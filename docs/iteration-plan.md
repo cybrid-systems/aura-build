@@ -1,6 +1,6 @@
 # Iteration plan — M0–M5 + Post-M5 + Aura kernel
 
-> **Kernel = Aura.** Core orch / worldline / prove / harness / traj / memory / L2 live under `aura/*.aura`. Python is thin host + CI fallback. See README.
+> **Kernel = Aura.** Core orch / worldline / prove / harness / traj / memory / L2 live under `aura/*.aura`. Python is thin host only (no orch fallback). See README.
 
 ## Status table (M0–M5 + Post-M5)
 
@@ -162,7 +162,7 @@
 - Thin Python `kernel.py` + CLI prefer Aura when binary+sidecar healthy
 - Trajectory JSONL still `trajectory.v0`; `runtime.kernel=aura` on kernel path
 - Honest prove-incr in-process (`incr_proven` only with measured epoch/invalidate deltas)
-- CI-safe: pytest + Python fallback when no `AURA_BIN`; optional live Aura job
+- CI-safe: host pytest + refuse path when no `AURA_BIN`; Aura episodes skip; optional live Aura job
 
 **Exit criteria**
 

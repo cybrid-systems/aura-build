@@ -14,38 +14,58 @@ Prefer live-object worldlines over git-worktree mail; dogfood [cybrid-systems/au
 
 **Product core is written in Aura** under [`aura/`](aura/): orchestration, worldlines,
 mutate/eval bridge, prove-incr / doctor honesty flags, harness L1 mutate+canary,
-trajectory write, memory, L2 stub metadata (`aura/main.aura` + modules).
+trajectory write, memory, ACP/TUI stubs, export JSON+redaction (`aura/main.aura` + modules).
 
-Python is a **thin CLI / test harness** that shells out to the `aura` binary
-(with the GCC16 libstdc++ sidecar). It still owns optional Parquet conversion for export, schema
-validation, and a **CI-safe fallback** when no Aura binary is present
-(`AURA_BUILD_FORCE_PYTHON=1` forces the fallback). ACP and TUI prefer the Aura kernel.
+Python is a **thin CLI host only**: argparse, `kernel.py` invoke Aura, optional Parquet
+adapter, schema validate, and a few host-side helpers (`l2 promote --from-export`,
+memory JSON I/O, prove *refuse* report when Aura is missing).
+
+**Python orch is gone.** Modules that used to reimplement product logic were deleted or
+gutted to refuse stubs (`kernel=python_deprecated`, exit non-zero). There is **no**
+silent CI green path that pretends Python is the product.
+
+| Env / path | Role |
+|------------|------|
+| `AURA_BIN` + GCC16 libstdc++ sidecar | Required for orch CLIs (`run`, `harness-mutate`, `acp`, `tui`, …) |
+| `AURA_BUILD_FORCE_PYTHON` | **Deprecated / debug-only** — disables Aura prefer so the host **refuses**; does **not** restore Python orch |
+| Host without Aura | pytest host unit tests + `--help` + prove refuse report; orch episodes **skip** |
 
 ### Which CLIs are Aura-first
 
-| CLI | When Aura healthy | Python |
-|-----|-------------------|--------|
-| `run` | **Aura kernel** (`orch.aura`); traj `runtime.kernel=aura` | CI fallback / `--json` |
-| `prove-incr` | **Aura kernel** (`prove.aura` in-process storm) | fail-closed refuse report |
-| `harness-mutate` | **Aura kernel** (`harness.aura` + canary); `kernel=aura` | CI fallback / `--json` |
-| `doctor` / `harness-show` | **Aura kernel** (cheap) | fallback |
-| `memory` / `l2 show\|list\|promote` | Aura when healthy (promote `--from-export` stays Python) | fallback |
-| `export` | **Aura kernel** (JSON array + default-ON redaction); Parquet via thin Python adapter | `AURA_BUILD_FORCE_PYTHON=1` / no binary |
-| `acp` | **Aura kernel** (`acp.aura` hooks: start/status/worldlines/promote/discard/export) | `AURA_BUILD_FORCE_PYTHON=1` / no binary |
-| `tui` | **Aura kernel** (`tui.aura` status stub; reuses ACP/prove honesty) | `AURA_BUILD_FORCE_PYTHON=1` / no binary |
+| CLI | When Aura healthy | Without Aura |
+|-----|-------------------|--------------|
+| `run` / `harness-mutate` / `acp` / `tui` / `harness-show` | **Aura kernel** | refuse (`kernel=python_deprecated`, exit 2) |
+| `prove-incr` | **Aura kernel** (measured storm) | honest refuse report only (no storm orch) |
+| `doctor` | **Aura kernel** | host snapshot of last report / probe |
+| `export` | **Aura kernel** JSON+redaction; Parquet via thin Python adapter | host JSONL→JSON+Parquet adapter (`kernel=python_host`) |
+| `memory` / `l2 show|list|promote` | Aura when healthy | thin host JSON I/O; `l2 promote --from-export` stays host corpus gate |
 
 ```bash
 # Primary path (Aura kernel) — requires AURA_BIN + sidecar
 export AURA_BIN=/workspace/aura-redis/.deps/aura/build/aura
 ./scripts/run-aura-kernel.sh          # AURA_BUILD_CMD=run by default
-aura-build run --prompt "demo" --mode simulated   # CLI → Aura kernel when healthy
+aura-build run --prompt "demo" --mode simulated   # CLI → Aura kernel
 aura-build prove-incr --cycles 2 --worldlines 1
 aura-build harness-mutate --prompt "canary" --set worldline_count=4
 aura-build doctor
 ```
 
 Honest flags: never fake `incr_proven` / `fiber_live` (env alone cannot elevate).
-Trajectory / stdout show `kernel=aura` on the kernel path (`kernel=python` on fallback).
+Trajectory / stdout show `kernel=aura` on the kernel path.
+
+### Deleted / gutted Python modules
+
+| Was | Now |
+|-----|-----|
+| `orch.py` / `worldline.py` / `profile_aura_repo.py` | refuse stubs — product in `aura/orch.aura`, `aura/worldline.aura` |
+| `prove_incr.py` storm loop | host refuse report only — product in `aura/prove.aura` |
+| `harness.py` canary engine | `default_root` + `AUTOPROMOTE_ENV` only — product in `aura/harness.aura` |
+| `acp.py` / `tui.py` product logic | refuse stubs — product in `aura/acp.aura`, `aura/tui.aura` |
+| `runtime.py` SimulatedBackend / AuraBackend orch | probe + libstdc++ sidecar helpers for `kernel.py` only |
+
+**Still in Python (host):** `cli.py`, `kernel.py`, `schema.py`, `trajectory.py`,
+`export.py` (redaction + Parquet adapter), `l2_weights.py`, thin `memory.py`,
+`deprecated.py`, prove refuse / doctor snapshot helpers.
 
 ## Non-goals / 非目标
 
@@ -69,7 +89,7 @@ Trajectory / stdout show `kernel=aura` on the kernel path (`kernel=python` on fa
 ## Run
 
 ```bash
-./scripts/smoke.sh          # pytest (Python fallback) + Aura kernel episode when AURA_BIN healthy
+./scripts/smoke.sh          # host pytest + refuse checks; Aura kernel episodes when AURA_BIN healthy
 # or manually:
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
@@ -113,7 +133,7 @@ Writes validated episode JSONL under `trajectories/` (gitignored). Sample shape 
 # Stdlib status stub — Aura-first when AURA_BIN healthy (not a full-screen TUI)
 aura-build tui
 aura-build tui --json
-AURA_BUILD_FORCE_PYTHON=1 aura-build tui   # Python stub fallback
+# Without AURA_BIN: tui refuses (python_deprecated) — no fake status orch
 
 # Agent control plane hooks — Aura-first when AURA_BIN healthy (headless remains SSOT)
 aura-build acp hooks
@@ -124,8 +144,7 @@ aura-build acp worldlines --workspace /path/to/shared_ws
 aura-build acp discard --workspace /path/to/shared_ws --ref wl-1
 aura-build acp promote --id specialist.stub.v0 --notes "offline"
 aura-build acp export --out trajectories/export.json
-# Force Python fallback:
-AURA_BUILD_FORCE_PYTHON=1 aura-build acp status
+# AURA_BUILD_FORCE_PYTHON=1 refuses acp (deprecated; does not restore Python orch)
 ```
 
 ### L2 offline metadata (M5)
@@ -171,7 +190,7 @@ Report: `.aura-build/prove-incr-latest.json`. Trajectories carry
 
 ### Trajectory export (M4)
 
-Aura-first when `AURA_BIN` + sidecar are healthy: the kernel writes the redacted JSON array (`aura/export.aura`). **Parquet is not produced in Aura** (no clean in-kernel parquet writer); the Python host optionally converts the JSON array → Parquet as a thin adapter when `pandas`+`pyarrow` are installed. Set `AURA_BUILD_FORCE_PYTHON=1` to force the pure-Python exporter.
+Aura-first when `AURA_BIN` + sidecar are healthy: the kernel writes the redacted JSON array (`aura/export.aura`). **Parquet is not produced in Aura** (no clean in-kernel parquet writer); the Python host optionally converts the JSON array → Parquet as a thin adapter when `pandas`+`pyarrow` are installed. Without Aura, the host may still batch-export JSONL→JSON+Parquet as `kernel=python_host` (I/O adapter, not orch).
 
 
 ```bash

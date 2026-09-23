@@ -9,7 +9,35 @@ from pathlib import Path
 import pytest
 
 from aura_build.kernel import invoke_aura_kernel, kernel_available
-from aura_build.schema import validate_episode
+from aura_build.schema import SCHEMA_VERSION, validate_episode
+
+from aura_build.schema import SCHEMA_VERSION
+from aura_build.trajectory import TrajectoryWriter
+
+
+def _fixture_episode(**overrides):
+    ep = {
+        "schema_version": SCHEMA_VERSION,
+        "episode_id": "ep-kernel-fixture",
+        "ts_start": "2026-01-01T00:00:00+00:00",
+        "ts_end": "2026-01-01T00:00:01+00:00",
+        "prompt": "fixture",
+        "runtime": {
+            "mode": "simulated",
+            "kernel": "aura",
+            "incr_proven": False,
+            "fiber_live": False,
+        },
+        "harness": {"l3_online": False, "actions": []},
+        "worldlines": [
+            {"id": "wl-0", "eval": {"fitness": 0.9}, "mutations": [{"summary": "a"}]},
+            {"id": "wl-1", "eval": {"fitness": 0.4}, "mutations": [{"summary": "b"}]},
+        ],
+        "selected_id": "wl-0",
+    }
+    ep.update(overrides)
+    return ep
+
 
 pytestmark = pytest.mark.skipif(
     not kernel_available()[0],
@@ -242,13 +270,8 @@ def test_cli_harness_mutate_autopropote_env(tmp_path: Path, monkeypatch) -> None
 
 
 def test_kernel_export_redacts(tmp_path: Path) -> None:
-    from aura_build.orch import OrchConfig, run_episode
-    from aura_build.trajectory import TrajectoryWriter
-
     jsonl = tmp_path / "ep.jsonl"
-    ep = run_episode(
-        "kernel export", OrchConfig(seed=9, n_worldlines=2, attach_prove=False)
-    ).episode
+    ep = _fixture_episode()
     ep["runtime"]["aura_ref"] = "/workspace/aura-grok"
     ep["prompt"] = "api_key=sk-secretvalue1234567890 path=/home/box/secret"
     TrajectoryWriter(jsonl).append(ep)
@@ -284,19 +307,19 @@ def test_kernel_export_redacts(tmp_path: Path) -> None:
     assert meta.get("redacted") is True
 
 
-def test_cli_export_force_python(tmp_path: Path, monkeypatch) -> None:
+def test_cli_export_host_adapter_when_force_python(tmp_path: Path, monkeypatch) -> None:
+    """FORCE_PYTHON disables Aura prefer; export still works as host I/O adapter."""
     from aura_build.cli import main
-    from aura_build.orch import OrchConfig, run_episode
-    from aura_build.trajectory import TrajectoryWriter
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("AURA_BUILD_FORCE_PYTHON", "1")
     traj = tmp_path / "trajectories"
     traj.mkdir()
-    ep = run_episode(
-        "force python export", OrchConfig(seed=8, n_worldlines=1, attach_prove=False)
-    ).episode
+    ep = _fixture_episode(prompt="force python export")
     ep["runtime"]["aura_ref"] = "/workspace/keep-force"
+    # single worldline ok
+    ep["worldlines"] = [ep["worldlines"][0]]
+    ep["selected_id"] = "wl-0"
     TrajectoryWriter(traj / "ep.jsonl").append(ep)
     out = tmp_path / "batch.json"
     rc = main(
@@ -357,10 +380,14 @@ def test_kernel_acp_hooks_status_start(tmp_path: Path) -> None:
 
 
 def test_kernel_acp_worldlines_discard_promote(tmp_path: Path) -> None:
-    from aura_build.worldline import WorldlineWorkspace
-
+    # Seed workspace layout expected by aura/acp.aura (no Python WorldlineWorkspace)
     ws = tmp_path / "ws"
-    WorldlineWorkspace.create(ws, n_candidates=2)
+    cand = ws / "candidates"
+    for name in ("wl-0", "wl-1"):
+        d = cand / name
+        d.mkdir(parents=True)
+        (d / "REF").write_text(name + "\n", encoding="utf-8")
+    (ws / "PARENT").write_text("parent\n", encoding="utf-8")
     rows = invoke_aura_kernel(
         "acp",
         {
@@ -427,13 +454,13 @@ def test_cli_acp_prefer_aura_and_force_python(tmp_path: Path, monkeypatch) -> No
     assert "fiber_live=False" in out or "fiber_live=false" in out or "fiber_live=#f" in out
 
     monkeypatch.setenv("AURA_BUILD_FORCE_PYTHON", "1")
-    buf2 = io.StringIO()
-    with redirect_stdout(buf2):
+    import io as _io
+    from contextlib import redirect_stderr
+    err = _io.StringIO()
+    with redirect_stderr(err):
         rc = main(["acp", "status", "--harness-root", str(tmp_path)])
-    assert rc == 0
-    out2 = buf2.getvalue()
-    assert "kernel=python" in out2
-    assert "incr_proven=False" in out2
+    assert rc == 2
+    assert "python_deprecated" in err.getvalue()
 
 
 def test_kernel_tui_status(tmp_path: Path) -> None:
@@ -493,10 +520,10 @@ def test_cli_tui_prefer_aura_and_force_python(tmp_path: Path, monkeypatch) -> No
     assert (data.get("honesty") or {}).get("fiber_live") is False
 
     monkeypatch.setenv("AURA_BUILD_FORCE_PYTHON", "1")
-    buf2 = io.StringIO()
-    with redirect_stdout(buf2):
+    import io as _io
+    from contextlib import redirect_stderr
+    err = _io.StringIO()
+    with redirect_stderr(err):
         rc = main(["tui", "--harness-root", str(tmp_path)])
-    assert rc == 0
-    out2 = buf2.getvalue()
-    assert "kernel=python" in out2
-    assert "incr_proven=False" in out2
+    assert rc == 2
+    assert "python_deprecated" in err.getvalue()

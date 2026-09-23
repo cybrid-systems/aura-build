@@ -6,8 +6,8 @@ Product orchestration lives in ``aura/*.aura``. This module only:
 - shells out to ``aura aura/main.aura``
 - returns stdout + parsed kernel-response.json
 
-When the Aura binary is unavailable and the caller allows it, a **CI-safe
-Python fallback** may run simulated orch (documented as non-product).
+``AURA_BUILD_FORCE_PYTHON`` is debug-only / deprecated: it disables the Aura
+prefer path so the CLI can refuse honestly. It does **not** restore Python orch.
 """
 
 from __future__ import annotations
@@ -15,7 +15,6 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -38,7 +37,7 @@ class KernelResult:
     stdout: str
     stderr: str
     response: dict[str, Any]
-    via: str  # "aura" | "python_fallback"
+    via: str  # "aura"
 
 
 def repo_root() -> Path:
@@ -53,7 +52,6 @@ def aura_path_env(aura_bin: str | None = None) -> str:
         Path("/workspace/aura-grok/lib"),
     ]
     if aura_bin:
-        # …/build/aura → …/lib next to checkout, or .deps/aura/lib
         b = Path(aura_bin).resolve()
         candidates.insert(0, b.parent.parent / "lib")
         candidates.insert(0, b.parent.parent.parent / "aura" / "lib")
@@ -64,7 +62,6 @@ def aura_path_env(aura_bin: str | None = None) -> str:
     prev = os.environ.get("AURA_PATH", "")
     if prev:
         parts.append(prev)
-    # de-dupe
     out: list[str] = []
     seen: set[str] = set()
     for p in parts:
@@ -144,7 +141,6 @@ def invoke_aura_kernel(
         except json.JSONDecodeError:
             response = {"ok": False, "error": "invalid_kernel_response"}
 
-    # Aura process often exits 0 even when cmd returns 1; honor response.
     exit_code = 0
     if cmd == "harness-mutate" and response.get("accepted") is False:
         exit_code = 1
@@ -164,7 +160,11 @@ def invoke_aura_kernel(
 
 
 def prefer_aura_kernel() -> bool:
-    """Host policy: use Aura kernel when binary+probe OK (default ON)."""
+    """Host policy: use Aura kernel when binary+probe OK (default ON).
+
+    ``AURA_BUILD_FORCE_PYTHON=1`` is deprecated: disables Aura prefer so the
+    CLI refuses instead of silently pretending Python is the product.
+    """
     raw = os.environ.get("AURA_BUILD_FORCE_PYTHON", "").strip().lower()
     if raw in ("1", "true", "yes", "on"):
         return False

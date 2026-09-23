@@ -28,7 +28,7 @@
 
 ## Host thin
 
-The host process is a **thin** adapter: argparse/CI entrypoints that **shell out to the Aura kernel** (`aura/main.aura`), plus export Parquet adapter / M5 `tui` stub; `acp` prefers Aura. Product value lives in `aura/*.aura`, not Python scaffolding. Python orch modules remain as CI-safe fallback when `aura` is missing (`AURA_BUILD_FORCE_PYTHON=1`). Soft ≠ Restricted; deny plugin-as-moat.
+The host process is a **thin** adapter: argparse/CI entrypoints that **shell out to the Aura kernel** (`aura/main.aura`), plus export Parquet adapter and a few host JSON helpers. Product value lives in `aura/*.aura`. **Python orch was removed** — without Aura the host refuses (`kernel=python_deprecated`) or skips; `AURA_BUILD_FORCE_PYTHON` is deprecated and does not restore orch. Soft ≠ Restricted; deny plugin-as-moat.
 
 ## Aura control
 
@@ -131,15 +131,14 @@ is observed. Details: [storm-still-incr.md](storm-still-incr.md).
 
 | Surface | Role |
 |---------|------|
-| `cli.py` + `kernel.py` | Argparse → env → `aura aura/main.aura`; exit-code mapping |
-| `export.py` / schema / trajectory validate | Batch export, privacy redaction, pytest SSOT |
-| `acp.py` / `tui.py` | Thin host adapters / TUI stub (ACP prefers `aura/acp.aura`) |
-| `orch.py` / `prove_incr.py` / `harness.py` / … | **CI fallback only** when Aura binary unavailable (`AURA_BUILD_FORCE_PYTHON=1`) |
+| `cli.py` + `kernel.py` | Argparse → env → `aura aura/main.aura`; refuse when unavailable |
+| `export.py` / schema / trajectory | Host batch export, privacy redaction, Parquet adapter |
+| `l2_weights.py` / thin `memory.py` | Host metadata I/O; `l2 promote --from-export` corpus gate |
+| `prove_incr.py` refuse helper | Honest fail-closed report only (no storm orch) |
+| `runtime.py` | Binary probe + GCC16 libstdc++ sidecar for `kernel.py` |
+| `orch.py` / `worldline.py` / `acp.py` / `tui.py` / … | **Deleted product logic** — refuse stubs |
 
-**Aura-first CLIs** (prefer kernel when `AURA_BIN` + sidecar healthy): `run`,
-`prove-incr`, `harness-mutate`, `doctor`, `harness-show`, `memory`, `l2`, `export`, `acp`
-(except `l2 promote --from-export`). Trajectories record `runtime.kernel=aura`
-(except `l2 promote --from-export`). Trajectories record `runtime.kernel=aura`
-(or `python` on fallback). Never invent `incr_proven` / `fiber_live`.
-
-Primary dogfood path: Aura kernel. Do not grow Python orch as the product.
+**Aura-first CLIs** (require kernel when doing orch): `run`, `prove-incr`,
+`harness-mutate`, `doctor`, `harness-show`, `acp`, `tui`, `export` (JSON), `memory`/`l2`
+(Aura when healthy). Trajectories record `runtime.kernel=aura`. Never invent
+`incr_proven` / `fiber_live`. Do not grow Python orch as the product.

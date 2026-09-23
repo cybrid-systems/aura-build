@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from aura_build.orch import OrchConfig, run_episode
 from aura_build.schema import SCHEMA_VERSION, SchemaError, validate_episode
 from aura_build.trajectory import TrajectoryWriter
 
@@ -54,12 +53,11 @@ def test_validate_rejects_bad_selected():
 def test_writer_append_and_read(tmp_path: Path):
     path = tmp_path / "e.jsonl"
     w = TrajectoryWriter(path)
-    ep = run_episode("hello", OrchConfig(seed=42, n_worldlines=2)).episode
+    ep = _minimal_episode(prompt="hello")
     w.append(ep)
     rows = w.read_all()
     assert len(rows) == 1
     assert rows[0]["prompt"] == "hello"
-    # raw line is valid JSON
     line = path.read_text(encoding="utf-8").strip()
     assert json.loads(line)["episode_id"] == ep["episode_id"]
 

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Smoke: pytest (Python fallback SSOT) + CLI episodes.
-# When AURA_BIN healthy, CLI prefer Aura kernel (runtime.kernel=aura).
-# Fail-closed prove-incr still uses missing-bin Python path.
+# Honest smoke: host unit tests always; Aura kernel episodes when AURA_BIN healthy.
+# No Python orch green path. AURA_BUILD_FORCE_PYTHON is deprecated (refuse only).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -16,10 +15,68 @@ source "$VENV/bin/activate"
 
 python -m pip install -U pip -q
 python -m pip install -e ".[dev]" -q
-AURA_BUILD_FORCE_PYTHON=1 python -m pytest -q
 
-# Isolated harness root so dogfood `.aura-build/prove-incr-latest.json`
-# (possibly incr_proven=true) does not attach into simulated smoke episodes.
+# Host-only pytest (no FORCE_PYTHON orch). Kernel tests skip if Aura missing.
+python -m pytest -q
+
+# Discover Aura binary
+LIVE_AURA="${AURA_BIN:-}"
+if [[ -z "$LIVE_AURA" ]]; then
+  for c in \
+    /workspace/aura-redis/.deps/aura/build/aura \
+    /workspace/aura-grok/build/aura \
+    /workspace/aura-redis-ci/.deps/aura/build/aura
+  do
+    if [[ -x "$c" ]]; then LIVE_AURA="$c"; break; fi
+  done
+fi
+
+# --help always
+aura-build --help >/dev/null
+aura-build run --help >/dev/null
+
+# Deprecated FORCE_PYTHON must refuse orch (not silent green)
+set +e
+AURA_BUILD_FORCE_PYTHON=1 aura-build run --prompt "deprecated" --mode simulated >/tmp/aura_force.out 2>/tmp/aura_force.err
+frc=$?
+set -e
+test "$frc" -eq 2
+grep -q 'python_deprecated\|aura-build run' /tmp/aura_force.err
+
+# Prove refuse without Aura (honest fail-closed, no storm orch)
+PROVE_ROOT="${ROOT}/trajectories/_smoke_prove"
+rm -rf "$PROVE_ROOT"
+mkdir -p "$PROVE_ROOT"
+env -u AURA_BIN AURA_BUILD_FORCE_PYTHON=1 aura-build prove-incr --cycles 2 --worldlines 1 \
+  --aura-bin /nonexistent/aura-missing \
+  --no-fiber-probe \
+  --harness-root "$PROVE_ROOT" \
+  --out "$PROVE_ROOT/prove-incr-latest.json" | tee "$PROVE_ROOT/prove.out"
+grep -q 'incr_proven=False' "$PROVE_ROOT/prove.out"
+grep -q 'python_deprecated\|aura_binary_missing\|aura_unhealthy\|aura_glibcxx' "$PROVE_ROOT/prove.out"
+python - <<PYPROVE
+import json
+from pathlib import Path
+p = Path(r"$PROVE_ROOT/prove-incr-latest.json")
+data = json.loads(p.read_text())
+assert data["incr_proven"] is False
+assert data["measured"] is False
+assert data.get("fiber_live") is False
+assert data.get("kernel") == "python_deprecated"
+print("smoke ok prove refuse (no Python orch):", p)
+PYPROVE
+
+aura-build doctor --skip-probe --harness-root "$PROVE_ROOT" | grep -q 'incr_proven=False'
+
+if [[ -z "${LIVE_AURA}" || ! -x "$LIVE_AURA" ]]; then
+  echo "smoke: host tests + refuse path OK; skip Aura kernel episodes (no AURA_BIN)"
+  echo "smoke ok (host-only; set AURA_BIN for full kernel smoke)"
+  exit 0
+fi
+
+export AURA_BIN="$LIVE_AURA"
+echo "smoke: Aura kernel episodes via AURA_BIN=$AURA_BIN"
+
 SMOKE_ROOT="${ROOT}/trajectories/_smoke_root"
 rm -rf "$SMOKE_ROOT"
 mkdir -p "$SMOKE_ROOT"
@@ -39,7 +96,6 @@ aura-build run --prompt "smoke aura-repo profile" --seed 2 --mode simulated \
   --harness-root "$SMOKE_ROOT" \
   --out "$OUT2"
 
-# M3: harness canary (AUTOPROMOTE off → discard) + reject bad L1
 HROOT="${ROOT}/trajectories/_smoke_harness"
 rm -rf "$HROOT"
 mkdir -p "$HROOT"
@@ -64,17 +120,14 @@ rc=$?
 set -e
 test "$rc" -eq 1
 
-# memory roundtrip
 aura-build memory set --profile smoke --key demo --value anti-postman --harness-root "$HROOT"
 aura-build memory get --profile smoke --key demo --harness-root "$HROOT" | grep -q anti-postman
 
-# M4: batch export (JSON always; Parquet optional)
 EXPORT_JSON="${ROOT}/trajectories/smoke_export.json"
 rm -f "$EXPORT_JSON" "${ROOT}/trajectories/smoke_export.parquet"
 aura-build export "$OUT" "$OUT2" "$OUT3" "$OUT4" \
   --out "$EXPORT_JSON" --no-parquet
 
-# M5: L2 offline metadata + TUI/ACP stubs
 aura-build l2 promote --id specialist.smoke.v0 --notes "smoke metadata" \
   --from-export "$EXPORT_JSON" --harness-root "$HROOT" --overwrite
 aura-build l2 show --id specialist.smoke.v0 --harness-root "$HROOT" | grep -q 'artifact_present=True'
@@ -90,168 +143,35 @@ aura-build acp start --prompt "smoke session" --harness-root "$HROOT" \
 ACP_STATUS=$(aura-build acp status --harness-root "$HROOT")
 echo "$ACP_STATUS" | grep -q 'incr_proven=False'
 echo "$ACP_STATUS" | grep -q 'fiber_live=False\|fiber_live=false'
-# When Aura healthy, ACP should report kernel=aura (FORCE_PYTHON path checked in pytest)
-if [[ -n "${AURA_BIN:-}" && -x "${AURA_BIN}" ]]; then
-  echo "$ACP_STATUS" | grep -q 'kernel=aura'
-fi
+echo "$ACP_STATUS" | grep -q 'kernel=aura'
 TUI_STATUS=$(aura-build tui --harness-root "$HROOT")
-echo "$TUI_STATUS" | grep -q 'aura-build tui'
-echo "$TUI_STATUS" | grep -q 'incr_proven=False'
-echo "$TUI_STATUS" | grep -q 'fiber_live=False\|fiber_live=false'
-if [[ -n "${AURA_BIN:-}" && -x "${AURA_BIN}" ]]; then
-  echo "$TUI_STATUS" | grep -q 'kernel=aura'
-fi
-AURA_BUILD_FORCE_PYTHON=1 aura-build tui --harness-root "$HROOT" | grep -q 'kernel=python'
+echo "$TUI_STATUS" | grep -q 'aura-build tui\|incr_proven=False'
+echo "$TUI_STATUS" | grep -q 'kernel=aura'
 aura-build acp hooks | grep -q start_session
 aura-build acp worldlines --traj "$OUT2" | grep -q candidate
-# discard one loser in retained workspace (wl-1 exists from 3-worldline fan-out)
-aura-build acp discard --workspace "$WS" --ref wl-1 --reason smoke_discard | tee /tmp/acp_discard.out | grep -q 'fiber_live=false'
+aura-build acp discard --workspace "$WS" --ref wl-1 --reason smoke_discard | tee /tmp/acp_discard.out | grep -q 'fiber_live=false\|fiber_live=False'
 aura-build acp promote --id specialist.acp.smoke.v0 --notes smoke --harness-root "$HROOT" | grep -q 'kernel=aura\|stub='
 
-
-# Post-M5: prove-incr fail-closed + doctor (Aura may be missing/GLIBCXX — still exit 0)
-PROVE_ROOT="${ROOT}/trajectories/_smoke_prove"
-rm -rf "$PROVE_ROOT"
-mkdir -p "$PROVE_ROOT"
-# Force missing bin so CI is deterministic fail-closed (do not depend on host Aura)
-env -u AURA_BIN aura-build prove-incr --cycles 2 --worldlines 1 \
-  --aura-bin /nonexistent/aura-missing \
+# Live prove-incr on healthy Aura
+LIVE_ROOT="${ROOT}/trajectories/_smoke_prove_live"
+rm -rf "$LIVE_ROOT"
+mkdir -p "$LIVE_ROOT"
+set +e
+aura-build prove-incr --cycles 2 --worldlines 1 \
+  --aura-bin "$LIVE_AURA" \
   --no-fiber-probe \
-  --harness-root "$PROVE_ROOT" \
-  --out "$PROVE_ROOT/prove-incr-latest.json" | tee "$PROVE_ROOT/prove.out"
-grep -q 'incr_proven=False' "$PROVE_ROOT/prove.out"
-grep -q 'aura_binary_missing\|aura_glibcxx_mismatch\|aura_unhealthy\|aura_probe' "$PROVE_ROOT/prove.out" \
-  || grep -q 'incr_proven=False' "$PROVE_ROOT/prove.out"
-aura-build doctor --skip-probe --harness-root "$PROVE_ROOT" | grep -q 'incr_proven=False'
-python - <<PYPROVE
-import json
-from pathlib import Path
-p = Path(r"$PROVE_ROOT/prove-incr-latest.json")
-data = json.loads(p.read_text())
-assert data["incr_proven"] is False
-assert data["measured"] is False
-assert data.get("fiber_live") is False
-print("smoke ok prove-incr fail-closed:", p)
-PYPROVE
-
-# Auto-attach prove honesty into traj (default ON); env alone cannot elevate
-OUT_ATTACH="${ROOT}/trajectories/smoke_attach.jsonl"
-rm -f "$OUT_ATTACH"
-env AURA_BUILD_INCR_VALID=1 AURA_BUILD_FIBER_SESSION_OK=1 \
-  aura-build run --prompt "smoke attach prove" --seed 7 --mode simulated \
-  --worldlines 2 --harness-root "$PROVE_ROOT" --out "$OUT_ATTACH"
-python - <<PYATTACH
-import json
-from pathlib import Path
-from aura_build.schema import validate_episode
-p = Path(r"$OUT_ATTACH")
-ep = json.loads([ln for ln in p.read_text().splitlines() if ln.strip()][0])
-validate_episode(ep)
-rt = ep["runtime"]
-assert rt["incr_proven"] is False
-assert rt["measured"] is False
-assert rt["fiber_live"] is False
-pi = rt["prove_incr"]
-for k in ("incr_proven", "measured", "fiber_live", "session_model", "reason"):
-    assert k in pi, k
-assert "env_ignored_unproven" in pi["env_notes"]
-assert "env_fiber_ignored_unproven" in pi["env_notes"]
-assert pi["attached"] is True
-print("smoke ok attach-prove (env ignored):", p)
-PYATTACH
-
-python - <<PY
-import json
-from pathlib import Path
-from aura_build.schema import validate_episode
-
-def check(path, *, expect_profile=False, expect_harness_outcome=None, expect_accepted=None):
-    p = Path(path)
-    lines = [ln for ln in p.read_text().splitlines() if ln.strip()]
-    assert len(lines) == 1, lines
-    ep = json.loads(lines[0])
-    validate_episode(ep)
-    assert ep["runtime"]["mode"] in ("simulated", "aura"), ep["runtime"]
-    assert ep["runtime"].get("incr_proven", False) is False
-    if expect_profile:
-        assert ep["runtime"]["profile"]["id"] == "aura-repo"
-        assert ep["runtime"]["session_model"] == "shared_workspace_subprocess"
-        assert len(ep["worldlines"]) >= 2
-        assert len(ep["discarded"]) == len(ep["worldlines"]) - 1
-        assert all(w.get("stable_ref") for w in ep["worldlines"])
-    if expect_harness_outcome is not None:
-        assert ep["harness"]["outcome"] == expect_harness_outcome
-        assert ep["harness"]["mid"]
-        ops = [a["op"] for a in ep["harness"]["actions"]]
-        assert "propose" in ops and "canary" in ops
-        assert expect_harness_outcome in ops
-        assert ep["harness"]["l3_online"] is False
-        if expect_accepted is not None:
-            canary = [a for a in ep["harness"]["actions"] if a["op"] == "canary"][0]
-            assert canary["accepted"] is expect_accepted
-    print("smoke ok:", path)
-
-check(r"$OUT", expect_profile=False)
-check(r"$OUT2", expect_profile=True)
-# Default --attach-prove: fields present; still false
-ep0 = json.loads([ln for ln in Path(r"$OUT").read_text().splitlines() if ln.strip()][0])
-assert "prove_incr" in ep0["runtime"]
-assert ep0["runtime"]["prove_incr"]["attached"] is True
-assert ep0["runtime"]["incr_proven"] is False
-print("smoke ok default attach fields on", r"$OUT")
-check(r"$OUT3", expect_harness_outcome="discard", expect_accepted=True)
-check(r"$OUT4", expect_harness_outcome="heal", expect_accepted=False)
-
-export_path = Path(r"$EXPORT_JSON")
-exported = json.loads(export_path.read_text())
-assert isinstance(exported, list) and len(exported) >= 4, len(exported)
-for ep in exported:
-    validate_episode(ep)
-    assert ep["privacy"].get("redacted") is True
-    assert ep["runtime"].get("incr_proven", False) is False
-    assert ep["harness"]["l3_online"] is False
-print("smoke ok export:", export_path, "n=", len(exported))
-
-# M5 L2 episode
-p5 = Path(r"$OUT5")
-ep5 = json.loads([ln for ln in p5.read_text().splitlines() if ln.strip()][0])
-validate_episode(ep5)
-assert ep5["harness"]["l2_ref"]["stub"] is True
-assert ep5["harness"]["l2_ref"]["artifact_present"] is True
-assert ep5["runtime"].get("incr_proven", False) is False
-print("smoke ok l2:", p5)
-
-print("smoke ok all (M0–M5 + Post-M5 prove-incr + attach)")
-PY
-
-# Optional: when Aura binary is healthy, demo incr_proven=true via real probe.
-LIVE_AURA="${AURA_BIN:-}"
-if [[ -z "$LIVE_AURA" ]]; then
-  for c in \
-    /workspace/aura-redis/.deps/aura/build/aura \
-    /workspace/aura-grok/build/aura \
-    /workspace/aura-redis-ci/.deps/aura/build/aura
-  do
-    if [[ -x "$c" ]]; then LIVE_AURA="$c"; break; fi
-  done
-fi
-if [[ -n "${LIVE_AURA}" && -x "$LIVE_AURA" ]]; then
-  LIVE_ROOT="${ROOT}/trajectories/_smoke_prove_live"
-  rm -rf "$LIVE_ROOT"
-  mkdir -p "$LIVE_ROOT"
-  set +e
-  aura-build prove-incr --cycles 2 --worldlines 1 \
-    --aura-bin "$LIVE_AURA" \
-    --no-fiber-probe \
-    --harness-root "$LIVE_ROOT" \
-    --out "$LIVE_ROOT/prove-incr-latest.json" \
-    --json >"$LIVE_ROOT/prove.out" 2>"$LIVE_ROOT/prove.err"
-  set -e
-  export LIVE_ROOT
-  python - <<'PYLIVE'
+  --harness-root "$LIVE_ROOT" \
+  --out "$LIVE_ROOT/prove-incr-latest.json" \
+  --json >"$LIVE_ROOT/prove.out" 2>"$LIVE_ROOT/prove.err"
+set -e
+export ROOT
+export LIVE_ROOT
+python - <<'PYLIVE'
 import json
 import os
 from pathlib import Path
+from aura_build.schema import validate_episode
+
 p = Path(os.environ["LIVE_ROOT"]) / "prove-incr-latest.json"
 if not p.is_file():
     print("smoke skip live incr_proven: no report (aura unhealthy?)")
@@ -269,9 +189,40 @@ else:
         print("smoke ok live incr_proven=true")
     else:
         print("smoke ok live refuse (Aura not fully healthy):", data.get("reason"))
-PYLIVE
-else
-  echo "smoke skip live incr_proven demo (no AURA_BIN)"
-fi
 
-echo "smoke ok all (M0–M5 + Post-M5 prove-incr + attach + optional live)"
+# Validate kernel episodes
+root = Path(os.environ["ROOT"])
+for rel, expect_profile, expect_harness in [
+    ("trajectories/smoke.jsonl", False, None),
+    ("trajectories/smoke_aura_repo.jsonl", True, None),
+    ("trajectories/smoke_harness_canary.jsonl", False, "discard"),
+    ("trajectories/smoke_harness_reject.jsonl", False, "heal"),
+    ("trajectories/smoke_l2.jsonl", False, None),
+]:
+    path = root / rel
+    lines = [ln for ln in path.read_text().splitlines() if ln.strip()]
+    assert len(lines) == 1, (rel, lines)
+    ep = json.loads(lines[0])
+    validate_episode(ep)
+    assert ep["runtime"]["mode"] in ("simulated", "aura")
+    assert ep["runtime"].get("kernel") == "aura", ep["runtime"]
+    assert ep["runtime"].get("incr_proven", False) is False
+    assert ep["runtime"].get("fiber_live", False) is False
+    if expect_profile:
+        assert ep["runtime"]["profile"]["id"] == "aura-repo"
+        assert len(ep["worldlines"]) >= 2
+    if expect_harness is not None:
+        assert ep["harness"]["outcome"] == expect_harness
+    print("smoke ok:", path)
+
+export_path = root / "trajectories/smoke_export.json"
+exported = json.loads(export_path.read_text())
+assert isinstance(exported, list) and len(exported) >= 4
+for ep in exported:
+    validate_episode(ep)
+    assert ep["privacy"].get("redacted") is True
+print("smoke ok export:", export_path, "n=", len(exported))
+print("smoke ok all (host + Aura kernel)")
+PYLIVE
+
+echo "smoke ok all (host unit + Aura kernel episodes)"

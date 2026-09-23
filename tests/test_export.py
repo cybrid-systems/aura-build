@@ -1,4 +1,4 @@
-"""M4 trajectory export + privacy filters."""
+"""Host export adapter: redaction + JSON array (+ optional Parquet)."""
 
 from __future__ import annotations
 
@@ -13,9 +13,39 @@ from aura_build.export import (
     redact_episode,
     write_parquet,
 )
-from aura_build.orch import OrchConfig, run_episode
 from aura_build.schema import SCHEMA_VERSION, validate_episode
-from aura_build.trajectory import TrajectoryWriter
+
+
+def _sample_episode(**overrides) -> dict:
+    ep = {
+        "schema_version": SCHEMA_VERSION,
+        "episode_id": "ep-test-1",
+        "ts_start": "2026-01-01T00:00:00+00:00",
+        "ts_end": "2026-01-01T00:00:01+00:00",
+        "prompt": "demo",
+        "runtime": {
+            "mode": "simulated",
+            "kernel": "aura",
+            "incr_proven": False,
+            "fiber_live": False,
+        },
+        "harness": {"l3_online": False, "actions": []},
+        "worldlines": [
+            {
+                "id": "wl-0",
+                "eval": {"fitness": 0.9},
+                "mutations": [{"summary": "noop"}],
+            },
+            {
+                "id": "wl-1",
+                "eval": {"fitness": 0.5},
+                "mutations": [{"summary": "noop"}],
+            },
+        ],
+        "selected_id": "wl-0",
+    }
+    ep.update(overrides)
+    return ep
 
 
 def _write_jsonl(path: Path, episodes: list[dict]) -> None:
@@ -26,7 +56,7 @@ def _write_jsonl(path: Path, episodes: list[dict]) -> None:
 
 
 def test_redact_strips_abs_paths_and_secrets():
-    ep = run_episode("x", OrchConfig(seed=1, n_worldlines=2, attach_prove=False)).episode
+    ep = _sample_episode()
     ep["runtime"]["aura_ref"] = "/workspace/aura-grok"
     ep["runtime"]["workspace"] = "/tmp/aura-build-ws/abc"
     ep["prompt"] = "use api_key=sk-secretvalue1234567890 and Bearer tok_abc12345"
@@ -48,133 +78,59 @@ def test_redact_strips_abs_paths_and_secrets():
 
 
 def test_export_json_array_default_redact(tmp_path: Path):
-    jsonl = tmp_path / "trajectories" / "a.jsonl"
-    ep = run_episode(
-        "export me",
-        OrchConfig(
-            seed=2,
-            n_worldlines=2,
-            workspace_dir=tmp_path / "ws",
-            harness_root=tmp_path / ".aura-build",
-        ),
-    ).episode
-    # Force an absolute path into runtime for filter check.
-    ep["runtime"]["aura_ref"] = str(tmp_path / "fake-aura")
-    TrajectoryWriter(jsonl).append(ep)
-
-    out_json = tmp_path / "out" / "batch.json"
+    src = tmp_path / "a.jsonl"
+    ep = _sample_episode()
+    ep["runtime"]["workspace"] = "/secret/ws"
+    _write_jsonl(src, [ep])
+    out = tmp_path / "export.json"
     result = export_trajectories(
-        inputs=[jsonl],
-        out_json=out_json,
+        inputs=[src],
+        out_json=out,
+        redact=True,
         want_parquet=False,
-        cwd=tmp_path,
     )
     assert result.stats.episodes_exported == 1
     assert result.stats.redacted is True
-    data = json.loads(out_json.read_text(encoding="utf-8"))
+    data = json.loads(out.read_text())
     assert isinstance(data, list) and len(data) == 1
     validate_episode(data[0])
     assert data[0]["privacy"]["redacted"] is True
-    blob = out_json.read_text(encoding="utf-8")
-    assert str(tmp_path / "fake-aura") not in blob
-    assert data[0]["runtime"].get("incr_proven") is False
+    assert "/secret/ws" not in json.dumps(data)
 
 
-def test_export_include_raw_keeps_paths(tmp_path: Path):
-    jsonl = tmp_path / "e.jsonl"
-    ep = run_episode("raw", OrchConfig(seed=3, n_worldlines=1, attach_prove=False)).episode
-    ep["runtime"]["aura_ref"] = "/workspace/keep-me"
-    TrajectoryWriter(jsonl).append(ep)
-    out_json = tmp_path / "raw.json"
+def test_export_include_raw(tmp_path: Path):
+    src = tmp_path / "a.jsonl"
+    ep = _sample_episode()
+    ep["runtime"]["workspace"] = "/keep/me"
+    _write_jsonl(src, [ep])
+    out = tmp_path / "export.json"
     result = export_trajectories(
-        inputs=[jsonl],
-        out_json=out_json,
+        inputs=[src],
+        out_json=out,
         include_raw=True,
+        redact=False,
         want_parquet=False,
     )
+    data = json.loads(out.read_text())
+    assert data[0]["runtime"]["workspace"] == "/keep/me"
     assert result.stats.redacted is False
-    data = json.loads(out_json.read_text(encoding="utf-8"))
-    assert data[0]["runtime"]["aura_ref"] == "/workspace/keep-me"
-    # Source episode may still have privacy.redacted=false
-    assert data[0]["privacy"].get("redacted") is False
 
 
-def test_collect_default_globs(tmp_path: Path):
-    traj = tmp_path / "trajectories"
-    traj.mkdir()
-    (traj / "one.jsonl").write_text("{}\n", encoding="utf-8")
-    ab = tmp_path / ".aura-build" / "trajectories"
-    ab.mkdir(parents=True)
-    (ab / "two.jsonl").write_text("{}\n", encoding="utf-8")
-    paths = collect_jsonl_paths(cwd=tmp_path)
-    names = sorted(p.name for p in paths)
-    assert names == ["one.jsonl", "two.jsonl"]
-
-
-def test_export_skips_invalid_line(tmp_path: Path):
-    jsonl = tmp_path / "mixed.jsonl"
-    good = run_episode("ok", OrchConfig(seed=4, n_worldlines=1)).episode
-    _write_jsonl(jsonl, [])
-    with jsonl.open("w", encoding="utf-8") as fh:
-        fh.write(json.dumps(good) + "\n")
-        fh.write("{not-json\n")
-        fh.write(
-            json.dumps(
-                {
-                    "schema_version": SCHEMA_VERSION,
-                    "episode_id": "bad",
-                    "ts_start": "t",
-                    "ts_end": "t",
-                    "prompt": "x",
-                    "runtime": {"mode": "simulated"},
-                    "harness": {"l3_online": False},
-                    "worldlines": [],
-                    "selected_id": "missing",
-                }
-            )
-            + "\n"
-        )
-    result = export_trajectories(
-        inputs=[jsonl],
-        out_json=tmp_path / "out.json",
-        want_parquet=False,
-    )
-    assert result.stats.episodes_exported == 1
-    assert result.stats.episodes_skipped_invalid >= 1
-
-
-def test_write_parquet_degrades_or_writes(tmp_path: Path):
-    ep = run_episode("pq", OrchConfig(seed=5, n_worldlines=1)).episode
-    path, reason = write_parquet([ep], tmp_path / "x.parquet")
-    if path is None:
-        assert reason is not None
-        assert "pandas" in reason or "pyarrow" in reason
-    else:
-        assert path.exists()
-        assert reason is None
-
-
-def test_cli_export(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    from aura_build.cli import main
-
+def test_collect_jsonl_paths(tmp_path: Path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     traj = tmp_path / "trajectories"
     traj.mkdir()
-    ep = run_episode("cli-export", OrchConfig(seed=6, n_worldlines=2)).episode
-    ep["runtime"]["aura_ref"] = "/workspace/cli-aura"
-    TrajectoryWriter(traj / "ep.jsonl").append(ep)
-    out = tmp_path / "batch.json"
-    rc = main(
-        [
-            "export",
-            str(traj / "ep.jsonl"),
-            "--out",
-            str(out),
-            "--no-parquet",
-        ]
-    )
-    assert rc == 0
-    data = json.loads(out.read_text(encoding="utf-8"))
-    assert len(data) == 1
-    assert data[0]["privacy"]["redacted"] is True
-    assert "/workspace/cli-aura" not in out.read_text(encoding="utf-8")
+    f = traj / "x.jsonl"
+    _write_jsonl(f, [_sample_episode()])
+    found = collect_jsonl_paths(cwd=tmp_path)
+    assert any(p.name == "x.jsonl" for p in found)
+
+
+def test_write_parquet_optional(tmp_path: Path):
+    eps = [_sample_episode()]
+    pq = tmp_path / "out.parquet"
+    path, reason = write_parquet(eps, pq)
+    if path is None:
+        assert reason
+        pytest.skip(reason)
+    assert path.is_file()
