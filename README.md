@@ -17,7 +17,7 @@ mutate/eval bridge, prove-incr / doctor honesty flags, harness L1 mutate+canary,
 trajectory write, memory, L2 stub metadata (`aura/main.aura` + modules).
 
 Python is a **thin CLI / test harness** that shells out to the `aura` binary
-(with the GCC16 libstdc++ sidecar). It still owns export/ACP/TUI stubs, schema
+(with the GCC16 libstdc++ sidecar). It still owns ACP/TUI stubs, optional Parquet conversion for export, schema
 validation, and a **CI-safe fallback** when no Aura binary is present
 (`AURA_BUILD_FORCE_PYTHON=1` forces the fallback).
 
@@ -30,7 +30,8 @@ validation, and a **CI-safe fallback** when no Aura binary is present
 | `harness-mutate` | **Aura kernel** (`harness.aura` + canary); `kernel=aura` | CI fallback / `--json` |
 | `doctor` / `harness-show` | **Aura kernel** (cheap) | fallback |
 | `memory` / `l2 show\|list\|promote` | Aura when healthy (promote `--from-export` stays Python) | fallback |
-| `export` / `tui` / `acp` | — | **Python only** (host surfaces) |
+| `export` | **Aura kernel** (JSON array + default-ON redaction); Parquet via thin Python adapter | `AURA_BUILD_FORCE_PYTHON=1` / no binary |
+| `tui` / `acp` | — | **Python only** (host surfaces) |
 
 ```bash
 # Primary path (Aura kernel) — requires AURA_BIN + sidecar
@@ -164,6 +165,9 @@ Report: `.aura-build/prove-incr-latest.json`. Trajectories carry
 [storm-still-incr.md](docs/storm-still-incr.md).
 
 ### Trajectory export (M4)
+
+Aura-first when `AURA_BIN` + sidecar are healthy: the kernel writes the redacted JSON array (`aura/export.aura`). **Parquet is not produced in Aura** (no clean in-kernel parquet writer); the Python host optionally converts the JSON array → Parquet as a thin adapter when `pandas`+`pyarrow` are installed. Set `AURA_BUILD_FORCE_PYTHON=1` to force the pure-Python exporter.
+
 
 ```bash
 # Redacted JSON array (default). Parquet if pandas+pyarrow installed.

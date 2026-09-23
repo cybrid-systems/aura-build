@@ -239,3 +239,78 @@ def test_cli_harness_mutate_autopropote_env(tmp_path: Path, monkeypatch) -> None
     assert ep["runtime"].get("kernel") == "aura"
     assert ep["harness"]["outcome"] == "commit"
     assert ep["harness"]["committed"] is True
+
+
+def test_kernel_export_redacts(tmp_path: Path) -> None:
+    from aura_build.orch import OrchConfig, run_episode
+    from aura_build.trajectory import TrajectoryWriter
+
+    jsonl = tmp_path / "ep.jsonl"
+    ep = run_episode(
+        "kernel export", OrchConfig(seed=9, n_worldlines=2, attach_prove=False)
+    ).episode
+    ep["runtime"]["aura_ref"] = "/workspace/aura-grok"
+    ep["prompt"] = "api_key=sk-secretvalue1234567890 path=/home/box/secret"
+    TrajectoryWriter(jsonl).append(ep)
+    out = tmp_path / "export.json"
+    result = invoke_aura_kernel(
+        "export",
+        {
+            "AURA_BUILD_EXPORT_CWD": str(tmp_path),
+            "AURA_BUILD_EXPORT_INPUTS": str(jsonl),
+            "AURA_BUILD_EXPORT_OUT": str(out),
+            "AURA_BUILD_EXPORT_INCLUDE_RAW": "0",
+            "AURA_BUILD_EXPORT_STRICT": "0",
+            "AURA_BUILD_EXPORT_WANT_PARQUET": "0",
+        },
+        harness_root=tmp_path,
+    )
+    assert result.via == "aura"
+    assert result.ok
+    assert out.is_file()
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert isinstance(data, list) and len(data) == 1
+    validate_episode(data[0])
+    assert data[0]["privacy"]["redacted"] is True
+    assert data[0]["privacy"]["export_filter"] == "m4.default"
+    blob = out.read_text(encoding="utf-8")
+    assert "/workspace/aura-grok" not in blob
+    assert "sk-secretvalue" not in blob
+    assert "/home/box" not in blob
+    assert data[0]["runtime"].get("incr_proven") is False
+    assert data[0]["runtime"].get("fiber_live") in (False, None)
+    meta = (result.response or {}).get("result") or {}
+    assert meta.get("kernel") == "aura"
+    assert meta.get("redacted") is True
+
+
+def test_cli_export_force_python(tmp_path: Path, monkeypatch) -> None:
+    from aura_build.cli import main
+    from aura_build.orch import OrchConfig, run_episode
+    from aura_build.trajectory import TrajectoryWriter
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AURA_BUILD_FORCE_PYTHON", "1")
+    traj = tmp_path / "trajectories"
+    traj.mkdir()
+    ep = run_episode(
+        "force python export", OrchConfig(seed=8, n_worldlines=1, attach_prove=False)
+    ).episode
+    ep["runtime"]["aura_ref"] = "/workspace/keep-force"
+    TrajectoryWriter(traj / "ep.jsonl").append(ep)
+    out = tmp_path / "batch.json"
+    rc = main(
+        [
+            "export",
+            str(traj / "ep.jsonl"),
+            "--out",
+            str(out),
+            "--no-parquet",
+            "--json",
+        ]
+    )
+    assert rc == 0
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert len(data) == 1
+    assert data[0]["privacy"]["redacted"] is True
+    assert "/workspace/keep-force" not in out.read_text(encoding="utf-8")

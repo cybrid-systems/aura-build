@@ -1,0 +1,296 @@
+; aura-build kernel — batch trajectory export (JSON array + default-ON redaction)
+; Parquet is not produced in-kernel; Python host may convert JSON→Parquet as a thin adapter.
+(export
+  export-trajectories
+  redact-episode
+  redact-string
+  collect-jsonl-paths
+  load-episodes)
+
+(require "util" all:)
+(require "traj" all:)
+(require "std/io" all:)
+(require "std/process" all:)
+(require "std/string" all:)
+(require "std/regex" all:)
+(require "std/hash" all:)
+
+(define SCHEMA_VERSION "trajectory.v0")
+
+(define (filter pred xs)
+  (if (null? xs) (list)
+    (if (pred (car xs))
+      (cons (car xs) (filter pred (cdr xs)))
+      (filter pred (cdr xs)))))
+
+(define (for-each f xs)
+  (if (null? xs) #t
+    (begin (f (car xs)) (for-each f (cdr xs)))))
+
+(define (append-all xs ys)
+  (if (null? xs) ys (cons (car xs) (append-all (cdr xs) ys))))
+
+(define (string-nonempty? s)
+  (and (string? s) (> (string-length s) 0)))
+
+(define (ends-with-jsonl? p)
+  (let ((n (string-length p)))
+    (and (>= n 6) (equal? (substring p (- n 6) n) ".jsonl"))))
+
+(define (starts-with-slash? s)
+  (and (string-nonempty? s) (equal? (substring s 0 1) "/")))
+
+(define (strip-trailing-seps s)
+  (let ((n (string-length s)))
+    (let loop ((j (- n 1)))
+      (if (< j 0) ""
+        (let ((c (substring s j (+ j 1))))
+          (if (or (equal? c "/") (equal? c "\\"))
+            (loop (- j 1))
+            (substring s 0 (+ j 1))))))))
+
+(define (path-basename p)
+  (let* ((s (strip-trailing-seps p))
+         (n (string-length s)))
+    (if (= n 0) "path"
+      (let loop ((i (- n 1)))
+        (if (< i 0) s
+          (let ((c (substring s i (+ i 1))))
+            (if (or (equal? c "/") (equal? c "\\"))
+              (let ((base (substring s (+ i 1) n)))
+                (if (equal? base "") "path" base))
+              (loop (- i 1)))))))))
+
+(define (deep-copy v)
+  (json-parse (json-encode v)))
+
+; ── string redaction ──────────────────────────────────────────────
+
+(define (redact-paths s)
+  (let ((m (re-find "/[A-Za-z0-9._~/-]+" s)))
+    (if (or (not (string? m)) (equal? m ""))
+      s
+      (let* ((ph (string-append "<redacted:path:" (path-basename m) ">"))
+             (next (string-replace s m ph)))
+        (if (equal? next s) s (redact-paths next))))))
+
+(define (redact-kv-match m)
+  (let ((n (string-length m)))
+    (let loop ((i 0))
+      (if (>= i n) (string-append m "<redacted:secret>")
+        (let ((c (substring m i (+ i 1))))
+          (if (or (equal? c "=") (equal? c ":"))
+            (let sp ((k (+ i 1)))
+              (if (and (< k n)
+                       (or (equal? (substring m k (+ k 1)) " ")
+                           (equal? (substring m k (+ k 1)) "\t")))
+                (sp (+ k 1))
+                (string-append (substring m 0 k) "<redacted:secret>")))
+            (loop (+ i 1))))))))
+
+(define *kv-pat*
+  "(api[_-]?key|access[_-]?token|auth[_-]?token|[Bb]earer|secret|password|passwd|private[_-]?key|aws[_-]?secret|xai[_-]?api[_-]?key|openai[_-]?api[_-]?key|gh[_-]?token|github[_-]?token|[Aa]uthorization)[ \t]*[=:][ \t]*[^ \t\"',;]+")
+
+(define (redact-secret-kv s)
+  (let ((m (re-find *kv-pat* s)))
+    (if (or (not (string? m)) (equal? m ""))
+      s
+      (let ((next (string-replace s m (redact-kv-match m))))
+        (if (equal? next s) s (redact-secret-kv next))))))
+
+(define *token-pat*
+  "(sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,})")
+
+(define (redact-secret-tokens s)
+  (let ((m (re-find *token-pat* s)))
+    (if (or (not (string? m)) (equal? m ""))
+      s
+      (let ((next (string-replace s m "<redacted:secret>")))
+        (if (equal? next s) s (redact-secret-tokens next))))))
+
+(define *bearer-pat*
+  "([Bb]earer)[ \t]+([A-Za-z0-9._\\-+/=]{8,})")
+
+(define (redact-bearer s)
+  (let ((m (re-find *bearer-pat* s)))
+    (if (or (not (string? m)) (equal? m ""))
+      s
+      (let* ((n (string-length m))
+             (prefix
+               (let loop ((i 0))
+                 (if (>= i n) m
+                   (let ((c (substring m i (+ i 1))))
+                     (if (or (equal? c " ") (equal? c "\t"))
+                       (substring m 0 (+ i 1))
+                       (loop (+ i 1)))))))
+             (repl (string-append prefix "<redacted:secret>"))
+             (next (string-replace s m repl)))
+        (if (equal? next s) s (redact-bearer next))))))
+
+(define (redact-string s)
+  (redact-paths
+    (redact-bearer
+      (redact-secret-tokens
+        (redact-secret-kv s)))))
+
+(define (redact-value v)
+  (cond
+    ((string? v) (redact-string v))
+    ((null? v) v)
+    ((list? v) (map redact-value v))
+    ((hash? v)
+     (let ((out (hash)))
+       (hash-for-each v (lambda (k val)
+                          (hash-set! out k (redact-value val))))
+       out))
+    (else v)))
+
+(define (redact-episode ep)
+  (let ((red (redact-value (deep-copy ep))))
+    (let ((privacy (hash-ref red "privacy" #f)))
+      (if (hash? privacy)
+        (begin
+          (hash-set! privacy "redacted" #t)
+          (if (not (hash-ref privacy "retention_class" #f))
+            (hash-set! privacy "retention_class" "dogfood"))
+          (hash-set! privacy "export_filter" "m4.default"))
+        (hash-set! red "privacy"
+                   (hash "redacted" #t
+                         "retention_class" "dogfood"
+                         "export_filter" "m4.default")))
+      red)))
+
+; ── light schema gate ────────────────────────────────────────────
+
+(define (member-str x xs)
+  (if (null? xs) #f
+    (if (equal? x (car xs)) #t (member-str x (cdr xs)))))
+
+(define (episode-ok? ep)
+  (and (hash? ep)
+       (equal? (hash-ref ep "schema_version" "") SCHEMA_VERSION)
+       (string-nonempty? (hash-ref ep "episode_id" ""))
+       (string? (hash-ref ep "prompt" #f))
+       (hash? (hash-ref ep "runtime" #f))
+       (hash? (hash-ref ep "harness" #f))
+       (list? (hash-ref ep "worldlines" #f))
+       (> (length (hash-ref ep "worldlines" (list))) 0)
+       (let* ((wls (hash-ref ep "worldlines" (list)))
+              (ids (map (lambda (w) (hash-ref w "id" "")) wls))
+              (sel (hash-ref ep "selected_id" "")))
+         (member-str sel ids))))
+
+; ── collect JSONL paths ──────────────────────────────────────────
+
+(define (read-lines path)
+  (if (not (file-exists? path)) (list)
+    (let ((content (read-file path)))
+      (if (or (null? content) (not (string? content)) (equal? content ""))
+        (list)
+        (filter string-nonempty? (string-split content "\n"))))))
+
+(define (discover-default-jsonl cwd)
+  (let ((tmp "/tmp/_aura_build_export_find"))
+    (sh (string-append
+         "find '" cwd "/trajectories' '" cwd "/.aura-build' "
+         "-type f -name '*.jsonl' 2>/dev/null | sort > " tmp " || true"))
+    (let ((lines (read-lines tmp)))
+      (sh (string-append "rm -f " tmp))
+      lines)))
+
+(define (expand-input cwd raw)
+  (let ((p (if (starts-with-slash? raw) raw (join-path cwd raw)))
+        (tmp "/tmp/_aura_build_export_one"))
+    (sh (string-append
+         "if [ -d '" p "' ]; then find '" p "' -type f -name '*.jsonl' 2>/dev/null | sort; "
+         "elif [ -f '" p "' ]; then printf '%s\\n' '" p "'; fi > " tmp " 2>/dev/null || true"))
+    (let ((lines (read-lines tmp)))
+      (sh (string-append "rm -f " tmp))
+      (filter ends-with-jsonl? lines))))
+
+(define (collect-jsonl-paths cwd inputs-raw)
+  (if (or (null? inputs-raw) (not (string? inputs-raw)) (equal? inputs-raw ""))
+    (discover-default-jsonl cwd)
+    (let* ((parts (filter string-nonempty? (string-split inputs-raw "\n")))
+           (acc (list)))
+      (for-each
+        (lambda (raw)
+          (set! acc (append-all acc (expand-input cwd raw))))
+        parts)
+      (let ((seen (hash)) (out (list)))
+        (for-each
+          (lambda (p)
+            (if (not (hash-ref seen p #f))
+              (begin
+                (hash-set! seen p #t)
+                (set! out (append-all out (list p))))))
+          acc)
+        out))))
+
+; ── load episodes ────────────────────────────────────────────────
+
+(define (load-episodes paths skip-invalid)
+  (let ((episodes (list))
+        (files-read 0)
+        (skipped 0)
+        (loaded 0)
+        (fatal #f))
+    (for-each
+      (lambda (path)
+        (set! files-read (+ files-read 1))
+        (for-each
+          (lambda (line)
+            (if (not fatal)
+              (let ((obj (json-parse line)))
+                (if (and (hash? obj) (episode-ok? obj))
+                  (begin
+                    (set! loaded (+ loaded 1))
+                    (set! episodes (append-all episodes (list obj))))
+                  (begin
+                    (set! skipped (+ skipped 1))
+                    (if (not skip-invalid) (set! fatal #t)))))))
+          (read-lines path)))
+      paths)
+    (hash "episodes" episodes
+          "files_read" files-read
+          "episodes_loaded" loaded
+          "episodes_skipped_invalid" skipped
+          "fatal" fatal)))
+
+(define (write-json-array episodes path)
+  (ensure-dir (dirname-path path))
+  (write-file path (normalize-json-empties (json-encode episodes)))
+  path)
+
+(define (export-trajectories)
+  (let* ((cwd (env-get "AURA_BUILD_EXPORT_CWD"
+                       (env-get "AURA_BUILD_REPO_ROOT" ".")))
+         (inputs-raw (env-get "AURA_BUILD_EXPORT_INPUTS" ""))
+         (out (env-get "AURA_BUILD_EXPORT_OUT" "trajectories/export.json"))
+         (include-raw (env-bool "AURA_BUILD_EXPORT_INCLUDE_RAW" #f))
+         (strict (env-bool "AURA_BUILD_EXPORT_STRICT" #f))
+         (paths (collect-jsonl-paths cwd inputs-raw))
+         (loaded (load-episodes paths (not strict))))
+    (if (hash-ref loaded "fatal" #f)
+      (hash "ok" #f
+            "error" "invalid_episode"
+            "files_read" (hash-ref loaded "files_read")
+            "episodes_skipped_invalid" (hash-ref loaded "episodes_skipped_invalid")
+            "episodes_exported" 0
+            "redacted" (not include-raw)
+            "json_path" out
+            "kernel" "aura")
+      (let* ((eps0 (hash-ref loaded "episodes"))
+             (do-redact (not include-raw))
+             (eps (if do-redact (map redact-episode eps0) eps0))
+             (json-path (write-json-array eps out)))
+        (hash "ok" #t
+              "files_read" (hash-ref loaded "files_read")
+              "episodes_loaded" (hash-ref loaded "episodes_loaded")
+              "episodes_exported" (length eps)
+              "episodes_skipped_invalid" (hash-ref loaded "episodes_skipped_invalid")
+              "redacted" do-redact
+              "json_path" json-path
+              "parquet_written" #f
+              "parquet_skip_reason" "parquet_not_in_aura_kernel_use_python_adapter"
+              "kernel" "aura")))))

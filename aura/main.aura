@@ -8,6 +8,7 @@
 (require "harness" all:)
 (require "memory" all:)
 (require "l2" all:)
+(require "export" all:)
 (require "std/io" all:)
 
 (define (write-response obj)
@@ -163,6 +164,27 @@
     (write-response (hash "ok" #t "harness" cfg))
     0))
 
+
+(define (cmd-export)
+  (let ((result (export-trajectories))
+        (want-pq (env-bool "AURA_BUILD_EXPORT_WANT_PARQUET" #t)))
+    (display "exported=")(display (hash-ref result "episodes_exported" 0))
+    (display " files=")(display (hash-ref result "files_read" 0))
+    (display " skipped_invalid=")(display (hash-ref result "episodes_skipped_invalid" 0))
+    (display " redacted=")(display (hash-ref result "redacted" #t))
+    (display " kernel=aura")
+    (display " json=")(display (hash-ref result "json_path" ""))
+    (newline)
+    (if want-pq
+      (begin
+        (display "parquet_skip_reason=")
+        (display (hash-ref result "parquet_skip_reason" ""))
+        (newline))
+      #t)
+    (write-response (hash "cmd" "export" "ok" (hash-ref result "ok" #f)
+                          "result" result))
+    (if (hash-ref result "ok" #f) 0 2)))
+
 (define (kernel-main)
   (let ((cmd (env-get "AURA_BUILD_CMD" "run")))
     (display "AURA_BUILD_KERNEL cmd=")(display cmd)(newline)
@@ -174,6 +196,7 @@
       ((equal? cmd "memory") (cmd-memory))
       ((equal? cmd "l2") (cmd-l2))
       ((equal? cmd "harness-show") (cmd-harness-show))
+      ((equal? cmd "export") (cmd-export))
       (else
         (display "unknown AURA_BUILD_CMD=")(display cmd)(newline)
         (write-response (hash "ok" #f "error" "unknown_cmd"))

@@ -38,6 +38,9 @@ Postman-style request dumps (see devaluation in [trajectory-protocol-v0.md](traj
 
 ## Export pipeline
 
+When `AURA_BIN` + sidecar are healthy, `aura-build export` runs the **Aura kernel** (`aura/export.aura`) for JSON array export + default-ON path/secret redaction. **Parquet is not written in Aura**; the Python host may convert the JSON array to Parquet as a thin adapter (`pandas`+`pyarrow`). `AURA_BUILD_FORCE_PYTHON=1` forces the pure-Python exporter (same privacy defaults).
+
+
 ```bash
 # Default: redact abs paths + secret patterns; JSON array always
 aura-build export --out trajectories/export.json

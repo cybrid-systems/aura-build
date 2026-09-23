@@ -1,7 +1,7 @@
 """Headless CLI — thin host over the Aura kernel (`aura/*.aura`).
 
 Primary run/prove/harness/memory/l2 shells to Aura when healthy.
-Python keeps export/ACP/TUI, schema validate, and CI fallback.
+Python keeps ACP/TUI stubs, schema validate, CI fallback, and Parquet adapter for export.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from aura_build.harness import (
 )
 from aura_build.memory import MemoryStore
 from aura_build.orch import AuraUnavailable, OrchConfig, run_episode, run_harness_canary
-from aura_build.export import export_trajectories
+from aura_build.export import export_trajectories, write_parquet
 from aura_build.trajectory import TrajectoryWriter
 from aura_build.acp import (
     L2PromoteError,
@@ -46,7 +46,6 @@ from aura_build.kernel import (
     kernel_available,
     prefer_aura_kernel,
 )
-
 
 
 def _try_aura_kernel(
@@ -720,8 +719,99 @@ def _cmd_harness_show(args: argparse.Namespace) -> int:
 
 
 
+
 def _cmd_export(args: argparse.Namespace) -> int:
     include_raw = bool(args.include_raw or args.no_redact)
+    cwd = Path.cwd()
+    out_json = Path(args.out)
+    if not out_json.is_absolute():
+        out_json = cwd / out_json
+    input_paths: list[str] = []
+    for raw in args.inputs or []:
+        p = Path(raw)
+        if not p.is_absolute():
+            p = cwd / p
+        input_paths.append(str(p))
+
+    root = default_root()
+    env = {
+        "AURA_BUILD_EXPORT_CWD": str(cwd),
+        "AURA_BUILD_EXPORT_INPUTS": "\n".join(input_paths),
+        "AURA_BUILD_EXPORT_OUT": str(out_json),
+        "AURA_BUILD_EXPORT_INCLUDE_RAW": "1" if include_raw else "0",
+        "AURA_BUILD_EXPORT_STRICT": "1" if args.strict else "0",
+        "AURA_BUILD_EXPORT_WANT_PARQUET": "0" if args.no_parquet else "1",
+    }
+
+    used_aura = False
+    result_meta: dict = {}
+    if prefer_aura_kernel():
+        ok, _bin, _err = kernel_available(None, None)
+        if ok:
+            try:
+                kr = invoke_aura_kernel("export", env, harness_root=root)
+                used_aura = True
+                result_meta = (kr.response or {}).get("result") or {}
+                if not args.json:
+                    # Replay human summary from kernel stdout (drop trailing #t)
+                    for ln in (kr.stdout or "").splitlines():
+                        if not ln.strip() or ln.strip() == "#t":
+                            continue
+                        ln = (
+                            ln.replace("=#t", "=True")
+                            .replace("=#f", "=False")
+                            .replace("= #t", "= True")
+                            .replace("= #f", "= False")
+                        )
+                        print(ln)
+                if kr.exit_code not in (0, None) and not result_meta.get("ok", True):
+                    return kr.exit_code
+            except AuraUnavailable as exc:
+                print(f"error: aura kernel: {exc}", file=sys.stderr)
+                return 2
+
+    if used_aura:
+        parquet_path = None
+        parquet_written = False
+        parquet_skip_reason = result_meta.get("parquet_skip_reason")
+        if not args.no_parquet:
+            try:
+                episodes = json.loads(out_json.read_text(encoding="utf-8"))
+                if not isinstance(episodes, list):
+                    episodes = []
+            except (OSError, json.JSONDecodeError):
+                episodes = []
+            pq = (
+                Path(args.parquet)
+                if args.parquet is not None
+                else out_json.with_suffix(".parquet")
+            )
+            if not pq.is_absolute():
+                pq = cwd / pq
+            parquet_path, parquet_skip_reason = write_parquet(episodes, pq)
+            parquet_written = parquet_path is not None
+            if parquet_written and not args.json:
+                print(f"parquet={parquet_path}")
+            elif parquet_skip_reason and not args.json:
+                print(parquet_skip_reason, file=sys.stderr)
+
+        if args.json:
+            payload = {
+                "json": str(out_json),
+                "parquet": str(parquet_path) if parquet_path else None,
+                "files_read": result_meta.get("files_read", 0),
+                "episodes_exported": result_meta.get("episodes_exported", 0),
+                "episodes_skipped_invalid": result_meta.get(
+                    "episodes_skipped_invalid", 0
+                ),
+                "redacted": result_meta.get("redacted", not include_raw),
+                "parquet_written": parquet_written,
+                "parquet_skip_reason": parquet_skip_reason,
+                "kernel": "aura",
+            }
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0 if result_meta.get("ok", True) else 2
+
     result = export_trajectories(
         inputs=args.inputs or None,
         out_json=args.out,
@@ -741,6 +831,7 @@ def _cmd_export(args: argparse.Namespace) -> int:
         "redacted": s.redacted,
         "parquet_written": s.parquet_written,
         "parquet_skip_reason": s.parquet_skip_reason,
+        "kernel": "python",
     }
     if args.json:
         print(json.dumps(payload, indent=2, sort_keys=True))
@@ -748,14 +839,13 @@ def _cmd_export(args: argparse.Namespace) -> int:
         print(
             f"exported={s.episodes_exported} files={s.files_read} "
             f"skipped_invalid={s.episodes_skipped_invalid} "
-            f"redacted={s.redacted} json={result.json_path}"
+            f"redacted={s.redacted} kernel=python json={result.json_path}"
         )
         if s.parquet_written and result.parquet_path:
             print(f"parquet={result.parquet_path}")
         elif s.parquet_skip_reason:
             print(s.parquet_skip_reason, file=sys.stderr)
     return 0
-
 
 
 def _harness_root_arg(args: argparse.Namespace) -> Path | None:
