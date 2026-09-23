@@ -263,6 +263,35 @@ aura-build run --prompt "dogfood select-best" --profile aura-repo \
 aura-build run --prompt "ci" --profile aura-repo --no-live-build --mode simulated
 ```
 
+
+### MiniMax dogfood (Post-M5++)
+
+Closed loop: **MiniMax-M3** proposes a small Aura program → Aura binary verify →
+repair via worldlines select-best (host HTTP + Aura orch stamp). Prefer Aura
+kernel product; Python host owns the OpenAI-compatible HTTP client only.
+
+Secrets (never commit / never put in traj README):
+
+| Path | Role |
+|------|------|
+| `~/.config/aura-build/minimax_api_key` | API key file (loaded into process env only) |
+| `~/.config/aura-build/minimax.env` | `MINIMAX_BASE_URL`, `MINIMAX_MODEL`, `MINIMAX_API_KEY_FILE` |
+
+Verified base URL for this dogfood: `https://api.minimaxi.com/v1` (model `MiniMax-M3`). **CN site only** — `api.minimax.io` is rejected/rewritten (401 for this key).
+Set `AURA_BUILD_LLM=minimax` optionally; CLI profile is the `llm` / `llm-dogfood` commands.
+
+```bash
+# Thin chat (thinking disabled by default for speed)
+export AURA_BIN=/workspace/aura-redis/.deps/aura/build/aura
+aura-build llm --prompt "Reply with PONG" --json
+
+# Closed loop: fib Aura program, up to 8 repair rounds, 3 worldlines
+aura-build llm-dogfood --task fib --max-rounds 8 --worldlines 3 --json
+```
+
+Honesty: `fiber_live` only when prove says so; otherwise `session_model=shared_workspace_subprocess`.
+Trajectories record `runtime.kernel=aura`, `runtime.llm.model`, actions/fitness; API keys are redacted.
+
 ## License
 
 Apache-2.0

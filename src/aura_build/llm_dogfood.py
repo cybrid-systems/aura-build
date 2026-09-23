@@ -1,0 +1,695 @@
+"""MiniMax → aura-build closed loop: propose Aura source → verify → repair.
+
+Uses shared_workspace_subprocess worldline layout (honest when fiber_live=false).
+Orch episode recording prefers the Aura kernel (`llm-dogfood` cmd) when available;
+host always owns MiniMax HTTP + repair steering.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import shutil
+import subprocess
+import time
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from aura_build.kernel import prefer_aura_kernel, repo_root, try_invoke_aura
+from aura_build.minimax import (
+    MiniMaxConfig,
+    chat_completions,
+    extract_aura_source,
+    load_minimax_config,
+    redact_secrets,
+)
+from aura_build.runtime import aura_subprocess_env, resolve_aura_bin
+from aura_build.schema import validate_episode
+
+SESSION_SHARED = "shared_workspace_subprocess"
+
+TASK_FIB = "fib"
+DEFAULT_TASK = TASK_FIB
+DEFAULT_MAX_ROUNDS = 8
+DEFAULT_WORLDLINES = 3
+
+SYSTEM_CODEGEN = """You are a careful Aura (Lisp-like) code generator for the Aura runtime.
+Rules:
+- Output ONE complete Aura program only (prefer a ```aura fence).
+- Use define/lambda/if/cond/let/display/newline/number->string.
+- No Python. No imports unless stdlib require is essential (prefer none).
+- Keep the program small and deterministic.
+- Do not include API keys or secrets.
+"""
+
+FIB_USER = """Write a small Aura program that defines (fib n) recursively and prints exactly:
+FIB10=55
+followed by a newline. fib(10) must equal 55. No extra prose outside the code fence.
+"""
+
+FIB_EXPECT = "FIB10=55"
+FIB_SUCCESS_RE = re.compile(r"FIB10\s*=\s*55")
+
+REPAIR_STEER = """The previous Aura candidate failed verification under the Aura binary.
+Fix the program. Keep the same required output contract.
+Common Aura pitfalls: balanced parentheses; use (display x) (newline); recursion via
+(define (fib n) (if (<= n 1) n (+ (fib (- n 1)) (fib (- n 2))))); no Python syntax.
+Return ONE corrected Aura program in a ```aura fence.
+"""
+
+
+def _iso_now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def _make_id(prefix: str = "ep") -> str:
+    return f"{prefix}-{uuid.uuid4().hex[:12]}"
+
+
+def load_honesty(harness_root: Path) -> dict[str, Any]:
+    """Read last prove report if present; never invent fiber_live/incr_proven."""
+    report = harness_root / "prove-incr-latest.json"
+    honesty = {
+        "incr_proven": False,
+        "fiber_live": False,
+        "measured": False,
+        "session_model": SESSION_SHARED,
+        "reason": "no_prove_report",
+    }
+    if not report.is_file():
+        return honesty
+    try:
+        data = json.loads(report.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        honesty["reason"] = "prove_report_invalid_json"
+        return honesty
+    honesty["incr_proven"] = bool(data.get("incr_proven", False))
+    honesty["fiber_live"] = bool(data.get("fiber_live", False))
+    honesty["measured"] = bool(data.get("measured", False))
+    honesty["session_model"] = (
+        data.get("session_model")
+        if data.get("fiber_live")
+        else SESSION_SHARED
+    )
+    # Hard honesty: env alone cannot elevate fiber_live
+    if not honesty["fiber_live"]:
+        honesty["session_model"] = SESSION_SHARED
+    honesty["reason"] = str(data.get("reason") or "from_prove_report")
+    return honesty
+
+
+def verify_aura_program(
+    source_path: Path,
+    *,
+    expect_re: re.Pattern[str],
+    aura_bin: str | None = None,
+    timeout_s: float = 15.0,
+) -> dict[str, Any]:
+    """Compile/run candidate with Aura binary; fitness from pass + error signal."""
+    bin_path = resolve_aura_bin(aura_bin)
+    if not bin_path:
+        return {
+            "ok": False,
+            "fitness": 0.0,
+            "passed": False,
+            "stdout": "",
+            "stderr": "aura_binary_missing",
+            "exit_code": 2,
+            "ms": 0,
+        }
+    env = aura_subprocess_env(bin_path)
+    t0 = time.monotonic()
+    proc = subprocess.run(
+        [bin_path, str(source_path)],
+        capture_output=True,
+        text=True,
+        timeout=timeout_s,
+        env=env,
+        check=False,
+    )
+    ms = int((time.monotonic() - t0) * 1000)
+    stdout = proc.stdout or ""
+    stderr = proc.stderr or ""
+    has_error = bool(
+        re.search(r"(?i)\berror:|\bunbound variable\b|\bsyntax\b", stderr)
+        or re.search(r"(?i)\berror:|\bunbound variable\b", stdout)
+    )
+    matched = bool(expect_re.search(stdout))
+    passed = matched and not has_error
+    if passed:
+        fitness = 1.0
+    elif matched and has_error:
+        fitness = 0.35
+    elif stdout.strip() and not has_error:
+        fitness = 0.25
+    elif has_error:
+        # shorter errors → slightly higher (closer to fixable)
+        fitness = max(0.05, 0.2 - min(0.15, len(stderr) / 5000.0))
+    else:
+        fitness = 0.05
+    return {
+        "ok": passed,
+        "fitness": round(fitness, 4),
+        "passed": passed,
+        "stdout": stdout[-4000:],
+        "stderr": stderr[-4000:],
+        "exit_code": proc.returncode,
+        "ms": ms,
+        "matched_expect": matched,
+        "has_error": has_error,
+    }
+
+
+def _workspace_create(root: Path, n: int, episode_token: str) -> dict[str, Any]:
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "parent").mkdir(exist_ok=True)
+    (root / "parent" / "SNAPSHOT").write_text(
+        "parent_id=wl-parent\n", encoding="utf-8"
+    )
+    cands_dir = root / "candidates"
+    cands_dir.mkdir(exist_ok=True)
+    candidates: dict[str, str] = {}
+    cand_meta: dict[str, Any] = {}
+    for i in range(n):
+        cid = f"wl-{i}"
+        rel = f"candidates/{cid}"
+        cdir = root / rel
+        cdir.mkdir(parents=True, exist_ok=True)
+        (cdir / "REF").write_text(
+            f"ref_id={cid}\nparent_ref=wl-parent\n", encoding="utf-8"
+        )
+        candidates[cid] = cid
+        cand_meta[cid] = {
+            "ref_id": cid,
+            "parent_ref": "wl-parent",
+            "workspace_relpath": rel,
+            "kind": "candidate",
+        }
+    meta = {
+        "episode_token": episode_token,
+        "session_model": SESSION_SHARED,
+        "parent": {
+            "ref_id": "wl-parent",
+            "parent_ref": None,
+            "workspace_relpath": "parent",
+            "kind": "parent",
+        },
+        "candidates": cand_meta,
+        "discarded": [],
+        "incr_proven": False,
+        "fiber_live": False,
+        "honesty": "shared workspace + stable refs; not fiber-live",
+    }
+    (root / "meta.json").write_text(
+        json.dumps(meta, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    return {
+        "root": str(root),
+        "parent_ref": "wl-parent",
+        "session_model": SESSION_SHARED,
+        "candidates": candidates,
+        "n": n,
+    }
+
+
+def _discard_losers(ws_root: Path, selected_id: str, fitness_by_id: dict[str, float]) -> list[dict[str, Any]]:
+    discarded: list[dict[str, Any]] = []
+    cands = ws_root / "candidates"
+    if not cands.is_dir():
+        return discarded
+    for child in sorted(cands.iterdir()):
+        if not child.is_dir():
+            continue
+        cid = child.name
+        if cid == selected_id:
+            continue
+        marker = child / "DISCARDED"
+        marker.write_text(
+            f"reason=select_best_loser\nselected={selected_id}\n",
+            encoding="utf-8",
+        )
+        discarded.append(
+            {
+                "id": cid,
+                "reason": "select_best_loser",
+                "fitness": float(fitness_by_id.get(cid, 0.0)),
+                "stable_ref": cid,
+            }
+        )
+    # update meta
+    meta_path = ws_root / "meta.json"
+    if meta_path.is_file():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            meta["discarded"] = discarded
+            meta_path.write_text(
+                json.dumps(meta, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
+        except json.JSONDecodeError:
+            pass
+    return discarded
+
+
+def _propose(
+    cfg: MiniMaxConfig,
+    *,
+    round_i: int,
+    prev_source: str | None,
+    prev_errors: str | None,
+    candidate_index: int,
+) -> dict[str, Any]:
+    if round_i == 0 and not prev_errors:
+        user = FIB_USER + f"\n(candidate index={candidate_index}; vary structure slightly)\n"
+        messages = [
+            {"role": "system", "content": SYSTEM_CODEGEN},
+            {"role": "user", "content": user},
+        ]
+    else:
+        err = (prev_errors or "")[:2500]
+        src = (prev_source or "")[:2500]
+        messages = [
+            {"role": "system", "content": SYSTEM_CODEGEN},
+            {
+                "role": "user",
+                "content": (
+                    f"{REPAIR_STEER}\n\n## Previous source\n```aura\n{src}\n```\n\n"
+                    f"## Verify errors / stdout\n```\n{err}\n```\n"
+                    f"(repair round={round_i} candidate={candidate_index})\n"
+                ),
+            },
+        ]
+    result = chat_completions(messages, config=cfg, thinking_disabled=True)
+    source = extract_aura_source(result.get("content") or "") if result.get("ok") else ""
+    return {
+        **result,
+        "source": source,
+        "messages_roles": [m["role"] for m in messages],
+    }
+
+
+def _append_traj(path: Path, episode: dict[str, Any]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    validate_episode(episode)
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(episode, sort_keys=True) + "\n")
+    return path
+
+
+def _try_aura_orch_record(
+    *,
+    prompt: str,
+    traj_id: str,
+    workspace: Path,
+    worldlines_payload: list[dict[str, Any]],
+    selected_id: str,
+    discarded: list[dict[str, Any]],
+    honesty: dict[str, Any],
+    model: str,
+    round_i: int,
+    harness_root: Path,
+    out_path: Path,
+) -> dict[str, Any] | None:
+    """Ask Aura kernel to stamp an orch episode when preferred+available."""
+    if not prefer_aura_kernel():
+        return None
+    # Write a manifest the Aura cmd can read
+    manifest = harness_root / "llm-dogfood-manifest.json"
+    payload = {
+        "traj_id": traj_id,
+        "prompt": prompt,
+        "workspace": str(workspace),
+        "selected_id": selected_id,
+        "discarded": discarded,
+        "worldlines": worldlines_payload,
+        "honesty": honesty,
+        "llm": {"provider": "minimax", "model": model},
+        "round": round_i,
+        "out": str(out_path),
+    }
+    harness_root.mkdir(parents=True, exist_ok=True)
+    manifest.write_text(json.dumps(payload), encoding="utf-8")
+    env = {
+        "AURA_BUILD_LLM_MANIFEST": str(manifest),
+        "AURA_BUILD_OUT": str(out_path),
+        "AURA_BUILD_PROMPT": prompt,
+        "AURA_BUILD_LLM_MODEL": model,
+        "AURA_BUILD_LLM_PROVIDER": "minimax",
+        "AURA_BUILD_TRAJ_ID": traj_id,
+        "AURA_BUILD_WORKSPACE": str(workspace),
+        "AURA_BUILD_SELECTED_ID": selected_id,
+        "AURA_BUILD_ROUND": str(round_i),
+    }
+    try:
+        kr = try_invoke_aura(
+            "llm-dogfood",
+            env,
+            harness_root=harness_root,
+            timeout_s=60.0,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": redact_secrets(str(exc)), "via": "aura"}
+    if kr is None:
+        return None
+    return {
+        "ok": kr.ok,
+        "via": "aura",
+        "response": kr.response,
+        "stdout": redact_secrets(kr.stdout or "")[-1500:],
+        "stderr": redact_secrets(kr.stderr or "")[-1500:],
+    }
+
+
+def run_closed_loop(
+    *,
+    task: str = DEFAULT_TASK,
+    max_rounds: int = DEFAULT_MAX_ROUNDS,
+    worldlines: int = DEFAULT_WORLDLINES,
+    out: Path | None = None,
+    workspace: Path | None = None,
+    harness_root: Path | None = None,
+    aura_bin: str | None = None,
+    keep_workspace: bool = True,
+    config: MiniMaxConfig | None = None,
+) -> dict[str, Any]:
+    """Run MiniMax propose → Aura verify → repair until success or max_rounds."""
+    if task != TASK_FIB:
+        raise ValueError(f"unsupported task {task!r} (supported: fib)")
+    cfg = config or load_minimax_config()
+    repo = repo_root()
+    hroot = harness_root or (repo / ".aura-build")
+    hroot.mkdir(parents=True, exist_ok=True)
+    honesty = load_honesty(hroot)
+    session_model = (
+        honesty["session_model"]
+        if honesty.get("fiber_live")
+        else SESSION_SHARED
+    )
+    # Never fake fiber
+    if not honesty.get("fiber_live"):
+        session_model = SESSION_SHARED
+
+    traj_id = _make_id("mm")
+    out_path = out or (repo / "trajectories" / "minimax_dogfood.jsonl")
+    ws_root = workspace or (
+        repo / "trajectories" / f"_minimax_ws_{traj_id}"
+    )
+    if ws_root.exists():
+        shutil.rmtree(ws_root)
+    ws = _workspace_create(ws_root, worldlines, traj_id)
+
+    rounds_log: list[dict[str, Any]] = []
+    final_program: Path | None = None
+    success = False
+    selected_id = "wl-0"
+    last_source = ""
+    last_errors = ""
+
+    # Optional harness canary via Aura (best-effort; ignore refuse)
+    canary_mid = None
+    if prefer_aura_kernel():
+        try:
+            kr = try_invoke_aura(
+                "harness-mutate",
+                {
+                    "AURA_BUILD_PROMPT": f"minimax dogfood canary {traj_id}",
+                    "AURA_BUILD_OUT": str(out_path),
+                    "AURA_BUILD_HARNESS_PATCHES": json.dumps(
+                        {"worldline_count": max(2, worldlines)}
+                    ),
+                    "AURA_BUILD_FITNESS_PATCHES": json.dumps({"tests": 0.8}),
+                    "AURA_BUILD_AUTOPROMOTE_FLAG": "",
+                },
+                harness_root=hroot,
+                timeout_s=60.0,
+            )
+            if kr and isinstance(kr.response, dict):
+                ep = kr.response.get("episode") or {}
+                harness = ep.get("harness") if isinstance(ep, dict) else {}
+                if isinstance(harness, dict):
+                    canary_mid = harness.get("mid")
+        except Exception:
+            canary_mid = None
+
+    for round_i in range(max_rounds):
+        round_wls: list[dict[str, Any]] = []
+        fitness_by_id: dict[str, float] = {}
+        sources: dict[str, str] = {}
+
+        for i in range(worldlines):
+            cid = f"wl-{i}"
+            cdir = ws_root / "candidates" / cid
+            cdir.mkdir(parents=True, exist_ok=True)
+            # First worldline repairs from last errors; others diversify from base prompt
+            if i == 0 and round_i > 0:
+                prop = _propose(
+                    cfg,
+                    round_i=round_i,
+                    prev_source=last_source,
+                    prev_errors=last_errors,
+                    candidate_index=i,
+                )
+            else:
+                prop = _propose(
+                    cfg,
+                    round_i=0 if round_i == 0 else round_i,
+                    prev_source=last_source if i == 0 else None,
+                    prev_errors=last_errors if i == 0 and round_i > 0 else (
+                        last_errors if round_i > 0 else None
+                    ),
+                    candidate_index=i,
+                )
+                if round_i > 0 and i > 0 and last_errors:
+                    # diversify repair
+                    prop = _propose(
+                        cfg,
+                        round_i=round_i,
+                        prev_source=last_source,
+                        prev_errors=last_errors + f"\n(variant {i})",
+                        candidate_index=i,
+                    )
+
+            source = prop.get("source") or ""
+            if not source.strip():
+                source = (
+                    "; empty model reply fallback\n"
+                    "(display \"FIB10=0\")(newline)\n"
+                )
+            prog_path = cdir / "program.aura"
+            prog_path.write_text(source, encoding="utf-8")
+            (cdir / "mutation.json").write_text(
+                json.dumps(
+                    {
+                        "op": "minimax_codegen",
+                        "target_id": "program.aura",
+                        "summary": f"round={round_i} cand={cid} model={cfg.model}",
+                        "provider": "minimax",
+                        "model": cfg.model,
+                        "llm_ok": bool(prop.get("ok")),
+                        "llm_error": redact_secrets(prop.get("error") or "", cfg.api_key),
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            ver = verify_aura_program(
+                prog_path, expect_re=FIB_SUCCESS_RE, aura_bin=aura_bin
+            )
+            fitness_by_id[cid] = float(ver["fitness"])
+            sources[cid] = source
+            (cdir / "eval.json").write_text(
+                json.dumps(
+                    {
+                        "fitness": ver["fitness"],
+                        "passed": ver["passed"],
+                        "stdout": redact_secrets(ver["stdout"], cfg.api_key),
+                        "stderr": redact_secrets(ver["stderr"], cfg.api_key),
+                        "ms": ver["ms"],
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            round_wls.append(
+                {
+                    "id": cid,
+                    "parent_id": "wl-parent" if round_i > 0 else None,
+                    "stable_ref": cid,
+                    "mutations": [
+                        {
+                            "op": "minimax_codegen",
+                            "target_id": "program.aura",
+                            "summary": f"MiniMax-M3 fib candidate {cid} round {round_i}",
+                        }
+                    ],
+                    "eval": {
+                        "fitness": ver["fitness"],
+                        "passed": ver["passed"],
+                        "metrics": {
+                            "tests_passed": 1 if ver["passed"] else 0,
+                            "tests_total": 1,
+                            "incr_compile_ms": ver["ms"],
+                            "audit_ok": True,
+                            "incr_proven": False,
+                            "matched_expect": ver.get("matched_expect", False),
+                        },
+                        "notes": redact_secrets(
+                            (ver["stderr"] or ver["stdout"] or "")[:500],
+                            cfg.api_key,
+                        ),
+                    },
+                    "program_path": str(prog_path),
+                }
+            )
+
+        # select-best
+        selected_id = max(
+            fitness_by_id.keys(),
+            key=lambda k: (fitness_by_id[k], k),
+        )
+        discarded = _discard_losers(ws_root, selected_id, fitness_by_id)
+        best = next(w for w in round_wls if w["id"] == selected_id)
+        last_source = sources[selected_id]
+        last_errors = best["eval"]["notes"]
+        if not best["eval"]["passed"]:
+            # richer error feed for repair
+            eval_path = ws_root / "candidates" / selected_id / "eval.json"
+            try:
+                ev = json.loads(eval_path.read_text(encoding="utf-8"))
+                last_errors = (
+                    f"stdout:\n{ev.get('stdout','')}\nstderr:\n{ev.get('stderr','')}"
+                )
+            except Exception:
+                pass
+
+        # materialize selected to workspace final
+        final_program = ws_root / "selected" / "program.aura"
+        final_program.parent.mkdir(parents=True, exist_ok=True)
+        final_program.write_text(last_source, encoding="utf-8")
+        shutil.copy2(
+            ws_root / "candidates" / selected_id / "program.aura",
+            final_program,
+        )
+
+        episode = {
+            "schema_version": "trajectory.v0",
+            "episode_id": f"{traj_id}-r{round_i}",
+            "ts_start": _iso_now(),
+            "ts_end": _iso_now(),
+            "prompt": f"minimax dogfood task={task} round={round_i}",
+            "runtime": {
+                "mode": "aura",
+                "requested_mode": "aura",
+                "kernel": "aura",
+                "seed": round_i,
+                "incr_proven": bool(honesty.get("incr_proven", False)),
+                "fiber_live": bool(honesty.get("fiber_live", False)),
+                "measured": bool(honesty.get("measured", False)),
+                "session_model": session_model,
+                "workspace": str(ws_root),
+                "llm": cfg.public_dict(),
+                "dogfood": {
+                    "provider": "minimax",
+                    "model": cfg.model,
+                    "task": task,
+                    "round": round_i,
+                    "max_rounds": max_rounds,
+                    "traj_id": traj_id,
+                },
+            },
+            "harness": {
+                "l1_strategy_id": "minimax_dogfood.v0",
+                "l2_weights_id": None,
+                "l3_online": False,
+                "mid": canary_mid,
+                "outcome": "pass" if best["eval"]["passed"] else "repair",
+                "actions": [
+                    {"op": "propose", "provider": "minimax"},
+                    {"op": "verify", "via": "aura_bin"},
+                    {"op": "select_best", "selected": selected_id},
+                    {"op": "discard_losers", "count": len(discarded)},
+                ],
+            },
+            "worldlines": [
+                {k: v for k, v in w.items() if k != "program_path"} for w in round_wls
+            ],
+            "selected_id": selected_id,
+            "selection_reason": "max_fitness",
+            "discarded": discarded,
+            "privacy": {"redacted": True, "retention_class": "dogfood"},
+        }
+        # Host writes traj (Aura may also append via llm-dogfood)
+        _append_traj(out_path, episode)
+        aura_rec = _try_aura_orch_record(
+            prompt=episode["prompt"],
+            traj_id=episode["episode_id"],
+            workspace=ws_root,
+            worldlines_payload=episode["worldlines"],
+            selected_id=selected_id,
+            discarded=discarded,
+            honesty=honesty,
+            model=cfg.model,
+            round_i=round_i,
+            harness_root=hroot,
+            out_path=out_path,
+        )
+
+        rounds_log.append(
+            {
+                "round": round_i,
+                "selected_id": selected_id,
+                "fitness": best["eval"]["fitness"],
+                "passed": best["eval"]["passed"],
+                "discarded": len(discarded),
+                "final_program": str(final_program),
+                "aura_orch": (
+                    {"ok": aura_rec.get("ok"), "via": aura_rec.get("via")}
+                    if aura_rec
+                    else {"ok": False, "via": "host_only"}
+                ),
+            }
+        )
+
+        if best["eval"]["passed"]:
+            success = True
+            break
+
+    if not keep_workspace and success:
+        # keep selected artifact copy under .aura-build
+        keep = hroot / "minimax-last-program.aura"
+        if final_program and final_program.is_file():
+            shutil.copy2(final_program, keep)
+            final_program = keep
+
+    summary = {
+        "ok": success,
+        "traj_id": traj_id,
+        "rounds": len(rounds_log),
+        "max_rounds": max_rounds,
+        "success": success,
+        "final_program": str(final_program) if final_program else "",
+        "selected_id": selected_id,
+        "workspace": str(ws_root),
+        "traj_path": str(out_path),
+        "llm": cfg.public_dict(),
+        "honesty": {
+            "incr_proven": bool(honesty.get("incr_proven", False)),
+            "fiber_live": bool(honesty.get("fiber_live", False)),
+            "session_model": session_model,
+            "reason": honesty.get("reason"),
+        },
+        "rounds_log": rounds_log,
+        "kernel": "aura",
+        "reason": "verify_green" if success else f"max_rounds_{max_rounds}",
+    }
+    summary_path = hroot / "minimax-dogfood-latest.json"
+    summary_path.write_text(
+        json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    return summary

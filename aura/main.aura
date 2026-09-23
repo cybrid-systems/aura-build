@@ -12,6 +12,7 @@
 (require "acp" all:)
 (require "tui" all:)
 (require "self_evolve" all:)
+(require "llm_dogfood" all:)
 (require "std/io" all:)
 
 (define (write-response obj)
@@ -216,6 +217,19 @@
     (if (hash-ref result "ok" #f) 0 1)))
 
 
+
+(define (cmd-llm-dogfood)
+  (let ((result (run-llm-dogfood)))
+    (write-response (hash "cmd" "llm-dogfood"
+                          "ok" (hash-ref result "ok" #f)
+                          "traj_id" (hash-ref result "traj_id" "")
+                          "selected_id" (hash-ref result "selected_id" "")
+                          "path" (hash-ref result "path" "")
+                          "reason" (hash-ref result "reason" "")
+                          "honesty" (hash-ref result "honesty" (hash))
+                          "kernel" "aura"))
+    (if (hash-ref result "ok" #f) 0 1)))
+
 (define (kernel-main)
   (let ((cmd (env-get "AURA_BUILD_CMD" "run")))
     (display "AURA_BUILD_KERNEL cmd=")(display cmd)(newline)
@@ -231,6 +245,7 @@
       ((equal? cmd "acp") (cmd-acp))
       ((equal? cmd "tui") (cmd-tui))
       ((equal? cmd "self-evolve") (cmd-self-evolve))
+      ((equal? cmd "llm-dogfood") (cmd-llm-dogfood))
       (else
         (display "unknown AURA_BUILD_CMD=")(display cmd)(newline)
         (write-response (hash "ok" #f "error" "unknown_cmd"))

@@ -1,0 +1,127 @@
+"""MiniMax adapter + dogfood helpers (no live key required for unit tests)."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from aura_build.cli import build_parser, main
+from aura_build.minimax import extract_aura_source, lock_cn_base_url, redact_secrets
+
+FIB_SRC = """(define (fib n)
+  (if (<= n 1) n (+ (fib (- n 1)) (fib (- n 2)))))
+(display "FIB10=")(display (fib 10))(newline)
+"""
+
+
+def test_parser_lists_llm_commands():
+    help_text = build_parser().format_help()
+    assert "llm" in help_text
+    assert "llm-dogfood" in help_text
+
+
+def test_extract_aura_source_fence():
+    text = "Sure.\n```aura\n(display 1)\n```\n"
+    assert extract_aura_source(text).strip() == "(display 1)"
+
+
+def test_redact_secrets():
+    s = "Bearer sk-abc1234567890xyz Authorization: sk-abc1234567890xyz"
+    out = redact_secrets(s, extra="sk-abc1234567890xyz")
+    assert "sk-abc" not in out
+    assert "<redacted:secret>" in out
+
+
+def test_lock_cn_base_url():
+    assert lock_cn_base_url(None) == "https://api.minimaxi.com/v1"
+    assert lock_cn_base_url("https://api.minimax.io/v1") == "https://api.minimaxi.com/v1"
+    assert lock_cn_base_url("https://api.minimaxi.com/v1/") == "https://api.minimaxi.com/v1"
+
+
+def test_llm_refuses_missing_key(monkeypatch, tmp_path):
+    missing = tmp_path / "no-such-key"
+    env = tmp_path / "minimax.env"
+    env.write_text(
+        f"MINIMAX_API_KEY_FILE={missing}\n"
+        "MINIMAX_BASE_URL=https://api.minimaxi.com/v1\n"
+        "MINIMAX_MODEL=MiniMax-M3\n",
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.delenv("MINIMAX_API_KEY_FILE", raising=False)
+    monkeypatch.delenv("MINIMAX_BASE_URL", raising=False)
+    rc = main(["llm", "--prompt", "hi", "--env-file", str(env)])
+    assert rc == 2
+
+
+def test_verify_good_fib(tmp_path):
+    from aura_build.llm_dogfood import FIB_SUCCESS_RE, verify_aura_program
+    from aura_build.runtime import resolve_aura_bin
+
+    bin_path = resolve_aura_bin()
+    if not bin_path:
+        return
+    prog = tmp_path / "fib.aura"
+    prog.write_text(FIB_SRC, encoding="utf-8")
+    got = verify_aura_program(prog, expect_re=FIB_SUCCESS_RE, aura_bin=bin_path)
+    assert got["passed"] is True
+    assert got["fitness"] == 1.0
+
+
+def test_closed_loop_mocked_minimax(monkeypatch, tmp_path):
+    """One propose returns good fib; ensure select-best + traj without live API."""
+
+    class FakeCfg:
+        api_key = "sk-test-fake-key-not-real"
+        base_url = "https://api.minimaxi.com/v1"
+        model = "MiniMax-M3"
+        key_file = "/tmp/fake"
+        env_file = "/tmp/fake.env"
+
+        def public_dict(self):
+            return {
+                "provider": "minimax",
+                "base_url": self.base_url,
+                "model": self.model,
+                "api_key": "<redacted:secret>",
+            }
+
+    def fake_chat(messages, config=None, **kwargs):
+        return {
+            "ok": True,
+            "content": f"```aura\n{FIB_SRC}```",
+            "model": "MiniMax-M3",
+            "error": "",
+        }
+
+    monkeypatch.setattr("aura_build.llm_dogfood.chat_completions", fake_chat)
+    monkeypatch.setattr("aura_build.llm_dogfood.prefer_aura_kernel", lambda: False)
+
+    from aura_build.llm_dogfood import run_closed_loop
+    from aura_build.runtime import resolve_aura_bin
+
+    if not resolve_aura_bin():
+        return
+
+    out = tmp_path / "traj.jsonl"
+    ws = tmp_path / "ws"
+    summary = run_closed_loop(
+        task="fib",
+        max_rounds=2,
+        worldlines=2,
+        out=out,
+        workspace=ws,
+        harness_root=tmp_path / "harness",
+        keep_workspace=True,
+        config=FakeCfg(),  # type: ignore[arg-type]
+    )
+    assert summary["success"] is True
+    assert summary["rounds"] >= 1
+    assert Path(summary["final_program"]).is_file()
+    lines = out.read_text(encoding="utf-8").strip().splitlines()
+    assert lines
+    ep = json.loads(lines[0])
+    assert ep["runtime"]["kernel"] == "aura"
+    assert ep["runtime"]["llm"]["api_key"] == "<redacted:secret>"
+    assert ep["runtime"]["fiber_live"] is False
+    assert ep["runtime"]["llm"]["base_url"] == "https://api.minimaxi.com/v1"

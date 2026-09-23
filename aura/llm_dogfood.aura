@@ -1,0 +1,94 @@
+; aura-build kernel — MiniMax dogfood orch stamp (host owns HTTP propose/repair)
+; Reads AURA_BUILD_LLM_MANIFEST JSON written by host; records worldline episode.
+; Honesty: never invent incr_proven / fiber_live. session_model from prove snapshot.
+(export run-llm-dogfood)
+
+(require "util" all:)
+(require "traj" all:)
+(require "worldline" all:)
+(require "prove" all:)
+(require "std/io" all:)
+(require "std/hash" all:)
+
+(define (ld-read-manifest path)
+  (if (not (file-exists? path))
+    #f
+    (let ((raw (read-file path)))
+      (json-parse raw))))
+
+(define (ld-session-model honesty)
+  (if (hash-ref honesty "fiber_live" #f)
+    (hash-ref honesty "session_model" "shared_workspace_subprocess")
+    "shared_workspace_subprocess"))
+
+(define (run-llm-dogfood)
+  (let* ((manifest-path (env-get "AURA_BUILD_LLM_MANIFEST" ""))
+         (root (env-get "AURA_BUILD_HARNESS_ROOT" ".aura-build"))
+         (honesty (attach-prove-metadata root))
+         (man (if (equal? manifest-path "") #f (ld-read-manifest manifest-path)))
+         (prompt (env-get "AURA_BUILD_PROMPT" "minimax dogfood"))
+         (out (env-get "AURA_BUILD_OUT" "trajectories/minimax_dogfood.jsonl"))
+         (model (env-get "AURA_BUILD_LLM_MODEL" "MiniMax-M3"))
+         (provider (env-get "AURA_BUILD_LLM_PROVIDER" "minimax"))
+         (traj-id (env-get "AURA_BUILD_TRAJ_ID" (make-id)))
+         (selected (env-get "AURA_BUILD_SELECTED_ID" "wl-0"))
+         (round-i (env-int "AURA_BUILD_ROUND" 0))
+         (ws (env-get "AURA_BUILD_WORKSPACE" ""))
+         (session (ld-session-model honesty)))
+    (if (not man)
+      (begin
+        (display "llm_dogfood ok=false reason=manifest_missing kernel=aura")(newline)
+        (hash "ok" #f "reason" "manifest_missing" "kernel" "aura"))
+      (let* ((wls (hash-ref man "worldlines" (list)))
+             (discarded (hash-ref man "discarded" (list)))
+             (sel (hash-ref man "selected_id" selected))
+             (tid (hash-ref man "traj_id" traj-id))
+             (rt (hash "mode" "aura"
+                       "requested_mode" "aura"
+                       "kernel" "aura"
+                       "seed" round-i
+                       "incr_proven" #f
+                       "fiber_live" #f
+                       "measured" (hash-ref honesty "measured" #f)
+                       "session_model" session
+                       "workspace" (hash-ref man "workspace" ws)
+                       "llm" (hash "provider" provider
+                                   "model" model
+                                   "api_key" "<redacted:secret>")))
+             (_ (merge-prove-into-runtime rt honesty))
+             (ep (hash "schema_version" "trajectory.v0"
+                       "episode_id" (string-append tid "-aura")
+                       "ts_start" (iso-now)
+                       "ts_end" (iso-now)
+                       "prompt" (hash-ref man "prompt" prompt)
+                       "runtime" rt
+                       "harness" (hash "l1_strategy_id" "minimax_dogfood.v0"
+                                       "l2_weights_id" #f
+                                       "l3_online" #f
+                                       "outcome" "orch_stamp"
+                                       "actions" (list
+                                         (hash "op" "orch_stamp" "via" "aura")))
+                       "worldlines" wls
+                       "selected_id" sel
+                       "selection_reason" "host_select_best"
+                       "discarded" discarded
+                       "privacy" (hash "redacted" #t "retention_class" "dogfood")))
+             (path (write-episode ep out)))
+        (display "llm_dogfood ok=true")
+        (display " selected=")(display sel)
+        (display " traj=")(display (hash-ref ep "episode_id"))
+        (display " model=")(display model)
+        (display " session_model=")(display session)
+        (display " fiber_live=")(display (hash-ref rt "fiber_live" #f))
+        (display " incr_proven=")(display (hash-ref rt "incr_proven" #f))
+        (display " kernel=aura")
+        (display " wrote=")(display path)
+        (newline)
+        (hash "ok" #t
+              "traj_id" (hash-ref ep "episode_id")
+              "selected_id" sel
+              "path" path
+              "episode" ep
+              "honesty" honesty
+              "kernel" "aura"
+              "reason" "orch_stamp")))))

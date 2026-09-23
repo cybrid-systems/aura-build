@@ -89,7 +89,7 @@
             (loop (+ i 1))))))))
 
 (define *kv-pat*
-  "(api[_-]?key|access[_-]?token|auth[_-]?token|[Bb]earer|secret|password|passwd|private[_-]?key|aws[_-]?secret|xai[_-]?api[_-]?key|openai[_-]?api[_-]?key|gh[_-]?token|github[_-]?token|[Aa]uthorization)[ \t]*[=:][ \t]*[^ \t\"',;]+")
+  "(api[_-]?key|access[_-]?token|auth[_-]?token|[Bb]earer|secret|password|passwd|private[_-]?key|aws[_-]?secret|xai[_-]?api[_-]?key|openai[_-]?api[_-]?key|minimax[_-]?api[_-]?key|llm[_-]?api[_-]?key|gh[_-]?token|github[_-]?token|[Aa]uthorization)[ \t]*[=:][ \t]*[^ \t\"',;]+")
 
 (define (redact-secret-kv s)
   (let ((m (re-find *kv-pat* s)))

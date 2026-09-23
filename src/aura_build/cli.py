@@ -97,6 +97,8 @@ def main(argv: list[str] | None = None) -> int:
         "prove-incr": _cmd_prove_incr,
         "doctor": _cmd_doctor,
         "self-evolve": _cmd_self_evolve,
+        "llm": _cmd_llm,
+        "llm-dogfood": _cmd_llm_dogfood,
     }
     fn = handlers.get(args.cmd)
     return fn(args) if fn else 2
@@ -480,6 +482,90 @@ def _cmd_self_evolve(args: argparse.Namespace) -> int:
             )
         )
     return 0 if git_res.get("ok", False) else 1
+
+
+
+
+def _cmd_llm(args: argparse.Namespace) -> int:
+    """Thin MiniMax chat completions (host HTTP; CN endpoint locked)."""
+    from aura_build.minimax import chat_completions, load_minimax_config, redact_secrets
+
+    try:
+        cfg = load_minimax_config(env_file=getattr(args, "env_file", None))
+    except (FileNotFoundError, ValueError, OSError) as exc:
+        print(f"error: minimax config: {exc}", file=sys.stderr)
+        return 2
+    thinking_disabled = (getattr(args, "thinking", "disabled") or "disabled") == "disabled"
+    result = chat_completions(
+        [
+            {"role": "system", "content": args.system},
+            {"role": "user", "content": args.prompt},
+        ],
+        config=cfg,
+        temperature=float(args.temperature),
+        max_tokens=int(args.max_tokens),
+        thinking_disabled=thinking_disabled,
+    )
+    if args.json:
+        safe = {
+            "ok": result.get("ok"),
+            "model": result.get("model"),
+            "provider": result.get("provider"),
+            "content": result.get("content"),
+            "error": redact_secrets(result.get("error") or "", cfg.api_key),
+            "llm": cfg.public_dict(),
+        }
+        print(json.dumps(safe, indent=2, sort_keys=True))
+    else:
+        if not result.get("ok"):
+            print(
+                f"error: llm failed model={result.get('model')} "
+                f"err={redact_secrets(result.get('error') or '', cfg.api_key)}",
+                file=sys.stderr,
+            )
+            return 1
+        print(result.get("content") or "")
+    return 0 if result.get("ok") else 1
+
+
+def _cmd_llm_dogfood(args: argparse.Namespace) -> int:
+    """Closed-loop MiniMax codegen → Aura verify → repair (worldlines)."""
+    from aura_build.llm_dogfood import run_closed_loop
+    from aura_build.minimax import load_minimax_config
+
+    try:
+        cfg = load_minimax_config(env_file=getattr(args, "env_file", None))
+    except (FileNotFoundError, ValueError, OSError) as exc:
+        print(f"error: minimax config: {exc}", file=sys.stderr)
+        return 2
+    summary = run_closed_loop(
+        task=getattr(args, "task", "fib") or "fib",
+        max_rounds=int(getattr(args, "max_rounds", 8) or 8),
+        worldlines=int(getattr(args, "worldlines", 3) or 3),
+        out=getattr(args, "out", None),
+        workspace=getattr(args, "workspace", None),
+        harness_root=_root(args),
+        aura_bin=getattr(args, "aura_bin", None),
+        keep_workspace=bool(getattr(args, "keep_workspace", True)),
+        config=cfg,
+    )
+    print(
+        "llm_dogfood"
+        f" ok={summary.get('ok')}"
+        f" success={summary.get('success')}"
+        f" rounds={summary.get('rounds')}"
+        f" traj={summary.get('traj_id')}"
+        f" program={summary.get('final_program')}"
+        f" session_model={summary.get('honesty', {}).get('session_model')}"
+        f" fiber_live={summary.get('honesty', {}).get('fiber_live')}"
+        f" incr_proven={summary.get('honesty', {}).get('incr_proven')}"
+        f" kernel=aura"
+        f" model={summary.get('llm', {}).get('model')}"
+        f" reason={summary.get('reason')}"
+    )
+    if args.json:
+        print(json.dumps(summary, indent=2, sort_keys=True))
+    return 0 if summary.get("ok") else 1
 
 
 

@@ -155,6 +155,42 @@ def build_parser() -> argparse.ArgumentParser:
     _opt(lp, "--overwrite", action="store_true")
     _common(lp)
 
+
+    llm = sub.add_parser(
+        "llm",
+        help="thin MiniMax (OpenAI-compatible) chat; key from file, never echoed",
+    )
+    _opt(llm, "--prompt", required=True, help="user prompt")
+    _opt(llm, "--system", default="You are a helpful coding assistant.")
+    _opt(llm, "--max-tokens", type=int, default=1024)
+    _opt(llm, "--temperature", type=float, default=0.2)
+    _opt(
+        llm,
+        "--thinking",
+        choices=("disabled", "enabled"),
+        default="disabled",
+        help="MiniMax thinking mode (default disabled for speed)",
+    )
+    _opt(llm, "--env-file", type=Path, default=None)
+    _common(llm, harness=False)
+
+    dog = sub.add_parser(
+        "llm-dogfood",
+        help=(
+            "MiniMax→Aura closed loop: propose Aura program → verify → repair "
+            "(worldlines select-best; host HTTP + Aura orch stamp)"
+        ),
+    )
+    _opt(dog, "--task", choices=("fib",), default="fib")
+    _opt(dog, "--max-rounds", type=int, default=8)
+    _opt(dog, "--worldlines", type=int, default=3)
+    _opt(dog, "--out", type=Path, default=None)
+    _opt(dog, "--workspace", type=Path, default=None)
+    _opt(dog, "--env-file", type=Path, default=None)
+    _opt(dog, "--keep-workspace", action=argparse.BooleanOptionalAction, default=True)
+    _common(dog, aura=True)
+
+
     prove = sub.add_parser("prove-incr", help="storm-still-incr prove-or-refuse (Aura)")
     _opt(prove, "--cycles", type=int, default=8)
     _opt(prove, "--worldlines", type=int, default=3)
