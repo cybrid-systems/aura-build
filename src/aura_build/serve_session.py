@@ -741,7 +741,11 @@ def _holder_main(harness_root: str, aura_bin: str) -> None:
                     clear_marker(hroot)
                     os._exit(0)
                 if op == "ping":
-                    r = _aura_send_line(proc, "(+ 1 1)", timeout_s=5.0)
+                    r = _aura_send_line(
+                        proc,
+                        _aura_line_for_mode("(+ 1 1)", async_mode=prefer_async),
+                        timeout_s=5.0,
+                    )
                     resp = {
                         "status": "ok" if r.get("status") == "ok" else "error",
                         "pid": proc.pid,
@@ -755,7 +759,11 @@ def _holder_main(harness_root: str, aura_bin: str) -> None:
                     t0 = time.monotonic()
                     esc = _escape_aura_string(source)
                     set_r = _aura_send_line(
-                        proc, f'(set-code "{esc}")', timeout_s=timeout_s
+                        proc,
+                        _aura_line_for_mode(
+                            f'(set-code "{esc}")', async_mode=prefer_async
+                        ),
+                        timeout_s=timeout_s,
                     )
                     if set_r.get("status") != "ok":
                         resp = {
@@ -769,7 +777,13 @@ def _holder_main(harness_root: str, aura_bin: str) -> None:
                             "session_model": SESSION_SERVE,
                         }
                     else:
-                        ev = _aura_send_line(proc, "(eval-current)", timeout_s=timeout_s)
+                        ev = _aura_send_line(
+                            proc,
+                            _aura_line_for_mode(
+                                "(eval-current)", async_mode=prefer_async
+                            ),
+                            timeout_s=timeout_s,
+                        )
                         display = str(ev.get("display") or "")
                         msg = str(ev.get("msg") or "")
                         status = ev.get("status")
@@ -795,7 +809,9 @@ def _holder_main(harness_root: str, aura_bin: str) -> None:
                 elif op == "raw":
                     line = str(req.get("line") or "")
                     r = _aura_send_line(
-                        proc, line, timeout_s=float(req.get("timeout_s") or 10.0)
+                        proc,
+                        _aura_line_for_mode(line, async_mode=prefer_async),
+                        timeout_s=float(req.get("timeout_s") or 10.0),
                     )
                     resp = r
                 else:
@@ -934,8 +950,8 @@ def start_session(
     )
     # Wait for marker + ping
     sess: ServeSession | None = None
-    # Soft Ready probe (~3s) + async warm + mutate can exceed 30s on Soft Ready.
-    deadline = time.monotonic() + 60.0
+    # Soft Ready + async warm + shared-ast (+ sync side-probe #4047 B) can exceed 60s.
+    deadline = time.monotonic() + 90.0
     while time.monotonic() < deadline:
         marker = read_marker(hroot)
         if marker and sock_path(hroot).exists():
@@ -953,7 +969,7 @@ def start_session(
         time.sleep(0.1)
     raise RuntimeError(
         "serve_session_start_timeout: holder did not become ready "
-        "(Soft Ready probe + shared-ast probe may take ~10s)"
+        "(Soft Ready + shared-ast / sync side-probe may take ~30–60s)"
     )
 
 
