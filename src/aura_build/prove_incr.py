@@ -195,5 +195,17 @@ def format_doctor_text(snap: dict[str, Any]) -> str:
         f"session_model={h.get('session_model')} "
         f"l3_online={h.get('l3_online')} kernel={snap.get('kernel')}"
     )
+    fiber = snap.get("fiber") or {}
+    if fiber:
+        lines.append(
+            f"  fiber           = probed={fiber.get('probed')} "
+            f"oneshot={fiber.get('oneshot_fiber_ok')} "
+            f"same_flatast_multi={fiber.get('same_flatast_multi_ok')} "
+            f"serve_session={fiber.get('serve_session_ok')} "
+            f"backend={fiber.get('spawn_backend')} "
+            f"reason={fiber.get('reason')}"
+        )
+        if fiber.get("missing_surface"):
+            lines.append(f"  fiber_missing   = {fiber.get('missing_surface')}")
     lines.append("  tips: " + " | ".join(snap.get("tips") or []))
     return "\n".join(lines)

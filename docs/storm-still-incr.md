@@ -43,9 +43,15 @@ If the Aura binary is **missing** or **unhealthy** (classic:
 
 When `probe_aura` succeeds:
 
-1. Optional **fiber session probe** — looks for an explicit
-   `AURA_BUILD_FIBER_SESSION_OK` marker. Absent that, session stays
-   `shared_workspace_subprocess` (one-shot subprocess multi-eval ≠ fiber).
+1. **Fiber session probe** (honest denseness) — under `AURA_BIN`, attempt
+   `fiber:spawn`+`fiber:join` oneshot and same-FlatAST dual-candidate
+   `mutate:rebind` denseness (see aura-grok `docs/stdlib/fiber-spawn.md`).
+   Optional child `--serve-async-bench` probe records `serve_session_ok`
+   (often false on Soft/Ready boxes). Set `fiber_live=true` and
+   `session_model=fiber_denseness_in_process` **only** if denseness
+   succeeds. `AURA_BUILD_FIBER_SESSION_OK` alone never elevates
+   (`env_fiber_ignored_unproven` when set while still false).
+   `--no-fiber-probe` / `AURA_BUILD_NO_FIBER_PROBE=1` skips and keeps false.
 2. Run **N cycles × W concurrent worldlines** of mutate+eval via `AuraBackend`.
 3. Set `incr_proven=true` **only if** every cycle is `ok` **and** carries an
    **explicit incr-valid signal** (`metrics.incr_valid`, `metrics.incr_proven`,
@@ -65,8 +71,8 @@ Wall-clock `incr_compile_ms` alone is **not** proof.
 | `reason` | Stable refuse / prove token |
 | `measured` | True iff a storm actually ran |
 | `aura_healthy` | Probe result |
-| `session_model` | `shared_workspace_subprocess` unless fiber probe proves otherwise |
-| `fiber_live` | True only with explicit fiber session OK |
+| `session_model` | `shared_workspace_subprocess` or `fiber_denseness_in_process` when denseness probe passes |
+| `fiber_live` | True only after successful spawn+join denseness probe (never from env alone) |
 | `cycles_*` | Requested / completed / ok / incr_valid counts |
 | `storm[]` | Per-cycle results |
 
@@ -88,7 +94,7 @@ Wall-clock `incr_compile_ms` alone is **not** proof.
 | Env | Effect on attach |
 |-----|------------------|
 | `AURA_BUILD_INCR_VALID=1` | Documents future/external telemetry intent. If set while prove says false → keep `incr_proven=false` + `env_notes: env_ignored_unproven`. Cannot alone elevate. |
-| `AURA_BUILD_FIBER_SESSION_OK=1` | Same for fiber: without a successful fiber probe / report `fiber_live`, stay false + `env_fiber_ignored_unproven`. |
+| `AURA_BUILD_FIBER_SESSION_OK=1` | Read-only intent marker. Without successful denseness probe, keep `fiber_live=false` + `env_fiber_ignored_unproven`. Cannot alone elevate. |
 
 These gates exist so healthy boxes can advertise readiness; attach still
 requires the prove harness (or an explicit measured report) to agree.
@@ -195,5 +201,6 @@ No Aura C++ change was required for this contract; Redis-specific hooks stay out
 
 ## Deferred
 
-- Long-lived fiber-hosted multi-worldline session API (needs fiber probe OK)
+- Lift worldlines onto fiber graph / long-lived serve-async session (slice 3; needs fiber denseness probe OK)
+- `serve_session_ok` / scheduler backend on Soft boxes (production Ready self-check)
 - Richer FlatAST metrics JSON file path (optional alternate to stdout markers)

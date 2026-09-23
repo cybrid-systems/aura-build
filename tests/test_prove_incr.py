@@ -50,6 +50,7 @@ def test_cli_prove_missing_bin_refuse(tmp_path: Path, monkeypatch):
     assert data["incr_proven"] is False
     assert data["measured"] is False
     assert data["fiber_live"] is False
+    assert data.get("session_model") == "shared_workspace_subprocess"
     assert data.get("kernel") == KERNEL_TAG
 
 

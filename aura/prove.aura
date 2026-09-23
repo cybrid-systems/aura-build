@@ -1,9 +1,9 @@
-; aura-build kernel — storm-still-incr prove-or-refuse + doctor honesty
+;; aura-build kernel — storm-still-incr prove-or-refuse + doctor honesty
 ; Never invent incr_proven/fiber_live; env alone cannot elevate.
 (export
   prove-or-refuse write-prove-report load-prove-report
   attach-prove-metadata merge-prove-into-runtime doctor-snapshot
-  default-prove-path ENV_INCR ENV_FIBER)
+  probe-fiber-session default-prove-path ENV_INCR ENV_FIBER)
 
 (require "util" all:)
 (require "std/io" all:)
@@ -11,8 +11,10 @@
 
 (define ENV_INCR "AURA_BUILD_INCR_VALID")
 (define ENV_FIBER "AURA_BUILD_FIBER_SESSION_OK")
+(define ENV_NO_FIBER_PROBE "AURA_BUILD_NO_FIBER_PROBE")
 (define REPORT_SCHEMA "prove_incr.v0")
 (define SESSION_SHARED "shared_workspace_subprocess")
+(define SESSION_FIBER "fiber_denseness_in_process")
 
 (define (default-prove-path root)
   (join-path root "prove-incr-latest.json"))
@@ -77,12 +79,135 @@
               (if (hash-ref c "ok") ok-all #f)
               (if (hash-ref c "incr_valid") incr-all #f))))))
 
+; --- Slice 2: honest fiber-live probe ---------------------------------
+; Docs (aura-grok): docs/stdlib/fiber-spawn.md
+; Multi-candidate same-FlatAST needs fiber:spawn+join denseness on one
+; workspace (thread backend=2, or scheduler backend=1 under --serve-async).
+; AURA_BUILD_FIBER_SESSION_OK alone must NEVER force fiber_live.
+
+(define (fiber-oneshot-ok?)
+  (try
+    (let* ((fid (fiber:spawn (lambda () (+ 1 2))))
+           (j (fiber:join fid)))
+      (and (number? fid) (> fid 0) (= j 3)))
+    (catch (e) #f)))
+
+(define (fiber-same-flatast-multi-ok?)
+  (try
+    (begin
+      (set-code "(define (c-a n) (+ n 0)) (define (c-b n) (+ n 0))")
+      (eval-current)
+      (let* ((fa (fiber:spawn (lambda ()
+                    (and (mutate:rebind "c-a" "(lambda (n) (+ n 10))" "fiber-probe-a")
+                         (begin (eval-current) #t)))))
+             (fb (fiber:spawn (lambda ()
+                    (and (mutate:rebind "c-b" "(lambda (n) (+ n 20))" "fiber-probe-b")
+                         (begin (eval-current) #t)))))
+             (ra (fiber:join fa))
+             (rb (fiber:join fb))
+             (va (c-a 1))
+             (vb (c-b 1)))
+        (and ra rb (= va 11) (= vb 21)
+             (number? fa) (> fa 0) (number? fb) (> fb 0) (not (= fa fb)))))
+    (catch (e) #f)))
+
+(define (fiber-serve-session-ok?)
+  ; Documented scheduler path: child --serve-async-bench (often fails Soft/Ready).
+  (try
+    (begin
+      (require "std/process" all:)
+      (let* ((bin (env-get "AURA_BIN" ""))
+             (script "/tmp/aura-build-fiber-serve-probe.aura")
+             (err "/tmp/aura-build-fiber-serve-probe.err")
+             (rcfile "/tmp/aura-build-fiber-serve-probe.rc"))
+        (if (equal? bin "")
+          #f
+          (begin
+            (write-file script
+              "(display (fiber:join (fiber:spawn (lambda () 7))))(newline)")
+            (sh (string-append
+                  bin " --serve-async-bench " script
+                  " >/tmp/aura-build-fiber-serve-probe.out 2>" err
+                  "; echo $? > " rcfile))
+            (equal? (string-trim (read-file rcfile)) "0")))))
+    (catch (e) #f)))
+
+(define (fiber-probe-skipped reason)
+  (hash "probed" #f
+        "skipped" #t
+        "reason" reason
+        "oneshot_fiber_ok" #f
+        "same_flatast_multi_ok" #f
+        "serve_session_ok" #f
+        "serve_cross_session_shared_ast" #f
+        "fiber_live" #f
+        "session_model" SESSION_SHARED
+        "spawn_backend" 0
+        "available" #f
+        "notes" "fiber probe skipped; env cannot force fiber_live"
+        "missing_surface" reason))
+
+(define (probe-fiber-session)
+  (if (env-bool ENV_NO_FIBER_PROBE #f)
+    (fiber-probe-skipped "no_fiber_probe_flag")
+    (if (equal? (env-get "AURA_BIN" "") "")
+      (fiber-probe-skipped "aura_binary_missing")
+      (let* ((oneshot (fiber-oneshot-ok?))
+             (multi (if oneshot (fiber-same-flatast-multi-ok?) #f))
+             (backend (try (fiber:spawn-backend) (catch (e) 0)))
+             (serve (fiber-serve-session-ok?))
+             (live (and oneshot multi))
+             (session (if live SESSION_FIBER SESSION_SHARED))
+             (reason (if live
+                       (if serve "fiber_denseness_and_serve_ok"
+                         "fiber_denseness_in_process_ok")
+                       (if oneshot "same_flatast_multi_failed"
+                         "oneshot_fiber_spawn_join_failed")))
+             (missing (if live
+                        "worldlines not yet lifted to fiber graph (slice 3)"
+                        (if oneshot
+                          "same-FlatAST multi-candidate denseness failed"
+                          "fiber:spawn+join unavailable in this session"))))
+        (hash "probed" #t
+              "skipped" #f
+              "reason" reason
+              "oneshot_fiber_ok" oneshot
+              "same_flatast_multi_ok" multi
+              "serve_session_ok" serve
+              "serve_cross_session_shared_ast" #f
+              "fiber_live" live
+              "session_model" session
+              "spawn_backend" backend
+              "available" live
+              "notes" "fiber:spawn denseness (fiber-spawn.md); backend 1=scheduler 2=thread; AURA_BUILD_FIBER_SESSION_OK cannot force fiber_live"
+              "missing_surface" missing)))))
+
+(define (apply-fiber-probe report probe)
+  (hash-set! report "fiber_live" (hash-ref probe "fiber_live" #f))
+  (hash-set! report "session_model" (hash-ref probe "session_model" SESSION_SHARED))
+  (hash-set! report "fiber_probe" probe)
+  report)
+
+(define (env-notes-for incr-ok fiber-ok)
+  (let* ((env-incr (env-bool ENV_INCR #f))
+         (env-fiber (env-bool ENV_FIBER #f))
+         (ignore-incr (and env-incr (not incr-ok)))
+         (ignore-fiber (and env-fiber (not fiber-ok))))
+    (if ignore-fiber
+      (if ignore-incr
+        (list "env_ignored_unproven" "env_fiber_ignored_unproven")
+        (list "env_fiber_ignored_unproven"))
+      (if ignore-incr
+        (list "env_ignored_unproven")
+        (list "none")))))
+
 (define (prove-or-refuse cycles pressure)
   (let ((bin (env-get "AURA_BIN" "")))
     (if (equal? bin "")
       (let ((r (empty-report "aura_binary_missing")))
         (hash-set! r "cycles_requested" cycles)
         (hash-set! r "worldline_pressure" pressure)
+        (apply-fiber-probe r (fiber-probe-skipped "aura_binary_missing"))
         r)
       (let loop ((i 0) (storm (list)) (ok-n 0) (incr-n 0))
         (if (>= i cycles)
@@ -99,12 +224,7 @@
             (hash-set! r "cycles_incr_valid" incr-n)
             (hash-set! r "worldline_pressure" pressure)
             (hash-set! r "storm" (reverse storm))
-            (hash-set! r "fiber_live" #f)
-            (hash-set! r "fiber_probe"
-              (hash "available" #f
-                    "session_model" SESSION_SHARED
-                    "notes" "kernel in-process; not fiber-live multi-worldline"
-                    "probed" #t))
+            (apply-fiber-probe r (probe-fiber-session))
             r)
           (let* ((pr (pressure-cycles i pressure))
                  (storm2 (append (car pr) storm))
@@ -126,16 +246,7 @@
 
 ; Attach honesty into traj runtime — never invent true from env alone.
 (define (attach-prove-metadata root)
-  (let* ((rep (load-prove-report root))
-         (env-incr (env-bool ENV_INCR #f))
-         (env-fiber (env-bool ENV_FIBER #f))
-         (notes (if env-fiber
-                  (if env-incr
-                    (list "env_ignored_unproven" "env_fiber_ignored_unproven")
-                    (list "env_fiber_ignored_unproven"))
-                  (if env-incr
-                    (list "env_ignored_unproven")
-                    (list "none")))))
+  (let ((rep (load-prove-report root)))
     (if (not rep)
       (hash "attached" #t
             "incr_proven" #f
@@ -143,24 +254,29 @@
             "fiber_live" #f
             "session_model" SESSION_SHARED
             "reason" "no_prove_report"
-            "env_notes" notes)
+            "env_notes" (env-notes-for #f #f)
+            "fiber_probe" (hash))
       (let* ((proven (hash-ref rep "incr_proven" #f))
              (measured (hash-ref rep "measured" #f))
              (incr (if (and proven measured) #t #f))
-             (fiber (hash-ref rep "fiber_live" #f)))
+             (fiber (hash-ref rep "fiber_live" #f))
+             (probe (hash-ref rep "fiber_probe" (hash))))
         (hash "attached" #t
               "incr_proven" incr
               "measured" measured
               "fiber_live" (if fiber #t #f)
               "session_model" (hash-ref rep "session_model" SESSION_SHARED)
               "reason" (hash-ref rep "reason" "")
-              "env_notes" notes
+              "env_notes" (env-notes-for incr fiber)
+              "fiber_probe" probe
               "report_ts" (hash-ref rep "ts" ""))))))
 
 (define (merge-prove-into-runtime runtime fields)
   (hash-set! runtime "incr_proven" (hash-ref fields "incr_proven" #f))
   (hash-set! runtime "measured" (hash-ref fields "measured" #f))
   (hash-set! runtime "fiber_live" (hash-ref fields "fiber_live" #f))
+  (hash-set! runtime "session_model"
+             (hash-ref fields "session_model" SESSION_SHARED))
   (hash-set! runtime "prove_incr" fields)
   runtime)
 
@@ -168,10 +284,13 @@
   (let* ((rep (load-prove-report root))
          (bin (env-get "AURA_BIN" ""))
          (fields (attach-prove-metadata root))
+         (probe (probe-fiber-session))
          (l1 (l1-doctor-info root))
          (last (hash-ref l1 "last" #f))
          (l1-backend (if last (hash-ref last "l1_backend" (hash-ref l1 "preferred"))
-                       (hash-ref l1 "preferred"))))
+                       (hash-ref l1 "preferred")))
+         (fiber-live (hash-ref probe "fiber_live" #f))
+         (session (hash-ref probe "session_model" SESSION_SHARED)))
     (hash "aura_bin" bin
           "aura_probe_ok" (not (equal? bin ""))
           "aura_probe_error" (if (equal? bin "") "aura_binary_missing" "")
@@ -179,17 +298,21 @@
           "prove_incr_latest" (if rep rep #f)
           "l1" l1
           "honesty" (hash "incr_proven" (hash-ref fields "incr_proven")
-                          "fiber_live" (hash-ref fields "fiber_live")
-                          "session_model" (hash-ref fields "session_model")
+                          "fiber_live" fiber-live
+                          "session_model" session
                           "l3_online" #f
                           "l1_backend" l1-backend)
-          "fiber" (hash "fiber_live" #f
-                        "oneshot_fiber_ok" #f
-                        "serve_session_ok" #f
-                        "serve_cross_session_shared_ast" #f
-                        "missing_surface" "host worldline shared-AST not wired")
+          "fiber" (hash "fiber_live" fiber-live
+                        "oneshot_fiber_ok" (hash-ref probe "oneshot_fiber_ok" #f)
+                        "same_flatast_multi_ok" (hash-ref probe "same_flatast_multi_ok" #f)
+                        "serve_session_ok" (hash-ref probe "serve_session_ok" #f)
+                        "serve_cross_session_shared_ast" (hash-ref probe "serve_cross_session_shared_ast" #f)
+                        "spawn_backend" (hash-ref probe "spawn_backend" 0)
+                        "reason" (hash-ref probe "reason" "")
+                        "probed" (hash-ref probe "probed" #f)
+                        "missing_surface" (hash-ref probe "missing_surface" "")
+                        "fiber_probe" probe)
           "tips" (list "kernel=Aura"
                        "run aura-build prove-incr with healthy AURA_BIN"
                        "L1 live path = std/hot-strategy; harness.json is durable mirror"
-                       "fiber_live/incr_proven never invented"))))
-
+                       "fiber_live only after real spawn+join denseness probe; env cannot elevate"))))

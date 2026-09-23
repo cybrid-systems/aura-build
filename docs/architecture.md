@@ -100,7 +100,7 @@ Live L1 mutates through Aura `std/hot-strategy` when the kernel is healthy:
 - **AUTOPROMOTE default OFF** (`AURA_BUILD_AUTOPROMOTE` / `--autopropote`)
 - Trajectory records `harness.mid`, `harness.actions[]`, and honest `harness.l1_backend` (`hot-strategy`|`file`)
 - Override: `AURA_BUILD_L1_BACKEND=file` forces file-only path (still no fake `fiber_live` / `incr_proven`)
-- Until fiber lands, worldlines stay file + `mutate:rebind` (not fiber-live multi-worldline)
+- Fiber denseness is probed honestly in prove/doctor; worldlines stay file + `mutate:rebind` until slice 3 lifts them onto the fiber graph (denseness ≠ worldline wiring)
 
 Memory: `MemoryStore` under `.aura-build/memory/<profile>.json` (get/set via CLI or orch).
 

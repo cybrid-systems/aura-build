@@ -138,7 +138,7 @@
 - Measurement harness: `aura-build prove-incr` + `docs/storm-still-incr.md` + `scripts/prove_incr.sh`
 - Fail-closed when Aura unhealthy (GLIBCXX / missing): report `incr_proven=false` + reason; CI-green
 - Healthy path: N rapid mutate+eval under concurrent worldline pressure; `incr_proven=true` **only** with explicit incr-valid signal every cycle
-- Optional fiber session probe; keep `session_model=shared_workspace_subprocess` unless real fiber marker
+- Honest fiber denseness probe (`fiber:spawn`+join + same-FlatAST multi); `fiber_live` only when probe works; env cannot elevate; worldline→fiber graph still slice 3
 - `aura-build doctor` surfaces probe + last report; ACP/TUI honesty overlays last report
 
 **Exit criteria**
@@ -147,7 +147,8 @@
 - [x] Report written under `.aura-build/prove-incr-latest.json`
 - [x] Never claim fiber-live / incr_proven without measurement
 - [ ] Real FlatAST incr telemetry from Aura (deferred)
-- [ ] Long-lived fiber multi-eval session API (deferred)
+- [x] Honest fiber denseness probe in prove-incr / doctor (slice 2)
+- [ ] Lift worldlines to fiber graph / long-lived serve-async session (slice 3)
 - [ ] Auto-attach prove report into every orch episode (deferred; opt-in later)
 
 **Honesty note:** On boxes where the Aura binary hits `GLIBCXX_` mismatch, expect `incr_proven=false` forever until a healthy runtime is measured. Do not flip the flag by hand.

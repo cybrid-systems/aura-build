@@ -87,8 +87,16 @@ def test_kernel_prove_incr_honest(tmp_path: Path) -> None:
     assert report["measured"] is True
     assert report["aura_healthy"] is True
     assert report["incr_proven"] is True
-    assert report["fiber_live"] is False
     assert report["cycles_incr_valid"] == report["cycles_completed"]
+    probe = report.get("fiber_probe") or {}
+    assert probe.get("probed") is True
+    # fiber_live only if denseness probe actually succeeded — never invented
+    if report.get("fiber_live"):
+        assert probe.get("oneshot_fiber_ok") is True
+        assert probe.get("same_flatast_multi_ok") is True
+        assert report["session_model"] == "fiber_denseness_in_process"
+    else:
+        assert report["session_model"] == "shared_workspace_subprocess"
 
 
 def test_kernel_env_cannot_elevate_fiber(tmp_path: Path) -> None:
@@ -130,6 +138,41 @@ def test_kernel_env_cannot_elevate_fiber(tmp_path: Path) -> None:
     notes = ep["runtime"]["prove_incr"].get("env_notes") or []
     assert "env_ignored_unproven" in notes
     assert "env_fiber_ignored_unproven" in notes
+
+
+def test_kernel_no_fiber_probe_keeps_false(tmp_path: Path) -> None:
+    result = invoke_aura_kernel(
+        "prove-incr",
+        {
+            "AURA_BUILD_CYCLES": "1",
+            "AURA_BUILD_WORLDLINES": "1",
+            "AURA_BUILD_NO_FIBER_PROBE": "1",
+            "AURA_BUILD_FIBER_SESSION_OK": "1",  # must not elevate
+        },
+        harness_root=tmp_path,
+    )
+    assert result.via == "aura"
+    report = json.loads((tmp_path / "prove-incr-latest.json").read_text())
+    assert report["fiber_live"] is False
+    assert report["session_model"] == "shared_workspace_subprocess"
+    probe = report.get("fiber_probe") or {}
+    assert probe.get("skipped") is True
+    assert probe.get("fiber_live") is False
+
+
+def test_kernel_doctor_reports_fiber_probe(tmp_path: Path) -> None:
+    result = invoke_aura_kernel("doctor", {}, harness_root=tmp_path)
+    assert result.via == "aura"
+    assert result.ok
+    snap = (result.response or {}).get("snapshot") or {}
+    fiber = snap.get("fiber") or {}
+    assert "fiber_live" in fiber
+    assert "oneshot_fiber_ok" in fiber or "reason" in fiber
+    # env alone cannot appear as forced live without denseness
+    honesty = snap.get("honesty") or {}
+    if honesty.get("fiber_live"):
+        assert fiber.get("oneshot_fiber_ok") is True
+        assert fiber.get("same_flatast_multi_ok") is True
 
 
 def test_kernel_harness_mutate_discard(tmp_path: Path) -> None:
@@ -211,7 +254,7 @@ def test_kernel_harness_mutate_heal_bad_l1(tmp_path: Path) -> None:
 
 
 def test_kernel_doctor(tmp_path: Path) -> None:
-    # Seed a refuse report so honesty stays false
+    # Seed a refuse report — incr honesty stays false; fiber may be live from probe
     (tmp_path / "prove-incr-latest.json").write_text(
         json.dumps(
             {
@@ -230,8 +273,15 @@ def test_kernel_doctor(tmp_path: Path) -> None:
     assert result.ok
     snap = result.response.get("snapshot") or {}
     honesty = snap.get("honesty") or {}
-    assert honesty.get("incr_proven") is False
-    assert honesty.get("fiber_live") is False
+    assert honesty.get("incr_proven") is False  # from refuse report
+    fiber = snap.get("fiber") or {}
+    # Live denseness probe may set fiber_live; never invent without probe fields
+    if honesty.get("fiber_live"):
+        assert fiber.get("oneshot_fiber_ok") is True
+        assert fiber.get("same_flatast_multi_ok") is True
+        assert honesty.get("session_model") == "fiber_denseness_in_process"
+    else:
+        assert honesty.get("session_model") == "shared_workspace_subprocess"
     assert honesty.get("l1_backend") in ("hot-strategy", "file")
     l1 = snap.get("l1") or {}
     assert l1.get("available") is True
