@@ -5,7 +5,7 @@
 ```
 ┌─────────────────────────────────────────────────────────┐
 │  Host (thin)                                            │
-│  CLI / CI / (later TUI·ACP) — no business moat here     │
+│  CLI / CI / TUI·ACP stub — no business moat here        │
 └──────────────────────────┬──────────────────────────────┘
                            │ prompts, policy, I/O
 ┌──────────────────────────▼──────────────────────────────┐
@@ -28,7 +28,7 @@
 
 ## Host thin
 
-The host process is a **thin** adapter: argparse/CI entrypoints, path wiring, exit codes. Surface shape may follow grok-build (headless → CI → ACP later). Product value does **not** live in host chrome. Soft ≠ Restricted; deny plugin-as-moat.
+The host process is a **thin** adapter: argparse/CI entrypoints, path wiring, exit codes, plus M5 `tui`/`acp` stubs. Surface *shape* may follow grok-build (headless → CI → ACP/TUI). Product value does **not** live in host chrome. Soft ≠ Restricted; deny plugin-as-moat.
 
 ## Aura control
 
@@ -99,9 +99,20 @@ Append-only episodes (see [trajectory-protocol-v0.md](trajectory-protocol-v0.md)
 
 Memory: `MemoryStore` under `.aura-build/memory/<profile>.json` (get/set via CLI or orch).
 
-L2: `resolve_l2_weights(id)` stub only — no training, no tensor load. Real artifacts would plug at the resolver/loader by `weights_id` (see `l2_weights.py` docstring); M4 documents plug points only.
+L2 (M5): `resolve_l2_weights(id, root=…)` loads **metadata-only** stubs from
+`.aura-build/weights/<id>.json` (`id`, `created`, `notes`). Offline promote via
+`aura-build l2 promote` (refuses `l3_online=true` corpora). Always `stub=True`
+until real weight bytes exist — no training, no tensor/mmap, no online L3.
 
-Do **not** read a committed harness JSON or `stable_ref` as fiber-live FlatAST / proven incr.
+### M5 TUI / ACP
+
+- `aura-build tui` — stdlib status printer (session + last traj); not a full TUI
+- `aura-build acp {hooks,start,status,worldlines,discard,export}` — thin control
+  plane wired to session marker, worldline workspace, L2 promote, and export
+- Headless `run` / `export` / harness canary remain SSOT
+
+Do **not** read a committed harness JSON, L2 metadata file, or `stable_ref` as
+fiber-live FlatAST / proven incr / real specialist weights in memory.
 
 ## Anti-postman default
 

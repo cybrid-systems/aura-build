@@ -1,7 +1,7 @@
 # Specialist training notes (M4)
 
 Offline notes for distillers / RL jobs that consume `aura-build export` corpora.
-**No training loop lives in this repo.** L2 remains stub-by-id; L3 online is refused.
+**No training loop lives in this repo.** L2 is metadata-only under `.aura-build/weights/<id>.json`; L3 online is refused.
 
 ## What to train on
 
@@ -22,14 +22,14 @@ Postman-style request dumps (see devaluation in [trajectory-protocol-v0.md](traj
 | `harness.mid` + `harness.actions[]` | Harness canary propose/canary/commit/heal/discard tape |
 | `harness.outcome` / `autopropote` / `committed` | L1 promotion decision (default autopropote off) |
 | `harness.l1_strategy_id` | Strategy code id that produced the policy |
-| `harness.l2_weights_id` / `l2_ref` | Offline specialist id (stub until real loader) |
+| `harness.l2_weights_id` / `l2_ref` | Offline specialist id; `stub=True`, `artifact_present` when JSON loaded |
 | `harness.l3_online` | Quarantine if `true`; default corpora require `false` |
 | `privacy.redacted` / `retention_class` | Export filter honesty; customer class ≠ shared L2 |
 | `runtime.profile` / `session_model` | Profile context; `shared_workspace_subprocess` ≠ fiber-live |
 
 ### Honesty flags (do not “fix” in labels)
 
-- **`incr_proven=false`** — always in M0–M4 dogfood. Distillers must not invent
+- **`incr_proven=false`** — always in M0–M5 dogfood. Distillers must not invent
   incremental-compile wins from placeholders.
 - **No fiber-live FlatAST claim** — `stable_ref` / shared workspace are subprocess
   continuity, not multi-worldline fibers on one FlatAST.
@@ -54,15 +54,21 @@ aura-build export --include-raw --out trajectories/export.raw.json
 - **Parquet** — optional; requires `pandas` + `pyarrow` (`pip install 'aura-build[export]'`).
   If missing, export prints a clear skip message and still returns 0 for JSON.
 
-## L2 weight artifacts (plug points)
+## L2 weight artifacts (M5 metadata plug)
 
-Keep resolving by **id** (`resolve_l2_weights`). Real weights would plug at:
+```bash
+aura-build l2 promote --id specialist.stub.v0 --notes "offline demo"
+aura-build l2 promote --id specialist.from.export.v0 --from-export trajectories/export.json
+aura-build l2 show --id specialist.stub.v0
+```
 
-1. Artifact dir / object key = `weights_id`
-2. Manifest (corpus export SHA, metrics, retention)
-3. Loader beside the stub (`load_l2_weights`) — **not implemented**; no training here
+- Path: `.aura-build/weights/<id>.json` with `{id, created, notes}` only
+- `resolve_l2_weights` / `load_l2_artifact` set `artifact_present=True` when JSON loads
+- **`stub=True` always** in M5 — no tensor bytes; do not claim weights are in memory
+- Promote with `--from-export` **refuses** any episode where `harness.l3_online=true`
+- Future (past M5): mmap/read real bytes → `stub=False`; still no online L3 in default orch
 
-See module docstring in `src/aura_build/l2_weights.py`.
+See `src/aura_build/l2_weights.py` and `examples/weights.specialist.stub.v0.json`.
 
 ## Retention / privacy
 
@@ -74,9 +80,9 @@ See module docstring in `src/aura_build/l2_weights.py`.
 
 Default export sets `privacy.redacted=true` and `export_filter=m4.default`.
 
-## Deferred to M5+
+## Deferred past M5
 
-- TUI / ACP surfaces (headless remains SSOT)
-- Real L2 tensor load + offline promotion automation
+- Full TUI (Textual/rich) / editor ACP embed (M5 ships status stub + hook CLI only)
+- Real L2 tensor/mmap load (`stub=False`)
 - Fiber-live multi-worldline / `incr_proven=true`
 - Online L3 (still experimental / refused in orch)

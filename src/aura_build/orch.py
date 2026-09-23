@@ -221,12 +221,12 @@ def run_episode(prompt: str, cfg: OrchConfig | None = None) -> EpisodeResult:
     """Full scout→mutate→eval→select-best; returns episode dict + selected."""
     cfg = cfg or OrchConfig()
     if cfg.l3_online:
-        raise ValueError("L3 online weights are experimental-only; refuse in M0–M3")
+        raise ValueError("L3 online weights are experimental-only; refuse in M0–M5")
 
     cfg = _apply_harness_defaults(cfg)
 
     # Resolve L2 stub (by id only).
-    l2 = resolve_l2_weights(cfg.l2_weights_id)
+    l2 = resolve_l2_weights(cfg.l2_weights_id, root=cfg.harness_root)
     if l2 is not None and cfg.l2_weights_id is None:
         cfg.l2_weights_id = l2.weights_id
 
@@ -431,6 +431,7 @@ def run_harness_canary(
         decision=decision,
         seed=_seed_from_prompt(prompt, seed),
         nested=canary.episode,
+        harness_root=root,
     )
     # Tag shadow memory with decision.
     memory_update(
@@ -456,6 +457,7 @@ def _harness_change_episode(
     decision: HarnessDecision,
     seed: int,
     nested: dict[str, Any] | None = None,
+    harness_root: Path | str | None = None,
 ) -> dict[str, Any]:
     """Episode that records mid + harness actions (every harness change)."""
     ts = _utc_now()
@@ -541,7 +543,7 @@ def _harness_change_episode(
             "retention_class": "dogfood",
         },
     }
-    l2 = resolve_l2_weights(proposal.proposed.l2_weights_id)
+    l2 = resolve_l2_weights(proposal.proposed.l2_weights_id, root=harness_root)
     if l2 is not None:
         episode["harness"]["l2_ref"] = l2.to_dict()
     return episode

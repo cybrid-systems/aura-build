@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Simulated CI / local smoke (no Aura required): venv, pytest, episodes, harness canary, export.
+# Simulated CI / local smoke (no Aura required): venv, pytest, episodes, harness canary, export, M5 tui/acp/l2.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -64,6 +64,26 @@ rm -f "$EXPORT_JSON" "${ROOT}/trajectories/smoke_export.parquet"
 aura-build export "$OUT" "$OUT2" "$OUT3" "$OUT4" \
   --out "$EXPORT_JSON" --no-parquet
 
+# M5: L2 offline metadata + TUI/ACP stubs
+aura-build l2 promote --id specialist.smoke.v0 --notes "smoke metadata" \
+  --from-export "$EXPORT_JSON" --harness-root "$HROOT" --overwrite
+aura-build l2 show --id specialist.smoke.v0 --harness-root "$HROOT" | grep -q 'artifact_present=True'
+aura-build l2 list --harness-root "$HROOT" | grep -q specialist.smoke.v0
+
+OUT5="${ROOT}/trajectories/smoke_l2.jsonl"
+rm -f "$OUT5"
+aura-build run --prompt "smoke l2 metadata" --seed 5 --mode simulated \
+  --l2-weights-id specialist.smoke.v0 --harness-root "$HROOT" --out "$OUT5"
+
+aura-build acp start --prompt "smoke session" --harness-root "$HROOT" \
+  --workspace "$WS"
+aura-build acp status --harness-root "$HROOT" | grep -q 'incr_proven=False'
+aura-build tui --harness-root "$HROOT" | grep -q 'aura-build tui'
+aura-build acp hooks | grep -q start_session
+aura-build acp worldlines --traj "$OUT2" | grep -q candidate
+# discard one loser in retained workspace (wl-1 exists from 3-worldline fan-out)
+aura-build acp discard --workspace "$WS" --ref wl-1 --reason smoke_discard | grep -q 'fiber_live=false'
+
 python - <<PY
 import json
 from pathlib import Path
@@ -109,5 +129,15 @@ for ep in exported:
     assert ep["runtime"].get("incr_proven", False) is False
     assert ep["harness"]["l3_online"] is False
 print("smoke ok export:", export_path, "n=", len(exported))
-print("smoke ok all (M0–M4)")
+
+# M5 L2 episode
+p5 = Path(r"$OUT5")
+ep5 = json.loads([ln for ln in p5.read_text().splitlines() if ln.strip()][0])
+validate_episode(ep5)
+assert ep5["harness"]["l2_ref"]["stub"] is True
+assert ep5["harness"]["l2_ref"]["artifact_present"] is True
+assert ep5["runtime"].get("incr_proven", False) is False
+print("smoke ok l2:", p5)
+
+print("smoke ok all (M0–M5)")
 PY

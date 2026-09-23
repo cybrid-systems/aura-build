@@ -17,17 +17,16 @@ Prefer live-object worldlines over git-worktree mail; dogfood [cybrid-systems/au
 | Another coding agent / prettier language | Aura is the runtime; this is the room on the floor |
 | Plugin-as-moat | Soft ≠ Restricted; integrations are soft surfaces |
 | Git-worktree-as-primary | Anti-postman: mail is fallback, not the product |
-| TUI/ACP-first | Headless/CI first (surface shape inspired by grok-build; product is not grok-build) |
+| TUI/ACP-as-product | Headless/CI first (surface *shape* inspired by grok-build; product is not grok-build) |
 
 ## Docs
 
 - [Narrative](docs/narrative.md) — 邮差 vs 活对象
 - [Architecture](docs/architecture.md)
 - [Trajectory protocol v0](docs/trajectory-protocol-v0.md)
-- [Specialist training notes](docs/specialist-training-notes.md) — M4 export fields
-- [Iteration plan](docs/iteration-plan.md) — M0–M5
+- [Specialist training notes](docs/specialist-training-notes.md) — M4/M5 export + L2 metadata
+- [Iteration plan](docs/iteration-plan.md) — M0–M5 status table
 - [Value](docs/value.md) · [Investor](docs/investor.md) · [Founders narrow path](docs/founders-narrow-path.md)
-
 
 ## Run
 
@@ -56,18 +55,53 @@ export AURA_BIN=/path/to/build/aura   # e.g. /workspace/aura-grok/build/aura
 
 Writes validated episode JSONL under `trajectories/` (gitignored). Sample shape in `examples/`.
 
-## Status
+## Status (M0–M5)
 
-**M4** — Batch **RL / specialist export**: `aura-build export` → JSON array (always) + Parquet when `pandas`/`pyarrow` available. Privacy redaction **default ON** (abs paths → placeholders, secret patterns scrubbed); `--include-raw` for local dogfood only. Specialist training notes + L2 stub plug-point docs. Still **`incr_proven=false`**; no online L3; no fiber-live claim.
+| M | What works | What's stub / refused |
+|---|------------|------------------------|
+| **M0** | `run`, trajectory JSONL, simulated select-best, pytest smoke | — |
+| **M1** | `RuntimeBackend` simulated + Aura subprocess bridge; honest `runtime.mode` | Not fiber-live multi-worldline |
+| **M2** | Shared workspace stable refs, aura-repo profile, discard losers | `incr_proven=false`; stable_ref ≠ fibers |
+| **M3** | Harness canary (AUTOPROMOTE OFF), memory store, L2 id stub | No L2 tensors; no online L3 |
+| **M4** | `export` JSON (+ optional Parquet), privacy redaction default ON | No training loop |
+| **M5** | `tui` status stub; `acp` hooks; L2 metadata load/promote under `.aura-build/weights/` | TUI ≠ full Textual; `stub=True` always (metadata only); no fiber-live / no `incr_proven=true` / no online L3 |
 
-**M3** — Self-evolving **memory / harness** at L1: mutable harness config, canary propose→commit|heal|discard, file-backed memory under `.aura-build/`, L2 stub by weights id. **AUTOPROMOTE default OFF**.
+**Beyond M5 (honest gaps):** real L2 tensor/mmap (`stub=False`); fiber-live FlatAST; proven storm-still-incr; long-lived Aura multi-eval; full TUI / editor ACP embed.
 
-**M2** — Worldline API (parent → N stable refs on shared workspace) + `--profile aura-repo` fitness hooks. Session model: `shared_workspace_subprocess`.
+### TUI / ACP (M5)
 
-**M1** — `RuntimeBackend`: `SimulatedBackend` + `AuraBackend` (subprocess mutate:rebind + eval-current). Honest `runtime.mode`.
+```bash
+# Stdlib status stub — session + last traj path (not a full-screen TUI)
+aura-build tui
+aura-build tui --json
 
-**Not yet (M5+):** TUI/ACP; real L2 tensor load / promotion automation; fiber-live multi-worldline on one FlatAST; proven storm-still-incr (`incr_proven=true`); long-lived Aura multi-eval. Do not read `stable_ref` as live fibers.
+# Agent control plane hooks (thin host; headless remains SSOT)
+aura-build acp hooks
+aura-build acp start --prompt "dogfood session"
+aura-build acp status
+aura-build acp worldlines --traj trajectories/smoke.jsonl
+aura-build acp worldlines --workspace /path/to/shared_ws
+aura-build acp discard --workspace /path/to/shared_ws --ref wl-1
+aura-build acp export --out trajectories/export.json
+```
 
+### L2 offline metadata (M5)
+
+```bash
+# Promote metadata-only stub (id, created, notes) — refuses l3_online=true corpora
+aura-build l2 promote --id specialist.stub.v0 --notes "offline demo"
+aura-build l2 promote --id specialist.from.export.v0 \
+  --from-export trajectories/export.json --notes "gated"
+
+aura-build l2 show --id specialist.stub.v0
+aura-build l2 list
+
+# Episode resolve picks up .aura-build/weights/<id>.json when present
+aura-build run --prompt "with l2" --l2-weights-id specialist.stub.v0 --mode simulated
+```
+
+Example artifact shape: `examples/weights.specialist.stub.v0.json` → copy to `.aura-build/weights/specialist.stub.v0.json`.
+**No training. No tensor load. `stub=True` until real bytes exist.**
 
 ### Trajectory export (M4)
 

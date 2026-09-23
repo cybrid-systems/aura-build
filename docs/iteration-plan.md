@@ -1,5 +1,18 @@
 # Iteration plan — M0–M5
 
+## Status table (M0–M5)
+
+| Milestone | Theme | Status | Honest note |
+|-----------|-------|--------|-------------|
+| **M0** | Stub floor — CLI + trajectory JSONL + simulated select-best | **done** | Simulated only |
+| **M1** | RuntimeBackend — Simulated + Aura subprocess bridge | **done** | Not fiber-live |
+| **M2** | Worldline shared workspace + aura-repo profile | **done** | `incr_proven=false`; stable_ref ≠ fibers |
+| **M3** | Harness canary + memory + L2 stub-by-id | **done** | AUTOPROMOTE default OFF |
+| **M4** | RL/batch export + privacy + specialist notes | **done** | No training; no online L3 |
+| **M5** | TUI/ACP skeleton + L2 offline metadata plug | **done** | Metadata-only weights; TUI is status stub |
+
+**Still refused (beyond M5):** fiber-live FlatAST multi-worldline; `incr_proven=true`; real L2 tensor/mmap load (`stub=False`); online L3 weight updates; full Textual/rich TUI.
+
 ## M0 — Stub floor
 
 **Deliver**
@@ -73,11 +86,11 @@
 - [x] AUTOPROMOTE default off; discard on pass unless flag/env
 - [x] Memory get/set via CLI + orch; L2 stub resolves by id
 - [ ] Fiber-live FlatAST / storm-still-incr proof (still deferred)
-- [ ] Real L2 weight load / training (deferred to M4+)
+- [ ] Real L2 tensor load / training (deferred)
 
 **Honesty note:** M3 canary is a **shadow harness episode**, not fiber-live multi-worldline. Committing harness JSON under `.aura-build/` is not promoting online L3 weights.
 
-## M4 — RL export + specialist notes (current)
+## M4 — RL export + specialist notes
 
 **Deliver**
 
@@ -93,19 +106,24 @@
 - [x] Privacy redaction default ON; retention_class preserved; `--include-raw` opt-out
 - [x] Off-runtime devaluation documented in [specialist-training-notes.md](specialist-training-notes.md)
 - [x] RL export pipeline writes JSON (+ optional Parquet) for offline jobs (no online L3)
-- [ ] Real L2 tensor load / promotion automation (deferred — stub + docs only)
+- [ ] Real L2 tensor load (`stub=False`) (deferred — M5 is metadata-only)
 - [ ] Fiber-live FlatAST / storm-still-incr proof (still deferred)
 
-## M5 — TUI / ACP + real L2 load (next / deferred)
+## M5 — TUI / ACP + L2 offline metadata plug (current / closing)
 
 **Deliver**
 
-- Optional TUI and ACP adapter — **after** headless trajectory loop is solid
-- Real L2 weight artifact load (mmap/read by `weights_id`) + offline promotion gate using exported corpora
-- Still **no** online L3 in default orch; still no fake `incr_proven=true`
+- Minimal headless-compatible `aura-build tui` — stdlib status stub (session + last traj path); not a full Textual loop
+- ACP hooks documented + CLI: `start` / `status` / `worldlines` / `discard` / `export` / `hooks` — wired to existing orch/export/worldline surfaces
+- L2 offline metadata: load/promote stub artifact at `.aura-build/weights/<id>.json` (`id`, `created`, `notes`); promotion refuses `l3_online=true` corpora
+- Still **no** training; **no** tensor load (`stub=True` always); **no** online L3; **no** fake `incr_proven=true`; **no** fiber-live claim
 
 **Exit criteria**
 
-- [ ] Headless path remains SSOT (`run` / `export` / harness canary)
-- [ ] Soft ≠ Restricted; no plugin-as-moat narrative
-- [ ] L2 loader sets `stub=False` only when bytes actually load; promotion excludes `l3_online=true` by default
+- [x] Headless path remains SSOT (`run` / `export` / harness canary)
+- [x] Soft ≠ Restricted; no plugin-as-moat narrative (TUI/ACP are thin host adapters)
+- [x] L2 metadata loader sets `artifact_present=True` when JSON loads; **`stub` stays True** (no weight bytes)
+- [x] Offline promote excludes `l3_online=true` by default
+- [ ] Real L2 tensor/mmap load → `stub=False` (deferred past M5)
+- [ ] Full TUI (Textual/rich) / editor ACP embed (deferred)
+- [ ] Fiber-live FlatAST / storm-still-incr proof (still deferred)

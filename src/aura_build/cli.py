@@ -1,4 +1,4 @@
-"""Headless CLI — `aura-build run|harness-mutate|memory|export`."""
+"""Headless CLI — `aura-build run|harness-mutate|memory|export|tui|acp|l2`."""
 
 from __future__ import annotations
 
@@ -17,6 +17,20 @@ from aura_build.memory import MemoryStore
 from aura_build.orch import AuraUnavailable, OrchConfig, run_episode, run_harness_canary
 from aura_build.export import export_trajectories
 from aura_build.trajectory import TrajectoryWriter
+from aura_build.acp import (
+    L2PromoteError,
+    acp_discard_worldline,
+    acp_list_worldlines,
+    acp_start_session,
+    acp_status,
+    describe_hooks,
+)
+from aura_build.l2_weights import (
+    list_l2_artifacts,
+    promote_l2_offline,
+    resolve_l2_weights,
+)
+from aura_build.tui import format_status
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -24,7 +38,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="aura-build",
         description=(
             "Dev-time room on the Aura FlatAST floor "
-            "(M4: RL/batch trajectory export + harness canary + memory)."
+            "(M5: TUI/ACP stub + L2 offline metadata + export + harness canary)."
         ),
     )
     p.add_argument("--version", action="version", version=f"aura-build {__version__}")
@@ -158,6 +172,78 @@ def build_parser() -> argparse.ArgumentParser:
     show.add_argument("--harness-root", type=Path, default=None)
     show.add_argument("--json", action="store_true")
 
+    tui = sub.add_parser(
+        "tui",
+        help="M5 status stub (stdlib): session + last traj path (not a full TUI)",
+    )
+    tui.add_argument("--harness-root", type=Path, default=None)
+    tui.add_argument("--json", action="store_true")
+
+    acp = sub.add_parser(
+        "acp",
+        help="agent control plane hooks (start/list/promote/discard/export)",
+    )
+    acp_sub = acp.add_subparsers(dest="acp_cmd", required=True)
+    acp_hooks = acp_sub.add_parser("hooks", help="list ACP hook descriptions")
+    acp_hooks.add_argument("--json", action="store_true")
+    acp_st = acp_sub.add_parser("status", help="session + harness + last traj")
+    acp_st.add_argument("--harness-root", type=Path, default=None)
+    acp_st.add_argument("--json", action="store_true")
+    acp_start = acp_sub.add_parser("start", help="start/refresh session marker")
+    acp_start.add_argument("--prompt", default=None)
+    acp_start.add_argument("--workspace", type=Path, default=None)
+    acp_start.add_argument("--harness-root", type=Path, default=None)
+    acp_start.add_argument("--json", action="store_true")
+    acp_wl = acp_sub.add_parser("worldlines", help="list worldlines from traj/workspace")
+    acp_wl.add_argument("--workspace", type=Path, default=None)
+    acp_wl.add_argument("--traj", type=Path, default=None)
+    acp_wl.add_argument("--harness-root", type=Path, default=None)
+    acp_wl.add_argument("--json", action="store_true")
+    acp_disc = acp_sub.add_parser(
+        "discard", help="mark worldline discarded in shared workspace"
+    )
+    acp_disc.add_argument("--workspace", type=Path, required=True)
+    acp_disc.add_argument("--ref", required=True, help="candidate ref id (e.g. wl-1)")
+    acp_disc.add_argument("--reason", default="acp_discard")
+    acp_disc.add_argument("--json", action="store_true")
+    acp_exp = acp_sub.add_parser(
+        "export",
+        help="hint / thin alias — prefer `aura-build export`",
+    )
+    acp_exp.add_argument(
+        "--out",
+        type=Path,
+        default=Path("trajectories/export.json"),
+    )
+    acp_exp.add_argument("--include-raw", action="store_true")
+    acp_exp.add_argument("--no-parquet", action="store_true")
+    acp_exp.add_argument("--json", action="store_true")
+
+    l2 = sub.add_parser("l2", help="L2 offline metadata weights (stub artifacts)")
+    l2_sub = l2.add_subparsers(dest="l2_cmd", required=True)
+    l2_show = l2_sub.add_parser("show", help="resolve / load weights id")
+    l2_show.add_argument("--id", required=True)
+    l2_show.add_argument("--harness-root", type=Path, default=None)
+    l2_show.add_argument("--json", action="store_true")
+    l2_list = l2_sub.add_parser("list", help="list .aura-build/weights/*.json")
+    l2_list.add_argument("--harness-root", type=Path, default=None)
+    l2_list.add_argument("--json", action="store_true")
+    l2_prom = l2_sub.add_parser(
+        "promote",
+        help="write offline metadata stub (refuses l3_online=true corpora)",
+    )
+    l2_prom.add_argument("--id", required=True)
+    l2_prom.add_argument("--notes", default="")
+    l2_prom.add_argument(
+        "--from-export",
+        type=Path,
+        default=None,
+        help="optional export JSON/JSONL to gate (no l3_online=true)",
+    )
+    l2_prom.add_argument("--harness-root", type=Path, default=None)
+    l2_prom.add_argument("--overwrite", action="store_true")
+    l2_prom.add_argument("--json", action="store_true")
+
     return p
 
 
@@ -280,6 +366,12 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_harness_show(args)
     if args.cmd == "export":
         return _cmd_export(args)
+    if args.cmd == "tui":
+        return _cmd_tui(args)
+    if args.cmd == "acp":
+        return _cmd_acp(args)
+    if args.cmd == "l2":
+        return _cmd_l2(args)
     return 2
 
 
@@ -453,6 +545,159 @@ def _cmd_export(args: argparse.Namespace) -> int:
         elif s.parquet_skip_reason:
             print(s.parquet_skip_reason, file=sys.stderr)
     return 0
+
+
+
+def _harness_root_arg(args: argparse.Namespace) -> Path | None:
+    return Path(args.harness_root) if getattr(args, "harness_root", None) else None
+
+
+def _cmd_tui(args: argparse.Namespace) -> int:
+    root = _harness_root_arg(args)
+    st = acp_status(root=root)
+    if args.json:
+        print(json.dumps(st.to_dict(), indent=2, sort_keys=True))
+    else:
+        print(format_status(st), end="")
+    return 0
+
+
+def _cmd_acp(args: argparse.Namespace) -> int:
+    root = _harness_root_arg(args)
+    if args.acp_cmd == "hooks":
+        hooks = describe_hooks()
+        if args.json:
+            print(json.dumps(hooks, indent=2, sort_keys=True))
+        else:
+            for name, desc in sorted(hooks.items()):
+                print(f"{name}: {desc}")
+        return 0
+    if args.acp_cmd == "status":
+        st = acp_status(root=root)
+        if args.json:
+            print(json.dumps(st.to_dict(), indent=2, sort_keys=True))
+        else:
+            print(format_status(st))
+        return 0
+    if args.acp_cmd == "start":
+        st = acp_start_session(
+            prompt=args.prompt,
+            root=root,
+            workspace=args.workspace,
+        )
+        if args.json:
+            print(json.dumps(st.to_dict(), indent=2, sort_keys=True))
+        else:
+            print(
+                f"session_id={st.session_id} started={st.started} "
+                f"last_traj={st.last_traj_path or '-'}"
+            )
+        return 0
+    if args.acp_cmd == "worldlines":
+        rows = acp_list_worldlines(
+            root=root,
+            workspace=args.workspace,
+            traj_path=args.traj,
+        )
+        if args.json:
+            print(json.dumps(rows, indent=2, sort_keys=True))
+        else:
+            if not rows:
+                print("worldlines: (none)")
+            for r in rows:
+                print(
+                    f"{r.get('role', '?'):10} id={r.get('id') or r.get('ref_id')} "
+                    f"stable_ref={r.get('stable_ref') or r.get('ref_id')} "
+                    f"fitness={r.get('fitness')}"
+                )
+        return 0
+    if args.acp_cmd == "discard":
+        try:
+            payload = acp_discard_worldline(
+                args.ref,
+                workspace=args.workspace,
+                reason=args.reason,
+            )
+        except (KeyError, FileNotFoundError, OSError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        if args.json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            print(
+                f"discarded={payload['discarded']} reason={payload['reason']} "
+                f"workspace={payload['workspace']} fiber_live=false"
+            )
+        return 0
+    if args.acp_cmd == "export":
+        # Thin wire to existing export command.
+        return _cmd_export(
+            argparse.Namespace(
+                inputs=[],
+                out=args.out,
+                parquet=None,
+                no_parquet=args.no_parquet,
+                include_raw=args.include_raw,
+                no_redact=False,
+                strict=False,
+                json=args.json,
+            )
+        )
+    return 2
+
+
+def _cmd_l2(args: argparse.Namespace) -> int:
+    root = _harness_root_arg(args)
+    if args.l2_cmd == "show":
+        ref = resolve_l2_weights(args.id, root=root)
+        if ref is None:
+            print("null")
+            return 1
+        if args.json:
+            print(json.dumps(ref.to_dict(), indent=2, sort_keys=True))
+        else:
+            print(
+                f"id={ref.weights_id} loaded={ref.loaded} stub={ref.stub} "
+                f"artifact_present={ref.artifact_present} "
+                f"created={ref.created or '-'} path={ref.artifact_path or '-'}"
+            )
+        return 0
+    if args.l2_cmd == "list":
+        refs = list_l2_artifacts(root=root)
+        payload = [r.to_dict() for r in refs]
+        if args.json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            if not refs:
+                print("l2 weights: (none)")
+            for r in refs:
+                print(
+                    f"id={r.weights_id} stub={r.stub} "
+                    f"created={r.created or '-'} path={r.artifact_path}"
+                )
+        return 0
+    if args.l2_cmd == "promote":
+        try:
+            ref = promote_l2_offline(
+                args.id,
+                notes=args.notes,
+                root=root,
+                export_path=args.from_export,
+                overwrite=args.overwrite,
+            )
+        except L2PromoteError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        if args.json:
+            print(json.dumps(ref.to_dict(), indent=2, sort_keys=True))
+        else:
+            print(
+                f"promoted id={ref.weights_id} stub={ref.stub} "
+                f"artifact_present={ref.artifact_present} path={ref.artifact_path}"
+            )
+        return 0
+    return 2
+
 
 
 def console_main() -> None:

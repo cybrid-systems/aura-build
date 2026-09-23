@@ -230,6 +230,62 @@ class WorldlineWorkspace:
         )
 
 
+    @classmethod
+    def load(cls, root: Path | str) -> "WorldlineWorkspace":
+        """Reload workspace from ``meta.json`` (ACP / TUI status)."""
+        root_p = Path(root)
+        meta_path = root_p / "meta.json"
+        if not meta_path.is_file():
+            raise FileNotFoundError(f"workspace meta not found: {meta_path}")
+        data = json.loads(meta_path.read_text(encoding="utf-8"))
+        parent_raw = data.get("parent") or {}
+        parent = StableRef(
+            ref_id=str(parent_raw.get("ref_id") or "wl-parent"),
+            parent_ref=parent_raw.get("parent_ref"),
+            workspace_relpath=str(parent_raw.get("workspace_relpath") or "parent"),
+            kind=str(parent_raw.get("kind") or "parent"),
+        )
+        candidates: dict[str, StableRef] = {}
+        for cid, raw in (data.get("candidates") or {}).items():
+            if not isinstance(raw, dict):
+                continue
+            candidates[str(cid)] = StableRef(
+                ref_id=str(raw.get("ref_id") or cid),
+                parent_ref=raw.get("parent_ref"),
+                workspace_relpath=str(
+                    raw.get("workspace_relpath") or f"candidates/{cid}"
+                ),
+                kind=str(raw.get("kind") or "candidate"),
+            )
+        discarded: list[DiscardRecord] = []
+        for d in data.get("discarded") or []:
+            if not isinstance(d, dict):
+                continue
+            discarded.append(
+                DiscardRecord(
+                    id=str(d.get("id")),
+                    reason=str(d.get("reason") or "discarded"),
+                    fitness=d.get("fitness"),
+                    stable_ref=d.get("stable_ref"),
+                )
+            )
+        ws = cls(
+            root=root_p,
+            parent=parent,
+            candidates=candidates,
+            discarded=discarded,
+            session_model=str(
+                data.get("session_model") or SESSION_SHARED_SUBPROCESS
+            ),
+            episode_token=str(data.get("episode_token") or uuid.uuid4().hex[:12]),
+        )
+        return ws
+
+    def save_meta(self) -> None:
+        """Public alias for persisting workspace meta (ACP discard)."""
+        self._write_meta()
+
+
 def cleanup_workspace(root: Path | str, *, missing_ok: bool = True) -> None:
     """Remove a workspace tree (tests / ephemeral runs)."""
     p = Path(root)

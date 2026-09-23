@@ -89,7 +89,7 @@ Do not treat `stable_ref` or `session_model=shared_workspace_subprocess` as fibe
 | `harness.outcome` | Final decision for a canary episode |
 | `harness.autopropote` / `harness.committed` | Promote gate (default off) |
 | `harness.config` / `config_base` / `config_proposed` | Harness snapshots |
-| `harness.l2_ref` | Stub `{weights_id, loaded, stub:true}` — no training |
+| `harness.l2_ref` | `{weights_id, loaded, stub:true, artifact_present}` — metadata JSON only; no tensors |
 | `runtime.shadow` / `runtime.harness_canary` | Canary ran on shadow profile |
 | `memory.profile_id` | Optional memory profile touched by orch |
 
