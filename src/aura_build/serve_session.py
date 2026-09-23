@@ -5,9 +5,10 @@ Architecture:
   ``aura --serve-async`` pipes and listens on ``.aura-build/serve.sock``.
 - CLI / verify clients talk JSON-lines over the socket (host IPC only).
 - Honesty: ``session_model=serve`` only when daemon+aura pid alive (not env).
-- Soft Ready (#3098) refuses ``--serve-async`` when ``AURA_SANDBOX=off``;
-  holder prefers async only after a measured Soft Ready self-check, else sync
-  ``--serve`` with ``serve_mode=sync`` (never env-fake async).
+- Soft Ready: holder prefers async only after a **measured** Soft Ready
+  self-check (Aura #4047 Soft Ready profile under Soft; older tips refused
+  with #3098 ``fail_bits=0x10``). Else sync ``--serve`` with
+  ``serve_mode=sync`` (never env-fake async / production Ready).
 - ``serve_cross_session_shared_ast`` elevates only after a measured proof that
   two named Aura serve sessions share one FlatAST (Soft ``--serve`` does not).
 """
@@ -202,8 +203,9 @@ def probe_serve_async_soft_ready(
 ) -> dict[str, Any]:
     """Measured Soft Ready self-check for ``aura --serve-async``.
 
-    Soft boxes (``AURA_SANDBOX=off``) are refused by Aura #3098 multi-worker
-    Ready. Never invent ``ok`` from env. Returns structured refuse reason.
+    Aura #4047: Soft tips enter Soft Ready (alive + Soft Ready banner) without
+    claiming production multi-worker Ready. Older tips refuse with #3098
+    ``fail_bits=0x10``. Never invent ``ok`` from env.
     """
     bin_path = resolve_aura_bin(aura_bin) or aura_bin
     if not bin_path:
@@ -243,7 +245,15 @@ def probe_serve_async_soft_ready(
             except Exception:
                 stdout, stderr = "", ""
             # Timed out while alive → Soft Ready did not abort; treat as ready.
+            # Prefer Aura #4047 Soft Ready banner when present (not production).
             out = (stdout or "") + (stderr or "")
+            if "Soft Ready profile (#4047)" in out and "FATAL" not in out:
+                return {
+                    "ok": True,
+                    "serve_mode_preferred": SERVE_MODE_ASYNC,
+                    "reason": "soft_ready_profile_4047",
+                    "stderr_tail": (stderr or "")[-200:],
+                }
             if any(m in out for m in _SOFT_ASYNC_REFUSE_MARKERS):
                 return {
                     "ok": False,

@@ -1,4 +1,12 @@
-# Soft Ready gate (`--serve-async` / #3098)
+# Soft Ready gate (`--serve-async` / #3098 → Aura #4047)
+
+> **Status (Aura tip with #4047):** Soft boxes (`AURA_SANDBOX=off`) can enter
+> `--serve-async` under an honest **Soft Ready** profile. Probe expects
+> `ok=true` / `serve_mode_preferred=async` and stderr Soft Ready banner —
+> **not** production multi-worker Ready. Never env-fake.
+
+> Historical Soft refuse (pre-#4047) is documented below for tip decoding.
+
 
 > Measured on Soft boxes (`AURA_SANDBOX=off`). SSOT companion to
 > [optimal-dev-loop.md](optimal-dev-loop.md). Never env-fake Soft Ready /

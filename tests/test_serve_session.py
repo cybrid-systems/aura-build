@@ -169,10 +169,11 @@ def test_env_cannot_elevate_shared_ast(tmp_path: Path, monkeypatch: pytest.Monke
     st = session_status(harness_root=tmp_path)
     assert st["serve_attach_ok"] is True
     assert st["serve_cross_session_shared_ast"] is False
-    # Soft Ready refuse → sync on this box
-    assert st["serve_mode"] == "sync"
+    # Soft Ready (#4047): prefer async when measured ok; never env-fake shared_ast
+    assert st["serve_mode"] in ("sync", "async")
     soft = st.get("serve_async_soft_ready") or {}
-    assert soft.get("ok") is False
+    if soft.get("ok"):
+        assert st["serve_mode"] == "async"
     assert st.get("serve_same_session_mutate_ok") is True
     stop_session(harness_root=tmp_path)
 
@@ -183,16 +184,24 @@ def test_probe_serve_async_soft_ready_measured() -> None:
     bin_path = resolve_aura_bin(None)
     assert bin_path
     got = probe_serve_async_soft_ready(bin_path)
-    # Soft sandbox refuse is the measured box outcome today
-    assert got["ok"] is False
-    assert got["serve_mode_preferred"] == "sync"
-    assert got["reason"] in (
-        "soft_ready_refused",
-        "soft_ready_refused_after_timeout",
-        "soft_ready_inconclusive",
-    )
-    if got["reason"] == "soft_ready_refused":
-        assert got.get("fail_bits") == "0x10"
+    # Aura #4047 Soft Ready tips: ok=true → async preferred.
+    # Pre-#4047 tips: refuse with fail_bits=0x10 / sync preferred.
+    if got["ok"]:
+        assert got["serve_mode_preferred"] == "async"
+        assert got["reason"] in (
+            "soft_ready_alive_timeout_ok",
+            "soft_ready_profile_4047",
+            "soft_ready_ok",
+        )
+    else:
+        assert got["serve_mode_preferred"] == "sync"
+        assert got["reason"] in (
+            "soft_ready_refused",
+            "soft_ready_refused_after_timeout",
+            "soft_ready_inconclusive",
+        )
+        if got["reason"] == "soft_ready_refused":
+            assert got.get("fail_bits") == "0x10"
 
 
 def test_decode_soft_ready_fail_bits_0x10() -> None:
@@ -206,16 +215,24 @@ def test_decode_soft_ready_fail_bits_0x10() -> None:
 
 
 def test_probe_fail_bits_decoded() -> None:
-    from aura_build.serve_session import probe_serve_async_soft_ready
+    from aura_build.serve_session import (
+        decode_soft_ready_fail_bits,
+        probe_serve_async_soft_ready,
+    )
 
     bin_path = resolve_aura_bin(None)
     assert bin_path
     got = probe_serve_async_soft_ready(bin_path)
-    assert got["ok"] is False
-    assert got.get("fail_bits") == "0x10"
-    decoded = got.get("fail_bits_decoded") or {}
-    assert decoded.get("soft_defaults_only") is True
-    assert "defaults_missing_soft" in (decoded.get("names") or [])
+    if got["ok"]:
+        # Soft Ready path: no refuse fail_bits; decoder still honest for 0x10
+        decoded = decode_soft_ready_fail_bits("0x10")
+        assert decoded.get("soft_defaults_only") is True
+        assert "defaults_missing_soft" in (decoded.get("names") or [])
+    else:
+        assert got.get("fail_bits") == "0x10"
+        decoded = got.get("fail_bits_decoded") or {}
+        assert decoded.get("soft_defaults_only") is True
+        assert "defaults_missing_soft" in (decoded.get("names") or [])
 
 
 def test_pursue_session_mutate_rebind(tmp_path: Path) -> None:
@@ -238,9 +255,13 @@ def test_pursue_session_mutate_rebind(tmp_path: Path) -> None:
     assert summary["path_kind"] == "mutate_rebind"
     assert summary["worldline_backend"] == "serve_mutate_rebind"
     assert summary["cold_spawns"] == 0
-    assert summary["serve_mode"] == "sync"
-    assert summary["serve_async_soft_ready_ok"] is False
-    assert summary["serve_async_soft_ready_fail_bits"] == "0x10"
+    assert summary["serve_mode"] in ("sync", "async")
+    soft_ok = summary.get("serve_async_soft_ready_ok")
+    if soft_ok:
+        assert summary["serve_mode"] == "async"
+    else:
+        assert summary["serve_mode"] == "sync"
+        assert summary["serve_async_soft_ready_fail_bits"] == "0x10"
     assert summary["serve_cross_session_shared_ast"] is False
     assert summary["serve_same_session_mutate_ok"] is True
     assert out.is_file()
