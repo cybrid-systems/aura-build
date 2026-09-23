@@ -17,9 +17,9 @@ mutate/eval bridge, prove-incr / doctor honesty flags, harness L1 mutate+canary,
 trajectory write, memory, L2 stub metadata (`aura/main.aura` + modules).
 
 Python is a **thin CLI / test harness** that shells out to the `aura` binary
-(with the GCC16 libstdc++ sidecar). It still owns the TUI status stub, optional Parquet conversion for export, schema
+(with the GCC16 libstdc++ sidecar). It still owns optional Parquet conversion for export, schema
 validation, and a **CI-safe fallback** when no Aura binary is present
-(`AURA_BUILD_FORCE_PYTHON=1` forces the fallback). ACP prefers the Aura kernel.
+(`AURA_BUILD_FORCE_PYTHON=1` forces the fallback). ACP and TUI prefer the Aura kernel.
 
 ### Which CLIs are Aura-first
 
@@ -32,7 +32,7 @@ validation, and a **CI-safe fallback** when no Aura binary is present
 | `memory` / `l2 show\|list\|promote` | Aura when healthy (promote `--from-export` stays Python) | fallback |
 | `export` | **Aura kernel** (JSON array + default-ON redaction); Parquet via thin Python adapter | `AURA_BUILD_FORCE_PYTHON=1` / no binary |
 | `acp` | **Aura kernel** (`acp.aura` hooks: start/status/worldlines/promote/discard/export) | `AURA_BUILD_FORCE_PYTHON=1` / no binary |
-| `tui` | — | **Python stub** (may reuse ACP status) |
+| `tui` | **Aura kernel** (`tui.aura` status stub; reuses ACP/prove honesty) | `AURA_BUILD_FORCE_PYTHON=1` / no binary |
 
 ```bash
 # Primary path (Aura kernel) — requires AURA_BIN + sidecar
@@ -110,9 +110,10 @@ Writes validated episode JSONL under `trajectories/` (gitignored). Sample shape 
 ### TUI / ACP (M5)
 
 ```bash
-# Stdlib status stub — session + last traj path (not a full-screen TUI)
+# Stdlib status stub — Aura-first when AURA_BIN healthy (not a full-screen TUI)
 aura-build tui
 aura-build tui --json
+AURA_BUILD_FORCE_PYTHON=1 aura-build tui   # Python stub fallback
 
 # Agent control plane hooks — Aura-first when AURA_BIN healthy (headless remains SSOT)
 aura-build acp hooks

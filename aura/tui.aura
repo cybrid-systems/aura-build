@@ -1,0 +1,117 @@
+; aura-build kernel — TUI status stub (stdlib printer; not a full Textual UI)
+; Reuses acp-status / acp-hooks / prove honesty; never invents incr_proven/fiber_live.
+(export tui-format-status tui-run)
+
+(require "util" all:)
+(require "acp" all:)
+(require "std/io" all:)
+(require "std/string" all:)
+
+(define (bool-str v)
+  (if v "True" "False"))
+
+(define (dash s)
+  (if (or (null? s) (not s) (equal? s "")) "-" s))
+
+(define (wl-count-str status)
+  (let ((c (hash-ref status "worldline_count" #f)))
+    (if (or (not c) (null? c) (eq? c #f))
+      "-"
+      (if (number? c) (number->string c) (dash c)))))
+
+(define (lines->list raw)
+  (let ((n (string-length raw)))
+    (let loop ((i 0) (start 0) (acc (list)))
+      (if (>= i n)
+        (let ((last (substring raw start n)))
+          (reverse (if (equal? last "") acc (cons last acc))))
+        (if (equal? (substring raw i (+ i 1)) "\n")
+          (loop (+ i 1) (+ i 1)
+                (let ((piece (substring raw start i)))
+                  (if (equal? piece "") acc (cons piece acc))))
+          (loop (+ i 1) start acc))))))
+
+(define (sort-strings xs)
+  (if (null? xs)
+    (list)
+    (let ((tmp "/tmp/_aura_build_tui_hooks")
+          (joined
+            (let loop ((ys xs) (acc ""))
+              (if (null? ys)
+                acc
+                (loop (cdr ys)
+                      (if (equal? acc "")
+                        (car ys)
+                        (string-append acc "\n" (car ys))))))))
+      (write-file tmp joined)
+      (sh (string-append "sort -u '" tmp "' -o '" tmp "' 2>/dev/null || true"))
+      (let ((body (string-trim (read-file tmp))))
+        (sh (string-append "rm -f " tmp))
+        (if (equal? body "") (list) (lines->list body))))))
+
+(define (join-hook-names hooks)
+  (let ((keys (sort-strings (hash-keys hooks))))
+    (if (null? keys)
+      "-"
+      (let loop ((xs keys) (acc ""))
+        (if (null? xs)
+          acc
+          (loop (cdr xs)
+                (if (equal? acc "")
+                  (car xs)
+                  (string-append acc ", " (car xs)))))))))
+
+(define (prompt-show prompt)
+  (if (or (null? prompt) (not prompt) (equal? prompt ""))
+    "-"
+    (if (<= (string-length prompt) 60)
+      prompt
+      (substring prompt 0 60))))
+
+(define (tui-format-status status)
+  (let* ((h (hash-ref status "honesty" (hash)))
+         (hooks (hash-ref status "hooks" (acp-hooks)))
+         (hook-names (join-hook-names hooks)))
+    (string-append
+     "aura-build tui (M5 stub — stdlib status; not a full TUI)\n"
+     "  session_id     = " (dash (hash-ref status "session_id" "")) "\n"
+     "  started        = " (dash (hash-ref status "started" "")) "\n"
+     "  prompt         = " (prompt-show (hash-ref status "prompt" "")) "\n"
+     "  harness_id     = " (dash (hash-ref status "harness_id" "")) "\n"
+     "  routing        = " (dash (hash-ref status "harness_routing" "")) "\n"
+     "  worldline_count= " (wl-count-str status) "\n"
+     "  l2_weights_id  = " (dash (hash-ref status "l2_weights_id" "")) "\n"
+     "  l2_artifact    = " (bool-str (hash-ref status "l2_artifact_present" #f)) "\n"
+     "  workspace      = " (dash (hash-ref status "workspace" "")) "\n"
+     "  last_traj_path = " (dash (hash-ref status "last_traj_path" "")) "\n"
+     "  last_episode   = " (dash (hash-ref status "last_episode_id" "")) "\n"
+     "  honesty:\n"
+     "    incr_proven=" (bool-str (hash-ref h "incr_proven" #f))
+     " fiber_live=" (bool-str (hash-ref h "fiber_live" #f))
+     " l3_online=" (bool-str (hash-ref h "l3_online" #f))
+     " l2_stub_metadata_only=" (bool-str (hash-ref h "l2_stub_metadata_only" #t)) "\n"
+     "  kernel=aura\n"
+     "  acp hooks: " hook-names "\n"
+     "  tip: aura-build acp hooks | aura-build run | aura-build l2 promote\n")))
+
+(define (write-response-local root obj)
+  (let ((path (env-get "AURA_BUILD_RESPONSE" (join-path root "kernel-response.json"))))
+    (ensure-dir (dirname-path path))
+    (write-file path (normalize-json-empties (json-encode obj)))
+    path))
+
+(define (tui-run)
+  (let* ((root (env-get "AURA_BUILD_HARNESS_ROOT" ".aura-build"))
+         (traj (env-get "AURA_BUILD_TUI_TRAJ" ""))
+         (workspace (env-get "AURA_BUILD_TUI_WORKSPACE" ""))
+         (want-json (env-bool "AURA_BUILD_TUI_JSON" #f))
+         (st (acp-status root traj workspace)))
+    (if want-json
+      (begin
+        (display (normalize-json-empties (json-encode st)))
+        (newline))
+      (begin
+        (display (tui-format-status st))))
+    (write-response-local root
+      (hash "cmd" "tui" "ok" #t "status" st "kernel" "aura"))
+    0))

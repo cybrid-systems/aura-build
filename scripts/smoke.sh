@@ -94,7 +94,14 @@ echo "$ACP_STATUS" | grep -q 'fiber_live=False\|fiber_live=false'
 if [[ -n "${AURA_BIN:-}" && -x "${AURA_BIN}" ]]; then
   echo "$ACP_STATUS" | grep -q 'kernel=aura'
 fi
-aura-build tui --harness-root "$HROOT" | grep -q 'aura-build tui'
+TUI_STATUS=$(aura-build tui --harness-root "$HROOT")
+echo "$TUI_STATUS" | grep -q 'aura-build tui'
+echo "$TUI_STATUS" | grep -q 'incr_proven=False'
+echo "$TUI_STATUS" | grep -q 'fiber_live=False\|fiber_live=false'
+if [[ -n "${AURA_BIN:-}" && -x "${AURA_BIN}" ]]; then
+  echo "$TUI_STATUS" | grep -q 'kernel=aura'
+fi
+AURA_BUILD_FORCE_PYTHON=1 aura-build tui --harness-root "$HROOT" | grep -q 'kernel=python'
 aura-build acp hooks | grep -q start_session
 aura-build acp worldlines --traj "$OUT2" | grep -q candidate
 # discard one loser in retained workspace (wl-1 exists from 3-worldline fan-out)

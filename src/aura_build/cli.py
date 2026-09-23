@@ -1,7 +1,7 @@
 """Headless CLI — thin host over the Aura kernel (`aura/*.aura`).
 
-Primary run/prove/harness/memory/l2/acp/export shells to Aura when healthy.
-Python keeps TUI stub, schema validate, CI fallback, and Parquet adapter for export.
+Primary run/prove/harness/memory/l2/acp/export/tui shells to Aura when healthy.
+Python keeps schema validate, CI fallback, Parquet adapter for export, and TUI text fallback.
 """
 
 from __future__ import annotations
@@ -241,7 +241,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     tui = sub.add_parser(
         "tui",
-        help="M5 status stub (stdlib): session + last traj path (not a full TUI)",
+        help="session status stub (Aura-first; stdlib printer, not full Textual)",
     )
     tui.add_argument("--harness-root", type=Path, default=None)
     tui.add_argument("--json", action="store_true")
@@ -862,12 +862,47 @@ def _harness_root_arg(args: argparse.Namespace) -> Path | None:
 
 
 def _cmd_tui(args: argparse.Namespace) -> int:
+    """TUI status stub — prefer Aura kernel; Python fallback when forced/unavailable."""
     root = _harness_root_arg(args)
+    harness = root or default_root()
+    env = {
+        "AURA_BUILD_TUI_JSON": "1" if args.json else "0",
+    }
+    if prefer_aura_kernel():
+        ok, _bin, _err = kernel_available(None, None)
+        if ok:
+            try:
+                kr = invoke_aura_kernel("tui", env, harness_root=harness)
+            except AuraUnavailable as exc:
+                print(f"error: aura kernel: {exc}", file=sys.stderr)
+                return 2
+            if args.json:
+                st = (kr.response or {}).get("status") or {}
+                if "kernel" not in st:
+                    st = dict(st)
+                    st["kernel"] = "aura"
+                print(json.dumps(st, indent=2, sort_keys=True))
+            else:
+                for ln in (kr.stdout or "").splitlines():
+                    if not ln.strip() or ln.strip() == "#t":
+                        continue
+                    ln = (
+                        ln.replace("=#t", "=True")
+                        .replace("=#f", "=False")
+                        .replace("= #t", "= True")
+                        .replace("= #f", "= False")
+                    )
+                    print(ln)
+            return kr.exit_code if kr.exit_code is not None else (0 if kr.ok else 2)
+
+    # Python fallback
     st = acp_status(root=root)
     if args.json:
-        print(json.dumps(st.to_dict(), indent=2, sort_keys=True))
+        d = st.to_dict()
+        d["kernel"] = "python"
+        print(json.dumps(d, indent=2, sort_keys=True))
     else:
-        print(format_status(st), end="")
+        print(format_status(st, kernel="python"), end="")
     return 0
 
 

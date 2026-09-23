@@ -434,3 +434,69 @@ def test_cli_acp_prefer_aura_and_force_python(tmp_path: Path, monkeypatch) -> No
     out2 = buf2.getvalue()
     assert "kernel=python" in out2
     assert "incr_proven=False" in out2
+
+
+def test_kernel_tui_status(tmp_path: Path) -> None:
+    # seed session via acp start
+    start = invoke_aura_kernel(
+        "acp",
+        {"AURA_BUILD_ACP_OP": "start", "AURA_BUILD_ACP_PROMPT": "tui pytest"},
+        harness_root=tmp_path,
+    )
+    assert start.via == "aura" and start.ok
+
+    kr = invoke_aura_kernel(
+        "tui",
+        {"AURA_BUILD_TUI_JSON": "0"},
+        harness_root=tmp_path,
+    )
+    assert kr.via == "aura" and kr.ok
+    assert (kr.response or {}).get("kernel") == "aura"
+    st = (kr.response or {}).get("status") or {}
+    assert st.get("kernel") == "aura"
+    honesty = st.get("honesty") or {}
+    assert honesty.get("incr_proven") is False
+    assert honesty.get("fiber_live") is False
+    out = kr.stdout or ""
+    assert "aura-build tui" in out
+    assert "kernel=aura" in out
+    assert "incr_proven=True" not in out.replace("incr_proven=False", "")
+    assert "incr_proven=False" in out
+    assert "fiber_live=False" in out
+
+
+def test_cli_tui_prefer_aura_and_force_python(tmp_path: Path, monkeypatch) -> None:
+    from aura_build.cli import main
+    import io
+    from contextlib import redirect_stdout
+
+    monkeypatch.delenv("AURA_BUILD_FORCE_PYTHON", raising=False)
+    assert main(["acp", "start", "--prompt", "tui cli", "--harness-root", str(tmp_path)]) == 0
+
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        rc = main(["tui", "--harness-root", str(tmp_path)])
+    assert rc == 0
+    out = buf.getvalue()
+    assert "aura-build tui" in out
+    assert "kernel=aura" in out
+    assert "incr_proven=False" in out
+    assert "fiber_live=False" in out or "fiber_live=false" in out
+
+    bufj = io.StringIO()
+    with redirect_stdout(bufj):
+        rc = main(["tui", "--harness-root", str(tmp_path), "--json"])
+    assert rc == 0
+    data = json.loads(bufj.getvalue())
+    assert data.get("kernel") == "aura"
+    assert (data.get("honesty") or {}).get("incr_proven") is False
+    assert (data.get("honesty") or {}).get("fiber_live") is False
+
+    monkeypatch.setenv("AURA_BUILD_FORCE_PYTHON", "1")
+    buf2 = io.StringIO()
+    with redirect_stdout(buf2):
+        rc = main(["tui", "--harness-root", str(tmp_path)])
+    assert rc == 0
+    out2 = buf2.getvalue()
+    assert "kernel=python" in out2
+    assert "incr_proven=False" in out2

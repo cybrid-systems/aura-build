@@ -10,6 +10,7 @@
 (require "l2" all:)
 (require "export" all:)
 (require "acp" all:)
+(require "tui" all:)
 (require "std/io" all:)
 
 (define (write-response obj)
@@ -189,6 +190,9 @@
 (define (cmd-acp)
   (acp-run))
 
+(define (cmd-tui)
+  (tui-run))
+
 (define (kernel-main)
   (let ((cmd (env-get "AURA_BUILD_CMD" "run")))
     (display "AURA_BUILD_KERNEL cmd=")(display cmd)(newline)
@@ -202,6 +206,7 @@
       ((equal? cmd "harness-show") (cmd-harness-show))
       ((equal? cmd "export") (cmd-export))
       ((equal? cmd "acp") (cmd-acp))
+      ((equal? cmd "tui") (cmd-tui))
       (else
         (display "unknown AURA_BUILD_CMD=")(display cmd)(newline)
         (write-response (hash "ok" #f "error" "unknown_cmd"))

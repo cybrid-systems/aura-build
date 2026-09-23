@@ -5,8 +5,14 @@ full-screen agent chrome and **not** postman physics. Prefer
 ``aura-build tui`` as a session status printer; a Textual/rich loop is deferred
 until deps stay light.
 
+When ``AURA_BIN`` + sidecar are healthy, the CLI shells to the Aura kernel
+(``aura/tui.aura``), which reuses ACP status / prove honesty surfaces and tags
+``kernel=aura``. ``AURA_BUILD_FORCE_PYTHON=1`` (or missing binary) uses this
+Python stub and tags ``kernel=python``. Honesty flags (``incr_proven`` /
+``fiber_live``) are never faked.
+
 Prints: session id, harness routing, L2 stub presence, last trajectory path,
-worldline count, honesty flags. Headless ``run`` remains SSOT.
+worldline count, honesty flags, kernel tag. Headless ``run`` remains SSOT.
 """
 
 from __future__ import annotations
@@ -19,7 +25,7 @@ from aura_build.acp import SessionStatus, acp_status, describe_hooks
 __all__ = ["format_status", "run_tui_stub"]
 
 
-def format_status(status: SessionStatus) -> str:
+def format_status(status: SessionStatus, *, kernel: str = "python") -> str:
     """Human-readable status block for stdout."""
     h = status.honesty or {}
     lines = [
@@ -40,6 +46,7 @@ def format_status(status: SessionStatus) -> str:
         f"fiber_live={h.get('fiber_live', False)} "
         f"l3_online={h.get('l3_online', False)} "
         f"l2_stub_metadata_only={h.get('l2_stub_metadata_only', True)}",
+        f"  kernel={kernel}",
         "  acp hooks: " + ", ".join(sorted(describe_hooks())),
         "  tip: aura-build acp hooks | aura-build run | aura-build l2 promote",
     ]
@@ -51,7 +58,10 @@ def run_tui_stub(
     root: Path | str | None = None,
     traj_search: list[Path] | None = None,
     as_json: bool = False,
+    kernel: str = "python",
 ) -> dict[str, Any]:
     """Gather status and return dict (CLI prints text or JSON)."""
     status = acp_status(root=root, traj_search=traj_search)
-    return status.to_dict()
+    d = status.to_dict()
+    d["kernel"] = kernel
+    return d

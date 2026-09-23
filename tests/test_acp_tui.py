@@ -43,6 +43,7 @@ def test_session_status_and_tui(tmp_path: Path, capsys):
     assert "aura-build tui" in text
     assert "incr_proven=False" in text
     assert "fiber_live=False" in text
+    assert "kernel=python" in text
 
     status = acp_status(root=root)
     assert status.last_episode_id == result.episode["episode_id"]
