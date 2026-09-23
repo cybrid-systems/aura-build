@@ -233,6 +233,33 @@ def chat_completions(
     }
 
 
+MAX_AURA_FILE_BYTES = 12_000
+MAX_AURA_TOTAL_BYTES = 40_000
+
+
+def _cap_aura_source(body: str, *, limit: int = MAX_AURA_FILE_BYTES) -> str:
+    """Truncate oversized model output so repair stays bounded."""
+    if body is None:
+        return ""
+    if len(body) <= limit:
+        return body
+    return body[:limit] + "\n; truncated by extract_aura_sources\n"
+
+
+def _order_sources(out: dict[str, str], names: list[str]) -> dict[str, str]:
+    """Stable fence order: filenames list order, then any extras."""
+    if not names:
+        return dict(out)
+    ordered: dict[str, str] = {}
+    for n in names:
+        if n in out:
+            ordered[n] = out[n]
+    for k, v in out.items():
+        if k not in ordered:
+            ordered[k] = v
+    return ordered
+
+
 def extract_aura_source(text: str) -> str:
     """Pull Aura source from model reply (fenced or raw)."""
     if not text:
@@ -268,6 +295,9 @@ def extract_aura_sources(
     Also a top-level JSON object mapping filename -> source string.
     When ``filenames`` is given and only unnamed fences exist, equal counts
     zip in order; a single unnamed fence maps to the last (entry) filename.
+    Results are returned in ``filenames`` order when provided (stable fence
+    order). Each file is capped at ``MAX_AURA_FILE_BYTES``; total across
+    files at ``MAX_AURA_TOTAL_BYTES``.
     Single-file callers can keep using ``extract_aura_source``.
     """
     if not text:
@@ -289,7 +319,7 @@ def extract_aura_sources(
                         body = v.strip()
                         out[key] = body + ("\n" if not body.endswith("\n") else "")
                 if out:
-                    return out
+                    return _finalize_sources(out, names)
         except json.JSONDecodeError:
             pass
 
@@ -307,8 +337,8 @@ def extract_aura_sources(
         if names:
             filtered = {k: v for k, v in out.items() if k in names}
             if filtered:
-                return filtered
-        return out
+                return _finalize_sources(filtered, names)
+        return _finalize_sources(out, names)
 
     # Unnamed fences — fall back to extract_aura_source style
     unnamed: list[str] = []
@@ -330,17 +360,41 @@ def extract_aura_sources(
 
     if not names:
         if len(unnamed) == 1:
-            return {"program.aura": unnamed[0]}
-        return {f"file{i}.aura": s for i, s in enumerate(unnamed)}
+            return _finalize_sources({"program.aura": unnamed[0]}, [])
+        return _finalize_sources(
+            {f"file{i}.aura": s for i, s in enumerate(unnamed)}, []
+        )
 
     if len(unnamed) == len(names):
-        return dict(zip(names, unnamed))
+        return _finalize_sources(dict(zip(names, unnamed)), names)
     if len(unnamed) == 1 and len(names) >= 1:
-        # Assign sole fence to entry (last) file; leave others for repair
-        return {names[-1]: unnamed[0]}
+        # Assign sole fence to entry (last) file; leave others for repair merge
+        return _finalize_sources({names[-1]: unnamed[0]}, names)
     result: dict[str, str] = {}
     for i, name in enumerate(names):
         if i < len(unnamed):
             result[name] = unnamed[i]
-    return result
+    return _finalize_sources(result, names)
+
+
+def _finalize_sources(out: dict[str, str], names: list[str]) -> dict[str, str]:
+    """Apply per-file / total byte caps and stable filename order."""
+    capped: dict[str, str] = {}
+    total = 0
+    ordered_keys = list(names) if names else list(out.keys())
+    for k in list(out.keys()):
+        if k not in ordered_keys:
+            ordered_keys.append(k)
+    for k in ordered_keys:
+        if k not in out:
+            continue
+        body = _cap_aura_source(out[k], limit=MAX_AURA_FILE_BYTES)
+        if total + len(body) > MAX_AURA_TOTAL_BYTES:
+            remain = max(0, MAX_AURA_TOTAL_BYTES - total)
+            body = _cap_aura_source(body, limit=remain)
+        capped[k] = body
+        total += len(body)
+        if total >= MAX_AURA_TOTAL_BYTES:
+            break
+    return _order_sources(capped, names)
 

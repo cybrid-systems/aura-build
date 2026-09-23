@@ -1,0 +1,28 @@
+{
+  "label": "router",
+  "files": [
+    "table.aura",
+    "match.aura",
+    "main.aura"
+  ],
+  "entry": "main.aura",
+  "run_mode": "cli_multi",
+  "expect": "GET_SLASH=home\nGET_API=api\nGET_API_V1=api\nGET_API_V2=api\nPOST_API=405\nMISS=404\nCOUNT=5",
+  "expect_res": [
+    "GET_SLASH\\s*=\\s*home",
+    "GET_API\\s*=\\s*api",
+    "GET_API_V1\\s*=\\s*api",
+    "GET_API_V2\\s*=\\s*api",
+    "POST_API\\s*=\\s*405",
+    "MISS\\s*=\\s*404",
+    "COUNT\\s*=\\s*5"
+  ],
+  "source_res": [
+    "\\(define\\s+\\(route-register\\b",
+    "\\(define\\s+\\(route-lookup\\b",
+    "route-lookup",
+    "(substring|string-length)"
+  ],
+  "user_extra": "table.aura MUST define (route-register \u2026) and register routes. match.aura MUST define (route-lookup method path) with exact match PLUS one prefix rule using substring/string-length so GET /api/v1 AND GET /api/v2 \u2192 api. main.aura MUST call route-lookup for GET /, GET /api, GET /api/v1, GET /api/v2, POST /api, GET /nope and print COUNT= number of those six results that are not 404 (expect 5). POST /api \u2192 405. Named fences required for all three files in order table.aura, match.aura, main.aura. Aura run: `aura table.aura match.aura main.aura`.",
+  "seed_from_stub": true
+}

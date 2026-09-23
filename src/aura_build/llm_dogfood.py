@@ -38,6 +38,7 @@ TASK_CALC = "calc"
 TASK_KV = "kv"
 TASK_STACK = "stack"
 TASK_BANK = "bank"
+TASK_ROUTER = "router"
 DEFAULT_TASK = TASK_FIB
 DEFAULT_MAX_ROUNDS = 8
 DEFAULT_WORLDLINES = 3
@@ -52,7 +53,9 @@ Rules:
   ```aura main.aura
   ...
   ```
-  (```aura:lib.aura and ```lib.aura also accepted).
+  For 3+ files keep the same named-fence pattern (one fence per required file,
+  stable order as listed). (```aura:lib.aura and ```lib.aura also accepted).
+  Prefer omitting unchanged files on repair when prior sources are provided.
 - Use define/lambda/if/cond/let/display/newline/set!/equal?/number->string.
 - No Python. Prefer Aura CLI multi-file (lib then main) or (load "lib.aura") when asked.
 - Keep programs small and deterministic.
@@ -201,7 +204,12 @@ stack-push/stack-pop/stack-top/stack-size), keep those (define …) forms and
 call them — do not only hardcode display strings. Use \b-safe define forms
 including zero-arity (define (stack-pop) ...).
 When verify stderr is present, treat it as the ground-truth failure reason.
-Return ONE corrected Aura program in a ```aura fence.
+Pay special attention to lines starting with 'verify mismatch line N:' — fix those
+outputs first.
+Single-file: return ONE corrected Aura program in a ```aura fence.
+Multi-file: return EACH required file in a named fence (```aura <filename>).
+Prefer rewriting only the failing file(s); omitted files are kept from the previous
+candidate. Keep fence order stable (table/lib before match before main/entry).
 """
 
 # Task registry: propose prompt + verify regex + empty-reply fallback.
@@ -250,6 +258,23 @@ TASKS: dict[str, dict[str, Any]] = {
         "label": "stack",
         "project": "examples/projects/mini-stack",
         "verify_script": "examples/projects/mini-stack/verify.sh",
+    },
+    # bank/router: thin registry aliases; real prompts/stubs live under --project
+    TASK_BANK: {
+        "label": "bank",
+        "project": "examples/projects/mini-bank",
+        "verify_script": "examples/projects/mini-bank/verify.sh",
+        "user": "",
+        "expect": "A=100\nB=50\nA2=70\nB2=80\nOK=1",
+        "fallback": "",
+    },
+    TASK_ROUTER: {
+        "label": "router",
+        "project": "examples/projects/mini-router",
+        "verify_script": "examples/projects/mini-router/verify.sh",
+        "user": "",
+        "expect": "GET_SLASH=home\nGET_API=api\nGET_API_V1=api\nGET_API_V2=api\nPOST_API=405\nMISS=404\nCOUNT=5",
+        "fallback": "",
     },
 }
 
@@ -369,6 +394,7 @@ def load_project_spec(project: Path | str, *, repo: Path | None = None) -> dict[
         raise ValueError(
             f"project {root} needs verify.sh and/or dogfood.json expect_res"
         )
+    seed_from_stub = bool(meta.get("seed_from_stub"))
     return {
         "user": user,
         "expect": expect,
@@ -383,6 +409,7 @@ def load_project_spec(project: Path | str, *, repo: Path | None = None) -> dict[
         "multi_file": multi,
         "run_mode": run_mode,
         "entry": entry,
+        "seed_from_stub": seed_from_stub,
     }
 
 
@@ -761,8 +788,11 @@ def _propose(
     prev_source: str | None,
     prev_errors: str | None,
     candidate_index: int,
+    prev_sources: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     base_user = str(task_spec["user"])
+    file_list = list(task_spec.get("files") or [])
+    multi = len(file_list) > 1
     if round_i == 0 and not prev_errors:
         user = base_user + f"\n(candidate index={candidate_index}; vary structure slightly)\n"
         messages = [
@@ -771,7 +801,6 @@ def _propose(
         ]
     else:
         err = (prev_errors or "")[:3500]
-        src = (prev_source or "")[:3500]
         expect = str(task_spec.get("expect") or "")
         src_res = task_spec.get("source_res") or []
         struct_hint = ""
@@ -783,27 +812,70 @@ def _propose(
                 f"Required source patterns (all must match; use \\b so zero-arity "
                 f"(define (name) ...) works): {pats}\n"
             )
+        mismatch_hint = ""
+        if "verify mismatch line" in (err or "").lower():
+            mismatch_hint = (
+                "Verify reported line mismatches — fix those exact KEY=value lines "
+                "(prefix rule, method 405, COUNT definition, etc.).\n"
+            )
+        if multi:
+            fence_hint = "\n".join(f"```aura {fn}\n...\n```" for fn in file_list)
+            prev_blocks = []
+            src_map = dict(prev_sources or {})
+            if not src_map and prev_source:
+                # best-effort split from joined "; --- name ---" form
+                parts = str(prev_source).split("; --- ")
+                for part in parts:
+                    if " ---\n" in part or " ---\r\n" in part:
+                        name, _, body = part.partition(" ---")
+                        name = name.strip()
+                        body = body.lstrip("\r\n")
+                        if name:
+                            src_map[name] = body
+            for fn in file_list:
+                body = (src_map.get(fn) or "")[:2500]
+                prev_blocks.append(f"```aura {fn}\n{body}\n```")
+            prev_blob = "\n\n".join(prev_blocks) if prev_blocks else (
+                f"```aura\n{(prev_source or '')[:3500]}\n```"
+            )
+            user_content = (
+                f"{REPAIR_STEER}\nRequired exact output:\n{expect}\n"
+                f"{struct_hint}{mismatch_hint}\n"
+                f"Required files (stable order): {', '.join(file_list)}.\n"
+                f"Emit named fences, e.g.:\n{fence_hint}\n"
+                "Prefer rewrite ONLY files implicated by verify errors; omitted "
+                "files are kept from the previous candidate.\n\n"
+                f"## Previous sources\n{prev_blob}\n\n"
+                f"## Verify errors / stdout\n```\n{err}\n```\n"
+                f"(repair round={round_i} candidate={candidate_index})\n"
+            )
+        else:
+            src = (prev_source or "")[:3500]
+            user_content = (
+                f"{REPAIR_STEER}\nRequired exact output:\n{expect}\n"
+                f"{struct_hint}{mismatch_hint}\n"
+                f"## Previous source\n```aura\n{src}\n```\n\n"
+                f"## Verify errors / stdout\n```\n{err}\n```\n"
+                f"(repair round={round_i} candidate={candidate_index})\n"
+            )
         messages = [
             {"role": "system", "content": SYSTEM_CODEGEN},
-            {
-                "role": "user",
-                "content": (
-                    f"{REPAIR_STEER}\nRequired exact output:\n{expect}\n"
-                    f"{struct_hint}\n"
-                    f"## Previous source\n```aura\n{src}\n```\n\n"
-                    f"## Verify errors / stdout\n```\n{err}\n```\n"
-                    f"(repair round={round_i} candidate={candidate_index})\n"
-                ),
-            },
+            {"role": "user", "content": user_content},
         ]
     result = chat_completions(messages, config=cfg, thinking_disabled=True)
     content = (result.get("content") or "") if result.get("ok") else ""
-    file_list = list(task_spec.get("files") or [])
     sources: dict[str, str] = {}
     source = ""
     if content:
-        if len(file_list) > 1:
+        if multi:
             sources = extract_aura_sources(content, file_list)
+            # Per-file repair merge: keep previous for omitted/empty files
+            if prev_sources:
+                for fn in file_list:
+                    if not (sources.get(fn) or "").strip():
+                        prev = prev_sources.get(fn) or ""
+                        if prev.strip():
+                            sources[fn] = prev
             source = chr(10).join(
                 f"; --- {fn} ---{chr(10)}{sources.get(fn, '')}"
                 for fn in file_list
@@ -968,6 +1040,7 @@ def run_closed_loop(
     success = False
     selected_id = "wl-0"
     last_source = ""
+    last_sources: dict[str, str] = {}
     last_errors = ""
 
     # Optional harness canary via Aura (best-effort; ignore refuse)
@@ -996,6 +1069,46 @@ def run_closed_loop(
         except Exception:
             canary_mid = None
 
+    # Sticky projects: verify stub first so round-0 propose is a repair (fail→repair).
+    if task_spec.get("seed_from_stub") and isinstance(task_spec.get("fallback"), dict):
+        files_seed = list(task_spec.get("files") or [])
+        if files_seed:
+            seed_dir = ws_root / "candidates" / "stub-seed"
+            seed_dir.mkdir(parents=True, exist_ok=True)
+            fb = task_spec["fallback"]
+            for fn in files_seed:
+                (seed_dir / fn).write_text(str(fb.get(fn) or ""), encoding="utf-8")
+            entry_name = str(task_spec.get("entry") or files_seed[-1])
+            seed_ver = verify_aura_program(
+                seed_dir / entry_name,
+                expect_re=expect_re,
+                source_res=task_spec.get("source_res"),
+                aura_bin=aura_bin,
+                verify_script=verify_script,
+                candidate_dir=seed_dir,
+                files=files_seed,
+            )
+            last_sources = {
+                fn: str(fb.get(fn) or "") for fn in files_seed
+            }
+            last_source = chr(10).join(
+                f"; --- {fn} ---{chr(10)}{last_sources.get(fn, '')}" for fn in files_seed
+            )
+            last_errors = (
+                f"stdout:\n{seed_ver.get('stdout', '')}\n"
+                f"stderr:\n{seed_ver.get('stderr', '')}\n"
+                "(seed_from_stub: previous candidate was project stub; repair it)\n"
+            )
+            rounds_log.append(
+                {
+                    "round": -1,
+                    "selected_id": "stub-seed",
+                    "passed": bool(seed_ver.get("passed")),
+                    "fitness": float(seed_ver.get("fitness") or 0.0),
+                    "seed_from_stub": True,
+                }
+            )
+
     for round_i in range(max_rounds):
         round_wls: list[dict[str, Any]] = []
         fitness_by_id: dict[str, float] = {}
@@ -1006,13 +1119,14 @@ def run_closed_loop(
             cdir = ws_root / "candidates" / cid
             cdir.mkdir(parents=True, exist_ok=True)
             # First worldline repairs from last errors; others diversify from base prompt
-            if i == 0 and round_i > 0:
+            if i == 0 and (round_i > 0 or last_errors):
                 prop = _propose(
                     cfg,
                     task_spec=task_spec,
                     round_i=round_i,
                     prev_source=last_source,
                     prev_errors=last_errors,
+                    prev_sources=last_sources,
                     candidate_index=i,
                 )
             else:
@@ -1024,6 +1138,7 @@ def run_closed_loop(
                     prev_errors=last_errors if i == 0 and round_i > 0 else (
                         last_errors if round_i > 0 else None
                     ),
+                    prev_sources=last_sources if round_i > 0 else None,
                     candidate_index=i,
                 )
                 if round_i > 0 and i > 0 and last_errors:
@@ -1034,6 +1149,7 @@ def run_closed_loop(
                         round_i=round_i,
                         prev_source=last_source,
                         prev_errors=last_errors + f"\n(variant {i})",
+                        prev_sources=last_sources,
                         candidate_index=i,
                     )
 
@@ -1043,12 +1159,17 @@ def run_closed_loop(
             source = prop.get("source") or ""
             fallback = task_spec.get("fallback")
             if multi:
-                if isinstance(fallback, dict):
-                    for fn in files:
-                        if not (sources_map.get(fn) or "").strip():
+                # Per-file merge: prior candidate > stub fallback for omitted fences
+                for fn in files:
+                    if not (sources_map.get(fn) or "").strip():
+                        if (last_sources.get(fn) or "").strip():
+                            sources_map[fn] = last_sources[fn]
+                        elif isinstance(fallback, dict):
                             sources_map[fn] = str(fallback.get(fn) or "")
                 if not any((sources_map.get(fn) or "").strip() for fn in files):
-                    if isinstance(fallback, dict):
+                    if last_sources:
+                        sources_map = {fn: str(last_sources.get(fn) or "") for fn in files}
+                    elif isinstance(fallback, dict):
                         sources_map = {fn: str(fallback.get(fn) or "") for fn in files}
                     else:
                         sources_map = {files[-1]: str(fallback or FIB_FALLBACK)}
@@ -1163,6 +1284,17 @@ def run_closed_loop(
         discarded = _discard_losers(ws_root, selected_id, fitness_by_id)
         best = next(w for w in round_wls if w["id"] == selected_id)
         last_source = sources[selected_id]
+        # Capture per-file map for next-round partial repair merge
+        last_sources = {}
+        if task_spec.get("multi_file"):
+            sel_cand = ws_root / "candidates" / selected_id
+            for fn in list(task_spec.get("files") or []):
+                fp = sel_cand / fn
+                if fp.is_file():
+                    try:
+                        last_sources[fn] = fp.read_text(encoding="utf-8")
+                    except OSError:
+                        pass
         last_errors = best["eval"]["notes"]
         if not best["eval"]["passed"]:
             # richer error feed for repair

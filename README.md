@@ -366,6 +366,13 @@ aura-build llm-dogfood --task kv --max-rounds 8 --worldlines 3 --json
 aura-build llm-dogfood --project examples/projects/mini-bank --max-rounds 12 \
   --worldlines 3 --out trajectories/mini_bank_dogfood.jsonl --json
 ./examples/projects/mini-bank/verify.sh examples/projects/mini-bank/stub  # expect fail
+
+# Harder 3-file sticky router (table + match + main): exact + prefix + 405
+aura-build llm-dogfood --project examples/projects/mini-router --max-rounds 12 \
+  --worldlines 3 --out trajectories/mini_router_dogfood.jsonl --json
+# registry alias:
+aura-build llm-dogfood --task router --max-rounds 12 --worldlines 3 --json
+./examples/projects/mini-router/verify.sh examples/projects/mini-router/stub  # expect fail
 ```
 
 Tasks: `fib` (see `examples/minimax_fib_task.md`), `greet` (see
@@ -392,6 +399,23 @@ actions/fitness; API keys are redacted.
 - **Friction → fix:** `llm-dogfood --project …` still defaulted `--task fib`, so
   traj/`summary.task` lied as `fib` while verifying mini-kv; now project label
   wins unless the project was auto-loaded from an explicit registry `--task`.
+
+### Dogfood lessons (mini-router / 3-file)
+
+- **Friction → fix:** 2-file extract assumed lib+main; `extract_aura_sources` now
+  keeps stable fence order for 3+ files, zips unnamed fences, and caps per-file /
+  total bytes so runaway fences cannot blow the workspace.
+- **Friction → fix:** repair always asked for ONE program; multi-file repair now
+  requests named fences, highlights `verify mismatch line N:` stderr, and
+  **merges omitted files from the previous candidate** (per-file repair) instead
+  of resetting to stubs.
+- **Friction → fix:** CLI listed `--task bank` without a TASKS entry; bank +
+  router are thin registry aliases that auto-load `examples/projects/mini-*`.
+- **Sticky stub lesson:** mini-router stubs break prefix (`GET_API_V1`/`V2`) and POST
+  405 on purpose so MiniMax must fail→repair across table/match/main.
+- **Friction → fix:** MiniMax often one-shot the 3-file router from the goal alone;
+  `dogfood.json` `seed_from_stub: true` now verifies the sticky stub first and feeds
+  that failure into round-0 repair so the closed loop exercises fail→repair.
 
 ### Self-evolve after external dogfood
 

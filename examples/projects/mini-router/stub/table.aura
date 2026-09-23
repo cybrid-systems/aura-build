@@ -1,0 +1,11 @@
+; Intentionally sticky — registers GET routes; POST /api wrongly mapped to api
+(define routes '())
+(define (route-register method path handler)
+  (set! routes (cons (list method path handler) routes)))
+(define (route-table) routes)
+(define (routes-init)
+  (set! routes '())
+  (route-register "GET" "/" "home")
+  (route-register "GET" "/api" "api")
+  ; wrong: POST should be 405, not api
+  (route-register "POST" "/api" "api"))

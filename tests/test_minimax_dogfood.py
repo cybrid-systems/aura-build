@@ -945,3 +945,242 @@ def test_closed_loop_mocked_bank_multifile(monkeypatch, tmp_path):
     dog = ep["runtime"]["dogfood"]
     assert dog.get("multi_file") is True or "lib.aura" in (dog.get("files") or [])
 
+
+
+ROUTER_TABLE = """(define routes '())
+(define (route-register method path handler)
+  (set! routes (cons (list method path handler) routes)))
+(define (route-table) routes)
+(define (routes-init)
+  (set! routes '())
+  (route-register "GET" "/" "home")
+  (route-register "GET" "/api" "api")
+  (route-register "POST" "/api" "405"))
+"""
+
+ROUTER_MATCH = """(define (path-prefix? path prefix)
+  (let ((n (string-length prefix)))
+    (if (< (string-length path) n)
+        #f
+        (equal? (substring path 0 n) prefix))))
+(define (lookup-exact method path rs)
+  (if (null? rs)
+      #f
+      (let ((r (car rs)))
+        (if (and (equal? (car r) method) (equal? (car (cdr r)) path))
+            (car (cdr (cdr r)))
+            (lookup-exact method path (cdr rs))))))
+(define (route-lookup method path)
+  (let ((hit (lookup-exact method path (route-table))))
+    (if hit
+        hit
+        (if (and (equal? method "GET") (path-prefix? path "/api"))
+            "api"
+            "404"))))
+"""
+
+ROUTER_MAIN = """(routes-init)
+(define (show label val)
+  (display label)(display "=")(display val)(newline))
+(define c 0)
+(define (hit label method path)
+  (let ((v (route-lookup method path)))
+    (show label v)
+    (if (equal? v "404")
+        0
+        (set! c (+ c 1)))))
+(hit "GET_SLASH" "GET" "/")
+(hit "GET_API" "GET" "/api")
+(hit "GET_API_V1" "GET" "/api/v1")
+(hit "GET_API_V2" "GET" "/api/v2")
+(hit "POST_API" "POST" "/api")
+(hit "MISS" "GET" "/nope")
+(show "COUNT" c)
+"""
+
+ROUTER_REPLY = (
+    "```aura table.aura\n" + ROUTER_TABLE + "```\n"
+    + "```aura match.aura\n" + ROUTER_MATCH + "```\n"
+    + "```aura main.aura\n" + ROUTER_MAIN + "```\n"
+)
+
+
+def test_extract_aura_sources_three_files():
+    from aura_build.minimax import extract_aura_sources
+
+    names = ["table.aura", "match.aura", "main.aura"]
+    got = extract_aura_sources(ROUTER_REPLY, names)
+    assert list(got.keys()) == names  # stable fence order
+    assert "(define (route-register" in got["table.aura"]
+    assert "(define (route-lookup" in got["match.aura"]
+    assert "(route-lookup" in got["main.aura"]
+
+
+def test_extract_aura_sources_three_unnamed_zip():
+    from aura_build.minimax import extract_aura_sources
+
+    reply = (
+        "```aura\n(define (route-register m p h) 1)\n```\n"
+        "```aura\n(define (route-lookup m p) 404)\n```\n"
+        "```aura\n(display 1)\n```\n"
+    )
+    names = ["table.aura", "match.aura", "main.aura"]
+    got = extract_aura_sources(reply, names)
+    assert list(got.keys()) == names
+    assert "route-register" in got["table.aura"]
+    assert "route-lookup" in got["match.aura"]
+
+
+def test_extract_aura_sources_byte_cap():
+    from aura_build.minimax import extract_aura_sources, MAX_AURA_FILE_BYTES
+
+    huge = "x" * (MAX_AURA_FILE_BYTES + 500)
+    reply = f"```aura table.aura\n{huge}\n```\n```aura match.aura\n(define (route-lookup m p) 1)\n```\n"
+    got = extract_aura_sources(reply, ["table.aura", "match.aura", "main.aura"])
+    assert "table.aura" in got
+    assert len(got["table.aura"]) <= MAX_AURA_FILE_BYTES + 80
+    assert "truncated" in got["table.aura"]
+
+
+def test_load_project_spec_mini_router_three_files():
+    from aura_build.llm_dogfood import load_project_spec
+    from aura_build.kernel import repo_root
+
+    spec = load_project_spec(repo_root() / "examples/projects/mini-router")
+    assert spec["label"] == "router"
+    assert spec["multi_file"] is True
+    assert spec["files"] == ["table.aura", "match.aura", "main.aura"]
+    assert spec["entry"] == "main.aura"
+    assert spec["run_mode"] == "cli_multi"
+    assert isinstance(spec["fallback"], dict)
+    assert set(spec["fallback"]) >= {"table.aura", "match.aura", "main.aura"}
+    assert "route-lookup" in spec["user"] or "route-lookup" in str(spec.get("source_res"))
+    assert spec.get("seed_from_stub") is True
+
+
+def test_parser_lists_router_and_bank_tasks():
+    dog = None
+    for action in build_parser()._subparsers._group_actions:
+        dog = action.choices.get("llm-dogfood")
+        if dog is not None:
+            break
+    assert dog is not None
+    task_choices = None
+    for act in dog._actions:
+        if "--task" in (act.option_strings or []):
+            task_choices = act.choices
+            break
+    assert task_choices is not None
+    assert "router" in task_choices
+    assert "bank" in task_choices
+
+
+def test_verify_good_router_multifile(tmp_path):
+    from aura_build.llm_dogfood import verify_aura_program, load_project_spec
+    from aura_build.runtime import resolve_aura_bin
+    from aura_build.kernel import repo_root
+
+    bin_path = resolve_aura_bin()
+    if not bin_path:
+        return
+    spec = load_project_spec(repo_root() / "examples/projects/mini-router")
+    cand = tmp_path / "cand"
+    cand.mkdir()
+    (cand / "table.aura").write_text(ROUTER_TABLE, encoding="utf-8")
+    (cand / "match.aura").write_text(ROUTER_MATCH, encoding="utf-8")
+    (cand / "main.aura").write_text(ROUTER_MAIN, encoding="utf-8")
+    got = verify_aura_program(
+        cand / "main.aura",
+        expect_re=spec["expect_re"],
+        source_res=spec["source_res"],
+        aura_bin=bin_path,
+        verify_script=spec["verify_script"],
+        candidate_dir=cand,
+        files=spec["files"],
+    )
+    assert got["passed"] is True
+    assert got["via"] == "verify_script"
+
+
+def test_verify_router_stub_fails():
+    from aura_build.llm_dogfood import verify_aura_program, load_project_spec
+    from aura_build.runtime import resolve_aura_bin
+    from aura_build.kernel import repo_root
+
+    bin_path = resolve_aura_bin()
+    if not bin_path:
+        return
+    spec = load_project_spec(repo_root() / "examples/projects/mini-router")
+    stub = repo_root() / "examples/projects/mini-router/stub"
+    got = verify_aura_program(
+        stub / "main.aura",
+        expect_re=spec["expect_re"],
+        source_res=spec["source_res"],
+        aura_bin=bin_path,
+        verify_script=spec["verify_script"],
+        candidate_dir=stub,
+        files=spec["files"],
+    )
+    assert got["passed"] is False
+    assert "mismatch" in (got["stderr"] or "").lower() or got["exit_code"] != 0
+
+
+def test_closed_loop_mocked_router_three_files(monkeypatch, tmp_path):
+    """Mock MiniMax returns 3 named fences; verify.sh multi-file oracle."""
+
+    class FakeCfg:
+        api_key = "sk-test-fake-key-not-real"
+        base_url = "https://api.minimaxi.com/v1"
+        model = "MiniMax-M3"
+        key_file = "/tmp/fake"
+        env_file = "/tmp/fake.env"
+
+        def public_dict(self):
+            return {
+                "provider": "minimax",
+                "base_url": self.base_url,
+                "model": self.model,
+                "api_key": "<redacted:secret>",
+            }
+
+    def fake_chat(messages, config=None, **kwargs):
+        return {
+            "ok": True,
+            "content": ROUTER_REPLY,
+            "model": "MiniMax-M3",
+            "error": "",
+        }
+
+    monkeypatch.setattr("aura_build.llm_dogfood.chat_completions", fake_chat)
+    monkeypatch.setattr("aura_build.llm_dogfood.prefer_aura_kernel", lambda: False)
+
+    from aura_build.llm_dogfood import run_closed_loop
+    from aura_build.runtime import resolve_aura_bin
+    from aura_build.kernel import repo_root
+
+    if not resolve_aura_bin():
+        return
+
+    out = tmp_path / "traj.jsonl"
+    ws = tmp_path / "ws"
+    summary = run_closed_loop(
+        task=None,
+        project=repo_root() / "examples/projects/mini-router",
+        max_rounds=2,
+        worldlines=2,
+        out=out,
+        workspace=ws,
+        harness_root=tmp_path / "harness",
+        keep_workspace=True,
+        config=FakeCfg(),  # type: ignore[arg-type]
+    )
+    assert summary["success"] is True
+    assert summary["task"] == "router"
+    assert "mini-router" in summary["project"]
+    sel = Path(summary["final_program"]).parent
+    assert (sel / "table.aura").is_file()
+    assert (sel / "match.aura").is_file()
+    ep = json.loads(out.read_text(encoding="utf-8").strip().splitlines()[0])
+    dog = ep["runtime"]["dogfood"]
+    assert dog.get("multi_file") is True
+    assert dog.get("files") == ["table.aura", "match.aura", "main.aura"]

@@ -1,0 +1,17 @@
+'; Broken main — wrong COUNT (counts all lookups including 404); still calls route-lookup
+(routes-init)
+(define (show label val)
+  (display label)(display "=")(display val)(newline))
+(define c 0)
+(define (hit label method path)
+  (let ((v (route-lookup method path)))
+    (show label v)
+    ; wrong: increments even on 404
+    (set! c (+ c 1))))
+(hit "GET_SLASH" "GET" "/")
+(hit "GET_API" "GET" "/api")
+(hit "GET_API_V1" "GET" "/api/v1")
+(hit "GET_API_V2" "GET" "/api/v2")
+(hit "POST_API" "POST" "/api")
+(hit "MISS" "GET" "/nope")
+(show "COUNT" c)

@@ -1,0 +1,12 @@
+; Intentionally sticky — exact-only lookup; no prefix so GET /api/v1 → 404
+(define (lookup-exact method path rs)
+  (if (null? rs)
+      #f
+      (let ((r (car rs)))
+        (if (and (equal? (car r) method) (equal? (car (cdr r)) path))
+            (car (cdr (cdr r)))
+            (lookup-exact method path (cdr rs))))))
+(define (route-lookup method path)
+  ; broken: no prefix rule for /api
+  (let ((hit (lookup-exact method path (route-table))))
+    (if hit hit "404")))
