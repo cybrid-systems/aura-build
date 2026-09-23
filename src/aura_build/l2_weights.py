@@ -23,6 +23,7 @@ __all__ = [
     "list_l2_artifacts",
     "load_l2_artifact",
     "promote_l2_offline",
+    "host_cli",
     "resolve_l2_weights",
     "weights_dir",
 ]
@@ -226,3 +227,70 @@ def promote_l2_offline(
     if ref is None:
         raise L2PromoteError(f"wrote {path} but failed to reload")
     return ref
+
+
+def host_cli(
+    op: str,
+    *,
+    root: Path | str,
+    weights_id: str = "",
+    notes: str = "",
+    from_export: Path | str | None = None,
+    overwrite: bool = False,
+    as_json: bool = False,
+) -> int:
+    """Thin host L2 metadata I/O / promote --from-export corpus gate."""
+    import sys
+
+    if op == "show":
+        ref = resolve_l2_weights(weights_id, root=root)
+        if ref is None:
+            print("null")
+            return 1
+        if as_json:
+            print(json.dumps(ref.to_dict(), indent=2, sort_keys=True))
+        else:
+            print(
+                f"id={ref.weights_id} loaded={ref.loaded} stub={ref.stub} "
+                f"artifact_present={ref.artifact_present} "
+                f"created={ref.created or '-'} path={ref.artifact_path or '-'}"
+            )
+        return 0
+    if op == "list":
+        refs = list_l2_artifacts(root=root)
+        payload = [r.to_dict() for r in refs]
+        if as_json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            if not refs:
+                print("l2 weights: (none)")
+            for r in refs:
+                print(
+                    f"id={r.weights_id} stub={r.stub} "
+                    f"created={r.created or '-'} path={r.artifact_path}"
+                )
+        return 0
+    if op == "promote":
+        try:
+            ref = promote_l2_offline(
+                weights_id,
+                notes=notes,
+                root=root,
+                export_path=from_export,
+                overwrite=overwrite,
+            )
+        except L2PromoteError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        if as_json:
+            print(json.dumps(ref.to_dict(), indent=2, sort_keys=True))
+        else:
+            tag = "python_host" if from_export is not None else ""
+            extra = f" kernel={tag}" if tag else ""
+            print(
+                f"promoted id={ref.weights_id} stub={ref.stub} "
+                f"artifact_present={ref.artifact_present} path={ref.artifact_path}"
+                f"{extra}"
+            )
+        return 0
+    return 2

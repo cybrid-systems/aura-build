@@ -63,9 +63,9 @@ Trajectory / stdout show `kernel=aura` on the kernel path.
 | `harness.py` canary engine | `default_root` + `AUTOPROMOTE_ENV` only — product in `aura/harness.aura` |
 | `runtime.py` SimulatedBackend / AuraBackend orch | probe + libstdc++ sidecar helpers for `kernel.py` only |
 
-**Rough host LOC (excl. tests):** ~1.85k lines (`cli` ~810, rest thin). Product logic LOC lives under `aura/` (~2k).
+**Rough host LOC (excl. tests):** ~1.9k lines (`cli` ~360 dispatch + `cli_parser` ~200 flags; rest thin). Product logic LOC lives under `aura/` (~2k).
 
-**Still in Python (host):** `cli.py`, `kernel.py`, `runtime.py` (probe + sidecar),
+**Still in Python (host):** `cli.py` + `cli_parser.py`, `kernel.py`, `runtime.py` (probe + sidecar),
 `export.py` (Parquet adapter only), light `schema.py` / `trajectory.py` (host smoke
 gate), `l2_weights.py` (`promote --from-export` corpus gate), thin `memory.py` /
 `harness.py` / `prove_incr.py` refuse helpers, `deprecated.py`.

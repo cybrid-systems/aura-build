@@ -131,7 +131,7 @@ is observed. Details: [storm-still-incr.md](storm-still-incr.md).
 
 | Surface | Role |
 |---------|------|
-| `cli.py` + `kernel.py` | Argparse → env → `aura aura/main.aura`; refuse when unavailable |
+| `cli.py` + `cli_parser.py` + `kernel.py` | Argparse → env → `aura aura/main.aura`; refuse when unavailable |
 | `export.py` | Parquet adapter only (JSON+redaction in `aura/export.aura`) |
 | `l2_weights.py` / thin `memory.py` | Host metadata I/O; `l2 promote --from-export` corpus gate |
 | `prove_incr.py` refuse helper | Honest fail-closed report only (no storm orch) |

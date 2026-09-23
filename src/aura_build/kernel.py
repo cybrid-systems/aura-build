@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -169,3 +170,65 @@ def prefer_aura_kernel() -> bool:
     if raw in ("1", "true", "yes", "on"):
         return False
     return True
+
+
+def clean_kernel_text(s: str) -> str:
+    """Strip Aura REPL noise; normalize #t/#f in KEY=VAL lines for host stdout."""
+    out: list[str] = []
+    for ln in (s or "").splitlines():
+        if not ln.strip() or ln.strip() == "#t":
+            continue
+        ln = (
+            ln.replace("=#t", "=True")
+            .replace("=#f", "=False")
+            .replace("= #t", "= True")
+            .replace("= #f", "= False")
+        )
+        out.append(ln)
+    return "\n".join(out)
+
+
+def emit_kernel_io(result: KernelResult) -> None:
+    """Print cleaned kernel stdout/stderr to the host process streams."""
+    out = clean_kernel_text(result.stdout)
+    if out:
+        print(out)
+    err = clean_kernel_text(result.stderr)
+    if err:
+        print(err, file=sys.stderr)
+
+
+def try_invoke_aura(
+    cmd: str,
+    env_vars: dict[str, str] | None = None,
+    *,
+    aura_bin: str | None = None,
+    aura_ref: str | None = None,
+    harness_root: Path | str | None = None,
+    timeout_s: float = 120.0,
+) -> KernelResult | None:
+    """Invoke Aura when preferred+available; None ⇒ host refuse or host-only fallback.
+
+    Raises AuraUnavailable only if availability passed but exec/timeout failed.
+    """
+    if not prefer_aura_kernel():
+        return None
+    ok, _bin, _err = kernel_available(aura_bin, aura_ref)
+    if not ok:
+        return None
+    return invoke_aura_kernel(
+        cmd,
+        env_vars,
+        aura_bin=aura_bin,
+        aura_ref=aura_ref,
+        harness_root=harness_root,
+        timeout_s=timeout_s,
+    )
+
+
+def kernel_exit_code(result: KernelResult) -> int:
+    if result.exit_code is not None:
+        return int(result.exit_code)
+    return 0 if result.ok else 2
+
+

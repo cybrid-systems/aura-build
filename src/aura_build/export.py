@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 __all__ = [
+    "complete_export_cli",
     "episodes_from_json_array",
     "write_parquet",
 ]
@@ -90,3 +91,57 @@ def write_parquet(
     out.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(out, index=False)
     return out, None
+
+
+def complete_export_cli(
+    *,
+    out_json: Path,
+    cwd: Path,
+    include_raw: bool,
+    no_parquet: bool,
+    parquet_arg: Path | None,
+    as_json: bool,
+    result_meta: dict[str, Any],
+    print_kernel_stdout: str | None = None,
+) -> int:
+    """Parquet adapter + optional JSON summary after Aura export kernel.
+
+    ``print_kernel_stdout`` is cleaned kernel text to emit when not ``as_json``.
+    """
+    import sys
+
+    if print_kernel_stdout and not as_json:
+        print(print_kernel_stdout)
+
+    parquet_path = None
+    parquet_written = False
+    parquet_skip_reason = result_meta.get("parquet_skip_reason")
+    if not no_parquet:
+        try:
+            episodes = episodes_from_json_array(out_json)
+        except (OSError, json.JSONDecodeError, TypeError):
+            episodes = []
+        pq = Path(parquet_arg) if parquet_arg is not None else out_json.with_suffix(".parquet")
+        if not pq.is_absolute():
+            pq = cwd / pq
+        parquet_path, parquet_skip_reason = write_parquet(episodes, pq)
+        parquet_written = parquet_path is not None
+        if parquet_written and not as_json:
+            print(f"parquet={parquet_path}")
+        elif parquet_skip_reason and not as_json:
+            print(parquet_skip_reason, file=sys.stderr)
+
+    if as_json:
+        payload = {
+            "json": str(out_json),
+            "parquet": str(parquet_path) if parquet_path else None,
+            "files_read": result_meta.get("files_read", 0),
+            "episodes_exported": result_meta.get("episodes_exported", 0),
+            "episodes_skipped_invalid": result_meta.get("episodes_skipped_invalid", 0),
+            "redacted": result_meta.get("redacted", not include_raw),
+            "parquet_written": parquet_written,
+            "parquet_skip_reason": parquet_skip_reason,
+            "kernel": "aura",
+        }
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0 if result_meta.get("ok", True) else 2

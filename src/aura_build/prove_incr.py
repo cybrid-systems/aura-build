@@ -15,7 +15,14 @@ from typing import Any
 from aura_build.deprecated import KERNEL_TAG
 from aura_build.harness import default_root
 
-__all__ = ["ProveReport", "doctor_snapshot", "write_refuse_report", "write_report"]
+__all__ = [
+    "ProveReport",
+    "cli_refuse_prove",
+    "doctor_snapshot",
+    "format_doctor_text",
+    "write_refuse_report",
+    "write_report",
+]
 
 
 def _utc_now() -> str:
@@ -121,3 +128,72 @@ def doctor_snapshot(
         ],
         "kernel": honesty["kernel"],
     }
+
+
+def cli_refuse_prove(
+    *,
+    reason_hint: str | None = None,
+    aura_bin: str | None = None,
+    aura_ref: str | None = None,
+    out: Path | str | None = None,
+    root: Path | str | None = None,
+    cycles: int = 0,
+    worldlines: int = 0,
+    as_json: bool = False,
+) -> int:
+    """Honest refuse report path when Aura kernel is unavailable. Exit 0."""
+    from aura_build.kernel import kernel_available
+
+    reason = reason_hint or "aura_binary_missing"
+    ok, _bin, err = kernel_available(aura_bin, aura_ref)
+    if err:
+        reason = err if "missing" in (err or "") else (err or reason)
+        if not ok and err and "GLIBCXX" in err:
+            reason = "aura_glibcxx_mismatch"
+        elif not ok and err:
+            reason = "aura_unhealthy"
+    report, path = write_refuse_report(
+        reason=reason, path=out, root=root, cycles=cycles, worldlines=worldlines
+    )
+    payload = report.to_dict()
+    payload["report_path"] = str(path)
+    payload["kernel"] = KERNEL_TAG
+    if as_json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        print(
+            f"incr_proven={report.incr_proven} measured={report.measured} "
+            f"aura_healthy={report.aura_healthy} reason={report.reason} "
+            f"session_model={report.session_model} fiber_live={report.fiber_live} "
+            f"kernel={KERNEL_TAG} report={path}"
+        )
+    return 0
+
+
+def format_doctor_text(snap: dict[str, Any]) -> str:
+    h = snap["honesty"]
+    lines = [
+        "aura-build doctor",
+        f"  aura_bin        = {snap.get('aura_bin') or '-'}",
+        f"  aura_probe_ok   = {snap.get('aura_probe_ok')}",
+    ]
+    err = snap.get("aura_probe_error")
+    if err:
+        lines.append(f"  aura_probe_error= {str(err)[:200]}")
+    lines.append(f"  prove_report    = {snap.get('prove_incr_report_path')}")
+    latest = snap.get("prove_incr_latest")
+    if latest:
+        lines.append(
+            f"  last_prove      = incr_proven={latest.get('incr_proven')} "
+            f"reason={latest.get('reason')} measured={latest.get('measured')}"
+        )
+    else:
+        lines.append("  last_prove      = (none — run aura-build prove-incr)")
+    lines.append(
+        f"  honesty         = incr_proven={h.get('incr_proven')} "
+        f"fiber_live={h.get('fiber_live')} "
+        f"session_model={h.get('session_model')} "
+        f"l3_online={h.get('l3_online')} kernel={snap.get('kernel')}"
+    )
+    lines.append("  tips: " + " | ".join(snap.get("tips") or []))
+    return "\n".join(lines)
