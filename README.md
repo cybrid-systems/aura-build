@@ -34,7 +34,8 @@ CI green path that pretends Python is the product.
 
 | CLI | When Aura healthy | Without Aura |
 |-----|-------------------|--------------|
-| `run` / `harness-mutate` / `acp` / `tui` / `harness-show` | **Aura kernel** | refuse (`kernel=python_deprecated`, exit 2) |
+| `run` / `harness-mutate` / `pursue` / `acp` / `tui` / `harness-show` | **Aura kernel** | refuse (`kernel=python_deprecated`, exit 2) |
+| `pursue` | **Aura kernel** | refuse (`kernel=python_deprecated`) |
 | `prove-incr` | **Aura kernel** (measured storm) | honest refuse report only (no storm orch) |
 | `doctor` | **Aura kernel** | host snapshot of last report / probe |
 | `export` | **Aura kernel** JSON+redaction; Parquet via thin Python adapter | refuse (`kernel=python_deprecated`) — no host redaction |
@@ -286,6 +287,40 @@ aura-build run --prompt "dogfood select-best" --profile aura-repo \
 aura-build run --prompt "ci" --profile aura-repo --no-live-build --mode simulated
 ```
 
+
+
+
+## pursue --goal (continuous transform)
+
+First-class continuous goal loop owned by the **Aura kernel** (`aura/pursue.aura`).
+Python only parses flags and invokes the kernel (same host path as `run` / `prove-incr`).
+
+Workflow each round:
+
+1. Doctor/prove honesty snapshot (refuse closed if Aura missing or backends incoherent)
+2. Fan-out worldlines (`fiber_graph` when `fiber_live`, else `file`) + mutate:rebind / eval
+3. `select-best`, discard losers, append trajectory
+4. Optional MiniMax **hint only** (`--with-llm`) — never the loop controller
+5. Optional one-shot `harness-mutate` canary (`--harness-mutate`, AUTOPROMOTE off)
+6. Stop on `goal_met` | `max_rounds` | `honesty_fail`
+
+Trajectory per-round fields: `goal`, `round_i`, `selected_id`, `fitness`,
+`worldline_backend`, `fiber_live`, `incr_proven`, `l1_backend`, `stop_reason`.
+
+```bash
+export AURA_BIN=/workspace/aura-redis/.deps/aura/build/aura
+# short smoke (2 rounds × 2 worldlines)
+aura-build pursue --goal "demo select-best fitness" --max-rounds 2 --worldlines 2 \
+  --mode aura --min-fitness 0.8 --json
+
+# example honest lines (backends from probe, never env-faked):
+# pursue honesty worldline_backend=fiber_graph fiber_live=True incr_proven=False l1_backend=hot-strategy
+# pursue round=1/2 selected=wl-1 fitness=0.8854 worldline_backend=fiber_graph fiber_live=True stop_reason=continue
+# pursue done goal_met=False stop_reason=max_rounds best_fitness=0.8854 worldline_backend=fiber_graph kernel=aura
+```
+
+Flags: `--goal` (required), `--predicate fitness_ge:N` / `--min-fitness`, `--max-rounds`,
+`--worldlines`, `--mode aura|simulated|auto`, `--with-llm`, `--harness-mutate`, `--json`.
 
 ### MiniMax dogfood (Post-M5++)
 

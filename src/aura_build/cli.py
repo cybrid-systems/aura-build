@@ -99,6 +99,7 @@ def main(argv: list[str] | None = None) -> int:
         "self-evolve": _cmd_self_evolve,
         "llm": _cmd_llm,
         "llm-dogfood": _cmd_llm_dogfood,
+        "pursue": _cmd_pursue,
     }
     fn = handlers.get(args.cmd)
     return fn(args) if fn else 2
@@ -567,6 +568,101 @@ def _cmd_llm_dogfood(args: argparse.Namespace) -> int:
         print(json.dumps(summary, indent=2, sort_keys=True))
     return 0 if summary.get("ok") else 1
 
+
+
+
+
+def _cmd_pursue(args: argparse.Namespace) -> int:
+    """Continuous goal loop — Aura kernel owns rounds; MiniMax never controls."""
+    root = _root(args)
+    min_fit = args.min_fitness
+    predicate = args.predicate
+    if min_fit is not None and predicate:
+        print("error: use either --min-fitness or --predicate, not both", file=sys.stderr)
+        return 2
+    if min_fit is not None:
+        predicate = f"fitness_ge:{min_fit}"
+        min_fit_s = str(min_fit)
+    elif predicate:
+        min_fit_s = ""
+        if predicate.startswith("fitness_ge:"):
+            min_fit_s = predicate.split(":", 1)[1]
+    else:
+        predicate = "fitness_ge:0.8"
+        min_fit_s = "0.8"
+
+    llm_assist = "off"
+    llm_hint = ""
+    if getattr(args, "with_llm", False):
+        try:
+            from aura_build.minimax import chat_completions, load_minimax_config, redact_secrets
+
+            cfg = load_minimax_config(env_file=getattr(args, "env_file", None))
+            hint_prompt = (
+                "In one short paragraph, refine this coding/optimization goal into a concrete "
+                "success-oriented hint. Do not take control of any loop; hint only.\n\n"
+                f"Goal: {args.goal}"
+            )
+            result = chat_completions(
+                [
+                    {"role": "system", "content": "You assist aura-build pursue with brief hints only."},
+                    {"role": "user", "content": hint_prompt},
+                ],
+                config=cfg,
+                temperature=0.2,
+                max_tokens=256,
+                thinking_disabled=True,
+            )
+            if result.get("ok") and (result.get("content") or "").strip():
+                llm_hint = (result.get("content") or "").strip()[:800]
+                llm_assist = "hint"
+            else:
+                err = redact_secrets(result.get("error") or "llm_failed", cfg.api_key)
+                print(f"pursue: --with-llm unavailable ({err}); continuing without hint", file=sys.stderr)
+                llm_assist = "unavailable"
+        except Exception as exc:  # noqa: BLE001 — honest degrade
+            print(f"pursue: --with-llm unavailable ({exc}); continuing without hint", file=sys.stderr)
+            llm_assist = "unavailable"
+
+    # Mild L1 patch so harness-mutate canary has something to propose (AUTOPROMOTE off).
+    patches = {}
+    if getattr(args, "harness_mutate", False):
+        patches = {"worldline_count": int(args.worldlines)}
+
+    env = {
+        "AURA_BUILD_GOAL": args.goal,
+        "AURA_BUILD_PROMPT": args.goal,
+        "AURA_BUILD_PREDICATE": predicate or "fitness_ge:0.8",
+        "AURA_BUILD_MIN_FITNESS": min_fit_s,
+        "AURA_BUILD_MAX_ROUNDS": str(args.max_rounds),
+        "AURA_BUILD_WORLDLINES": str(args.worldlines),
+        "AURA_BUILD_MODE": args.mode,
+        "AURA_BUILD_REQUESTED_MODE": args.mode,
+        "AURA_BUILD_OUT": str(args.out or Path("trajectories/pursue.jsonl")),
+        "AURA_BUILD_JSON": _b(args.json),
+        "AURA_BUILD_LLM_ASSIST": llm_assist,
+        "AURA_BUILD_LLM_HINT": llm_hint,
+        "AURA_BUILD_PURSUE_HARNESS_MUTATE": _b(getattr(args, "harness_mutate", False)),
+        "AURA_BUILD_HARNESS_PATCHES": __import__("json").dumps(patches),
+        "AURA_BUILD_FITNESS_PATCHES": "{}",
+        "AURA_BUILD_AUTOPROMOTE_FLAG": "",  # never promote from pursue
+        "AURA_BUILD_ATTACH_PROVE": "1",
+    }
+    if args.seed is not None:
+        env["AURA_BUILD_SEED"] = str(args.seed)
+
+    # Multi-round: allow more wall time than a single run
+    timeout = max(180.0, float(args.max_rounds) * 90.0)
+    code = _dispatch(
+        "pursue",
+        env,
+        refuse_as="pursue",
+        aura_bin=args.aura_bin,
+        aura_ref=args.aura_ref,
+        harness_root=root,
+        timeout_s=timeout,
+    )
+    return code if code is not None else 2
 
 
 def console_main() -> None:

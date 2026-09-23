@@ -13,6 +13,7 @@
 (require "tui" all:)
 (require "self_evolve" all:)
 (require "llm_dogfood" all:)
+(require "pursue" all:)
 (require "std/io" all:)
 
 (define (write-response obj)
@@ -243,6 +244,32 @@
                           "kernel" "aura"))
     (if (hash-ref result "ok" #f) 0 1)))
 
+
+(define (cmd-pursue)
+  (let ((result (run-pursue)))
+    (write-response (hash "cmd" "pursue"
+                          "ok" (hash-ref result "ok" #f)
+                          "goal_met" (hash-ref result "goal_met" #f)
+                          "stop_reason" (hash-ref result "stop_reason" "")
+                          "goal" (hash-ref result "goal" "")
+                          "rounds_completed" (hash-ref result "rounds_completed" 0)
+                          "max_rounds" (hash-ref result "max_rounds" 0)
+                          "min_fitness" (hash-ref result "min_fitness" 0)
+                          "best_fitness" (hash-ref result "best_fitness" 0)
+                          "selected_id" (hash-ref result "selected_id" "")
+                          "fitness" (hash-ref result "fitness" (hash-ref result "best_fitness" 0))
+                          "worldline_backend" (hash-ref result "worldline_backend" "file")
+                          "fiber_live" (hash-ref result "fiber_live" #f)
+                          "incr_proven" (hash-ref result "incr_proven" #f)
+                          "l1_backend" (hash-ref result "l1_backend" "file")
+                          "path" (hash-ref result "path" "")
+                          "rounds" (hash-ref result "rounds" (list))
+                          "llm_assist" (hash-ref result "llm_assist" "off")
+                          "error" (hash-ref result "error" "")
+                          "kernel" "aura"))
+    (if (hash-ref result "ok" #f) 0 2)))
+
+
 (define (kernel-main)
   (let ((cmd (env-get "AURA_BUILD_CMD" "run")))
     (display "AURA_BUILD_KERNEL cmd=")(display cmd)(newline)
@@ -259,6 +286,7 @@
       ((equal? cmd "tui") (cmd-tui))
       ((equal? cmd "self-evolve") (cmd-self-evolve))
       ((equal? cmd "llm-dogfood") (cmd-llm-dogfood))
+      ((equal? cmd "pursue") (cmd-pursue))
       (else
         (display "unknown AURA_BUILD_CMD=")(display cmd)(newline)
         (write-response (hash "ok" #f "error" "unknown_cmd"))

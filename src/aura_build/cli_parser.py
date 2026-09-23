@@ -238,6 +238,48 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _common(se, aura=True)
 
+
+    pursue = sub.add_parser(
+        "pursue",
+        help=(
+            "continuous goal-driven loop (Aura kernel): worldlines → select-best "
+            "until fitness_ge / max-rounds; optional MiniMax hint; optional harness-mutate canary"
+        ),
+    )
+    _opt(pursue, "--goal", required=True, help="goal text for the pursue loop")
+    _opt(
+        pursue,
+        "--predicate",
+        default=None,
+        help="success predicate, e.g. fitness_ge:0.8 (default fitness_ge:0.8)",
+    )
+    _opt(pursue, "--min-fitness", type=float, default=None, help="alias for fitness_ge threshold")
+    _opt(pursue, "--max-rounds", type=int, default=8)
+    _opt(pursue, "--worldlines", type=int, default=3)
+    _opt(
+        pursue,
+        "--mode",
+        choices=("simulated", "aura", "auto"),
+        default="aura",
+        help="runtime backend per round (default aura)",
+    )
+    _opt(pursue, "--seed", type=int, default=None)
+    _opt(pursue, "--out", type=Path, default=None, help="trajectory JSONL (default trajectories/pursue.jsonl)")
+    _opt(
+        pursue,
+        "--with-llm",
+        action="store_true",
+        help="optional MiniMax one-shot hint (never controller); requires key",
+    )
+    _opt(
+        pursue,
+        "--harness-mutate",
+        action="store_true",
+        help="optional L1 harness-mutate canary once (AUTOPROMOTE off)",
+    )
+    _opt(pursue, "--env-file", type=Path, default=None, help="MiniMax env file when --with-llm")
+    _common(pursue, aura=True)
+
     doc = sub.add_parser("doctor", help="Aura probe + last prove-incr report")
     _opt(doc, "--skip-probe", action="store_true")
     _common(doc, aura=True)

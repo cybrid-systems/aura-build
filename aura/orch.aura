@@ -1,7 +1,7 @@
 ; aura-build kernel — scout → mutate → eval → select-best
 ; Primary product path. Simulated = pure Aura fitness; aura = in-process mutate:rebind.
 ; Slice 3: fiber_live ⇒ worldline_backend=fiber_graph (fiber:spawn fan-out); else file.
-(export run-episode run-harness-canary select-best)
+(export run-episode run-harness-canary select-best run-backend-episode)
 
 (require "util" all:)
 (require "traj" all:)

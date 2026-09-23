@@ -1,0 +1,234 @@
+;;; aura-build kernel — continuous goal-driven pursue loop
+; Owns scout→mutate→eval→select-best rounds until goal / max-rounds / honesty fail-closed.
+; MiniMax is never the controller (optional host hint only). AUTOPROMOTE stays OFF.
+; Honesty: never invent incr_proven / fiber_live / worldline_backend via env alone.
+(export run-pursue)
+
+(require "util" all:)
+(require "traj" all:)
+(require "orch" all:)
+(require "worldline" all:)
+(require "harness" all:)
+(require "prove" all:)
+(require "std/io" all:)
+(require "std/hash" all:)
+
+(define (pursue-parse-min-fitness)
+  ; Prefer AURA_BUILD_MIN_FITNESS; else parse predicate fitness_ge:N
+  (let* ((raw-min (env-get "AURA_BUILD_MIN_FITNESS" ""))
+         (pred (string-downcase (env-get "AURA_BUILD_PREDICATE" "")))
+         (from-min (if (equal? raw-min "") #f (string->number raw-min))))
+    (if (number? from-min)
+      from-min
+      (if (and (>= (string-length pred) 11)
+               (equal? (substring pred 0 11) "fitness_ge:"))
+        (let ((n (string->number (substring pred 11 (string-length pred)))))
+          (if (number? n) n 0.8))
+        0.8))))
+
+(define (pursue-make-prompt goal hint)
+  (if (or (not (string? hint)) (equal? hint ""))
+    goal
+    (string-append goal "\n\n; llm_hint (non-controller):\n" hint)))
+
+(define (pursue-print-round i max-r sel fit rt stop)
+  (display "pursue round=")(display i)(display "/")(display max-r)
+  (display " selected=")(display sel)
+  (display " fitness=")(display fit)
+  (display " worldline_backend=")(display (hash-ref rt "worldline_backend" "file"))
+  (display " fiber_live=")(display (hash-ref rt "fiber_live" #f))
+  (display " incr_proven=")(display (hash-ref rt "incr_proven" #f))
+  (display " l1_backend=")(display (hash-ref rt "l1_backend" "file"))
+  (display " stop_reason=")(display stop)
+  (display " kernel=aura")
+  (newline))
+
+(define (pursue-enrich-episode ep goal round-i max-r min-fit stop l1-backend llm-assist harness-mut?)
+  (let ((rt (hash-ref ep "runtime")))
+    (hash-set! rt "pursue" (hash "goal" goal
+                                 "round_i" round-i
+                                 "max_rounds" max-r
+                                 "min_fitness" min-fit
+                                 "stop_reason" stop
+                                 "llm_assist" llm-assist
+                                 "harness_mutate" harness-mut?))
+    (hash-set! rt "l1_backend" l1-backend)
+    (hash-set! rt "goal" goal)
+    (hash-set! rt "round_i" round-i)
+    (hash-set! rt "stop_reason" stop)
+    (hash-set! ep "prompt" goal)
+    (hash "episode" ep "runtime" rt)))
+
+(define (pursue-honesty-ok? decision)
+  ; Fail closed only on incoherent claims (env cannot elevate). Missing prove is OK.
+  (let* ((fiber (hash-ref decision "fiber_live" #f))
+         (backend (hash-ref decision "worldline_backend" BACKEND_FILE)))
+    ; fiber_graph requires live denseness; file backend always coherent
+    (if (equal? backend BACKEND_FIBER)
+      (if fiber #t #f)
+      #t)))
+
+(define (run-pursue)
+  (let* ((goal (env-get "AURA_BUILD_GOAL" (env-get "AURA_BUILD_PROMPT" "")))
+         (hint (env-get "AURA_BUILD_LLM_HINT" ""))
+         (llm-assist (env-get "AURA_BUILD_LLM_ASSIST" "off"))
+         (max-r (env-int "AURA_BUILD_MAX_ROUNDS" 8))
+         (n (env-int "AURA_BUILD_WORLDLINES" 3))
+         (min-fit (pursue-parse-min-fitness))
+         (mode-req (env-get "AURA_BUILD_MODE" "aura"))
+         (mode (if (equal? mode-req "auto") "aura" mode-req))
+         (mode (if (or (equal? mode "aura") (equal? mode "simulated")) mode "aura"))
+         (seed-opt (env-get "AURA_BUILD_SEED" ""))
+         (seed (seed-from-prompt goal
+                 (if (equal? seed-opt "") #f (string->number seed-opt))))
+         (harness-root (env-get "AURA_BUILD_HARNESS_ROOT" ".aura-build"))
+         (out (env-get "AURA_BUILD_OUT" "trajectories/pursue.jsonl"))
+         (l1 (env-get "AURA_BUILD_L1" "m3.harness.select_best"))
+         (l2-id (env-get "AURA_BUILD_L2" ""))
+         (l2 (if (equal? l2-id "") #f l2-id))
+         (attach? (env-bool "AURA_BUILD_ATTACH_PROVE" #t))
+         (want-harness (env-bool "AURA_BUILD_PURSUE_HARNESS_MUTATE" #f))
+         (prompt (pursue-make-prompt goal hint))
+         (l1-backend (l1-backend-prefer))
+         (honesty (attach-prove-metadata harness-root))
+         (decision (decide-worldline-backend probe-fiber-session))
+         (bin (env-get "AURA_BIN" "")))
+    (display "pursue goal=")(display goal)(newline)
+    (display "pursue min_fitness=")(display min-fit)
+    (display " max_rounds=")(display max-r)
+    (display " worldlines=")(display n)
+    (display " mode=")(display mode)
+    (display " llm_assist=")(display llm-assist)
+    (display " harness_mutate=")(display want-harness)
+    (display " kernel=aura")(newline)
+    (display "pursue honesty worldline_backend=")(display (hash-ref decision "worldline_backend"))
+    (display " fiber_live=")(display (hash-ref decision "fiber_live" #f))
+    (display " incr_proven=")(display (hash-ref honesty "incr_proven" #f))
+    (display " l1_backend=")(display l1-backend)
+    (display " reason=")(display (hash-ref decision "reason" ""))
+    (newline)
+    (cond
+      ((equal? goal "")
+       (display "pursue ok=false stop_reason=missing_goal kernel=aura")(newline)
+       (hash "ok" #f "goal_met" #f "stop_reason" "missing_goal"
+             "error" "missing_goal" "kernel" "aura" "rounds" (list)))
+      ((equal? bin "")
+       (display "pursue ok=false stop_reason=aura_binary_missing kernel=aura")(newline)
+       (hash "ok" #f "goal_met" #f "stop_reason" "aura_binary_missing"
+             "error" "aura_binary_missing" "kernel" "aura" "rounds" (list)))
+      ((not (pursue-honesty-ok? decision))
+       (display "pursue ok=false stop_reason=honesty_fail kernel=aura")(newline)
+       (hash "ok" #f "goal_met" #f "stop_reason" "honesty_fail"
+             "error" "honesty_fail"
+             "worldline_backend" (hash-ref decision "worldline_backend")
+             "fiber_live" (hash-ref decision "fiber_live" #f)
+             "incr_proven" (hash-ref honesty "incr_proven" #f)
+             "l1_backend" l1-backend
+             "kernel" "aura" "rounds" (list)))
+      (else
+        (let ((harness-note
+                (if want-harness
+                  (let ((hr (run-harness-canary)))
+                    (display "pursue harness_mutate outcome=")
+                    (display (hash-ref hr "outcome" ""))
+                    (display " l1_backend=")
+                    (display (hash-ref hr "l1_backend" l1-backend))
+                    (display " accepted=")
+                    (display (hash-ref hr "accepted" #f))
+                    (newline)
+                    hr)
+                  #f)))
+          (let loop ((i 1)
+                     (rounds (list))
+                     (best-fit -1.0)
+                     (best-sel "")
+                     (last-rt (hash))
+                     (last-path ""))
+            (if (> i max-r)
+              (let ((stop "max_rounds")
+                    (summary (hash "ok" #t
+                                   "goal_met" #f
+                                   "stop_reason" stop
+                                   "goal" goal
+                                   "rounds_completed" max-r
+                                   "max_rounds" max-r
+                                   "min_fitness" min-fit
+                                   "best_fitness" best-fit
+                                   "selected_id" best-sel
+                                   "worldline_backend" (hash-ref last-rt "worldline_backend" (hash-ref decision "worldline_backend"))
+                                   "fiber_live" (hash-ref last-rt "fiber_live" (hash-ref decision "fiber_live" #f))
+                                   "incr_proven" (hash-ref last-rt "incr_proven" (hash-ref honesty "incr_proven" #f))
+                                   "l1_backend" (hash-ref last-rt "l1_backend" l1-backend)
+                                   "llm_assist" llm-assist
+                                   "harness_mutate" want-harness
+                                   "path" last-path
+                                   "rounds" (reverse rounds)
+                                   "kernel" "aura")))
+                (pursue-print-round max-r max-r best-sel best-fit last-rt stop)
+                (display "pursue done goal_met=#f stop_reason=")(display stop)
+                (display " best_fitness=")(display best-fit)(display " kernel=aura")(newline)
+                summary)
+              (let* ((round-seed (+ seed i))
+                     (pack (run-backend-episode prompt round-seed n mode harness-root l1 l2 attach?))
+                     (ep0 (hash-ref pack "episode"))
+                     (sel0 (hash-ref pack "selected"))
+                     (fit0 (hash-ref (hash-ref sel0 "eval") "fitness" 0.0))
+                     (goal-met (>= fit0 min-fit))
+                     (stop (if goal-met "goal_met" (if (>= i max-r) "max_rounds" "continue")))
+                     (enriched (pursue-enrich-episode ep0 goal i max-r min-fit stop l1-backend llm-assist want-harness))
+                     (ep (hash-ref enriched "episode"))
+                     (rt (hash-ref enriched "runtime"))
+                     (path (write-episode ep out))
+                     (round-rec (hash "goal" goal
+                                      "round_i" i
+                                      "selected_id" (hash-ref sel0 "id")
+                                      "fitness" fit0
+                                      "worldline_backend" (hash-ref rt "worldline_backend" "file")
+                                      "fiber_live" (hash-ref rt "fiber_live" #f)
+                                      "incr_proven" (hash-ref rt "incr_proven" #f)
+                                      "l1_backend" l1-backend
+                                      "stop_reason" stop
+                                      "path" path
+                                      "episode_id" (hash-ref ep "episode_id")))
+                     (_ (pursue-print-round i max-r (hash-ref sel0 "id") fit0 rt stop))
+                     (best-fit2 (if (> fit0 best-fit) fit0 best-fit))
+                     (best-sel2 (if (> fit0 best-fit) (hash-ref sel0 "id") best-sel)))
+                (if (or goal-met (>= i max-r))
+                  (let ((summary (hash "ok" #t
+                                       "goal_met" goal-met
+                                       "stop_reason" (if goal-met "goal_met" "max_rounds")
+                                       "goal" goal
+                                       "rounds_completed" i
+                                       "max_rounds" max-r
+                                       "min_fitness" min-fit
+                                       "best_fitness" best-fit2
+                                       "selected_id" best-sel2
+                                       "fitness" fit0
+                                       "worldline_backend" (hash-ref rt "worldline_backend" "file")
+                                       "fiber_live" (hash-ref rt "fiber_live" #f)
+                                       "incr_proven" (hash-ref rt "incr_proven" #f)
+                                       "l1_backend" l1-backend
+                                       "llm_assist" llm-assist
+                                       "harness_mutate" want-harness
+                                       "path" path
+                                       "rounds" (reverse (cons round-rec rounds))
+                                       "kernel" "aura"
+                                       "harness_note" (if harness-note
+                                                        (hash "outcome" (hash-ref harness-note "outcome" "")
+                                                              "accepted" (hash-ref harness-note "accepted" #f)
+                                                              "l1_backend" (hash-ref harness-note "l1_backend" l1-backend))
+                                                        #f))))
+                    (display "pursue done goal_met=")(display goal-met)
+                    (display " stop_reason=")(display (hash-ref summary "stop_reason"))
+                    (display " best_fitness=")(display best-fit2)
+                    (display " worldline_backend=")(display (hash-ref summary "worldline_backend"))
+                    (display " fiber_live=")(display (hash-ref summary "fiber_live"))
+                    (display " incr_proven=")(display (hash-ref summary "incr_proven"))
+                    (display " kernel=aura")(newline)
+                    summary)
+                  (loop (+ i 1)
+                        (cons round-rec rounds)
+                        best-fit2
+                        best-sel2
+                        rt
+                        path))))))))))
