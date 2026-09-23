@@ -12,11 +12,11 @@ if [[ -z "${AURA_BIN:-}" || ! -x "${AURA_BIN}" ]]; then
 fi
 # Structural: named helpers required (reject bare display-literal hardcode)
 src="$(cat "$CAND")"
-if ! printf '%s\n' "$src" | grep -qE '\(define[[:space:]]+\(kv-set[[:space:]]'; then
+if ! printf '%s\n' "$src" | grep -qE '\(define[[:space:]]+\(kv-set\b'; then
   echo "verify fail: missing (define (kv-set …)" >&2
   exit 1
 fi
-if ! printf '%s\n' "$src" | grep -qE '\(define[[:space:]]+\(kv-get[[:space:]]'; then
+if ! printf '%s\n' "$src" | grep -qE '\(define[[:space:]]+\(kv-get\b'; then
   echo "verify fail: missing (define (kv-get …)" >&2
   exit 1
 fi

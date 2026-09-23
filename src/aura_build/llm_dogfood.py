@@ -35,6 +35,7 @@ TASK_FIB = "fib"
 TASK_GREET = "greet"
 TASK_CALC = "calc"
 TASK_KV = "kv"
+TASK_STACK = "stack"
 DEFAULT_TASK = TASK_FIB
 DEFAULT_MAX_ROUNDS = 8
 DEFAULT_WORLDLINES = 3
@@ -138,12 +139,57 @@ KV_FALLBACK = (
     '(display "GET_c=0")(newline)\n'
 )
 
+
+STACK_USER = """Write a small Aura program that implements a tiny mutable stack
+and prints exactly:
+TOP=30
+POP=30
+TOP2=20
+SIZE=2
+EMPTY=0
+each followed by a newline.
+Semantics: start empty; (stack-push 10) (stack-push 20) (stack-push 30);
+(stack-top)->30; (stack-pop)->30; (stack-top)->20; (stack-size)->2; empty->0.
+You MUST include (define (stack-push x) ...), (define (stack-pop) ...),
+(define (stack-top) ...), and (define (stack-size) ...) using set!/cons/car/cdr
+(or equivalent) — do not only hardcode the five display strings.
+Prefer also (define (stack-empty) ...) returning 0/1.
+Prefer display/newline/set!/cons/car/cdr/null?. No extra prose outside the code fence.
+"""
+
+STACK_EXPECT = "TOP=30\nPOP=30\nTOP2=20\nSIZE=2\nEMPTY=0"
+STACK_SUCCESS_RES = [
+    re.compile(r"TOP\s*=\s*30"),
+    re.compile(r"POP\s*=\s*30"),
+    re.compile(r"TOP2\s*=\s*20"),
+    re.compile(r"SIZE\s*=\s*2"),
+    re.compile(r"EMPTY\s*=\s*0"),
+]
+STACK_SOURCE_RES = [
+    re.compile(r"\(define\s+\(stack-push\b"),
+    re.compile(r"\(define\s+\(stack-pop\b"),
+    re.compile(r"\(define\s+\(stack-top\b"),
+    re.compile(r"\(define\s+\(stack-size\b"),
+]
+STACK_FALLBACK = (
+    "; empty model reply fallback\n"
+    "(define stk '())\n"
+    "(define (stack-push x) (set! stk (cons x '())))\n"
+    '(display "TOP=0")(newline)\n'
+    '(display "POP=0")(newline)\n'
+    '(display "TOP2=0")(newline)\n'
+    '(display "SIZE=0")(newline)\n'
+    '(display "EMPTY=1")(newline)\n'
+)
+
 REPAIR_STEER = """The previous Aura candidate failed verification under the Aura binary.
 Fix the program. Keep the same required output contract.
 Common Aura pitfalls: balanced parentheses; use (display x) (newline); recursion via
 (define (fib n) (if (<= n 1) n (+ (fib (- n 1)) (fib (- n 2))))); no Python syntax.
-If the task requires named helpers (e.g. add/mul or kv-set/kv-get), keep those
-(define …) forms and call them — do not only hardcode display strings.
+If the task requires named helpers (e.g. add/mul, kv-set/kv-get, or
+stack-push/stack-pop/stack-top/stack-size), keep those (define …) forms and
+call them — do not only hardcode display strings. Use \b-safe define forms
+including zero-arity (define (stack-pop) ...).
 When verify stderr is present, treat it as the ground-truth failure reason.
 Return ONE corrected Aura program in a ```aura fence.
 """
@@ -184,6 +230,16 @@ TASKS: dict[str, dict[str, Any]] = {
         "label": "kv",
         "project": "examples/projects/mini-kv",
         "verify_script": "examples/projects/mini-kv/verify.sh",
+    },
+    TASK_STACK: {
+        "user": STACK_USER,
+        "expect": STACK_EXPECT,
+        "expect_re": STACK_SUCCESS_RES,
+        "source_res": STACK_SOURCE_RES,
+        "fallback": STACK_FALLBACK,
+        "label": "stack",
+        "project": "examples/projects/mini-stack",
+        "verify_script": "examples/projects/mini-stack/verify.sh",
     },
 }
 
@@ -326,6 +382,28 @@ def load_honesty(harness_root: Path) -> dict[str, Any]:
     return honesty
 
 
+
+def _matched_expect(
+    passed: bool,
+    stdout: str,
+    expect_re: re.Pattern[str] | list[re.Pattern[str]] | None,
+) -> bool:
+    """True if verify passed or any expect pattern / known token appears in stdout."""
+    if passed:
+        return True
+    if expect_re is not None:
+        patterns = expect_re if isinstance(expect_re, list) else [expect_re]
+        if any(bool(p.search(stdout or "")) for p in patterns):
+            return True
+    # Fallback tokens across dogfood tiers (fib/greet/calc/kv/stack)
+    return bool(
+        re.search(
+            r"(?:FIB10=|GREET=|ADD=|MUL=|MIX=|GET_|MISS=|TOP=|POP=|TOP2=|SIZE=|EMPTY=)",
+            stdout or "",
+        )
+    )
+
+
 def _structure_fail_note(source_res: list[re.Pattern[str]] | None) -> str:
     """Human-readable structure failure for repair / traj notes (task-agnostic)."""
     if not source_res:
@@ -426,7 +504,7 @@ def verify_aura_program(
             "stderr": stderr[-4000:],
             "exit_code": proc.returncode,
             "ms": ms,
-            "matched_expect": passed or ("GET_" in stdout or "ADD=" in stdout),
+            "matched_expect": _matched_expect(passed, stdout, expect_re),
             "structure_ok": structure_ok,
             "has_error": (not passed) and bool(
                 re.search(r"(?i)\berror:|\bunbound variable\b", stdout + stderr)
@@ -613,15 +691,26 @@ def _propose(
             {"role": "user", "content": user},
         ]
     else:
-        err = (prev_errors or "")[:2500]
-        src = (prev_source or "")[:2500]
+        err = (prev_errors or "")[:3500]
+        src = (prev_source or "")[:3500]
         expect = str(task_spec.get("expect") or "")
+        src_res = task_spec.get("source_res") or []
+        struct_hint = ""
+        if src_res:
+            pats = ", ".join(
+                getattr(p, "pattern", str(p)) for p in src_res
+            )
+            struct_hint = (
+                f"Required source patterns (all must match; use \\b so zero-arity "
+                f"(define (name) ...) works): {pats}\n"
+            )
         messages = [
             {"role": "system", "content": SYSTEM_CODEGEN},
             {
                 "role": "user",
                 "content": (
-                    f"{REPAIR_STEER}\nRequired exact output token: {expect}\n\n"
+                    f"{REPAIR_STEER}\nRequired exact output:\n{expect}\n"
+                    f"{struct_hint}\n"
                     f"## Previous source\n```aura\n{src}\n```\n\n"
                     f"## Verify errors / stdout\n```\n{err}\n```\n"
                     f"(repair round={round_i} candidate={candidate_index})\n"
@@ -731,7 +820,7 @@ def run_closed_loop(
     registry_task = task
     auto_loaded = False
     # Auto-load project dir only when registry entry opts in via verify_script
-    # (keeps greet/calc baked prompts stable; kv + --project use verify.sh oracle).
+    # (keeps greet/calc baked prompts stable; kv/stack + --project use verify.sh).
     if project is None and task in TASKS and TASKS[task].get("verify_script"):
         proj_rel = TASKS[task].get("project")
         if isinstance(proj_rel, str) and proj_rel.startswith("examples/projects/"):

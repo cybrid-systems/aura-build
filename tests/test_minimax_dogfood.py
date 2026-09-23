@@ -562,3 +562,194 @@ def test_project_alone_does_not_inherit_default_fib_label(monkeypatch, tmp_path)
     assert summary["success"] is True
     assert summary["task"] == "kv"
     assert summary["task"] != "fib"
+
+
+STACK_SRC = """(define stk '())
+(define (stack-push x) (set! stk (cons x stk)))
+(define (stack-pop)
+  (if (null? stk) 'nil
+      (let ((v (car stk))) (set! stk (cdr stk)) v)))
+(define (stack-top) (if (null? stk) 'nil (car stk)))
+(define (stack-size)
+  (define (len xs n) (if (null? xs) n (len (cdr xs) (+ n 1))))
+  (len stk 0))
+(define (stack-empty) (if (null? stk) 1 0))
+(stack-push 10)
+(stack-push 20)
+(stack-push 30)
+(display "TOP=")(display (stack-top))(newline)
+(display "POP=")(display (stack-pop))(newline)
+(display "TOP2=")(display (stack-top))(newline)
+(display "SIZE=")(display (stack-size))(newline)
+(display "EMPTY=")(display (stack-empty))(newline)
+"""
+
+STACK_HARDCODE = """(display "TOP=30")(newline)
+(display "POP=30")(newline)
+(display "TOP2=20")(newline)
+(display "SIZE=2")(newline)
+(display "EMPTY=0")(newline)
+"""
+
+
+def test_parser_lists_stack_task():
+    dog = None
+    for action in build_parser()._subparsers._group_actions:
+        dog = action.choices.get("llm-dogfood")
+        if dog is not None:
+            break
+    assert dog is not None
+    task_choices = None
+    for act in dog._actions:
+        if "--task" in (act.option_strings or []):
+            task_choices = act.choices
+    assert task_choices is not None
+    assert "stack" in task_choices
+
+
+def test_load_project_spec_mini_stack():
+    from aura_build.llm_dogfood import load_project_spec
+    from aura_build.kernel import repo_root
+
+    spec = load_project_spec(repo_root() / "examples/projects/mini-stack")
+    assert spec["label"] == "stack"
+    assert spec["verify_script"] and spec["verify_script"].endswith("verify.sh")
+    assert "TOP=30" in spec["expect"]
+    assert spec["source_res"] and len(spec["source_res"]) >= 4
+    assert "stack-push" in spec["user"]
+
+
+def test_verify_good_stack(tmp_path):
+    from aura_build.llm_dogfood import (
+        STACK_SOURCE_RES,
+        STACK_SUCCESS_RES,
+        verify_aura_program,
+    )
+    from aura_build.runtime import resolve_aura_bin
+    from aura_build.kernel import repo_root
+
+    bin_path = resolve_aura_bin()
+    if not bin_path:
+        return
+    prog = tmp_path / "stack.aura"
+    prog.write_text(STACK_SRC, encoding="utf-8")
+    script = repo_root() / "examples/projects/mini-stack/verify.sh"
+    got = verify_aura_program(
+        prog,
+        expect_re=STACK_SUCCESS_RES,
+        source_res=STACK_SOURCE_RES,
+        aura_bin=bin_path,
+        verify_script=str(script),
+    )
+    assert got["passed"] is True
+    assert got["via"] == "verify_script"
+    assert got["fitness"] == 1.0
+    assert got["matched_expect"] is True
+
+
+def test_verify_stack_rejects_hardcode(tmp_path):
+    from aura_build.llm_dogfood import (
+        STACK_SOURCE_RES,
+        STACK_SUCCESS_RES,
+        verify_aura_program,
+    )
+    from aura_build.runtime import resolve_aura_bin
+    from aura_build.kernel import repo_root
+
+    bin_path = resolve_aura_bin()
+    if not bin_path:
+        return
+    prog = tmp_path / "hard.aura"
+    prog.write_text(STACK_HARDCODE, encoding="utf-8")
+    script = repo_root() / "examples/projects/mini-stack/verify.sh"
+    got = verify_aura_program(
+        prog,
+        expect_re=STACK_SUCCESS_RES,
+        source_res=STACK_SOURCE_RES,
+        aura_bin=bin_path,
+        verify_script=str(script),
+    )
+    assert got["passed"] is False
+    assert got["structure_ok"] is False or got["exit_code"] != 0
+
+
+def test_verify_stack_zero_arity_defines_ok(tmp_path):
+    """Regression: (define (stack-pop) ...) must match source_res / verify.sh (\\\\b)."""
+    from aura_build.llm_dogfood import STACK_SOURCE_RES
+    import re
+
+    src = "(define (stack-pop)\n  1)\n(define (stack-top)\n  2)\n"
+    assert STACK_SOURCE_RES[1].search(src)  # stack-pop
+    assert STACK_SOURCE_RES[2].search(src)  # stack-top
+    # trailing-space pattern must NOT be required
+    bad = re.compile(r"\(define\s+\(stack-pop\s")
+    assert not bad.search(src)
+
+
+def test_closed_loop_mocked_stack_via_project(monkeypatch, tmp_path):
+    """--project path: mock MiniMax returns good stack; verify.sh oracle."""
+
+    class FakeCfg:
+        api_key = "sk-test-fake-key-not-real"
+        base_url = "https://api.minimaxi.com/v1"
+        model = "MiniMax-M3"
+        key_file = "/tmp/fake"
+        env_file = "/tmp/fake.env"
+
+        def public_dict(self):
+            return {
+                "provider": "minimax",
+                "base_url": self.base_url,
+                "model": self.model,
+                "api_key": "<redacted:secret>",
+            }
+
+    def fake_chat(messages, config=None, **kwargs):
+        return {
+            "ok": True,
+            "content": f"```aura\n{STACK_SRC}```",
+            "model": "MiniMax-M3",
+            "error": "",
+        }
+
+    monkeypatch.setattr("aura_build.llm_dogfood.chat_completions", fake_chat)
+    monkeypatch.setattr("aura_build.llm_dogfood.prefer_aura_kernel", lambda: False)
+
+    from aura_build.llm_dogfood import run_closed_loop
+    from aura_build.runtime import resolve_aura_bin
+    from aura_build.kernel import repo_root
+
+    if not resolve_aura_bin():
+        return
+
+    out = tmp_path / "traj.jsonl"
+    ws = tmp_path / "ws"
+    summary = run_closed_loop(
+        task="stack",
+        project=repo_root() / "examples/projects/mini-stack",
+        max_rounds=2,
+        worldlines=2,
+        out=out,
+        workspace=ws,
+        harness_root=tmp_path / "harness",
+        keep_workspace=True,
+        config=FakeCfg(),  # type: ignore[arg-type]
+    )
+    assert summary["success"] is True
+    assert summary["task"] == "stack"
+    assert "mini-stack" in summary["project"]
+    assert summary.get("verify_script")
+    final = Path(summary["final_program"]).read_text(encoding="utf-8")
+    assert "(define (stack-push" in final
+    assert "(define (stack-pop" in final
+    ep = json.loads(out.read_text(encoding="utf-8").strip().splitlines()[0])
+    assert ep["runtime"]["dogfood"]["task"] == "stack"
+    assert "mini-stack" in (ep["runtime"]["dogfood"].get("project") or "")
+
+
+def test_matched_expect_recognizes_stack_tokens():
+    from aura_build.llm_dogfood import _matched_expect, STACK_SUCCESS_RES
+
+    assert _matched_expect(False, "TOP=30\nPOP=30\n", STACK_SUCCESS_RES) is True
+    assert _matched_expect(False, "noise only", STACK_SUCCESS_RES) is False
+    assert _matched_expect(True, "", None) is True

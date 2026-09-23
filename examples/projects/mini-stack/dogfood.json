@@ -1,0 +1,18 @@
+{
+  "label": "stack",
+  "expect": "TOP=30\nPOP=30\nTOP2=20\nSIZE=2\nEMPTY=0",
+  "expect_res": [
+    "TOP\\s*=\\s*30",
+    "POP\\s*=\\s*30",
+    "TOP2\\s*=\\s*20",
+    "SIZE\\s*=\\s*2",
+    "EMPTY\\s*=\\s*0"
+  ],
+  "source_res": [
+    "\\(define\\s+\\(stack-push\\b",
+    "\\(define\\s+\\(stack-pop\\b",
+    "\\(define\\s+\\(stack-top\\b",
+    "\\(define\\s+\\(stack-size\\b"
+  ],
+  "user_extra": "You MUST include (define (stack-push x) ...), (define (stack-pop) ...), (define (stack-top) ...), and (define (stack-size) ...) using set!/cons/car/cdr (or equivalent) so the stack state machine is real — do not only hardcode the five display strings. Prefer also (define (stack-empty) ...) returning 0/1. Call order: push 10, push 20, push 30, then print TOP/POP/TOP2/SIZE/EMPTY from live helpers. Prefer display/newline/set!/cons/car/cdr/null?. No extra prose outside the code fence."
+}

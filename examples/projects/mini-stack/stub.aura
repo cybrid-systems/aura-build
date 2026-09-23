@@ -1,0 +1,12 @@
+; Intentionally wrong/incomplete — dogfood loop must repair to TOP/POP/TOP2/SIZE/EMPTY
+(define stk '())
+(define (stack-push x) (set! stk (cons x '())))
+; missing stack-pop / stack-top / stack-size / stack-empty; wrong prints
+(stack-push 10)
+(stack-push 20)
+(stack-push 30)
+(display "TOP=0")(newline)
+(display "POP=0")(newline)
+(display "TOP2=0")(newline)
+(display "SIZE=0")(newline)
+(display "EMPTY=1")(newline)
