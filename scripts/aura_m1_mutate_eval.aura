@@ -1,10 +1,31 @@
-; aura-build M1 smoke program — mutate:rebind + eval-current
+; aura-build M1 smoke program — mutate:rebind + eval-current + incr-valid probe
 ; Invoked by AuraBackend (or manually: $AURA_BIN scripts/aura_m1_mutate_eval.aura)
 ; Success marker: AURA_BUILD_OK 42
+; Incr-valid (when compile:epoch / hotswap-invalidate / mutation-epoch delta):
+;   AURA_BUILD_INCR_VALID 1
+;   AURA_INCR_VALID=1
 (set-code "(define (m1-cand n) (+ n 0))")
 (eval-current)
+(define epoch0 (or (stats:get "compile:epoch") 0))
+(define h0 (stats:get "query:jit-stats-hash"))
+(define inv0 (or (hash-ref h0 "hotswap-invalidate-total") 0))
+(define mut0 (or (hash-ref h0 "mutation-epoch") 0))
 (mutate:rebind "m1-cand" "(lambda (n) (+ n 2))" "aura-build-m1-smoke")
 (eval-current)
+(define epoch1 (or (stats:get "compile:epoch") 0))
+(define h1 (stats:get "query:jit-stats-hash"))
+(define inv1 (or (hash-ref h1 "hotswap-invalidate-total") 0))
+(define mut1 (or (hash-ref h1 "mutation-epoch") 0))
 (display "AURA_BUILD_OK ")
 (display (m1-cand 40))
 (newline)
+(display "AURA_INCR_META epoch=")(display epoch0)(display "->")(display epoch1)
+(display " inv=")(display inv0)(display "->")(display inv1)
+(display " mut=")(display mut0)(display "->")(display mut1)
+(newline)
+(if (or (> epoch1 epoch0) (> inv1 inv0) (> mut1 mut0))
+  (begin
+    (display "AURA_BUILD_INCR_VALID 1")(newline)
+    (display "AURA_INCR_VALID=1")(newline))
+  (begin
+    (display "AURA_BUILD_INCR_VALID 0")(newline)))

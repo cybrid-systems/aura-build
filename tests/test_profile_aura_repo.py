@@ -117,6 +117,7 @@ def test_aura_repo_episode_shared_workspace(tmp_path: Path):
             workspace_dir=ws,
             keep_workspace=True,
             try_live_build=True,
+            harness_root=tmp_path / ".aura-build",
         ),
     )
     validate_episode(result.episode)
@@ -152,6 +153,7 @@ def test_aura_repo_no_live_build(tmp_path: Path):
             try_live_build=False,
             workspace_dir=tmp_path / "ws",
             keep_workspace=True,
+            harness_root=tmp_path / ".aura-build",
         ),
     )
     validate_episode(result.episode)

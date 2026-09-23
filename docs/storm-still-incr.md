@@ -49,7 +49,9 @@ When `probe_aura` succeeds:
 2. Run **N cycles × W concurrent worldlines** of mutate+eval via `AuraBackend`.
 3. Set `incr_proven=true` **only if** every cycle is `ok` **and** carries an
    **explicit incr-valid signal** (`metrics.incr_valid`, `metrics.incr_proven`,
-   or notes containing `AURA_BUILD_INCR_VALID`).
+   notes containing `AURA_BUILD_INCR_VALID`, or parsed `AURA_INCR_VALID=1`).
+   The Aura bridge derives that signal from real `compile:epoch` /
+   `hotswap-invalidate-total` / `mutation-epoch` deltas (never wall-clock).
 4. Otherwise refuse with
    `storm_cycles_ok_but_no_incr_valid_signal:…` or `storm_cycles_failed:…`.
 
@@ -135,8 +137,10 @@ Official Aura toolchain image: `ghcr.io/cybrid-systems/dev:v1.0.7`.
    ```
 
 Expect: `aura_healthy=true` / probe ok once the sidecar is present.
-`incr_proven` may **still be false** until storm cycles carry an explicit
-incr-valid signal — that is expected; do **not** flip it by hand.
+With a healthy Aura that exposes `compile:epoch` /
+`query:jit-stats-hash`, storm cycles should carry `AURA_BUILD_INCR_VALID 1`
+and `incr_proven` can become **true**. If the marker is absent, refuse stays
+correct — do **not** flip it by hand.
 
 ### Alternatives (same honesty)
 
@@ -145,7 +149,51 @@ incr-valid signal — that is expected; do **not** flip it by hand.
   `AURA_LIBSTDCXX_DIR` at it.
 - Static-link `libstdc++` when building Aura in-container (heavier; not done here).
 
+## Incr-valid probe contract (Aura ↔ aura-build)
+
+Prefer **existing Aura stats** over inventing a counter. The mutate+eval bridge
+(`AuraBackend` / `scripts/aura_m1_mutate_eval.aura`) measures language-wide
+surfaces documented in Aura `docs/stdlib/hot-strategy.md` (Issue #2684):
+
+| Surface | Role |
+|---------|------|
+| `(stats:get "compile:epoch")` | Mutation / compile epoch; bumps on `mutate:rebind` |
+| `query:jit-stats-hash` → `hotswap-invalidate-total` | Lifetime invalidate count; stays elevated after eval |
+| `query:jit-stats-hash` → `mutation-epoch` | Same clock family; delta after rebind |
+
+**Aura program emits (stdout):**
+
+```text
+AURA_BUILD_OK <int>
+AURA_INCR_META epoch=<pre>-><post> inv=<pre>-><post> mut=<pre>-><post>
+AURA_BUILD_INCR_VALID 1
+AURA_INCR_VALID=1
+```
+
+only when `(or (> epoch1 epoch0) (> inv1 inv0) (> mut1 mut0))`. Otherwise
+`AURA_BUILD_INCR_VALID 0` (no env line).
+
+**aura-build parser** (`runtime.parse_incr_valid_signal`):
+
+- Accepts `AURA_BUILD_INCR_VALID 1` **or** `AURA_INCR_VALID=1` on stdout/stderr
+- Rejects `… 0`, missing marker, or failed eval (`incr_valid=false`)
+- Sets `eval.metrics.incr_valid` + includes `AURA_BUILD_INCR_VALID` in notes
+- `prove-incr` sets `incr_proven=true` **only** when every storm cycle has that signal
+
+Demo (healthy Aura + GCC16 sidecar on this box):
+
+```bash
+./scripts/demo_incr_valid_probe.sh
+# or:
+aura-build prove-incr --cycles 2 --worldlines 1 --json
+```
+
+If Aura cannot emit the marker (old binary / missing stats primitives), keep
+refuse with `storm_cycles_ok_but_no_incr_valid_signal` — do **not** invent true.
+
+No Aura C++ change was required for this contract; Redis-specific hooks stay out.
+
 ## Deferred
 
-- Real FlatAST incr-compile telemetry from Aura (marker / metric)
 - Long-lived fiber-hosted multi-worldline session API (needs fiber probe OK)
+- Richer FlatAST metrics JSON file path (optional alternate to stdout markers)

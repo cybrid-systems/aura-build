@@ -68,7 +68,7 @@ Writes validated episode JSONL under `trajectories/` (gitignored). Sample shape 
 | **M5** | `tui` status stub; `acp` hooks; L2 metadata load/promote under `.aura-build/weights/` | TUI ≠ full Textual; `stub=True` always (metadata only); no fiber-live / no `incr_proven=true` / no online L3 |
 | **Post-M5** | `prove-incr` / `doctor`; fail-closed report; fiber probe; **auto-attach** on `run` | `incr_proven=true` only with measured incr-valid signal; fiber-live only with session OK; env alone cannot elevate |
 
-**Beyond / deferred:** real L2 tensor/mmap (`stub=False`); fiber-live FlatAST (needs `AURA_BUILD_FIBER_SESSION_OK`); proven storm-still-incr on a **healthy** Aura (needs incr-valid telemetry); full TUI / editor ACP embed. Harness exists — see [storm-still-incr.md](docs/storm-still-incr.md).
+**Beyond / deferred:** real L2 tensor/mmap (`stub=False`); fiber-live FlatAST (needs `AURA_BUILD_FIBER_SESSION_OK`); full TUI / editor ACP embed. Storm-still-incr is **proven** on healthy Aura via `compile:epoch` / `query:jit-stats-hash` deltas → `AURA_BUILD_INCR_VALID` (see [storm-still-incr.md](docs/storm-still-incr.md)); refuse when marker absent.
 
 ### TUI / ACP (M5)
 

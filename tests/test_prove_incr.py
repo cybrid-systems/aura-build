@@ -219,3 +219,50 @@ def test_doctor_snapshot_honesty_from_report(tmp_path: Path):
         "aura_glibcxx_mismatch",
         "aura_unhealthy",
     ) or snap["prove_incr_latest"]["reason"].startswith("aura_")
+
+
+def test_storm_incr_via_metrics_flag_proves():
+    """metrics.incr_valid=True path (what AuraBackend sets after probe)."""
+
+    def eval_fn(cycle: int, wl: int) -> StormCycleResult:
+        # Mimic _default_aura_eval_fn reading metrics.incr_valid
+        return StormCycleResult(
+            index=cycle,
+            ok=True,
+            elapsed_ms=1,
+            incr_valid=True,
+            notes="aura mutate+eval-current",
+            aura_value=42,
+        )
+
+    report = prove_or_refuse(
+        cycles=2,
+        worldline_pressure=1,
+        eval_fn=eval_fn,
+        probe_fiber=False,
+        aura_bin="/injected",
+    )
+    assert report.incr_proven is True
+    assert report.reason == "storm_still_incr_measured"
+
+
+def test_storm_mixed_incr_signal_refuses():
+    def eval_fn(cycle: int, wl: int) -> StormCycleResult:
+        return StormCycleResult(
+            index=cycle,
+            ok=True,
+            elapsed_ms=1,
+            incr_valid=(cycle == 0),
+            notes="partial",
+        )
+
+    report = prove_or_refuse(
+        cycles=2,
+        worldline_pressure=1,
+        eval_fn=eval_fn,
+        probe_fiber=False,
+    )
+    assert report.measured is True
+    assert report.incr_proven is False
+    assert "no_incr_valid_signal" in report.reason
+    assert report.cycles_incr_valid == 1

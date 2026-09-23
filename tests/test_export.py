@@ -26,7 +26,7 @@ def _write_jsonl(path: Path, episodes: list[dict]) -> None:
 
 
 def test_redact_strips_abs_paths_and_secrets():
-    ep = run_episode("x", OrchConfig(seed=1, n_worldlines=2)).episode
+    ep = run_episode("x", OrchConfig(seed=1, n_worldlines=2, attach_prove=False)).episode
     ep["runtime"]["aura_ref"] = "/workspace/aura-grok"
     ep["runtime"]["workspace"] = "/tmp/aura-build-ws/abc"
     ep["prompt"] = "use api_key=sk-secretvalue1234567890 and Bearer tok_abc12345"
@@ -51,7 +51,12 @@ def test_export_json_array_default_redact(tmp_path: Path):
     jsonl = tmp_path / "trajectories" / "a.jsonl"
     ep = run_episode(
         "export me",
-        OrchConfig(seed=2, n_worldlines=2, workspace_dir=tmp_path / "ws"),
+        OrchConfig(
+            seed=2,
+            n_worldlines=2,
+            workspace_dir=tmp_path / "ws",
+            harness_root=tmp_path / ".aura-build",
+        ),
     ).episode
     # Force an absolute path into runtime for filter check.
     ep["runtime"]["aura_ref"] = str(tmp_path / "fake-aura")
@@ -77,7 +82,7 @@ def test_export_json_array_default_redact(tmp_path: Path):
 
 def test_export_include_raw_keeps_paths(tmp_path: Path):
     jsonl = tmp_path / "e.jsonl"
-    ep = run_episode("raw", OrchConfig(seed=3, n_worldlines=1)).episode
+    ep = run_episode("raw", OrchConfig(seed=3, n_worldlines=1, attach_prove=False)).episode
     ep["runtime"]["aura_ref"] = "/workspace/keep-me"
     TrajectoryWriter(jsonl).append(ep)
     out_json = tmp_path / "raw.json"

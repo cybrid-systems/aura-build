@@ -16,7 +16,10 @@ Integration points (AuraBackend → live FlatAST)
 3. Invocation:
    - ``aura <file.aura>`` (preferred) or ``aura -e '…'``
    - success marker on stdout: ``AURA_BUILD_OK <int>``
-   - non-zero exit or missing marker ⇒ eval failed (no silent simulated fill)
+   - incr-valid marker (optional, honest only): ``AURA_BUILD_INCR_VALID 1``
+     and/or ``AURA_INCR_VALID=1`` on stdout/stderr after measuring Aura
+     ``compile:epoch`` / ``query:jit-stats-hash`` deltas across mutate:rebind
+   - non-zero exit or missing OK marker ⇒ eval failed (no silent simulated fill)
 
 4. Honesty rules:
    - ``runtime.mode`` in trajectories is the backend actually used
@@ -44,6 +47,30 @@ from typing import Any, Callable, Protocol, runtime_checkable
 
 OK_MARKER = "AURA_BUILD_OK"
 _OK_RE = re.compile(rf"{re.escape(OK_MARKER)}\s+(-?\d+)")
+
+# Incr-valid probe contract (see docs/storm-still-incr.md):
+# Aura mutate+eval programs emit an explicit marker when FlatAST/compile
+# surfaces show a real delta (compile:epoch / hotswap-invalidate-total /
+# mutation-epoch). aura-build never invents this — parse stdout/stderr only.
+INCR_VALID_MARKER = "AURA_BUILD_INCR_VALID"
+INCR_VALID_ENV_LINE = "AURA_INCR_VALID=1"
+_INCR_VALID_RE = re.compile(rf"{re.escape(INCR_VALID_MARKER)}\s+1\b")
+
+
+def parse_incr_valid_signal(stdout: str = "", stderr: str = "") -> bool:
+    """Return True only when Aura emitted an explicit incr-valid marker.
+
+    Accepted forms (stdout or stderr):
+    - ``AURA_BUILD_INCR_VALID 1`` (value must be exactly 1)
+    - ``AURA_INCR_VALID=1``
+
+    ``AURA_BUILD_INCR_VALID 0`` / missing marker ⇒ False. Never invent True.
+    """
+    blob = f"{stdout or ''}\n{stderr or ''}"
+    if INCR_VALID_ENV_LINE in blob:
+        return True
+    return _INCR_VALID_RE.search(blob) is not None
+
 
 _DEFAULT_BIN_CANDIDATES = (
     "/workspace/aura-grok/build/aura",
@@ -223,6 +250,10 @@ class AuraBackend:
             fitness = 0.45
         else:
             fitness = 0.1
+        incr_valid = bool(result.get("incr_valid"))
+        notes = str(result.get("notes") or "aura mutate+eval-current")
+        if incr_valid and INCR_VALID_MARKER not in notes:
+            notes = f"{notes}; {INCR_VALID_MARKER}"
         return {
             "id": wl["id"],
             "parent_id": wl.get("parent_id"),
@@ -237,8 +268,9 @@ class AuraBackend:
                     "audit_ok": ok,
                     "aura_exit": result.get("exit_code"),
                     "aura_value": value,
+                    "incr_valid": incr_valid,
                 },
-                "notes": result.get("notes", "aura mutate+eval-current"),
+                "notes": notes,
             },
         }
 
@@ -293,28 +325,60 @@ class AuraBackend:
         match = _OK_RE.search(stdout)
         value = int(match.group(1)) if match else None
         ok = proc.returncode == 0 and match is not None
+        incr_valid = parse_incr_valid_signal(stdout, stderr)
         notes = "aura mutate+eval-current"
+        if incr_valid:
+            notes = f"aura mutate+eval-current; {INCR_VALID_MARKER}"
         if not ok:
             tail = (stderr or stdout)[-400:].strip()
             notes = f"aura failed rc={proc.returncode}: {tail}"
+            incr_valid = False  # fail-closed: failed eval is never incr-valid
         return {
             "ok": ok,
             "exit_code": proc.returncode,
             "value": value,
             "notes": notes,
+            "incr_valid": incr_valid,
+            "stdout_tail": stdout[-500:],
+            "stderr_tail": stderr[-500:],
         }
 
 
 def _program_for(*, bump: int, index: int, seed: int) -> str:
-    """Tiny Aura program: set-code → eval-current → mutate:rebind → eval-current."""
-    return f"""; aura-build M1 — mutate:rebind + eval-current (wl={index} seed={seed})
+    """Tiny Aura program: mutate:rebind + eval-current + incr-valid probe.
+
+    Probe contract (language-wide Aura stats — not Redis-specific):
+    record ``compile:epoch`` / ``query:jit-stats-hash`` (hotswap-invalidate-total,
+    mutation-epoch) *before* rebind; after ``eval-current``, emit
+    ``AURA_BUILD_INCR_VALID 1`` + ``AURA_INCR_VALID=1`` only when a delta proves
+    incremental compile/invalidate work. See docs/storm-still-incr.md.
+    """
+    return f"""; aura-build M1 — mutate:rebind + eval-current + incr probe (wl={index} seed={seed})
 (set-code "(define (m1-cand n) (+ n 0))")
 (eval-current)
+(define epoch0 (or (stats:get "compile:epoch") 0))
+(define h0 (stats:get "query:jit-stats-hash"))
+(define inv0 (or (hash-ref h0 "hotswap-invalidate-total") 0))
+(define mut0 (or (hash-ref h0 "mutation-epoch") 0))
 (mutate:rebind "m1-cand" "(lambda (n) (+ n {bump}))" "aura-build-m1-wl-{index}")
 (eval-current)
+(define epoch1 (or (stats:get "compile:epoch") 0))
+(define h1 (stats:get "query:jit-stats-hash"))
+(define inv1 (or (hash-ref h1 "hotswap-invalidate-total") 0))
+(define mut1 (or (hash-ref h1 "mutation-epoch") 0))
 (display "{OK_MARKER} ")
 (display (m1-cand 40))
 (newline)
+(display "AURA_INCR_META epoch=")(display epoch0)(display "->")(display epoch1)
+(display " inv=")(display inv0)(display "->")(display inv1)
+(display " mut=")(display mut0)(display "->")(display mut1)
+(newline)
+(if (or (> epoch1 epoch0) (> inv1 inv0) (> mut1 mut0))
+  (begin
+    (display "{INCR_VALID_MARKER} 1")(newline)
+    (display "{INCR_VALID_ENV_LINE}")(newline))
+  (begin
+    (display "{INCR_VALID_MARKER} 0")(newline)))
 """
 
 

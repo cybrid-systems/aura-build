@@ -332,6 +332,7 @@ def run_harness_canary(
             canary=canary,
             decision=decision,
             seed=_seed_from_prompt(prompt, seed),
+            harness_root=root,
         )
         return HarnessCanaryEpisode(
             proposal=proposal, canary=canary, decision=decision, episode=episode

@@ -31,6 +31,7 @@ from typing import Any, Callable
 
 from aura_build.harness import default_root
 from aura_build.runtime import (
+    INCR_VALID_MARKER,
     AuraBackend,
     AuraUnavailable,
     probe_aura,
@@ -61,7 +62,7 @@ __all__ = [
 ]
 
 REPORT_SCHEMA = "prove_incr.v0"
-INCR_VALID_MARKER = "AURA_BUILD_INCR_VALID"
+# INCR_VALID_MARKER imported from runtime (probe contract SSOT)
 # Env gates (read-only honor): document future healthy boxes; cannot alone
 # elevate incr_proven / fiber_live when attaching trajectory metadata.
 ENV_INCR_VALID = "AURA_BUILD_INCR_VALID"

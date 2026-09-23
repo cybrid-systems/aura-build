@@ -16,9 +16,16 @@ python -m pip install -U pip -q
 python -m pip install -e ".[dev]" -q
 python -m pytest -q
 
+# Isolated harness root so dogfood `.aura-build/prove-incr-latest.json`
+# (possibly incr_proven=true) does not attach into simulated smoke episodes.
+SMOKE_ROOT="${ROOT}/trajectories/_smoke_root"
+rm -rf "$SMOKE_ROOT"
+mkdir -p "$SMOKE_ROOT"
+
 OUT="${ROOT}/trajectories/smoke.jsonl"
 rm -f "$OUT"
-aura-build run --prompt "smoke select-best" --seed 1 --mode simulated --out "$OUT"
+aura-build run --prompt "smoke select-best" --seed 1 --mode simulated \
+  --harness-root "$SMOKE_ROOT" --out "$OUT"
 
 OUT2="${ROOT}/trajectories/smoke_aura_repo.jsonl"
 rm -f "$OUT2"
@@ -27,6 +34,7 @@ rm -rf "$WS"
 aura-build run --prompt "smoke aura-repo profile" --seed 2 --mode simulated \
   --profile aura-repo --no-live-build --worldlines 3 \
   --workspace "$WS" --keep-workspace \
+  --harness-root "$SMOKE_ROOT" \
   --out "$OUT2"
 
 # M3: harness canary (AUTOPROMOTE off → discard) + reject bad L1
@@ -199,3 +207,55 @@ print("smoke ok l2:", p5)
 
 print("smoke ok all (M0–M5 + Post-M5 prove-incr + attach)")
 PY
+
+# Optional: when Aura binary is healthy, demo incr_proven=true via real probe.
+LIVE_AURA="${AURA_BIN:-}"
+if [[ -z "$LIVE_AURA" ]]; then
+  for c in \
+    /workspace/aura-redis/.deps/aura/build/aura \
+    /workspace/aura-grok/build/aura \
+    /workspace/aura-redis-ci/.deps/aura/build/aura
+  do
+    if [[ -x "$c" ]]; then LIVE_AURA="$c"; break; fi
+  done
+fi
+if [[ -n "${LIVE_AURA}" && -x "$LIVE_AURA" ]]; then
+  LIVE_ROOT="${ROOT}/trajectories/_smoke_prove_live"
+  rm -rf "$LIVE_ROOT"
+  mkdir -p "$LIVE_ROOT"
+  set +e
+  aura-build prove-incr --cycles 2 --worldlines 1 \
+    --aura-bin "$LIVE_AURA" \
+    --no-fiber-probe \
+    --harness-root "$LIVE_ROOT" \
+    --out "$LIVE_ROOT/prove-incr-latest.json" \
+    --json >"$LIVE_ROOT/prove.out" 2>"$LIVE_ROOT/prove.err"
+  set -e
+  export LIVE_ROOT
+  python - <<'PYLIVE'
+import json
+import os
+from pathlib import Path
+p = Path(os.environ["LIVE_ROOT"]) / "prove-incr-latest.json"
+if not p.is_file():
+    print("smoke skip live incr_proven: no report (aura unhealthy?)")
+else:
+    data = json.loads(p.read_text())
+    print(
+        "smoke live prove:",
+        "incr_proven=", data.get("incr_proven"),
+        "measured=", data.get("measured"),
+        "reason=", data.get("reason"),
+    )
+    if data.get("measured") and data.get("aura_healthy"):
+        assert data["incr_proven"] is True, data
+        assert data["cycles_incr_valid"] == data["cycles_completed"]
+        print("smoke ok live incr_proven=true")
+    else:
+        print("smoke ok live refuse (Aura not fully healthy):", data.get("reason"))
+PYLIVE
+else
+  echo "smoke skip live incr_proven demo (no AURA_BIN)"
+fi
+
+echo "smoke ok all (M0–M5 + Post-M5 prove-incr + attach + optional live)"
