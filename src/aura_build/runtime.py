@@ -51,6 +51,16 @@ _DEFAULT_BIN_CANDIDATES = (
     "/workspace/aura-redis-ci/.deps/aura/build/aura",
 )
 
+# Host boxes often ship GCC 14 (libstdc++ ≤ GLIBCXX_3.4.33) while Aura is
+# built with GCC 16 (needs GLIBCXX_3.4.35). Sidecar dirs hold a matching
+# libstdc++.so.6; see docs/storm-still-incr.md + scripts/fetch-gcc16-libstdcxx.sh.
+_ENV_LIBSTDCXX_DIR = "AURA_LIBSTDCXX_DIR"
+_DEFAULT_LIBSTDCXX_CANDIDATES = (
+    "/workspace/aura-redis/.deps/gcc16-libstdcxx",
+    "/workspace/aura-redis-ci/.deps/gcc16-libstdcxx",
+    "/workspace/aura-grok/.deps/gcc16-libstdcxx",
+)
+
 
 class AuraUnavailable(RuntimeError):
     """Aura was requested but the binary/probe is missing or broken."""
@@ -245,16 +255,11 @@ class AuraBackend:
 
     def _run_mutate_eval(self, *, bump: int, index: int, seed: int) -> dict[str, Any]:
         program = _program_for(bump=bump, index=index, seed=seed)
-        env = os.environ.copy()
-        env.setdefault("AURA_BIN", self.aura_bin)
-        env.setdefault("AURA_PIPELINE_STRICT", "0")
-        env.setdefault("AURA_SANDBOX", "off")
-        if self.lib_path:
-            env["AURA_PATH"] = self.lib_path
-        elif self.aura_ref:
-            lib = Path(self.aura_ref) / "lib"
-            if lib.is_dir():
-                env.setdefault("AURA_PATH", str(lib))
+        env = aura_subprocess_env(
+            self.aura_bin,
+            lib_path=self.lib_path,
+            aura_ref=self.aura_ref,
+        )
 
         with tempfile.TemporaryDirectory(prefix="aura-build-m1-") as tmp:
             path = Path(tmp) / "m1_mutate_eval.aura"
@@ -313,6 +318,84 @@ def _program_for(*, bump: int, index: int, seed: int) -> str:
 """
 
 
+
+def resolve_libstdcxx_dir(
+    aura_bin: str | None = None,
+    *,
+    environ: dict[str, str] | None = None,
+) -> str | None:
+    """Locate a directory with libstdc++.so.6 new enough for a GCC16 Aura binary.
+
+    Order: ``AURA_LIBSTDCXX_DIR`` → sibling ``.deps/gcc16-libstdcxx`` next to
+    the aura checkout → well-known workspace paths. Returns None when absent
+    (caller keeps host default; probe will then surface GLIBCXX honestly).
+    """
+    env = environ if environ is not None else os.environ
+    explicit = (env.get(_ENV_LIBSTDCXX_DIR) or "").strip()
+    if explicit:
+        p = Path(explicit)
+        if (p / "libstdc++.so.6").is_file() or (p / "libstdc++.so.6.0.35").is_file():
+            return str(p.resolve())
+        return None
+
+    candidates: list[Path] = []
+    if aura_bin:
+        bin_path = Path(aura_bin).resolve()
+        # …/aura/build/aura → …/gcc16-libstdcxx (redis .deps layout)
+        # …/aura/build/aura → parent=build, parent2=aura, parent3=.deps
+        build_dir = bin_path.parent
+        aura_root = build_dir.parent
+        deps_root = aura_root.parent
+        candidates.append(deps_root / "gcc16-libstdcxx")
+        candidates.append(aura_root / ".deps" / "gcc16-libstdcxx")
+        candidates.append(build_dir / "gcc16-libstdcxx")
+    for c in _DEFAULT_LIBSTDCXX_CANDIDATES:
+        candidates.append(Path(c))
+
+    seen: set[str] = set()
+    for c in candidates:
+        key = str(c)
+        if key in seen:
+            continue
+        seen.add(key)
+        if (c / "libstdc++.so.6").is_file() or (c / "libstdc++.so.6.0.35").is_file():
+            return str(c.resolve())
+    return None
+
+
+def aura_subprocess_env(
+    aura_bin: str,
+    *,
+    base: dict[str, str] | None = None,
+    lib_path: str | None = None,
+    aura_ref: str | None = None,
+) -> dict[str, str]:
+    """Env for aura subprocesses: sandbox off + optional GCC16 libstdc++ sidecar."""
+    env = dict(base) if base is not None else os.environ.copy()
+    env.setdefault("AURA_BIN", aura_bin)
+    env.setdefault("AURA_PIPELINE_STRICT", "0")
+    env.setdefault("AURA_SANDBOX", "off")
+    if lib_path:
+        env["AURA_PATH"] = lib_path
+    elif aura_ref:
+        lib = Path(aura_ref) / "lib"
+        if lib.is_dir():
+            env.setdefault("AURA_PATH", str(lib))
+    libdir = resolve_libstdcxx_dir(aura_bin, environ=env)
+    if libdir:
+        prev = env.get("LD_LIBRARY_PATH", "")
+        parts = [libdir] + ([p for p in prev.split(":") if p] if prev else [])
+        # de-dupe preserving order
+        out: list[str] = []
+        seen: set[str] = set()
+        for p in parts:
+            if p not in seen:
+                seen.add(p)
+                out.append(p)
+        env["LD_LIBRARY_PATH"] = ":".join(out)
+    return env
+
+
 def probe_aura(aura_bin: str, *, timeout_s: float = 10.0) -> tuple[bool, str | None]:
     """Return (ok, error_message). ok means binary runs a trivial -e form."""
     if not aura_bin:
@@ -322,10 +405,7 @@ def probe_aura(aura_bin: str, *, timeout_s: float = 10.0) -> tuple[bool, str | N
         return False, f"aura binary not found: {aura_bin}"
     if not os.access(path, os.X_OK):
         return False, f"aura binary not executable: {aura_bin}"
-    env = os.environ.copy()
-    env.setdefault("AURA_BIN", str(path))
-    env.setdefault("AURA_PIPELINE_STRICT", "0")
-    env.setdefault("AURA_SANDBOX", "off")
+    env = aura_subprocess_env(str(path))
     try:
         proc = subprocess.run(
             [str(path), "-e", "(+ 1 2)"],

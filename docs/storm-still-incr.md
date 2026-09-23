@@ -91,6 +91,60 @@ Wall-clock `incr_compile_ms` alone is **not** proof.
 These gates exist so healthy boxes can advertise readiness; attach still
 requires the prove harness (or an explicit measured report) to agree.
 
+
+## Toolchain: GLIBCXX_3.4.35 (host vs Aura)
+
+**Measured on this dogfood box (2026-09-23 CST):**
+
+| Item | Value |
+|------|-------|
+| Aura binary | `/workspace/aura-redis/.deps/aura/build/aura` (also check `/workspace/aura-grok`) |
+| Built with | GCC 16.1.0 (`GCC: (Ubuntu 16.1.0-2ubuntu1) 16.1.0` in `.comment`) |
+| Binary needs | **GLIBCXX_3.4.35** (and down to 3.4) |
+| Host `libstdc++` | `/lib/x86_64-linux-gnu/libstdc++.so.6` → `libstdc++.so.6.0.33` |
+| Host max symbol | **GLIBCXX_3.4.33** (Debian 13 / g++ 14.2.0) |
+| Host `g++` | 14.2.0 — **cannot** rebuild Aura (tree is **C++26 / GCC 16** modules) |
+
+Mismatch ⇒ probe fails ⇒ `reason=aura_glibcxx_mismatch`, `incr_proven=false`,
+`measured=false`. That is correct honesty, not a green to invent.
+
+### Why not “just rebuild on the box”?
+
+`aura-grok` / pinned Aura set `CMAKE_CXX_STANDARD 26` and target GCC 16
+(presets literally say “GCC 16”). Host g++-14 cannot compile that tree.
+Official Aura toolchain image: `ghcr.io/cybrid-systems/dev:v1.0.7`.
+
+### Minimal host workaround (dogfood without fake green)
+
+1. Extract a matching `libstdc++.so.6.0.35` (+ `libgcc_s.so.1`) from the
+   toolchain image into a **sidecar** dir (gitignored under redis `.deps/`):
+
+   ```bash
+   ./scripts/fetch-gcc16-libstdcxx.sh
+   # default dest: /workspace/aura-redis/.deps/gcc16-libstdcxx
+   ```
+
+2. `aura-build` auto-prepends that dir to `LD_LIBRARY_PATH` when probing /
+   running Aura (`AURA_LIBSTDCXX_DIR` overrides). No need to commit the `.so`.
+
+3. Re-run:
+
+   ```bash
+   aura-build doctor --json
+   aura-build prove-incr --json
+   ```
+
+Expect: `aura_healthy=true` / probe ok once the sidecar is present.
+`incr_proven` may **still be false** until storm cycles carry an explicit
+incr-valid signal — that is expected; do **not** flip it by hand.
+
+### Alternatives (same honesty)
+
+- Run prove-incr **inside** `ghcr.io/cybrid-systems/dev:v1.0.7` (full GCC16).
+- Install/use a host GCC ≥15 libstdc++ (conda / newer distro) and point
+  `AURA_LIBSTDCXX_DIR` at it.
+- Static-link `libstdc++` when building Aura in-container (heavier; not done here).
+
 ## Deferred
 
 - Real FlatAST incr-compile telemetry from Aura (marker / metric)

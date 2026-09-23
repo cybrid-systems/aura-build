@@ -558,6 +558,23 @@ def doctor_snapshot(
         latest.session_model if latest else SESSION_SHARED_SUBPROCESS
     )
 
+    tips = [
+        "aura-build prove-incr",
+        "aura-build prove-incr --json",
+        "aura-build doctor --json",
+        "docs/storm-still-incr.md",
+    ]
+    err_u = (probe_err or "").upper()
+    reason = (latest.reason if latest else "") or ""
+    if "GLIBCXX" in err_u or reason == "aura_glibcxx_mismatch":
+        tips = [
+            "GLIBCXX: Aura binary needs GCC16 libstdc++ (GLIBCXX_3.4.35); "
+            "box often has ≤3.4.33 — see docs/storm-still-incr.md",
+            "scripts/fetch-gcc16-libstdcxx.sh  # extract sidecar from "
+            "ghcr.io/cybrid-systems/dev:v1.0.7",
+            "or: export AURA_LIBSTDCXX_DIR=/path/to/dir-with-libstdc++.so.6",
+        ] + tips
+
     return {
         "aura_bin": bin_path,
         "aura_probe_ok": probe_ok,
@@ -574,12 +591,7 @@ def doctor_snapshot(
                 "measurement says so; unset report ⇒ false"
             ),
         },
-        "tips": [
-            "aura-build prove-incr",
-            "aura-build prove-incr --json",
-            "aura-build doctor --json",
-            "docs/storm-still-incr.md",
-        ],
+        "tips": tips,
     }
 
 
