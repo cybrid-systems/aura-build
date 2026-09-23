@@ -34,6 +34,12 @@ from aura_build.l2_weights import (
 )
 from aura_build.worldline import WorldlineWorkspace
 
+# Late-friendly: prove_incr may not be imported by older callers; keep soft.
+try:
+    from aura_build.prove_incr import load_latest_report as _load_prove_report
+except ImportError:  # pragma: no cover
+    _load_prove_report = None  # type: ignore[assignment]
+
 __all__ = [
     "ACP_HOOKS",
     "SessionStatus",
@@ -201,6 +207,25 @@ def acp_start_session(
     return acp_status(root=r)
 
 
+
+def _overlay_prove_honesty(status: SessionStatus, root: Path | str | None) -> None:
+    """Pull incr_proven/fiber_live from last prove-incr report when present."""
+    if _load_prove_report is None:
+        return
+    try:
+        report = _load_prove_report(root=root)
+    except Exception:  # noqa: BLE001 — status must not crash
+        return
+    if report is None:
+        return
+    status.honesty = dict(status.honesty or {})
+    status.honesty["incr_proven"] = bool(report.incr_proven)
+    status.honesty["fiber_live"] = bool(report.fiber_live)
+    status.honesty["session_model"] = report.session_model
+    status.honesty["prove_incr_reason"] = report.reason
+    status.honesty["prove_incr_measured"] = report.measured
+
+
 def acp_status(
     *,
     root: Path | str | None = None,
@@ -251,6 +276,7 @@ def acp_status(
             if status.worldline_count is None:
                 status.worldline_count = len(ep.get("worldlines") or [])
 
+    _overlay_prove_honesty(status, r)
     return status
 
 

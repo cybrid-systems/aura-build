@@ -148,3 +148,14 @@ Chat transcripts, raw git diffs without eval metrics, and Postman-style request 
 | `harness.l3_online` | Must be `false` unless experimental online path is explicitly enabled |
 
 Episodes produced under `l3_online=true` are tagged and quarantined from default L2 promotion sets.
+
+### Post-M5 prove-incr metadata (optional)
+
+| Field / artifact | Meaning |
+|------------------|---------|
+| `.aura-build/prove-incr-latest.json` | Latest prove-or-refuse report (`prove_incr.v0`) |
+| `runtime.incr_proven` | Still **false** in orch episodes by default; do not auto-flip from report |
+| ACP/TUI `honesty.*` | May overlay last prove report when present |
+
+See [storm-still-incr.md](storm-still-incr.md). Wall-clock alone never proves incr.
+

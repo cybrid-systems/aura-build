@@ -1,6 +1,6 @@
-# Iteration plan — M0–M5
+# Iteration plan — M0–M5 + Post-M5
 
-## Status table (M0–M5)
+## Status table (M0–M5 + Post-M5)
 
 | Milestone | Theme | Status | Honest note |
 |-----------|-------|--------|-------------|
@@ -10,8 +10,9 @@
 | **M3** | Harness canary + memory + L2 stub-by-id | **done** | AUTOPROMOTE default OFF |
 | **M4** | RL/batch export + privacy + specialist notes | **done** | No training; no online L3 |
 | **M5** | TUI/ACP skeleton + L2 offline metadata plug | **done** | Metadata-only weights; TUI is status stub |
+| **Post-M5** | storm-still-incr prove-or-refuse + doctor + fiber probe | **done (harness)** | `incr_proven` stays false until measured; GLIBCXX ⇒ fail-closed |
 
-**Still refused (beyond M5):** fiber-live FlatAST multi-worldline; `incr_proven=true`; real L2 tensor/mmap load (`stub=False`); online L3 weight updates; full Textual/rich TUI.
+**Still refused / deferred:** fiber-live FlatAST multi-worldline (no `AURA_BUILD_FIBER_SESSION_OK` yet); `incr_proven=true` without explicit incr-valid signal; real L2 tensor/mmap (`stub=False`); online L3; full Textual/rich TUI.
 
 ## M0 — Stub floor
 
@@ -127,3 +128,25 @@
 - [ ] Real L2 tensor/mmap load → `stub=False` (deferred past M5)
 - [ ] Full TUI (Textual/rich) / editor ACP embed (deferred)
 - [ ] Fiber-live FlatAST / storm-still-incr proof (still deferred)
+
+## Post-M5 — prove-or-refuse (storm-still-incr)
+
+**Deliver**
+
+- Measurement harness: `aura-build prove-incr` + `docs/storm-still-incr.md` + `scripts/prove_incr.sh`
+- Fail-closed when Aura unhealthy (GLIBCXX / missing): report `incr_proven=false` + reason; CI-green
+- Healthy path: N rapid mutate+eval under concurrent worldline pressure; `incr_proven=true` **only** with explicit incr-valid signal every cycle
+- Optional fiber session probe; keep `session_model=shared_workspace_subprocess` unless real fiber marker
+- `aura-build doctor` surfaces probe + last report; ACP/TUI honesty overlays last report
+
+**Exit criteria**
+
+- [x] Fail-closed path tested and CI-green (`tests/test_prove_incr.py`)
+- [x] Report written under `.aura-build/prove-incr-latest.json`
+- [x] Never claim fiber-live / incr_proven without measurement
+- [ ] Real FlatAST incr telemetry from Aura (deferred)
+- [ ] Long-lived fiber multi-eval session API (deferred)
+- [ ] Auto-attach prove report into every orch episode (deferred; opt-in later)
+
+**Honesty note:** On boxes where the Aura binary hits `GLIBCXX_` mismatch, expect `incr_proven=false` forever until a healthy runtime is measured. Do not flip the flag by hand.
+

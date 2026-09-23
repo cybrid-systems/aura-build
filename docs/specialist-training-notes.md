@@ -86,3 +86,11 @@ Default export sets `privacy.redacted=true` and `export_filter=m4.default`.
 - Real L2 tensor/mmap load (`stub=False`)
 - Fiber-live multi-worldline / `incr_proven=true`
 - Online L3 (still experimental / refused in orch)
+
+## Post-M5 prove-incr
+
+Distillers may read `.aura-build/prove-incr-latest.json` as an honesty side-channel.
+Do **not** treat orch `runtime.incr_proven` as true unless that report (or an
+explicit episode field) says so after a measured storm. See
+[storm-still-incr.md](storm-still-incr.md).
+

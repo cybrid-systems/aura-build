@@ -25,7 +25,8 @@ Prefer live-object worldlines over git-worktree mail; dogfood [cybrid-systems/au
 - [Architecture](docs/architecture.md)
 - [Trajectory protocol v0](docs/trajectory-protocol-v0.md)
 - [Specialist training notes](docs/specialist-training-notes.md) — M4/M5 export + L2 metadata
-- [Iteration plan](docs/iteration-plan.md) — M0–M5 status table
+- [Iteration plan](docs/iteration-plan.md) — M0–M5 + Post-M5 status table
+- [Storm-still-incr](docs/storm-still-incr.md) — prove-or-refuse harness
 - [Value](docs/value.md) · [Investor](docs/investor.md) · [Founders narrow path](docs/founders-narrow-path.md)
 
 ## Run
@@ -55,7 +56,7 @@ export AURA_BIN=/path/to/build/aura   # e.g. /workspace/aura-grok/build/aura
 
 Writes validated episode JSONL under `trajectories/` (gitignored). Sample shape in `examples/`.
 
-## Status (M0–M5)
+## Status (M0–M5 + Post-M5)
 
 | M | What works | What's stub / refused |
 |---|------------|------------------------|
@@ -65,8 +66,9 @@ Writes validated episode JSONL under `trajectories/` (gitignored). Sample shape 
 | **M3** | Harness canary (AUTOPROMOTE OFF), memory store, L2 id stub | No L2 tensors; no online L3 |
 | **M4** | `export` JSON (+ optional Parquet), privacy redaction default ON | No training loop |
 | **M5** | `tui` status stub; `acp` hooks; L2 metadata load/promote under `.aura-build/weights/` | TUI ≠ full Textual; `stub=True` always (metadata only); no fiber-live / no `incr_proven=true` / no online L3 |
+| **Post-M5** | `prove-incr` / `doctor`; fail-closed report; fiber probe | `incr_proven=true` only with measured incr-valid signal; fiber-live only with session OK marker |
 
-**Beyond M5 (honest gaps):** real L2 tensor/mmap (`stub=False`); fiber-live FlatAST; proven storm-still-incr; long-lived Aura multi-eval; full TUI / editor ACP embed.
+**Beyond / deferred:** real L2 tensor/mmap (`stub=False`); fiber-live FlatAST (needs `AURA_BUILD_FIBER_SESSION_OK`); proven storm-still-incr on a **healthy** Aura (needs incr-valid telemetry); full TUI / editor ACP embed. Harness exists — see [storm-still-incr.md](docs/storm-still-incr.md).
 
 ### TUI / ACP (M5)
 
@@ -102,6 +104,21 @@ aura-build run --prompt "with l2" --l2-weights-id specialist.stub.v0 --mode simu
 
 Example artifact shape: `examples/weights.specialist.stub.v0.json` → copy to `.aura-build/weights/specialist.stub.v0.json`.
 **No training. No tensor load. `stub=True` until real bytes exist.**
+
+
+### Prove-incr / doctor (Post-M5)
+
+```bash
+# Fail-closed if Aura missing/GLIBCXX; never lies about incr_proven
+aura-build prove-incr
+aura-build prove-incr --cycles 8 --worldlines 3 --json
+./scripts/prove_incr.sh
+
+aura-build doctor
+aura-build doctor --json
+```
+
+Report: `.aura-build/prove-incr-latest.json`. See [storm-still-incr.md](docs/storm-still-incr.md).
 
 ### Trajectory export (M4)
 

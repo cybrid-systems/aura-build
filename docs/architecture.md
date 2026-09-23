@@ -117,3 +117,11 @@ fiber-live FlatAST / proven incr / real specialist weights in memory.
 ## Anti-postman default
 
 Prefer hot-object worldlines over git-worktree mail. If the system falls back to “clone, patch, PR” as the only path, architecture has regressed.
+
+### Post-M5 prove-incr / doctor
+
+`aura-build prove-incr` measures storm-still-incr or **refuses** (fail-closed on
+GLIBCXX / missing binary). `aura-build doctor` aggregates probe + last report.
+Session model stays `shared_workspace_subprocess` unless a fiber session marker
+is observed. Details: [storm-still-incr.md](storm-still-incr.md).
+

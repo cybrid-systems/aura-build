@@ -1,4 +1,4 @@
-"""Headless CLI — `aura-build run|harness-mutate|memory|export|tui|acp|l2`."""
+"""Headless CLI — `aura-build run|…|prove-incr|doctor`."""
 
 from __future__ import annotations
 
@@ -30,6 +30,11 @@ from aura_build.l2_weights import (
     promote_l2_offline,
     resolve_l2_weights,
 )
+from aura_build.prove_incr import (
+    doctor_snapshot,
+    prove_or_refuse,
+    write_report,
+)
 from aura_build.tui import format_status
 
 
@@ -38,7 +43,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="aura-build",
         description=(
             "Dev-time room on the Aura FlatAST floor "
-            "(M5: TUI/ACP stub + L2 offline metadata + export + harness canary)."
+            "(Post-M5: prove-incr / doctor + M5 TUI/ACP + L2 metadata)."
         ),
     )
     p.add_argument("--version", action="version", version=f"aura-build {__version__}")
@@ -244,6 +249,56 @@ def build_parser() -> argparse.ArgumentParser:
     l2_prom.add_argument("--overwrite", action="store_true")
     l2_prom.add_argument("--json", action="store_true")
 
+    prove = sub.add_parser(
+        "prove-incr",
+        help=(
+            "storm-still-incr prove-or-refuse: fail-closed if Aura unhealthy; "
+            "never sets incr_proven without measured incr-valid signal"
+        ),
+    )
+    prove.add_argument("--cycles", type=int, default=8, help="rapid mutate+eval cycles")
+    prove.add_argument(
+        "--worldlines",
+        type=int,
+        default=3,
+        help="concurrent worldline pressure per cycle",
+    )
+    prove.add_argument("--aura-bin", default=None)
+    prove.add_argument("--aura-ref", default=None)
+    prove.add_argument(
+        "--timeout",
+        type=float,
+        default=30.0,
+        help="per-eval timeout seconds",
+    )
+    prove.add_argument(
+        "--no-fiber-probe",
+        action="store_true",
+        help="skip optional fiber/long-lived session probe",
+    )
+    prove.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help="report JSON path (default: .aura-build/prove-incr-latest.json)",
+    )
+    prove.add_argument("--harness-root", type=Path, default=None)
+    prove.add_argument("--json", action="store_true")
+
+    doc = sub.add_parser(
+        "doctor",
+        help="Aura probe + last prove-incr report + honesty flags",
+    )
+    doc.add_argument("--aura-bin", default=None)
+    doc.add_argument("--aura-ref", default=None)
+    doc.add_argument("--harness-root", type=Path, default=None)
+    doc.add_argument(
+        "--skip-probe",
+        action="store_true",
+        help="do not invoke aura binary (report + paths only)",
+    )
+    doc.add_argument("--json", action="store_true")
+
     return p
 
 
@@ -372,6 +427,10 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_acp(args)
     if args.cmd == "l2":
         return _cmd_l2(args)
+    if args.cmd == "prove-incr":
+        return _cmd_prove_incr(args)
+    if args.cmd == "doctor":
+        return _cmd_doctor(args)
     return 2
 
 
@@ -698,6 +757,77 @@ def _cmd_l2(args: argparse.Namespace) -> int:
         return 0
     return 2
 
+
+
+
+def _cmd_prove_incr(args: argparse.Namespace) -> int:
+    """Prove-or-refuse storm-still-incr; always writes a report.
+
+    Exit 0 on refuse (unhealthy / unproven) and on proven — the report's
+    ``incr_proven`` field is the honesty surface. Exit 2 only on bad args.
+    """
+    if args.cycles < 1 or args.worldlines < 1:
+        print("error: --cycles and --worldlines must be >= 1", file=sys.stderr)
+        return 2
+    report = prove_or_refuse(
+        cycles=args.cycles,
+        worldline_pressure=args.worldlines,
+        aura_bin=args.aura_bin,
+        aura_ref=args.aura_ref,
+        timeout_s=args.timeout,
+        probe_fiber=not args.no_fiber_probe,
+    )
+    path = write_report(report, path=args.out, root=args.harness_root)
+    payload = report.to_dict()
+    payload["report_path"] = str(path)
+    if args.json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        print(
+            f"incr_proven={report.incr_proven} measured={report.measured} "
+            f"aura_healthy={report.aura_healthy} reason={report.reason} "
+            f"session_model={report.session_model} fiber_live={report.fiber_live} "
+            f"cycles_ok={report.cycles_ok}/{report.cycles_completed} "
+            f"incr_valid={report.cycles_incr_valid}/{report.cycles_completed} "
+            f"report={path}"
+        )
+    return 0
+
+
+def _cmd_doctor(args: argparse.Namespace) -> int:
+    snap = doctor_snapshot(
+        root=args.harness_root,
+        aura_bin=args.aura_bin,
+        aura_ref=args.aura_ref,
+        run_probe=not args.skip_probe,
+    )
+    if args.json:
+        print(json.dumps(snap, indent=2, sort_keys=True))
+    else:
+        h = snap["honesty"]
+        print("aura-build doctor (Post-M5)")
+        print(f"  aura_bin        = {snap.get('aura_bin') or '-'}")
+        print(f"  aura_probe_ok   = {snap.get('aura_probe_ok')}")
+        err = snap.get("aura_probe_error")
+        if err:
+            print(f"  aura_probe_error= {str(err)[:200]}")
+        print(f"  prove_report    = {snap.get('prove_incr_report_path')}")
+        latest = snap.get("prove_incr_latest")
+        if latest:
+            print(
+                f"  last_prove      = incr_proven={latest.get('incr_proven')} "
+                f"reason={latest.get('reason')} measured={latest.get('measured')}"
+            )
+        else:
+            print("  last_prove      = (none — run aura-build prove-incr)")
+        print(
+            f"  honesty         = incr_proven={h.get('incr_proven')} "
+            f"fiber_live={h.get('fiber_live')} "
+            f"session_model={h.get('session_model')} "
+            f"l3_online={h.get('l3_online')}"
+        )
+        print("  tips: " + " | ".join(snap.get("tips") or []))
+    return 0
 
 
 def console_main() -> None:

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Simulated CI / local smoke (no Aura required): venv, pytest, episodes, harness canary, export, M5 tui/acp/l2.
+# Simulated CI / local smoke (no Aura required): venv, pytest, episodes, harness canary, export, M5 tui/acp/l2, Post-M5 prove-incr.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -84,6 +84,32 @@ aura-build acp worldlines --traj "$OUT2" | grep -q candidate
 # discard one loser in retained workspace (wl-1 exists from 3-worldline fan-out)
 aura-build acp discard --workspace "$WS" --ref wl-1 --reason smoke_discard | grep -q 'fiber_live=false'
 
+
+# Post-M5: prove-incr fail-closed + doctor (Aura may be missing/GLIBCXX — still exit 0)
+PROVE_ROOT="${ROOT}/trajectories/_smoke_prove"
+rm -rf "$PROVE_ROOT"
+mkdir -p "$PROVE_ROOT"
+# Force missing bin so CI is deterministic fail-closed (do not depend on host Aura)
+env -u AURA_BIN aura-build prove-incr --cycles 2 --worldlines 1 \
+  --aura-bin /nonexistent/aura-missing \
+  --no-fiber-probe \
+  --harness-root "$PROVE_ROOT" \
+  --out "$PROVE_ROOT/prove-incr-latest.json" | tee "$PROVE_ROOT/prove.out"
+grep -q 'incr_proven=False' "$PROVE_ROOT/prove.out"
+grep -q 'aura_binary_missing\|aura_glibcxx_mismatch\|aura_unhealthy\|aura_probe' "$PROVE_ROOT/prove.out" \
+  || grep -q 'incr_proven=False' "$PROVE_ROOT/prove.out"
+aura-build doctor --skip-probe --harness-root "$PROVE_ROOT" | grep -q 'incr_proven=False'
+python - <<PYPROVE
+import json
+from pathlib import Path
+p = Path(r"$PROVE_ROOT/prove-incr-latest.json")
+data = json.loads(p.read_text())
+assert data["incr_proven"] is False
+assert data["measured"] is False
+assert data.get("fiber_live") is False
+print("smoke ok prove-incr fail-closed:", p)
+PYPROVE
+
 python - <<PY
 import json
 from pathlib import Path
@@ -139,5 +165,5 @@ assert ep5["harness"]["l2_ref"]["artifact_present"] is True
 assert ep5["runtime"].get("incr_proven", False) is False
 print("smoke ok l2:", p5)
 
-print("smoke ok all (M0–M5)")
+print("smoke ok all (M0–M5 + Post-M5 prove-incr)")
 PY
