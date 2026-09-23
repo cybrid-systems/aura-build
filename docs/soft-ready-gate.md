@@ -33,8 +33,8 @@ Holder starts `aura --serve-async` and stamps `serve_mode=async` when probe ok.
 `serve_cross_session_shared_ast` stamps **true** only after measured orch→project
 binding proof. Soft sync `--serve` (#4047 B) aliases named sessions onto one
 CompilerService + `shared_workspace_tree`. When the holder prefers async, a sync
-side-probe measures cross-session share (async named-session fiber wake still
-deferred). Never env-fake.
+async on-proc orch→project probe measures cross-session share (#4047 B Soft
+shared CS + fiber wake). Never env-fake.
 
 ### Historical Soft refuse (pre-#4047 tips)
 
@@ -85,7 +85,7 @@ So: **blocker = Aura Soft Ready gate**, not a missing aura-build config flag.
 |------|----------------------|
 | `serve_mode` | `sync` (honest) |
 | `serve_async_soft_ready.ok` | `false` (`fail_bits=0x10`) |
-| `serve_cross_session_shared_ast` | `true` when Soft #4047 B measured (sync / sync side-probe) |
+| `serve_cross_session_shared_ast` | `true` when Soft #4047 B measured on live serve/--serve-async |
 | `serve_same_session_mutate_ok` | **`true`** (measured mutate:rebind + eval) |
 | `session dogfood` / `pursue --prefer-session` | **`path_kind=mutate_rebind`**, `cold_spawns=0` |
 
@@ -93,9 +93,8 @@ So: **blocker = Aura Soft Ready gate**, not a missing aura-build config flag.
 
 1. Soft Ready → `ok=true`, holder prefers `serve_mode=async`.
 2. Soft sync shared graph (#4047 B) → measured orch→project binding; holder
-   sync side-probe can stamp `serve_cross_session_shared_ast=true`.
-3. Remaining: async named-session fiber wake so cross-session proof can run
-   on the async proc itself (optional; sync side-probe is honest).
+   async on-proc orch→project probe stamps `serve_cross_session_shared_ast=true`.
+3. Soft Ready holder prefer `serve_mode=async` when probe ok (stage 2).
 
 Deepen orch/project dual-session worldlines on the shared Soft graph.
 
