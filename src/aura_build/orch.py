@@ -1,14 +1,32 @@
-"""Orchestrator: scout → mutate → eval → select-best (M0 simulated worldlines)."""
+"""Orchestrator: scout → mutate → eval → select-best (RuntimeBackend)."""
 
 from __future__ import annotations
 
 import hashlib
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable
 
+from aura_build.runtime import (
+    AuraUnavailable,
+    RuntimeBackend,
+    SimulatedBackend,
+    resolve_backend,
+)
 from aura_build.schema import SCHEMA_VERSION
+
+__all__ = [
+    "AuraUnavailable",
+    "EpisodeResult",
+    "OrchConfig",
+    "Worldline",
+    "eval_worldline",
+    "mutate_worldlines",
+    "run_episode",
+    "scout",
+    "select_best",
+]
 
 
 def _utc_now() -> str:
@@ -38,25 +56,18 @@ class EpisodeResult:
 
 @dataclass
 class OrchConfig:
-    """M0 config — Aura client hooked in M1 behind the same surface."""
+    """Episode config. M1: backend resolved from mode (simulated|aura|auto)."""
 
     n_worldlines: int = 3
     seed: int | None = None
-    l1_strategy_id: str = "m0.simulated.select_best"
+    l1_strategy_id: str = "m1.runtime.select_best"
     l2_weights_id: str | None = None
     l3_online: bool = False
-    mode: str = "simulated"  # simulated | aura
+    mode: str = "simulated"  # simulated | aura | auto
+    aura_bin: str | None = None
     aura_ref: str | None = None
     fitness_fn: Callable[[str, int, int], float] | None = None
-
-
-def _default_fitness(prompt: str, seed: int, index: int) -> float:
-    """Deterministic fake fitness for M0 demos."""
-    h = hashlib.sha256(f"{seed}:{index}:{prompt}".encode()).hexdigest()
-    # Mix in index so worldlines differ; prefer mid candidates slightly for demos.
-    base = int(h[:6], 16) / float(0xFFFFFF)
-    bump = 0.15 if index == 1 else 0.0
-    return round(min(1.0, base * 0.85 + bump), 4)
+    backend: RuntimeBackend | None = None
 
 
 def scout(prompt: str, cfg: OrchConfig) -> dict[str, Any]:
@@ -65,27 +76,13 @@ def scout(prompt: str, cfg: OrchConfig) -> dict[str, Any]:
         "prompt": prompt,
         "l1_strategy_id": cfg.l1_strategy_id,
         "hints": ["anti-postman", "multi-candidate", "select-best"],
+        "mode": cfg.mode,
     }
 
 
 def mutate_worldlines(prompt: str, seed: int, n: int) -> list[dict[str, Any]]:
-    """Propose N simulated mutations (M0). M1 replaces with Aura mutate."""
-    out: list[dict[str, Any]] = []
-    for i in range(n):
-        out.append(
-            {
-                "id": f"wl-{i}",
-                "parent_id": None,
-                "mutations": [
-                    {
-                        "op": "simulated_edit",
-                        "target_id": f"node:demo:{i}",
-                        "summary": f"candidate {i} for: {prompt[:80]}",
-                    }
-                ],
-            }
-        )
-    return out
+    """Backward-compatible helper — simulated mutations only."""
+    return SimulatedBackend().mutate_worldlines(prompt, seed, n)
 
 
 def eval_worldline(
@@ -95,24 +92,13 @@ def eval_worldline(
     index: int,
     fitness_fn: Callable[[str, int, int], float],
 ) -> Worldline:
-    fitness = fitness_fn(prompt, seed, index)
-    passed = fitness >= 0.3
-    metrics = {
-        "tests_passed": 1 if passed else 0,
-        "tests_total": 1,
-        "incr_compile_ms": 5 + index * 3,
-        "audit_ok": True,
-    }
+    """Backward-compatible helper — simulated eval only."""
+    raw = SimulatedBackend(fitness_fn=fitness_fn).eval_worldline(wl, prompt, seed, index)
     return Worldline(
-        id=wl["id"],
-        parent_id=wl.get("parent_id"),
-        mutations=list(wl.get("mutations") or []),
-        eval={
-            "fitness": fitness,
-            "passed": passed,
-            "metrics": metrics,
-            "notes": "m0 simulated eval",
-        },
+        id=raw["id"],
+        parent_id=raw.get("parent_id"),
+        mutations=list(raw.get("mutations") or []),
+        eval=raw["eval"],
     )
 
 
@@ -128,20 +114,37 @@ def run_episode(prompt: str, cfg: OrchConfig | None = None) -> EpisodeResult:
     """Full scout→mutate→eval→select-best; returns episode dict + selected."""
     cfg = cfg or OrchConfig()
     if cfg.l3_online:
-        # M0 forbids promoting experimental online path silently.
-        raise ValueError("L3 online weights are experimental-only; refuse in M0")
+        raise ValueError("L3 online weights are experimental-only; refuse in M0/M1")
 
     seed = _seed_from_prompt(prompt, cfg.seed)
-    fitness_fn = cfg.fitness_fn or _default_fitness
+    backend = resolve_backend(
+        cfg.mode,
+        aura_bin=cfg.aura_bin,
+        aura_ref=cfg.aura_ref,
+        fitness_fn=cfg.fitness_fn,
+        backend=cfg.backend,
+    )
     ts_start = _utc_now()
 
     scout(prompt, cfg)
-    raw = mutate_worldlines(prompt, seed, cfg.n_worldlines)
-    evaluated = [
-        eval_worldline(wl, prompt, seed, i, fitness_fn) for i, wl in enumerate(raw)
-    ]
+    raw = backend.mutate_worldlines(prompt, seed, cfg.n_worldlines)
+    evaluated: list[Worldline] = []
+    for i, wl in enumerate(raw):
+        got = backend.eval_worldline(wl, prompt, seed, i)
+        evaluated.append(
+            Worldline(
+                id=got["id"],
+                parent_id=got.get("parent_id"),
+                mutations=list(got.get("mutations") or []),
+                eval=got["eval"],
+            )
+        )
     selected, reason = select_best(evaluated)
     ts_end = _utc_now()
+
+    # Honest mode: what backend actually ran, not the requested auto preference.
+    resolved_mode = backend.mode
+    resolved_ref = backend.aura_ref if resolved_mode == "aura" else cfg.aura_ref
 
     episode: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
@@ -150,9 +153,10 @@ def run_episode(prompt: str, cfg: OrchConfig | None = None) -> EpisodeResult:
         "ts_end": ts_end,
         "prompt": prompt,
         "runtime": {
-            "mode": cfg.mode,
-            "aura_ref": cfg.aura_ref,
+            "mode": resolved_mode,
+            "aura_ref": resolved_ref,
             "seed": seed,
+            "requested_mode": cfg.mode,
         },
         "harness": {
             "l1_strategy_id": cfg.l1_strategy_id,

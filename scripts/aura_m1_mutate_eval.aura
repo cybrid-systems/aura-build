@@ -1,0 +1,10 @@
+; aura-build M1 smoke program — mutate:rebind + eval-current
+; Invoked by AuraBackend (or manually: $AURA_BIN scripts/aura_m1_mutate_eval.aura)
+; Success marker: AURA_BUILD_OK 42
+(set-code "(define (m1-cand n) (+ n 0))")
+(eval-current)
+(mutate:rebind "m1-cand" "(lambda (n) (+ n 2))" "aura-build-m1-smoke")
+(eval-current)
+(display "AURA_BUILD_OK ")
+(display (m1-cand 40))
+(newline)

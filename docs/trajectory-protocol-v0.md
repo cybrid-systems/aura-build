@@ -13,6 +13,7 @@ Every `aura-build run` appends one **episode** (JSON object) per line to a JSONL
   "prompt": "string",
   "runtime": {
     "mode": "simulated | aura",
+    "requested_mode": "simulated | aura | auto",
     "aura_ref": "optional string/path",
     "seed": 0
   },
@@ -59,6 +60,8 @@ Every `aura-build run` appends one **episode** (JSON object) per line to a JSONL
 `schema_version`, `episode_id`, `ts_start`, `ts_end`, `prompt`, `runtime.mode`, `worldlines` (≥1), `selected_id`, `harness.l3_online`.
 
 `selected_id` must match one `worldlines[].id`. Fitness is comparable within an episode only.
+
+**Honesty:** `runtime.mode` is the backend that actually ran. `requested_mode` may be `auto`; never claim `aura` when the episode used `SimulatedBackend`. M1 `AuraBackend` is a subprocess bridge (mutate:rebind + eval-current), not fiber-live multi-worldline.
 
 ## Export formats
 

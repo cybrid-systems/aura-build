@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# M0 CI / local smoke: venv, install, pytest, one live run.
+# Simulated CI / local smoke (no Aura required): venv, pytest, one episode.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -18,7 +18,7 @@ python -m pytest -q
 
 OUT="${ROOT}/trajectories/smoke.jsonl"
 rm -f "$OUT"
-aura-build run --prompt "smoke select-best" --seed 1 --out "$OUT"
+aura-build run --prompt "smoke select-best" --seed 1 --mode simulated --out "$OUT"
 python - <<PY
 import json
 from pathlib import Path
@@ -26,6 +26,8 @@ from aura_build.schema import validate_episode
 p = Path(r"$OUT")
 lines = [ln for ln in p.read_text().splitlines() if ln.strip()]
 assert len(lines) == 1, lines
-validate_episode(json.loads(lines[0]))
-print("smoke ok:", lines[0][:120], "...")
+ep = json.loads(lines[0])
+validate_episode(ep)
+assert ep["runtime"]["mode"] == "simulated", ep["runtime"]
+print("smoke ok mode=simulated:", lines[0][:120], "...")
 PY

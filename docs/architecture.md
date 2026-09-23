@@ -35,9 +35,18 @@ The host process is a **thin** adapter: argparse/CI entrypoints, path wiring, ex
 `orch` owns the episode loop:
 
 1. **Scout** — read task + optional harness hints (L1/L2).
-2. **Mutate** — propose N worldline mutations (Aura mutate API; M0 simulates).
-3. **Eval** — fitness: tests, incr-compile cost, audit constraints.
-4. **Select-best** — collapse to one worldline; append trajectory.
+2. **Mutate** — propose N worldline mutations via `RuntimeBackend` (`SimulatedBackend` or `AuraBackend` shelling `mutate:rebind`).
+3. **Eval** — fitness: tests, incr-compile cost, audit constraints (`eval-current` when Aura).
+4. **Select-best** — collapse to one worldline; append trajectory (`runtime.mode` = backend actually used).
+
+### RuntimeBackend (M1)
+
+| Backend | When | Honesty |
+|---------|------|---------|
+| `SimulatedBackend` | `--mode simulated` or `auto` fallback | Fake fitness; not live FlatAST |
+| `AuraBackend` | `--mode aura` / successful `auto` probe | Subprocess `aura` + tiny program; **not** fiber multi-worldline yet |
+
+Integration points: `AURA_BIN` / `--aura-bin`, `scripts/aura_m1_mutate_eval.aura`, primitives `set-code` → `mutate:rebind` → `eval-current`. See `src/aura_build/runtime.py` module docstring. M2 replaces N cold shells with shared-workspace incr-compile fan-out.
 
 ### Worldlines
 

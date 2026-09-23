@@ -1,6 +1,6 @@
 # Iteration plan — M0–M5
 
-## M0 — Stub floor (current)
+## M0 — Stub floor
 
 **Deliver**
 
@@ -15,31 +15,37 @@
 - [x] `pytest` + `scripts/smoke.sh` green
 - [x] Docs encode north star (anti-postman, dogfood Aura, L1/L2/L3, deny plugin-as-moat)
 
-## M1 — Real Aura mutate/eval
+## M1 — Real Aura mutate/eval (current)
 
 **Deliver**
 
-- Honest Aura client interface (`mutate` / `eval` / `query`)
-- Integration path when Aura binary or `/workspace/aura-grok` available
-- Fallback: keep simulated backend behind the same interface
+- Honest `RuntimeBackend` protocol: `SimulatedBackend` + `AuraBackend`
+- `AuraBackend` shells to aura binary with tiny `mutate:rebind` + `eval-current` program
+- Fallback: simulated behind the same orch surface; **no silent fake when `--mode aura`**
+- Trajectory `runtime.mode` records the backend actually used (`requested_mode` kept for auto)
 
 **Exit criteria**
 
-- [ ] One real (or interface-complete stub) mutate→eval episode against Aura-shaped graph
-- [ ] Trajectory `runtime.mode` reflects `aura` vs `simulated`
-- [ ] No silent fake when Aura was requested
+- [x] Interface-complete mutate→eval behind orch; live shell when `AURA_BIN` probes clean
+- [x] Trajectory `runtime.mode` reflects `aura` vs `simulated`
+- [x] No silent fake when Aura was requested (`mode=aura` → `AuraUnavailable` / exit 2)
+- [x] CI simulated smoke stays green; optional `aura` job skips if binary missing
+
+**Honesty note:** M1 `AuraBackend` is a **subprocess bridge**, not fiber-live multi-worldline on one FlatAST. Do not claim live worldlines yet.
 
 ## M2 — aura-repo profile
 
 **Deliver**
 
 - Profile for repos with `build.py` + tests
-- Multi-candidate incr-compile select-best
+- Multi-candidate incr-compile select-best on a shared Aura workspace (not N cold shells)
+- Fitness includes incr compile ms + tests; document storm-still-incr metric
 
 **Exit criteria**
 
 - [ ] Fan-out ≥2 worldlines; fitness includes incr compile + tests
 - [ ] Storm still incr (documented metric)
+- [ ] Prefer stable-ref continuity across candidates vs mail/worktree
 
 ## M3 — Memory/harness mutate + canary
 

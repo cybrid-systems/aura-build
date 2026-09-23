@@ -6,7 +6,7 @@
 
 ## One-line pitch
 
-Prefer live-object worldlines over git-worktree mail; dogfood [cybrid-systems/aura](https://github.com/cybrid-systems); turn every mutate→eval→select into RL/specialist fuel.
+Prefer live-object worldlines over git-worktree mail; dogfood [cybrid-systems/aura](https://github.com/cybrid-systems/aura); turn every mutate→eval→select into RL/specialist fuel.
 
 一句话：用活对象世界线代替邮差式 worktree；狗粮 Aura；把每次 mutate→eval→select 变成 RL / 专才蒸馏燃料。
 
@@ -27,23 +27,39 @@ Prefer live-object worldlines over git-worktree mail; dogfood [cybrid-systems/au
 - [Iteration plan](docs/iteration-plan.md) — M0–M5
 - [Value](docs/value.md) · [Investor](docs/investor.md) · [Founders narrow path](docs/founders-narrow-path.md)
 
-## Run M0 stub
+
+## Run
 
 ```bash
-./scripts/smoke.sh          # creates .venv, pytest, one episode
+./scripts/smoke.sh          # simulated backend; creates .venv, pytest, one episode
 # or manually:
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-aura-build run --prompt "demo select-best"
+aura-build run --prompt "demo select-best" --mode simulated
+```
+
+### Runtime modes
+
+| Flag | Behavior |
+|------|----------|
+| `--mode simulated` (default) | Deterministic fake worldlines; CI-safe |
+| `--mode aura` | Shell to Aura binary (`--aura-bin` / `AURA_BIN`); **fails closed** if missing/broken |
+| `--mode auto` | Use Aura when probe succeeds, else simulated; trajectory `runtime.mode` is honest |
+
+Optional live smoke (skips cleanly if Aura unavailable):
+
+```bash
+export AURA_BIN=/path/to/build/aura   # e.g. /workspace/aura-grok/build/aura
+./scripts/aura_smoke.sh
 ```
 
 Writes validated episode JSONL under `trajectories/` (gitignored). Sample shape in `examples/`.
 
 ## Status
 
-**M0** — headless CLI + trajectory JSONL + schema validate + fake worldline select-best + CI smoke.
+**M1** — `RuntimeBackend` protocol: `SimulatedBackend` + `AuraBackend` (subprocess mutate:rebind + eval-current). Trajectories set `runtime.mode` honestly. Default remains simulated.
 
-Next: **M1** — real Aura mutate/eval (or honest stub + aura-grok path).
+**Not yet:** fiber-live multi-worldline on one FlatAST, aura-repo incr-compile fan-out — that is **M2**. Do not read M1 trajectories with `mode=simulated` as live worldlines; `mode=aura` is a short shell bridge, not full floor concurrency.
 
 ## License
 
