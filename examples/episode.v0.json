@@ -8,10 +8,12 @@
     "mode": "simulated",
     "aura_ref": null,
     "seed": 42,
-    "requested_mode": "simulated"
+    "requested_mode": "simulated",
+    "incr_proven": false,
+    "incr_claimed": true
   },
   "harness": {
-    "l1_strategy_id": "m1.runtime.select_best",
+    "l1_strategy_id": "m2.worldline.select_best",
     "l2_weights_id": null,
     "l3_online": false
   },
@@ -33,7 +35,10 @@
           "tests_passed": 1,
           "tests_total": 1,
           "incr_compile_ms": 5,
-          "audit_ok": true
+          "audit_ok": true,
+          "compile_ms": 5,
+          "incr_claimed": false,
+          "incr_proven": false
         },
         "notes": "m0 simulated eval"
       }
@@ -55,7 +60,10 @@
           "tests_passed": 1,
           "tests_total": 1,
           "incr_compile_ms": 8,
-          "audit_ok": true
+          "audit_ok": true,
+          "compile_ms": 8,
+          "incr_claimed": false,
+          "incr_proven": false
         },
         "notes": "m0 simulated eval"
       }
@@ -77,7 +85,10 @@
           "tests_passed": 1,
           "tests_total": 1,
           "incr_compile_ms": 11,
-          "audit_ok": true
+          "audit_ok": true,
+          "compile_ms": 11,
+          "incr_claimed": false,
+          "incr_proven": false
         },
         "notes": "m0 simulated eval"
       }
@@ -88,5 +99,6 @@
   "privacy": {
     "redacted": false,
     "retention_class": "dogfood"
-  }
+  },
+  "discarded": []
 }

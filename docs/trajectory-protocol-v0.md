@@ -63,6 +63,23 @@ Every `aura-build run` appends one **episode** (JSON object) per line to a JSONL
 
 **Honesty:** `runtime.mode` is the backend that actually ran. `requested_mode` may be `auto`; never claim `aura` when the episode used `SimulatedBackend`. M1 `AuraBackend` is a subprocess bridge (mutate:rebind + eval-current), not fiber-live multi-worldline.
 
+### M2 extensions (optional keys)
+
+| Field | Meaning |
+|-------|---------|
+| `runtime.profile` | e.g. `{id: aura-repo, root, fitness_source, incr_claimed, incr_proven}` |
+| `runtime.workspace` | Shared worldline workspace path |
+| `runtime.session_model` | `shared_workspace_subprocess` (M2 default) or future `long_lived_aura` |
+| `runtime.parent_ref` / `stable_refs` | Parent snapshot + candidate stable refs |
+| `runtime.incr_proven` | **Must be false** until storm-still-incr is measured |
+| `worldlines[].stable_ref` / `parent_id` | Continuity across candidates |
+| `worldlines[].eval.metrics.compile_ms` | Wall-clock compile/check ms |
+| `worldlines[].eval.metrics.incr_claimed` | Profile claims incremental path |
+| `worldlines[].eval.metrics.incr_proven` | Proven incr; false in M2 |
+| `discarded[]` | Losers after select-best (`id`, `reason`, `fitness`, `stable_ref`) |
+
+Do not treat `stable_ref` or `session_model=shared_workspace_subprocess` as fiber-live FlatAST.
+
 ## Export formats
 
 | Format | Use |

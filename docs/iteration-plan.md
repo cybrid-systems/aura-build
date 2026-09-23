@@ -15,7 +15,7 @@
 - [x] `pytest` + `scripts/smoke.sh` green
 - [x] Docs encode north star (anti-postman, dogfood Aura, L1/L2/L3, deny plugin-as-moat)
 
-## M1 — Real Aura mutate/eval (current)
+## M1 — Real Aura mutate/eval
 
 **Deliver**
 
@@ -33,27 +33,34 @@
 
 **Honesty note:** M1 `AuraBackend` is a **subprocess bridge**, not fiber-live multi-worldline on one FlatAST. Do not claim live worldlines yet.
 
-## M2 — aura-repo profile
+## M2 — aura-repo profile (current)
 
 **Deliver**
 
-- Profile for repos with `build.py` + tests
-- Multi-candidate incr-compile select-best on a shared Aura workspace (not N cold shells)
-- Fitness includes incr compile ms + tests; document storm-still-incr metric
+- Profile for repos with `build.py` + tests (`--profile aura-repo`)
+- Worldline API: parent snapshot → N candidates with **stable refs** on a shared workspace dir
+- Discard losers documented in trajectory (`discarded[]`)
+- Fitness hooks wrapping `build.py` / compile check; simulated fallback when Aura/toolchain broken (e.g. GLIBCXX)
+- Metric placeholders: `compile_ms`, `incr_claimed`, **`incr_proven=false`** (explicit until storm-still-incr is measured)
+- Session model recorded: `shared_workspace_subprocess` (default) — not claiming long-lived Aura multi-eval yet
 
 **Exit criteria**
 
-- [ ] Fan-out ≥2 worldlines; fitness includes incr compile + tests
-- [ ] Storm still incr (documented metric)
-- [ ] Prefer stable-ref continuity across candidates vs mail/worktree
+- [x] Fan-out ≥2 worldlines with `parent_id` + `stable_ref`; fitness includes compile_ms + tests fields
+- [x] `incr_proven=false` always set in M2 trajectories/docs (storm-still-incr not yet proven)
+- [x] Prefer stable-ref continuity on shared workspace vs mail/worktree; losers discarded in episode
+- [ ] True incr-compile proof / fiber-live single FlatAST session (deferred — do not fake)
 
-## M3 — Memory/harness mutate + canary
+**Honesty note:** M2 shared workspace is **not** fiber-live FlatAST. Default remains simulated-green CI. Live `build.py` hook uses a cheap discovery command unless callers pass a real compile command.
+
+## M3 — Memory/harness mutate + canary (next)
 
 **Deliver**
 
 - L1 strategy mutation under canary
 - L2 offline weight hook (load by id)
 - L3 remains experimental flag-gated
+- Preview: prove or keep refusing `incr_proven`; optional long-lived Aura session if binary healthy
 
 **Exit criteria**
 

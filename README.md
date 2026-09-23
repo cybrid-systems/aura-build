@@ -57,9 +57,22 @@ Writes validated episode JSONL under `trajectories/` (gitignored). Sample shape 
 
 ## Status
 
-**M1** — `RuntimeBackend` protocol: `SimulatedBackend` + `AuraBackend` (subprocess mutate:rebind + eval-current). Trajectories set `runtime.mode` honestly. Default remains simulated.
+**M2** — Worldline API (parent → N stable refs on shared workspace) + `--profile aura-repo` fitness hooks around `build.py`. Trajectories record `discarded[]`, `compile_ms`, `incr_claimed`, and **`incr_proven=false`**. Session model: `shared_workspace_subprocess` (not long-lived Aura; not fiber-live).
 
-**Not yet:** fiber-live multi-worldline on one FlatAST, aura-repo incr-compile fan-out — that is **M2**. Do not read M1 trajectories with `mode=simulated` as live worldlines; `mode=aura` is a short shell bridge, not full floor concurrency.
+**M1** — `RuntimeBackend`: `SimulatedBackend` + `AuraBackend` (subprocess mutate:rebind + eval-current). Honest `runtime.mode`.
+
+**Not yet:** fiber-live multi-worldline on one FlatAST; proven storm-still-incr (`incr_proven=true`); long-lived Aura multi-eval. Do not read `stable_ref` as live fibers.
+
+### aura-repo profile
+
+```bash
+# Detects AURA_REF or /workspace/aura-grok when build.py exists
+aura-build run --prompt "dogfood select-best" --profile aura-repo \
+  --aura-ref /workspace/aura-grok --mode simulated --worldlines 3
+
+# Force simulated fitness (skip build.py hook) — CI-safe
+aura-build run --prompt "ci" --profile aura-repo --no-live-build --mode simulated
+```
 
 ## License
 

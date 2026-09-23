@@ -23,10 +23,10 @@ Integration points (AuraBackend → live FlatAST)
    - ``mode=aura`` never falls back to simulated (raises ``AuraUnavailable``)
    - ``mode=auto`` may fall back; trajectory still says ``simulated``
 
-5. M2 gaps (not this module):
-   - multi-candidate incr-compile fitness from aura-repo ``build.py``
-   - fiber fan-out of live worldlines (not N sequential shell procs)
-   - durable workspace / stable-ref continuity across candidates
+5. M2 (see ``worldline.py`` + ``profile_aura_repo.py``, not this module):
+   - shared workspace + stable-ref fan-out + discard losers
+   - aura-repo ``build.py`` fitness hooks (``incr_proven=false`` until proven)
+   - still **not** fiber-live FlatAST; session_model=shared_workspace_subprocess
 """
 
 from __future__ import annotations

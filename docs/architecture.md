@@ -46,15 +46,31 @@ The host process is a **thin** adapter: argparse/CI entrypoints, path wiring, ex
 | `SimulatedBackend` | `--mode simulated` or `auto` fallback | Fake fitness; not live FlatAST |
 | `AuraBackend` | `--mode aura` / successful `auto` probe | Subprocess `aura` + tiny program; **not** fiber multi-worldline yet |
 
-Integration points: `AURA_BIN` / `--aura-bin`, `scripts/aura_m1_mutate_eval.aura`, primitives `set-code` → `mutate:rebind` → `eval-current`. See `src/aura_build/runtime.py` module docstring. M2 replaces N cold shells with shared-workspace incr-compile fan-out.
+Integration points: `AURA_BIN` / `--aura-bin`, `scripts/aura_m1_mutate_eval.aura`, primitives `set-code` → `mutate:rebind` → `eval-current`. See `src/aura_build/runtime.py` module docstring.
 
-### Worldlines
+### Worldlines (M2 API)
 
 A worldline is a **candidate live-object history**, not a git worktree. Default is anti-postman: keep candidates on the floor with stable IDs. Git/mail export is an escape hatch for humans and external CI, not the primary concurrency model.
 
-### aura-repo profile
+`WorldlineWorkspace` (`src/aura_build/worldline.py`):
 
-Repos that look like Aura itself (`build.py`, tests, incr compile) get a first-class profile: multi-candidate mutate under incremental compile, select-best by test+cost fitness. Dogfood: cybrid-systems/aura (and local refs like `/workspace/aura-grok` when present).
+1. Snapshot **parent** under a shared workspace dir
+2. Fork **N candidates** with `stable_ref` + `parent_id`
+3. Eval each (profile fitness / backend)
+4. **Discard losers** — recorded in episode `discarded[]` and workspace `DISCARDED` markers
+
+Session model written to trajectory: `shared_workspace_subprocess` (M2). A future `long_lived_aura` single-process multi-eval is reserved but **not claimed** until it exists. Stable refs ≠ fiber-live FlatAST.
+
+### aura-repo profile (M2)
+
+Repos that look like Aura itself (`build.py`, tests) get `--profile aura-repo`:
+
+- Detect: `--aura-ref` / `AURA_REF` / `/workspace/aura-grok`
+- Fitness: `build.py` hook (cheap `list` by default) or simulated if GLIBCXX / toolchain broken
+- Metrics: `compile_ms`, `incr_claimed`, **`incr_proven=false`** until storm-still-incr is proven
+- Dogfood: cybrid-systems/aura (local `/workspace/aura-grok` when present)
+
+Default CI stays `--mode simulated` (optionally with `--profile aura-repo --no-live-build`).
 
 ## Trajectory store
 

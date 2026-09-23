@@ -15,7 +15,10 @@ from aura_build.trajectory import TrajectoryWriter
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="aura-build",
-        description="Dev-time room on the Aura FlatAST floor (M1 runtime backends).",
+        description=(
+            "Dev-time room on the Aura FlatAST floor "
+            "(M2: worldline workspace + aura-repo profile)."
+        ),
     )
     p.add_argument("--version", action="version", version=f"aura-build {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -50,7 +53,29 @@ def build_parser() -> argparse.ArgumentParser:
     run_p.add_argument(
         "--aura-ref",
         default=None,
-        help="aura checkout path for lib/ + build/aura discovery",
+        help="aura checkout path (also used for aura-repo profile detection)",
+    )
+    run_p.add_argument(
+        "--profile",
+        choices=("aura-repo",),
+        default=None,
+        help="optional dogfood profile (aura-repo: shared workspace + build.py fitness)",
+    )
+    run_p.add_argument(
+        "--workspace",
+        type=Path,
+        default=None,
+        help="shared worldline workspace dir (default: ephemeral temp)",
+    )
+    run_p.add_argument(
+        "--keep-workspace",
+        action="store_true",
+        help="retain workspace dir after episode (implies useful with --workspace)",
+    )
+    run_p.add_argument(
+        "--no-live-build",
+        action="store_true",
+        help="aura-repo: skip build.py hook; simulated fitness only",
     )
     run_p.add_argument(
         "--json",
@@ -70,6 +95,10 @@ def main(argv: list[str] | None = None) -> int:
             mode=args.mode,
             aura_bin=args.aura_bin,
             aura_ref=args.aura_ref,
+            profile=args.profile,
+            workspace_dir=args.workspace,
+            keep_workspace=args.keep_workspace,
+            try_live_build=not args.no_live_build,
         )
         try:
             result = run_episode(args.prompt, cfg)
@@ -83,9 +112,14 @@ def main(argv: list[str] | None = None) -> int:
         else:
             sel = result.selected
             mode = result.episode["runtime"]["mode"]
+            prof = result.episode["runtime"].get("profile")
+            prof_s = prof.get("id") if isinstance(prof, dict) else (args.profile or "-")
+            discarded_n = len(result.episode.get("discarded") or [])
             print(
                 f"selected={sel.id} fitness={sel.eval['fitness']} "
-                f"mode={mode} episode={result.episode['episode_id']} wrote={path}"
+                f"mode={mode} profile={prof_s} discarded={discarded_n} "
+                f"incr_proven={result.episode['runtime'].get('incr_proven', False)} "
+                f"episode={result.episode['episode_id']} wrote={path}"
             )
         return 0
     return 2

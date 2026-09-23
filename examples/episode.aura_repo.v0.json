@@ -1,0 +1,102 @@
+{
+  "schema_version": "trajectory.v0",
+  "episode_id": "00000000-0000-4000-8000-0000000000m2",
+  "ts_start": "2026-09-23T05:10:00+00:00",
+  "ts_end": "2026-09-23T05:10:00.080000+00:00",
+  "prompt": "example: aura-repo shared workspace select-best",
+  "runtime": {
+    "mode": "simulated",
+    "requested_mode": "simulated",
+    "aura_ref": "/workspace/aura-grok",
+    "seed": 2,
+    "profile": {
+      "id": "aura-repo",
+      "root": "/workspace/aura-grok",
+      "build_py": "/workspace/aura-grok/build.py",
+      "has_tests": true,
+      "fitness_source": "simulated",
+      "incr_claimed": true,
+      "incr_proven": false
+    },
+    "workspace": "/tmp/aura-build-wl-example",
+    "session_model": "shared_workspace_subprocess",
+    "parent_ref": "wl-parent",
+    "incr_proven": false,
+    "incr_claimed": true
+  },
+  "harness": {
+    "l1_strategy_id": "m2.worldline.select_best",
+    "l2_weights_id": null,
+    "l3_online": false
+  },
+  "worldlines": [
+    {
+      "id": "wl-0",
+      "parent_id": "wl-parent",
+      "stable_ref": "wl-0",
+      "mutations": [
+        {
+          "op": "worldline_fork",
+          "target_id": "stable:wl-0",
+          "summary": "cand 0"
+        }
+      ],
+      "eval": {
+        "fitness": 0.71,
+        "passed": true,
+        "metrics": {
+          "tests_passed": 1,
+          "tests_total": 1,
+          "compile_ms": 12,
+          "incr_compile_ms": 12,
+          "incr_claimed": true,
+          "incr_proven": false,
+          "fitness_source": "simulated",
+          "audit_ok": true
+        },
+        "notes": "example simulated"
+      }
+    },
+    {
+      "id": "wl-1",
+      "parent_id": "wl-parent",
+      "stable_ref": "wl-1",
+      "mutations": [
+        {
+          "op": "worldline_fork",
+          "target_id": "stable:wl-1",
+          "summary": "cand 1"
+        }
+      ],
+      "eval": {
+        "fitness": 0.4,
+        "passed": true,
+        "metrics": {
+          "tests_passed": 1,
+          "tests_total": 1,
+          "compile_ms": 15,
+          "incr_compile_ms": 15,
+          "incr_claimed": true,
+          "incr_proven": false,
+          "fitness_source": "simulated",
+          "audit_ok": true
+        },
+        "notes": "example simulated"
+      }
+    }
+  ],
+  "selected_id": "wl-0",
+  "selection_reason": "max_fitness",
+  "discarded": [
+    {
+      "id": "wl-1",
+      "reason": "lower_fitness",
+      "fitness": 0.4,
+      "stable_ref": "wl-1"
+    }
+  ],
+  "privacy": {
+    "redacted": false,
+    "retention_class": "dogfood"
+  }
+}
