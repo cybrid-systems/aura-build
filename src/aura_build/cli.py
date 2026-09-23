@@ -1,4 +1,4 @@
-"""Headless CLI — `aura-build run|harness-mutate|memory`."""
+"""Headless CLI — `aura-build run|harness-mutate|memory|export`."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from aura_build.harness import (
 )
 from aura_build.memory import MemoryStore
 from aura_build.orch import AuraUnavailable, OrchConfig, run_episode, run_harness_canary
+from aura_build.export import export_trajectories
 from aura_build.trajectory import TrajectoryWriter
 
 
@@ -23,7 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="aura-build",
         description=(
             "Dev-time room on the Aura FlatAST floor "
-            "(M3: harness canary + memory store)."
+            "(M4: RL/batch trajectory export + harness canary + memory)."
         ),
     )
     p.add_argument("--version", action="version", version=f"aura-build {__version__}")
@@ -102,6 +103,56 @@ def build_parser() -> argparse.ArgumentParser:
     ml = mem_sub.add_parser("list", help="list notes for profile")
     ml.add_argument("--profile", default="default")
     ml.add_argument("--harness-root", type=Path, default=None)
+
+    exp = sub.add_parser(
+        "export",
+        help=(
+            "batch-export trajectory JSONL → JSON array (+ Parquet if "
+            "pandas/pyarrow installed); privacy redaction ON by default"
+        ),
+    )
+    exp.add_argument(
+        "inputs",
+        nargs="*",
+        type=Path,
+        help=(
+            "JSONL files and/or dirs (default: trajectories/*.jsonl and "
+            ".aura-build/**/*.jsonl)"
+        ),
+    )
+    exp.add_argument(
+        "--out",
+        type=Path,
+        default=Path("trajectories/export.json"),
+        help="JSON array output path (default: trajectories/export.json)",
+    )
+    exp.add_argument(
+        "--parquet",
+        type=Path,
+        default=None,
+        help="optional Parquet path (default: same stem as --out)",
+    )
+    exp.add_argument(
+        "--no-parquet",
+        action="store_true",
+        help="skip Parquet attempt entirely",
+    )
+    exp.add_argument(
+        "--include-raw",
+        action="store_true",
+        help="disable privacy redaction (local dogfood only)",
+    )
+    exp.add_argument(
+        "--no-redact",
+        action="store_true",
+        help="alias of --include-raw",
+    )
+    exp.add_argument(
+        "--strict",
+        action="store_true",
+        help="fail on invalid JSONL lines instead of skipping",
+    )
+    exp.add_argument("--json", action="store_true", help="print export stats JSON")
 
     show = sub.add_parser("harness-show", help="print live harness config")
     show.add_argument("--harness-root", type=Path, default=None)
@@ -227,6 +278,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_memory(args)
     if args.cmd == "harness-show":
         return _cmd_harness_show(args)
+    if args.cmd == "export":
+        return _cmd_export(args)
     return 2
 
 
@@ -361,6 +414,44 @@ def _cmd_harness_show(args: argparse.Namespace) -> int:
             f"worldline_count={cfg.worldline_count} routing={cfg.routing} "
             f"l1={cfg.l1_strategy_id} l2={cfg.l2_weights_id}"
         )
+    return 0
+
+
+
+def _cmd_export(args: argparse.Namespace) -> int:
+    include_raw = bool(args.include_raw or args.no_redact)
+    result = export_trajectories(
+        inputs=args.inputs or None,
+        out_json=args.out,
+        out_parquet=args.parquet,
+        redact=not include_raw,
+        include_raw=include_raw,
+        skip_invalid=not args.strict,
+        want_parquet=not args.no_parquet,
+    )
+    s = result.stats
+    payload = {
+        "json": str(result.json_path),
+        "parquet": str(result.parquet_path) if result.parquet_path else None,
+        "files_read": s.files_read,
+        "episodes_exported": s.episodes_exported,
+        "episodes_skipped_invalid": s.episodes_skipped_invalid,
+        "redacted": s.redacted,
+        "parquet_written": s.parquet_written,
+        "parquet_skip_reason": s.parquet_skip_reason,
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        print(
+            f"exported={s.episodes_exported} files={s.files_read} "
+            f"skipped_invalid={s.episodes_skipped_invalid} "
+            f"redacted={s.redacted} json={result.json_path}"
+        )
+        if s.parquet_written and result.parquet_path:
+            print(f"parquet={result.parquet_path}")
+        elif s.parquet_skip_reason:
+            print(s.parquet_skip_reason, file=sys.stderr)
     return 0
 
 

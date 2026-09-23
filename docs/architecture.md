@@ -76,6 +76,10 @@ Default CI stays `--mode simulated` (optionally with `--profile aura-repo --no-l
 
 Append-only episodes (see [trajectory-protocol-v0.md](trajectory-protocol-v0.md)). Feeds RL export and specialist distillation. Off-runtime chat logs are **devalued** relative to on-runtime mutate/eval tapes.
 
+### M4 batch export
+
+`aura-build export` reads JSONL under `trajectories/` and `.aura-build/**`, validates `trajectory.v0`, applies privacy filters (**default ON**), writes a **JSON array**, and attempts **Parquet** when `pandas`+`pyarrow` are installed (optional extra `aura-build[export]`; otherwise clear skip message). `--include-raw` disables redaction for local dogfood only. Export is offline — no L3 weight updates. Field guide: [specialist-training-notes.md](specialist-training-notes.md).
+
 ## Evolving memory / harness
 
 | Level | What | Production posture |
@@ -95,7 +99,7 @@ Append-only episodes (see [trajectory-protocol-v0.md](trajectory-protocol-v0.md)
 
 Memory: `MemoryStore` under `.aura-build/memory/<profile>.json` (get/set via CLI or orch).
 
-L2: `resolve_l2_weights(id)` stub only — no training, no tensor load.
+L2: `resolve_l2_weights(id)` stub only — no training, no tensor load. Real artifacts would plug at the resolver/loader by `weights_id` (see `l2_weights.py` docstring); M4 documents plug points only.
 
 Do **not** read a committed harness JSON or `stable_ref` as fiber-live FlatAST / proven incr.
 

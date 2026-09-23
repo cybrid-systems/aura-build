@@ -24,6 +24,7 @@ Prefer live-object worldlines over git-worktree mail; dogfood [cybrid-systems/au
 - [Narrative](docs/narrative.md) — 邮差 vs 活对象
 - [Architecture](docs/architecture.md)
 - [Trajectory protocol v0](docs/trajectory-protocol-v0.md)
+- [Specialist training notes](docs/specialist-training-notes.md) — M4 export fields
 - [Iteration plan](docs/iteration-plan.md) — M0–M5
 - [Value](docs/value.md) · [Investor](docs/investor.md) · [Founders narrow path](docs/founders-narrow-path.md)
 
@@ -57,13 +58,35 @@ Writes validated episode JSONL under `trajectories/` (gitignored). Sample shape 
 
 ## Status
 
-**M3** — Self-evolving **memory / harness** at L1: mutable harness config, canary propose→commit|heal|discard, file-backed memory under `.aura-build/`, L2 stub by weights id. **AUTOPROMOTE default OFF**. Trajectories keep **`incr_proven=false`**. Not fiber-live.
+**M4** — Batch **RL / specialist export**: `aura-build export` → JSON array (always) + Parquet when `pandas`/`pyarrow` available. Privacy redaction **default ON** (abs paths → placeholders, secret patterns scrubbed); `--include-raw` for local dogfood only. Specialist training notes + L2 stub plug-point docs. Still **`incr_proven=false`**; no online L3; no fiber-live claim.
+
+**M3** — Self-evolving **memory / harness** at L1: mutable harness config, canary propose→commit|heal|discard, file-backed memory under `.aura-build/`, L2 stub by weights id. **AUTOPROMOTE default OFF**.
 
 **M2** — Worldline API (parent → N stable refs on shared workspace) + `--profile aura-repo` fitness hooks. Session model: `shared_workspace_subprocess`.
 
 **M1** — `RuntimeBackend`: `SimulatedBackend` + `AuraBackend` (subprocess mutate:rebind + eval-current). Honest `runtime.mode`.
 
-**Not yet (M4+):** RL export / specialist training notes; real L2 weight artifacts; fiber-live multi-worldline on one FlatAST; proven storm-still-incr (`incr_proven=true`); long-lived Aura multi-eval. Do not read `stable_ref` as live fibers.
+**Not yet (M5+):** TUI/ACP; real L2 tensor load / promotion automation; fiber-live multi-worldline on one FlatAST; proven storm-still-incr (`incr_proven=true`); long-lived Aura multi-eval. Do not read `stable_ref` as live fibers.
+
+
+### Trajectory export (M4)
+
+```bash
+# Redacted JSON array (default). Parquet if pandas+pyarrow installed.
+aura-build export --out trajectories/export.json
+
+# From explicit dirs/files
+aura-build export trajectories/ .aura-build/trajectories/ \
+  --out /tmp/aura-export.json --parquet /tmp/aura-export.parquet
+
+# Local dogfood only — keep raw paths/secrets
+aura-build export --include-raw --out trajectories/export.raw.json
+
+# Optional deps for Parquet
+pip install 'aura-build[export]'
+```
+
+See [specialist-training-notes.md](docs/specialist-training-notes.md).
 
 ### Canary harness mutate demo
 

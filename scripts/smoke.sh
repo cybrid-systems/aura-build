@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Simulated CI / local smoke (no Aura required): venv, pytest, episodes, harness canary.
+# Simulated CI / local smoke (no Aura required): venv, pytest, episodes, harness canary, export.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -58,6 +58,12 @@ test "$rc" -eq 1
 aura-build memory set --profile smoke --key demo --value anti-postman --harness-root "$HROOT"
 aura-build memory get --profile smoke --key demo --harness-root "$HROOT" | grep -q anti-postman
 
+# M4: batch export (JSON always; Parquet optional)
+EXPORT_JSON="${ROOT}/trajectories/smoke_export.json"
+rm -f "$EXPORT_JSON" "${ROOT}/trajectories/smoke_export.parquet"
+aura-build export "$OUT" "$OUT2" "$OUT3" "$OUT4" \
+  --out "$EXPORT_JSON" --no-parquet
+
 python - <<PY
 import json
 from pathlib import Path
@@ -93,5 +99,15 @@ check(r"$OUT", expect_profile=False)
 check(r"$OUT2", expect_profile=True)
 check(r"$OUT3", expect_harness_outcome="discard", expect_accepted=True)
 check(r"$OUT4", expect_harness_outcome="heal", expect_accepted=False)
-print("smoke ok all (M0–M3)")
+
+export_path = Path(r"$EXPORT_JSON")
+exported = json.loads(export_path.read_text())
+assert isinstance(exported, list) and len(exported) >= 4, len(exported)
+for ep in exported:
+    validate_episode(ep)
+    assert ep["privacy"].get("redacted") is True
+    assert ep["runtime"].get("incr_proven", False) is False
+    assert ep["harness"]["l3_online"] is False
+print("smoke ok export:", export_path, "n=", len(exported))
+print("smoke ok all (M0–M4)")
 PY

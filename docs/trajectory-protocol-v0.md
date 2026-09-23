@@ -97,15 +97,32 @@ AUTOPROMOTE default is **OFF**. Canary reject → `heal` (live harness unchanged
 
 `incr_proven` remains **false**. Do not treat harness commit as fiber-live FlatAST.
 
+### M4 export metadata (optional keys on exported episodes)
+
+| Field | Meaning |
+|-------|---------|
+| `privacy.export_filter` | e.g. `m4.default` when redaction ran |
+| `privacy.redacted` | `true` after default export filter |
+
+Batch export does not add training labels; distillers read actions / fitness / `harness.mid` as documented in [specialist-training-notes.md](specialist-training-notes.md).
+
 ## Export formats
 
 | Format | Use |
 |--------|-----|
 | **JSONL** (default) | Append-only local / CI artifact |
-| **JSON array** | Batch export for training jobs |
-| **Parquet** (M4+) | Columnar RL pipelines |
+| **JSON array** | Batch export for training jobs (`aura-build export`) |
+| **Parquet** (optional) | Columnar RL pipelines when pandas+pyarrow installed |
 
-M0 writes JSONL only. Schema validation rejects unknown `schema_version` and missing required keys.
+M0–M3 write JSONL. **M4** `aura-build export` always writes a JSON array of validated episodes; Parquet is best-effort (optional dep). Schema validation rejects unknown `schema_version` and missing required keys.
+
+### M4 privacy filters (default ON)
+
+- Absolute local paths → `<redacted:path:basename>` placeholders
+- Secret / token patterns (`api_key=…`, `sk-…`, `ghp_…`, `Bearer …`, etc.) → `<redacted:secret>`
+- Sets `privacy.redacted=true` and `privacy.export_filter=m4.default`
+- `--include-raw` / `--no-redact` skips filters (local dogfood only)
+- Does **not** flip `incr_proven` or enable `l3_online`
 
 ## Privacy
 

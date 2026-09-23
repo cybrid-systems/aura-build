@@ -53,7 +53,7 @@
 
 **Honesty note:** M2 shared workspace is **not** fiber-live FlatAST. Default remains simulated-green CI. Live `build.py` hook uses a cheap discovery command unless callers pass a real compile command.
 
-## M3 — Memory/harness mutate + canary (current)
+## M3 — Memory/harness mutate + canary
 
 **Deliver**
 
@@ -77,28 +77,35 @@
 
 **Honesty note:** M3 canary is a **shadow harness episode**, not fiber-live multi-worldline. Committing harness JSON under `.aura-build/` is not promoting online L3 weights.
 
-## M4 — RL export + specialist notes (next)
+## M4 — RL export + specialist notes (current)
 
 **Deliver**
 
-- Batch export (JSON array / Parquet notes)
-- Specialist training notes from trajectory corpus
-- Real L2 weight artifact promotion notes (still offline)
+- CLI: `aura-build export` — JSONL → JSON array (always) + Parquet when pandas/pyarrow present
+- Privacy filters **default ON**: strip absolute paths → placeholders; redact token/key patterns; `--include-raw` for local dogfood only
+- Specialist training notes: fields distillers need (actions, fitness, worldline outcomes, `harness.mid`, `incr_proven=false` honesty)
+- L2 weight artifacts: stub-by-id retained; document plug points for real weights; **no training loop**
+- Keep `incr_proven=false`; no fiber-live FlatAST claim; no online L3 weight updates
 
 **Exit criteria**
 
-- [ ] Export validates against v0 schema
-- [ ] Privacy retention_class enforced in export filters
-- [ ] Off-runtime devaluation documented in training notes
-- [ ] RL export pipeline stubs consumed by offline jobs (no online L3)
+- [x] Export validates against v0 schema
+- [x] Privacy redaction default ON; retention_class preserved; `--include-raw` opt-out
+- [x] Off-runtime devaluation documented in [specialist-training-notes.md](specialist-training-notes.md)
+- [x] RL export pipeline writes JSON (+ optional Parquet) for offline jobs (no online L3)
+- [ ] Real L2 tensor load / promotion automation (deferred — stub + docs only)
+- [ ] Fiber-live FlatAST / storm-still-incr proof (still deferred)
 
-## M5 — TUI / ACP (deferred)
+## M5 — TUI / ACP + real L2 load (next / deferred)
 
 **Deliver**
 
 - Optional TUI and ACP adapter — **after** headless trajectory loop is solid
+- Real L2 weight artifact load (mmap/read by `weights_id`) + offline promotion gate using exported corpora
+- Still **no** online L3 in default orch; still no fake `incr_proven=true`
 
 **Exit criteria**
 
-- [ ] Headless path remains SSOT
-- Soft ≠ Restricted; no plugin-as-moat narrative
+- [ ] Headless path remains SSOT (`run` / `export` / harness canary)
+- [ ] Soft ≠ Restricted; no plugin-as-moat narrative
+- [ ] L2 loader sets `stub=False` only when bytes actually load; promotion excludes `l3_online=true` by default
