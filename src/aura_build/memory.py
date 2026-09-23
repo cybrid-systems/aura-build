@@ -1,8 +1,4 @@
-"""Thin host memory JSON I/O (Aura kernel preferred via CLI).
-
-Product memory commands live in ``aura/memory.aura``. This module remains as a
-tiny JSON file helper for ``l2 promote --from-export`` / local debug only.
-"""
+"""Thin host memory JSON I/O (product memory is aura/memory.aura)."""
 
 from __future__ import annotations
 

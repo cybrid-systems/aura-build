@@ -43,6 +43,14 @@ set -e
 test "$frc" -eq 2
 grep -q 'python_deprecated\|aura-build run' /tmp/aura_force.err
 
+# export also refuses without Aura (no host redaction)
+set +e
+AURA_BUILD_FORCE_PYTHON=1 aura-build export --out /tmp/aura_force_export.json --no-parquet >/tmp/aura_force_exp.out 2>/tmp/aura_force_exp.err
+frc=$?
+set -e
+test "$frc" -eq 2
+grep -q 'python_deprecated\|aura-build export' /tmp/aura_force_exp.err
+
 # Prove refuse without Aura (honest fail-closed, no storm orch)
 PROVE_ROOT="${ROOT}/trajectories/_smoke_prove"
 rm -rf "$PROVE_ROOT"

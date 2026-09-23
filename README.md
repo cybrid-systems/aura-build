@@ -16,13 +16,13 @@ Prefer live-object worldlines over git-worktree mail; dogfood [cybrid-systems/au
 mutate/eval bridge, prove-incr / doctor honesty flags, harness L1 mutate+canary,
 trajectory write, memory, ACP/TUI stubs, export JSON+redaction (`aura/main.aura` + modules).
 
-Python is a **thin CLI host only**: argparse, `kernel.py` invoke Aura, optional Parquet
-adapter, schema validate, and a few host-side helpers (`l2 promote --from-export`,
-memory JSON I/O, prove *refuse* report when Aura is missing).
+Python is a **thin CLI host only**: argparse, `kernel.py` invoke Aura, Parquet
+adapter, light schema for smoke/refuse messages, and a few host-side helpers
+(`l2 promote --from-export` corpus gate, memory JSON I/O, prove *refuse* report).
 
-**Python orch is gone.** Modules that used to reimplement product logic were deleted or
-gutted to refuse stubs (`kernel=python_deprecated`, exit non-zero). There is **no**
-silent CI green path that pretends Python is the product.
+**Python orch is gone.** Former reimplementations are **deleted** (not stubs); the CLI
+refuses with `kernel=python_deprecated` when Aura is missing. There is **no** silent
+CI green path that pretends Python is the product.
 
 | Env / path | Role |
 |------------|------|
@@ -37,7 +37,7 @@ silent CI green path that pretends Python is the product.
 | `run` / `harness-mutate` / `acp` / `tui` / `harness-show` | **Aura kernel** | refuse (`kernel=python_deprecated`, exit 2) |
 | `prove-incr` | **Aura kernel** (measured storm) | honest refuse report only (no storm orch) |
 | `doctor` | **Aura kernel** | host snapshot of last report / probe |
-| `export` | **Aura kernel** JSON+redaction; Parquet via thin Python adapter | host JSONL→JSON+Parquet adapter (`kernel=python_host`) |
+| `export` | **Aura kernel** JSON+redaction; Parquet via thin Python adapter | refuse (`kernel=python_deprecated`) — no host redaction |
 | `memory` / `l2 show|list|promote` | Aura when healthy | thin host JSON I/O; `l2 promote --from-export` stays host corpus gate |
 
 ```bash
@@ -57,15 +57,18 @@ Trajectory / stdout show `kernel=aura` on the kernel path.
 
 | Was | Now |
 |-----|-----|
-| `orch.py` / `worldline.py` / `profile_aura_repo.py` | refuse stubs — product in `aura/orch.aura`, `aura/worldline.aura` |
+| `orch.py` / `worldline.py` / `profile_aura_repo.py` / `acp.py` / `tui.py` | **deleted** — product in `aura/*.aura`; CLI refuses via `deprecated.refuse` |
+| `export.py` redaction / JSONL batch | **Parquet adapter only** — JSON+redaction in `aura/export.aura` |
 | `prove_incr.py` storm loop | host refuse report only — product in `aura/prove.aura` |
 | `harness.py` canary engine | `default_root` + `AUTOPROMOTE_ENV` only — product in `aura/harness.aura` |
-| `acp.py` / `tui.py` product logic | refuse stubs — product in `aura/acp.aura`, `aura/tui.aura` |
 | `runtime.py` SimulatedBackend / AuraBackend orch | probe + libstdc++ sidecar helpers for `kernel.py` only |
 
-**Still in Python (host):** `cli.py`, `kernel.py`, `schema.py`, `trajectory.py`,
-`export.py` (redaction + Parquet adapter), `l2_weights.py`, thin `memory.py`,
-`deprecated.py`, prove refuse / doctor snapshot helpers.
+**Rough host LOC (excl. tests):** ~1.85k lines (`cli` ~810, rest thin). Product logic LOC lives under `aura/` (~2k).
+
+**Still in Python (host):** `cli.py`, `kernel.py`, `runtime.py` (probe + sidecar),
+`export.py` (Parquet adapter only), light `schema.py` / `trajectory.py` (host smoke
+gate), `l2_weights.py` (`promote --from-export` corpus gate), thin `memory.py` /
+`harness.py` / `prove_incr.py` refuse helpers, `deprecated.py`.
 
 ## Non-goals / 非目标
 
@@ -190,7 +193,7 @@ Report: `.aura-build/prove-incr-latest.json`. Trajectories carry
 
 ### Trajectory export (M4)
 
-Aura-first when `AURA_BIN` + sidecar are healthy: the kernel writes the redacted JSON array (`aura/export.aura`). **Parquet is not produced in Aura** (no clean in-kernel parquet writer); the Python host optionally converts the JSON array → Parquet as a thin adapter when `pandas`+`pyarrow` are installed. Without Aura, the host may still batch-export JSONL→JSON+Parquet as `kernel=python_host` (I/O adapter, not orch).
+Aura-first when `AURA_BIN` + sidecar are healthy: the kernel writes the redacted JSON array (`aura/export.aura`). **Parquet is not produced in Aura**; the Python host optionally converts the JSON array → Parquet as a thin adapter when `pandas`+`pyarrow` are installed. Without Aura / with `AURA_BUILD_FORCE_PYTHON`, `export` **refuses** — no silent Python redaction path.
 
 
 ```bash

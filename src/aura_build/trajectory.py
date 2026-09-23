@@ -1,4 +1,4 @@
-"""Append-only trajectory JSONL store."""
+"""Tiny host JSONL helper for tests/fixtures (product write is aura/traj.aura)."""
 
 from __future__ import annotations
 
@@ -8,12 +8,11 @@ from typing import Any
 
 from aura_build.schema import validate_episode
 
-
 DEFAULT_DIR = Path("trajectories")
 
 
 class TrajectoryWriter:
-    """Write validated episodes to a JSONL file."""
+    """Append validated episodes to JSONL (host test helper only)."""
 
     def __init__(self, path: Path | str | None = None) -> None:
         if path is None:

@@ -1,4 +1,4 @@
-"""Host-only prove refuse report (no Python storm orch).
+"""Host prove refuse report + doctor snapshot (no Python storm orch).
 
 Product prove-incr lives in ``aura/prove.aura``. Without Aura, write an honest
 fail-closed refuse report — never simulate incr_proven / fiber_live.
@@ -15,12 +15,7 @@ from typing import Any
 from aura_build.deprecated import KERNEL_TAG
 from aura_build.harness import default_root
 
-__all__ = [
-    "ProveReport",
-    "doctor_snapshot",
-    "write_refuse_report",
-    "write_report",
-]
+__all__ = ["ProveReport", "doctor_snapshot", "write_refuse_report", "write_report"]
 
 
 def _utc_now() -> str:
@@ -75,8 +70,7 @@ def write_refuse_report(
     payload = report.to_dict()
     payload["requested_cycles"] = int(cycles)
     payload["requested_worldlines"] = int(worldlines)
-    out_path = write_report(payload, path=path, root=root)
-    return report, out_path
+    return report, write_report(payload, path=path, root=root)
 
 
 def doctor_snapshot(
@@ -123,7 +117,6 @@ def doctor_snapshot(
         "honesty": honesty,
         "tips": [
             "Product prove-incr is aura/prove.aura — set AURA_BIN",
-            "AURA_BUILD_FORCE_PYTHON is deprecated and does not restore Python orch",
             "Never invent incr_proven / fiber_live",
         ],
         "kernel": honesty["kernel"],

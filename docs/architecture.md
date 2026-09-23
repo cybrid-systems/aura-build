@@ -52,7 +52,7 @@ Integration points: `AURA_BIN` / `--aura-bin`, `scripts/aura_m1_mutate_eval.aura
 
 A worldline is a **candidate live-object history**, not a git worktree. Default is anti-postman: keep candidates on the floor with stable IDs. Git/mail export is an escape hatch for humans and external CI, not the primary concurrency model.
 
-`WorldlineWorkspace` (`src/aura_build/worldline.py`):
+`WorldlineWorkspace` (Aura: `aura/worldline.aura`):
 
 1. Snapshot **parent** under a shared workspace dir
 2. Fork **N candidates** with `stable_ref` + `parent_id`
@@ -132,11 +132,11 @@ is observed. Details: [storm-still-incr.md](storm-still-incr.md).
 | Surface | Role |
 |---------|------|
 | `cli.py` + `kernel.py` | Argparse → env → `aura aura/main.aura`; refuse when unavailable |
-| `export.py` / schema / trajectory | Host batch export, privacy redaction, Parquet adapter |
+| `export.py` | Parquet adapter only (JSON+redaction in `aura/export.aura`) |
 | `l2_weights.py` / thin `memory.py` | Host metadata I/O; `l2 promote --from-export` corpus gate |
 | `prove_incr.py` refuse helper | Honest fail-closed report only (no storm orch) |
 | `runtime.py` | Binary probe + GCC16 libstdc++ sidecar for `kernel.py` |
-| `orch.py` / `worldline.py` / `acp.py` / `tui.py` / … | **Deleted product logic** — refuse stubs |
+| `orch.py` / `worldline.py` / `acp.py` / `tui.py` / … | **Deleted** — CLI refuses via `deprecated.py` |
 
 **Aura-first CLIs** (require kernel when doing orch): `run`, `prove-incr`,
 `harness-mutate`, `doctor`, `harness-show`, `acp`, `tui`, `export` (JSON), `memory`/`l2`

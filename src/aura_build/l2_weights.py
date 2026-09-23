@@ -1,20 +1,8 @@
-"""L2 offline specialist weights — metadata artifact plug (M5).
+"""L2 offline metadata — host corpus gate for ``l2 promote --from-export``.
 
-M5 posture
-----------
-- Resolve by ``weights_id``; optionally load stub metadata from
-  ``.aura-build/weights/<id>.json`` (``id``, ``created``, ``notes`` only).
-- Offline promotion writes that JSON after gating an export corpus
-  (refuses any episode with ``l3_online=true``).
-- **No training loop**, no tensor/mmap load, no online L3 updates.
-- ``stub=True`` always while artifacts are metadata-only (no weight bytes).
-  ``artifact_present=True`` when the JSON file was loaded.
-
-Honesty
--------
-- Do not set ``stub=False`` until real weight bytes load (deferred past M5).
-- Do not flip ``incr_proven``.
-- Do not promote from online L3 episodes into default L2 sets.
+Product show/list/promote (sans export gate) lives in ``aura/l2.aura``. This
+module keeps the offline promote path that refuses ``l3_online=true`` corpora
+and thin resolve/list JSON I/O when Aura is unavailable. Always ``stub=True``.
 """
 
 from __future__ import annotations
@@ -51,18 +39,11 @@ def _utc_now() -> str:
 
 
 def _aura_build_root(root: Path | str | None) -> Path:
-    """Normalize to the ``.aura-build`` directory.
-
-    Accepts ``None`` (cwd/.aura-build), a path to ``.aura-build``, or a
-    harness_root that already points at ``.aura-build``.
-    """
     if root is None:
         return default_root()
     r = Path(root)
     if r.name == ".aura-build":
         return r
-    # harness_root in this project is already `.aura-build` (may not exist yet).
-    # Heuristic: if it looks like an aura-build state dir, use as-is.
     if (
         (r / "harness.json").exists()
         or (r / "memory").is_dir()
@@ -74,14 +55,11 @@ def _aura_build_root(root: Path | str | None) -> Path:
 
 
 def weights_dir(root: Path | str | None = None) -> Path:
-    """Return ``<aura-build-root>/weights``."""
     return _aura_build_root(root) / "weights"
 
 
 def artifact_path(weights_id: str, root: Path | str | None = None) -> Path:
-    """Path for stub metadata JSON: ``.aura-build/weights/<id>.json``."""
-    wid = _require_safe_id(weights_id)
-    return weights_dir(root) / f"{wid}.json"
+    return weights_dir(root) / f"{_require_safe_id(weights_id)}.json"
 
 
 def _require_safe_id(weights_id: str) -> str:
@@ -109,17 +87,12 @@ def _safe_id_or_none(weights_id: str | None) -> str | None:
 
 @dataclass(frozen=True)
 class L2WeightsRef:
-    """Reference to offline specialist weights (metadata stub in M5)."""
-
     weights_id: str
     loaded: bool
     stub: bool = True
     artifact_present: bool = False
     created: str | None = None
-    notes: str = (
-        "stub: resolve by model id only; metadata JSON under "
-        ".aura-build/weights/<id>.json; no training; no tensor load"
-    )
+    notes: str = "stub metadata; no tensor load"
     artifact_path: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -127,13 +100,8 @@ class L2WeightsRef:
 
 
 def load_l2_artifact(
-    weights_id: str,
-    root: Path | str | None = None,
+    weights_id: str, root: Path | str | None = None
 ) -> L2WeightsRef | None:
-    """Load metadata stub from ``.aura-build/weights/<id>.json`` if present.
-
-    Returns None when the file is missing. Always ``stub=True`` (no tensors).
-    """
     wid = _safe_id_or_none(weights_id)
     if wid is None:
         return None
@@ -150,33 +118,21 @@ def load_l2_artifact(
     if file_id != wid:
         return None
     created = data.get("created")
-    created_s = str(created) if created is not None else None
     notes_raw = data.get("notes")
-    notes = (
-        str(notes_raw)
-        if notes_raw is not None
-        else "metadata artifact; stub=True (no tensor bytes)"
-    )
     return L2WeightsRef(
         weights_id=wid,
         loaded=True,
         stub=True,
         artifact_present=True,
-        created=created_s,
-        notes=notes,
+        created=str(created) if created is not None else None,
+        notes=str(notes_raw) if notes_raw is not None else "metadata stub; stub=True",
         artifact_path=str(path),
     )
 
 
 def resolve_l2_weights(
-    weights_id: str | None,
-    root: Path | str | None = None,
+    weights_id: str | None, root: Path | str | None = None
 ) -> L2WeightsRef | None:
-    """Return an L2 ref when ``weights_id`` is set; else None.
-
-    Prefer on-disk metadata under ``.aura-build/weights/<id>.json``.
-    If absent, acknowledge the id with ``artifact_present=False``, ``stub=True``.
-    """
     wid = _safe_id_or_none(weights_id)
     if wid is None:
         if weights_id is None:
@@ -184,13 +140,7 @@ def resolve_l2_weights(
         raw = str(weights_id).strip()
         if not raw or raw.lower() in ("null", "none"):
             return None
-        return L2WeightsRef(
-            weights_id=raw,
-            loaded=True,
-            stub=True,
-            artifact_present=False,
-        )
-
+        return L2WeightsRef(weights_id=raw, loaded=True, stub=True, artifact_present=False)
     loaded = load_l2_artifact(wid, root=root)
     if loaded is not None:
         return loaded
@@ -199,15 +149,11 @@ def resolve_l2_weights(
         loaded=True,
         stub=True,
         artifact_present=False,
-        notes=(
-            "stub: id acknowledged; no .aura-build/weights/<id>.json yet; "
-            "promote offline via aura-build l2 promote"
-        ),
+        notes="stub: id acknowledged; promote via aura-build l2 promote",
     )
 
 
 def list_l2_artifacts(root: Path | str | None = None) -> list[L2WeightsRef]:
-    """List metadata artifacts under ``.aura-build/weights/``."""
     d = weights_dir(root)
     if not d.is_dir():
         return []
@@ -220,7 +166,6 @@ def list_l2_artifacts(root: Path | str | None = None) -> list[L2WeightsRef]:
 
 
 def _export_has_l3_online(export_path: Path) -> list[str]:
-    """Return episode ids that set ``l3_online=true``."""
     text = export_path.read_text(encoding="utf-8")
     text_stripped = text.strip()
     if text_stripped.startswith("["):
@@ -231,18 +176,15 @@ def _export_has_l3_online(export_path: Path) -> list[str]:
         episodes = []
         for line in text.splitlines():
             line = line.strip()
-            if not line:
-                continue
-            episodes.append(json.loads(line))
-
+            if line:
+                episodes.append(json.loads(line))
     bad: list[str] = []
     for i, ep in enumerate(episodes):
         if not isinstance(ep, dict):
             continue
         harness = ep.get("harness") or {}
         if isinstance(harness, dict) and harness.get("l3_online") is True:
-            eid = ep.get("episode_id") or f"index:{i}"
-            bad.append(str(eid))
+            bad.append(str(ep.get("episode_id") or f"index:{i}"))
     return bad
 
 
@@ -255,11 +197,7 @@ def promote_l2_offline(
     created: str | None = None,
     overwrite: bool = False,
 ) -> L2WeightsRef:
-    """Write offline metadata stub under ``.aura-build/weights/<id>.json``.
-
-    If ``export_path`` is given, refuses when any episode has ``l3_online=true``.
-    Never trains; never loads tensors; never sets ``stub=False``.
-    """
+    """Write metadata stub; refuse l3_online=true export corpora."""
     wid = _require_safe_id(weights_id)
     if export_path is not None:
         ep = Path(export_path)
@@ -271,7 +209,6 @@ def promote_l2_offline(
                 "refuse offline L2 promote: export contains l3_online=true "
                 f"episodes: {bad[:5]}"
             )
-
     path = artifact_path(wid, root=root)
     if path.exists() and not overwrite:
         raise L2PromoteError(
@@ -284,9 +221,7 @@ def promote_l2_offline(
         "notes": notes
         or "offline metadata stub; stub=True; no tensor bytes; no online L3",
     }
-    path.write_text(
-        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     ref = load_l2_artifact(wid, root=root)
     if ref is None:
         raise L2PromoteError(f"wrote {path} but failed to reload")

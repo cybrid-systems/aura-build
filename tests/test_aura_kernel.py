@@ -307,36 +307,21 @@ def test_kernel_export_redacts(tmp_path: Path) -> None:
     assert meta.get("redacted") is True
 
 
-def test_cli_export_host_adapter_when_force_python(tmp_path: Path, monkeypatch) -> None:
-    """FORCE_PYTHON disables Aura prefer; export still works as host I/O adapter."""
+def test_cli_export_refuses_when_force_python(tmp_path: Path, monkeypatch) -> None:
+    """FORCE_PYTHON: export refuses — JSON+redaction is Aura-only; Parquet is adapter."""
     from aura_build.cli import main
 
-    monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("AURA_BUILD_FORCE_PYTHON", "1")
-    traj = tmp_path / "trajectories"
-    traj.mkdir()
-    ep = _fixture_episode(prompt="force python export")
-    ep["runtime"]["aura_ref"] = "/workspace/keep-force"
-    # single worldline ok
-    ep["worldlines"] = [ep["worldlines"][0]]
-    ep["selected_id"] = "wl-0"
-    TrajectoryWriter(traj / "ep.jsonl").append(ep)
-    out = tmp_path / "batch.json"
     rc = main(
         [
             "export",
-            str(traj / "ep.jsonl"),
             "--out",
-            str(out),
+            str(tmp_path / "batch.json"),
             "--no-parquet",
-            "--json",
         ]
     )
-    assert rc == 0
-    data = json.loads(out.read_text(encoding="utf-8"))
-    assert len(data) == 1
-    assert data[0]["privacy"]["redacted"] is True
-    assert "/workspace/keep-force" not in out.read_text(encoding="utf-8")
+    assert rc == 2
+
 
 
 def test_kernel_acp_hooks_status_start(tmp_path: Path) -> None:
