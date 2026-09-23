@@ -210,6 +210,20 @@ Report: `.aura-build/prove-incr-latest.json`. Trajectories carry
 `AURA_BUILD_INCR_VALID=1` alone cannot force true. See
 [storm-still-incr.md](docs/storm-still-incr.md).
 
+### Fiber worldlines (slice 3)
+
+When prove/doctor denseness says `fiber_live` (or the run-time probe succeeds),
+orch fans out via `fiber:spawn` / same-FlatAST mutate and records
+`runtime.worldline_backend=fiber_graph`. Otherwise file layout +
+`worldline_backend=file`. Never fake; force file anytime:
+
+```bash
+aura-build run --prompt "fiber wl" --mode aura --worldlines 3
+# look for: worldline_backend=fiber_graph  (when denseness live)
+AURA_BUILD_WORLDLINE_BACKEND=file aura-build run --prompt "file wl" --mode aura --worldlines 3
+# look for: worldline_backend=file
+```
+
 ### Trajectory export (M4)
 
 Aura-first when `AURA_BIN` + sidecar are healthy: the kernel writes the redacted JSON array (`aura/export.aura`). **Parquet is not produced in Aura**; the Python host optionally converts the JSON array → Parquet as a thin adapter when `pandas`+`pyarrow` are installed. Without Aura / with `AURA_BUILD_FORCE_PYTHON`, `export` **refuses** — no silent Python redaction path.

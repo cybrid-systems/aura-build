@@ -1,15 +1,26 @@
-; aura-build kernel — shared workspace stable refs (layout matches Python worldline.py)
-; NOT fiber-live FlatAST.
+; aura-build kernel — worldline fan-out (file layout OR same-FlatAST fiber graph)
+; Slice 3: when fiber denseness is live, prefer fiber:spawn / mutate:rebind fan-out.
+; When probe fails: file parent/candidates/wl-N + mutate:rebind; never fake fiber_live.
 (export
-  SESSION_SHARED
+  SESSION_SHARED SESSION_FIBER
+  BACKEND_FILE BACKEND_FIBER
   workspace-create workspace-fork-note workspace-discard-losers
-  workspace-discard-one workspace-runtime-fields)
+  workspace-discard-one workspace-runtime-fields
+  decide-worldline-backend
+  fiber-fanout-aura fiber-fanout-sim fiber-discard-losers
+  fiber-runtime-fields fiber-audit-write)
 
 (require "util" all:)
 (require "std/io" all:)
 (require "traj" all:)
 
 (define SESSION_SHARED "shared_workspace_subprocess")
+(define SESSION_FIBER "fiber_denseness_in_process")
+(define BACKEND_FILE "file")
+(define BACKEND_FIBER "fiber_graph")
+(define ENV_WL_BACKEND "AURA_BUILD_WORLDLINE_BACKEND")
+
+; --- file layout (M2; kept when fiber probe fails) ---------------------
 
 (define (workspace-create root n)
   (ensure-dir root)
@@ -21,10 +32,13 @@
       (let* ((ws (hash "root" root
                        "parent_ref" "wl-parent"
                        "session_model" SESSION_SHARED
+                       "worldline_backend" BACKEND_FILE
+                       "fiber_live" #f
                        "candidates" cands
                        "n" n))
              (meta (hash "episode_token" (make-id)
                          "session_model" SESSION_SHARED
+                         "worldline_backend" BACKEND_FILE
                          "parent" (hash "ref_id" "wl-parent"
                                         "parent_ref" #f
                                         "workspace_relpath" "parent"
@@ -60,7 +74,8 @@
                         "summary" summary
                         "parent_ref" "wl-parent"
                         "stable_ref" cid
-                        "workspace_relpath" rel)))
+                        "workspace_relpath" rel
+                        "worldline_backend" (hash-ref ws "worldline_backend" BACKEND_FILE))))
     (write-file (join-path cdir "mutation.json") (json-encode payload))
     payload))
 
@@ -96,13 +111,11 @@
         #t))
     kept))
 
-
 (define (filter pred xs)
   (if (null? xs) (list)
     (if (pred (car xs))
       (cons (car xs) (filter pred (cdr xs)))
       (filter pred (cdr xs)))))
-
 
 (define (workspace-discard-one root ref-id reason fitness)
   ; Mark a single candidate discarded (ACP hook). Audit-only; not fiber-live.
@@ -127,10 +140,281 @@
           #t)
         rec))))
 
-
 (define (workspace-runtime-fields ws)
   (hash "workspace" (hash-ref ws "root")
-        "session_model" (hash-ref ws "session_model")
-        "parent_ref" (hash-ref ws "parent_ref")
-        "stable_refs" (hash-keys (hash-ref ws "candidates"))
-        "fiber_live" #f))
+        "session_model" (hash-ref ws "session_model" SESSION_SHARED)
+        "parent_ref" (hash-ref ws "parent_ref" "wl-parent")
+        "stable_refs" (hash-keys (hash-ref ws "candidates" (hash)))
+        "fiber_live" (hash-ref ws "fiber_live" #f)
+        "worldline_backend" (hash-ref ws "worldline_backend" BACKEND_FILE)))
+
+; --- decide backend (honest; env alone cannot elevate) -----------------
+; probe-live? is a thunk returning fiber denseness hash (from prove).
+; Never claim fiber_graph unless probe says fiber_live.
+
+(define (decide-worldline-backend probe-live?)
+  ; fiber_live = denseness probe (never from env alone).
+  ; worldline_backend = fiber_graph only when probe live AND not forced file.
+  (let* ((req (string-downcase (env-get ENV_WL_BACKEND "auto")))
+         (force-file (or (equal? req "file") (equal? req "files")))
+         (force-fiber (or (equal? req "fiber_graph") (equal? req "fiber")))
+         (probe (if (env-bool "AURA_BUILD_NO_FIBER_PROBE" #f)
+                  (hash "fiber_live" #f "reason" "no_fiber_probe_flag" "probed" #f)
+                  (probe-live?)))
+         (live (and (hash? probe) (hash-ref probe "fiber_live" #f)))
+         ; Env force-fiber cannot elevate without live probe.
+         (use-fiber (and live (not force-file)))
+         (session (if live SESSION_FIBER SESSION_SHARED))
+         (reason (if use-fiber
+                   (hash-ref probe "reason" "fiber_denseness_ok")
+                   (if force-file
+                     (if live "forced_file_backend_while_fiber_live" "forced_file_backend")
+                     (if force-fiber
+                       (if live "fiber_graph" "fiber_graph_requested_but_probe_failed")
+                       (if (hash? probe)
+                         (hash-ref probe "reason" "fiber_probe_failed")
+                         "fiber_probe_unavailable"))))))
+    (hash "worldline_backend" (if use-fiber BACKEND_FIBER BACKEND_FILE)
+          "fiber_live" (if live #t #f)
+          "session_model" session
+          "probe" (if (hash? probe) probe (hash))
+          "requested" req
+          "reason" reason)))
+
+; --- fiber graph fan-out (same FlatAST) --------------------------------
+
+(define (wl-name i)
+  (string-append "wl" (number->string i)))
+
+(define (wl-id i)
+  (string-append "wl-" (number->string i)))
+
+(define (build-fiber-prelude n)
+  ; Install wl0..wl{n-1} stubs + call-wl dispatcher on one FlatAST.
+  (let loop ((i 0) (defs "") (arms ""))
+    (if (>= i n)
+      (string-append defs
+                     "(define (call-wl i arg) (cond " arms " (else #f)))")
+      (loop (+ i 1)
+            (string-append defs "(define (" (wl-name i) " n) (+ n 0))")
+            (string-append arms "((= i " (number->string i) ") (" (wl-name i) " arg))")))))
+
+(define (fiber-audit-write root n backend session live ids discarded)
+  (ensure-dir root)
+  (let ((cand-meta (hash)))
+    (for-each
+      (lambda (cid)
+        (hash-set! cand-meta cid
+          (hash "ref_id" cid
+                "parent_ref" "wl-parent"
+                "kind" "fiber_candidate"
+                "workspace_relpath" #f)))
+      ids)
+    (let ((meta (hash "episode_token" (make-id)
+                      "session_model" session
+                      "worldline_backend" backend
+                      "fiber_live" live
+                      "parent" (hash "ref_id" "wl-parent"
+                                     "kind" "parent"
+                                     "parent_ref" #f)
+                      "candidates" cand-meta
+                      "discarded" discarded
+                      "incr_proven" #f
+                      "honesty" "same-FlatAST fiber:spawn fan-out; not file candidates/")))
+      (write-file (join-path root "meta.json")
+                  (normalize-json-empties (json-encode meta)))
+      meta)))
+
+(define (for-each f xs)
+  (if (null? xs) #t
+    (begin (f (car xs)) (for-each f (cdr xs)))))
+
+(define (fiber-discard-losers selected-id fitness-by-id ids)
+  (filter-truth
+    (map (lambda (cid)
+           (if (equal? cid selected-id)
+             #f
+             (hash "id" cid
+                   "reason" "lower_fitness"
+                   "fitness" (hash-ref fitness-by-id cid 0.0)
+                   "stable_ref" cid
+                   "worldline_backend" BACKEND_FIBER)))
+         ids)))
+
+(define (fiber-runtime-fields root n live session ids)
+  (hash "workspace" root
+        "session_model" session
+        "parent_ref" "wl-parent"
+        "stable_refs" ids
+        "fiber_live" live
+        "worldline_backend" BACKEND_FIBER
+        "fiber_candidate_count" n))
+
+(define (fiber-spawn-mutate i bump)
+  (let ((name (wl-name i))
+        (tag (string-append "fiber-wl-" (number->string i))))
+    (fiber:spawn
+      (lambda ()
+        (try
+          (begin
+            (mutate:rebind name
+              (string-append "(lambda (n) (+ n " (number->string bump) "))")
+              tag)
+            (eval-current)
+            bump)
+          (catch (e) #f))))))
+
+(define (join-all fids)
+  (map (lambda (fid)
+         (if (and (number? fid) (> fid 0))
+           (try (fiber:join fid) (catch (e) #f))
+           #f))
+       fids))
+
+(define (spawn-aura-fibers n)
+  (let loop ((i 0) (fids (list)) (meta (list)))
+    (if (>= i n)
+      (list (reverse fids) (reverse meta))
+      (let ((bump (+ i 1)))
+        (let ((fid (fiber-spawn-mutate i bump)))
+          (let ((ok-fid (and (number? fid) (> fid 0))))
+            (loop (+ i 1)
+                  (cons (if ok-fid fid #f) fids)
+                  (cons (hash "id" (wl-id i)
+                              "index" i
+                              "bump" bump
+                              "fiber_id" (if ok-fid fid #f)
+                              "spawn_ok" ok-fid)
+                        meta))))))))
+
+(define (make-aura-wl m i j)
+  (let ((bump (hash-ref m "bump"))
+        (cid (hash-ref m "id"))
+        (spawn-ok (hash-ref m "spawn_ok")))
+    (let ((join-ok (and spawn-ok (number? j) (= j bump))))
+      (let ((val (if join-ok (try (call-wl i 40) (catch (e) #f)) #f)))
+        (let ((expected (+ 40 bump)))
+          (let ((ok (and join-ok (number? val) (= val expected))))
+            (let ((fitness (if ok
+                             (round4 (+ 0.75 (* 0.05 (modulo i 4))))
+                             (if join-ok 0.45 0.1))))
+              (let ((mut (hash "op" "fiber_mutate_rebind"
+                               "target_id" (string-append (wl-name i) ":" (number->string i))
+                               "summary" (string-append "fiber:spawn mutate:rebind bump="
+                                                        (number->string bump))
+                               "bump" bump
+                               "fiber_id" (hash-ref m "fiber_id")
+                               "worldline_backend" BACKEND_FIBER)))
+                (hash "id" cid
+                      "parent_id" "wl-parent"
+                      "stable_ref" cid
+                      "mutations" (list mut)
+                      "eval" (hash "fitness" fitness
+                                   "passed" ok
+                                   "metrics" (hash "tests_passed" (if ok 1 0)
+                                                   "tests_total" 1
+                                                   "incr_compile_ms" 0
+                                                   "audit_ok" ok
+                                                   "aura_value" val
+                                                   "fiber_id" (hash-ref m "fiber_id")
+                                                   "incr_proven" #f)
+                                   "notes" "aura-kernel fiber_graph mutate+eval"))))))))))
+
+(define (eval-aura-joins meta joins)
+  (let loop ((i 0) (xs meta) (js joins) (out (list)))
+    (if (null? xs)
+      (reverse out)
+      (let ((m (car xs))
+            (j (if (null? js) #f (car js))))
+        (loop (+ i 1)
+              (cdr xs)
+              (if (null? js) js (cdr js))
+              (cons (make-aura-wl m i j) out))))))
+
+(define (fiber-fanout-aura prompt seed n audit-root)
+  (begin
+    (set-code (build-fiber-prelude n))
+    (eval-current)
+    (let ((spawned (spawn-aura-fibers n)))
+      (let ((fids (car spawned))
+            (meta (car (cdr spawned))))
+        (let ((joins (join-all fids)))
+          (let ((evaluated (eval-aura-joins meta joins)))
+            (let ((ids (map (lambda (w) (hash-ref w "id")) evaluated)))
+              (begin
+                (if (and audit-root (not (equal? audit-root "")))
+                  (fiber-audit-write audit-root n BACKEND_FIBER SESSION_FIBER #t ids (list))
+                  #t)
+                (hash "worldlines" evaluated
+                      "ids" ids
+                      "worldline_backend" BACKEND_FIBER
+                      "fiber_live" #t
+                      "session_model" SESSION_FIBER
+                      "parent_ref" "wl-parent"
+                      "workspace" audit-root)))))))))
+
+(define (spawn-sim-fibers prompt seed n)
+  (let loop ((i 0) (fids (list)))
+    (if (>= i n)
+      (reverse fids)
+      (let ((idx i))
+        (let ((fid (fiber:spawn
+                     (lambda ()
+                       (let ((fitness (default-fitness prompt seed idx)))
+                         (hash "fitness" fitness
+                               "passed" (>= fitness 0.3)
+                               "index" idx))))))
+          (begin
+            (loop (+ i 1)
+                  (cons (if (and (number? fid) (> fid 0)) fid #f) fids))))))))
+
+(define (make-sim-wl prompt seed i j)
+  (let ((cid (wl-id i))
+        (ok-join (hash? j)))
+    (let ((fitness (if ok-join (hash-ref j "fitness") (default-fitness prompt seed i))))
+      (let ((passed (if ok-join (hash-ref j "passed") (>= fitness 0.3))))
+        (let ((mut (hash "op" "fiber_simulated_edit"
+                         "target_id" (string-append "node:demo:" (number->string i))
+                         "summary" (string-append "fiber:spawn sim candidate "
+                                                  (number->string i)
+                                                  " for: "
+                                                  (substring prompt 0 (min 80 (string-length prompt))))
+                         "worldline_backend" BACKEND_FIBER)))
+          (hash "id" cid
+                "parent_id" "wl-parent"
+                "stable_ref" cid
+                "mutations" (list mut)
+                "eval" (hash "fitness" fitness
+                             "passed" passed
+                             "metrics" (hash "tests_passed" (if passed 1 0)
+                                             "tests_total" 1
+                                             "incr_compile_ms" (+ 5 (* i 3))
+                                             "audit_ok" #t
+                                             "incr_proven" #f)
+                             "notes" "aura-kernel fiber_graph simulated eval")))))))
+
+(define (eval-sim-joins prompt seed n joins)
+  (let loop ((i 0) (js joins) (out (list)))
+    (if (>= i n)
+      (reverse out)
+      (let ((j (if (null? js) #f (car js))))
+        (loop (+ i 1)
+              (if (null? js) js (cdr js))
+              (cons (make-sim-wl prompt seed i j) out))))))
+
+(define (fiber-fanout-sim prompt seed n audit-root)
+  (let ((fids (spawn-sim-fibers prompt seed n)))
+    (let ((joins (join-all fids)))
+      (let ((evaluated (eval-sim-joins prompt seed n joins)))
+        (let ((ids (map (lambda (w) (hash-ref w "id")) evaluated)))
+          (begin
+            (if (and audit-root (not (equal? audit-root "")))
+              (fiber-audit-write audit-root n BACKEND_FIBER SESSION_FIBER #t ids (list))
+              #t)
+            (hash "worldlines" evaluated
+                  "ids" ids
+                  "worldline_backend" BACKEND_FIBER
+                  "fiber_live" #t
+                  "session_model" SESSION_FIBER
+                  "parent_ref" "wl-parent"
+                  "workspace" audit-root)))))))

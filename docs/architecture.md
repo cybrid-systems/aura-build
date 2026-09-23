@@ -59,7 +59,7 @@ A worldline is a **candidate live-object history**, not a git worktree. Default 
 3. Eval each (profile fitness / backend)
 4. **Discard losers** — recorded in episode `discarded[]` and workspace `DISCARDED` markers
 
-Session model written to trajectory: `shared_workspace_subprocess` (M2). A future `long_lived_aura` single-process multi-eval is reserved but **not claimed** until it exists. Stable refs ≠ fiber-live FlatAST.
+Session model: `shared_workspace_subprocess` (file backend) or `fiber_denseness_in_process` when denseness probe passes. Trajectory records `runtime.worldline_backend=fiber_graph|file`. Long-lived serve-async multi-session still deferred. Env alone cannot elevate `fiber_live`.
 
 ### aura-repo profile (M2)
 
@@ -100,7 +100,7 @@ Live L1 mutates through Aura `std/hot-strategy` when the kernel is healthy:
 - **AUTOPROMOTE default OFF** (`AURA_BUILD_AUTOPROMOTE` / `--autopropote`)
 - Trajectory records `harness.mid`, `harness.actions[]`, and honest `harness.l1_backend` (`hot-strategy`|`file`)
 - Override: `AURA_BUILD_L1_BACKEND=file` forces file-only path (still no fake `fiber_live` / `incr_proven`)
-- Fiber denseness is probed honestly in prove/doctor; worldlines stay file + `mutate:rebind` until slice 3 lifts them onto the fiber graph (denseness ≠ worldline wiring)
+- Fiber denseness probed honestly in prove/doctor; when `fiber_live`, orch/worldline fan-out via `fiber:spawn` (`worldline_backend=fiber_graph`); else file `parent/candidates/wl-N` (`worldline_backend=file`). Force file: `AURA_BUILD_WORLDLINE_BACKEND=file`.
 
 Memory: `MemoryStore` under `.aura-build/memory/<profile>.json` (get/set via CLI or orch).
 

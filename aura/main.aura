@@ -34,6 +34,7 @@
     (display " incr_proven=")(display (hash-ref rt "incr_proven" #f))
     (display " measured=")(display (hash-ref rt "measured" #f))
     (display " fiber_live=")(display (hash-ref rt "fiber_live" #f))
+    (display " worldline_backend=")(display (hash-ref rt "worldline_backend" "file"))
     (display " episode=")(display (hash-ref ep "episode_id"))
     (display " wrote=")(display (hash-ref result "path"))
     (newline)))

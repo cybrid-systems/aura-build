@@ -164,7 +164,7 @@
                        (if oneshot "same_flatast_multi_failed"
                          "oneshot_fiber_spawn_join_failed")))
              (missing (if live
-                        "worldlines not yet lifted to fiber graph (slice 3)"
+                        "orch/worldline may use fiber_graph when fiber_live (slice 3)"
                         (if oneshot
                           "same-FlatAST multi-candidate denseness failed"
                           "fiber:spawn+join unavailable in this session"))))

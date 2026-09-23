@@ -199,8 +199,24 @@ refuse with `storm_cycles_ok_but_no_incr_valid_signal` — do **not** invent tru
 
 No Aura C++ change was required for this contract; Redis-specific hooks stay out.
 
+## Worldline backend (slice 3)
+
+When denseness probe sets `fiber_live=true`, `aura-build run` fans out candidates via
+`fiber:spawn` / same-FlatAST `mutate:rebind` and records
+`runtime.worldline_backend=fiber_graph`. If the probe fails (or
+`AURA_BUILD_WORLDLINE_BACKEND=file`), keep file layout
+`parent/candidates/wl-N` + sequential mutate; `worldline_backend=file`.
+`AURA_BUILD_FIBER_SESSION_OK` alone never forces fiber_graph.
+
+```bash
+# Prefer fiber graph when denseness live (default auto)
+aura-build run --prompt "fiber wl" --mode aura --worldlines 3
+# Force file worldlines even if fiber_live
+AURA_BUILD_WORLDLINE_BACKEND=file aura-build run --prompt "file wl" --mode aura --worldlines 3
+```
+
 ## Deferred
 
-- Lift worldlines onto fiber graph / long-lived serve-async session (slice 3; needs fiber denseness probe OK)
+- Long-lived serve-async / cross-session shared FlatAST (`serve_session_ok`)
 - `serve_session_ok` / scheduler backend on Soft boxes (production Ready self-check)
 - Richer FlatAST metrics JSON file path (optional alternate to stdout markers)

@@ -1,5 +1,6 @@
 ; aura-build kernel — scout → mutate → eval → select-best
 ; Primary product path. Simulated = pure Aura fitness; aura = in-process mutate:rebind.
+; Slice 3: fiber_live ⇒ worldline_backend=fiber_graph (fiber:spawn fan-out); else file.
 (export run-episode run-harness-canary select-best)
 
 (require "util" all:)
@@ -149,49 +150,27 @@
       (filter-truth (cdr xs)))))
 
 (define (run-backend-episode prompt seed n mode harness-root l1 l2-id attach?)
-  (let* ((raw (if (equal? mode "aura")
-                (aura-mutate prompt seed n)
-                (sim-mutate prompt seed n)))
+  (let* ((decision (decide-worldline-backend probe-fiber-session))
+         (backend (hash-ref decision "worldline_backend"))
+         (use-fiber (equal? backend BACKEND_FIBER))
+         (audit (join-path harness-root (string-append "wl-fiber-" (make-id))))
+         (fan (if use-fiber
+                (if (equal? mode "aura")
+                  (fiber-fanout-aura prompt seed n audit)
+                  (fiber-fanout-sim prompt seed n audit))
+                #f))
          (evaluated
-           (let loop ((i 0) (xs raw) (out (list)))
-             (if (null? xs) (reverse out)
-               (let ((got (if (equal? mode "aura")
-                            (aura-eval (car xs) prompt seed i)
-                            (sim-eval (car xs) prompt seed i))))
-                 (loop (+ i 1) (cdr xs) (cons got out))))))
-         (selected (select-best evaluated))
-         (harness-block (hash "l1_strategy_id" l1
-                              "l2_weights_id" l2-id
-                              "l3_online" #f))
-         (l2ref (if (and l2-id (not (equal? l2-id "")))
-                  (l2-resolve harness-root l2-id)
-                  #f))
-         (_ (if (and l2ref (hash-ref l2ref "artifact_present" #f))
-              (hash-set! harness-block "l2_ref" l2ref)
-              #t))
-         (ep (build-episode prompt seed mode evaluated selected "max_fitness"
-                            (hash) harness-block (list) harness-root attach?)))
-    (hash "episode" ep "selected" selected)))
-
-(define (run-aura-repo-episode prompt seed n mode harness-root l1 l2-id workspace attach?)
-  (let* ((ws-root (if (or (null? workspace) (equal? workspace ""))
-                    (join-path harness-root (string-append "ws-" (make-id)))
-                    workspace))
-         (ws (workspace-create ws-root n))
-         (cids (hash-keys (hash-ref ws "candidates")))
-         (evaluated
-           (let loop ((i 0) (xs cids) (out (list)))
-             (if (null? xs) (reverse out)
-               (let* ((cid (car xs))
-                      (mut (workspace-fork-note ws cid
-                             (string-append "aura-repo candidate " (number->string i)
-                                            " for: " (substring prompt 0 (min 80 (string-length prompt))))))
-                      (got (sim-eval (hash "id" cid
-                                           "parent_id" "wl-parent"
-                                           "mutations" (list mut)
-                                           "stable_ref" cid)
-                                     prompt seed i)))
-                 (loop (+ i 1) (cdr xs) (cons got out))))))
+           (if use-fiber
+             (hash-ref fan "worldlines")
+             (let* ((raw (if (equal? mode "aura")
+                           (aura-mutate prompt seed n)
+                           (sim-mutate prompt seed n))))
+               (let loop ((i 0) (xs raw) (out (list)))
+                 (if (null? xs) (reverse out)
+                   (let ((got (if (equal? mode "aura")
+                                (aura-eval (car xs) prompt seed i)
+                                (sim-eval (car xs) prompt seed i))))
+                     (loop (+ i 1) (cdr xs) (cons got out))))))))
          (selected (select-best evaluated))
          (fit-map (let ((h (hash)))
                     (for-each (lambda (w)
@@ -199,19 +178,125 @@
                                            (hash-ref (hash-ref w "eval") "fitness")))
                               evaluated)
                     h))
-         (discarded (filter-truth (workspace-discard-losers ws (hash-ref selected "id") fit-map)))
-         (rt (workspace-runtime-fields ws))
+         (ids (map (lambda (w) (hash-ref w "id")) evaluated))
+         (discarded
+           (if use-fiber
+             (let ((d (fiber-discard-losers (hash-ref selected "id") fit-map ids)))
+               (if (and audit (not (equal? audit "")))
+                 (fiber-audit-write audit n BACKEND_FIBER
+                                    (hash-ref decision "session_model")
+                                    #t ids d)
+                 #t)
+               d)
+             (list)))
+         (rt-extra
+           (if use-fiber
+             (fiber-runtime-fields audit n #t
+                                   (hash-ref decision "session_model") ids)
+             (hash "worldline_backend" BACKEND_FILE
+                   "fiber_live" #f
+                   "session_model" SESSION_SHARED)))
+         (_ (hash-set! rt-extra "worldline_backend_reason"
+                       (hash-ref decision "reason" "")))
+         (harness-block (hash "l1_strategy_id" l1
+                              "l2_weights_id" l2-id
+                              "l3_online" #f))
+         (l2ref (if (and l2-id (not (equal? l2-id "")))
+                  (l2-resolve harness-root l2-id)
+                  #f))
+         (_2 (if (and l2ref (hash-ref l2ref "artifact_present" #f))
+               (hash-set! harness-block "l2_ref" l2ref)
+               #t))
+         (ep (build-episode prompt seed mode evaluated selected "max_fitness"
+                            rt-extra harness-block discarded harness-root attach?))
+         (rt (hash-ref ep "runtime")))
+    ; Episode truth: backend actually used + live probe (prove attach cannot invent fiber_graph)
+    (hash-set! rt "worldline_backend" backend)
+    (hash-set! rt "worldline_backend_reason" (hash-ref decision "reason" ""))
+    (hash-set! rt "fiber_live" (hash-ref decision "fiber_live" #f))
+    (hash-set! rt "session_model" (hash-ref decision "session_model" SESSION_SHARED))
+    (hash "episode" ep "selected" selected
+          "worldline_backend" backend)))
+
+(define (run-aura-repo-episode prompt seed n mode harness-root l1 l2-id workspace attach?)
+  (let* ((decision (decide-worldline-backend probe-fiber-session))
+         (backend (hash-ref decision "worldline_backend"))
+         (use-fiber (equal? backend BACKEND_FIBER))
+         (ws-root (if (or (null? workspace) (equal? workspace ""))
+                    (join-path harness-root (string-append "ws-" (make-id)))
+                    workspace))
+         (pack
+           (if use-fiber
+             (let* ((fan (if (equal? mode "aura")
+                           (fiber-fanout-aura prompt seed n ws-root)
+                           (fiber-fanout-sim prompt seed n ws-root)))
+                    (evaluated (hash-ref fan "worldlines"))
+                    (selected (select-best evaluated))
+                    (fit-map (let ((h (hash)))
+                               (for-each (lambda (w)
+                                           (hash-set! h (hash-ref w "id")
+                                                      (hash-ref (hash-ref w "eval") "fitness")))
+                                         evaluated)
+                               h))
+                    (ids (hash-ref fan "ids"))
+                    (discarded (fiber-discard-losers (hash-ref selected "id") fit-map ids))
+                    (_ (fiber-audit-write ws-root n BACKEND_FIBER
+                                          (hash-ref decision "session_model")
+                                          #t ids discarded))
+                    (rt (fiber-runtime-fields ws-root n #t
+                                              (hash-ref decision "session_model") ids)))
+               (hash-set! rt "worldline_backend_reason" (hash-ref decision "reason" ""))
+               (hash "evaluated" evaluated "selected" selected
+                     "discarded" discarded "rt" rt))
+             (let* ((ws (workspace-create ws-root n))
+                    (cids (hash-keys (hash-ref ws "candidates")))
+                    (evaluated
+                      (let loop ((i 0) (xs cids) (out (list)))
+                        (if (null? xs) (reverse out)
+                          (let* ((cid (car xs))
+                                 (mut (workspace-fork-note ws cid
+                                        (string-append "aura-repo candidate " (number->string i)
+                                                       " for: " (substring prompt 0 (min 80 (string-length prompt))))))
+                                 (got (sim-eval (hash "id" cid
+                                                      "parent_id" "wl-parent"
+                                                      "mutations" (list mut)
+                                                      "stable_ref" cid)
+                                                prompt seed i)))
+                            (loop (+ i 1) (cdr xs) (cons got out))))))
+                    (selected (select-best evaluated))
+                    (fit-map (let ((h (hash)))
+                               (for-each (lambda (w)
+                                           (hash-set! h (hash-ref w "id")
+                                                      (hash-ref (hash-ref w "eval") "fitness")))
+                                         evaluated)
+                               h))
+                    (discarded (filter-truth (workspace-discard-losers ws (hash-ref selected "id") fit-map)))
+                    (rt (workspace-runtime-fields ws)))
+               (hash-set! rt "worldline_backend_reason" (hash-ref decision "reason" ""))
+               (hash "evaluated" evaluated "selected" selected
+                     "discarded" discarded "rt" rt))))
+         (evaluated (hash-ref pack "evaluated"))
+         (selected (hash-ref pack "selected"))
+         (discarded (hash-ref pack "discarded"))
+         (rt (hash-ref pack "rt"))
          (harness-block (hash "l1_strategy_id" l1
                               "l2_weights_id" l2-id
                               "l3_online" #f))
          (ep (build-episode prompt seed mode evaluated selected "max_fitness"
-                            rt harness-block discarded harness-root attach?)))
-    (hash-set! (hash-ref ep "runtime") "profile"
+                            rt harness-block discarded harness-root attach?))
+         (rtrun (hash-ref ep "runtime")))
+    (hash-set! rtrun "worldline_backend" backend)
+    (hash-set! rtrun "worldline_backend_reason" (hash-ref decision "reason" ""))
+    (hash-set! rtrun "fiber_live" (hash-ref decision "fiber_live" #f))
+    (hash-set! rtrun "session_model" (hash-ref decision "session_model" SESSION_SHARED))
+    (hash-set! rtrun "profile"
                (hash "id" "aura-repo"
-                     "fitness_source" "simulated"
+                     "fitness_source" (if (equal? mode "aura") "aura" "simulated")
                      "incr_claimed" #t
-                     "incr_proven" #f))
-    (hash "episode" ep "selected" selected)))
+                     "incr_proven" #f
+                     "worldline_backend" backend))
+    (hash "episode" ep "selected" selected
+          "worldline_backend" backend)))
 
 (define (for-each f xs)
   (if (null? xs) #t

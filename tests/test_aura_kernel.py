@@ -67,8 +67,18 @@ def test_kernel_simulated_run(tmp_path: Path) -> None:
     assert ep["runtime"]["mode"] == "simulated"
     assert ep["runtime"].get("kernel") == "aura"
     assert ep["runtime"]["incr_proven"] is False
-    assert ep["runtime"]["fiber_live"] is False
     assert "prove_incr" in ep["runtime"]
+    assert ep["runtime"].get("worldline_backend") in ("fiber_graph", "file")
+    if ep["runtime"].get("worldline_backend") == "fiber_graph":
+        assert ep["runtime"]["fiber_live"] is True
+        assert ep["runtime"]["session_model"] == "fiber_denseness_in_process"
+        assert len(ep.get("discarded") or []) == len(ep["worldlines"]) - 1
+        assert all(
+            (w.get("mutations") or [{}])[0].get("op") == "fiber_simulated_edit"
+            for w in ep["worldlines"]
+        )
+    else:
+        assert ep["runtime"].get("worldline_backend") == "file"
 
 
 def test_kernel_prove_incr_honest(tmp_path: Path) -> None:
@@ -128,6 +138,8 @@ def test_kernel_env_cannot_elevate_fiber(tmp_path: Path) -> None:
             "AURA_BUILD_ATTACH_PROVE": "1",
             "AURA_BUILD_INCR_VALID": "1",
             "AURA_BUILD_FIBER_SESSION_OK": "1",
+            "AURA_BUILD_NO_FIBER_PROBE": "1",
+            "AURA_BUILD_WORLDLINE_BACKEND": "fiber_graph",  # cannot elevate without probe
         },
         harness_root=tmp_path,
     )
@@ -135,6 +147,7 @@ def test_kernel_env_cannot_elevate_fiber(tmp_path: Path) -> None:
     ep = json.loads(out.read_text().splitlines()[0])
     assert ep["runtime"]["incr_proven"] is False
     assert ep["runtime"]["fiber_live"] is False
+    assert ep["runtime"].get("worldline_backend") == "file"
     notes = ep["runtime"]["prove_incr"].get("env_notes") or []
     assert "env_ignored_unproven" in notes
     assert "env_fiber_ignored_unproven" in notes
@@ -591,5 +604,86 @@ def test_kernel_harness_mutate_file_backend(tmp_path: Path, monkeypatch) -> None
     ep = json.loads(out.read_text().splitlines()[0])
     assert ep["harness"]["l1_backend"] == "file"
     assert ep["harness"]["outcome"] == "discard"
-    assert ep["runtime"]["fiber_live"] is False
     assert ep["runtime"]["incr_proven"] is False
+    # fiber_live follows denseness probe; never invent without probe
+    if ep["runtime"].get("fiber_live"):
+        assert ep["runtime"].get("session_model") == "fiber_denseness_in_process"
+
+def test_kernel_worldline_backend_file_forced(tmp_path: Path) -> None:
+    """Force file layout even when denseness would be live."""
+    out = tmp_path / "ep.jsonl"
+    result = invoke_aura_kernel(
+        "run",
+        {
+            "AURA_BUILD_PROMPT": "force file worldlines",
+            "AURA_BUILD_MODE": "simulated",
+            "AURA_BUILD_SEED": "11",
+            "AURA_BUILD_WORLDLINES": "3",
+            "AURA_BUILD_OUT": str(out),
+            "AURA_BUILD_ATTACH_PROVE": "0",
+            "AURA_BUILD_WORLDLINE_BACKEND": "file",
+        },
+        harness_root=tmp_path,
+    )
+    assert result.ok
+    ep = json.loads(out.read_text().splitlines()[0])
+    validate_episode(ep)
+    assert ep["runtime"]["worldline_backend"] == "file"
+    ops = [(w.get("mutations") or [{}])[0].get("op") for w in ep["worldlines"]]
+    assert ops == ["simulated_edit", "simulated_edit", "simulated_edit"]
+
+
+def test_kernel_worldline_backend_fiber_or_file(tmp_path: Path) -> None:
+    """Auto backend: fiber_graph when denseness live, else file; select-best + discard."""
+    out = tmp_path / "ep.jsonl"
+    result = invoke_aura_kernel(
+        "run",
+        {
+            "AURA_BUILD_PROMPT": "auto worldlines",
+            "AURA_BUILD_MODE": "aura",
+            "AURA_BUILD_SEED": "12",
+            "AURA_BUILD_WORLDLINES": "3",
+            "AURA_BUILD_OUT": str(out),
+            "AURA_BUILD_ATTACH_PROVE": "0",
+            "AURA_BUILD_WORLDLINE_BACKEND": "auto",
+        },
+        harness_root=tmp_path,
+    )
+    assert result.ok
+    ep = json.loads(out.read_text().splitlines()[0])
+    validate_episode(ep)
+    backend = ep["runtime"].get("worldline_backend")
+    assert backend in ("fiber_graph", "file")
+    assert ep["selected_id"] in {w["id"] for w in ep["worldlines"]}
+    if backend == "fiber_graph":
+        assert ep["runtime"]["fiber_live"] is True
+        assert ep["runtime"]["session_model"] == "fiber_denseness_in_process"
+        assert len(ep.get("discarded") or []) == 2
+        ops = [(w.get("mutations") or [{}])[0].get("op") for w in ep["worldlines"]]
+        assert ops == ["fiber_mutate_rebind"] * 3
+    else:
+        assert ep["runtime"]["fiber_live"] is False
+        assert ep["runtime"]["session_model"] == "shared_workspace_subprocess"
+
+
+def test_kernel_worldline_no_probe_stays_file(tmp_path: Path) -> None:
+    out = tmp_path / "ep.jsonl"
+    result = invoke_aura_kernel(
+        "run",
+        {
+            "AURA_BUILD_PROMPT": "no probe",
+            "AURA_BUILD_MODE": "simulated",
+            "AURA_BUILD_SEED": "13",
+            "AURA_BUILD_WORLDLINES": "2",
+            "AURA_BUILD_OUT": str(out),
+            "AURA_BUILD_ATTACH_PROVE": "0",
+            "AURA_BUILD_NO_FIBER_PROBE": "1",
+            "AURA_BUILD_FIBER_SESSION_OK": "1",
+        },
+        harness_root=tmp_path,
+    )
+    assert result.ok
+    ep = json.loads(out.read_text().splitlines()[0])
+    assert ep["runtime"]["worldline_backend"] == "file"
+    assert ep["runtime"]["fiber_live"] is False
+

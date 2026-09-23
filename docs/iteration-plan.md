@@ -14,7 +14,7 @@
 | **M5** | TUI/ACP skeleton + L2 offline metadata plug | **done** | Metadata-only weights; TUI is status stub |
 | **Post-M5** | storm-still-incr prove-or-refuse + doctor + fiber probe | **done (harness)** | `incr_proven` stays false until measured; GLIBCXX ⇒ fail-closed |
 
-**Still refused / deferred:** fiber-live FlatAST multi-worldline (no `AURA_BUILD_FIBER_SESSION_OK` yet); `incr_proven=true` without explicit incr-valid signal; real L2 tensor/mmap (`stub=False`); online L3; full Textual/rich TUI.
+**Still refused / deferred:** long-lived serve-async multi-session FlatAST; `incr_proven=true` without explicit incr-valid signal; real L2 tensor/mmap (`stub=False`); online L3; full Textual/rich TUI. (`fiber_graph` worldlines require honest denseness probe — env alone cannot elevate.)
 
 ## M0 — Stub floor
 
@@ -138,7 +138,8 @@
 - Measurement harness: `aura-build prove-incr` + `docs/storm-still-incr.md` + `scripts/prove_incr.sh`
 - Fail-closed when Aura unhealthy (GLIBCXX / missing): report `incr_proven=false` + reason; CI-green
 - Healthy path: N rapid mutate+eval under concurrent worldline pressure; `incr_proven=true` **only** with explicit incr-valid signal every cycle
-- Honest fiber denseness probe (`fiber:spawn`+join + same-FlatAST multi); `fiber_live` only when probe works; env cannot elevate; worldline→fiber graph still slice 3
+- Honest fiber denseness probe (`fiber:spawn`+join + same-FlatAST multi); `fiber_live` only when probe works; env cannot elevate
+- Slice 3: orch/worldline lift to `worldline_backend=fiber_graph` when denseness live; else file layout
 - `aura-build doctor` surfaces probe + last report; ACP/TUI honesty overlays last report
 
 **Exit criteria**
@@ -148,7 +149,7 @@
 - [x] Never claim fiber-live / incr_proven without measurement
 - [ ] Real FlatAST incr telemetry from Aura (deferred)
 - [x] Honest fiber denseness probe in prove-incr / doctor (slice 2)
-- [ ] Lift worldlines to fiber graph / long-lived serve-async session (slice 3)
+- [x] Lift worldlines to fiber graph when `fiber_live` (`worldline_backend=fiber_graph|file`); serve-async long-lived session still deferred
 - [ ] Auto-attach prove report into every orch episode (deferred; opt-in later)
 
 **Honesty note:** On boxes where the Aura binary hits `GLIBCXX_` mismatch, expect `incr_proven=false` forever until a healthy runtime is measured. Do not flip the flag by hand.
