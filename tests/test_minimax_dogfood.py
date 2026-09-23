@@ -125,3 +125,91 @@ def test_closed_loop_mocked_minimax(monkeypatch, tmp_path):
     assert ep["runtime"]["llm"]["api_key"] == "<redacted:secret>"
     assert ep["runtime"]["fiber_live"] is False
     assert ep["runtime"]["llm"]["base_url"] == "https://api.minimaxi.com/v1"
+
+
+GREET_SRC = '(display "GREET=aura")(newline)\n'
+
+
+def test_parser_lists_greet_task():
+    dog = None
+    for action in build_parser()._subparsers._group_actions:
+        dog = action.choices.get("llm-dogfood")
+        if dog is not None:
+            break
+    assert dog is not None
+    task_choices = None
+    for act in dog._actions:
+        if "--task" in (act.option_strings or []):
+            task_choices = act.choices
+            break
+    assert task_choices is not None
+    assert "greet" in task_choices
+    assert "fib" in task_choices
+
+
+def test_verify_good_greet(tmp_path):
+    from aura_build.llm_dogfood import GREET_SUCCESS_RE, verify_aura_program
+    from aura_build.runtime import resolve_aura_bin
+
+    bin_path = resolve_aura_bin()
+    if not bin_path:
+        return
+    prog = tmp_path / "greet.aura"
+    prog.write_text(GREET_SRC, encoding="utf-8")
+    got = verify_aura_program(prog, expect_re=GREET_SUCCESS_RE, aura_bin=bin_path)
+    assert got["passed"] is True
+    assert got["fitness"] == 1.0
+
+
+def test_closed_loop_mocked_greet(monkeypatch, tmp_path):
+    """One propose returns good greet; ensure select-best + traj without live API."""
+
+    class FakeCfg:
+        api_key = "sk-test-fake-key-not-real"
+        base_url = "https://api.minimaxi.com/v1"
+        model = "MiniMax-M3"
+        key_file = "/tmp/fake"
+        env_file = "/tmp/fake.env"
+
+        def public_dict(self):
+            return {
+                "provider": "minimax",
+                "base_url": self.base_url,
+                "model": self.model,
+                "api_key": "<redacted:secret>",
+            }
+
+    def fake_chat(messages, config=None, **kwargs):
+        return {
+            "ok": True,
+            "content": f"```aura\n{GREET_SRC}```",
+            "model": "MiniMax-M3",
+            "error": "",
+        }
+
+    monkeypatch.setattr("aura_build.llm_dogfood.chat_completions", fake_chat)
+    monkeypatch.setattr("aura_build.llm_dogfood.prefer_aura_kernel", lambda: False)
+
+    from aura_build.llm_dogfood import run_closed_loop
+    from aura_build.runtime import resolve_aura_bin
+
+    if not resolve_aura_bin():
+        return
+
+    out = tmp_path / "traj.jsonl"
+    ws = tmp_path / "ws"
+    summary = run_closed_loop(
+        task="greet",
+        max_rounds=2,
+        worldlines=2,
+        out=out,
+        workspace=ws,
+        harness_root=tmp_path / "harness",
+        keep_workspace=True,
+        config=FakeCfg(),  # type: ignore[arg-type]
+    )
+    assert summary["success"] is True
+    assert summary["task"] == "greet"
+    assert summary["expect"] == "GREET=aura"
+    assert Path(summary["final_program"]).is_file()
+    assert "GREET=aura" in Path(summary["final_program"]).read_text(encoding="utf-8")

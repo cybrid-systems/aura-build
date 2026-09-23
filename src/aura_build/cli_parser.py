@@ -181,7 +181,7 @@ def build_parser() -> argparse.ArgumentParser:
             "(worldlines select-best; host HTTP + Aura orch stamp)"
         ),
     )
-    _opt(dog, "--task", choices=("fib",), default="fib")
+    _opt(dog, "--task", choices=("fib", "greet"), default="fib")
     _opt(dog, "--max-rounds", type=int, default=8)
     _opt(dog, "--worldlines", type=int, default=3)
     _opt(dog, "--out", type=Path, default=None)

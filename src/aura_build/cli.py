@@ -554,6 +554,8 @@ def _cmd_llm_dogfood(args: argparse.Namespace) -> int:
         "llm_dogfood"
         f" ok={summary.get('ok')}"
         f" success={summary.get('success')}"
+        f" task={summary.get('task')}"
+        f" expect={summary.get('expect')}"
         f" rounds={summary.get('rounds')}"
         f" traj={summary.get('traj_id')}"
         f" program={summary.get('final_program')}"

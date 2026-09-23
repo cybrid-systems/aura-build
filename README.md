@@ -345,10 +345,29 @@ aura-build llm --prompt "Reply with PONG" --json
 
 # Closed loop: fib Aura program, up to 8 repair rounds, 3 worldlines
 aura-build llm-dogfood --task fib --max-rounds 8 --worldlines 3 --json
+
+# Tiny external project dogfood (examples/projects/mini-greet → GREET=aura)
+aura-build llm-dogfood --task greet --max-rounds 8 --worldlines 3 --json
+./examples/projects/mini-greet/verify.sh examples/projects/mini-greet/stub.aura  # expect fail
 ```
 
-Honesty: `fiber_live` only when prove says so; otherwise `session_model=shared_workspace_subprocess`.
-Trajectories record `runtime.kernel=aura`, `runtime.llm.model`, actions/fitness; API keys are redacted.
+Tasks: `fib` (see `examples/minimax_fib_task.md`), `greet` (see
+`examples/projects/mini-greet/`). MiniMax is propose-only; Aura binary verifies;
+worldlines select-best + repair. Honesty: `fiber_live` only when prove says so;
+otherwise `session_model=shared_workspace_subprocess`. Trajectories record
+`runtime.kernel=aura`, `runtime.llm.model`, actions/fitness; API keys are redacted.
+
+### Self-evolve after external dogfood
+
+Once mini projects like `mini-greet` verify green, aura-build can evolve **its own**
+product code (still Aura-kernel + thin host):
+
+```bash
+# Dry / no-push smoke only — prefer after external dogfood is green
+aura-build self-evolve --prompt "dry after mini-greet" --no-push --verify smoke
+```
+
+Do not push self-evolve unless verify is green and the diff is clearly product-useful.
 
 ## License
 

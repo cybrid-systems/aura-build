@@ -32,6 +32,7 @@ from aura_build.schema import validate_episode
 SESSION_SHARED = "shared_workspace_subprocess"
 
 TASK_FIB = "fib"
+TASK_GREET = "greet"
 DEFAULT_TASK = TASK_FIB
 DEFAULT_MAX_ROUNDS = 8
 DEFAULT_WORLDLINES = 3
@@ -52,6 +53,22 @@ followed by a newline. fib(10) must equal 55. No extra prose outside the code fe
 
 FIB_EXPECT = "FIB10=55"
 FIB_SUCCESS_RE = re.compile(r"FIB10\s*=\s*55")
+FIB_FALLBACK = (
+    '; empty model reply fallback\n'
+    '(display "FIB10=0")(newline)\n'
+)
+
+GREET_USER = """Write a tiny Aura program that prints exactly:
+GREET=aura
+followed by a newline. Prefer (display "GREET=aura")(newline). No extra prose outside the code fence.
+"""
+
+GREET_EXPECT = "GREET=aura"
+GREET_SUCCESS_RE = re.compile(r"GREET\s*=\s*aura")
+GREET_FALLBACK = (
+    '; empty model reply fallback\n'
+    '(display "GREET=wrong")(newline)\n'
+)
 
 REPAIR_STEER = """The previous Aura candidate failed verification under the Aura binary.
 Fix the program. Keep the same required output contract.
@@ -59,6 +76,26 @@ Common Aura pitfalls: balanced parentheses; use (display x) (newline); recursion
 (define (fib n) (if (<= n 1) n (+ (fib (- n 1)) (fib (- n 2))))); no Python syntax.
 Return ONE corrected Aura program in a ```aura fence.
 """
+
+# Task registry: propose prompt + verify regex + empty-reply fallback.
+TASKS: dict[str, dict[str, Any]] = {
+    TASK_FIB: {
+        "user": FIB_USER,
+        "expect": FIB_EXPECT,
+        "expect_re": FIB_SUCCESS_RE,
+        "fallback": FIB_FALLBACK,
+        "label": "fib",
+        "project": "examples/minimax_fib_task.md",
+    },
+    TASK_GREET: {
+        "user": GREET_USER,
+        "expect": GREET_EXPECT,
+        "expect_re": GREET_SUCCESS_RE,
+        "fallback": GREET_FALLBACK,
+        "label": "greet",
+        "project": "examples/projects/mini-greet",
+    },
+}
 
 
 def _iso_now() -> str:
@@ -256,13 +293,15 @@ def _discard_losers(ws_root: Path, selected_id: str, fitness_by_id: dict[str, fl
 def _propose(
     cfg: MiniMaxConfig,
     *,
+    task_spec: dict[str, Any],
     round_i: int,
     prev_source: str | None,
     prev_errors: str | None,
     candidate_index: int,
 ) -> dict[str, Any]:
+    base_user = str(task_spec["user"])
     if round_i == 0 and not prev_errors:
-        user = FIB_USER + f"\n(candidate index={candidate_index}; vary structure slightly)\n"
+        user = base_user + f"\n(candidate index={candidate_index}; vary structure slightly)\n"
         messages = [
             {"role": "system", "content": SYSTEM_CODEGEN},
             {"role": "user", "content": user},
@@ -270,12 +309,14 @@ def _propose(
     else:
         err = (prev_errors or "")[:2500]
         src = (prev_source or "")[:2500]
+        expect = str(task_spec.get("expect") or "")
         messages = [
             {"role": "system", "content": SYSTEM_CODEGEN},
             {
                 "role": "user",
                 "content": (
-                    f"{REPAIR_STEER}\n\n## Previous source\n```aura\n{src}\n```\n\n"
+                    f"{REPAIR_STEER}\nRequired exact output token: {expect}\n\n"
+                    f"## Previous source\n```aura\n{src}\n```\n\n"
                     f"## Verify errors / stdout\n```\n{err}\n```\n"
                     f"(repair round={round_i} candidate={candidate_index})\n"
                 ),
@@ -375,8 +416,12 @@ def run_closed_loop(
     config: MiniMaxConfig | None = None,
 ) -> dict[str, Any]:
     """Run MiniMax propose → Aura verify → repair until success or max_rounds."""
-    if task != TASK_FIB:
-        raise ValueError(f"unsupported task {task!r} (supported: fib)")
+    if task not in TASKS:
+        raise ValueError(
+            f"unsupported task {task!r} (supported: {', '.join(sorted(TASKS))})"
+        )
+    task_spec = TASKS[task]
+    expect_re: re.Pattern[str] = task_spec["expect_re"]
     cfg = config or load_minimax_config()
     repo = repo_root()
     hroot = harness_root or (repo / ".aura-build")
@@ -446,6 +491,7 @@ def run_closed_loop(
             if i == 0 and round_i > 0:
                 prop = _propose(
                     cfg,
+                    task_spec=task_spec,
                     round_i=round_i,
                     prev_source=last_source,
                     prev_errors=last_errors,
@@ -454,6 +500,7 @@ def run_closed_loop(
             else:
                 prop = _propose(
                     cfg,
+                    task_spec=task_spec,
                     round_i=0 if round_i == 0 else round_i,
                     prev_source=last_source if i == 0 else None,
                     prev_errors=last_errors if i == 0 and round_i > 0 else (
@@ -465,6 +512,7 @@ def run_closed_loop(
                     # diversify repair
                     prop = _propose(
                         cfg,
+                        task_spec=task_spec,
                         round_i=round_i,
                         prev_source=last_source,
                         prev_errors=last_errors + f"\n(variant {i})",
@@ -473,10 +521,7 @@ def run_closed_loop(
 
             source = prop.get("source") or ""
             if not source.strip():
-                source = (
-                    "; empty model reply fallback\n"
-                    "(display \"FIB10=0\")(newline)\n"
-                )
+                source = str(task_spec.get("fallback") or FIB_FALLBACK)
             prog_path = cdir / "program.aura"
             prog_path.write_text(source, encoding="utf-8")
             (cdir / "mutation.json").write_text(
@@ -497,7 +542,7 @@ def run_closed_loop(
                 encoding="utf-8",
             )
             ver = verify_aura_program(
-                prog_path, expect_re=FIB_SUCCESS_RE, aura_bin=aura_bin
+                prog_path, expect_re=expect_re, aura_bin=aura_bin
             )
             fitness_by_id[cid] = float(ver["fitness"])
             sources[cid] = source
@@ -525,7 +570,7 @@ def run_closed_loop(
                         {
                             "op": "minimax_codegen",
                             "target_id": "program.aura",
-                            "summary": f"MiniMax-M3 fib candidate {cid} round {round_i}",
+                            "summary": f"MiniMax-M3 {task} candidate {cid} round {round_i}",
                         }
                     ],
                     "eval": {
@@ -686,6 +731,9 @@ def run_closed_loop(
         },
         "rounds_log": rounds_log,
         "kernel": "aura",
+        "task": task,
+        "expect": str(task_spec.get("expect") or ""),
+        "project": str(task_spec.get("project") or ""),
         "reason": "verify_green" if success else f"max_rounds_{max_rounds}",
     }
     summary_path = hroot / "minimax-dogfood-latest.json"
