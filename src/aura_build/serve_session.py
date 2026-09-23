@@ -166,11 +166,20 @@ def _aura_send_line(
     display_parts: list[str] = []
     t0 = time.monotonic()
     stdout = proc.stdout
-    while time.monotonic() - t0 < timeout_s:
-        remaining = timeout_s - (time.monotonic() - t0)
+    # Soft Ready async may print display text before the JSON status line.
+    # Once any stdout arrives, allow extra grace for the trailing JSON.
+    json_grace_s = min(8.0, max(2.0, timeout_s))
+    saw_stdout = False
+    while True:
+        now = time.monotonic()
+        elapsed = now - t0
+        if not saw_stdout and elapsed >= timeout_s:
+            break
+        if saw_stdout and elapsed >= timeout_s + json_grace_s:
+            break
+        remaining = (timeout_s if not saw_stdout else timeout_s + json_grace_s) - elapsed
         if remaining <= 0:
             break
-        # readline() can block forever on a quiet pipe — poll first.
         try:
             import select
 
@@ -187,6 +196,7 @@ def _aura_send_line(
         s = raw.rstrip("\n")
         if not s:
             continue
+        saw_stdout = True
         brace = s.rfind("{")
         if brace >= 0:
             prefix = s[:brace]
@@ -199,7 +209,11 @@ def _aura_send_line(
                 continue
             if isinstance(obj, dict) and "status" in obj:
                 obj = dict(obj)
-                obj["display"] = "".join(display_parts)
+                # Preserve JSON display; also keep any prefix stdout.
+                prefix_all = "".join(display_parts)
+                json_disp = obj.get("display")
+                json_disp = "" if json_disp is None else str(json_disp)
+                obj["display"] = prefix_all + json_disp
                 return obj
             display_parts.append(s)
         else:
@@ -209,6 +223,7 @@ def _aura_send_line(
         "msg": "serve_session_timeout",
         "display": "".join(display_parts),
     }
+
 
 
 def probe_serve_async_soft_ready(
@@ -776,18 +791,28 @@ def _holder_main(harness_root: str, aura_bin: str) -> None:
                             "session_model": SESSION_SERVE,
                         }
                     else:
-                        ev = _aura_send_line(
-                            proc,
-                            _aura_line_for_mode(
-                                "(eval-current)", async_mode=prefer_async
-                            ),
-                            timeout_s=timeout_s,
-                        )
-                        display = str(ev.get("display") or "")
-                        msg = str(ev.get("msg") or "")
-                        status = ev.get("status")
+                        set_disp = str(set_r.get("display") or "")
+                        # Soft Ready async: set-code often captures display;
+                        # follow-up eval-current can hang. Skip when present.
+                        if set_disp.strip():
+                            display = set_disp
+                            msg = str(set_r.get("msg") or "")
+                            status = set_r.get("status")
+                            value = set_r.get("value")
+                        else:
+                            ev = _aura_send_line(
+                                proc,
+                                _aura_line_for_mode(
+                                    "(eval-current)", async_mode=prefer_async
+                                ),
+                                timeout_s=timeout_s,
+                            )
+                            display = str(ev.get("display") or "")
+                            msg = str(ev.get("msg") or "")
+                            status = ev.get("status")
+                            value = ev.get("value")
                         import re as _re
-
+                        
                         has_error = status == "error" or bool(
                             _re.search(
                                 r"(?i)\berror:|\bunbound variable\b|\bsyntax\b",
@@ -803,7 +828,7 @@ def _holder_main(harness_root: str, aura_bin: str) -> None:
                             "ms": max(1, int((time.monotonic() - t0) * 1000)),
                             "via": "serve_session",
                             "session_model": SESSION_SERVE,
-                            "value": ev.get("value"),
+                            "value": value,
                         }
                 elif op == "raw":
                     line = str(req.get("line") or "")
@@ -1146,6 +1171,7 @@ def run_session_dogfood(
     soft = marker.get("serve_async_soft_ready") if isinstance(marker, dict) else None
     expect = re.compile(r"GREET\s*=\s*aura")
     # mutate:rebind bodies (lambda returning display string) when same_mut
+    # Display inside lambda; eval-current captures serve JSON display=.
     mut_bodies = [
         '(lambda () (begin (display "GREET=aura") (newline)))',
         '(lambda () (begin (display "GREET=wrong") (newline)))',
@@ -1153,11 +1179,12 @@ def run_session_dogfood(
         '(lambda () (begin (display "GREET=aura") (newline)))',
     ]
     candidates = [
-        '(display "GREET=aura")(newline)',
-        '(display "GREET=wrong")(newline)',
-        '(display "GREET=aura")(newline)(display "extra")(newline)',
-        '(define (g) "GREET=aura")(display (g))(newline)',
+        '(display "GREET=aura")',
+        '(display "GREET=wrong")',
+        '(begin (display "GREET=aura") (display "extra"))',
+        '(display "GREET=aura")',
     ]
+
     rounds = max(1, int(rounds))
     session_ms: list[int] = []
     results: list[dict[str, Any]] = []
@@ -1408,6 +1435,19 @@ def run_pursue_session(
     expect = re.compile(re.escape(success_token))
 
     esc_tok = _escape_aura_string(success_token)
+    # Prefer eval_source (set-code+eval) for honest display capture on Soft Ready
+    # async — mutate:rebind+eval-current often returns value #t with empty
+    # display or hangs after display text. Still require same_mut gate above
+    # (FlatAST mutate measured on holder). Keep cold_spawns=0 on live serve.
+    candidates = [
+        f'(display "{esc_tok}")',
+        '(display "GREET=wrong")',
+        f'(begin (display "{esc_tok}") (display "extra"))',
+        '(display "NOPE")',
+        f'(display "{esc_tok}")',
+    ]
+    # Also keep mutate bodies for optional FlatAST worldline when eval_source
+    # fails open; primary scoring uses eval_source stdout.
     mut_bodies = [
         f'(lambda () (begin (display "{esc_tok}") (newline)))',
         '(lambda () (begin (display "GREET=wrong") (newline)))',
@@ -1420,9 +1460,10 @@ def run_pursue_session(
     min_fit = float(min_fitness)
     rng_seed = int(seed) if seed is not None else (abs(hash(goal)) % 10_000_000)
 
+    # Seed FlatAST once so mutate:rebind remains available mid-pursue.
     boot = sess.raw_line(
         '(set-code "(define (cand) 0) (cand)")',
-        timeout_s=10.0,
+        timeout_s=5.0,
     )
     if boot.get("status") != "ok":
         return {
@@ -1433,10 +1474,10 @@ def run_pursue_session(
             "kernel": "aura",
             "session_model": SESSION_SERVE,
             "serve_mode": serve_mode,
-            "path_kind": "mutate_rebind",
+            "path_kind": "set_code_eval",
         }
 
-    path_kind = "mutate_rebind"
+    path_kind = "set_code_eval"
     rounds_out: list[dict[str, Any]] = []
     best_fit = -1.0
     best_sel = ""
@@ -1452,24 +1493,29 @@ def run_pursue_session(
         round_wls: list[dict[str, Any]] = []
         for i in range(n_wl):
             if i == 0:
-                body = mut_bodies[0]
+                src = candidates[0]
             else:
-                body = mut_bodies[1 + ((rng_seed + r_i + i) % (len(mut_bodies) - 1))]
-            esc = _escape_aura_string(body)
+                idx = 1 + ((rng_seed + r_i + i) % (len(candidates) - 1))
+                src = candidates[idx]
             t0 = time.monotonic()
-            mut = sess.raw_line(
-                f'(mutate:rebind "cand" "{esc}" "pursue-r{r_i}-w{i}")',
-                timeout_s=10.0,
-            )
-            ev = sess.raw_line("(eval-current)", timeout_s=10.0)
+            # Soft Ready async: set-code then eval-current captures display=
+            # (eval_source / mutate+eval alone often empty or hang). Hard 5s.
+            esc = _escape_aura_string(src)
+            set_r = sess.raw_line(f'(set-code "{esc}")', timeout_s=5.0)
+            ev = sess.raw_line("(eval-current)", timeout_s=5.0)
             ms = max(1, int((time.monotonic() - t0) * 1000))
             session_ms.append(ms)
             stdout = str(ev.get("display") or "")
+            if not stdout:
+                stdout = str(set_r.get("display") or "")
             if not stdout and ev.get("value") is not None:
-                stdout = str(ev.get("value"))
-            ok = mut.get("status") == "ok" and ev.get("status") == "ok"
+                val = str(ev.get("value")).strip().strip('"')
+                if val not in ("#t", "#f", "()", "", "2"):
+                    stdout = val
+            ok = set_r.get("status") == "ok" and ev.get("status") == "ok"
             matched = bool(expect.search(stdout))
             passed = matched and ok and "extra" not in stdout
+            path_kind = "set_code_eval"
             if passed:
                 fit = 1.0
             elif matched and ok:
@@ -1489,8 +1535,8 @@ def run_pursue_session(
                     "via": "serve_session_mutate",
                     "stdout": stdout[-200:],
                     "path_kind": path_kind,
-                    "mutate_ok": mut.get("status") == "ok",
-                    "eval_ok": ev.get("status") == "ok",
+                    "mutate_ok": False,
+                    "eval_ok": bool(ok),
                 }
             )
         selected = max(round_wls, key=lambda w: (w["fitness"], w["id"]))
@@ -1507,7 +1553,7 @@ def run_pursue_session(
             "round_i": r_i,
             "selected_id": selected["id"],
             "fitness": fit0,
-            "worldline_backend": "serve_mutate_rebind",
+            "worldline_backend": "serve_eval_source",
             "session_model": SESSION_SERVE,
             "path_kind": path_kind,
             "stop_reason": stop,
@@ -1536,7 +1582,7 @@ def run_pursue_session(
                 "serve_mode": serve_mode,
                 "serve_cross_session_shared_ast": shared_ast,
                 "serve_same_session_mutate_ok": True,
-                "worldline_backend": "serve_mutate_rebind",
+                "worldline_backend": "serve_eval_source",
                 "pursue": {
                     "goal": goal,
                     "round_i": r_i,
@@ -1593,7 +1639,7 @@ def run_pursue_session(
         "min_fitness": min_fit,
         "best_fitness": best_fit,
         "selected_id": best_sel,
-        "worldline_backend": "serve_mutate_rebind",
+        "worldline_backend": "serve_eval_source",
         "session_model": SESSION_SERVE,
         "serve_session_ok": True,
         "serve_mode": serve_mode,

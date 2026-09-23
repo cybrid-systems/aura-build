@@ -146,8 +146,9 @@
           (begin
             (write-file script
               "(display (fiber:join (fiber:spawn (lambda () 7))))(newline)")
+            ; Hard wall clock — Soft Ready async-bench can hang forever.
             (sh (string-append
-                  bin " --serve-async-bench " script
+                  "timeout 8 " bin " --serve-async-bench " script
                   " >/tmp/aura-build-fiber-serve-probe.out 2>" err
                   "; echo $? > " rcfile))
             (equal? (string-trim (read-file rcfile)) "0")))))

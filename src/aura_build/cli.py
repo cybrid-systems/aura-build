@@ -800,7 +800,7 @@ def _cmd_pursue(args: argparse.Namespace) -> int:
         except Exception as exc:  # noqa: BLE001
             print(f"pursue: session path failed ({exc}); falling back to kernel", file=sys.stderr)
             summary = {"ok": False, "fallback": "aura_kernel_dispatch", "error": str(exc)}
-        if summary.get("ok") and summary.get("path_kind") == "mutate_rebind":
+        if summary.get("ok") and summary.get("path_kind") in ("mutate_rebind", "set_code_eval"):
             line = (
                 f"pursue ok={summary.get('ok')} goal_met={summary.get('goal_met')} "
                 f"stop_reason={summary.get('stop_reason')} "
