@@ -1399,8 +1399,8 @@ def fiber_fanout_probe(
     """
     if serve_session is None or n <= 0:
         return {"ok": False, "fiber_ids": [], "worldline_backend": None, "reason": "no_session"}
-    # Soft Ready async: a second fiber:spawn in the same sock session has been
-    # observed to hang / SIGSEGV the holder. One successful denseness oneshot
+    # Soft Ready async denseness is live after Aura #4048 (affinity + body
+    # mutex + Soft Ready auto workers=1). One successful spawn+join oneshot
     # is enough to stamp fiber_graph for the round (honest: denseness used).
     fiber_ids: list[Any] = []
     try:
@@ -1433,7 +1433,7 @@ def fiber_fanout_probe(
             "spawn_n": 1,
             "join_value": join_val,
             "requested_n": n,
-            "note": "soft_async_safe_oneshot_denseness",
+            "note": "soft_ready_async_denseness_4048",
         }
     except Exception as exc:  # noqa: BLE001
         return {
@@ -1857,18 +1857,17 @@ def run_closed_loop(
         round_fiber_live = bool(honesty.get("fiber_live", False))
         fiber_ids_round: list[Any] = []
 
-        # Fiber denseness on the live serve FlatAST. Soft Ready --serve-async
-        # sock sessions have been observed to hang/SIGSEGV after fiber:spawn;
-        # probing there would kill hot verify. Prefer denseness probe only on
-        # sync serve (thread denseness) or when honesty already measured
-        # fiber_live AND caller set AURA_BUILD_FIBER_EXPLORE_FORCE=1.
+        # Fiber denseness on the live serve FlatAST. Aura #4048 makes Soft
+        # Ready --serve-async denseness honest (spawn+join returns). Probe on
+        # sync and async Soft Ready; never invent fiber_graph without ok probe.
+        # AURA_BUILD_FIBER_EXPLORE_FORCE=1 retained as an explicit override.
         fiber_probe = {"ok": False}
         serve_mode_now = serve_meta.get("serve_mode") or honesty.get("serve_mode")
         force_fiber = os.environ.get("AURA_BUILD_FIBER_EXPLORE_FORCE") == "1"
         if (
             serve_sess is not None
             and prefer_session is not False
-            and (serve_mode_now == "sync" or force_fiber)
+            and (serve_mode_now in ("sync", "async") or force_fiber)
         ):
             fiber_probe = fiber_fanout_probe(
                 serve_sess, n=fiber_explore_n, timeout_s=8.0
@@ -1879,11 +1878,6 @@ def run_closed_loop(
                 round_fiber_live = True
             else:
                 round_backend = None  # do not invent fiber_graph
-        elif serve_sess is not None and serve_mode_now == "async":
-            # Honest: explorers run host-side; denseness bit may still be true
-            # from prove-incr, but this round did not use fiber:spawn on the
-            # serve FlatAST for candidate fan-out.
-            round_backend = None
 
         n_explore = fiber_explore_n
 

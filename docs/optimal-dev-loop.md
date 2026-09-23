@@ -101,10 +101,11 @@ Primary workflow = this loop: long-lived serve → in-session predicate → worl
   stay in Python (no cold aura spawn).
 - **Fiber explore:** `--fiber-explore N` (default = `--worldlines`) fans out N explorer
   worldlines. Stamp `worldline_backend=fiber_graph` **only** when `fiber:spawn` denseness
-  actually ran on the live serve FlatAST. Soft Ready `--serve-async` sock sessions can
-  hang/SIGSEGV after `fiber:spawn` — default skips in-session probe on `serve_mode=async`
-  and uses `explore_parallel=host_thread` (honest). Sync serve or
-  `AURA_BUILD_FIBER_EXPLORE_FORCE=1` may probe. Otherwise do not invent `fiber_graph`.
+  actually ran on the live serve FlatAST. Soft Ready `--serve-async` denseness is live
+  after Aura [#4048](https://github.com/cybrid-systems/aura/issues/4048) (affinity +
+  body mutex + Soft Ready auto workers=1) — probe on sync **and** async Soft Ready.
+  Never invent `fiber_graph` without an ok probe; on probe failure keep
+  `explore_parallel=host_thread` (honest).
 
 - **Tools ≠ agents:** `--explore-tools rule,llm,intent` lists strategies any explorer
   may use (deterministic patch, MiniMax propose, intent skeleton). Stamp
