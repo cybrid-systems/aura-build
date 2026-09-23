@@ -91,6 +91,31 @@ for propose→verify→repair plumbing. They are **not** the primary workflow.
 
 Primary workflow = this loop: long-lived serve → in-session predicate → worldlines → traj → git publish.
 
+
+## Multi-file hot session verify + fiber explore
+
+- **Hot verify:** when `prefer-session` and a live Soft serve attach exists, multi-file
+  candidates are concatenated in `files` order and scored via session `set-code` +
+  `eval-current` (`via=serve_session`, `cold_spawns=0`). Project `verify.sh` is an
+  optional oracle / fallback — never invent a green. Structural `source_res` checks
+  stay in Python (no cold aura spawn).
+- **Fiber explore:** `--fiber-explore N` (default = `--worldlines`) fans out N explorer
+  worldlines. Stamp `worldline_backend=fiber_graph` **only** when `fiber:spawn` denseness
+  actually ran on the live serve FlatAST. Soft Ready `--serve-async` sock sessions can
+  hang/SIGSEGV after `fiber:spawn` — default skips in-session probe on `serve_mode=async`
+  and uses `explore_parallel=host_thread` (honest). Sync serve or
+  `AURA_BUILD_FIBER_EXPLORE_FORCE=1` may probe. Otherwise do not invent `fiber_graph`.
+
+- **Tools ≠ agents:** `--explore-tools rule,llm,intent` lists strategies any explorer
+  may use (deterministic patch, MiniMax propose, intent skeleton). Stamp
+  `tools_used` per worldline. There is no three-agent product taxonomy.
+
+```bash
+aura-build llm-dogfood --project examples/projects/mini-cache \
+  --fiber-explore 3 --explore-tools rule,llm,intent --prefer-session \
+  --max-rounds 8 --worldlines 3 --out trajectories/mini_cache_fiber_explore.jsonl --json
+```
+
 ## See also
 
 - [architecture.md](architecture.md) — layers

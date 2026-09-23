@@ -214,6 +214,33 @@ def _aura_send_line(
                 json_disp = obj.get("display")
                 json_disp = "" if json_disp is None else str(json_disp)
                 obj["display"] = prefix_all + json_disp
+                # Soft Ready async: top-level display from set-code can arrive
+                # *after* the JSON status line. Drain briefly when empty.
+                if not str(obj.get("display") or "").strip():
+                    drain_deadline = time.monotonic() + min(1.5, max(0.3, timeout_s * 0.25))
+                    extra: list[str] = []
+                    while time.monotonic() < drain_deadline:
+                        try:
+                            import select as _sel
+                            ready, _, _ = _sel.select([stdout], [], [], 0.15)
+                            if not ready:
+                                if extra:
+                                    break
+                                continue
+                        except (ValueError, OSError):
+                            break
+                        raw2 = stdout.readline()
+                        if not raw2:
+                            break
+                        s2 = raw2.rstrip("\n")
+                        if not s2:
+                            continue
+                        # Stop if another JSON status sneaks in
+                        if s2.lstrip().startswith("{") and '"status"' in s2:
+                            break
+                        extra.append(s2)
+                    if extra:
+                        obj["display"] = "\n".join(extra) + ("\n" if extra else "")
                 return obj
             display_parts.append(s)
         else:
@@ -884,6 +911,23 @@ def _holder_main(harness_root: str, aura_bin: str) -> None:
                             msg = str(ev.get("msg") or "")
                             status = ev.get("status")
                             value = ev.get("value")
+                            # Soft sync: first eval-current after set-code can
+                            # return empty display while a second pass captures
+                            # top-level display forms (multi-file concat).
+                            if not display.strip() and not prefer_async:
+                                ev2 = _aura_send_line(
+                                    proc,
+                                    _aura_line_for_mode(
+                                        "(eval-current)", async_mode=False
+                                    ),
+                                    timeout_s=min(timeout_s, 5.0),
+                                )
+                                d2 = str(ev2.get("display") or "")
+                                if d2.strip():
+                                    display = d2
+                                    msg = str(ev2.get("msg") or msg)
+                                    status = ev2.get("status") or status
+                                    value = ev2.get("value")
                         import re as _re
                         
                         has_error = status == "error" or bool(

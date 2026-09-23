@@ -1184,3 +1184,82 @@ def test_closed_loop_mocked_router_three_files(monkeypatch, tmp_path):
     dog = ep["runtime"]["dogfood"]
     assert dog.get("multi_file") is True
     assert dog.get("files") == ["table.aura", "match.aura", "main.aura"]
+
+
+def test_parser_fiber_explore_flags():
+    help_text = build_parser().format_help()
+    # Top-level -h truncates subparser flags; ask the subparser directly.
+    dog_help = build_parser().parse_args  # noqa: keep import path warm
+    import argparse
+    p = build_parser()
+    # Reach llm-dogfood subparser help
+    for action in p._subparsers._group_actions:
+        for name, sub in action.choices.items():
+            if name == "llm-dogfood":
+                dog_help = sub.format_help()
+                break
+    assert "--fiber-explore" in dog_help
+    assert "--explore-tools" in dog_help
+    assert "--agents" not in dog_help
+
+
+def test_rule_tool_mini_cache():
+    from aura_build.llm_dogfood import _tool_rule_sources, load_project_spec, repo_root
+
+    spec = load_project_spec(repo_root() / "examples/projects/mini-cache")
+    got = _tool_rule_sources(spec, prev_sources=None, prev_errors="TTL_EXPIRED sticky")
+    assert got["ok"] is True
+    assert "rule" in got["tools_used"]
+    assert "cache-init" in got["sources"]["store.aura"]
+    assert "cache-tick" in got["sources"]["ops.aura"]
+
+
+def test_verify_prefers_session_over_verify_script(tmp_path, monkeypatch):
+    """Hot serve path must run even when verify_script is present."""
+    from aura_build import llm_dogfood as ld
+
+    class FakeSess:
+        harness_root = tmp_path
+
+        def alive(self):
+            return True
+
+        def eval_source(self, source, timeout_s=5.0):
+            return {
+                "ok": True,
+                "stdout": "GET_A=1\nGET_MISS=miss\nGET_B=2\nTTL_EXPIRED=miss\nCOUNT=2\n",
+                "stderr": "",
+                "ms": 3,
+            }
+
+    monkeypatch.setattr(
+        "aura_build.serve_session.session_status",
+        lambda **kw: {
+            "serve_attach_ok": True,
+            "serve_mode": "async",
+            "serve_cross_session_shared_ast": True,
+        },
+    )
+    cdir = tmp_path / "cand"
+    cdir.mkdir()
+    (cdir / "store.aura").write_text("(define (cache-init) #t)(define (cache-set key val ttl) #t)", encoding="utf-8")
+    (cdir / "ops.aura").write_text("(define (cache-get key) \"1\")(define (cache-tick n) #t)", encoding="utf-8")
+    (cdir / "main.aura").write_text("(cache-get \"a\")", encoding="utf-8")
+    script = tmp_path / "verify.sh"
+    script.write_text("#!/bin/bash\necho should_not_run\nexit 1\n", encoding="utf-8")
+    script.chmod(0o755)
+    import re
+    got = ld.verify_aura_program(
+        cdir / "main.aura",
+        expect_re=[re.compile(r"GET_A\s*=\s*1"), re.compile(r"COUNT\s*=\s*2")],
+        source_res=[re.compile(r"\(define\s+\(cache-init\b")],
+        verify_script=script,
+        candidate_dir=cdir,
+        files=["store.aura", "ops.aura", "main.aura"],
+        serve_session=FakeSess(),
+        prefer_session=True,
+        aura_bin="/bin/true",
+    )
+    assert got["via"] == "serve_session"
+    assert got["cold_spawns"] == 0
+    assert got["passed"] is True

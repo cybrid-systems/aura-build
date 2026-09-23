@@ -214,6 +214,25 @@ def build_parser() -> argparse.ArgumentParser:
             "(default ON; cold subprocess fallback)"
         ),
     )
+    _opt(
+        dog,
+        "--fiber-explore",
+        type=int,
+        default=None,
+        help=(
+            "spawn N explorer worldlines; Soft Ready prefers fiber:spawn denseness "
+            "fan-out on shared FlatAST when measured (default: --worldlines)"
+        ),
+    )
+    _opt(
+        dog,
+        "--explore-tools",
+        default="rule,llm,intent",
+        help=(
+            "comma tools any explorer fiber may use: rule,llm,intent "
+            "(strategies — not named agent products; default rule,llm,intent)"
+        ),
+    )
     _common(dog, aura=True)
 
     sess = sub.add_parser(

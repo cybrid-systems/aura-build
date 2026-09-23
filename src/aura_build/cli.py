@@ -685,6 +685,8 @@ def _cmd_llm_dogfood(args: argparse.Namespace) -> int:
         keep_workspace=bool(getattr(args, "keep_workspace", True)),
         config=cfg,
         prefer_session=prefer,
+        fiber_explore=getattr(args, "fiber_explore", None),
+        explore_tools=getattr(args, "explore_tools", None),
     )
     hon = summary.get("honesty") or {}
     print(
@@ -701,6 +703,11 @@ def _cmd_llm_dogfood(args: argparse.Namespace) -> int:
         f" serve_mode={hon.get('serve_mode')}"
         f" shared_ast={hon.get('serve_cross_session_shared_ast')}"
         f" via_prefer_session={hon.get('via_prefer_session')}"
+        f" via={summary.get('via') or hon.get('via')}"
+        f" worldline_backend={summary.get('worldline_backend') or hon.get('worldline_backend')}"
+        f" explore_parallel={summary.get('explore_parallel')}"
+        f" fiber_explore_n={summary.get('fiber_explore_n')}"
+        f" tools_used={summary.get('tools_used_selected')}"
         f" fiber_live={hon.get('fiber_live')}"
         f" incr_proven={hon.get('incr_proven')}"
         f" kernel=aura"

@@ -397,6 +397,12 @@ aura-build llm-dogfood --project examples/projects/mini-router --max-rounds 12 \
 # registry alias:
 aura-build llm-dogfood --task router --max-rounds 12 --worldlines 3 --json
 ./examples/projects/mini-router/verify.sh examples/projects/mini-router/stub  # expect fail
+
+# mini-cache: fiber explore (N worldlines) + hot session verify; tools are strategies
+aura-build llm-dogfood --project examples/projects/mini-cache \
+  --fiber-explore 3 --explore-tools rule,llm,intent --prefer-session \
+  --max-rounds 8 --worldlines 3 \
+  --out trajectories/mini_cache_fiber_explore.jsonl --json
 ```
 
 Tasks: `fib` (see `examples/minimax_fib_task.md`), `greet` (see
@@ -407,7 +413,10 @@ named helpers + multi-line stdout), `kv` (see `examples/projects/mini-kv/` —
 `verify.sh` / `dogfood.json`) so the TASKS registry stays thin. MiniMax is
 propose-only; project `verify.sh` (when present) is the fitness oracle;
 worldlines select-best + repair. Honesty: `session_model=serve` when long-lived serve attach is live;
-`fiber_live` only when denseness proves it; else `shared_workspace_subprocess`.
+`fiber_live` / `worldline_backend=fiber_graph` only when denseness / fiber:spawn
+actually used; else `explore_parallel=host_thread` + `shared_workspace_subprocess` cold fallback.
+Multi-file hot verify → `via=serve_session` when attach live; `verify.sh` is oracle/fallback.
+`--explore-tools` are strategies any explorer may use (not named agent kinds).
 Trajectories record
 `runtime.kernel=aura`, `runtime.llm.model`, `runtime.dogfood.task/project`,
 actions/fitness; API keys are redacted.
