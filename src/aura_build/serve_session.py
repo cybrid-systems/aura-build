@@ -248,8 +248,8 @@ def probe_serve_async_soft_ready(
         }
     try:
         assert proc.stdin is not None
-        # Soft --serve accepts sexpr; Soft --serve-async usually aborts first.
-        proc.stdin.write("(+ 1 1)\n")
+        # Soft Ready --serve-async wants JSON exec; sexpr yields "missing cmd".
+        proc.stdin.write('{"cmd":"exec","code":"(+ 1 1)"}\n')
         proc.stdin.flush()
         try:
             stdout, stderr = proc.communicate(timeout=timeout_s)
@@ -304,11 +304,15 @@ def probe_serve_async_soft_ready(
                 }
         # Got a JSON status line without FATAL → Soft Ready passed
         if '"status"' in (stdout or "") and "FATAL" not in err:
+            reason = "soft_ready_ok"
+            if "Soft Ready profile (#4047)" in err:
+                reason = "soft_ready_profile_4047"
             return {
                 "ok": True,
                 "serve_mode_preferred": SERVE_MODE_ASYNC,
-                "reason": "soft_ready_ok",
+                "reason": reason,
                 "stdout_tail": (stdout or "")[-200:],
+                "stderr_tail": err[-200:],
             }
         return {
             "ok": False,
