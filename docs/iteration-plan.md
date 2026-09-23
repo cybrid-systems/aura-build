@@ -91,7 +91,7 @@
 - [ ] Fiber-live FlatAST / storm-still-incr proof (still deferred)
 - [ ] Real L2 tensor load / training (deferred)
 
-**Honesty note:** M3 canary is a **shadow harness episode**, not fiber-live multi-worldline. Committing harness JSON under `.aura-build/` is not promoting online L3 weights.
+**Honesty note:** M3 canary is **not** fiber-live multi-worldline. L1 live path uses `std/hot-strategy` (register/swap/heal + last-good) with `harness.json` as durable mirror; traj records `l1_backend`. Committing harness JSON is not promoting online L3 weights and never invents `fiber_live` / `incr_proven`.
 
 ## M4 — RL export + specialist notes
 

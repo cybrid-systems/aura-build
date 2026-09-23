@@ -257,6 +257,8 @@
       (hash "ok" #t "episode" ep "path" path "selected" sel))))
 
 (define (run-harness-canary)
+  ; L1: prefer std/hot-strategy (register/swap/heal + last-good). harness.json = durable mirror.
+  ; AUTOPROMOTE still default OFF. Honesty: never invent fiber_live / incr_proven.
   (let* ((prompt (env-get "AURA_BUILD_PROMPT" "harness canary"))
          (harness-root (env-get "AURA_BUILD_HARNESS_ROOT" ".aura-build"))
          (out (env-get "AURA_BUILD_OUT" "trajectories/episodes.jsonl"))
@@ -271,20 +273,33 @@
          (auto (if (equal? auto-flag "1") #t (if (equal? auto-flag "0") #f 'unset)))
          (base (load-harness harness-root))
          (proposal (propose-mutate base patches fw))
-         (pre (validate-harness (hash-ref proposal "proposed"))))
+         (pre (validate-harness (hash-ref proposal "proposed")))
+         (backend (l1-backend-prefer))
+         (use-hot (equal? backend "hot-strategy")))
+    ; Seed last-good from durable harness.json when using hot-strategy.
+    (if use-hot (l1-seed! base) #f)
     (if (not (null? pre))
       (let* ((decision (decide-canary proposal #f auto harness-root))
-             (ep (harness-change-episode prompt proposal #f decision seed harness-root #f 0.0)))
+             (_ (if use-hot (l1-heal!) #f))
+             (_ (write-l1-backend-marker harness-root backend
+                    (hash-ref proposal "mid") (hash-ref decision "outcome")))
+             (ep (harness-change-episode prompt proposal #f decision seed harness-root
+                                         #f 0.0 backend)))
         (let ((path (write-episode ep out)))
           (hash "ok" #t "accepted" #f "episode" ep "path" path
                 "outcome" (hash-ref decision "outcome")
-                "mid" (hash-ref proposal "mid"))))
+                "mid" (hash-ref proposal "mid")
+                "l1_backend" backend)))
       (let* ((n (hash-ref (hash-ref proposal "proposed") "worldline_count"))
              (mode (hash-ref (hash-ref proposal "proposed") "routing" "simulated"))
              (mode (if (equal? mode "aura") "aura" "simulated"))
              (base-n (hash-ref base "worldline_count"))
              (base-mode (hash-ref base "routing" "simulated"))
              (base-mode (if (equal? base-mode "aura") "aura" "simulated"))
+             ; Live L1 swap of proposed strategy body (canary), when hot-strategy.
+             (_swap (if use-hot
+                       (l1-swap! (hash-ref proposal "proposed") "l1-canary")
+                       #f))
              (baseline (run-backend-episode prompt seed base-n base-mode harness-root
                           (hash-ref base "l1_strategy_id")
                           (hash-ref base "l2_weights_id" #f) #t))
@@ -296,18 +311,28 @@
              (passed (hash-ref (hash-ref (hash-ref canary "selected") "eval") "passed"))
              (accepted (and passed (>= cf (* bf 0.5))))
              (decision (decide-canary proposal accepted auto harness-root))
+             (outcome (hash-ref decision "outcome"))
+             ; heal! on canary fail OR discard (AUTOPROMOTE off). Keep swap only on commit.
+             (_heal (if (and use-hot (not (equal? outcome "commit")))
+                       (l1-heal!)
+                       #f))
+             (_mark (write-l1-backend-marker harness-root backend
+                       (hash-ref proposal "mid") outcome))
              (ep (harness-change-episode prompt proposal accepted decision seed harness-root
-                                         (hash-ref canary "episode") cf)))
+                                         (hash-ref canary "episode") cf backend)))
         (memory-set harness-root (hash-ref proposal "shadow_profile")
                     "last_harness_mid" (hash-ref proposal "mid"))
         (memory-set harness-root (hash-ref proposal "shadow_profile")
-                    "last_harness_outcome" (hash-ref decision "outcome"))
+                    "last_harness_outcome" outcome)
+        (memory-set harness-root (hash-ref proposal "shadow_profile")
+                    "last_l1_backend" backend)
         (let ((path (write-episode ep out)))
           (hash "ok" #t "accepted" accepted "episode" ep "path" path
-                "outcome" (hash-ref decision "outcome")
-                "mid" (hash-ref proposal "mid")))))))
+                "outcome" outcome
+                "mid" (hash-ref proposal "mid")
+                "l1_backend" backend))))))
 
-(define (harness-change-episode prompt proposal accepted decision seed root nested cf)
+(define (harness-change-episode prompt proposal accepted decision seed root nested cf l1-backend)
   (let* ((ts (iso-now))
          (use-nested (and nested (hash? nested) (hash-ref nested "worldlines" #f)))
          (worldlines (if use-nested (hash-ref nested "worldlines")
@@ -357,7 +382,8 @@
                           "outcome" (hash-ref decision "outcome")
                           "autopropote" (hash-ref decision "autopropote")
                           "committed" (hash-ref decision "committed")
-                          "shadow_profile" (hash-ref proposal "shadow_profile"))
+                          "shadow_profile" (hash-ref proposal "shadow_profile")
+                          "l1_backend" (if (string? l1-backend) l1-backend "file"))
           "worldlines" worldlines
           "selected_id" selected-id
           "selection_reason" (string-append "harness_" (hash-ref decision "outcome"))

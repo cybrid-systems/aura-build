@@ -88,14 +88,19 @@ Append-only episodes (see [trajectory-protocol-v0.md](trajectory-protocol-v0.md)
 | **L2** | Offline-trained weights | Promote after offline eval |
 | **L3** | Online weights | **Experimental only** |
 
-### M3 harness canary
+### M3 harness canary (L1 → `std/hot-strategy`)
 
-`HarnessConfig` (`.aura-build/harness.json`) is a mutable L1 object:
+`HarnessConfig` (`.aura-build/harness.json`) is the **durable mirror / config seed**.
+Live L1 mutates through Aura `std/hot-strategy` when the kernel is healthy:
 
 - `worldline_count`, `fitness_weights`, `routing` (`simulated|aura|auto`)
-- `aura-build harness-mutate --set …` → **propose** → canary episode on shadow profile → **commit|heal|discard**
+- `aura-build harness-mutate --set …` → **propose** → `hot-strategy:register!/swap!` → canary → **commit|heal|discard**
+  - canary fail or AUTOPROMOTE off → `hot-strategy:heal!` (last-good)
+  - commit → keep swap + write `harness.json` mirror
 - **AUTOPROMOTE default OFF** (`AURA_BUILD_AUTOPROMOTE` / `--autopropote`)
-- Every change records `harness.mid` + `harness.actions[]` in the trajectory
+- Trajectory records `harness.mid`, `harness.actions[]`, and honest `harness.l1_backend` (`hot-strategy`|`file`)
+- Override: `AURA_BUILD_L1_BACKEND=file` forces file-only path (still no fake `fiber_live` / `incr_proven`)
+- Until fiber lands, worldlines stay file + `mutate:rebind` (not fiber-live multi-worldline)
 
 Memory: `MemoryStore` under `.aura-build/memory/<profile>.json` (get/set via CLI or orch).
 

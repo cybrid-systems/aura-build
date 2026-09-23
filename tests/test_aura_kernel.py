@@ -157,6 +157,7 @@ def test_kernel_harness_mutate_discard(tmp_path: Path) -> None:
     assert ep["harness"]["outcome"] == "discard"
     assert ep["harness"]["committed"] is False
     assert ep["harness"]["autopropote"] is False
+    assert ep["harness"]["l1_backend"] == "hot-strategy"
 
 
 def test_kernel_harness_mutate_autopropote_env(tmp_path: Path, monkeypatch) -> None:
@@ -181,6 +182,7 @@ def test_kernel_harness_mutate_autopropote_env(tmp_path: Path, monkeypatch) -> N
     assert ep["runtime"]["kernel"] == "aura"
     assert ep["harness"]["outcome"] == "commit"
     assert ep["harness"]["committed"] is True
+    assert ep["harness"]["l1_backend"] == "hot-strategy"
     harness_path = tmp_path / "harness.json"
     assert harness_path.is_file()
     cfg = json.loads(harness_path.read_text())
@@ -205,6 +207,7 @@ def test_kernel_harness_mutate_heal_bad_l1(tmp_path: Path) -> None:
     ep = json.loads(out.read_text().splitlines()[0])
     assert ep["runtime"]["kernel"] == "aura"
     assert ep["harness"]["outcome"] == "heal"
+    assert ep["harness"]["l1_backend"] == "hot-strategy"
 
 
 def test_kernel_doctor(tmp_path: Path) -> None:
@@ -229,6 +232,10 @@ def test_kernel_doctor(tmp_path: Path) -> None:
     honesty = snap.get("honesty") or {}
     assert honesty.get("incr_proven") is False
     assert honesty.get("fiber_live") is False
+    assert honesty.get("l1_backend") in ("hot-strategy", "file")
+    l1 = snap.get("l1") or {}
+    assert l1.get("available") is True
+    assert l1.get("preferred") == "hot-strategy"
 
 
 def test_kernel_harness_show(tmp_path: Path) -> None:
@@ -512,3 +519,27 @@ def test_cli_tui_prefer_aura_and_force_python(tmp_path: Path, monkeypatch) -> No
         rc = main(["tui", "--harness-root", str(tmp_path)])
     assert rc == 2
     assert "python_deprecated" in err.getvalue()
+
+
+def test_kernel_harness_mutate_file_backend(tmp_path: Path, monkeypatch) -> None:
+    """AURA_BUILD_L1_BACKEND=file keeps honest file mirror path."""
+    monkeypatch.setenv("AURA_BUILD_L1_BACKEND", "file")
+    out = tmp_path / "ep.jsonl"
+    result = invoke_aura_kernel(
+        "harness-mutate",
+        {
+            "AURA_BUILD_PROMPT": "file backend canary",
+            "AURA_BUILD_SEED": "1",
+            "AURA_BUILD_OUT": str(out),
+            "AURA_BUILD_HARNESS_PATCHES": '{"worldline_count": 4}',
+            "AURA_BUILD_FITNESS_PATCHES": "{}",
+        },
+        harness_root=tmp_path,
+    )
+    assert result.via == "aura"
+    assert result.exit_code == 0
+    ep = json.loads(out.read_text().splitlines()[0])
+    assert ep["harness"]["l1_backend"] == "file"
+    assert ep["harness"]["outcome"] == "discard"
+    assert ep["runtime"]["fiber_live"] is False
+    assert ep["runtime"]["incr_proven"] is False

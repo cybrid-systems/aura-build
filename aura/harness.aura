@@ -1,11 +1,22 @@
 ; aura-build kernel — L1 harness mutate + canary decide (AUTOPROMOTE default OFF)
+; L1 live path: std/hot-strategy register!/swap!/heal! + last-good.
+; harness.json remains durable mirror / config seed. Never invent fiber_live / incr_proven.
 (export
   default-harness load-harness save-harness validate-harness
-  propose-mutate decide-canary harness-path)
+  propose-mutate decide-canary harness-path
+  l1-name cfg->l1-body l1-backend-prefer
+  l1-seed! l1-swap! l1-heal!
+  l1-backend-marker-path write-l1-backend-marker load-l1-backend-marker
+  l1-doctor-info)
 
 (require "util" all:)
 (require "std/io" all:)
 (require "std/hash" all:)
+(require "std/hot-strategy" all:)
+
+(define L1-NAME "l1-harness")
+(define L1-BACKEND-HOT "hot-strategy")
+(define L1-BACKEND-FILE "file")
 
 (define (default-harness)
   (hash "worldline_count" 3
@@ -116,3 +127,78 @@
                  (hash "op" "canary" "mid" mid "ts" (iso-now)
                        "accepted" #t)
                  act))))))))
+
+; ── L1 hot-strategy surface (Aura-native) ───────────────────────────────────
+; Process-local: each harness-mutate invocation seeds last-good from harness.json,
+; swap!s the proposed body for canary, heal!s on fail/discard, mirrors file on commit.
+
+(define (l1-name) L1-NAME)
+
+(define (cfg->l1-body cfg)
+  (string-append "(lambda () (json-parse "
+                 (json-encode (json-encode cfg))
+                 "))"))
+
+(define (l1-backend-prefer)
+  ; Env override for demos/tests: AURA_BUILD_L1_BACKEND=file|hot-strategy
+  (let ((raw (string-downcase (env-get "AURA_BUILD_L1_BACKEND" ""))))
+    (cond
+      ((or (equal? raw "file") (equal? raw "json")) L1-BACKEND-FILE)
+      ((or (equal? raw "hot-strategy") (equal? raw "hot") (equal? raw "hs"))
+       L1-BACKEND-HOT)
+      ; Default when Aura kernel is healthy: prefer hot-strategy.
+      (else L1-BACKEND-HOT))))
+
+(define (l1-seed! cfg)
+  ; Bind stub, register last-good, swap! so live body matches seed.
+  (set-code (string-append "(define (" L1-NAME ") #f)"))
+  (eval-current)
+  (let ((body (cfg->l1-body cfg)))
+    (hot-strategy:register! L1-NAME body)
+    (let ((r (hot-strategy:swap! L1-NAME body "l1-seed")))
+      (hash "ok" (if (and (list? r) (car r)) #t #f)
+            "version" (hot-strategy:version)
+            "body" body
+            "result" r))))
+
+(define (l1-swap! cfg summary)
+  (let ((r (hot-strategy:swap! L1-NAME (cfg->l1-body cfg)
+                               (if (string? summary) summary "l1-canary"))))
+    (hash "ok" (if (and (list? r) (car r)) #t #f)
+          "version" (hot-strategy:version)
+          "result" r)))
+
+(define (l1-heal!)
+  (hot-strategy:heal!))
+
+(define (l1-backend-marker-path root)
+  (join-path root "l1-backend.json"))
+
+(define (write-l1-backend-marker root backend mid outcome)
+  (ensure-dir root)
+  (write-file (l1-backend-marker-path root)
+              (json-encode (hash "l1_backend" backend
+                                 "mid" mid
+                                 "outcome" outcome
+                                 "ts" (iso-now)
+                                 "hot_strategy_version" (hot-strategy:version)
+                                 "hot_strategy_aot" (hot-strategy:aot?)
+                                 "file_mirror" "harness.json"
+                                 "note" "harness.json is durable seed/mirror; live L1 uses hot-strategy when backend=hot-strategy")))
+  backend)
+
+(define (load-l1-backend-marker root)
+  (let ((p (l1-backend-marker-path root)))
+    (if (file-exists? p)
+      (json-parse (read-file p))
+      #f)))
+
+(define (l1-doctor-info root)
+  (let ((marker (load-l1-backend-marker root))
+        (prefer (l1-backend-prefer)))
+    (hash "preferred" prefer
+          "available" #t
+          "aot" (hot-strategy:aot?)
+          "last" (if marker marker #f)
+          "file_mirror" (harness-path root)
+          "note" "L1 live path = std/hot-strategy (register/swap/heal); harness.json is durable mirror. Not fiber_live.")))

@@ -232,22 +232,31 @@ pip install 'aura-build[export]'
 
 See [specialist-training-notes.md](docs/specialist-training-notes.md).
 
-### Canary harness mutate demo
+### Canary harness mutate demo (L1 = `std/hot-strategy`)
+
+Live L1 uses Aura `hot-strategy:register!/swap!/heal!` when the kernel is healthy;
+`harness.json` is the durable mirror. Trajectories record `l1_backend=hot-strategy|file`.
+AUTOPROMOTE stays **OFF** by default (discard → heal live strategy).
 
 ```bash
-# AUTOPROMOTE off (default): canary may pass, but live harness is discarded (not committed)
+# AUTOPROMOTE off (default): canary may pass; live L1 heal!s back; harness.json not committed
 aura-build harness-mutate --prompt "demo canary" --seed 1 \
   --set worldline_count=4 --fitness-weight tests=0.8
+# look for: l1_backend=hot-strategy outcome=discard
 
-# Reject bad L1 before default path (exit 1, outcome=heal)
+# Reject bad L1 before default path (exit 1, outcome=heal, still hot-strategy)
 aura-build harness-mutate --prompt "bad L1" --set worldline_count=0
 
-# Demo commit (explicit): env or flag
+# Demo commit (explicit): env or flag — swap kept + harness.json mirrored
 AURA_BUILD_AUTOPROMOTE=1 aura-build harness-mutate --prompt "promote demo" \
   --set routing=auto --set l2_weights_id=specialist.stub.v0
 # or:  --autopropote
 
+# Force file-only L1 (no hot-strategy swap); still honest about fiber_live/incr_proven
+AURA_BUILD_L1_BACKEND=file aura-build harness-mutate --prompt "file L1" --set worldline_count=4
+
 aura-build harness-show
+aura-build doctor   # honesty includes l1_backend=
 aura-build memory set --profile default --key note --value "anti-postman"
 aura-build memory get --profile default --key note
 ```
