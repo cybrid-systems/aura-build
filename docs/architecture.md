@@ -28,7 +28,7 @@
 
 ## Host thin
 
-The host process is a **thin** adapter: argparse/CI entrypoints that **shell out to the Aura kernel** (`aura/main.aura`), plus export / M5 `tui`/`acp` stubs. Product value lives in `aura/*.aura`, not Python scaffolding. Python orch modules remain as CI-safe fallback when `aura` is missing (`AURA_BUILD_FORCE_PYTHON=1`). Soft ≠ Restricted; deny plugin-as-moat.
+The host process is a **thin** adapter: argparse/CI entrypoints that **shell out to the Aura kernel** (`aura/main.aura`), plus export Parquet adapter / M5 `tui` stub; `acp` prefers Aura. Product value lives in `aura/*.aura`, not Python scaffolding. Python orch modules remain as CI-safe fallback when `aura` is missing (`AURA_BUILD_FORCE_PYTHON=1`). Soft ≠ Restricted; deny plugin-as-moat.
 
 ## Aura control
 
@@ -107,7 +107,7 @@ until real weight bytes exist — no training, no tensor/mmap, no online L3.
 ### M5 TUI / ACP
 
 - `aura-build tui` — stdlib status printer (session + last traj); not a full TUI
-- `aura-build acp {hooks,start,status,worldlines,discard,export}` — thin control
+- `aura-build acp {hooks,start,status,worldlines,promote,discard,export}` — Aura-first control
   plane wired to session marker, worldline workspace, L2 promote, and export
 - Headless `run` / `export` / harness canary remain SSOT
 
@@ -133,11 +133,12 @@ is observed. Details: [storm-still-incr.md](storm-still-incr.md).
 |---------|------|
 | `cli.py` + `kernel.py` | Argparse → env → `aura aura/main.aura`; exit-code mapping |
 | `export.py` / schema / trajectory validate | Batch export, privacy redaction, pytest SSOT |
-| `acp.py` / `tui.py` | Thin host stubs (not the product) |
+| `acp.py` / `tui.py` | Thin host adapters / TUI stub (ACP prefers `aura/acp.aura`) |
 | `orch.py` / `prove_incr.py` / `harness.py` / … | **CI fallback only** when Aura binary unavailable (`AURA_BUILD_FORCE_PYTHON=1`) |
 
 **Aura-first CLIs** (prefer kernel when `AURA_BIN` + sidecar healthy): `run`,
-`prove-incr`, `harness-mutate`, `doctor`, `harness-show`, `memory`, `l2`
+`prove-incr`, `harness-mutate`, `doctor`, `harness-show`, `memory`, `l2`, `export`, `acp`
+(except `l2 promote --from-export`). Trajectories record `runtime.kernel=aura`
 (except `l2 promote --from-export`). Trajectories record `runtime.kernel=aura`
 (or `python` on fallback). Never invent `incr_proven` / `fiber_live`.
 

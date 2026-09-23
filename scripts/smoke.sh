@@ -87,12 +87,19 @@ aura-build run --prompt "smoke l2 metadata" --seed 5 --mode simulated \
 
 aura-build acp start --prompt "smoke session" --harness-root "$HROOT" \
   --workspace "$WS"
-aura-build acp status --harness-root "$HROOT" | grep -q 'incr_proven=False'
+ACP_STATUS=$(aura-build acp status --harness-root "$HROOT")
+echo "$ACP_STATUS" | grep -q 'incr_proven=False'
+echo "$ACP_STATUS" | grep -q 'fiber_live=False\|fiber_live=false'
+# When Aura healthy, ACP should report kernel=aura (FORCE_PYTHON path checked in pytest)
+if [[ -n "${AURA_BIN:-}" && -x "${AURA_BIN}" ]]; then
+  echo "$ACP_STATUS" | grep -q 'kernel=aura'
+fi
 aura-build tui --harness-root "$HROOT" | grep -q 'aura-build tui'
 aura-build acp hooks | grep -q start_session
 aura-build acp worldlines --traj "$OUT2" | grep -q candidate
 # discard one loser in retained workspace (wl-1 exists from 3-worldline fan-out)
-aura-build acp discard --workspace "$WS" --ref wl-1 --reason smoke_discard | grep -q 'fiber_live=false'
+aura-build acp discard --workspace "$WS" --ref wl-1 --reason smoke_discard | tee /tmp/acp_discard.out | grep -q 'fiber_live=false'
+aura-build acp promote --id specialist.acp.smoke.v0 --notes smoke --harness-root "$HROOT" | grep -q 'kernel=aura\|stub='
 
 
 # Post-M5: prove-incr fail-closed + doctor (Aura may be missing/GLIBCXX — still exit 0)

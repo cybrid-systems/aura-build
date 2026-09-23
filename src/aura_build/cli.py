@@ -1,7 +1,7 @@
 """Headless CLI — thin host over the Aura kernel (`aura/*.aura`).
 
-Primary run/prove/harness/memory/l2 shells to Aura when healthy.
-Python keeps ACP/TUI stubs, schema validate, CI fallback, and Parquet adapter for export.
+Primary run/prove/harness/memory/l2/acp/export shells to Aura when healthy.
+Python keeps TUI stub, schema validate, CI fallback, and Parquet adapter for export.
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ from aura_build.acp import (
     L2PromoteError,
     acp_discard_worldline,
     acp_list_worldlines,
+    acp_promote_l2,
     acp_start_session,
     acp_status,
     describe_hooks,
@@ -272,6 +273,14 @@ def build_parser() -> argparse.ArgumentParser:
     acp_disc.add_argument("--ref", required=True, help="candidate ref id (e.g. wl-1)")
     acp_disc.add_argument("--reason", default="acp_discard")
     acp_disc.add_argument("--json", action="store_true")
+    acp_prom = acp_sub.add_parser(
+        "promote",
+        help="offline L2 metadata promote (alias of `l2 promote`)",
+    )
+    acp_prom.add_argument("--id", required=True)
+    acp_prom.add_argument("--notes", default="")
+    acp_prom.add_argument("--harness-root", type=Path, default=None)
+    acp_prom.add_argument("--json", action="store_true")
     acp_exp = acp_sub.add_parser(
         "export",
         help="hint / thin alias — prefer `aura-build export`",
@@ -863,8 +872,85 @@ def _cmd_tui(args: argparse.Namespace) -> int:
 
 
 def _cmd_acp(args: argparse.Namespace) -> int:
+    """ACP hooks — prefer Aura kernel; Python fallback when forced/unavailable."""
     root = _harness_root_arg(args)
-    if args.acp_cmd == "hooks":
+    harness = root or default_root()
+    op = args.acp_cmd
+    # hooks are static — still prefer Aura so kernel=aura is visible when healthy
+    env: dict[str, str] = {
+        "AURA_BUILD_ACP_OP": {
+            "hooks": "hooks",
+            "status": "status",
+            "start": "start",
+            "worldlines": "worldlines",
+            "discard": "discard",
+            "promote": "promote",
+            "export": "export",
+        }.get(op, op),
+        "AURA_BUILD_ACP_JSON": "1" if getattr(args, "json", False) else "0",
+        "AURA_BUILD_ACP_PROMPT": getattr(args, "prompt", "") or "",
+        "AURA_BUILD_ACP_WORKSPACE": str(getattr(args, "workspace", "") or ""),
+        "AURA_BUILD_ACP_TRAJ": str(getattr(args, "traj", "") or ""),
+        "AURA_BUILD_ACP_REF": getattr(args, "ref", "") or "",
+        "AURA_BUILD_ACP_REASON": getattr(args, "reason", "") or "acp_discard",
+        "AURA_BUILD_ACP_L2_ID": getattr(args, "id", "") or "",
+        "AURA_BUILD_ACP_L2_NOTES": getattr(args, "notes", "") or "",
+    }
+    if op == "export":
+        # Reuse export host wiring (Parquet adapter stays Python).
+        return _cmd_export(
+            argparse.Namespace(
+                inputs=[],
+                out=args.out,
+                parquet=None,
+                no_parquet=args.no_parquet,
+                include_raw=args.include_raw,
+                no_redact=False,
+                strict=False,
+                json=args.json,
+            )
+        )
+
+    # Prefer Aura kernel (same host policy as run/prove/harness/export).
+    if prefer_aura_kernel():
+        ok, _bin, _err = kernel_available(None, None)
+        if ok:
+            try:
+                kr = invoke_aura_kernel("acp", env, harness_root=harness)
+            except AuraUnavailable as exc:
+                print(f"error: aura kernel: {exc}", file=sys.stderr)
+                return 2
+            if args.json:
+                # Prefer structured response payload over raw stdout.
+                payload = kr.response or {}
+                if op == "hooks":
+                    print(json.dumps(payload.get("hooks") or {}, indent=2, sort_keys=True))
+                elif op in ("status", "start"):
+                    st = payload.get("status") or {}
+                    print(json.dumps(st, indent=2, sort_keys=True))
+                elif op == "worldlines":
+                    print(json.dumps(payload.get("worldlines") or [], indent=2, sort_keys=True))
+                elif op == "discard":
+                    print(json.dumps(payload.get("result") or payload, indent=2, sort_keys=True))
+                elif op == "promote":
+                    print(json.dumps(payload.get("ref") or payload, indent=2, sort_keys=True))
+                else:
+                    print(json.dumps(payload, indent=2, sort_keys=True))
+            else:
+                for ln in (kr.stdout or "").splitlines():
+                    if not ln.strip() or ln.strip() == "#t":
+                        continue
+                    ln = (
+                        ln.replace("=#t", "=True")
+                        .replace("=#f", "=False")
+                        .replace("= #t", "= True")
+                        .replace("= #f", "= False")
+                    )
+                    print(ln)
+            return kr.exit_code if kr.exit_code is not None else (0 if kr.ok else 2)
+
+    # Python fallback
+    if op == "hooks":
         hooks = describe_hooks()
         if args.json:
             print(json.dumps(hooks, indent=2, sort_keys=True))
@@ -872,28 +958,31 @@ def _cmd_acp(args: argparse.Namespace) -> int:
             for name, desc in sorted(hooks.items()):
                 print(f"{name}: {desc}")
         return 0
-    if args.acp_cmd == "status":
+    if op == "status":
         st = acp_status(root=root)
         if args.json:
             print(json.dumps(st.to_dict(), indent=2, sort_keys=True))
         else:
-            print(format_status(st))
+            print(format_status(st), end="")
+            print("kernel=python")
         return 0
-    if args.acp_cmd == "start":
+    if op == "start":
         st = acp_start_session(
             prompt=args.prompt,
             root=root,
             workspace=args.workspace,
         )
         if args.json:
-            print(json.dumps(st.to_dict(), indent=2, sort_keys=True))
+            d = st.to_dict()
+            d["kernel"] = "python"
+            print(json.dumps(d, indent=2, sort_keys=True))
         else:
             print(
                 f"session_id={st.session_id} started={st.started} "
-                f"last_traj={st.last_traj_path or '-'}"
+                f"last_traj={st.last_traj_path or '-'} kernel=python"
             )
         return 0
-    if args.acp_cmd == "worldlines":
+    if op == "worldlines":
         rows = acp_list_worldlines(
             root=root,
             workspace=args.workspace,
@@ -911,7 +1000,7 @@ def _cmd_acp(args: argparse.Namespace) -> int:
                     f"fitness={r.get('fitness')}"
                 )
         return 0
-    if args.acp_cmd == "discard":
+    if op == "discard":
         try:
             payload = acp_discard_worldline(
                 args.ref,
@@ -921,29 +1010,39 @@ def _cmd_acp(args: argparse.Namespace) -> int:
         except (KeyError, FileNotFoundError, OSError) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2
+        payload = dict(payload)
+        payload["kernel"] = "python"
         if args.json:
             print(json.dumps(payload, indent=2, sort_keys=True))
         else:
             print(
                 f"discarded={payload['discarded']} reason={payload['reason']} "
-                f"workspace={payload['workspace']} fiber_live=false"
+                f"workspace={payload['workspace']} fiber_live=false kernel=python"
             )
         return 0
-    if args.acp_cmd == "export":
-        # Thin wire to existing export command.
-        return _cmd_export(
-            argparse.Namespace(
-                inputs=[],
-                out=args.out,
-                parquet=None,
-                no_parquet=args.no_parquet,
-                include_raw=args.include_raw,
-                no_redact=False,
-                strict=False,
-                json=args.json,
+    if op == "promote":
+        try:
+            ref = acp_promote_l2(args.id, notes=args.notes or "", root=harness)
+        except Exception as exc:  # noqa: BLE001
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        if isinstance(ref, dict):
+            payload = dict(ref)
+        else:
+            payload = ref.to_dict() if hasattr(ref, "to_dict") else {"weights_id": args.id}
+        payload["kernel"] = "python"
+        if args.json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            print(
+                f"promoted id={payload.get('weights_id', args.id)} "
+                f"stub={payload.get('stub', True)} "
+                f"artifact_present={payload.get('artifact_present', False)} "
+                f"kernel=python"
             )
-        )
+        return 0
     return 2
+
 
 
 def _cmd_l2(args: argparse.Namespace) -> int:

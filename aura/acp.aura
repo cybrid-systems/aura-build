@@ -1,0 +1,373 @@
+; aura-build kernel — ACP hooks (start/status/worldlines/promote/discard/export)
+; Wire to orch/worldline/l2/export/prove; never invent incr_proven/fiber_live.
+(export
+  acp-hooks acp-start-session acp-status acp-list-worldlines
+  acp-discard-worldline acp-promote-l2 acp-run)
+
+(require "util" all:)
+(require "traj" all:)
+(require "harness" all:)
+(require "l2" all:)
+(require "worldline" all:)
+(require "prove" all:)
+(require "export" all:)
+(require "std/io" all:)
+(require "std/process" all:)
+(require "std/string" all:)
+
+(define (acp-hooks)
+  (hash "start_session"
+        "Write/refresh `.aura-build/session.json`; optional prompt note. Does not run an episode — use `aura-build run` for that."
+        "list_worldlines"
+        "List worldlines from session workspace meta or last trajectory JSONL."
+        "promote"
+        "Offline L2 metadata promote → `.aura-build/weights/<id>.json`. Refuses corpora with `l3_online=true`. Alias: `aura-build l2 promote`."
+        "discard"
+        "Mark a worldline loser in a shared workspace (DISCARDED flag). Not fiber-live; audit-only."
+        "export"
+        "Batch-export trajectories (privacy ON by default). Alias: `aura-build export`."))
+
+(define (session-path root)
+  (join-path root "session.json"))
+
+(define (default-honesty)
+  (hash "incr_proven" #f
+        "fiber_live" #f
+        "l3_online" #f
+        "l2_stub_metadata_only" #t))
+
+(define (overlay-prove-honesty honesty root)
+  (let ((rep (load-prove-report root)))
+    (if (not rep)
+      honesty
+      (begin
+        (hash-set! honesty "incr_proven" (hash-ref rep "incr_proven" #f))
+        (hash-set! honesty "fiber_live" (hash-ref rep "fiber_live" #f))
+        (hash-set! honesty "session_model"
+                   (hash-ref rep "session_model" "shared_workspace_subprocess"))
+        (hash-set! honesty "prove_incr_reason" (hash-ref rep "reason" ""))
+        (hash-set! honesty "prove_incr_measured" (hash-ref rep "measured" #f))
+        honesty))))
+
+(define (find-newest-jsonl)
+  (let ((tmp "/tmp/_aura_build_acp_traj"))
+    (sh (string-append
+         "find trajectories .aura-build -name '*.jsonl' -type f 2>/dev/null "
+         "| xargs ls -1t 2>/dev/null | head -1 > " tmp " || true"))
+    (let ((p (string-trim (read-file tmp))))
+      (sh (string-append "rm -f " tmp))
+      (if (or (null? p) (equal? p "")) #f p))))
+
+(define (last-jsonl-object path)
+  (if (or (not path) (not (file-exists? path)))
+    #f
+    (let ((tmp "/tmp/_aura_build_acp_last"))
+      (sh (string-append "tail -n 1 '" path "' > " tmp " 2>/dev/null || true"))
+      (let ((line (string-trim (read-file tmp))))
+        (sh (string-append "rm -f " tmp))
+        (if (or (null? line) (equal? line ""))
+          #f
+          (json-parse line))))))
+
+(define (for-each f xs)
+  (if (null? xs) #t
+    (begin (f (car xs)) (for-each f (cdr xs)))))
+
+(define (hash-clone h)
+  (json-parse (json-encode h)))
+
+(define (hash-set h k v)
+  (let ((c (hash-clone h)))
+    (hash-set! c k v)
+    c))
+
+(define (write-response-local root obj)
+  (let ((path (env-get "AURA_BUILD_RESPONSE" (join-path root "kernel-response.json"))))
+    (ensure-dir (dirname-path path))
+    (write-file path (normalize-json-empties (json-encode obj)))
+    path))
+
+(define (acp-start-session root prompt workspace episode-id traj-path)
+  (ensure-dir root)
+  (let* ((sp (session-path root))
+         (existing (if (file-exists? sp) (json-parse (read-file sp)) (hash)))
+         (sid (let ((e (hash-ref existing "session_id" "")))
+                (if (or (null? e) (equal? e ""))
+                  (string-append "sess-" (make-id))
+                  e)))
+         (started (let ((e (hash-ref existing "started" "")))
+                    (if (or (null? e) (equal? e "")) (iso-now) e)))
+         (payload (hash "session_id" sid
+                        "started" started
+                        "updated" (iso-now)
+                        "prompt" (if (or (null? prompt) (equal? prompt ""))
+                                   (hash-ref existing "prompt" "")
+                                   prompt)
+                        "workspace" (if (or (null? workspace) (equal? workspace ""))
+                                      (hash-ref existing "workspace" "")
+                                      workspace)
+                        "last_episode_id" (if (or (null? episode-id) (equal? episode-id ""))
+                                            (hash-ref existing "last_episode_id" "")
+                                            episode-id)
+                        "last_traj_path" (if (or (null? traj-path) (equal? traj-path ""))
+                                           (hash-ref existing "last_traj_path" "")
+                                           traj-path))))
+    (write-file sp (normalize-json-empties (json-encode payload)))
+    (acp-status root #f #f)))
+
+(define (acp-status root traj-override workspace-override)
+  (let* ((sp (session-path root))
+         (data (if (file-exists? sp) (json-parse (read-file sp)) (hash)))
+         (cfg (load-harness root))
+         (status (hash "session_id" (hash-ref data "session_id" "")
+                       "started" (hash-ref data "started" "")
+                       "prompt" (hash-ref data "prompt" "")
+                       "workspace" (if (and workspace-override
+                                            (not (equal? workspace-override "")))
+                                     workspace-override
+                                     (hash-ref data "workspace" ""))
+                       "last_episode_id" (hash-ref data "last_episode_id" "")
+                       "last_traj_path" (hash-ref data "last_traj_path" "")
+                       "harness_id" (hash-ref cfg "harness_id" "default")
+                       "harness_routing" (hash-ref cfg "routing" "")
+                       "l2_weights_id" (hash-ref cfg "l2_weights_id" "")
+                       "l2_artifact_present" #f
+                       "worldline_count" (hash-ref cfg "worldline_count" #f)
+                       "hooks" (acp-hooks)
+                       "honesty" (overlay-prove-honesty (default-honesty) root)
+                       "kernel" "aura")))
+    (let ((l2id (hash-ref status "l2_weights_id" "")))
+      (if (and (string? l2id) (not (equal? l2id "")))
+        (let ((ref (l2-resolve root l2id)))
+          (if ref
+            (hash-set! status "l2_artifact_present"
+                       (hash-ref ref "artifact_present" #f))
+            #t))
+        #t))
+    (let* ((traj (if (and traj-override (not (equal? traj-override ""))
+                          (file-exists? traj-override))
+                   traj-override
+                   (let ((from-sess (hash-ref status "last_traj_path" "")))
+                     (if (and (string? from-sess) (not (equal? from-sess ""))
+                              (file-exists? from-sess))
+                       from-sess
+                       (find-newest-jsonl)))))
+           (ep (last-jsonl-object traj)))
+      (if traj
+        (hash-set! status "last_traj_path" traj)
+        #t)
+      (if ep
+        (begin
+          (if (or (null? (hash-ref status "last_episode_id" ""))
+                  (equal? (hash-ref status "last_episode_id" "") ""))
+            (hash-set! status "last_episode_id"
+                       (hash-ref ep "episode_id" ""))
+            #t)
+          (if (not (hash-ref status "worldline_count" #f))
+            (hash-set! status "worldline_count"
+                       (length (hash-ref ep "worldlines" (list))))
+            #t))
+        #t))
+    status))
+
+(define (acp-list-from-meta meta)
+  (let ((out (list))
+        (parent (hash-ref meta "parent" #f)))
+    (if (hash? parent)
+      (set! out (cons (hash-set parent "role" "parent") out))
+      #t)
+    (let ((cands (hash-ref meta "candidates" (hash))))
+      (if (hash? cands)
+        (for-each
+          (lambda (cid)
+            (let ((cref (hash-ref cands cid)))
+              (set! out
+                (cons
+                  (if (hash? cref)
+                    (let ((row (hash-clone cref)))
+                      (hash-set! row "role" "candidate")
+                      (hash-set! row "id" cid)
+                      row)
+                    (hash "role" "candidate" "id" cid "stable_ref" cref))
+                  out))))
+          (hash-keys cands))
+        #t))
+    (for-each
+      (lambda (d)
+        (if (hash? d)
+          (set! out (cons (hash-set d "role" "discarded") out))
+          #t))
+      (hash-ref meta "discarded" (list)))
+    (reverse out)))
+
+(define (acp-list-from-traj traj)
+  (let ((ep (last-jsonl-object traj)))
+    (if (not ep)
+      (list)
+      (let* ((selected (hash-ref ep "selected_id" ""))
+             (rows (map
+                     (lambda (w)
+                       (hash "role" (if (equal? (hash-ref w "id" "") selected)
+                                      "selected" "candidate")
+                             "id" (hash-ref w "id" "")
+                             "parent_id" (hash-ref w "parent_id" "")
+                             "stable_ref" (hash-ref w "stable_ref" "")
+                             "fitness" (hash-ref (hash-ref w "eval" (hash)) "fitness" #f)))
+                     (hash-ref ep "worldlines" (list))))
+             (disc (map
+                     (lambda (d) (hash-set d "role" "discarded"))
+                     (hash-ref ep "discarded" (list)))))
+        (append rows disc)))))
+
+(define (acp-list-worldlines root workspace traj-path)
+  (if (and workspace (not (equal? workspace ""))
+           (file-exists? (join-path workspace "meta.json")))
+    (acp-list-from-meta (json-parse (read-file (join-path workspace "meta.json"))))
+    (let ((traj (if (and traj-path (not (equal? traj-path ""))
+                         (file-exists? traj-path))
+                  traj-path
+                  (find-newest-jsonl))))
+      (if traj (acp-list-from-traj traj) (list)))))
+
+(define (acp-discard-worldline workspace ref-id reason fitness)
+  (let ((rec (workspace-discard-one workspace ref-id reason fitness)))
+    (if (not rec)
+      (hash "ok" #f "error" "unknown_ref" "discarded" ref-id
+            "workspace" workspace "fiber_live" #f "kernel" "aura")
+      (hash "ok" #t "discarded" ref-id
+            "reason" reason
+            "workspace" workspace
+            "fiber_live" #f
+            "kernel" "aura"
+            "record" rec))))
+
+(define (acp-promote-l2 root id notes)
+  (hash-set (l2-promote root id notes) "kernel" "aura"))
+
+(define (print-status status)
+  (let ((h (hash-ref status "honesty" (hash))))
+    (display "session_id=")(display (hash-ref status "session_id" "-"))
+    (display " started=")(display (hash-ref status "started" "-"))
+    (display " last_traj=")(display (hash-ref status "last_traj_path" "-"))
+    (display " kernel=aura")
+    (display " incr_proven=")(display (hash-ref h "incr_proven" #f))
+    (display " fiber_live=")(display (hash-ref h "fiber_live" #f))
+    (newline)
+    (display "  harness=")(display (hash-ref status "harness_id" "-"))
+    (display " routing=")(display (hash-ref status "harness_routing" "-"))
+    (display " worldlines=")(display (hash-ref status "worldline_count" "-"))
+    (display " l2=")(display (hash-ref status "l2_weights_id" "-"))
+    (newline)))
+
+(define (print-worldlines rows)
+  (if (null? rows)
+    (begin (display "worldlines: (none)")(newline))
+    (for-each
+      (lambda (r)
+        (display (hash-ref r "role" "?"))
+        (display " id=")(display (hash-ref r "id" (hash-ref r "ref_id" "-")))
+        (display " stable_ref=")(display (hash-ref r "stable_ref" (hash-ref r "ref_id" "-")))
+        (display " fitness=")(display (hash-ref r "fitness" "-"))
+        (newline))
+      rows)))
+
+(define (acp-run)
+  (let* ((root (env-get "AURA_BUILD_HARNESS_ROOT" ".aura-build"))
+         (op (env-get "AURA_BUILD_ACP_OP" "status"))
+         (prompt (env-get "AURA_BUILD_ACP_PROMPT" ""))
+         (workspace (env-get "AURA_BUILD_ACP_WORKSPACE" ""))
+         (traj (env-get "AURA_BUILD_ACP_TRAJ" ""))
+         (ref (env-get "AURA_BUILD_ACP_REF" ""))
+         (reason (env-get "AURA_BUILD_ACP_REASON" "acp_discard"))
+         (id (env-get "AURA_BUILD_ACP_L2_ID" ""))
+         (notes (env-get "AURA_BUILD_ACP_L2_NOTES" ""))
+         (want-json (env-bool "AURA_BUILD_ACP_JSON" #f)))
+    (cond
+      ((equal? op "hooks")
+       (let ((hooks (acp-hooks)))
+         (if want-json
+           (begin (display (json-encode hooks))(newline))
+           (begin
+             (display "start_session: ")(display (hash-ref hooks "start_session"))(newline)
+             (display "list_worldlines: ")(display (hash-ref hooks "list_worldlines"))(newline)
+             (display "promote: ")(display (hash-ref hooks "promote"))(newline)
+             (display "discard: ")(display (hash-ref hooks "discard"))(newline)
+             (display "export: ")(display (hash-ref hooks "export"))(newline)))
+         (write-response-local root (hash "cmd" "acp" "op" "hooks" "ok" #t
+                                          "hooks" hooks "kernel" "aura"))
+         0))
+      ((equal? op "start")
+       (let ((st (acp-start-session root prompt workspace "" "")))
+         (if want-json
+           (begin (display (normalize-json-empties (json-encode st)))(newline))
+           (print-status st))
+         (write-response-local root (hash "cmd" "acp" "op" "start" "ok" #t
+                                          "status" st "kernel" "aura"))
+         0))
+      ((equal? op "status")
+       (let ((st (acp-status root traj workspace)))
+         (if want-json
+           (begin (display (normalize-json-empties (json-encode st)))(newline))
+           (print-status st))
+         (write-response-local root (hash "cmd" "acp" "op" "status" "ok" #t
+                                          "status" st "kernel" "aura"))
+         0))
+      ((equal? op "worldlines")
+       (let ((rows (acp-list-worldlines root workspace traj)))
+         (if want-json
+           (begin (display (normalize-json-empties (json-encode rows)))(newline))
+           (print-worldlines rows))
+         (write-response-local root (hash "cmd" "acp" "op" "worldlines" "ok" #t
+                                          "worldlines" rows "kernel" "aura"))
+         0))
+      ((equal? op "discard")
+       (if (or (equal? workspace "") (equal? ref ""))
+         (begin
+           (display "error: discard requires workspace + ref")(newline)
+           (write-response-local root (hash "ok" #f "error" "missing_workspace_or_ref"))
+           2)
+         (let ((payload (acp-discard-worldline workspace ref reason #f)))
+           (if want-json
+             (begin (display (json-encode payload))(newline))
+             (begin
+               (display "discarded=")(display (hash-ref payload "discarded"))
+               (display " reason=")(display (hash-ref payload "reason" reason))
+               (display " workspace=")(display (hash-ref payload "workspace"))
+               (display " fiber_live=false kernel=aura")
+               (newline)))
+           (write-response-local root (hash "cmd" "acp" "op" "discard"
+                                            "ok" (hash-ref payload "ok" #t)
+                                            "result" payload "kernel" "aura"))
+           (if (hash-ref payload "ok" #t) 0 2))))
+      ((equal? op "promote")
+       (if (equal? id "")
+         (begin
+           (display "error: promote requires --id")(newline)
+           (write-response-local root (hash "ok" #f "error" "missing_id"))
+           2)
+         (let ((ref (acp-promote-l2 root id notes)))
+           (if want-json
+             (begin (display (json-encode ref))(newline))
+             (begin
+               (display "promoted id=")(display (hash-ref ref "weights_id" id))
+               (display " stub=")(display (hash-ref ref "stub" #t))
+               (display " artifact_present=")(display (hash-ref ref "artifact_present" #f))
+               (display " kernel=aura")
+               (newline)))
+           (write-response-local root (hash "cmd" "acp" "op" "promote" "ok" #t
+                                            "ref" ref "kernel" "aura"))
+           0)))
+      ((equal? op "export")
+       (let ((result (export-trajectories)))
+         (display "exported=")(display (hash-ref result "episodes_exported" 0))
+         (display " kernel=aura")
+         (display " json=")(display (hash-ref result "json_path" ""))
+         (newline)
+         (write-response-local root (hash "cmd" "acp" "op" "export" "ok"
+                                          (hash-ref result "ok" #f)
+                                          "result" result "kernel" "aura"))
+         (if (hash-ref result "ok" #f) 0 2)))
+      (else
+        (display "unknown acp op=")(display op)(newline)
+        (write-response-local root (hash "ok" #f "error" "unknown_acp_op"))
+        2))))

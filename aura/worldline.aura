@@ -3,7 +3,7 @@
 (export
   SESSION_SHARED
   workspace-create workspace-fork-note workspace-discard-losers
-  workspace-runtime-fields)
+  workspace-discard-one workspace-runtime-fields)
 
 (require "util" all:)
 (require "std/io" all:)
@@ -95,6 +95,38 @@
           (write-file meta-path (normalize-json-empties (json-encode meta))))
         #t))
     kept))
+
+
+(define (filter pred xs)
+  (if (null? xs) (list)
+    (if (pred (car xs))
+      (cons (car xs) (filter pred (cdr xs)))
+      (filter pred (cdr xs)))))
+
+
+(define (workspace-discard-one root ref-id reason fitness)
+  ; Mark a single candidate discarded (ACP hook). Audit-only; not fiber-live.
+  (let* ((rel (string-append "candidates/" ref-id))
+         (cdir (join-path root rel))
+         (meta-path (join-path root "meta.json"))
+         (why (if (or (null? reason) (equal? reason "")) "acp_discard" reason))
+         (rec (hash "id" ref-id
+                    "reason" why
+                    "fitness" fitness
+                    "stable_ref" ref-id)))
+    (if (not (file-exists? cdir))
+      #f
+      (begin
+        (write-file (join-path cdir "DISCARDED") (json-encode rec))
+        (if (file-exists? meta-path)
+          (let* ((meta (json-parse (read-file meta-path)))
+                 (prev (hash-ref meta "discarded" (list)))
+                 (kept (filter (lambda (d) (not (equal? (hash-ref d "id" "") ref-id))) prev)))
+            (hash-set! meta "discarded" (append kept (list rec)))
+            (write-file meta-path (normalize-json-empties (json-encode meta))))
+          #t)
+        rec))))
+
 
 (define (workspace-runtime-fields ws)
   (hash "workspace" (hash-ref ws "root")

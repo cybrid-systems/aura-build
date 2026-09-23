@@ -91,3 +91,8 @@ def test_cli_tui_acp_l2(tmp_path: Path):
     )
     assert main(["l2", "show", "--id", "specialist.cli.v0", "--harness-root", str(root)]) == 0
     assert main(["l2", "list", "--harness-root", str(root), "--json"]) == 0
+    # ACP promote alias (Aura-first when healthy; FORCE_PYTHON covered in kernel tests)
+    assert main([
+        "acp", "promote", "--id", "specialist.acp.cli.v0",
+        "--notes", "cli", "--harness-root", str(root),
+    ]) == 0

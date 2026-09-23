@@ -17,9 +17,9 @@ mutate/eval bridge, prove-incr / doctor honesty flags, harness L1 mutate+canary,
 trajectory write, memory, L2 stub metadata (`aura/main.aura` + modules).
 
 Python is a **thin CLI / test harness** that shells out to the `aura` binary
-(with the GCC16 libstdc++ sidecar). It still owns ACP/TUI stubs, optional Parquet conversion for export, schema
+(with the GCC16 libstdc++ sidecar). It still owns the TUI status stub, optional Parquet conversion for export, schema
 validation, and a **CI-safe fallback** when no Aura binary is present
-(`AURA_BUILD_FORCE_PYTHON=1` forces the fallback).
+(`AURA_BUILD_FORCE_PYTHON=1` forces the fallback). ACP prefers the Aura kernel.
 
 ### Which CLIs are Aura-first
 
@@ -31,7 +31,8 @@ validation, and a **CI-safe fallback** when no Aura binary is present
 | `doctor` / `harness-show` | **Aura kernel** (cheap) | fallback |
 | `memory` / `l2 show\|list\|promote` | Aura when healthy (promote `--from-export` stays Python) | fallback |
 | `export` | **Aura kernel** (JSON array + default-ON redaction); Parquet via thin Python adapter | `AURA_BUILD_FORCE_PYTHON=1` / no binary |
-| `tui` / `acp` | — | **Python only** (host surfaces) |
+| `acp` | **Aura kernel** (`acp.aura` hooks: start/status/worldlines/promote/discard/export) | `AURA_BUILD_FORCE_PYTHON=1` / no binary |
+| `tui` | — | **Python stub** (may reuse ACP status) |
 
 ```bash
 # Primary path (Aura kernel) — requires AURA_BIN + sidecar
@@ -113,14 +114,17 @@ Writes validated episode JSONL under `trajectories/` (gitignored). Sample shape 
 aura-build tui
 aura-build tui --json
 
-# Agent control plane hooks (thin host; headless remains SSOT)
+# Agent control plane hooks — Aura-first when AURA_BIN healthy (headless remains SSOT)
 aura-build acp hooks
 aura-build acp start --prompt "dogfood session"
-aura-build acp status
+aura-build acp status          # honesty: incr_proven / fiber_live never faked
 aura-build acp worldlines --traj trajectories/smoke.jsonl
 aura-build acp worldlines --workspace /path/to/shared_ws
 aura-build acp discard --workspace /path/to/shared_ws --ref wl-1
+aura-build acp promote --id specialist.stub.v0 --notes "offline"
 aura-build acp export --out trajectories/export.json
+# Force Python fallback:
+AURA_BUILD_FORCE_PYTHON=1 aura-build acp status
 ```
 
 ### L2 offline metadata (M5)

@@ -314,3 +314,123 @@ def test_cli_export_force_python(tmp_path: Path, monkeypatch) -> None:
     assert len(data) == 1
     assert data[0]["privacy"]["redacted"] is True
     assert "/workspace/keep-force" not in out.read_text(encoding="utf-8")
+
+
+def test_kernel_acp_hooks_status_start(tmp_path: Path) -> None:
+    hooks = invoke_aura_kernel(
+        "acp",
+        {"AURA_BUILD_ACP_OP": "hooks", "AURA_BUILD_ACP_JSON": "1"},
+        harness_root=tmp_path,
+    )
+    assert hooks.via == "aura"
+    assert hooks.ok
+    assert (hooks.response or {}).get("kernel") == "aura"
+    for name in ("start_session", "list_worldlines", "promote", "discard", "export"):
+        assert name in ((hooks.response or {}).get("hooks") or {})
+
+    start = invoke_aura_kernel(
+        "acp",
+        {
+            "AURA_BUILD_ACP_OP": "start",
+            "AURA_BUILD_ACP_PROMPT": "pytest acp",
+        },
+        harness_root=tmp_path,
+    )
+    assert start.via == "aura" and start.ok
+    assert (tmp_path / "session.json").is_file()
+    st = (start.response or {}).get("status") or {}
+    assert st.get("kernel") == "aura"
+    honesty = st.get("honesty") or {}
+    assert honesty.get("incr_proven") is False
+    assert honesty.get("fiber_live") is False
+
+    status = invoke_aura_kernel(
+        "acp",
+        {"AURA_BUILD_ACP_OP": "status"},
+        harness_root=tmp_path,
+    )
+    assert status.via == "aura" and status.ok
+    st2 = (status.response or {}).get("status") or {}
+    assert st2.get("session_id")
+    assert (st2.get("honesty") or {}).get("incr_proven") is False
+    assert (st2.get("honesty") or {}).get("fiber_live") is False
+
+
+def test_kernel_acp_worldlines_discard_promote(tmp_path: Path) -> None:
+    from aura_build.worldline import WorldlineWorkspace
+
+    ws = tmp_path / "ws"
+    WorldlineWorkspace.create(ws, n_candidates=2)
+    rows = invoke_aura_kernel(
+        "acp",
+        {
+            "AURA_BUILD_ACP_OP": "worldlines",
+            "AURA_BUILD_ACP_WORKSPACE": str(ws),
+            "AURA_BUILD_ACP_JSON": "1",
+        },
+        harness_root=tmp_path,
+    )
+    assert rows.via == "aura" and rows.ok
+    wls = (rows.response or {}).get("worldlines") or []
+    assert len(wls) >= 2
+
+    disc = invoke_aura_kernel(
+        "acp",
+        {
+            "AURA_BUILD_ACP_OP": "discard",
+            "AURA_BUILD_ACP_WORKSPACE": str(ws),
+            "AURA_BUILD_ACP_REF": "wl-1",
+            "AURA_BUILD_ACP_REASON": "pytest_discard",
+        },
+        harness_root=tmp_path,
+    )
+    assert disc.via == "aura" and disc.ok
+    result = (disc.response or {}).get("result") or {}
+    assert result.get("discarded") == "wl-1"
+    assert result.get("fiber_live") is False
+    assert result.get("kernel") == "aura"
+    assert (ws / "candidates" / "wl-1" / "DISCARDED").is_file()
+
+    prom = invoke_aura_kernel(
+        "acp",
+        {
+            "AURA_BUILD_ACP_OP": "promote",
+            "AURA_BUILD_ACP_L2_ID": "specialist.acp.pytest.v0",
+            "AURA_BUILD_ACP_L2_NOTES": "pytest",
+        },
+        harness_root=tmp_path,
+    )
+    assert prom.via == "aura" and prom.ok
+    ref = (prom.response or {}).get("ref") or {}
+    assert ref.get("stub") is True
+    assert ref.get("kernel") == "aura"
+    assert (tmp_path / "weights" / "specialist.acp.pytest.v0.json").is_file()
+
+
+def test_cli_acp_prefer_aura_and_force_python(tmp_path: Path, monkeypatch) -> None:
+    from aura_build.cli import main
+
+    monkeypatch.delenv("AURA_BUILD_FORCE_PYTHON", raising=False)
+    rc = main(["acp", "start", "--prompt", "cli aura", "--harness-root", str(tmp_path)])
+    assert rc == 0
+    # status should mention kernel=aura when binary healthy
+    import io
+    from contextlib import redirect_stdout
+
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        rc = main(["acp", "status", "--harness-root", str(tmp_path)])
+    assert rc == 0
+    out = buf.getvalue()
+    assert "incr_proven=False" in out or "incr_proven=#f" in out
+    assert "kernel=aura" in out
+    assert "fiber_live=False" in out or "fiber_live=false" in out or "fiber_live=#f" in out
+
+    monkeypatch.setenv("AURA_BUILD_FORCE_PYTHON", "1")
+    buf2 = io.StringIO()
+    with redirect_stdout(buf2):
+        rc = main(["acp", "status", "--harness-root", str(tmp_path)])
+    assert rc == 0
+    out2 = buf2.getvalue()
+    assert "kernel=python" in out2
+    assert "incr_proven=False" in out2
