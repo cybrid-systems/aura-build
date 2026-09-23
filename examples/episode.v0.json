@@ -1,0 +1,91 @@
+{
+  "schema_version": "trajectory.v0",
+  "episode_id": "00000000-0000-4000-8000-000000000042",
+  "ts_start": "2026-09-23T05:00:00+00:00",
+  "ts_end": "2026-09-23T05:00:00.050000+00:00",
+  "prompt": "example: fiber multi-candidate select-best",
+  "runtime": {
+    "mode": "simulated",
+    "aura_ref": null,
+    "seed": 42
+  },
+  "harness": {
+    "l1_strategy_id": "m0.simulated.select_best",
+    "l2_weights_id": null,
+    "l3_online": false
+  },
+  "worldlines": [
+    {
+      "id": "wl-0",
+      "parent_id": null,
+      "mutations": [
+        {
+          "op": "simulated_edit",
+          "target_id": "node:demo:0",
+          "summary": "candidate 0 for: example: fiber multi-candidate select-best"
+        }
+      ],
+      "eval": {
+        "fitness": 0.8076,
+        "passed": true,
+        "metrics": {
+          "tests_passed": 1,
+          "tests_total": 1,
+          "incr_compile_ms": 5,
+          "audit_ok": true
+        },
+        "notes": "m0 simulated eval"
+      }
+    },
+    {
+      "id": "wl-1",
+      "parent_id": null,
+      "mutations": [
+        {
+          "op": "simulated_edit",
+          "target_id": "node:demo:1",
+          "summary": "candidate 1 for: example: fiber multi-candidate select-best"
+        }
+      ],
+      "eval": {
+        "fitness": 0.3386,
+        "passed": true,
+        "metrics": {
+          "tests_passed": 1,
+          "tests_total": 1,
+          "incr_compile_ms": 8,
+          "audit_ok": true
+        },
+        "notes": "m0 simulated eval"
+      }
+    },
+    {
+      "id": "wl-2",
+      "parent_id": null,
+      "mutations": [
+        {
+          "op": "simulated_edit",
+          "target_id": "node:demo:2",
+          "summary": "candidate 2 for: example: fiber multi-candidate select-best"
+        }
+      ],
+      "eval": {
+        "fitness": 0.3524,
+        "passed": true,
+        "metrics": {
+          "tests_passed": 1,
+          "tests_total": 1,
+          "incr_compile_ms": 11,
+          "audit_ok": true
+        },
+        "notes": "m0 simulated eval"
+      }
+    }
+  ],
+  "selected_id": "wl-0",
+  "selection_reason": "max_fitness",
+  "privacy": {
+    "redacted": false,
+    "retention_class": "dogfood"
+  }
+}
