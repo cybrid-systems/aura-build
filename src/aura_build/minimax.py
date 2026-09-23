@@ -251,3 +251,96 @@ def extract_aura_source(text: str) -> str:
     if stripped.startswith("(") or stripped.startswith(";"):
         return stripped + ("\n" if not stripped.endswith("\n") else "")
     return stripped + "\n"
+
+
+def extract_aura_sources(
+    text: str,
+    filenames: list[str] | None = None,
+) -> dict[str, str]:
+    """Pull one or more Aura sources from a model reply.
+
+    Recognizes named fences (any of these forms)::
+
+      ```aura lib.aura
+      ```aura:lib.aura
+      ```lib.aura
+
+    Also a top-level JSON object mapping filename -> source string.
+    When ``filenames`` is given and only unnamed fences exist, equal counts
+    zip in order; a single unnamed fence maps to the last (entry) filename.
+    Single-file callers can keep using ``extract_aura_source``.
+    """
+    if not text:
+        return {}
+    names = list(filenames or [])
+    out: dict[str, str] = {}
+
+    # JSON map: {"lib.aura": "(define ...)", "main.aura": "..."}
+    stripped = text.strip()
+    if stripped.startswith("{"):
+        try:
+            obj = json.loads(stripped)
+            if isinstance(obj, dict) and obj and all(
+                isinstance(v, str) for v in obj.values()
+            ):
+                for k, v in obj.items():
+                    key = str(k).strip()
+                    if key.endswith(".aura") or (names and key in names):
+                        body = v.strip()
+                        out[key] = body + ("\n" if not body.endswith("\n") else "")
+                if out:
+                    return out
+        except json.JSONDecodeError:
+            pass
+
+    # Named fences: ```aura lib.aura / ```aura:lib.aura / ```lib.aura
+    named_pat = re.compile(
+        r"```(?:aura|scheme|lisp)?(?::|\s+)([\w./-]+\.aura)\s*\n([\s\S]*?)```",
+        re.IGNORECASE,
+    )
+    for m in named_pat.finditer(text):
+        fname = m.group(1).strip()
+        body = m.group(2).strip()
+        out[fname] = body + ("\n" if not body.endswith("\n") else "")
+
+    if out:
+        if names:
+            filtered = {k: v for k, v in out.items() if k in names}
+            if filtered:
+                return filtered
+        return out
+
+    # Unnamed fences — fall back to extract_aura_source style
+    unnamed: list[str] = []
+    for lang in ("aura", "scheme", "lisp", ""):
+        if lang:
+            pat = rf"```{lang}\s*\n([\s\S]*?)```"
+        else:
+            pat = r"```\s*\n([\s\S]*?)```"
+        found = re.findall(pat, text, re.IGNORECASE)
+        if found:
+            for body_raw in found:
+                body = body_raw.strip()
+                unnamed.append(body + ("\n" if not body.endswith("\n") else ""))
+            break
+    if not unnamed:
+        single = extract_aura_source(text)
+        if single.strip():
+            unnamed = [single]
+
+    if not names:
+        if len(unnamed) == 1:
+            return {"program.aura": unnamed[0]}
+        return {f"file{i}.aura": s for i, s in enumerate(unnamed)}
+
+    if len(unnamed) == len(names):
+        return dict(zip(names, unnamed))
+    if len(unnamed) == 1 and len(names) >= 1:
+        # Assign sole fence to entry (last) file; leave others for repair
+        return {names[-1]: unnamed[0]}
+    result: dict[str, str] = {}
+    for i, name in enumerate(names):
+        if i < len(unnamed):
+            result[name] = unnamed[i]
+    return result
+

@@ -1,0 +1,20 @@
+{
+  "label": "bank",
+  "files": ["lib.aura", "main.aura"],
+  "entry": "main.aura",
+  "run_mode": "cli_multi",
+  "expect": "A=100\nB=50\nA2=70\nB2=80\nOK=1",
+  "expect_res": [
+    "A\\s*=\\s*100",
+    "B\\s*=\\s*50",
+    "A2\\s*=\\s*70",
+    "B2\\s*=\\s*80",
+    "OK\\s*=\\s*1"
+  ],
+  "source_res": [
+    "\\(define\\s+\\(credit\\b",
+    "\\(define\\s+\\(debit\\b",
+    "\\(define\\s+\\(balance\\b"
+  ],
+  "user_extra": "lib.aura MUST define (credit acct n), (debit acct n), and (balance acct) using set! mutable state (or equivalent). main.aura MUST call those helpers — do not hardcode only the five display lines in main alone. Start A=100 B=50; transfer 30 A→B; print A/B/A2/B2/OK. Aura run mode: CLI multi-file `aura lib.aura main.aura` (definitions from lib visible to main). Named fences required."
+}

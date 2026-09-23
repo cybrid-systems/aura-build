@@ -1,0 +1,14 @@
+; Intentionally broken — missing debit/credit semantics / wrong balances
+(define a-bal 0)
+(define b-bal 0)
+(define (balance acct)
+  (if (equal? acct "A") a-bal
+      (if (equal? acct "B") b-bal 0)))
+(define (credit acct n)
+  ; wrong: overwrites instead of adding
+  (if (equal? acct "A") (set! a-bal n)
+      (if (equal? acct "B") (set! b-bal n) 0)))
+(define (debit acct n)
+  ; wrong: ignores n
+  (if (equal? acct "A") (set! a-bal a-bal)
+      (if (equal? acct "B") (set! b-bal b-bal) 0)))

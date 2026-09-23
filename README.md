@@ -361,6 +361,11 @@ aura-build llm-dogfood --project examples/projects/mini-kv --max-rounds 8 \
 # registry alias:
 aura-build llm-dogfood --task kv --max-rounds 8 --worldlines 3 --json
 ./examples/projects/mini-kv/verify.sh examples/projects/mini-kv/stub.aura  # expect fail
+
+# Multi-file (lib.aura + main.aura): mini-bank transfer / conservation
+aura-build llm-dogfood --project examples/projects/mini-bank --max-rounds 12 \
+  --worldlines 3 --out trajectories/mini_bank_dogfood.jsonl --json
+./examples/projects/mini-bank/verify.sh examples/projects/mini-bank/stub  # expect fail
 ```
 
 Tasks: `fib` (see `examples/minimax_fib_task.md`), `greet` (see

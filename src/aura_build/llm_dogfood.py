@@ -23,6 +23,7 @@ from aura_build.minimax import (
     MiniMaxConfig,
     chat_completions,
     extract_aura_source,
+    extract_aura_sources,
     load_minimax_config,
     redact_secrets,
 )
@@ -36,16 +37,25 @@ TASK_GREET = "greet"
 TASK_CALC = "calc"
 TASK_KV = "kv"
 TASK_STACK = "stack"
+TASK_BANK = "bank"
 DEFAULT_TASK = TASK_FIB
 DEFAULT_MAX_ROUNDS = 8
 DEFAULT_WORLDLINES = 3
 
 SYSTEM_CODEGEN = """You are a careful Aura (Lisp-like) code generator for the Aura runtime.
 Rules:
-- Output ONE complete Aura program only (prefer a ```aura fence).
-- Use define/lambda/if/cond/let/display/newline/number->string.
-- No Python. No imports unless stdlib require is essential (prefer none).
-- Keep the program small and deterministic.
+- Single-file: output ONE complete Aura program (prefer a ```aura fence).
+- Multi-file: output EACH required file in a named fence, e.g.
+  ```aura lib.aura
+  ...
+  ```
+  ```aura main.aura
+  ...
+  ```
+  (```aura:lib.aura and ```lib.aura also accepted).
+- Use define/lambda/if/cond/let/display/newline/set!/equal?/number->string.
+- No Python. Prefer Aura CLI multi-file (lib then main) or (load "lib.aura") when asked.
+- Keep programs small and deterministic.
 - Do not include API keys or secrets.
 """
 
@@ -257,10 +267,15 @@ def load_project_spec(project: Path | str, *, repo: Path | None = None) -> dict[
 
     Expected layout (minimal):
       GOAL.md       — human goal; becomes the propose user prompt body
-      stub.aura     — empty-reply / seed fallback (optional but recommended)
+      stub.aura     — empty-reply / seed fallback (single-file; optional)
+      stub/         — multi-file stubs mirroring ``files`` (e.g. stub/lib.aura)
       verify.sh     — exit 0 iff candidate green (preferred fitness oracle)
-      dogfood.json  — optional machine contract (expect / expect_res / source_res)
+      dogfood.json  — optional machine contract (expect / expect_res / source_res /
+                      files / run_mode / entry)
 
+    Multi-file: set ``files`` in dogfood.json (e.g. ["lib.aura","main.aura"]).
+    Aura natively accepts ``aura lib.aura main.aura`` and ``(load "lib.aura")``;
+    ``run_mode`` documents which contract verify.sh uses (cli_multi | load | concat).
     Friction this fixes: extending llm-dogfood previously required editing the
     hard-coded TASKS registry + CLI ``--task`` choices for every new project.
     """
@@ -274,12 +289,6 @@ def load_project_spec(project: Path | str, *, repo: Path | None = None) -> dict[
     if not goal_path.is_file():
         raise FileNotFoundError(f"project missing GOAL.md: {goal_path}")
     goal = goal_path.read_text(encoding="utf-8")
-    stub_path = root / "stub.aura"
-    fallback = (
-        stub_path.read_text(encoding="utf-8")
-        if stub_path.is_file()
-        else '; project stub missing\n(display "FAIL")(newline)\n'
-    )
     meta: dict[str, Any] = {}
     meta_path = root / "dogfood.json"
     if meta_path.is_file():
@@ -287,14 +296,65 @@ def load_project_spec(project: Path | str, *, repo: Path | None = None) -> dict[
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
             raise ValueError(f"invalid dogfood.json in {root}: {exc}") from exc
+    files_raw = meta.get("files")
+    files: list[str] = []
+    if isinstance(files_raw, list) and files_raw:
+        files = [str(f) for f in files_raw]
+    multi = len(files) > 1
+    run_mode = str(meta.get("run_mode") or ("cli_multi" if multi else "single"))
+    entry = str(meta.get("entry") or (files[-1] if files else "program.aura"))
+
+    fallback_files: dict[str, str] = {}
+    stub_dir = root / "stub"
+    if files:
+        for fname in files:
+            cand = stub_dir / fname
+            if cand.is_file():
+                fallback_files[fname] = cand.read_text(encoding="utf-8")
+            else:
+                alt = root / f"stub_{fname}"
+                if alt.is_file():
+                    fallback_files[fname] = alt.read_text(encoding="utf-8")
+                else:
+                    fallback_files[fname] = (
+                        f"; stub missing for {fname}\n"
+                        '(display "FAIL")(newline)\n'
+                    )
+        stub_path = root / "stub.aura"
+        if stub_path.is_file() and entry not in fallback_files:
+            fallback_files[entry] = stub_path.read_text(encoding="utf-8")
+        fallback: str | dict[str, str] = fallback_files
+    else:
+        stub_path = root / "stub.aura"
+        fallback = (
+            stub_path.read_text(encoding="utf-8")
+            if stub_path.is_file()
+            else '; project stub missing\n(display "FAIL")(newline)\n'
+        )
+
     label = str(meta.get("label") or root.name)
     expect = str(meta.get("expect") or "(see GOAL.md / verify.sh)")
     user_extra = str(meta.get("user_extra") or "").strip()
-    user = (
-        "Write ONE complete Aura program that satisfies the following project goal.\n"
-        "Output only the program in a ```aura fence.\n\n"
-        f"## GOAL.md\n{goal.strip()}\n"
-    )
+    if multi:
+        fence_hint = "\n".join(f"```aura {fn}\n...\n```" for fn in files)
+        user = (
+            "Write a MULTI-FILE Aura program that satisfies the following "
+            "project goal.\n"
+            f"Required files (in order): {', '.join(files)}.\n"
+            "Output EACH file in a named fence, for example:\n"
+            f"{fence_hint}\n"
+            f"Entrypoint / last file: {entry}. Run mode for verify: {run_mode}. "
+            "Aura accepts `aura lib.aura main.aura` (CLI multi-file) and "
+            '(load "lib.aura") — follow GOAL.md; do not invent unsupported modules.\n\n'
+            f"## GOAL.md\n{goal.strip()}\n"
+        )
+    else:
+        user = (
+            "Write ONE complete Aura program that satisfies the following "
+            "project goal.\n"
+            "Output only the program in a ```aura fence.\n\n"
+            f"## GOAL.md\n{goal.strip()}\n"
+        )
     if user_extra:
         user += f"\n## Extra constraints\n{user_extra}\n"
     verify_script = root / "verify.sh"
@@ -319,7 +379,13 @@ def load_project_spec(project: Path | str, *, repo: Path | None = None) -> dict[
         "project": str(root),
         "verify_script": verify_script_s,
         "goal_path": str(goal_path),
+        "files": files,
+        "multi_file": multi,
+        "run_mode": run_mode,
+        "entry": entry,
     }
+
+
 
 
 def resolve_task_spec(
@@ -398,7 +464,7 @@ def _matched_expect(
     # Fallback tokens across dogfood tiers (fib/greet/calc/kv/stack)
     return bool(
         re.search(
-            r"(?:FIB10=|GREET=|ADD=|MUL=|MIX=|GET_|MISS=|TOP=|POP=|TOP2=|SIZE=|EMPTY=)",
+            r"(?:FIB10=|GREET=|ADD=|MUL=|MIX=|GET_|MISS=|TOP=|POP=|TOP2=|SIZE=|EMPTY=|A=|B=|A2=|B2=|OK=)",
             stdout or "",
         )
     )
@@ -419,6 +485,8 @@ def verify_aura_program(
     source_res: list[re.Pattern[str]] | None = None,
     aura_bin: str | None = None,
     verify_script: str | Path | None = None,
+    candidate_dir: Path | str | None = None,
+    files: list[str] | None = None,
     timeout_s: float = 15.0,
 ) -> dict[str, Any]:
     """Compile/run candidate with Aura binary; fitness from pass + error signal.
@@ -465,9 +533,10 @@ def verify_aura_program(
                 "has_error": True,
                 "via": "verify_script",
             }
+        verify_arg = str(candidate_dir) if candidate_dir else str(source_path)
         t0 = time.monotonic()
         proc = subprocess.run(
-            ["bash", str(script), str(source_path)],
+            ["bash", str(script), verify_arg],
             capture_output=True,
             text=True,
             timeout=timeout_s,
@@ -479,8 +548,18 @@ def verify_aura_program(
         stderr = proc.stderr or ""
         passed = proc.returncode == 0
         # Optional extra structure check even when script is oracle
+        source_text = ""
         try:
-            source_text = source_path.read_text(encoding="utf-8")
+            if candidate_dir and files:
+                cdir = Path(candidate_dir)
+                parts = [
+                    (cdir / fn).read_text(encoding="utf-8")
+                    for fn in files
+                    if (cdir / fn).is_file()
+                ]
+                source_text = chr(10).join(parts)
+            else:
+                source_text = source_path.read_text(encoding="utf-8")
         except OSError:
             source_text = ""
         structure_ok = True
@@ -718,10 +797,29 @@ def _propose(
             },
         ]
     result = chat_completions(messages, config=cfg, thinking_disabled=True)
-    source = extract_aura_source(result.get("content") or "") if result.get("ok") else ""
+    content = (result.get("content") or "") if result.get("ok") else ""
+    file_list = list(task_spec.get("files") or [])
+    sources: dict[str, str] = {}
+    source = ""
+    if content:
+        if len(file_list) > 1:
+            sources = extract_aura_sources(content, file_list)
+            source = chr(10).join(
+                f"; --- {fn} ---{chr(10)}{sources.get(fn, '')}"
+                for fn in file_list
+            )
+            if not any((v or "").strip() for v in sources.values()):
+                source = extract_aura_source(content)
+                sources = {file_list[-1]: source}
+        else:
+            source = extract_aura_source(content)
+            if file_list:
+                sources = {file_list[0]: source}
     return {
         **result,
         "source": source,
+        "sources": sources,
+        "files_written": list(sources.keys()),
         "messages_roles": [m["role"] for m in messages],
     }
 
@@ -939,16 +1037,46 @@ def run_closed_loop(
                         candidate_index=i,
                     )
 
+            files = list(task_spec.get("files") or [])
+            multi = bool(task_spec.get("multi_file")) and len(files) > 1
+            sources_map = dict(prop.get("sources") or {})
             source = prop.get("source") or ""
-            if not source.strip():
-                source = str(task_spec.get("fallback") or FIB_FALLBACK)
-            prog_path = cdir / "program.aura"
-            prog_path.write_text(source, encoding="utf-8")
+            fallback = task_spec.get("fallback")
+            if multi:
+                if isinstance(fallback, dict):
+                    for fn in files:
+                        if not (sources_map.get(fn) or "").strip():
+                            sources_map[fn] = str(fallback.get(fn) or "")
+                if not any((sources_map.get(fn) or "").strip() for fn in files):
+                    if isinstance(fallback, dict):
+                        sources_map = {fn: str(fallback.get(fn) or "") for fn in files}
+                    else:
+                        sources_map = {files[-1]: str(fallback or FIB_FALLBACK)}
+                for fn in files:
+                    (cdir / fn).write_text(sources_map.get(fn) or "", encoding="utf-8")
+                source = chr(10).join(
+                    f"; --- {fn} ---{chr(10)}{sources_map.get(fn, '')}" for fn in files
+                )
+                prog_path = cdir / str(task_spec.get("entry") or files[-1])
+                target_id = ",".join(files)
+                cand_dir: Path | None = cdir
+            else:
+                if not source.strip():
+                    if isinstance(fallback, dict):
+                        source = str(next(iter(fallback.values()), FIB_FALLBACK))
+                    else:
+                        source = str(fallback or FIB_FALLBACK)
+                prog_path = cdir / "program.aura"
+                prog_path.write_text(source, encoding="utf-8")
+                sources_map = {prog_path.name: source}
+                target_id = "program.aura"
+                cand_dir = None
             (cdir / "mutation.json").write_text(
                 json.dumps(
                     {
                         "op": "minimax_codegen",
-                        "target_id": "program.aura",
+                        "target_id": target_id,
+                        "files_written": list(sources_map.keys()),
                         "summary": f"round={round_i} cand={cid} model={cfg.model}",
                         "provider": "minimax",
                         "model": cfg.model,
@@ -967,6 +1095,8 @@ def run_closed_loop(
                 source_res=task_spec.get("source_res"),
                 aura_bin=aura_bin,
                 verify_script=verify_script,
+                candidate_dir=cand_dir,
+                files=files if multi else None,
             )
             fitness_by_id[cid] = float(ver["fitness"])
             sources[cid] = source
@@ -993,7 +1123,8 @@ def run_closed_loop(
                     "mutations": [
                         {
                             "op": "minimax_codegen",
-                            "target_id": "program.aura",
+                            "target_id": target_id,
+                            "files_written": list(sources_map.keys()),
                             "summary": f"MiniMax-M3 {task} candidate {cid} round {round_i}",
                         }
                     ],
@@ -1045,13 +1176,24 @@ def run_closed_loop(
                 pass
 
         # materialize selected to workspace final
-        final_program = ws_root / "selected" / "program.aura"
-        final_program.parent.mkdir(parents=True, exist_ok=True)
-        final_program.write_text(last_source, encoding="utf-8")
-        shutil.copy2(
-            ws_root / "candidates" / selected_id / "program.aura",
-            final_program,
-        )
+        sel_dir = ws_root / "selected"
+        sel_dir.mkdir(parents=True, exist_ok=True)
+        cand_sel = ws_root / "candidates" / selected_id
+        files_sel = list(task_spec.get("files") or [])
+        if task_spec.get("multi_file") and len(files_sel) > 1:
+            for fn in files_sel:
+                src_f = cand_sel / fn
+                if src_f.is_file():
+                    shutil.copy2(src_f, sel_dir / fn)
+            final_program = sel_dir / str(task_spec.get("entry") or files_sel[-1])
+            (sel_dir / "FILES").write_text(chr(10).join(files_sel) + chr(10), encoding="utf-8")
+        else:
+            final_program = sel_dir / "program.aura"
+            final_program.write_text(last_source, encoding="utf-8")
+            src_prog = cand_sel / "program.aura"
+            if src_prog.is_file():
+                shutil.copy2(src_prog, final_program)
+
 
         episode = {
             "schema_version": "trajectory.v0",
@@ -1076,6 +1218,9 @@ def run_closed_loop(
                     "task": task,
                     "project": str(task_spec.get("project") or ""),
                     "verify_script": str(verify_script or ""),
+                    "files": list(task_spec.get("files") or []),
+                    "multi_file": bool(task_spec.get("multi_file")),
+                    "run_mode": str(task_spec.get("run_mode") or "single"),
                     "round": round_i,
                     "max_rounds": max_rounds,
                     "traj_id": traj_id,

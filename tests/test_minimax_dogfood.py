@@ -753,3 +753,195 @@ def test_matched_expect_recognizes_stack_tokens():
     assert _matched_expect(False, "TOP=30\nPOP=30\n", STACK_SUCCESS_RES) is True
     assert _matched_expect(False, "noise only", STACK_SUCCESS_RES) is False
     assert _matched_expect(True, "", None) is True
+
+
+BANK_LIB = """(define a-bal 100)
+(define b-bal 50)
+(define (balance acct)
+  (if (equal? acct "A") a-bal
+      (if (equal? acct "B") b-bal 0)))
+(define (credit acct n)
+  (if (equal? acct "A") (set! a-bal (+ a-bal n))
+      (if (equal? acct "B") (set! b-bal (+ b-bal n)) 0)))
+(define (debit acct n)
+  (if (equal? acct "A") (set! a-bal (- a-bal n))
+      (if (equal? acct "B") (set! b-bal (- b-bal n)) 0)))
+"""
+
+BANK_MAIN = """(define a0 (balance "A"))
+(define b0 (balance "B"))
+(display "A=")(display a0)(newline)
+(display "B=")(display b0)(newline)
+(debit "A" 30)
+(credit "B" 30)
+(define a2 (balance "A"))
+(define b2 (balance "B"))
+(display "A2=")(display a2)(newline)
+(display "B2=")(display b2)(newline)
+(display "OK=")
+(display (if (= (+ a2 b2) (+ a0 b0)) 1 0))
+(newline)
+"""
+
+BANK_REPLY = "```aura lib.aura\n" + BANK_LIB + "```\n" + "```aura main.aura\n" + BANK_MAIN + "```\n"
+
+
+def test_extract_aura_sources_named_fences():
+    from aura_build.minimax import extract_aura_sources
+
+    got = extract_aura_sources(BANK_REPLY, ["lib.aura", "main.aura"])
+    assert "lib.aura" in got and "main.aura" in got
+    assert "(define (credit" in got["lib.aura"]
+    assert 'display "A="' in got["main.aura"] or 'display "A="' in got["main.aura"].replace(
+        " ", " "
+    )
+
+
+def test_extract_aura_sources_json_map():
+    import json
+    from aura_build.minimax import extract_aura_sources
+
+    payload = json.dumps({"lib.aura": "(define (credit a n) n)\n", "main.aura": "(display 1)\n"})
+    got = extract_aura_sources(payload, ["lib.aura", "main.aura"])
+    assert got["lib.aura"].startswith("(define (credit")
+    assert got["main.aura"].startswith("(display 1)")
+
+
+def test_load_project_spec_mini_bank_multifile():
+    from aura_build.llm_dogfood import load_project_spec
+    from aura_build.kernel import repo_root
+
+    spec = load_project_spec(repo_root() / "examples/projects/mini-bank")
+    assert spec["label"] == "bank"
+    assert spec["multi_file"] is True
+    assert spec["files"] == ["lib.aura", "main.aura"]
+    assert spec["entry"] == "main.aura"
+    assert spec["run_mode"] == "cli_multi"
+    assert isinstance(spec["fallback"], dict)
+    assert "lib.aura" in spec["fallback"] and "main.aura" in spec["fallback"]
+    assert "MULTI-FILE" in spec["user"] or "multi-file" in spec["user"].lower()
+    assert spec["verify_script"] and spec["verify_script"].endswith("verify.sh")
+    assert "credit" in (spec["user"] + str(spec.get("source_res")))
+
+
+def test_verify_good_bank_multifile(tmp_path):
+    from aura_build.llm_dogfood import verify_aura_program, load_project_spec
+    from aura_build.runtime import resolve_aura_bin
+    from aura_build.kernel import repo_root
+
+    bin_path = resolve_aura_bin()
+    if not bin_path:
+        return
+    spec = load_project_spec(repo_root() / "examples/projects/mini-bank")
+    cand = tmp_path / "cand"
+    cand.mkdir()
+    (cand / "lib.aura").write_text(BANK_LIB, encoding="utf-8")
+    (cand / "main.aura").write_text(BANK_MAIN, encoding="utf-8")
+    got = verify_aura_program(
+        cand / "main.aura",
+        expect_re=spec["expect_re"],
+        source_res=spec["source_res"],
+        aura_bin=bin_path,
+        verify_script=spec["verify_script"],
+        candidate_dir=cand,
+        files=spec["files"],
+    )
+    assert got["passed"] is True
+    assert got["via"] == "verify_script"
+    assert got["fitness"] == 1.0
+
+
+def test_verify_bank_rejects_main_only_hardcode(tmp_path):
+    from aura_build.llm_dogfood import verify_aura_program, load_project_spec
+    from aura_build.runtime import resolve_aura_bin
+    from aura_build.kernel import repo_root
+
+    bin_path = resolve_aura_bin()
+    if not bin_path:
+        return
+    spec = load_project_spec(repo_root() / "examples/projects/mini-bank")
+    cand = tmp_path / "cand"
+    cand.mkdir()
+    (cand / "lib.aura").write_text("; empty lib\n", encoding="utf-8")
+    (cand / "main.aura").write_text(
+        '(display "A=100")(newline)\n'
+        '(display "B=50")(newline)\n'
+        '(display "A2=70")(newline)\n'
+        '(display "B2=80")(newline)\n'
+        '(display "OK=1")(newline)\n',
+        encoding="utf-8",
+    )
+    got = verify_aura_program(
+        cand / "main.aura",
+        expect_re=spec["expect_re"],
+        source_res=spec["source_res"],
+        aura_bin=bin_path,
+        verify_script=spec["verify_script"],
+        candidate_dir=cand,
+        files=spec["files"],
+    )
+    assert got["passed"] is False
+
+
+def test_closed_loop_mocked_bank_multifile(monkeypatch, tmp_path):
+    """Mock MiniMax returns named fences; verify.sh multi-file oracle."""
+
+    class FakeCfg:
+        api_key = "sk-test-fake-key-not-real"
+        base_url = "https://api.minimaxi.com/v1"
+        model = "MiniMax-M3"
+        key_file = "/tmp/fake"
+        env_file = "/tmp/fake.env"
+
+        def public_dict(self):
+            return {
+                "provider": "minimax",
+                "base_url": self.base_url,
+                "model": self.model,
+                "api_key": "<redacted:secret>",
+            }
+
+    def fake_chat(messages, config=None, **kwargs):
+        return {
+            "ok": True,
+            "content": BANK_REPLY,
+            "model": "MiniMax-M3",
+            "error": "",
+        }
+
+    monkeypatch.setattr("aura_build.llm_dogfood.chat_completions", fake_chat)
+    monkeypatch.setattr("aura_build.llm_dogfood.prefer_aura_kernel", lambda: False)
+
+    from aura_build.llm_dogfood import run_closed_loop
+    from aura_build.runtime import resolve_aura_bin
+    from aura_build.kernel import repo_root
+
+    if not resolve_aura_bin():
+        return
+
+    out = tmp_path / "traj.jsonl"
+    ws = tmp_path / "ws"
+    summary = run_closed_loop(
+        task=None,
+        project=repo_root() / "examples/projects/mini-bank",
+        max_rounds=2,
+        worldlines=2,
+        out=out,
+        workspace=ws,
+        harness_root=tmp_path / "harness",
+        keep_workspace=True,
+        config=FakeCfg(),  # type: ignore[arg-type]
+    )
+    assert summary["success"] is True
+    assert summary["task"] == "bank"
+    assert "mini-bank" in summary["project"]
+    sel = Path(summary["final_program"]).parent
+    assert (sel / "lib.aura").is_file() or Path(summary["final_program"]).name in (
+        "main.aura",
+        "program.aura",
+    )
+    # traj records files
+    ep = json.loads(out.read_text(encoding="utf-8").strip().splitlines()[0])
+    dog = ep["runtime"]["dogfood"]
+    assert dog.get("multi_file") is True or "lib.aura" in (dog.get("files") or [])
+
