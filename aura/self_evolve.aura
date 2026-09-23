@@ -13,13 +13,13 @@
 (require "std/process" all:)
 (require "std/hash" all:)
 
-(define (honesty-snapshot root)
+(define (se-honesty-snapshot root)
   (attach-prove-metadata root))
 
-(define (stamp-path repo)
+(define (se-stamp-path repo)
   (join-path (join-path repo "aura") "self_evolve_stamp.aura"))
 
-(define (read-generation path)
+(define (se-read-generation path)
   (if (not (file-exists? path))
     0
     (let* ((tmp "/tmp/_aura_build_se_gen.txt")
@@ -32,7 +32,7 @@
            (n (string->number raw)))
       (if (number? n) (floor n) 0))))
 
-(define (write-stamp path traj-id mid generation fitness verify-ok honesty)
+(define (se-write-stamp path traj-id mid generation fitness verify-ok honesty)
   (let ((body
           (string-append
             "; aura-build self-evolve stamp — materialized winner\n"
@@ -57,7 +57,7 @@
     (write-file path body)
     path))
 
-(define (light-verify stamp)
+(define (se-light-verify stamp)
   ; Cheap in-kernel check: stamp exists and declares kernel=aura (no nested CLI).
   (if (not (file-exists? stamp))
     (hash "ok" #f "reason" "stamp_missing" "exit_code" 1 "mode" "light")
@@ -72,7 +72,7 @@
             "exit_code" (if ok 0 1)
             "mode" "light"))))
 
-(define (build-episode prompt seed n selected-id mid honesty verify traj-id generation)
+(define (se-build-episode prompt seed n selected-id mid honesty verify traj-id generation)
   (let* ((ts (iso-now))
          (wls
            (let loop ((i 0) (acc (list)))
@@ -126,7 +126,7 @@
           "discarded" (list)
           "privacy" (hash "redacted" #f "retention_class" "dogfood"))))
 
-(define (pick-best-index prompt seed n)
+(define (se-pick-best-index prompt seed n)
   (let loop ((i 0) (best 0) (best-f -1.0))
     (if (>= i n)
       best
@@ -146,21 +146,21 @@
          (seed (seed-from-prompt prompt
                  (if (equal? seed-opt "") #f (string->number seed-opt))))
          (n (env-int "AURA_BUILD_WORLDLINES" 3))
-         (honesty (honesty-snapshot harness-root))
-         (spath (stamp-path repo))
-         (generation (read-generation spath))
+         (honesty (se-honesty-snapshot harness-root))
+         (spath (se-stamp-path repo))
+         (generation (se-read-generation spath))
          (traj-id (make-id))
          (canary (run-harness-canary))
          (mid (hash-ref canary "mid" (string-append "mid-" traj-id)))
-         (best-i (pick-best-index prompt seed n))
+         (best-i (se-pick-best-index prompt seed n))
          (selected-id (string-append "wl-" (number->string best-i)))
          (fitness (default-fitness prompt seed best-i))
          (new-gen (+ generation 1))
-         (stamp (write-stamp spath traj-id mid new-gen fitness #t honesty))
-         (verify (light-verify stamp))
+         (stamp (se-write-stamp spath traj-id mid new-gen fitness #t honesty))
+         (verify (se-light-verify stamp))
          (ok (hash-ref verify "ok" #f))
-         (stamp2 (write-stamp spath traj-id mid new-gen fitness ok honesty))
-         (ep (build-episode prompt seed n selected-id mid honesty verify traj-id generation))
+         (stamp2 (se-write-stamp spath traj-id mid new-gen fitness ok honesty))
+         (ep (se-build-episode prompt seed n selected-id mid honesty verify traj-id generation))
          (path (write-episode ep out))
          (reason (if ok "verify_green" (hash-ref verify "reason" "verify_failed")))
          (commit-msg
