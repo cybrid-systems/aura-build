@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Callable
@@ -99,6 +100,7 @@ def main(argv: list[str] | None = None) -> int:
         "self-evolve": _cmd_self_evolve,
         "llm": _cmd_llm,
         "llm-dogfood": _cmd_llm_dogfood,
+        "session": _cmd_session,
         "pursue": _cmd_pursue,
     }
     fn = handlers.get(args.cmd)
@@ -529,6 +531,103 @@ def _cmd_llm(args: argparse.Namespace) -> int:
     return 0 if result.get("ok") else 1
 
 
+
+def _cmd_session(args: argparse.Namespace) -> int:
+    """Long-lived Aura --serve attach + optional in-session dogfood."""
+    from aura_build.serve_session import (
+        run_session_dogfood,
+        session_status,
+        start_session,
+        stop_session,
+    )
+
+    op = getattr(args, "session_cmd", None) or "status"
+    hroot = _root(args)
+    aura_bin = getattr(args, "aura_bin", None)
+    want_json = bool(getattr(args, "json", False))
+
+    if op == "start":
+        try:
+            sess = start_session(
+                aura_bin=aura_bin,
+                harness_root=hroot,
+                force=bool(getattr(args, "force", False)),
+            )
+        except RuntimeError as exc:
+            print(f"session start failed: {exc}", file=sys.stderr)
+            return 2
+        payload = {
+            "ok": True,
+            "cmd": "session.start",
+            "pid": sess.pid,
+            "session_model": "serve",
+            "serve_attach_ok": True,
+            "aura_bin": sess.aura_bin,
+            "marker": str(hroot / "serve-session.json"),
+        }
+        if want_json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            print(
+                f"session start ok pid={sess.pid} session_model=serve "
+                f"serve_attach_ok=true marker={hroot / 'serve-session.json'}"
+            )
+        return 0
+
+    if op == "status":
+        st = session_status(harness_root=hroot, aura_bin=aura_bin)
+        payload = {"ok": True, "cmd": "session.status", **st}
+        if want_json:
+            print(json.dumps(payload, indent=2, sort_keys=True, default=str))
+        else:
+            print(
+                f"session status serve_attach_ok={st.get('serve_attach_ok')} "
+                f"eval_available={st.get('eval_available')} "
+                f"session_model={st.get('session_model')} "
+                f"pid={st.get('pid')} serve_cross_session_shared_ast=false"
+            )
+        return 0 if st.get("serve_attach_ok") or st.get("marker") is None else 0
+
+    if op == "stop":
+        res = stop_session(harness_root=hroot)
+        payload = {"ok": True, "cmd": "session.stop", **res}
+        if want_json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            print(f"session stop stopped={res.get('stopped')} serve_attach_ok=false")
+        return 0
+
+    if op == "dogfood":
+        try:
+            summary = run_session_dogfood(
+                rounds=int(getattr(args, "rounds", 3) or 3),
+                aura_bin=aura_bin,
+                harness_root=hroot,
+                out=getattr(args, "out", None),
+                compare_cold=bool(getattr(args, "compare_cold", True)),
+            )
+        except RuntimeError as exc:
+            print(f"session dogfood failed: {exc}", file=sys.stderr)
+            return 2
+        timing = summary.get("timing") or {}
+        if want_json:
+            print(json.dumps(summary, indent=2, sort_keys=True, default=str))
+        else:
+            print(
+                f"session dogfood ok traj={summary.get('traj_id')} "
+                f"session_model={summary.get('session_model')} "
+                f"session_ms_mean={timing.get('session_ms_mean')} "
+                f"cold_ms_mean={timing.get('cold_ms_mean')} "
+                f"cold_spawns={timing.get('cold_spawns')} "
+                f"session_evals={timing.get('session_evals')} "
+                f"path={summary.get('path')}"
+            )
+        return 0 if summary.get("ok") else 1
+
+    print(f"session: unknown op {op}", file=sys.stderr)
+    return 2
+
+
 def _cmd_llm_dogfood(args: argparse.Namespace) -> int:
     """Closed-loop MiniMax codegen → Aura verify → repair (worldlines)."""
     from aura_build.llm_dogfood import run_closed_loop
@@ -539,6 +638,26 @@ def _cmd_llm_dogfood(args: argparse.Namespace) -> int:
     except (FileNotFoundError, ValueError, OSError) as exc:
         print(f"error: minimax config: {exc}", file=sys.stderr)
         return 2
+    # Optimal loop: prefer long-lived serve verify unless --no-prefer-session
+    prefer = getattr(args, "prefer_session", True)
+    if prefer:
+        os.environ["AURA_BUILD_SESSION"] = os.environ.get("AURA_BUILD_SESSION") or "1"
+    else:
+        os.environ["AURA_BUILD_SESSION"] = "cold"
+    # Ensure session started when preferred so verify hits serve path
+    if prefer:
+        try:
+            from aura_build.serve_session import ensure_eval_session, start_session
+            h = _root(args)
+            sess = ensure_eval_session(
+                aura_bin=getattr(args, "aura_bin", None), harness_root=h
+            )
+            if sess is None:
+                start_session(
+                    aura_bin=getattr(args, "aura_bin", None), harness_root=h
+                )
+        except Exception as exc:
+            print(f"llm-dogfood: session attach skipped ({exc}); cold verify", file=sys.stderr)
     summary = run_closed_loop(
         task=getattr(args, "task", "fib") or "fib",
         project=getattr(args, "project", None),

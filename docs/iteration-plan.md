@@ -14,7 +14,7 @@
 | **M5** | TUI/ACP skeleton + L2 offline metadata plug | **done** | Metadata-only weights; TUI is status stub |
 | **Post-M5** | storm-still-incr prove-or-refuse + doctor + fiber probe | **done (harness)** | `incr_proven` stays false until measured; GLIBCXX ⇒ fail-closed |
 
-**Still refused / deferred:** long-lived serve-async multi-session FlatAST; `incr_proven=true` without explicit incr-valid signal; real L2 tensor/mmap (`stub=False`); online L3; full Textual/rich TUI. (`fiber_graph` worldlines require honest denseness probe — env alone cannot elevate.)
+**Still refused / deferred:** true `--serve-async` Soft multi-worker + cross-session shared FlatAST (`serve_cross_session_shared_ast`); `incr_proven=true` without explicit incr-valid signal; real L2 tensor/mmap (`stub=False`); online L3; full Textual/rich TUI. **Shipped MVP:** host-managed long-lived `--serve` attach (`session_model=serve`, `aura-build session *`) — see [optimal-dev-loop.md](optimal-dev-loop.md). (`fiber_graph` worldlines require honest denseness probe — env alone cannot elevate.)
 
 ## M0 — Stub floor
 
@@ -195,3 +195,21 @@
 - [x] `--no-push` / `--no-commit` / `--verify none|smoke|prove|kernel`
 - [x] Never fake `incr_proven` / `fiber_live`
 - [ ] Live fiber-multi worldline materialize (still deferred — stamp + L1 dogfood first)
+
+
+## Post-M5++ — long-lived serve attach (optimal loop MVP)
+
+**Deliver**
+
+- SSOT [optimal-dev-loop.md](optimal-dev-loop.md)
+- Host-managed `aura --serve`: `aura-build session start|status|stop|dogfood`
+- In-session verify path for dogfood when session live (`via=serve_session`)
+- Honesty: `session_model=serve`, `serve_session_ok` from live pid (not env)
+- mini-* llm-dogfood demoted to fixture / regression
+
+**Exit criteria**
+
+- [x] Docs SSOT merged
+- [x] Session start/status/stop on box with AURA_BIN
+- [x] Session dogfood closed loop + cold compare
+- [ ] True serve-async Soft multi-worker + orch/project shared FlatAST (deferred)

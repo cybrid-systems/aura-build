@@ -217,6 +217,6 @@ AURA_BUILD_WORLDLINE_BACKEND=file aura-build run --prompt "file wl" --mode aura 
 
 ## Deferred
 
-- Long-lived serve-async / cross-session shared FlatAST (`serve_session_ok`)
-- `serve_session_ok` / scheduler backend on Soft boxes (production Ready self-check)
+- True `--serve-async` Soft multi-worker + cross-session shared FlatAST (`serve_cross_session_shared_ast`) — MVP host `--serve` attach elevates `serve_session_ok` / `session_model=serve` when pid live (see optimal-dev-loop.md)
+- Scheduler backend denseness via `--serve-async-bench` on Soft boxes (production Ready self-check) — separate from host serve attach
 - Richer FlatAST metrics JSON file path (optional alternate to stdout markers)

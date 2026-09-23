@@ -204,8 +204,47 @@ def build_parser() -> argparse.ArgumentParser:
     _opt(dog, "--workspace", type=Path, default=None)
     _opt(dog, "--env-file", type=Path, default=None)
     _opt(dog, "--keep-workspace", action=argparse.BooleanOptionalAction, default=True)
+    _opt(
+        dog,
+        "--prefer-session",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "prefer long-lived aura --serve verify when session available "
+            "(default ON; cold subprocess fallback)"
+        ),
+    )
     _common(dog, aura=True)
 
+    sess = sub.add_parser(
+        "session",
+        help=(
+            "long-lived Aura --serve attach (optimal loop floor): "
+            "start|status|stop|dogfood"
+        ),
+    )
+    ssub = sess.add_subparsers(dest="session_cmd", required=True)
+    sp_start = ssub.add_parser("start", help="start aura --serve + write marker")
+    _opt(sp_start, "--force", action="store_true", help="restart even if alive")
+    _common(sp_start, aura=True, harness=True)
+    sp_st = ssub.add_parser("status", help="serve_attach_ok / session_model honesty")
+    _common(sp_st, aura=True, harness=True)
+    sp_stop = ssub.add_parser("stop", help="stop serve process + clear marker")
+    _common(sp_stop, aura=False, harness=True, json_flag=True)
+    sp_df = ssub.add_parser(
+        "dogfood",
+        help="closed-loop in-session verify (no MiniMax); compare cold spawns",
+    )
+    _opt(sp_df, "--rounds", type=int, default=3)
+    _opt(sp_df, "--out", type=Path, default=None)
+    _opt(
+        sp_df,
+        "--compare-cold",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="also time cold aura subprocess evals for comparison",
+    )
+    _common(sp_df, aura=True, harness=True)
 
     prove = sub.add_parser("prove-incr", help="storm-still-incr prove-or-refuse (Aura)")
     _opt(prove, "--cycles", type=int, default=8)

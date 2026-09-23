@@ -59,7 +59,7 @@ A worldline is a **candidate live-object history**, not a git worktree. Default 
 3. Eval each (profile fitness / backend)
 4. **Discard losers** — recorded in episode `discarded[]` and workspace `DISCARDED` markers
 
-Session model: `shared_workspace_subprocess` (file backend) or `fiber_denseness_in_process` when denseness probe passes. Trajectory records `runtime.worldline_backend=fiber_graph|file`. Long-lived serve-async multi-session still deferred. Env alone cannot elevate `fiber_live`.
+Session model: `serve` (host long-lived `aura --serve` attach), `fiber_denseness_in_process` (denseness), or `shared_workspace_subprocess` (cold/file). Trajectory records `runtime.worldline_backend=fiber_graph|file`. True `--serve-async` Soft multi-worker + `serve_cross_session_shared_ast` still deferred. Env alone cannot elevate `fiber_live` / `serve`. SSOT: [optimal-dev-loop.md](optimal-dev-loop.md).
 
 ### aura-repo profile (M2)
 
@@ -118,6 +118,10 @@ until real weight bytes exist — no training, no tensor/mmap, no online L3.
 
 Do **not** read a committed harness JSON, L2 metadata file, or `stable_ref` as
 fiber-live FlatAST / proven incr / real specialist weights in memory.
+
+## Optimal loop
+
+See [optimal-dev-loop.md](optimal-dev-loop.md): long-lived serve → in-session eval → worldlines → traj; LLM propose-only; git publish escape hatch. `aura-build session start|status|stop|dogfood`.
 
 ## Anti-postman default
 

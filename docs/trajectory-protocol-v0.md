@@ -69,7 +69,7 @@ Every `aura-build run` appends one **episode** (JSON object) per line to a JSONL
 |-------|---------|
 | `runtime.profile` | e.g. `{id: aura-repo, root, fitness_source, incr_claimed, incr_proven}` |
 | `runtime.workspace` | Shared worldline workspace path |
-| `runtime.session_model` | `shared_workspace_subprocess` (file) or `fiber_denseness_in_process` when denseness live |
+| `runtime.session_model` | `serve` (long-lived `--serve` attach), `fiber_denseness_in_process`, or `shared_workspace_subprocess` (cold/file) |
 | `runtime.worldline_backend` | `fiber_graph` (fiber:spawn fan-out) or `file` (parent/candidates/) — never faked |
 | `runtime.fiber_live` | Denseness probe result; env alone cannot elevate |
 | `runtime.parent_ref` / `stable_refs` | Parent snapshot + candidate stable refs |

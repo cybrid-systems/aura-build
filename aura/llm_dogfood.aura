@@ -18,8 +18,12 @@
 
 (define (ld-session-model honesty)
   (if (hash-ref honesty "fiber_live" #f)
-    (hash-ref honesty "session_model" "shared_workspace_subprocess")
-    "shared_workspace_subprocess"))
+    (hash-ref honesty "session_model" "fiber_denseness_in_process")
+    (if (or (hash-ref honesty "serve_session_ok" #f)
+            (hash-ref honesty "serve_attach_ok" #f)
+            (equal? (hash-ref honesty "session_model" "") "serve"))
+      "serve"
+      "shared_workspace_subprocess")))
 
 (define (run-llm-dogfood)
   (let* ((manifest-path (env-get "AURA_BUILD_LLM_MANIFEST" ""))

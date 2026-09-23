@@ -15,6 +15,7 @@
 (define REPORT_SCHEMA "prove_incr.v0")
 (define SESSION_SHARED "shared_workspace_subprocess")
 (define SESSION_FIBER "fiber_denseness_in_process")
+(define SESSION_SERVE "serve")
 
 (define (default-prove-path root)
   (join-path root "prove-incr-latest.json"))
@@ -111,6 +112,26 @@
              (number? fa) (> fa 0) (number? fb) (> fb 0) (not (= fa fb)))))
     (catch (e) #f)))
 
+(define (host-serve-attach-ok?)
+  ; Host-managed long-lived aura --serve marker (.aura-build/serve-session.json).
+  ; Env alone cannot elevate — requires live pid (kill -0).
+  (try
+    (let* ((root (env-get "AURA_BUILD_HARNESS_ROOT" ".aura-build"))
+           (path (join-path root "serve-session.json"))
+           (rcfile "/tmp/aura-build-host-serve-attach.rc"))
+      (if (not (file-exists? path))
+        #f
+        (let* ((data (json-parse (read-file path)))
+               (pid (hash-ref data "pid" 0)))
+          (if (or (not (number? pid)) (<= pid 0))
+            #f
+            (begin
+              (sh (string-append
+                    "kill -0 " (number->string pid)
+                    " 2>/dev/null; echo $? > " rcfile))
+              (equal? (string-trim (read-file rcfile)) "0"))))))
+    (catch (e) #f)))
+
 (define (fiber-serve-session-ok?)
   ; Documented scheduler path: child --serve-async-bench (often fails Soft/Ready).
   (try
@@ -139,6 +160,8 @@
         "oneshot_fiber_ok" #f
         "same_flatast_multi_ok" #f
         "serve_session_ok" #f
+        "serve_attach_ok" #f
+        "serve_async_bench_ok" #f
         "serve_cross_session_shared_ast" #f
         "fiber_live" #f
         "session_model" SESSION_SHARED
@@ -155,31 +178,41 @@
       (let* ((oneshot (fiber-oneshot-ok?))
              (multi (if oneshot (fiber-same-flatast-multi-ok?) #f))
              (backend (try (fiber:spawn-backend) (catch (e) 0)))
-             (serve (fiber-serve-session-ok?))
+             (serve-async-bench (fiber-serve-session-ok?))
+             (host-serve (host-serve-attach-ok?))
+             (serve (or serve-async-bench host-serve))
              (live (and oneshot multi))
-             (session (if live SESSION_FIBER SESSION_SHARED))
+             (session (if live
+                        SESSION_FIBER
+                        (if host-serve SESSION_SERVE SESSION_SHARED)))
              (reason (if live
                        (if serve "fiber_denseness_and_serve_ok"
                          "fiber_denseness_in_process_ok")
-                       (if oneshot "same_flatast_multi_failed"
-                         "oneshot_fiber_spawn_join_failed")))
+                       (if host-serve
+                         "host_serve_attach_ok"
+                         (if oneshot "same_flatast_multi_failed"
+                           "oneshot_fiber_spawn_join_failed"))))
              (missing (if live
                         "orch/worldline may use fiber_graph when fiber_live (slice 3)"
-                        (if oneshot
-                          "same-FlatAST multi-candidate denseness failed"
-                          "fiber:spawn+join unavailable in this session"))))
+                        (if host-serve
+                          "serve attach live (MVP --serve); serve_cross_session_shared_ast still deferred"
+                          (if oneshot
+                            "same-FlatAST multi-candidate denseness failed"
+                            "fiber:spawn+join unavailable in this session")))))
         (hash "probed" #t
               "skipped" #f
               "reason" reason
               "oneshot_fiber_ok" oneshot
               "same_flatast_multi_ok" multi
               "serve_session_ok" serve
+              "serve_attach_ok" host-serve
+              "serve_async_bench_ok" serve-async-bench
               "serve_cross_session_shared_ast" #f
               "fiber_live" live
               "session_model" session
               "spawn_backend" backend
               "available" live
-              "notes" "fiber:spawn denseness (fiber-spawn.md); backend 1=scheduler 2=thread; AURA_BUILD_FIBER_SESSION_OK cannot force fiber_live"
+              "notes" "fiber denseness + optional host --serve attach; env cannot force fiber_live/serve_session_ok"
               "missing_surface" missing)))))
 
 (define (apply-fiber-probe report probe)

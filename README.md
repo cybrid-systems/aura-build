@@ -82,6 +82,7 @@ gate), `l2_weights.py` (`promote --from-export` corpus gate), thin `memory.py` /
 
 ## Docs
 
+- [**Optimal dev loop (SSOT)**](docs/optimal-dev-loop.md) — long-lived serve → in-session eval → worldlines → traj
 - [Narrative](docs/narrative.md) — 邮差 vs 活对象
 - [Architecture](docs/architecture.md)
 - [Trajectory protocol v0](docs/trajectory-protocol-v0.md)
@@ -129,7 +130,7 @@ Writes validated episode JSONL under `trajectories/` (gitignored). Sample shape 
 | **M5** | `tui` status stub; `acp` hooks; L2 metadata load/promote under `.aura-build/weights/` | TUI ≠ full Textual; `stub=True` always (metadata only); no fiber-live / no `incr_proven=true` / no online L3 |
 | **Post-M5** | `prove-incr` / `doctor`; fail-closed report; fiber probe; **auto-attach** on `run` | `incr_proven=true` only with measured incr-valid signal; fiber-live only after denseness probe (spawn+join + same-FlatAST multi); env alone cannot elevate |
 
-**Beyond / deferred:** real L2 tensor/mmap (`stub=False`); fiber-live FlatAST (needs `AURA_BUILD_FIBER_SESSION_OK`); full TUI / editor ACP embed. Storm-still-incr is **proven** on healthy Aura via `compile:epoch` / `query:jit-stats-hash` deltas → `AURA_BUILD_INCR_VALID` (see [storm-still-incr.md](docs/storm-still-incr.md)); refuse when marker absent.
+**Beyond / deferred:** true `--serve-async` Soft multi-worker + cross-session shared FlatAST (`serve_cross_session_shared_ast`); real L2 tensor/mmap (`stub=False`); full TUI / editor ACP embed. MVP long-lived `--serve` attach ships (`session start|dogfood`). Storm-still-incr: [storm-still-incr.md](docs/storm-still-incr.md).
 
 ### TUI / ACP (M5)
 
@@ -322,11 +323,30 @@ aura-build pursue --goal "demo select-best fitness" --max-rounds 2 --worldlines 
 Flags: `--goal` (required), `--predicate fitness_ge:N` / `--min-fitness`, `--max-rounds`,
 `--worldlines`, `--mode aura|simulated|auto`, `--with-llm`, `--harness-mutate`, `--json`.
 
-### MiniMax dogfood (Post-M5++)
+### Long-lived serve session (optimal loop floor)
 
-Closed loop: **MiniMax-M3** proposes a small Aura program → Aura binary verify →
-repair via worldlines select-best (host HTTP + Aura orch stamp). Prefer Aura
-kernel product; Python host owns the OpenAI-compatible HTTP client only.
+Primary dogfood path: keep one `aura --serve` process alive and eval candidates
+**in-session** (no cold spawn per candidate). See [optimal-dev-loop.md](docs/optimal-dev-loop.md).
+
+```bash
+export AURA_BIN=/workspace/aura-redis/.deps/aura/build/aura
+aura-build session start
+aura-build session status --json     # serve_attach_ok / session_model=serve
+aura-build session dogfood --rounds 3 --json
+# example (box): session_ms_mean≈1ms vs cold_ms_mean≈21ms (~20×; 9 evals, 0 cold aura spawns on session path)
+aura-build doctor                    # serve_session_ok when attach live
+aura-build session stop
+```
+
+Honesty: `runtime.session_model=serve` only with live pid+ping. Soft boxes use
+`--serve` (not `--serve-async` multi-worker). `serve_cross_session_shared_ast`
+stays false until orch+project share one FlatAST. Env cannot fake ok.
+
+### MiniMax dogfood (Post-M5++) — fixture / regression
+
+Closed loop (CI fixture / regression): **MiniMax-M3** proposes → verify (**prefers live serve session** when available; cold `aura`/`verify.sh` fallback) →
+repair via worldlines. **Not** the primary workflow — see optimal-dev-loop.md.
+Python host owns MiniMax HTTP (propose-only); Aura kernel stamps traj.
 
 Secrets (never commit / never put in traj README):
 
@@ -382,8 +402,9 @@ named helpers + multi-line stdout), `kv` (see `examples/projects/mini-kv/` —
 `llm-dogfood --project DIR` for new mini projects (`GOAL.md` + `stub.aura` +
 `verify.sh` / `dogfood.json`) so the TASKS registry stays thin. MiniMax is
 propose-only; project `verify.sh` (when present) is the fitness oracle;
-worldlines select-best + repair. Honesty: `fiber_live` only when prove says so;
-otherwise `session_model=shared_workspace_subprocess`. Trajectories record
+worldlines select-best + repair. Honesty: `session_model=serve` when long-lived serve attach is live;
+`fiber_live` only when denseness proves it; else `shared_workspace_subprocess`.
+Trajectories record
 `runtime.kernel=aura`, `runtime.llm.model`, `runtime.dogfood.task/project`,
 actions/fitness; API keys are redacted.
 

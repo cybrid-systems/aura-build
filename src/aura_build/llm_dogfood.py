@@ -1,8 +1,11 @@
 """MiniMax → aura-build closed loop: propose Aura source → verify → repair.
 
-Uses shared_workspace_subprocess worldline layout (honest when fiber_live=false).
-Orch episode recording prefers the Aura kernel (`llm-dogfood` cmd) when available;
-host always owns MiniMax HTTP + repair steering.
+Primary verify prefers a long-lived Aura ``--serve`` session when attached
+(``session_model=serve``); cold ``aura`` / ``verify.sh`` is the fallback
+(``shared_workspace_subprocess``). Orch episode recording prefers the Aura
+kernel (`llm-dogfood` cmd) when available; host owns MiniMax HTTP (propose-only).
+
+mini-* tasks are CI fixtures / regression — see docs/optimal-dev-loop.md.
 """
 
 from __future__ import annotations
@@ -31,6 +34,7 @@ from aura_build.runtime import aura_subprocess_env, resolve_aura_bin
 from aura_build.schema import validate_episode
 
 SESSION_SHARED = "shared_workspace_subprocess"
+SESSION_SERVE = "serve"
 
 TASK_FIB = "fib"
 TASK_GREET = "greet"
@@ -515,14 +519,18 @@ def verify_aura_program(
     candidate_dir: Path | str | None = None,
     files: list[str] | None = None,
     timeout_s: float = 15.0,
+    serve_session: Any | None = None,
+    harness_root: Path | str | None = None,
+    prefer_session: bool | None = None,
 ) -> dict[str, Any]:
-    """Compile/run candidate with Aura binary; fitness from pass + error signal.
+    """Compile/run candidate; prefer in-session serve eval when available.
 
     ``expect_re`` may be one pattern or a list (all must match stdout).
     Optional ``source_res`` patterns must all match the candidate source
     (structural checks, e.g. require ``(define (add`` / ``(define (mul``).
-    Optional ``verify_script`` (project ``verify.sh``) is the preferred oracle:
-    exit 0 → pass; stdout/stderr are fed back into repair prompts.
+    Optional ``verify_script`` (project ``verify.sh``) remains the oracle when
+    present (may still cold-spawn). Single-file ``aura_bin`` verify uses a
+    long-lived ``--serve`` session when attached → ``via=serve_session``.
     """
     bin_path = resolve_aura_bin(aura_bin)
     if not bin_path and not verify_script:
@@ -618,6 +626,83 @@ def verify_aura_program(
             "via": "verify_script",
         }
 
+    # In-session serve path (single-file / concatenated sources; no verify_script)
+    if verify_script is None:
+        sess = serve_session
+        if sess is None and prefer_session is not False:
+            try:
+                from aura_build.serve_session import (
+                    attach_session,
+                    ensure_eval_session,
+                    prefer_session_verify,
+                )
+                hroot = harness_root
+                if prefer_session or prefer_session_verify(harness_root=hroot):
+                    sess = ensure_eval_session(aura_bin=aura_bin, harness_root=hroot)
+                else:
+                    sess = attach_session(harness_root=hroot, aura_bin=aura_bin)
+            except Exception:
+                sess = None
+        if sess is not None:
+            try:
+                if candidate_dir and files:
+                    cdir = Path(candidate_dir)
+                    parts = [
+                        (cdir / fn).read_text(encoding="utf-8")
+                        for fn in files
+                        if (cdir / fn).is_file()
+                    ]
+                    source_text = chr(10).join(parts)
+                else:
+                    source_text = source_path.read_text(encoding="utf-8")
+            except OSError:
+                source_text = ""
+            ev = sess.eval_source(source_text, timeout_s=timeout_s)
+            stdout = ev.get("stdout") or ""
+            stderr = ev.get("stderr") or ""
+            has_error = bool(
+                re.search(r"(?i)\berror:|\bunbound variable\b|\bsyntax\b", stderr)
+                or re.search(r"(?i)\berror:|\bunbound variable\b", stdout)
+                or not ev.get("ok")
+            )
+            if expect_re is None:
+                patterns: list[re.Pattern[str]] = []
+            else:
+                patterns = expect_re if isinstance(expect_re, list) else [expect_re]
+            matched = all(bool(p.search(stdout)) for p in patterns) if patterns else False
+            structure_ok = True
+            if source_res:
+                structure_ok = all(bool(p.search(source_text)) for p in source_res)
+            passed = matched and structure_ok and not has_error
+            if passed:
+                fitness = 1.0
+            elif matched and not structure_ok:
+                fitness = 0.4
+            elif matched and has_error:
+                fitness = 0.35
+            elif stdout.strip() and not has_error:
+                fitness = 0.25
+            elif has_error:
+                fitness = max(0.05, 0.2 - min(0.15, len(stderr) / 5000.0))
+            else:
+                fitness = 0.05
+            if not structure_ok and source_res:
+                stderr = (stderr + "\n" + _structure_fail_note(source_res)).strip()
+            return {
+                "ok": passed,
+                "fitness": round(fitness, 4),
+                "passed": passed,
+                "stdout": stdout[-4000:],
+                "stderr": stderr[-4000:],
+                "exit_code": 0 if passed else 1,
+                "ms": int(ev.get("ms") or 0),
+                "matched_expect": matched,
+                "structure_ok": structure_ok,
+                "has_error": has_error,
+                "via": "serve_session",
+                "session_model": SESSION_SERVE,
+            }
+
     if not bin_path:
         return {
             "ok": False,
@@ -687,6 +772,7 @@ def verify_aura_program(
         "structure_ok": structure_ok,
         "has_error": has_error,
         "via": "aura_bin",
+        "session_model": SESSION_SHARED,
     }
 
 
@@ -1025,6 +1111,26 @@ def run_closed_loop(
     # Never fake fiber
     if not honesty.get("fiber_live"):
         session_model = SESSION_SHARED
+    # Prefer long-lived serve attach for verify (optimal loop); honest elevate
+    serve_sess = None
+    try:
+        from aura_build.serve_session import (
+            SESSION_SERVE as _SS,
+            ensure_eval_session,
+            prefer_session_verify,
+            session_status,
+        )
+        st = session_status(harness_root=hroot, aura_bin=aura_bin)
+        if st.get("serve_attach_ok") or prefer_session_verify(harness_root=hroot):
+            serve_sess = ensure_eval_session(aura_bin=aura_bin, harness_root=hroot)
+        if serve_sess is not None and not honesty.get("fiber_live"):
+            session_model = _SS
+            honesty = dict(honesty)
+            honesty["session_model"] = _SS
+            honesty["serve_session_ok"] = True
+            honesty["serve_attach_ok"] = True
+    except Exception:
+        serve_sess = None
 
     traj_id = _make_id("mm")
     out_path = out or (repo / "trajectories" / "minimax_dogfood.jsonl")
@@ -1087,6 +1193,8 @@ def run_closed_loop(
                 verify_script=verify_script,
                 candidate_dir=seed_dir,
                 files=files_seed,
+                serve_session=serve_sess,
+                harness_root=hroot,
             )
             last_sources = {
                 fn: str(fb.get(fn) or "") for fn in files_seed
@@ -1218,6 +1326,8 @@ def run_closed_loop(
                 verify_script=verify_script,
                 candidate_dir=cand_dir,
                 files=files if multi else None,
+                serve_session=serve_sess,
+                harness_root=hroot,
             )
             fitness_by_id[cid] = float(ver["fitness"])
             sources[cid] = source
@@ -1366,7 +1476,14 @@ def run_closed_loop(
                 "outcome": "pass" if best["eval"]["passed"] else "repair",
                 "actions": [
                     {"op": "propose", "provider": "minimax"},
-                    {"op": "verify", "via": "aura_bin"},
+                    {
+                        "op": "verify",
+                        "via": (
+                            "serve_session"
+                            if session_model == SESSION_SERVE
+                            else ("verify_script" if verify_script else "aura_bin")
+                        ),
+                    },
                     {"op": "select_best", "selected": selected_id},
                     {"op": "discard_losers", "count": len(discarded)},
                 ],
