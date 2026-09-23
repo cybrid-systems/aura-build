@@ -1,0 +1,9 @@
+; Intentionally wrong/incomplete — dogfood loop must repair to GET_a/GET_b/MISS/GET_c
+(define store '())
+(define (kv-set k v) (set! store (cons k store)))
+; missing kv-get; wrong prints
+(kv-set "a" 9)
+(display "GET_a=0")(newline)
+(display "GET_b=0")(newline)
+(display "MISS=missing")(newline)
+(display "GET_c=0")(newline)

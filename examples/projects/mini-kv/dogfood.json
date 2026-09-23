@@ -1,0 +1,15 @@
+{
+  "label": "kv",
+  "expect": "GET_a=1\nGET_b=2\nMISS=nil\nGET_c=3",
+  "expect_res": [
+    "GET_a\\s*=\\s*1",
+    "GET_b\\s*=\\s*2",
+    "MISS\\s*=\\s*nil",
+    "GET_c\\s*=\\s*3"
+  ],
+  "source_res": [
+    "\\(define\\s+\\(kv-set\\b",
+    "\\(define\\s+\\(kv-get\\b"
+  ],
+  "user_extra": "You MUST include (define (kv-set k v) ...) and (define (kv-get k) ...) and call them with set!/alist (or equivalent) so gets see prior sets — do not only hardcode the four display strings. Prefer display/newline/set!/cons/car/cdr/null?/equal?. No extra prose outside the code fence."
+}

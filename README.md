@@ -354,14 +354,36 @@ aura-build llm-dogfood --task greet --max-rounds 8 --worldlines 3 --json
 aura-build llm-dogfood --task calc --max-rounds 8 --worldlines 3 \
   --out trajectories/mini_calc_dogfood.jsonl --json
 ./examples/projects/mini-calc/verify.sh examples/projects/mini-calc/stub.aura  # expect fail
+
+# Harder still: mini-kv in-memory get/set (prefer --project over registry edits)
+aura-build llm-dogfood --project examples/projects/mini-kv --max-rounds 8 \
+  --worldlines 3 --out trajectories/mini_kv_dogfood.jsonl --json
+# registry alias:
+aura-build llm-dogfood --task kv --max-rounds 8 --worldlines 3 --json
+./examples/projects/mini-kv/verify.sh examples/projects/mini-kv/stub.aura  # expect fail
 ```
 
 Tasks: `fib` (see `examples/minimax_fib_task.md`), `greet` (see
 `examples/projects/mini-greet/`), `calc` (see `examples/projects/mini-calc/` —
-named helpers + multi-line stdout). MiniMax is propose-only; Aura binary verifies;
+named helpers + multi-line stdout), `kv` (see `examples/projects/mini-kv/` —
+`kv-set`/`kv-get` + GET_a/GET_b/MISS/GET_c). Prefer
+`llm-dogfood --project DIR` for new mini projects (`GOAL.md` + `stub.aura` +
+`verify.sh` / `dogfood.json`) so the TASKS registry stays thin. MiniMax is
+propose-only; project `verify.sh` (when present) is the fitness oracle;
 worldlines select-best + repair. Honesty: `fiber_live` only when prove says so;
 otherwise `session_model=shared_workspace_subprocess`. Trajectories record
-`runtime.kernel=aura`, `runtime.llm.model`, actions/fitness; API keys are redacted.
+`runtime.kernel=aura`, `runtime.llm.model`, `runtime.dogfood.task/project`,
+actions/fitness; API keys are redacted.
+
+### Dogfood lessons (mini-kv)
+
+- **Friction → fix:** adding a fourth mini project required editing hard-coded
+  `--task` choices + `TASKS` dict; shipped `--project` so any GOAL/verify dir
+  dogfoods without a registry patch.
+- **Friction → fix:** structure-fail traj notes were hard-coded to `add`/`mul`;
+  now emit the actual `source_res` patterns (works for `kv-set`/`kv-get`).
+- **Friction → fix:** project `verify.sh` was docs-only; `--project` / kv task
+  now prefer it as the verify oracle and feed its stderr into repair.
 
 ### Self-evolve after external dogfood
 

@@ -181,7 +181,23 @@ def build_parser() -> argparse.ArgumentParser:
             "(worldlines select-best; host HTTP + Aura orch stamp)"
         ),
     )
-    _opt(dog, "--task", choices=("fib", "greet", "calc"), default="fib")
+    _opt(
+        dog,
+        "--task",
+        choices=("fib", "greet", "calc", "kv"),
+        default="fib",
+        help="Built-in dogfood task (or use --project for any GOAL.md dir)",
+    )
+    _opt(
+        dog,
+        "--project",
+        type=Path,
+        default=None,
+        help=(
+            "External project dir (GOAL.md + stub.aura + verify.sh / dogfood.json). "
+            "Preferred over extending the hard-coded --task registry."
+        ),
+    )
     _opt(dog, "--max-rounds", type=int, default=8)
     _opt(dog, "--worldlines", type=int, default=3)
     _opt(dog, "--out", type=Path, default=None)

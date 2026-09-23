@@ -34,6 +34,7 @@ SESSION_SHARED = "shared_workspace_subprocess"
 TASK_FIB = "fib"
 TASK_GREET = "greet"
 TASK_CALC = "calc"
+TASK_KV = "kv"
 DEFAULT_TASK = TASK_FIB
 DEFAULT_MAX_ROUNDS = 8
 DEFAULT_WORLDLINES = 3
@@ -100,12 +101,50 @@ CALC_FALLBACK = (
     '(display "MIX=0")(newline)\n'
 )
 
+
+KV_USER = """Write a small Aura program that implements a tiny in-memory key/value store
+and prints exactly:
+GET_a=1
+GET_b=2
+MISS=nil
+GET_c=3
+each followed by a newline.
+Semantics: (kv-set "a" 1) then (kv-set "b" 2); (kv-get "a")->1; (kv-get "b")->2;
+(kv-get "z")->nil; (kv-set "c" 3); (kv-get "c")->3.
+You MUST include (define (kv-set k v) ...) and (define (kv-get k) ...) using set!/alist
+(or equivalent) so gets see prior sets — do not only hardcode the four display strings.
+Prefer display/newline/set!/cons/car/cdr/null?/equal?. No extra prose outside the code fence.
+"""
+
+KV_EXPECT = "GET_a=1\nGET_b=2\nMISS=nil\nGET_c=3"
+KV_SUCCESS_RES = [
+    re.compile(r"GET_a\s*=\s*1"),
+    re.compile(r"GET_b\s*=\s*2"),
+    re.compile(r"MISS\s*=\s*nil"),
+    re.compile(r"GET_c\s*=\s*3"),
+]
+KV_SOURCE_RES = [
+    re.compile(r"\(define\s+\(kv-set\b"),
+    re.compile(r"\(define\s+\(kv-get\b"),
+]
+KV_FALLBACK = (
+    "; empty model reply fallback\n"
+    "(define store '())\n"
+    "(define (kv-set k v) (set! store (cons k store)))\n"
+    '(kv-set "a" 9)\n'
+    '(display "GET_a=0")(newline)\n'
+    '(display "GET_b=0")(newline)\n'
+    '(display "MISS=missing")(newline)\n'
+    '(display "GET_c=0")(newline)\n'
+)
+
 REPAIR_STEER = """The previous Aura candidate failed verification under the Aura binary.
 Fix the program. Keep the same required output contract.
 Common Aura pitfalls: balanced parentheses; use (display x) (newline); recursion via
 (define (fib n) (if (<= n 1) n (+ (fib (- n 1)) (fib (- n 2))))); no Python syntax.
-If the task requires named helpers (e.g. add/mul), keep (define (add …)) / (define (mul …))
-and call them — do not only hardcode display strings.
+If the task requires named helpers (e.g. add/mul or kv-set/kv-get), keep those
+(define …) forms and call them — do not only hardcode display strings.
+When verify stderr is present, treat it as the ground-truth failure reason.
 Return ONE corrected Aura program in a ```aura fence.
 """
 
@@ -136,7 +175,115 @@ TASKS: dict[str, dict[str, Any]] = {
         "label": "calc",
         "project": "examples/projects/mini-calc",
     },
+    TASK_KV: {
+        "user": KV_USER,
+        "expect": KV_EXPECT,
+        "expect_re": KV_SUCCESS_RES,
+        "source_res": KV_SOURCE_RES,
+        "fallback": KV_FALLBACK,
+        "label": "kv",
+        "project": "examples/projects/mini-kv",
+        "verify_script": "examples/projects/mini-kv/verify.sh",
+    },
 }
+
+
+
+
+def _compile_res(patterns: list[str] | None) -> list[re.Pattern[str]] | None:
+    if not patterns:
+        return None
+    return [re.compile(p) for p in patterns]
+
+
+def load_project_spec(project: Path | str, *, repo: Path | None = None) -> dict[str, Any]:
+    """Load a dogfood task from an external project directory.
+
+    Expected layout (minimal):
+      GOAL.md       — human goal; becomes the propose user prompt body
+      stub.aura     — empty-reply / seed fallback (optional but recommended)
+      verify.sh     — exit 0 iff candidate green (preferred fitness oracle)
+      dogfood.json  — optional machine contract (expect / expect_res / source_res)
+
+    Friction this fixes: extending llm-dogfood previously required editing the
+    hard-coded TASKS registry + CLI ``--task`` choices for every new project.
+    """
+    root = Path(project)
+    if not root.is_absolute():
+        root = (repo or repo_root()) / root
+    root = root.resolve()
+    if not root.is_dir():
+        raise FileNotFoundError(f"project dir not found: {root}")
+    goal_path = root / "GOAL.md"
+    if not goal_path.is_file():
+        raise FileNotFoundError(f"project missing GOAL.md: {goal_path}")
+    goal = goal_path.read_text(encoding="utf-8")
+    stub_path = root / "stub.aura"
+    fallback = (
+        stub_path.read_text(encoding="utf-8")
+        if stub_path.is_file()
+        else '; project stub missing\n(display "FAIL")(newline)\n'
+    )
+    meta: dict[str, Any] = {}
+    meta_path = root / "dogfood.json"
+    if meta_path.is_file():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"invalid dogfood.json in {root}: {exc}") from exc
+    label = str(meta.get("label") or root.name)
+    expect = str(meta.get("expect") or "(see GOAL.md / verify.sh)")
+    user_extra = str(meta.get("user_extra") or "").strip()
+    user = (
+        "Write ONE complete Aura program that satisfies the following project goal.\n"
+        "Output only the program in a ```aura fence.\n\n"
+        f"## GOAL.md\n{goal.strip()}\n"
+    )
+    if user_extra:
+        user += f"\n## Extra constraints\n{user_extra}\n"
+    verify_script = root / "verify.sh"
+    verify_script_s = str(verify_script) if verify_script.is_file() else None
+    expect_re: re.Pattern[str] | list[re.Pattern[str]] | None = _compile_res(
+        meta.get("expect_res")
+    )
+    if expect_re is None and isinstance(meta.get("expect_re"), str):
+        expect_re = re.compile(str(meta["expect_re"]))
+    source_res = _compile_res(meta.get("source_res"))
+    if verify_script_s is None and expect_re is None:
+        raise ValueError(
+            f"project {root} needs verify.sh and/or dogfood.json expect_res"
+        )
+    return {
+        "user": user,
+        "expect": expect,
+        "expect_re": expect_re or [],
+        "source_res": source_res,
+        "fallback": fallback,
+        "label": label,
+        "project": str(root),
+        "verify_script": verify_script_s,
+        "goal_path": str(goal_path),
+    }
+
+
+def resolve_task_spec(
+    task: str | None = None,
+    project: Path | str | None = None,
+    *,
+    repo: Path | None = None,
+) -> tuple[str, dict[str, Any]]:
+    """Resolve ``--task`` and/or ``--project`` into (task_label, task_spec)."""
+    if project:
+        spec = load_project_spec(project, repo=repo)
+        label = str(spec.get("label") or "project")
+        return label, spec
+    name = task or DEFAULT_TASK
+    if name not in TASKS:
+        raise ValueError(
+            f"unsupported task {name!r} (supported: {', '.join(sorted(TASKS))}"
+            "; or pass --project DIR)"
+        )
+    return name, dict(TASKS[name])
 
 
 def _iso_now() -> str:
@@ -179,12 +326,21 @@ def load_honesty(harness_root: Path) -> dict[str, Any]:
     return honesty
 
 
+def _structure_fail_note(source_res: list[re.Pattern[str]] | None) -> str:
+    """Human-readable structure failure for repair / traj notes (task-agnostic)."""
+    if not source_res:
+        return "structure_fail: required source patterns missing\n"
+    pats = ", ".join(p.pattern for p in source_res)
+    return f"structure_fail: source must match all of: {pats}\n"
+
+
 def verify_aura_program(
     source_path: Path,
     *,
-    expect_re: re.Pattern[str] | list[re.Pattern[str]],
+    expect_re: re.Pattern[str] | list[re.Pattern[str]] | None = None,
     source_res: list[re.Pattern[str]] | None = None,
     aura_bin: str | None = None,
+    verify_script: str | Path | None = None,
     timeout_s: float = 15.0,
 ) -> dict[str, Any]:
     """Compile/run candidate with Aura binary; fitness from pass + error signal.
@@ -192,8 +348,92 @@ def verify_aura_program(
     ``expect_re`` may be one pattern or a list (all must match stdout).
     Optional ``source_res`` patterns must all match the candidate source
     (structural checks, e.g. require ``(define (add`` / ``(define (mul``).
+    Optional ``verify_script`` (project ``verify.sh``) is the preferred oracle:
+    exit 0 → pass; stdout/stderr are fed back into repair prompts.
     """
     bin_path = resolve_aura_bin(aura_bin)
+    if not bin_path and not verify_script:
+        return {
+            "ok": False,
+            "fitness": 0.0,
+            "passed": False,
+            "stdout": "",
+            "stderr": "aura_binary_missing",
+            "exit_code": 2,
+            "ms": 0,
+            "matched_expect": False,
+            "structure_ok": False,
+            "has_error": True,
+            "via": "missing_bin",
+        }
+    env = aura_subprocess_env(bin_path) if bin_path else os.environ.copy()
+    if bin_path:
+        env.setdefault("AURA_BIN", bin_path)
+
+    # Project-owned verify.sh oracle (preferred when present)
+    if verify_script:
+        script = Path(verify_script)
+        if not script.is_file():
+            return {
+                "ok": False,
+                "fitness": 0.0,
+                "passed": False,
+                "stdout": "",
+                "stderr": f"verify_script_missing:{script}",
+                "exit_code": 2,
+                "ms": 0,
+                "matched_expect": False,
+                "structure_ok": False,
+                "has_error": True,
+                "via": "verify_script",
+            }
+        t0 = time.monotonic()
+        proc = subprocess.run(
+            ["bash", str(script), str(source_path)],
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+            env=env,
+            check=False,
+        )
+        ms = int((time.monotonic() - t0) * 1000)
+        stdout = proc.stdout or ""
+        stderr = proc.stderr or ""
+        passed = proc.returncode == 0
+        # Optional extra structure check even when script is oracle
+        try:
+            source_text = source_path.read_text(encoding="utf-8")
+        except OSError:
+            source_text = ""
+        structure_ok = True
+        if source_res:
+            structure_ok = all(bool(p.search(source_text)) for p in source_res)
+        if passed and not structure_ok:
+            passed = False
+            stderr = (stderr + "\n" + _structure_fail_note(source_res)).strip()
+        fitness = 1.0 if passed else (
+            0.4 if "verify ok" in stdout.lower() else (
+                0.25 if stdout.strip() else 0.1
+            )
+        )
+        if not passed and proc.returncode != 0:
+            fitness = max(0.05, min(0.45, fitness))
+        return {
+            "ok": passed,
+            "fitness": round(fitness if passed else fitness, 4),
+            "passed": passed,
+            "stdout": stdout[-4000:],
+            "stderr": stderr[-4000:],
+            "exit_code": proc.returncode,
+            "ms": ms,
+            "matched_expect": passed or ("GET_" in stdout or "ADD=" in stdout),
+            "structure_ok": structure_ok,
+            "has_error": (not passed) and bool(
+                re.search(r"(?i)\berror:|\bunbound variable\b", stdout + stderr)
+            ),
+            "via": "verify_script",
+        }
+
     if not bin_path:
         return {
             "ok": False,
@@ -203,8 +443,11 @@ def verify_aura_program(
             "stderr": "aura_binary_missing",
             "exit_code": 2,
             "ms": 0,
+            "matched_expect": False,
+            "structure_ok": False,
+            "has_error": True,
+            "via": "aura_bin",
         }
-    env = aura_subprocess_env(bin_path)
     t0 = time.monotonic()
     proc = subprocess.run(
         [bin_path, str(source_path)],
@@ -221,7 +464,10 @@ def verify_aura_program(
         re.search(r"(?i)\berror:|\bunbound variable\b|\bsyntax\b", stderr)
         or re.search(r"(?i)\berror:|\bunbound variable\b", stdout)
     )
-    patterns = expect_re if isinstance(expect_re, list) else [expect_re]
+    if expect_re is None:
+        patterns: list[re.Pattern[str]] = []
+    else:
+        patterns = expect_re if isinstance(expect_re, list) else [expect_re]
     matched = all(bool(p.search(stdout)) for p in patterns) if patterns else False
     try:
         source_text = source_path.read_text(encoding="utf-8")
@@ -234,17 +480,17 @@ def verify_aura_program(
     if passed:
         fitness = 1.0
     elif matched and not structure_ok:
-        # stdout looks right but missing required defines — still fail
         fitness = 0.4
     elif matched and has_error:
         fitness = 0.35
     elif stdout.strip() and not has_error:
         fitness = 0.25
     elif has_error:
-        # shorter errors → slightly higher (closer to fixable)
         fitness = max(0.05, 0.2 - min(0.15, len(stderr) / 5000.0))
     else:
         fitness = 0.05
+    if not structure_ok and source_res:
+        stderr = (stderr + "\n" + _structure_fail_note(source_res)).strip()
     return {
         "ok": passed,
         "fitness": round(fitness, 4),
@@ -256,6 +502,7 @@ def verify_aura_program(
         "matched_expect": matched,
         "structure_ok": structure_ok,
         "has_error": has_error,
+        "via": "aura_bin",
     }
 
 
@@ -464,7 +711,8 @@ def _try_aura_orch_record(
 
 def run_closed_loop(
     *,
-    task: str = DEFAULT_TASK,
+    task: str | None = DEFAULT_TASK,
+    project: Path | str | None = None,
     max_rounds: int = DEFAULT_MAX_ROUNDS,
     worldlines: int = DEFAULT_WORLDLINES,
     out: Path | None = None,
@@ -474,15 +722,37 @@ def run_closed_loop(
     keep_workspace: bool = True,
     config: MiniMaxConfig | None = None,
 ) -> dict[str, Any]:
-    """Run MiniMax propose → Aura verify → repair until success or max_rounds."""
-    if task not in TASKS:
-        raise ValueError(
-            f"unsupported task {task!r} (supported: {', '.join(sorted(TASKS))})"
-        )
-    task_spec = TASKS[task]
-    expect_re = task_spec["expect_re"]
-    cfg = config or load_minimax_config()
+    """Run MiniMax propose → Aura verify → repair until success or max_rounds.
+
+    Pass ``project`` (path to GOAL.md/stub/verify.sh) to dogfood an external
+    mini project without extending the hard-coded TASKS registry.
+    """
     repo = repo_root()
+    registry_task = task
+    # Auto-load project dir only when registry entry opts in via verify_script
+    # (keeps greet/calc baked prompts stable; kv + --project use verify.sh oracle).
+    if project is None and task in TASKS and TASKS[task].get("verify_script"):
+        proj_rel = TASKS[task].get("project")
+        if isinstance(proj_rel, str) and proj_rel.startswith("examples/projects/"):
+            cand = repo / proj_rel
+            if (cand / "GOAL.md").is_file() and (cand / "verify.sh").is_file():
+                project = cand
+    task, task_spec = resolve_task_spec(task, project, repo=repo)
+    if (
+        registry_task
+        and registry_task in TASKS
+        and project is not None
+        and str(task_spec.get("label") or "") != registry_task
+    ):
+        task = registry_task
+        task_spec = dict(task_spec)
+        task_spec["label"] = registry_task
+    expect_re = task_spec.get("expect_re")
+    verify_script = task_spec.get("verify_script")
+    if verify_script and not Path(str(verify_script)).is_absolute():
+        vs = repo / str(verify_script)
+        verify_script = str(vs) if vs.is_file() else str(verify_script)
+    cfg = config or load_minimax_config()
     hroot = harness_root or (repo / ".aura-build")
     hroot.mkdir(parents=True, exist_ok=True)
     honesty = load_honesty(hroot)
@@ -605,6 +875,7 @@ def run_closed_loop(
                 expect_re=expect_re,
                 source_res=task_spec.get("source_res"),
                 aura_bin=aura_bin,
+                verify_script=verify_script,
             )
             fitness_by_id[cid] = float(ver["fitness"])
             sources[cid] = source
@@ -649,13 +920,12 @@ def run_closed_loop(
                         "notes": redact_secrets(
                             (
                                 (
-                                    "structure_fail: need (define (add …)) and "
-                                    "(define (mul …)) in source\n"
+                                    _structure_fail_note(task_spec.get("source_res"))
                                     if ver.get("structure_ok") is False
                                     else ""
                                 )
                                 + (ver["stderr"] or ver["stdout"] or "")
-                            )[:500],
+                            )[:800],
                             cfg.api_key,
                         ),
                     },
@@ -713,6 +983,8 @@ def run_closed_loop(
                     "provider": "minimax",
                     "model": cfg.model,
                     "task": task,
+                    "project": str(task_spec.get("project") or ""),
+                    "verify_script": str(verify_script or ""),
                     "round": round_i,
                     "max_rounds": max_rounds,
                     "traj_id": traj_id,
@@ -804,6 +1076,7 @@ def run_closed_loop(
         "task": task,
         "expect": str(task_spec.get("expect") or ""),
         "project": str(task_spec.get("project") or ""),
+        "verify_script": str(verify_script or ""),
         "reason": "verify_green" if success else f"max_rounds_{max_rounds}",
     }
     summary_path = hroot / "minimax-dogfood-latest.json"

@@ -541,6 +541,7 @@ def _cmd_llm_dogfood(args: argparse.Namespace) -> int:
         return 2
     summary = run_closed_loop(
         task=getattr(args, "task", "fib") or "fib",
+        project=getattr(args, "project", None),
         max_rounds=int(getattr(args, "max_rounds", 8) or 8),
         worldlines=int(getattr(args, "worldlines", 3) or 3),
         out=getattr(args, "out", None),
@@ -555,6 +556,7 @@ def _cmd_llm_dogfood(args: argparse.Namespace) -> int:
         f" ok={summary.get('ok')}"
         f" success={summary.get('success')}"
         f" task={summary.get('task')}"
+        f" project={summary.get('project')}"
         f" expect={summary.get('expect')}"
         f" rounds={summary.get('rounds')}"
         f" traj={summary.get('traj_id')}"
