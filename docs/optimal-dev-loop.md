@@ -31,7 +31,9 @@ Never invent `serve` / `fiber_live` / `incr_proven` from env alone.
 | Field | Meaning |
 |-------|---------|
 | `serve_session_ok` | True if host serve attach is alive **or** (when available) `--serve-async-bench` child probe passes |
-| `serve_cross_session_shared_ast` | True only when orch + project share one FlatAST across sessions — **still deferred** |
+| `serve_mode` | `async` only after measured Soft Ready self-check for `--serve-async`; else `sync` (`--serve`). Soft (#3098) refuses async on this box → `sync` |
+| `serve_cross_session_shared_ast` | True **only** when two named Aura serve sessions share one FlatAST (measured). Soft `--serve` uses separate CompilerService maps → **false**; env cannot elevate |
+| `serve_same_session_mutate_ok` | Measured same-session `mutate:rebind` + `eval-current` on the holder serve process |
 | `fiber_live` | Denseness only; env cannot elevate |
 | `incr_proven` | Measured storm-still-incr only |
 
@@ -52,11 +54,11 @@ export AURA_BIN=/workspace/aura-redis/.deps/aura/build/aura   # + GCC16 sidecar 
 
 # 1) Start long-lived serve (writes .aura-build/serve-session.json)
 aura-build session start
-aura-build session status          # serve_attach_ok / session_model=serve
+aura-build session status          # serve_attach_ok / serve_mode / shared_ast honesty
 aura-build doctor                  # serve_session_ok when attach live
 
 # 2) In-session dogfood (no MiniMax required) — closed loop on serve path
-aura-build session dogfood --rounds 3 --json
+aura-build session dogfood --rounds 3 --json   # cold_spawns=0 on session path
 
 # 3) Optional: MiniMax propose-only; verify prefers live session for single-file tasks
 aura-build llm-dogfood --task greet --max-rounds 4 --worldlines 2 --json
@@ -67,12 +69,12 @@ aura-build session stop
 Cold subprocess verify remains when session is down (`session_model=shared_workspace_subprocess`,
 `via=aura_bin|verify_script`).
 
-## What is still deferred
+## What is still deferred / next gate
 
-1. **True `--serve-async` multi-worker** on Soft boxes (production Ready self-check refuses Soft multi-worker). MVP uses long-lived `--serve` (stdin JSON-line / expr protocol).
-2. **Shared FlatAST across aura-build orch + project** (`serve_cross_session_shared_ast=true`) — attach today is host-managed process reuse for verify/eval, not one FlatAST shared with fiber orch.
-3. Fiber worldlines *mutating* the same serve session’s AST as the project under test (orch still denseness/`file` as today).
-4. JSON-RPC “postman” as a primary surface — denied; serve stdin is the attach, not a new product.
+1. **Soft Ready `--serve-async`** — measured on this box: Soft (`AURA_SANDBOX=off`) aborts with `#3098` `fail_bits=0x10` (defaults bit). Holder prefers async only after Soft Ready self-check; today it honestly falls back to `serve_mode=sync` (`aura --serve`). Production sandbox can start `--serve-async`, but aura-build Soft ergonomics stay Soft.
+2. **`serve_cross_session_shared_ast=true`** — Soft `--serve` named sessions do **not** share FlatAST (binding defined in `orch` is unbound in `project`). Real cross-session sharing ships with `--serve-async` `shared_workspace_tree` once Soft Ready allows it. Same-session `mutate:rebind` **is** measured (`serve_same_session_mutate_ok`) and used by `session dogfood` when available.
+3. Fiber orch worldlines *and* project-under-test as two named sessions on one shared tree (depends on gate 1–2).
+4. JSON-RPC “postman” as a primary surface — denied; serve stdin / sock is the attach, not a new product.
 
 ## Demoted: mini-* llm-dogfood toys
 

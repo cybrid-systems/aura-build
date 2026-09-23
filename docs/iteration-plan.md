@@ -212,4 +212,4 @@
 - [x] Docs SSOT merged
 - [x] Session start/status/stop on box with AURA_BIN
 - [x] Session dogfood closed loop + cold compare
-- [ ] True serve-async Soft multi-worker + orch/project shared FlatAST (deferred)
+- [ ] True Soft Ready serve-async + orch/project shared FlatAST (`serve_cross_session_shared_ast`); measured Soft refuse + same-session mutate ok shipped

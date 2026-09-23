@@ -1,11 +1,15 @@
-"""Host-managed long-lived Aura ``--serve`` session (optimal-loop MVP).
+"""Host-managed long-lived Aura serve session (optimal-loop MVP).
 
 Architecture:
-- ``session start`` spawns a **holder daemon** that owns ``aura --serve`` pipes
-  and listens on ``.aura-build/serve.sock``.
+- ``session start`` spawns a **holder daemon** that owns ``aura --serve`` or
+  ``aura --serve-async`` pipes and listens on ``.aura-build/serve.sock``.
 - CLI / verify clients talk JSON-lines over the socket (host IPC only).
 - Honesty: ``session_model=serve`` only when daemon+aura pid alive (not env).
-- Soft boxes use ``--serve`` (not ``--serve-async`` multi-worker).
+- Soft Ready (#3098) refuses ``--serve-async`` when ``AURA_SANDBOX=off``;
+  holder prefers async only after a measured Soft Ready self-check, else sync
+  ``--serve`` with ``serve_mode=sync`` (never env-fake async).
+- ``serve_cross_session_shared_ast`` elevates only after a measured proof that
+  two named Aura serve sessions share one FlatAST (Soft ``--serve`` does not).
 """
 
 from __future__ import annotations
@@ -33,6 +37,16 @@ SESSION_FIBER = "fiber_denseness_in_process"
 MARKER_NAME = "serve-session.json"
 SOCK_NAME = "serve.sock"
 DEFAULT_MODE = "serve"
+SERVE_MODE_SYNC = "sync"
+SERVE_MODE_ASYNC = "async"
+
+# Soft Ready (#3098) refuse fingerprint — do not treat as "async works".
+_SOFT_ASYNC_REFUSE_MARKERS = (
+    "production multi-worker Ready self-check failed",
+    "Soft (AURA_SANDBOX=off)",
+    "fail_bits=",
+)
+
 
 _ATTACHED: "ServeSession | None" = None
 
@@ -180,25 +194,262 @@ def _aura_send_line(
     }
 
 
+
+def probe_serve_async_soft_ready(
+    aura_bin: str,
+    *,
+    timeout_s: float = 4.0,
+) -> dict[str, Any]:
+    """Measured Soft Ready self-check for ``aura --serve-async``.
+
+    Soft boxes (``AURA_SANDBOX=off``) are refused by Aura #3098 multi-worker
+    Ready. Never invent ``ok`` from env. Returns structured refuse reason.
+    """
+    bin_path = resolve_aura_bin(aura_bin) or aura_bin
+    if not bin_path:
+        return {
+            "ok": False,
+            "serve_mode_preferred": SERVE_MODE_SYNC,
+            "reason": "aura_binary_missing",
+        }
+    env = aura_subprocess_env(bin_path)  # Soft: AURA_SANDBOX=off
+    try:
+        proc = subprocess.Popen(
+            [bin_path, "--serve-async"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env,
+            start_new_session=True,
+        )
+    except OSError as exc:
+        return {
+            "ok": False,
+            "serve_mode_preferred": SERVE_MODE_SYNC,
+            "reason": f"spawn_error:{exc}",
+        }
+    try:
+        assert proc.stdin is not None
+        # Soft --serve accepts sexpr; Soft --serve-async usually aborts first.
+        proc.stdin.write("(+ 1 1)\n")
+        proc.stdin.flush()
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout_s)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            try:
+                stdout, stderr = proc.communicate(timeout=2.0)
+            except Exception:
+                stdout, stderr = "", ""
+            # Timed out while alive → Soft Ready did not abort; treat as ready.
+            out = (stdout or "") + (stderr or "")
+            if any(m in out for m in _SOFT_ASYNC_REFUSE_MARKERS):
+                return {
+                    "ok": False,
+                    "serve_mode_preferred": SERVE_MODE_SYNC,
+                    "reason": "soft_ready_refused_after_timeout",
+                    "stderr_tail": (stderr or "")[-400:],
+                    "fail_bits": _extract_fail_bits(stderr or ""),
+                }
+            return {
+                "ok": True,
+                "serve_mode_preferred": SERVE_MODE_ASYNC,
+                "reason": "soft_ready_alive_timeout_ok",
+                "stderr_tail": (stderr or "")[-200:],
+            }
+        err = stderr or ""
+        out = (stdout or "") + err
+        if any(m in out for m in _SOFT_ASYNC_REFUSE_MARKERS) or proc.returncode not in (0, None):
+            # Aborted or refused
+            if any(m in out for m in _SOFT_ASYNC_REFUSE_MARKERS) or "FATAL" in err:
+                return {
+                    "ok": False,
+                    "serve_mode_preferred": SERVE_MODE_SYNC,
+                    "reason": "soft_ready_refused",
+                    "stderr_tail": err[-500:],
+                    "fail_bits": _extract_fail_bits(err),
+                    "returncode": proc.returncode,
+                }
+        # Got a JSON status line without FATAL → Soft Ready passed
+        if '"status"' in (stdout or "") and "FATAL" not in err:
+            return {
+                "ok": True,
+                "serve_mode_preferred": SERVE_MODE_ASYNC,
+                "reason": "soft_ready_ok",
+                "stdout_tail": (stdout or "")[-200:],
+            }
+        return {
+            "ok": False,
+            "serve_mode_preferred": SERVE_MODE_SYNC,
+            "reason": "soft_ready_inconclusive",
+            "stderr_tail": err[-400:],
+            "stdout_tail": (stdout or "")[-200:],
+            "returncode": proc.returncode,
+        }
+    finally:
+        if proc.poll() is None:
+            try:
+                proc.kill()
+            except OSError:
+                pass
+            try:
+                proc.wait(timeout=2)
+            except Exception:
+                pass
+
+
+def _extract_fail_bits(stderr: str) -> str | None:
+    import re
+
+    m = re.search(r"fail_bits=(0x[0-9a-fA-F]+)", stderr)
+    return m.group(1) if m else None
+
+
+def _probe_shared_ast_on_proc(proc: subprocess.Popen[str]) -> dict[str, Any]:
+    """Measure cross-session vs same-session FlatAST sharing on a live serve.
+
+    Cross-session (two named Aura sessions): Soft ``--serve`` uses separate
+    CompilerService instances — expect unbound across sessions.
+    Same-session: ``mutate:rebind`` + ``eval-current`` on one loaded graph.
+    Never elevates ``serve_cross_session_shared_ast`` from env.
+    """
+    result: dict[str, Any] = {
+        "serve_cross_session_shared_ast": False,
+        "serve_same_session_mutate_ok": False,
+        "cross_session_proof": "not_run",
+        "same_session_proof": "not_run",
+        "next_gate": (
+            "Aura Soft Ready (#3098) must allow --serve-async so orch/project "
+            "sessions can share shared_workspace_tree; Soft --serve sessions "
+            "are separate CompilerService maps (no shared FlatAST)."
+        ),
+    }
+    # --- cross-session ---
+    r1 = _aura_send_line(proc, '{"cmd":"session","name":"orch"}', timeout_s=5.0)
+    if r1.get("status") not in ("ok", "created"):
+        result["cross_session_proof"] = f"session_create_orch_failed:{r1.get('msg')}"
+    else:
+        r2 = _aura_send_line(proc, "(define shared-ast-token 7777)", timeout_s=5.0)
+        _ = r2
+        r3 = _aura_send_line(proc, '{"cmd":"session","name":"project"}', timeout_s=5.0)
+        if r3.get("status") not in ("ok", "created"):
+            result["cross_session_proof"] = f"session_create_project_failed:{r3.get('msg')}"
+        else:
+            r4 = _aura_send_line(proc, "shared-ast-token", timeout_s=5.0)
+            # Shared iff project session can read orch binding
+            shared = (
+                r4.get("status") == "ok"
+                and str(r4.get("value") or "").strip() in ("7777", "7777.0")
+            )
+            result["serve_cross_session_shared_ast"] = bool(shared)
+            if shared:
+                result["cross_session_proof"] = (
+                    "project_session_read_orch_binding_shared-ast-token=7777"
+                )
+                result["next_gate"] = "measured_true"
+            else:
+                msg = str(r4.get("msg") or r4.get("status") or "")
+                result["cross_session_proof"] = (
+                    f"project_session_unbound_or_miss status={r4.get('status')} msg={msg[:120]}"
+                )
+        # Return to default session for mutate probe
+        _aura_send_line(proc, '{"cmd":"session","name":"default"}', timeout_s=3.0)
+
+    # --- same-session mutate:rebind identity ---
+    set_r = _aura_send_line(
+        proc,
+        '(set-code "(define (cand) 1) (display (cand)) (newline)")',
+        timeout_s=5.0,
+    )
+    if set_r.get("status") != "ok":
+        result["same_session_proof"] = f"set-code_failed:{set_r.get('msg')}"
+        return result
+    ep0 = _aura_send_line(proc, '(stats:get "compile:epoch")', timeout_s=5.0)
+    mut = _aura_send_line(
+        proc,
+        '(mutate:rebind "cand" "(lambda () 99)" "shared-ast-probe")',
+        timeout_s=5.0,
+    )
+    ep1 = _aura_send_line(proc, '(stats:get "compile:epoch")', timeout_s=5.0)
+    ev = _aura_send_line(proc, "(eval-current)", timeout_s=5.0)
+    display = str(ev.get("display") or "")
+    # epoch may parse as string ints
+    def _num(v: Any) -> int | None:
+        try:
+            return int(str(v).strip().strip('"'))
+        except (TypeError, ValueError):
+            return None
+
+    n0, n1 = _num(ep0.get("value")), _num(ep1.get("value"))
+    mut_ok = mut.get("status") == "ok"
+    eval_saw_99 = "99" in display or str(ev.get("value") or "") == "99"
+    epoch_bumped = n0 is not None and n1 is not None and n1 > n0
+    same_ok = bool(mut_ok and (eval_saw_99 or epoch_bumped))
+    result["serve_same_session_mutate_ok"] = same_ok
+    result["same_session_proof"] = (
+        f"mutate_ok={mut_ok} epoch={n0}->{n1} eval_display={display[-40:]!r} "
+        f"eval_status={ev.get('status')}"
+    )
+    if same_ok and not result["serve_cross_session_shared_ast"]:
+        result["next_gate"] = (
+            "same-session mutate:rebind+eval works on Soft --serve; "
+            "cross-session shared FlatAST still needs Soft-Ready --serve-async "
+            "(shared_workspace_tree across named sessions)"
+        )
+    return result
+
+
 def _holder_main(harness_root: str, aura_bin: str) -> None:
-    """Daemon entry: own aura --serve + unix socket."""
+    """Daemon entry: own aura --serve[--async] + unix socket."""
     hroot = Path(harness_root)
     hroot.mkdir(parents=True, exist_ok=True)
     env = aura_subprocess_env(aura_bin)
+    soft_probe = probe_serve_async_soft_ready(aura_bin)
+    prefer_async = bool(soft_probe.get("ok"))
+    serve_mode = SERVE_MODE_ASYNC if prefer_async else SERVE_MODE_SYNC
+    aura_argv = [aura_bin, "--serve-async"] if prefer_async else [aura_bin, "--serve"]
     stderr_path = hroot / "serve.stderr.log"
     err_fh = open(stderr_path, "w", encoding="utf-8")  # noqa: SIM115
-    proc = subprocess.Popen(
-        [aura_bin, "--serve"],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=err_fh,
-        text=True,
-        env=env,
-        bufsize=1,
-        start_new_session=True,
-    )
-    # Warm ping
-    warm = _aura_send_line(proc, "(+ 1 1)", timeout_s=8.0)
+    def _spawn(argv: list[str]) -> subprocess.Popen[str]:
+        return subprocess.Popen(
+            argv,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=err_fh,
+            text=True,
+            env=env,
+            bufsize=1,
+            start_new_session=True,
+        )
+
+    proc = _spawn(aura_argv)
+    # Warm ping — sync accepts sexpr; async wants JSON exec when Ready.
+    if prefer_async:
+        warm = _aura_send_line(
+            proc, '{"cmd":"exec","code":"(+ 1 1)"}', timeout_s=8.0
+        )
+    else:
+        warm = _aura_send_line(proc, "(+ 1 1)", timeout_s=8.0)
+    if warm.get("status") != "ok" and prefer_async:
+        # Measured Soft Ready said ok but warm failed — honest fallback to sync.
+        try:
+            proc.kill()
+        except OSError:
+            pass
+        try:
+            proc.wait(timeout=2)
+        except Exception:
+            pass
+        prefer_async = False
+        serve_mode = SERVE_MODE_SYNC
+        aura_argv = [aura_bin, "--serve"]
+        soft_probe = dict(soft_probe)
+        soft_probe["ok"] = False
+        soft_probe["reason"] = "async_warm_failed_fallback_sync"
+        soft_probe["warm"] = warm
+        proc = _spawn(aura_argv)
+        warm = _aura_send_line(proc, "(+ 1 1)", timeout_s=8.0)
     if warm.get("status") != "ok":
         try:
             proc.kill()
@@ -207,6 +458,18 @@ def _holder_main(harness_root: str, aura_bin: str) -> None:
         err_fh.close()
         clear_marker(hroot)
         sys.exit(2)
+
+    shared_probe = _probe_shared_ast_on_proc(proc)
+    # Env cannot elevate — force false unless measured true above.
+    shared_ast = bool(shared_probe.get("serve_cross_session_shared_ast"))
+    if (os.environ.get("AURA_BUILD_SERVE_SHARED_AST") or "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    ):
+        # Explicitly ignore elevation attempts.
+        shared_ast = bool(shared_probe.get("serve_cross_session_shared_ast"))
 
     sp = sock_path(hroot)
     try:
@@ -222,17 +485,30 @@ def _holder_main(harness_root: str, aura_bin: str) -> None:
             "holder_pid": os.getpid(),
             "aura_bin": aura_bin,
             "mode": DEFAULT_MODE,
+            "serve_mode": serve_mode,
             "session_model": SESSION_SERVE,
             "started_at": _iso_now(),
             "harness_root": str(hroot),
             "sock": str(sp),
-            "protocol": "unix-sock → aura --serve stdin",
-            "notes": (
-                "MVP long-lived --serve via holder daemon; "
-                "--serve-async Soft multi-worker deferred; "
-                "serve_cross_session_shared_ast=false"
+            "protocol": (
+                "unix-sock → aura --serve-async JSON exec"
+                if prefer_async
+                else "unix-sock → aura --serve stdin"
             ),
-            "serve_cross_session_shared_ast": False,
+            "aura_argv": aura_argv,
+            "serve_async_soft_ready": soft_probe,
+            "serve_cross_session_shared_ast": shared_ast,
+            "serve_same_session_mutate_ok": bool(
+                shared_probe.get("serve_same_session_mutate_ok")
+            ),
+            "shared_ast_probe": shared_probe,
+            "notes": (
+                f"serve_mode={serve_mode}; Soft Ready async="
+                f"{soft_probe.get('ok')} ({soft_probe.get('reason')}); "
+                f"serve_cross_session_shared_ast={shared_ast}; "
+                f"same_session_mutate_ok="
+                f"{shared_probe.get('serve_same_session_mutate_ok')}"
+            ),
         },
         hroot,
     )
@@ -391,6 +667,13 @@ class ServeSession:
             r["ms"] = 1
         return r
 
+    def raw_line(self, line: str, *, timeout_s: float = 10.0) -> dict[str, Any]:
+        return _sock_request(
+            self.harness_root,
+            {"op": "raw", "line": line, "timeout_s": timeout_s},
+            timeout_s=timeout_s + 2.0,
+        )
+
     def stop(self, *, clear: bool = True) -> None:
         _sock_request(self.harness_root, {"op": "stop"}, timeout_s=5.0)
         marker = read_marker(self.harness_root)
@@ -452,7 +735,7 @@ def start_session(
     )
     # Wait for marker + ping
     sess: ServeSession | None = None
-    deadline = time.monotonic() + 12.0
+    deadline = time.monotonic() + 30.0
     while time.monotonic() < deadline:
         marker = read_marker(hroot)
         if marker and sock_path(hroot).exists():
@@ -468,7 +751,10 @@ def start_session(
                 _ATTACHED = sess
                 return sess
         time.sleep(0.1)
-    raise RuntimeError("serve_session_start_timeout: holder did not become ready")
+    raise RuntimeError(
+        "serve_session_start_timeout: holder did not become ready "
+        "(Soft Ready probe + shared-ast probe may take ~10s)"
+    )
 
 
 def attach_session(
@@ -508,17 +794,24 @@ def session_status(
     hroot = Path(harness_root) if harness_root else Path(
         os.environ.get("AURA_BUILD_HARNESS_ROOT") or ".aura-build"
     )
-    marker = read_marker(hroot)
+    raw_marker = read_marker(hroot)
     attached = attach_session(harness_root=hroot, aura_bin=aura_bin)
     ping_ok = False
     if attached is not None:
         ping_ok = attached.ping(timeout_s=3.0)
-    aura_pid = int((marker or {}).get("pid") or 0)
-    holder_pid = int((marker or {}).get("holder_pid") or 0)
+    aura_pid = int((raw_marker or {}).get("pid") or 0)
+    holder_pid = int((raw_marker or {}).get("holder_pid") or 0)
     pid_ok = _pid_alive(aura_pid) or _pid_alive(holder_pid)
     serve_attach_ok = bool(ping_ok)
     # If sock dead but pids alive, still not ok (cannot eval)
     session_model = SESSION_SERVE if serve_attach_ok else SESSION_SHARED
+    marker = raw_marker or {}
+    shared_ast = bool(marker.get("serve_cross_session_shared_ast"))
+    # Env elevation refused even if marker somehow claims true without probe.
+    env_try = (os.environ.get("AURA_BUILD_SERVE_SHARED_AST") or "").strip().lower()
+    if env_try in ("1", "true", "yes", "on") and not shared_ast:
+        shared_ast = False
+    soft = marker.get("serve_async_soft_ready") if isinstance(marker, dict) else None
     return {
         "serve_attach_ok": serve_attach_ok,
         "serve_session_ok": serve_attach_ok,
@@ -526,13 +819,19 @@ def session_status(
         "session_model": session_model,
         "pid": aura_pid if _pid_alive(aura_pid) else None,
         "holder_pid": holder_pid if _pid_alive(holder_pid) else None,
-        "marker": marker,
-        "mode": (marker or {}).get("mode") or DEFAULT_MODE,
-        "aura_bin": (marker or {}).get("aura_bin") or resolve_aura_bin(aura_bin),
-        "serve_cross_session_shared_ast": False,
+        "marker": raw_marker,
+        "mode": marker.get("mode") or DEFAULT_MODE,
+        "serve_mode": marker.get("serve_mode") or SERVE_MODE_SYNC,
+        "aura_bin": marker.get("aura_bin") or resolve_aura_bin(aura_bin),
+        "serve_cross_session_shared_ast": shared_ast,
+        "serve_same_session_mutate_ok": bool(marker.get("serve_same_session_mutate_ok")),
+        "serve_async_soft_ready": soft,
+        "shared_ast_probe": marker.get("shared_ast_probe"),
         "notes": (
-            "session_model=serve when holder daemon + aura --serve ping ok; "
-            "cold subprocess fallback otherwise; env cannot fake ok"
+            "session_model=serve when holder daemon + aura serve ping ok; "
+            "serve_mode=async only after Soft Ready self-check; "
+            "serve_cross_session_shared_ast only when measured; "
+            "env cannot fake ok / shared_ast"
         ),
         "pid_alive_hint": pid_ok,
     }
@@ -612,7 +911,12 @@ def run_session_dogfood(
     out: Path | str | None = None,
     compare_cold: bool = True,
 ) -> dict[str, Any]:
-    """Closed-loop in-session verify dogfood (no MiniMax)."""
+    """Closed-loop in-session verify dogfood (no MiniMax).
+
+    Prefers same-session ``mutate:rebind`` when the holder measured
+    ``serve_same_session_mutate_ok``; otherwise set-code/eval-current per
+    candidate. Session-path ``cold_spawns`` is always 0 (one long-lived aura).
+    """
     import re
     import uuid
 
@@ -620,7 +924,19 @@ def run_session_dogfood(
         os.environ.get("AURA_BUILD_HARNESS_ROOT") or ".aura-build"
     )
     sess = start_session(aura_bin=aura_bin, harness_root=hroot)
+    marker = read_marker(hroot) or {}
+    serve_mode = str(marker.get("serve_mode") or SERVE_MODE_SYNC)
+    shared_ast = bool(marker.get("serve_cross_session_shared_ast"))
+    same_mut = bool(marker.get("serve_same_session_mutate_ok"))
+    soft = marker.get("serve_async_soft_ready") if isinstance(marker, dict) else None
     expect = re.compile(r"GREET\s*=\s*aura")
+    # mutate:rebind bodies (lambda returning display string) when same_mut
+    mut_bodies = [
+        '(lambda () (begin (display "GREET=aura") (newline)))',
+        '(lambda () (begin (display "GREET=wrong") (newline)))',
+        '(lambda () (begin (display "GREET=aura") (newline) (display "extra") (newline)))',
+        '(lambda () (begin (display "GREET=aura") (newline)))',
+    ]
     candidates = [
         '(display "GREET=aura")(newline)',
         '(display "GREET=wrong")(newline)',
@@ -630,15 +946,45 @@ def run_session_dogfood(
     rounds = max(1, int(rounds))
     session_ms: list[int] = []
     results: list[dict[str, Any]] = []
+    path_kind = "mutate_rebind" if same_mut else "set_code_eval"
+
+    if same_mut:
+        # Load once; worldlines rebind `cand` on the same FlatAST.
+        boot = sess.raw_line(
+            '(set-code "(define (cand) 0) (cand)")',
+            timeout_s=10.0,
+        )
+        if boot.get("status") != "ok":
+            same_mut = False
+            path_kind = "set_code_eval"
+
     for r in range(rounds):
         round_wls = []
         for i in range(3):
-            body = candidates[0] if i == 0 else candidates[(i + r) % len(candidates)]
-            ev = sess.eval_source(body, timeout_s=10.0)
-            stdout = ev.get("stdout") or ""
+            t0 = time.monotonic()
+            if same_mut:
+                body = mut_bodies[0] if i == 0 else mut_bodies[(i + r) % len(mut_bodies)]
+                esc = _escape_aura_string(body)
+                mut = sess.raw_line(
+                    f'(mutate:rebind "cand" "{esc}" "dogfood-r{r}-w{i}")',
+                    timeout_s=10.0,
+                )
+                ev = sess.raw_line("(eval-current)", timeout_s=10.0)
+                stdout = str(ev.get("display") or "")
+                # Also catch value if display empty
+                if not stdout and ev.get("value"):
+                    stdout = str(ev.get("value"))
+                ok = mut.get("status") == "ok" and ev.get("status") == "ok"
+                via = "serve_session_mutate"
+            else:
+                body = candidates[0] if i == 0 else candidates[(i + r) % len(candidates)]
+                ev = sess.eval_source(body, timeout_s=10.0)
+                stdout = ev.get("stdout") or ""
+                ok = bool(ev.get("ok"))
+                via = "serve_session"
             matched = bool(expect.search(stdout))
-            passed = matched and bool(ev.get("ok")) and "extra" not in stdout
-            ms = int(ev.get("ms") or 0)
+            passed = matched and ok and "extra" not in stdout
+            ms = max(1, int((time.monotonic() - t0) * 1000))
             session_ms.append(ms)
             round_wls.append(
                 {
@@ -646,8 +992,9 @@ def run_session_dogfood(
                     "passed": passed,
                     "fitness": 1.0 if passed else 0.2,
                     "ms": ms,
-                    "via": "serve_session",
+                    "via": via,
                     "stdout": stdout[-200:],
+                    "path_kind": path_kind,
                 }
             )
         selected = max(round_wls, key=lambda w: (w["fitness"], w["id"]))
@@ -662,7 +1009,7 @@ def run_session_dogfood(
         )
 
     cold_ms: list[int] = []
-    cold_spawns = 0
+    cold_compare_spawns = 0
     bin_path = resolve_aura_bin(aura_bin) or sess.aura_bin
     if compare_cold and bin_path:
         env = aura_subprocess_env(bin_path)
@@ -684,13 +1031,25 @@ def run_session_dogfood(
                     check=False,
                 )
                 cold_ms.append(max(1, int((time.monotonic() - t0) * 1000)))
-                cold_spawns += 1
+                cold_compare_spawns += 1
                 try:
                     Path(tmp).unlink(missing_ok=True)
                 except OSError:
                     pass
 
+    # Session path never cold-spawns aura (holder already owns one process).
+    cold_spawns = 0
     traj_id = f"serve-dogfood-{uuid.uuid4().hex[:10]}"
+    honesty = {
+        "serve_mode": serve_mode,
+        "serve_cross_session_shared_ast": shared_ast,
+        "serve_same_session_mutate_ok": same_mut,
+        "serve_async_soft_ready_ok": bool((soft or {}).get("ok")) if isinstance(soft, dict) else False,
+        "serve_async_soft_ready_reason": (
+            (soft or {}).get("reason") if isinstance(soft, dict) else None
+        ),
+        "path_kind": path_kind,
+    }
     episode = {
         "schema_version": "trajectory.v0",
         "episode_id": traj_id,
@@ -702,13 +1061,16 @@ def run_session_dogfood(
             "kernel": "aura",
             "incr_proven": False,
             "fiber_live": False,
-            "measured": False,
+            "measured": True,
             "session_model": SESSION_SERVE,
             "serve_session_ok": True,
-            "serve_cross_session_shared_ast": False,
+            "serve_mode": serve_mode,
+            "serve_cross_session_shared_ast": shared_ast,
+            "serve_same_session_mutate_ok": same_mut,
             "dogfood": {
                 "kind": "session",
                 "rounds": rounds,
+                "path_kind": path_kind,
                 "session_ms_total": sum(session_ms),
                 "session_ms_mean": (
                     round(sum(session_ms) / len(session_ms), 2) if session_ms else 0
@@ -718,16 +1080,17 @@ def run_session_dogfood(
                     round(sum(cold_ms) / len(cold_ms), 2) if cold_ms else 0
                 ),
                 "cold_spawns": cold_spawns,
+                "cold_compare_spawns": cold_compare_spawns,
                 "session_evals": len(session_ms),
             },
         },
         "harness": {
-            "l1_strategy_id": "session_dogfood.v0",
+            "l1_strategy_id": "session_dogfood.v1",
             "l3_online": False,
             "outcome": "pass" if all(x["passed"] for x in results) else "partial",
             "actions": [
-                {"op": "session_start", "via": "serve"},
-                {"op": "in_session_eval", "count": len(session_ms)},
+                {"op": "session_start", "via": f"serve_{serve_mode}"},
+                {"op": "in_session_eval", "count": len(session_ms), "path": path_kind},
                 {"op": "select_best"},
             ],
         },
@@ -747,6 +1110,10 @@ def run_session_dogfood(
         "path": str(out_path),
         "session_model": SESSION_SERVE,
         "serve_session_ok": True,
+        "serve_mode": serve_mode,
+        "serve_cross_session_shared_ast": shared_ast,
+        "serve_same_session_mutate_ok": same_mut,
+        "honesty": honesty,
         "rounds": results,
         "timing": episode["runtime"]["dogfood"],
         "pid": sess.pid,

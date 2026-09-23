@@ -556,21 +556,29 @@ def _cmd_session(args: argparse.Namespace) -> int:
         except RuntimeError as exc:
             print(f"session start failed: {exc}", file=sys.stderr)
             return 2
+        st = session_status(harness_root=hroot, aura_bin=aura_bin)
         payload = {
             "ok": True,
             "cmd": "session.start",
             "pid": sess.pid,
             "session_model": "serve",
             "serve_attach_ok": True,
+            "serve_mode": st.get("serve_mode"),
+            "serve_cross_session_shared_ast": st.get("serve_cross_session_shared_ast"),
+            "serve_same_session_mutate_ok": st.get("serve_same_session_mutate_ok"),
             "aura_bin": sess.aura_bin,
             "marker": str(hroot / "serve-session.json"),
         }
         if want_json:
-            print(json.dumps(payload, indent=2, sort_keys=True))
+            print(json.dumps(payload, indent=2, sort_keys=True, default=str))
         else:
             print(
                 f"session start ok pid={sess.pid} session_model=serve "
-                f"serve_attach_ok=true marker={hroot / 'serve-session.json'}"
+                f"serve_mode={st.get('serve_mode')} "
+                f"serve_attach_ok=true "
+                f"shared_ast={st.get('serve_cross_session_shared_ast')} "
+                f"same_session_mutate={st.get('serve_same_session_mutate_ok')} "
+                f"marker={hroot / 'serve-session.json'}"
             )
         return 0
 
@@ -584,7 +592,10 @@ def _cmd_session(args: argparse.Namespace) -> int:
                 f"session status serve_attach_ok={st.get('serve_attach_ok')} "
                 f"eval_available={st.get('eval_available')} "
                 f"session_model={st.get('session_model')} "
-                f"pid={st.get('pid')} serve_cross_session_shared_ast=false"
+                f"serve_mode={st.get('serve_mode')} "
+                f"pid={st.get('pid')} "
+                f"serve_cross_session_shared_ast={st.get('serve_cross_session_shared_ast')} "
+                f"same_session_mutate={st.get('serve_same_session_mutate_ok')}"
             )
         return 0 if st.get("serve_attach_ok") or st.get("marker") is None else 0
 
@@ -616,10 +627,14 @@ def _cmd_session(args: argparse.Namespace) -> int:
             print(
                 f"session dogfood ok traj={summary.get('traj_id')} "
                 f"session_model={summary.get('session_model')} "
+                f"serve_mode={summary.get('serve_mode')} "
+                f"path_kind={timing.get('path_kind')} "
                 f"session_ms_mean={timing.get('session_ms_mean')} "
                 f"cold_ms_mean={timing.get('cold_ms_mean')} "
                 f"cold_spawns={timing.get('cold_spawns')} "
+                f"cold_compare_spawns={timing.get('cold_compare_spawns')} "
                 f"session_evals={timing.get('session_evals')} "
+                f"shared_ast={summary.get('serve_cross_session_shared_ast')} "
                 f"path={summary.get('path')}"
             )
         return 0 if summary.get("ok") else 1

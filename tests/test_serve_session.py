@@ -44,6 +44,8 @@ def test_session_start_status_stop(tmp_path: Path) -> None:
     assert st["eval_available"] is True
     assert st["session_model"] == SESSION_SERVE
     assert st["serve_cross_session_shared_ast"] is False
+    assert st["serve_mode"] in ("sync", "async")
+    assert "serve_async_soft_ready" in st
     # Env alone does not invent ok when process dead
     stop_session(harness_root=tmp_path)
     st2 = session_status(harness_root=tmp_path)
@@ -131,13 +133,17 @@ def test_session_dogfood_closed_loop(tmp_path: Path) -> None:
     assert summary["serve_session_ok"] is True
     timing = summary["timing"]
     assert timing["session_evals"] == 6  # 2 rounds × 3 wl
-    assert timing["cold_spawns"] == 6
+    assert timing["cold_spawns"] == 0  # session path never cold-spawns aura
+    assert timing["cold_compare_spawns"] == 6
     assert out.is_file()
     ep = json.loads(out.read_text().splitlines()[0])
     assert ep["runtime"]["session_model"] == SESSION_SERVE
     assert ep["runtime"]["incr_proven"] is False
     assert ep["runtime"]["fiber_live"] is False
+    # Soft --serve: cross-session shared AST measured false (never env-elevated)
     assert ep["runtime"]["serve_cross_session_shared_ast"] is False
+    assert "serve_mode" in ep["runtime"]
+    assert summary["serve_mode"] in ("sync", "async")
     stop_session(harness_root=tmp_path)
 
 
@@ -151,3 +157,34 @@ def test_cli_session_help() -> None:
     ns = p.parse_args(["session", "status", "--json"])
     assert ns.cmd == "session"
     assert ns.session_cmd == "status"
+
+
+def test_env_cannot_elevate_shared_ast(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """AURA_BUILD_SERVE_SHARED_AST must not stamp serve_cross_session_shared_ast."""
+    monkeypatch.setenv("AURA_BUILD_SERVE_SHARED_AST", "1")
+    sess = start_session(harness_root=tmp_path)
+    st = session_status(harness_root=tmp_path)
+    assert st["serve_attach_ok"] is True
+    assert st["serve_cross_session_shared_ast"] is False
+    # Soft Ready refuse → sync on this box
+    assert st["serve_mode"] == "sync"
+    soft = st.get("serve_async_soft_ready") or {}
+    assert soft.get("ok") is False
+    assert st.get("serve_same_session_mutate_ok") is True
+    stop_session(harness_root=tmp_path)
+
+
+def test_probe_serve_async_soft_ready_measured() -> None:
+    from aura_build.serve_session import probe_serve_async_soft_ready
+
+    bin_path = resolve_aura_bin(None)
+    assert bin_path
+    got = probe_serve_async_soft_ready(bin_path)
+    # Soft sandbox refuse is the measured box outcome today
+    assert got["ok"] is False
+    assert got["serve_mode_preferred"] == "sync"
+    assert got["reason"] in (
+        "soft_ready_refused",
+        "soft_ready_refused_after_timeout",
+        "soft_ready_inconclusive",
+    )

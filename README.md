@@ -130,7 +130,7 @@ Writes validated episode JSONL under `trajectories/` (gitignored). Sample shape 
 | **M5** | `tui` status stub; `acp` hooks; L2 metadata load/promote under `.aura-build/weights/` | TUI ≠ full Textual; `stub=True` always (metadata only); no fiber-live / no `incr_proven=true` / no online L3 |
 | **Post-M5** | `prove-incr` / `doctor`; fail-closed report; fiber probe; **auto-attach** on `run` | `incr_proven=true` only with measured incr-valid signal; fiber-live only after denseness probe (spawn+join + same-FlatAST multi); env alone cannot elevate |
 
-**Beyond / deferred:** true `--serve-async` Soft multi-worker + cross-session shared FlatAST (`serve_cross_session_shared_ast`); real L2 tensor/mmap (`stub=False`); full TUI / editor ACP embed. MVP long-lived `--serve` attach ships (`session start|dogfood`). Storm-still-incr: [storm-still-incr.md](docs/storm-still-incr.md).
+**Beyond / deferred:** Soft Ready `--serve-async` (measured refuse `#3098`/`fail_bits=0x10` on Soft) + `serve_cross_session_shared_ast` (Soft `--serve` sessions are separate CompilerServices). Same-session `mutate:rebind` measured (`serve_same_session_mutate_ok`). Real L2 tensor/mmap (`stub=False`); full TUI / editor ACP embed. Storm-still-incr: [storm-still-incr.md](docs/storm-still-incr.md).
 
 ### TUI / ACP (M5)
 
@@ -338,9 +338,12 @@ aura-build doctor                    # serve_session_ok when attach live
 aura-build session stop
 ```
 
-Honesty: `runtime.session_model=serve` only with live pid+ping. Soft boxes use
-`--serve` (not `--serve-async` multi-worker). `serve_cross_session_shared_ast`
-stays false until orch+project share one FlatAST. Env cannot fake ok.
+Honesty: `runtime.session_model=serve` only with live pid+ping. Holder prefers
+`--serve-async` only after Soft Ready self-check; this Soft box measures refuse
+→ `serve_mode=sync`. `serve_cross_session_shared_ast` stays false until two
+named Aura sessions share one FlatAST (env cannot elevate). Same-session
+`mutate:rebind` dogfood path when `serve_same_session_mutate_ok`. Session-path
+`cold_spawns=0`.
 
 ### MiniMax dogfood (Post-M5++) — fixture / regression
 
