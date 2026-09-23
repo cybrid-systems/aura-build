@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Simulated CI / local smoke (no Aura required): venv, pytest, episodes, harness canary, export, M5 tui/acp/l2, Post-M5 prove-incr.
+# Simulated CI / local smoke (no Aura required): venv, pytest, episodes, harness canary, export, M5 tui/acp/l2, Post-M5 prove-incr + attach.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -110,6 +110,32 @@ assert data.get("fiber_live") is False
 print("smoke ok prove-incr fail-closed:", p)
 PYPROVE
 
+# Auto-attach prove honesty into traj (default ON); env alone cannot elevate
+OUT_ATTACH="${ROOT}/trajectories/smoke_attach.jsonl"
+rm -f "$OUT_ATTACH"
+env AURA_BUILD_INCR_VALID=1 AURA_BUILD_FIBER_SESSION_OK=1 \
+  aura-build run --prompt "smoke attach prove" --seed 7 --mode simulated \
+  --worldlines 2 --harness-root "$PROVE_ROOT" --out "$OUT_ATTACH"
+python - <<PYATTACH
+import json
+from pathlib import Path
+from aura_build.schema import validate_episode
+p = Path(r"$OUT_ATTACH")
+ep = json.loads([ln for ln in p.read_text().splitlines() if ln.strip()][0])
+validate_episode(ep)
+rt = ep["runtime"]
+assert rt["incr_proven"] is False
+assert rt["measured"] is False
+assert rt["fiber_live"] is False
+pi = rt["prove_incr"]
+for k in ("incr_proven", "measured", "fiber_live", "session_model", "reason"):
+    assert k in pi, k
+assert "env_ignored_unproven" in pi["env_notes"]
+assert "env_fiber_ignored_unproven" in pi["env_notes"]
+assert pi["attached"] is True
+print("smoke ok attach-prove (env ignored):", p)
+PYATTACH
+
 python - <<PY
 import json
 from pathlib import Path
@@ -143,6 +169,12 @@ def check(path, *, expect_profile=False, expect_harness_outcome=None, expect_acc
 
 check(r"$OUT", expect_profile=False)
 check(r"$OUT2", expect_profile=True)
+# Default --attach-prove: fields present; still false
+ep0 = json.loads([ln for ln in Path(r"$OUT").read_text().splitlines() if ln.strip()][0])
+assert "prove_incr" in ep0["runtime"]
+assert ep0["runtime"]["prove_incr"]["attached"] is True
+assert ep0["runtime"]["incr_proven"] is False
+print("smoke ok default attach fields on", r"$OUT")
 check(r"$OUT3", expect_harness_outcome="discard", expect_accepted=True)
 check(r"$OUT4", expect_harness_outcome="heal", expect_accepted=False)
 
@@ -165,5 +197,5 @@ assert ep5["harness"]["l2_ref"]["artifact_present"] is True
 assert ep5["runtime"].get("incr_proven", False) is False
 print("smoke ok l2:", p5)
 
-print("smoke ok all (M0–M5 + Post-M5 prove-incr)")
+print("smoke ok all (M0–M5 + Post-M5 prove-incr + attach)")
 PY

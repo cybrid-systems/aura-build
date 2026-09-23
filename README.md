@@ -66,7 +66,7 @@ Writes validated episode JSONL under `trajectories/` (gitignored). Sample shape 
 | **M3** | Harness canary (AUTOPROMOTE OFF), memory store, L2 id stub | No L2 tensors; no online L3 |
 | **M4** | `export` JSON (+ optional Parquet), privacy redaction default ON | No training loop |
 | **M5** | `tui` status stub; `acp` hooks; L2 metadata load/promote under `.aura-build/weights/` | TUI ≠ full Textual; `stub=True` always (metadata only); no fiber-live / no `incr_proven=true` / no online L3 |
-| **Post-M5** | `prove-incr` / `doctor`; fail-closed report; fiber probe | `incr_proven=true` only with measured incr-valid signal; fiber-live only with session OK marker |
+| **Post-M5** | `prove-incr` / `doctor`; fail-closed report; fiber probe; **auto-attach** on `run` | `incr_proven=true` only with measured incr-valid signal; fiber-live only with session OK; env alone cannot elevate |
 
 **Beyond / deferred:** real L2 tensor/mmap (`stub=False`); fiber-live FlatAST (needs `AURA_BUILD_FIBER_SESSION_OK`); proven storm-still-incr on a **healthy** Aura (needs incr-valid telemetry); full TUI / editor ACP embed. Harness exists — see [storm-still-incr.md](docs/storm-still-incr.md).
 
@@ -116,9 +116,17 @@ aura-build prove-incr --cycles 8 --worldlines 3 --json
 
 aura-build doctor
 aura-build doctor --json
+
+# Episodes auto-attach prove honesty into traj runtime (default ON)
+aura-build run --prompt "dogfood" --mode simulated
+aura-build run --prompt "skip attach" --no-attach-prove --mode simulated
 ```
 
-Report: `.aura-build/prove-incr-latest.json`. See [storm-still-incr.md](docs/storm-still-incr.md).
+Report: `.aura-build/prove-incr-latest.json`. Trajectories carry
+`runtime.prove_incr` (`incr_proven` / `measured` / `fiber_live` /
+`session_model` / `reason`) — still **false by default**. Env
+`AURA_BUILD_INCR_VALID=1` alone cannot force true. See
+[storm-still-incr.md](docs/storm-still-incr.md).
 
 ### Trajectory export (M4)
 

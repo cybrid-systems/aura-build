@@ -149,13 +149,18 @@ Chat transcripts, raw git diffs without eval metrics, and Postman-style request 
 
 Episodes produced under `l3_online=true` are tagged and quarantined from default L2 promotion sets.
 
-### Post-M5 prove-incr metadata (optional)
+### Post-M5 prove-incr metadata (auto-attach on `run`)
 
 | Field / artifact | Meaning |
 |------------------|---------|
 | `.aura-build/prove-incr-latest.json` | Latest prove-or-refuse report (`prove_incr.v0`) |
-| `runtime.incr_proven` | Still **false** in orch episodes by default; do not auto-flip from report |
+| `runtime.incr_proven` | Mirrored from attach; **false** unless report measured + proven |
+| `runtime.measured` / `fiber_live` / `session_model` | Mirrored honesty fields (never invented true) |
+| `runtime.prove_incr` | Attach block: `reason`, `source`, `env_notes`, `attached`, gates |
 | ACP/TUI `honesty.*` | May overlay last prove report when present |
 
-See [storm-still-incr.md](storm-still-incr.md). Wall-clock alone never proves incr.
+`aura-build run` defaults `--attach-prove` (cheap). Env
+`AURA_BUILD_INCR_VALID` / `AURA_BUILD_FIBER_SESSION_OK` alone cannot force
+true — see [storm-still-incr.md](storm-still-incr.md). Wall-clock alone
+never proves incr.
 

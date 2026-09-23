@@ -67,7 +67,7 @@ Repos that look like Aura itself (`build.py`, tests) get `--profile aura-repo`:
 
 - Detect: `--aura-ref` / `AURA_REF` / `/workspace/aura-grok`
 - Fitness: `build.py` hook (cheap `list` by default) or simulated if GLIBCXX / toolchain broken
-- Metrics: `compile_ms`, `incr_claimed`, **`incr_proven=false`** until storm-still-incr is proven
+- Metrics: `compile_ms`, `incr_claimed`, **`incr_proven=false`** until storm-still-incr is proven; `run` auto-attaches prove honesty (`runtime.prove_incr`) but never invents true (env alone cannot elevate)
 - Dogfood: cybrid-systems/aura (local `/workspace/aura-grok` when present)
 
 Default CI stays `--mode simulated` (optionally with `--profile aura-repo --no-live-build`).

@@ -377,6 +377,16 @@ def _add_run_args(run_p: argparse.ArgumentParser) -> None:
         action="store_true",
         help="print full episode JSON to stdout",
     )
+    run_p.add_argument(
+        "--attach-prove",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "attach latest prove-incr / doctor honesty into trajectory runtime "
+            "(default ON; cheap JSON read; never invents incr_proven true). "
+            "Use --no-attach-prove to skip."
+        ),
+    )
 
 
 def _parse_kv_list(items: list[str]) -> dict[str, str]:
@@ -448,6 +458,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         memory_profile=args.memory_profile,
         l2_weights_id=args.l2_weights_id,
         harness_root=args.harness_root,
+        attach_prove=bool(args.attach_prove),
     )
     try:
         result = run_episode(args.prompt, cfg)
@@ -464,10 +475,13 @@ def _cmd_run(args: argparse.Namespace) -> int:
         prof = result.episode["runtime"].get("profile")
         prof_s = prof.get("id") if isinstance(prof, dict) else (args.profile or "-")
         discarded_n = len(result.episode.get("discarded") or [])
+        rt = result.episode["runtime"]
         print(
             f"selected={sel.id} fitness={sel.eval['fitness']} "
             f"mode={mode} profile={prof_s} discarded={discarded_n} "
-            f"incr_proven={result.episode['runtime'].get('incr_proven', False)} "
+            f"incr_proven={rt.get('incr_proven', False)} "
+            f"measured={rt.get('measured', False)} "
+            f"fiber_live={rt.get('fiber_live', False)} "
             f"episode={result.episode['episode_id']} wrote={path}"
         )
     return 0

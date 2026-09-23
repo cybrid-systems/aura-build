@@ -30,6 +30,7 @@ from aura_build.profile_aura_repo import (
     evaluate_candidate,
     resolve_profile,
 )
+from aura_build.prove_incr import attach_prove_metadata, merge_prove_into_runtime
 from aura_build.runtime import (
     AuraUnavailable,
     RuntimeBackend,
@@ -126,6 +127,9 @@ class OrchConfig:
     harness_actions: list[dict[str, Any]] = field(default_factory=list)
     harness_mid: str | None = None
     shadow: bool = False
+    # Post-M5: auto-attach latest prove-incr / doctor honesty into traj runtime
+    # (cheap JSON read; never invents incr_proven/fiber_live true).
+    attach_prove: bool = True
 
 
 def scout(prompt: str, cfg: OrchConfig) -> dict[str, Any]:
@@ -263,6 +267,10 @@ def run_episode(prompt: str, cfg: OrchConfig | None = None) -> EpisodeResult:
 
     if l2 is not None:
         result.episode["harness"]["l2_ref"] = l2.to_dict()
+
+    if cfg.attach_prove:
+        fields = attach_prove_metadata(root=cfg.harness_root)
+        merge_prove_into_runtime(result.episode.setdefault("runtime", {}), fields)
 
     return result
 
@@ -546,6 +554,9 @@ def _harness_change_episode(
     l2 = resolve_l2_weights(proposal.proposed.l2_weights_id, root=harness_root)
     if l2 is not None:
         episode["harness"]["l2_ref"] = l2.to_dict()
+    # Harness-change tapes also carry prove-incr honesty (default attach ON).
+    fields = attach_prove_metadata(root=harness_root)
+    merge_prove_into_runtime(episode.setdefault("runtime", {}), fields)
     return episode
 
 

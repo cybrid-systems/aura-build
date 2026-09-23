@@ -74,11 +74,24 @@ Wall-clock `incr_compile_ms` alone is **not** proof.
 - `aura-build doctor` surfaces probe + last report + honesty flags
 - `aura-build tui` / `acp status` overlay `honesty.incr_proven` /
   `fiber_live` from that report when present (still default **false**)
-- Orch episodes still default `runtime.incr_proven=false`; they do **not**
-  silently flip because a report exists — attach explicitly if needed
+- **`aura-build run` auto-attaches** prove honesty into every episode
+  (`--attach-prove`, default **ON**; `--no-attach-prove` to skip):
+  - `runtime.incr_proven` / `measured` / `fiber_live` / `session_model`
+  - `runtime.prove_incr.{reason,source,env_notes,attached,…}`
+  - Source: latest report, else lightweight doctor snapshot defaults
+  - **Never invents true** — missing/unhealthy report ⇒ false
+
+### Env gates (read-only honor)
+
+| Env | Effect on attach |
+|-----|------------------|
+| `AURA_BUILD_INCR_VALID=1` | Documents future/external telemetry intent. If set while prove says false → keep `incr_proven=false` + `env_notes: env_ignored_unproven`. Cannot alone elevate. |
+| `AURA_BUILD_FIBER_SESSION_OK=1` | Same for fiber: without a successful fiber probe / report `fiber_live`, stay false + `env_fiber_ignored_unproven`. |
+
+These gates exist so healthy boxes can advertise readiness; attach still
+requires the prove harness (or an explicit measured report) to agree.
 
 ## Deferred
 
 - Real FlatAST incr-compile telemetry from Aura (marker / metric)
-- Long-lived fiber-hosted multi-worldline session API
-- Auto-promoting orch `runtime.incr_proven` from prove-incr (opt-in later)
+- Long-lived fiber-hosted multi-worldline session API (needs fiber probe OK)

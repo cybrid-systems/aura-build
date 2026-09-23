@@ -12,8 +12,10 @@ Honesty contract
   ``session_model=shared_workspace_subprocess`` unless a real fiber session
   works. Never claim ``fiber_live`` from a failed or skipped probe.
 
-This module does not flip orch episode ``runtime.incr_proven`` by side effect;
-callers that want trajectory metadata must attach the report explicitly.
+Orch episodes auto-attach the latest report via ``attach_prove_metadata``
+(``--attach-prove``, default ON). Attachment never invents ``true``: env gates
+``AURA_BUILD_INCR_VALID`` / ``AURA_BUILD_FIBER_SESSION_OK`` alone cannot elevate
+``incr_proven`` / ``fiber_live``.
 """
 
 from __future__ import annotations
@@ -40,13 +42,18 @@ from aura_build.worldline import (
 )
 
 __all__ = [
+    "ENV_FIBER_SESSION_OK",
+    "ENV_INCR_VALID",
     "FiberProbeResult",
     "ProveIncrReport",
     "StormCycleResult",
+    "attach_prove_metadata",
     "classify_unhealthy_reason",
     "default_report_path",
     "doctor_snapshot",
+    "env_flag_truthy",
     "load_latest_report",
+    "merge_prove_into_runtime",
     "probe_fiber_session",
     "prove_or_refuse",
     "run_storm",
@@ -55,6 +62,10 @@ __all__ = [
 
 REPORT_SCHEMA = "prove_incr.v0"
 INCR_VALID_MARKER = "AURA_BUILD_INCR_VALID"
+# Env gates (read-only honor): document future healthy boxes; cannot alone
+# elevate incr_proven / fiber_live when attaching trajectory metadata.
+ENV_INCR_VALID = "AURA_BUILD_INCR_VALID"
+ENV_FIBER_SESSION_OK = "AURA_BUILD_FIBER_SESSION_OK"
 
 
 def _utc_now() -> str:
@@ -570,3 +581,147 @@ def doctor_snapshot(
             "docs/storm-still-incr.md",
         ],
     }
+
+
+def env_flag_truthy(name: str, *, environ: dict[str, str] | None = None) -> bool:
+    """True when env var is set to a common truthy token (1/true/yes/on)."""
+    env = environ if environ is not None else os.environ
+    raw = str(env.get(name, "")).strip().lower()
+    return raw in ("1", "true", "yes", "on")
+
+
+def attach_prove_metadata(
+    *,
+    root: Path | str | None = None,
+    report: ProveIncrReport | None = None,
+    use_doctor_fallback: bool = True,
+    environ: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Build honesty fields for episode ``runtime`` (never invent true).
+
+    Prefers the latest prove-incr report under ``root``. If missing and
+    ``use_doctor_fallback``, uses a lightweight ``doctor_snapshot`` (no Aura
+    probe) so trajectories still carry explicit refuse defaults.
+
+    Env gates ``AURA_BUILD_INCR_VALID`` / ``AURA_BUILD_FIBER_SESSION_OK`` are
+    **read-only**: if set while the harness/report says false, fields stay
+    false and ``env_notes`` records ``env_ignored_unproven`` /
+    ``env_fiber_ignored_unproven``. They never alone set ``incr_proven`` or
+    ``fiber_live`` true.
+    """
+    env = environ if environ is not None else os.environ
+    source = "none"
+    reason = "no_prove_incr_report"
+    incr_proven = False
+    measured = False
+    fiber_live = False
+    session_model = SESSION_SHARED_SUBPROCESS
+    report_path = str(default_report_path(root))
+    loaded = report
+
+    if loaded is None:
+        loaded = load_latest_report(root=root)
+
+    if loaded is not None:
+        source = "prove-incr-latest"
+        incr_proven = bool(loaded.incr_proven)
+        measured = bool(loaded.measured)
+        fiber_live = bool(loaded.fiber_live)
+        session_model = str(loaded.session_model or SESSION_SHARED_SUBPROCESS)
+        reason = str(loaded.reason or "unknown")
+        # Belt: never claim fiber_live without available/session proof.
+        if not fiber_live and session_model == SESSION_LONG_LIVED_AURA:
+            session_model = SESSION_SHARED_SUBPROCESS
+    elif use_doctor_fallback:
+        snap = doctor_snapshot(root=root, run_probe=False)
+        source = "doctor_snapshot"
+        h = snap.get("honesty") or {}
+        incr_proven = bool(h.get("incr_proven", False))
+        fiber_live = bool(h.get("fiber_live", False))
+        session_model = str(h.get("session_model") or SESSION_SHARED_SUBPROCESS)
+        measured = False
+        reason = "no_prove_incr_report"
+        latest = snap.get("prove_incr_latest")
+        if isinstance(latest, dict):
+            # Should not happen when load_latest_report returned None, but
+            # keep fail-closed defaults if doctor somehow saw stale data.
+            incr_proven = bool(latest.get("incr_proven", False))
+            measured = bool(latest.get("measured", False))
+            fiber_live = bool(latest.get("fiber_live", False))
+            session_model = str(
+                latest.get("session_model") or SESSION_SHARED_SUBPROCESS
+            )
+            reason = str(latest.get("reason") or reason)
+            source = "doctor_snapshot+report"
+
+    env_notes: list[str] = []
+    if env_flag_truthy(ENV_INCR_VALID, environ=env):
+        if incr_proven and measured:
+            env_notes.append("env_agrees_proven")
+        else:
+            # Prefer keep false + note — env alone cannot elevate.
+            incr_proven = False
+            env_notes.append("env_ignored_unproven")
+    if env_flag_truthy(ENV_FIBER_SESSION_OK, environ=env):
+        if fiber_live:
+            env_notes.append("env_fiber_agrees")
+        else:
+            fiber_live = False
+            if session_model == SESSION_LONG_LIVED_AURA:
+                session_model = SESSION_SHARED_SUBPROCESS
+            env_notes.append("env_fiber_ignored_unproven")
+
+    # Final fail-closed clamps.
+    if not measured:
+        incr_proven = False
+    if not fiber_live and session_model == SESSION_LONG_LIVED_AURA:
+        session_model = SESSION_SHARED_SUBPROCESS
+
+    return {
+        "incr_proven": bool(incr_proven),
+        "measured": bool(measured),
+        "fiber_live": bool(fiber_live),
+        "session_model": session_model,
+        "reason": reason,
+        "source": source,
+        "report_path": report_path,
+        "env_notes": env_notes,
+        "attached": True,
+        "env_gates": {
+            ENV_INCR_VALID: env_flag_truthy(ENV_INCR_VALID, environ=env),
+            ENV_FIBER_SESSION_OK: env_flag_truthy(
+                ENV_FIBER_SESSION_OK, environ=env
+            ),
+        },
+    }
+
+
+def merge_prove_into_runtime(
+    runtime: dict[str, Any],
+    fields: dict[str, Any],
+) -> dict[str, Any]:
+    """Merge attach fields into episode ``runtime`` (mutates and returns it).
+
+    Top-level honesty mirrors: ``incr_proven``, ``measured``, ``fiber_live``.
+    ``session_model`` elevates to long-lived only when ``fiber_live``; otherwise
+    keeps an existing workspace session_model or sets the refuse default.
+    Nested ``runtime.prove_incr`` holds the full attach block including
+    ``reason``.
+    """
+    runtime["incr_proven"] = bool(fields.get("incr_proven", False))
+    runtime["measured"] = bool(fields.get("measured", False))
+    runtime["fiber_live"] = bool(fields.get("fiber_live", False))
+    runtime["prove_incr"] = dict(fields)
+
+    want_session = str(fields.get("session_model") or SESSION_SHARED_SUBPROCESS)
+    fiber_live = bool(fields.get("fiber_live", False))
+    existing = runtime.get("session_model")
+    if fiber_live and want_session == SESSION_LONG_LIVED_AURA:
+        runtime["session_model"] = SESSION_LONG_LIVED_AURA
+    elif existing is None:
+        runtime["session_model"] = want_session
+    elif existing == SESSION_LONG_LIVED_AURA and not fiber_live:
+        runtime["session_model"] = SESSION_SHARED_SUBPROCESS
+    # else: keep existing shared_workspace_subprocess (or other refuse model)
+
+    return runtime
