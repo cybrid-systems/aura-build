@@ -134,6 +134,11 @@ is observed. Details: [storm-still-incr.md](storm-still-incr.md).
 | `cli.py` + `kernel.py` | Argparse → env → `aura aura/main.aura`; exit-code mapping |
 | `export.py` / schema / trajectory validate | Batch export, privacy redaction, pytest SSOT |
 | `acp.py` / `tui.py` | Thin host stubs (not the product) |
-| `orch.py` / `prove_incr.py` / … | **CI fallback only** when Aura binary unavailable |
+| `orch.py` / `prove_incr.py` / `harness.py` / … | **CI fallback only** when Aura binary unavailable (`AURA_BUILD_FORCE_PYTHON=1`) |
+
+**Aura-first CLIs** (prefer kernel when `AURA_BIN` + sidecar healthy): `run`,
+`prove-incr`, `harness-mutate`, `doctor`, `harness-show`, `memory`, `l2`
+(except `l2 promote --from-export`). Trajectories record `runtime.kernel=aura`
+(or `python` on fallback). Never invent `incr_proven` / `fiber_live`.
 
 Primary dogfood path: Aura kernel. Do not grow Python orch as the product.

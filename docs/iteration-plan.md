@@ -167,6 +167,7 @@
 **Exit criteria**
 
 - [x] Primary `aura-build run` executes Aura kernel when Aura available
-- [x] Docs say kernel=Aura; list what Python still does
+- [x] `harness-mutate` / `prove-incr` / `doctor` / `harness-show` Aura-first (same host policy as `run`)
+- [x] Docs say kernel=Aura; list Aura-first CLIs vs Python-only surfaces
 - [x] Simulated + prove path smoke green (CI fallback + live when sidecar present)
 - [ ] Delete remaining Python orch once GHA provisions Aura (deferred shrink)

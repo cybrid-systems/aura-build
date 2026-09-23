@@ -21,15 +21,29 @@ Python is a **thin CLI / test harness** that shells out to the `aura` binary
 validation, and a **CI-safe fallback** when no Aura binary is present
 (`AURA_BUILD_FORCE_PYTHON=1` forces the fallback).
 
+### Which CLIs are Aura-first
+
+| CLI | When Aura healthy | Python |
+|-----|-------------------|--------|
+| `run` | **Aura kernel** (`orch.aura`); traj `runtime.kernel=aura` | CI fallback / `--json` |
+| `prove-incr` | **Aura kernel** (`prove.aura` in-process storm) | fail-closed refuse report |
+| `harness-mutate` | **Aura kernel** (`harness.aura` + canary); `kernel=aura` | CI fallback / `--json` |
+| `doctor` / `harness-show` | **Aura kernel** (cheap) | fallback |
+| `memory` / `l2 show\|list\|promote` | Aura when healthy (promote `--from-export` stays Python) | fallback |
+| `export` / `tui` / `acp` | — | **Python only** (host surfaces) |
+
 ```bash
 # Primary path (Aura kernel) — requires AURA_BIN + sidecar
 export AURA_BIN=/workspace/aura-redis/.deps/aura/build/aura
 ./scripts/run-aura-kernel.sh          # AURA_BUILD_CMD=run by default
 aura-build run --prompt "demo" --mode simulated   # CLI → Aura kernel when healthy
 aura-build prove-incr --cycles 2 --worldlines 1
+aura-build harness-mutate --prompt "canary" --set worldline_count=4
+aura-build doctor
 ```
 
 Honest flags: never fake `incr_proven` / `fiber_live` (env alone cannot elevate).
+Trajectory / stdout show `kernel=aura` on the kernel path (`kernel=python` on fallback).
 
 ## Non-goals / 非目标
 

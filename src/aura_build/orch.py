@@ -526,6 +526,7 @@ def _harness_change_episode(
             "incr_proven": False,
             "shadow": True,
             "harness_canary": True,
+            "kernel": "python",
         },
         "harness": {
             "l1_strategy_id": proposal.proposed.l1_strategy_id,
@@ -794,6 +795,7 @@ def _build_episode(
         "seed": seed,
         "requested_mode": cfg.mode,
         "incr_proven": False,
+        "kernel": "python",
     }
     runtime.update(runtime_extra)
     if profile_runtime is not None:

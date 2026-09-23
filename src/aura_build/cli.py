@@ -82,7 +82,14 @@ def _try_aura_kernel(
         for ln in (s or "").splitlines():
             if not ln.strip() or ln.strip() == "#t":
                 continue
-            out.append(ln.replace("=#t", "=True").replace("=#f", "=False"))
+            # Aura prints #t/#f; normalize for host terminals (with/without spaces)
+            ln = (
+                ln.replace("=#t", "=True")
+                .replace("=#f", "=False")
+                .replace("= #t", "= True")
+                .replace("= #f", "= False")
+            )
+            out.append(ln)
         return "\n".join(out)
     out = _clean(result.stdout)
     if out:
@@ -569,6 +576,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print(
             f"selected={sel.id} fitness={sel.eval['fitness']} "
             f"mode={mode} profile={prof_s} discarded={discarded_n} "
+            f"kernel={rt.get('kernel', 'python')} "
             f"incr_proven={rt.get('incr_proven', False)} "
             f"measured={rt.get('measured', False)} "
             f"fiber_live={rt.get('fiber_live', False)} "
@@ -602,10 +610,13 @@ def _cmd_harness_mutate(args: argparse.Namespace) -> int:
         "AURA_BUILD_OUT": str(out),
         "AURA_BUILD_HARNESS_PATCHES": json.dumps(patches or {}),
         "AURA_BUILD_FITNESS_PATCHES": json.dumps(fitness_weight_patches or {}),
-        "AURA_BUILD_AUTOPROMOTE_FLAG": "1" if args.autopropote else "0",
     }
+    # FLAG=1 forces promote; empty clears a stale parent env so AURA_BUILD_AUTOPROMOTE works
+    env["AURA_BUILD_AUTOPROMOTE_FLAG"] = "1" if args.autopropote else ""
     if args.seed is not None:
         env["AURA_BUILD_SEED"] = str(args.seed)
+    if args.profile:
+        env["AURA_BUILD_PROFILE"] = args.profile
     if not args.json:
         kc = _try_aura_kernel(
             "harness-mutate",
@@ -647,6 +658,7 @@ def _cmd_harness_mutate(args: argparse.Namespace) -> int:
             f"mid={h['mid']} outcome={h['outcome']} "
             f"accepted={result.canary.accepted} "
             f"autopropote={h['autopropote']} committed={h['committed']} "
+            f"kernel={result.episode['runtime'].get('kernel', 'python')} "
             f"incr_proven={result.episode['runtime'].get('incr_proven', False)} "
             f"episode={result.episode['episode_id']} wrote={path}"
         )

@@ -153,11 +153,18 @@ def test_cli_mode_flag(tmp_path):
 
 
 def test_cli_aura_missing_exits_nonzero(monkeypatch, tmp_path):
+    """mode=aura must fail closed when binary missing (Aura-first + Python path)."""
     from aura_build.cli import main
 
     monkeypatch.delenv("AURA_BIN", raising=False)
+    # Force Python fallback so orch path is exercised; also block kernel discovery.
+    monkeypatch.setenv("AURA_BUILD_FORCE_PYTHON", "1")
     monkeypatch.setattr(
         "aura_build.runtime.resolve_aura_bin",
+        lambda explicit=None, aura_ref=None: None,
+    )
+    monkeypatch.setattr(
+        "aura_build.kernel.resolve_aura_bin",
         lambda explicit=None, aura_ref=None: None,
     )
     rc = main(
