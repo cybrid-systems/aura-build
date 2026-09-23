@@ -43,6 +43,7 @@ TASK_KV = "kv"
 TASK_STACK = "stack"
 TASK_BANK = "bank"
 TASK_ROUTER = "router"
+TASK_CACHE = "cache"
 DEFAULT_TASK = TASK_FIB
 DEFAULT_MAX_ROUNDS = 8
 DEFAULT_WORLDLINES = 3
@@ -263,7 +264,7 @@ TASKS: dict[str, dict[str, Any]] = {
         "project": "examples/projects/mini-stack",
         "verify_script": "examples/projects/mini-stack/verify.sh",
     },
-    # bank/router: thin registry aliases; real prompts/stubs live under --project
+    # bank/router/cache: thin registry aliases; real prompts/stubs live under --project
     TASK_BANK: {
         "label": "bank",
         "project": "examples/projects/mini-bank",
@@ -278,6 +279,14 @@ TASKS: dict[str, dict[str, Any]] = {
         "verify_script": "examples/projects/mini-router/verify.sh",
         "user": "",
         "expect": "GET_SLASH=home\nGET_API=api\nGET_API_V1=api\nGET_API_V2=api\nPOST_API=405\nMISS=404\nCOUNT=5",
+        "fallback": "",
+    },
+    TASK_CACHE: {
+        "label": "cache",
+        "project": "examples/projects/mini-cache",
+        "verify_script": "examples/projects/mini-cache/verify.sh",
+        "user": "",
+        "expect": "GET_A=1\nGET_MISS=miss\nGET_B=2\nTTL_EXPIRED=miss\nCOUNT=2",
         "fallback": "",
     },
 }
@@ -495,7 +504,7 @@ def _matched_expect(
     # Fallback tokens across dogfood tiers (fib/greet/calc/kv/stack)
     return bool(
         re.search(
-            r"(?:FIB10=|GREET=|ADD=|MUL=|MIX=|GET_|MISS=|TOP=|POP=|TOP2=|SIZE=|EMPTY=|A=|B=|A2=|B2=|OK=)",
+            r"(?:FIB10=|GREET=|ADD=|MUL=|MIX=|GET_|MISS=|TTL_|COUNT=|TOP=|POP=|TOP2=|SIZE=|EMPTY=|A=|B=|A2=|B2=|OK=)",
             stdout or "",
         )
     )
@@ -1066,6 +1075,7 @@ def run_closed_loop(
     aura_bin: str | None = None,
     keep_workspace: bool = True,
     config: MiniMaxConfig | None = None,
+    prefer_session: bool | None = True,
 ) -> dict[str, Any]:
     """Run MiniMax propose → Aura verify → repair until success or max_rounds.
 
@@ -1103,6 +1113,8 @@ def run_closed_loop(
     hroot = harness_root or (repo / ".aura-build")
     hroot.mkdir(parents=True, exist_ok=True)
     honesty = load_honesty(hroot)
+    # fiber_live from prove-incr is a denseness bit — not the primary session_model
+    # when a long-lived Soft serve attach is alive (optimal loop SSOT).
     session_model = (
         honesty["session_model"]
         if honesty.get("fiber_live")
@@ -1111,8 +1123,10 @@ def run_closed_loop(
     # Never fake fiber
     if not honesty.get("fiber_live"):
         session_model = SESSION_SHARED
-    # Prefer long-lived serve attach for verify (optimal loop); honest elevate
+    # Prefer long-lived serve attach for verify (optimal loop); honest elevate.
+    # Live serve wins over stale fiber denseness stamp for session_model.
     serve_sess = None
+    serve_meta: dict[str, Any] = {}
     try:
         from aura_build.serve_session import (
             SESSION_SERVE as _SS,
@@ -1121,14 +1135,39 @@ def run_closed_loop(
             session_status,
         )
         st = session_status(harness_root=hroot, aura_bin=aura_bin)
-        if st.get("serve_attach_ok") or prefer_session_verify(harness_root=hroot):
+        want_session = prefer_session is not False and (
+            st.get("serve_attach_ok") or prefer_session_verify(harness_root=hroot)
+        )
+        if want_session:
             serve_sess = ensure_eval_session(aura_bin=aura_bin, harness_root=hroot)
-        if serve_sess is not None and not honesty.get("fiber_live"):
+        if serve_sess is not None and st.get("serve_attach_ok"):
             session_model = _SS
             honesty = dict(honesty)
             honesty["session_model"] = _SS
             honesty["serve_session_ok"] = True
             honesty["serve_attach_ok"] = True
+            honesty["serve_mode"] = st.get("serve_mode")
+            honesty["serve_cross_session_shared_ast"] = bool(
+                st.get("serve_cross_session_shared_ast")
+            )
+            honesty["serve_same_session_mutate_ok"] = bool(
+                st.get("serve_same_session_mutate_ok")
+            )
+            honesty["reason"] = (
+                f"serve_attach_ok mode={st.get('serve_mode')} "
+                f"shared_ast={st.get('serve_cross_session_shared_ast')} "
+                f"(fiber_live denseness={bool(honesty.get('fiber_live'))} retained)"
+            )
+            serve_meta = {
+                "serve_mode": st.get("serve_mode"),
+                "serve_cross_session_shared_ast": bool(
+                    st.get("serve_cross_session_shared_ast")
+                ),
+                "serve_same_session_mutate_ok": bool(
+                    st.get("serve_same_session_mutate_ok")
+                ),
+                "via_prefer_session": True,
+            }
     except Exception:
         serve_sess = None
 
@@ -1452,6 +1491,14 @@ def run_closed_loop(
                 "fiber_live": bool(honesty.get("fiber_live", False)),
                 "measured": bool(honesty.get("measured", False)),
                 "session_model": session_model,
+                "serve_mode": serve_meta.get("serve_mode"),
+                "serve_cross_session_shared_ast": serve_meta.get(
+                    "serve_cross_session_shared_ast"
+                ),
+                "serve_same_session_mutate_ok": serve_meta.get(
+                    "serve_same_session_mutate_ok"
+                ),
+                "via_prefer_session": bool(serve_meta.get("via_prefer_session")),
                 "workspace": str(ws_root),
                 "llm": cfg.public_dict(),
                 "dogfood": {
@@ -1554,6 +1601,16 @@ def run_closed_loop(
             "incr_proven": bool(honesty.get("incr_proven", False)),
             "fiber_live": bool(honesty.get("fiber_live", False)),
             "session_model": session_model,
+            "serve_mode": serve_meta.get("serve_mode") or honesty.get("serve_mode"),
+            "serve_cross_session_shared_ast": serve_meta.get(
+                "serve_cross_session_shared_ast",
+                honesty.get("serve_cross_session_shared_ast"),
+            ),
+            "serve_same_session_mutate_ok": serve_meta.get(
+                "serve_same_session_mutate_ok",
+                honesty.get("serve_same_session_mutate_ok"),
+            ),
+            "via_prefer_session": bool(serve_meta.get("via_prefer_session")),
             "reason": honesty.get("reason"),
         },
         "rounds_log": rounds_log,

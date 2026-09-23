@@ -1,0 +1,28 @@
+{
+  "label": "cache",
+  "files": [
+    "store.aura",
+    "ops.aura",
+    "main.aura"
+  ],
+  "entry": "main.aura",
+  "run_mode": "cli_multi",
+  "expect": "GET_A=1\nGET_MISS=miss\nGET_B=2\nTTL_EXPIRED=miss\nCOUNT=2",
+  "expect_res": [
+    "GET_A\\s*=\\s*1",
+    "GET_MISS\\s*=\\s*miss",
+    "GET_B\\s*=\\s*2",
+    "TTL_EXPIRED\\s*=\\s*miss",
+    "COUNT\\s*=\\s*2"
+  ],
+  "source_res": [
+    "\\(define\\s+\\(cache-init\\b",
+    "\\(define\\s+\\(cache-set\\b",
+    "\\(define\\s+\\(cache-get\\b",
+    "\\(define\\s+\\(cache-tick\\b",
+    "cache-get",
+    "cache-tick"
+  ],
+  "user_extra": "store.aura MUST define (cache-init) and (cache-set key val ttl). ops.aura MUST define (cache-get key) and (cache-tick n). Tick model: global tick; ttl=0 means forever (#f expire); ttl>0 stores expire-tick=tick+ttl; cache-tick advances tick; expired get returns miss. main.aura MUST call cache-init, cache-set a/1/0, cache-set b/2/2, four cache-gets (a, nope, b, b-after-tick-2), cache-tick 2, and print COUNT= non-miss gets among those four (expect 2). Named fences required for store.aura, ops.aura, main.aura in that order. Aura run: `aura store.aura ops.aura main.aura`.",
+  "seed_from_stub": true
+}

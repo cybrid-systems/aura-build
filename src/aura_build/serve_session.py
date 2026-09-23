@@ -617,6 +617,22 @@ def _holder_main(harness_root: str, aura_bin: str) -> None:
     """Daemon entry: own aura --serve[--async] + unix socket."""
     hroot = Path(harness_root)
     hroot.mkdir(parents=True, exist_ok=True)
+    # Boot marker so session start can fail fast if we die before sock ready.
+    write_marker(
+        {
+            "holder_pid": os.getpid(),
+            "pid": 0,
+            "aura_bin": aura_bin,
+            "mode": DEFAULT_MODE,
+            "serve_mode": "starting",
+            "session_model": SESSION_SHARED,
+            "started_at": _iso_now(),
+            "harness_root": str(hroot),
+            "boot": True,
+            "notes": "holder booting Soft Ready probe / serve spawn",
+        },
+        hroot,
+    )
     env = aura_subprocess_env(aura_bin)
     soft_probe = probe_serve_async_soft_ready(aura_bin)
     prefer_async = bool(soft_probe.get("ok"))
@@ -672,7 +688,64 @@ def _holder_main(harness_root: str, aura_bin: str) -> None:
         clear_marker(hroot)
         sys.exit(2)
 
-    shared_probe = _probe_shared_ast_on_proc(proc, async_mode=prefer_async, aura_bin=aura_bin)
+    # Shared-ast / same-session probe — if aura dies mid-probe, fall back sync once.
+    try:
+        if proc.poll() is not None:
+            raise RuntimeError(f"aura_exited_before_shared_probe rc={proc.returncode}")
+        shared_probe = _probe_shared_ast_on_proc(
+            proc, async_mode=prefer_async, aura_bin=aura_bin
+        )
+        if proc.poll() is not None:
+            raise RuntimeError(
+                f"aura_exited_during_shared_probe rc={proc.returncode}"
+            )
+    except Exception as exc:  # noqa: BLE001 — holder must not hang session start
+        shared_probe = {
+            "serve_cross_session_shared_ast": False,
+            "serve_same_session_mutate_ok": False,
+            "cross_session_proof": f"probe_failed:{exc}",
+            "same_session_proof": f"probe_failed:{exc}",
+            "async_mode": prefer_async,
+            "next_gate": "shared_ast_probe_failed",
+        }
+        if prefer_async:
+            try:
+                proc.kill()
+            except OSError:
+                pass
+            try:
+                proc.wait(timeout=2)
+            except Exception:
+                pass
+            prefer_async = False
+            serve_mode = SERVE_MODE_SYNC
+            aura_argv = [aura_bin, "--serve"]
+            soft_probe = dict(soft_probe)
+            soft_probe["ok"] = False
+            soft_probe["reason"] = f"async_shared_probe_failed_fallback_sync:{exc}"
+            proc = _spawn(aura_argv)
+            warm = _aura_send_line(proc, "(+ 1 1)", timeout_s=8.0)
+            if warm.get("status") != "ok":
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
+                err_fh.close()
+                clear_marker(hroot)
+                sys.exit(2)
+            try:
+                shared_probe = _probe_shared_ast_on_proc(
+                    proc, async_mode=False, aura_bin=aura_bin
+                )
+            except Exception as exc2:  # noqa: BLE001
+                shared_probe = {
+                    "serve_cross_session_shared_ast": False,
+                    "serve_same_session_mutate_ok": False,
+                    "cross_session_proof": f"sync_probe_failed:{exc2}",
+                    "same_session_proof": f"sync_probe_failed:{exc2}",
+                    "async_mode": False,
+                    "next_gate": "shared_ast_probe_failed",
+                }
     # Env cannot elevate — force false unless measured true above.
     shared_ast = bool(shared_probe.get("serve_cross_session_shared_ast"))
     if (os.environ.get("AURA_BUILD_SERVE_SHARED_AST") or "").strip().lower() in (
@@ -976,24 +1049,39 @@ def start_session(
     sess: ServeSession | None = None
     # Soft Ready + async warm + shared-ast (+ sync side-probe #4047 B) can exceed 60s.
     deadline = time.monotonic() + 90.0
+    saw_boot = False
     while time.monotonic() < deadline:
         marker = read_marker(hroot)
-        if marker and sock_path(hroot).exists():
-            sess = ServeSession(
-                harness_root=hroot,
-                aura_bin=bin_path,
-                mode=DEFAULT_MODE,
-                started_at=str(marker.get("started_at") or _iso_now()),
-                pid=int(marker.get("pid") or 0),
-                holder_pid=int(marker.get("holder_pid") or 0),
-            )
-            if sess.ping(timeout_s=2.0):
-                _ATTACHED = sess
-                return sess
+        if marker:
+            saw_boot = True
+            holder = int(marker.get("holder_pid") or 0)
+            # Fail fast if holder died before publishing a ready sock.
+            if holder and not _pid_alive(holder) and not sock_path(hroot).exists():
+                clear_marker(hroot)
+                raise RuntimeError(
+                    "serve_session_start_holder_died: holder exited before sock ready "
+                    f"(holder_pid={holder}; see serve.stderr.log)"
+                )
+            if (
+                not marker.get("boot")
+                and sock_path(hroot).exists()
+                and int(marker.get("pid") or 0) > 0
+            ):
+                sess = ServeSession(
+                    harness_root=hroot,
+                    aura_bin=bin_path,
+                    mode=DEFAULT_MODE,
+                    started_at=str(marker.get("started_at") or _iso_now()),
+                    pid=int(marker.get("pid") or 0),
+                    holder_pid=int(marker.get("holder_pid") or 0),
+                )
+                if sess.ping(timeout_s=2.0):
+                    _ATTACHED = sess
+                    return sess
         time.sleep(0.1)
     raise RuntimeError(
         "serve_session_start_timeout: holder did not become ready "
-        "(Soft Ready + shared-ast / sync side-probe may take ~30–60s)"
+        f"(saw_boot={saw_boot}; Soft Ready + shared-ast may take ~30–60s)"
     )
 
 

@@ -31,8 +31,8 @@ Never invent `serve` / `fiber_live` / `incr_proven` from env alone.
 | Field | Meaning |
 |-------|---------|
 | `serve_session_ok` | True if host serve attach is alive **or** (when available) `--serve-async-bench` child probe passes |
-| `serve_mode` | `async` only after measured Soft Ready self-check for `--serve-async`; else `sync` (`--serve`). Soft (#3098) refuses async on this box → `sync` |
-| `serve_cross_session_shared_ast` | True **only** when two named Aura serve sessions share one FlatAST (measured). Soft `--serve` uses separate CompilerService maps → **false**; env cannot elevate |
+| `serve_mode` | `async` only after measured Soft Ready self-check for `--serve-async` (#4047 Soft Ready profile); else `sync` (`--serve`). Env cannot elevate |
+| `serve_cross_session_shared_ast` | True **only** when two named Aura serve sessions share one FlatAST (measured on-proc / Soft Ready async). Soft sync `--serve` separate maps → **false**; env cannot elevate |
 | `serve_same_session_mutate_ok` | Measured same-session `mutate:rebind` + `eval-current` on the holder serve process |
 | `fiber_live` | Denseness only; env cannot elevate |
 | `incr_proven` | Measured storm-still-incr only |
@@ -63,7 +63,7 @@ aura-build session dogfood --rounds 3 --json   # cold_spawns=0; path_kind=mutate
 # 3) Pursue on same-session mutate:rebind (default --prefer-session)
 aura-build pursue --goal "emit GREET=aura" --min-fitness 0.8 --max-rounds 2 --worldlines 3 --json
 # → worldline_backend=serve_mutate_rebind path_kind=mutate_rebind cold_spawns=0
-# Soft Ready still refused (fail_bits=0x10); serve_mode=sync honest
+# Soft Ready tip (#4047): serve_mode=async + serve_cross_session_shared_ast=true when measured
 
 # 4) Optional: MiniMax propose-only; verify prefers live session for single-file tasks
 aura-build llm-dogfood --task greet --max-rounds 4 --worldlines 2 --json
@@ -79,14 +79,14 @@ Cold subprocess verify remains when session is down (`session_model=shared_works
 Precise Soft Ready diagnosis (fail bit map + why aura-build cannot clear it):
 **[soft-ready-gate.md](soft-ready-gate.md)**.
 
-1. **Soft Ready `--serve-async`** — measured refuse: Soft (`AURA_SANDBOX=off`) aborts with `#3098` `fail_bits=0x10` = bit4 `defaults_missing_soft` only (not ABI markers). Holder prefers async only after Soft Ready self-check; today it honestly falls back to `serve_mode=sync` (`aura --serve`). **Blocker is Aura runtime**, not a missing env flag — never flip sandbox to fake Ready.
-2. **`serve_cross_session_shared_ast=true`** — Soft `--serve` named sessions do **not** share FlatAST (binding defined in `orch` is unbound in `project`). Real cross-session sharing ships with Soft-Ready `--serve-async` `shared_workspace_tree`. Same-session `mutate:rebind` **is** measured (`serve_same_session_mutate_ok`) and used by `session dogfood` + **`pursue` (default `--prefer-session`)** → `worldline_backend=serve_mutate_rebind`, `cold_spawns=0`.
-3. Fiber orch worldlines *and* project-under-test as two named sessions on one shared tree (depends on gate 1–2).
+1. **Soft Ready `--serve-async`** — on Aura tip with Soft Ready profile (#4047), Soft boxes (`AURA_SANDBOX=off`) measure `serve_mode=async` after honest self-check (`soft_ready_profile_4047`). Older tips without #4047 still refuse (`#3098` `fail_bits=0x10`) and fall back to `serve_mode=sync`. **Never env-fake** Soft Ready / async.
+2. **`serve_cross_session_shared_ast=true`** — stamped only when measured (Soft Ready async on-proc orch→project / `shared_workspace_tree`). Soft sync `--serve` still keeps separate CompilerService maps → **false**. Same-session `mutate:rebind` remains measured and used by `session dogfood` + **`pursue` / `llm-dogfood --prefer-session`** → `worldline_backend=serve_mutate_rebind`, `cold_spawns=0` when attach live.
+3. Fiber orch worldlines *and* project-under-test as two named sessions on one shared tree (works when 1–2 measure true; denseness fiber probe still optional / skippable via `AURA_BUILD_NO_FIBER_PROBE=1`).
 4. JSON-RPC “postman” as a primary surface — denied; serve stdin / sock is the attach, not a new product.
 
 ## Demoted: mini-* llm-dogfood toys
 
-`examples/projects/mini-*` + `llm-dogfood --task {fib,greet,calc,kv,…}` are **CI fixtures / regression**
+`examples/projects/mini-*` + `llm-dogfood --task {fib,greet,calc,kv,stack,bank,router,cache,…}` are **CI fixtures / regression**
 for propose→verify→repair plumbing. They are **not** the primary workflow.
 
 Primary workflow = this loop: long-lived serve → in-session predicate → worldlines → traj → git publish.

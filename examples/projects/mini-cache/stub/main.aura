@@ -1,0 +1,18 @@
+; Broken main — wrong COUNT (counts all gets including miss); still calls cache ops
+(cache-init)
+(define (show label val)
+  (display label)(display "=")(display val)(newline))
+(define c 0)
+(define (hit label key)
+  (let ((v (cache-get key)))
+    (show label v)
+    ; wrong: increments even on miss
+    (set! c (+ c 1))))
+(cache-set "a" "1" 0)
+(cache-set "b" "2" 2)
+(hit "GET_A" "a")
+(hit "GET_MISS" "nope")
+(hit "GET_B" "b")
+(cache-tick 2)
+(hit "TTL_EXPIRED" "b")
+(show "COUNT" c)

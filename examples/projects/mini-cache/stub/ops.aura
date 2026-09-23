@@ -1,0 +1,16 @@
+; Intentionally sticky — get never expires; tick is a no-op
+(define (lookup key rs)
+  (if (null? rs)
+      #f
+      (let ((e (car rs)))
+        (if (equal? (car e) key)
+            e
+            (lookup key (cdr rs))))))
+(define (cache-get key)
+  (let ((hit (lookup key store)))
+    (if hit
+        (car (cdr hit))
+        "miss")))
+(define (cache-tick n)
+  ; broken: does not advance tick
+  #t)

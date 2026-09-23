@@ -684,7 +684,9 @@ def _cmd_llm_dogfood(args: argparse.Namespace) -> int:
         aura_bin=getattr(args, "aura_bin", None),
         keep_workspace=bool(getattr(args, "keep_workspace", True)),
         config=cfg,
+        prefer_session=prefer,
     )
+    hon = summary.get("honesty") or {}
     print(
         "llm_dogfood"
         f" ok={summary.get('ok')}"
@@ -695,9 +697,12 @@ def _cmd_llm_dogfood(args: argparse.Namespace) -> int:
         f" rounds={summary.get('rounds')}"
         f" traj={summary.get('traj_id')}"
         f" program={summary.get('final_program')}"
-        f" session_model={summary.get('honesty', {}).get('session_model')}"
-        f" fiber_live={summary.get('honesty', {}).get('fiber_live')}"
-        f" incr_proven={summary.get('honesty', {}).get('incr_proven')}"
+        f" session_model={hon.get('session_model')}"
+        f" serve_mode={hon.get('serve_mode')}"
+        f" shared_ast={hon.get('serve_cross_session_shared_ast')}"
+        f" via_prefer_session={hon.get('via_prefer_session')}"
+        f" fiber_live={hon.get('fiber_live')}"
+        f" incr_proven={hon.get('incr_proven')}"
         f" kernel=aura"
         f" model={summary.get('llm', {}).get('model')}"
         f" reason={summary.get('reason')}"

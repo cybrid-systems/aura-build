@@ -83,9 +83,9 @@ So: **blocker = Aura Soft Ready gate**, not a missing aura-build config flag.
 
 | Flag | Soft `--serve` today |
 |------|----------------------|
-| `serve_mode` | `sync` (honest) |
-| `serve_async_soft_ready.ok` | `false` (`fail_bits=0x10`) |
-| `serve_cross_session_shared_ast` | `true` when Soft #4047 B measured on live serve/--serve-async |
+| `serve_mode` | `async` when Soft Ready #4047 probe ok (else honest `sync`) |
+| `serve_async_soft_ready.ok` | `true` / `soft_ready_profile_4047` on Aura tip with #4047; older tips may still refuse `#3098` `fail_bits=0x10` |
+| `serve_cross_session_shared_ast` | `true` only when measured on live Soft Ready async (or Soft #4047 B sync share) — never env-elevated |
 | `serve_same_session_mutate_ok` | **`true`** (measured mutate:rebind + eval) |
 | `session dogfood` / `pursue --prefer-session` | **`path_kind=mutate_rebind`**, `cold_spawns=0` |
 
@@ -103,7 +103,7 @@ Deepen orch/project dual-session worldlines on the shared Soft graph.
 ```bash
 export AURA_BIN=/workspace/aura-redis/.deps/aura/build/aura
 aura-build session start
-aura-build session status --json   # serve_mode=sync; soft_ready.ok=false; same_session_mutate=true
+aura-build session status --json   # tip Soft Ready: serve_mode=async; soft_ready.ok=true; shared_ast=true when measured
 aura-build session dogfood --rounds 3 --json
 aura-build pursue --goal "emit GREET=aura" --min-fitness 0.8 --max-rounds 2 --worldlines 3 --json
 # → worldline_backend=serve_mutate_rebind path_kind=mutate_rebind cold_spawns=0
