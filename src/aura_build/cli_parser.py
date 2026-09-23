@@ -297,8 +297,9 @@ def build_parser() -> argparse.ArgumentParser:
     pursue = sub.add_parser(
         "pursue",
         help=(
-            "continuous goal-driven loop (Aura kernel): worldlines → select-best "
-            "until fitness_ge / max-rounds; optional MiniMax hint; optional harness-mutate canary"
+            "continuous goal-driven loop: prefers in-session mutate:rebind when "
+            "serve attach live; else Aura kernel worldlines → select-best; "
+            "optional MiniMax hint; optional harness-mutate canary"
         ),
     )
     _opt(pursue, "--goal", required=True, help="goal text for the pursue loop")
@@ -333,6 +334,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="optional L1 harness-mutate canary once (AUTOPROMOTE off)",
     )
     _opt(pursue, "--env-file", type=Path, default=None, help="MiniMax env file when --with-llm")
+    _opt(
+        pursue,
+        "--prefer-session",
+        action="store_true",
+        default=True,
+        help=(
+            "prefer in-session mutate:rebind pursue when serve_same_session_mutate_ok "
+            "(default on; Soft Ready async may still be refused)"
+        ),
+    )
+    _opt(
+        pursue,
+        "--force-kernel",
+        action="store_true",
+        help="skip serve session path; always dispatch Aura kernel pursue.aura",
+    )
+    _opt(
+        pursue,
+        "--no-prefer-session",
+        action="store_true",
+        help="alias of --force-kernel for pursue",
+    )
     _common(pursue, aura=True)
 
     doc = sub.add_parser("doctor", help="Aura probe + last prove-incr report")

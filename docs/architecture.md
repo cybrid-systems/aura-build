@@ -59,7 +59,7 @@ A worldline is a **candidate live-object history**, not a git worktree. Default 
 3. Eval each (profile fitness / backend)
 4. **Discard losers** — recorded in episode `discarded[]` and workspace `DISCARDED` markers
 
-Session model: `serve` (host long-lived `aura --serve` attach), `fiber_denseness_in_process` (denseness), or `shared_workspace_subprocess` (cold/file). Trajectory records `runtime.worldline_backend=fiber_graph|file`. Soft Ready `--serve-async` measured refuse on Soft (`serve_mode=sync`); `serve_cross_session_shared_ast` stays false until named sessions share FlatAST; same-session mutate measured. Env alone cannot elevate `fiber_live` / `serve` / shared_ast. SSOT: [optimal-dev-loop.md](optimal-dev-loop.md).
+Session model: `serve` (host long-lived `aura --serve` attach), `fiber_denseness_in_process` (denseness), or `shared_workspace_subprocess` (cold/file). Trajectory records `runtime.worldline_backend=fiber_graph|file`. Soft Ready `--serve-async` measured refuse on Soft (`serve_mode=sync`); `serve_cross_session_shared_ast` stays false until named sessions share FlatAST; same-session mutate measured. Env alone cannot elevate `fiber_live` / `serve` / shared_ast. SSOT: [optimal-dev-loop.md](optimal-dev-loop.md); Soft Ready: [soft-ready-gate.md](soft-ready-gate.md).
 
 ### aura-repo profile (M2)
 

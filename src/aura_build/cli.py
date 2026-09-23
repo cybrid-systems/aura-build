@@ -711,7 +711,11 @@ def _cmd_llm_dogfood(args: argparse.Namespace) -> int:
 
 
 def _cmd_pursue(args: argparse.Namespace) -> int:
-    """Continuous goal loop — Aura kernel owns rounds; MiniMax never controls."""
+    """Continuous goal loop — prefer in-session mutate:rebind; else Aura kernel.
+
+    MiniMax never controls. Soft Ready --serve-async may refuse (#3098); session
+    path still uses Soft --serve same-session mutate when measured.
+    """
     root = _root(args)
     min_fit = args.min_fitness
     predicate = args.predicate
@@ -721,13 +725,20 @@ def _cmd_pursue(args: argparse.Namespace) -> int:
     if min_fit is not None:
         predicate = f"fitness_ge:{min_fit}"
         min_fit_s = str(min_fit)
+        min_fit_f = float(min_fit)
     elif predicate:
         min_fit_s = ""
+        min_fit_f = 0.8
         if predicate.startswith("fitness_ge:"):
             min_fit_s = predicate.split(":", 1)[1]
+            try:
+                min_fit_f = float(min_fit_s)
+            except ValueError:
+                min_fit_f = 0.8
     else:
         predicate = "fitness_ge:0.8"
         min_fit_s = "0.8"
+        min_fit_f = 0.8
 
     llm_assist = "off"
     llm_hint = ""
@@ -762,6 +773,59 @@ def _cmd_pursue(args: argparse.Namespace) -> int:
             print(f"pursue: --with-llm unavailable ({exc}); continuing without hint", file=sys.stderr)
             llm_assist = "unavailable"
 
+    force_kernel = bool(
+        getattr(args, "force_kernel", False)
+        or getattr(args, "no_prefer_session", False)
+        or getattr(args, "harness_mutate", False)
+        or str(getattr(args, "mode", "aura")) == "simulated"
+    )
+    prefer_session = bool(getattr(args, "prefer_session", True)) and not force_kernel
+
+    if prefer_session:
+        try:
+            from aura_build.serve_session import run_pursue_session
+
+            summary = run_pursue_session(
+                goal=args.goal,
+                min_fitness=min_fit_f,
+                max_rounds=int(args.max_rounds),
+                worldlines=int(args.worldlines),
+                aura_bin=args.aura_bin,
+                harness_root=root,
+                out=args.out or Path("trajectories/pursue.jsonl"),
+                seed=args.seed,
+                llm_assist=llm_assist,
+                llm_hint=llm_hint,
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"pursue: session path failed ({exc}); falling back to kernel", file=sys.stderr)
+            summary = {"ok": False, "fallback": "aura_kernel_dispatch", "error": str(exc)}
+        if summary.get("ok") and summary.get("path_kind") == "mutate_rebind":
+            line = (
+                f"pursue ok={summary.get('ok')} goal_met={summary.get('goal_met')} "
+                f"stop_reason={summary.get('stop_reason')} "
+                f"best_fitness={summary.get('best_fitness')} "
+                f"worldline_backend={summary.get('worldline_backend')} "
+                f"session_model={summary.get('session_model')} "
+                f"path_kind={summary.get('path_kind')} "
+                f"serve_mode={summary.get('serve_mode')} "
+                f"cold_spawns={summary.get('cold_spawns')} "
+                f"soft_ready={summary.get('serve_async_soft_ready_ok')} "
+                f"fail_bits={summary.get('serve_async_soft_ready_fail_bits')} "
+                f"kernel=aura"
+            )
+            print(line)
+            if args.json:
+                print(json.dumps(summary, indent=2, sort_keys=True))
+            return 0 if summary.get("ok") else 1
+        if summary.get("fallback") == "aura_kernel_dispatch" or not summary.get("ok"):
+            print(
+                f"pursue: session mutate unavailable "
+                f"({summary.get('stop_reason') or summary.get('error')}); "
+                f"dispatching Aura kernel",
+                file=sys.stderr,
+            )
+
     # Mild L1 patch so harness-mutate canary has something to propose (AUTOPROMOTE off).
     patches = {}
     if getattr(args, "harness_mutate", False):
@@ -789,7 +853,6 @@ def _cmd_pursue(args: argparse.Namespace) -> int:
     if args.seed is not None:
         env["AURA_BUILD_SEED"] = str(args.seed)
 
-    # Multi-round: allow more wall time than a single run
     timeout = max(180.0, float(args.max_rounds) * 90.0)
     code = _dispatch(
         "pursue",
@@ -801,6 +864,7 @@ def _cmd_pursue(args: argparse.Namespace) -> int:
         timeout_s=timeout,
     )
     return code if code is not None else 2
+
 
 
 def console_main() -> None:

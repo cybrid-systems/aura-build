@@ -251,6 +251,9 @@ def probe_serve_async_soft_ready(
                     "reason": "soft_ready_refused_after_timeout",
                     "stderr_tail": (stderr or "")[-400:],
                     "fail_bits": _extract_fail_bits(stderr or ""),
+                    "fail_bits_decoded": decode_soft_ready_fail_bits(
+                        _extract_fail_bits(stderr or "")
+                    ),
                 }
             return {
                 "ok": True,
@@ -269,6 +272,9 @@ def probe_serve_async_soft_ready(
                     "reason": "soft_ready_refused",
                     "stderr_tail": err[-500:],
                     "fail_bits": _extract_fail_bits(err),
+                    "fail_bits_decoded": decode_soft_ready_fail_bits(
+                        _extract_fail_bits(err)
+                    ),
                     "returncode": proc.returncode,
                 }
         # Got a JSON status line without FATAL → Soft Ready passed
@@ -304,6 +310,56 @@ def _extract_fail_bits(stderr: str) -> str | None:
 
     m = re.search(r"fail_bits=(0x[0-9a-fA-F]+)", stderr)
     return m.group(1) if m else None
+
+
+# Aura #3098 / #2955 / #3195 production multi-worker Ready fail_bits (Soft refuse).
+# Source: aura serve/runtime_production_abi.h — never invent cleared bits from env.
+_FAIL_BIT_NAMES: dict[int, str] = {
+    0: "abi_steal_complete",
+    1: "abi_eval_id",
+    2: "abi_mutation_held",
+    3: "abi_depth_from_ptr",
+    4: "defaults_missing_soft",  # kProductionAbiSelfcheckFailBitDefaults (1<<4 = 0x10)
+    5: "residual_sticky",        # #3195
+    6: "tenant_scope",           # #3275
+    7: "probe_linear",           # #3343
+    8: "typed_entry",            # #3419
+    9: "hot_contracts",          # #3866
+}
+
+
+def decode_soft_ready_fail_bits(fail_bits: str | int | None) -> dict[str, Any]:
+    """Decode Soft Ready ``fail_bits`` hex into named bits (Aura #3098 lineage)."""
+    if fail_bits is None or fail_bits == "":
+        return {"raw": None, "mask": 0, "bits": [], "names": []}
+    if isinstance(fail_bits, str):
+        raw = fail_bits.strip()
+        try:
+            mask = int(raw, 16) if raw.lower().startswith("0x") else int(raw, 0)
+        except ValueError:
+            return {"raw": raw, "mask": 0, "bits": [], "names": [], "parse_error": True}
+    else:
+        mask = int(fail_bits)
+        raw = hex(mask)
+    bits = [i for i in range(16) if (mask >> i) & 1]
+    names = [_FAIL_BIT_NAMES.get(i, f"bit_{i}") for i in bits]
+    return {
+        "raw": raw if isinstance(fail_bits, str) else hex(mask),
+        "mask": mask,
+        "bits": bits,
+        "names": names,
+        "soft_defaults_only": bits == [4],
+        "meaning": (
+            "Soft (AURA_SANDBOX=off) / !production_defaults_active — multi-worker "
+            "Ready (#3098) refuses Soft fall-through; bit4=defaults_missing"
+            if bits == [4]
+            else (
+                "production multi-worker Ready self-check failed; see names"
+                if bits
+                else "no fail bits"
+            )
+        ),
+    }
 
 
 def _probe_shared_ast_on_proc(proc: subprocess.Popen[str]) -> dict[str, Any]:
@@ -1119,4 +1175,296 @@ def run_session_dogfood(
         "pid": sess.pid,
         "kernel": "aura",
         "reason": "session_dogfood",
+    }
+
+
+def run_pursue_session(
+    *,
+    goal: str,
+    min_fitness: float = 0.8,
+    max_rounds: int = 8,
+    worldlines: int = 3,
+    aura_bin: str | None = None,
+    harness_root: Path | str | None = None,
+    out: Path | str | None = None,
+    seed: int | None = None,
+    llm_assist: str = "off",
+    llm_hint: str = "",
+) -> dict[str, Any]:
+    """In-session pursue on long-lived serve via same-session ``mutate:rebind``.
+
+    Soft Ready ``--serve-async`` is often refused (#3098 ``fail_bits=0x10``);
+    this path uses Soft ``--serve`` (``serve_mode=sync``) and still keeps
+    ``cold_spawns=0`` with real FlatAST mutate worldlines when
+    ``serve_same_session_mutate_ok`` was measured. Never invents async /
+    shared_ast / Soft Ready from env.
+    """
+    import re
+    import uuid
+
+    goal = (goal or "").strip()
+    if not goal:
+        return {
+            "ok": False,
+            "goal_met": False,
+            "stop_reason": "missing_goal",
+            "error": "missing_goal",
+            "kernel": "aura",
+            "path_kind": None,
+        }
+
+    hroot = Path(harness_root) if harness_root else Path(
+        os.environ.get("AURA_BUILD_HARNESS_ROOT") or ".aura-build"
+    )
+    sess = start_session(aura_bin=aura_bin, harness_root=hroot)
+    marker = read_marker(hroot) or {}
+    serve_mode = str(marker.get("serve_mode") or SERVE_MODE_SYNC)
+    shared_ast = bool(marker.get("serve_cross_session_shared_ast"))
+    same_mut = bool(marker.get("serve_same_session_mutate_ok"))
+    soft = marker.get("serve_async_soft_ready") if isinstance(marker, dict) else None
+    soft_ok = bool((soft or {}).get("ok")) if isinstance(soft, dict) else False
+    soft_bits = (soft or {}).get("fail_bits") if isinstance(soft, dict) else None
+    soft_decoded = decode_soft_ready_fail_bits(soft_bits)
+
+    if not same_mut:
+        return {
+            "ok": False,
+            "goal_met": False,
+            "stop_reason": "same_session_mutate_unavailable",
+            "error": "same_session_mutate_unavailable",
+            "kernel": "aura",
+            "session_model": SESSION_SERVE,
+            "serve_mode": serve_mode,
+            "serve_same_session_mutate_ok": False,
+            "serve_async_soft_ready_ok": soft_ok,
+            "serve_async_soft_ready_fail_bits": soft_bits,
+            "serve_async_soft_ready_fail_bits_decoded": soft_decoded,
+            "path_kind": None,
+            "fallback": "aura_kernel_dispatch",
+        }
+
+    # Success token: prefer explicit GREET=… / KEY=val in goal; else GREET=aura.
+    m_tok = re.search(r"\b([A-Z][A-Z0-9_]*=\S+)", goal)
+    success_token = m_tok.group(1) if m_tok else "GREET=aura"
+    expect = re.compile(re.escape(success_token))
+
+    esc_tok = _escape_aura_string(success_token)
+    mut_bodies = [
+        f'(lambda () (begin (display "{esc_tok}") (newline)))',
+        '(lambda () (begin (display "GREET=wrong") (newline)))',
+        f'(lambda () (begin (display "{esc_tok}") (newline) (display "extra") (newline)))',
+        '(lambda () (begin (display "NOPE") (newline)))',
+        f'(lambda () (begin (display "{esc_tok}") (newline)))',
+    ]
+    n_wl = max(1, int(worldlines))
+    max_r = max(1, int(max_rounds))
+    min_fit = float(min_fitness)
+    rng_seed = int(seed) if seed is not None else (abs(hash(goal)) % 10_000_000)
+
+    boot = sess.raw_line(
+        '(set-code "(define (cand) 0) (cand)")',
+        timeout_s=10.0,
+    )
+    if boot.get("status") != "ok":
+        return {
+            "ok": False,
+            "goal_met": False,
+            "stop_reason": "serve_boot_failed",
+            "error": f"set-code_failed:{boot.get('msg')}",
+            "kernel": "aura",
+            "session_model": SESSION_SERVE,
+            "serve_mode": serve_mode,
+            "path_kind": "mutate_rebind",
+        }
+
+    path_kind = "mutate_rebind"
+    rounds_out: list[dict[str, Any]] = []
+    best_fit = -1.0
+    best_sel = ""
+    session_ms: list[int] = []
+    cold_spawns = 0
+    traj_id = f"pursue-serve-{uuid.uuid4().hex[:10]}"
+    out_path = Path(out) if out else Path("trajectories/pursue.jsonl")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    goal_met = False
+    stop_reason = "max_rounds"
+
+    for r_i in range(1, max_r + 1):
+        round_wls: list[dict[str, Any]] = []
+        for i in range(n_wl):
+            if i == 0:
+                body = mut_bodies[0]
+            else:
+                body = mut_bodies[1 + ((rng_seed + r_i + i) % (len(mut_bodies) - 1))]
+            esc = _escape_aura_string(body)
+            t0 = time.monotonic()
+            mut = sess.raw_line(
+                f'(mutate:rebind "cand" "{esc}" "pursue-r{r_i}-w{i}")',
+                timeout_s=10.0,
+            )
+            ev = sess.raw_line("(eval-current)", timeout_s=10.0)
+            ms = max(1, int((time.monotonic() - t0) * 1000))
+            session_ms.append(ms)
+            stdout = str(ev.get("display") or "")
+            if not stdout and ev.get("value") is not None:
+                stdout = str(ev.get("value"))
+            ok = mut.get("status") == "ok" and ev.get("status") == "ok"
+            matched = bool(expect.search(stdout))
+            passed = matched and ok and "extra" not in stdout
+            if passed:
+                fit = 1.0
+            elif matched and ok:
+                fit = 0.55
+            elif ok and stdout.strip():
+                fit = 0.25
+            elif ok:
+                fit = 0.15
+            else:
+                fit = 0.05
+            round_wls.append(
+                {
+                    "id": f"wl-{i}",
+                    "passed": passed,
+                    "fitness": fit,
+                    "ms": ms,
+                    "via": "serve_session_mutate",
+                    "stdout": stdout[-200:],
+                    "path_kind": path_kind,
+                    "mutate_ok": mut.get("status") == "ok",
+                    "eval_ok": ev.get("status") == "ok",
+                }
+            )
+        selected = max(round_wls, key=lambda w: (w["fitness"], w["id"]))
+        fit0 = float(selected["fitness"])
+        if fit0 > best_fit:
+            best_fit = fit0
+            best_sel = selected["id"]
+        goal_met = fit0 >= min_fit
+        stop = "goal_met" if goal_met else ("max_rounds" if r_i >= max_r else "continue")
+        if stop != "continue":
+            stop_reason = stop
+        round_rec = {
+            "goal": goal,
+            "round_i": r_i,
+            "selected_id": selected["id"],
+            "fitness": fit0,
+            "worldline_backend": "serve_mutate_rebind",
+            "session_model": SESSION_SERVE,
+            "path_kind": path_kind,
+            "stop_reason": stop,
+            "worldlines": round_wls,
+            "episode_id": f"{traj_id}-r{r_i}",
+        }
+        rounds_out.append(round_rec)
+
+        prompt = goal
+        if llm_hint:
+            prompt = f"{goal}\n\n; llm_hint (non-controller):\n{llm_hint}"
+        episode = {
+            "schema_version": "trajectory.v0",
+            "episode_id": round_rec["episode_id"],
+            "ts_start": _iso_now(),
+            "ts_end": _iso_now(),
+            "prompt": prompt,
+            "runtime": {
+                "mode": "aura",
+                "kernel": "aura",
+                "incr_proven": False,
+                "fiber_live": False,
+                "measured": True,
+                "session_model": SESSION_SERVE,
+                "serve_session_ok": True,
+                "serve_mode": serve_mode,
+                "serve_cross_session_shared_ast": shared_ast,
+                "serve_same_session_mutate_ok": True,
+                "worldline_backend": "serve_mutate_rebind",
+                "pursue": {
+                    "goal": goal,
+                    "round_i": r_i,
+                    "max_rounds": max_r,
+                    "min_fitness": min_fit,
+                    "stop_reason": stop,
+                    "llm_assist": llm_assist,
+                    "harness_mutate": False,
+                    "path_kind": path_kind,
+                    "success_token": success_token,
+                },
+                "dogfood": {
+                    "kind": "pursue_session",
+                    "cold_spawns": cold_spawns,
+                    "session_evals": len(session_ms),
+                    "session_ms_total": sum(session_ms),
+                    "session_ms_mean": (
+                        round(sum(session_ms) / len(session_ms), 2) if session_ms else 0
+                    ),
+                },
+            },
+            "harness": {
+                "l1_strategy_id": "pursue.serve_mutate.v1",
+                "l3_online": False,
+                "outcome": "pass" if goal_met else "partial",
+                "actions": [
+                    {"op": "session_attach", "via": f"serve_{serve_mode}"},
+                    {"op": "mutate_rebind_worldlines", "count": n_wl},
+                    {"op": "select_best"},
+                ],
+            },
+            "worldlines": round_wls,
+            "selected_id": selected["id"],
+            "privacy": {"redacted": True, "retention_class": "dogfood"},
+        }
+        with out_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(episode, sort_keys=True) + "\n")
+
+        if goal_met or r_i >= max_r:
+            break
+
+    if goal_met:
+        stop_reason = "goal_met"
+    elif stop_reason == "continue":
+        stop_reason = "max_rounds"
+
+    return {
+        "ok": True,
+        "goal_met": goal_met,
+        "stop_reason": stop_reason,
+        "goal": goal,
+        "rounds_completed": len(rounds_out),
+        "max_rounds": max_r,
+        "min_fitness": min_fit,
+        "best_fitness": best_fit,
+        "selected_id": best_sel,
+        "worldline_backend": "serve_mutate_rebind",
+        "session_model": SESSION_SERVE,
+        "serve_session_ok": True,
+        "serve_mode": serve_mode,
+        "serve_cross_session_shared_ast": shared_ast,
+        "serve_same_session_mutate_ok": True,
+        "serve_async_soft_ready_ok": soft_ok,
+        "serve_async_soft_ready_reason": (
+            (soft or {}).get("reason") if isinstance(soft, dict) else None
+        ),
+        "serve_async_soft_ready_fail_bits": soft_bits,
+        "serve_async_soft_ready_fail_bits_decoded": soft_decoded,
+        "path_kind": path_kind,
+        "cold_spawns": cold_spawns,
+        "session_evals": len(session_ms),
+        "session_ms_mean": (
+            round(sum(session_ms) / len(session_ms), 2) if session_ms else 0
+        ),
+        "fiber_live": False,
+        "incr_proven": False,
+        "llm_assist": llm_assist,
+        "harness_mutate": False,
+        "path": str(out_path),
+        "traj_id": traj_id,
+        "rounds": rounds_out,
+        "kernel": "aura",
+        "pid": sess.pid,
+        "success_token": success_token,
+        "next_gate": (
+            "Aura Soft Ready (#3098) fail_bits=0x10 (defaults_missing_soft) blocks "
+            "--serve-async on Soft; cross-session shared FlatAST still deferred. "
+            "Same-session mutate:rebind pursue is live."
+        ),
     }

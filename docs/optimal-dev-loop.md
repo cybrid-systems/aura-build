@@ -58,9 +58,14 @@ aura-build session status          # serve_attach_ok / serve_mode / shared_ast h
 aura-build doctor                  # serve_session_ok when attach live
 
 # 2) In-session dogfood (no MiniMax required) — closed loop on serve path
-aura-build session dogfood --rounds 3 --json   # cold_spawns=0 on session path
+aura-build session dogfood --rounds 3 --json   # cold_spawns=0; path_kind=mutate_rebind when measured
 
-# 3) Optional: MiniMax propose-only; verify prefers live session for single-file tasks
+# 3) Pursue on same-session mutate:rebind (default --prefer-session)
+aura-build pursue --goal "emit GREET=aura" --min-fitness 0.8 --max-rounds 2 --worldlines 3 --json
+# → worldline_backend=serve_mutate_rebind path_kind=mutate_rebind cold_spawns=0
+# Soft Ready still refused (fail_bits=0x10); serve_mode=sync honest
+
+# 4) Optional: MiniMax propose-only; verify prefers live session for single-file tasks
 aura-build llm-dogfood --task greet --max-rounds 4 --worldlines 2 --json
 
 aura-build session stop
@@ -71,8 +76,11 @@ Cold subprocess verify remains when session is down (`session_model=shared_works
 
 ## What is still deferred / next gate
 
-1. **Soft Ready `--serve-async`** — measured on this box: Soft (`AURA_SANDBOX=off`) aborts with `#3098` `fail_bits=0x10` (defaults bit). Holder prefers async only after Soft Ready self-check; today it honestly falls back to `serve_mode=sync` (`aura --serve`). Production sandbox can start `--serve-async`, but aura-build Soft ergonomics stay Soft.
-2. **`serve_cross_session_shared_ast=true`** — Soft `--serve` named sessions do **not** share FlatAST (binding defined in `orch` is unbound in `project`). Real cross-session sharing ships with `--serve-async` `shared_workspace_tree` once Soft Ready allows it. Same-session `mutate:rebind` **is** measured (`serve_same_session_mutate_ok`) and used by `session dogfood` when available.
+Precise Soft Ready diagnosis (fail bit map + why aura-build cannot clear it):
+**[soft-ready-gate.md](soft-ready-gate.md)**.
+
+1. **Soft Ready `--serve-async`** — measured refuse: Soft (`AURA_SANDBOX=off`) aborts with `#3098` `fail_bits=0x10` = bit4 `defaults_missing_soft` only (not ABI markers). Holder prefers async only after Soft Ready self-check; today it honestly falls back to `serve_mode=sync` (`aura --serve`). **Blocker is Aura runtime**, not a missing env flag — never flip sandbox to fake Ready.
+2. **`serve_cross_session_shared_ast=true`** — Soft `--serve` named sessions do **not** share FlatAST (binding defined in `orch` is unbound in `project`). Real cross-session sharing ships with Soft-Ready `--serve-async` `shared_workspace_tree`. Same-session `mutate:rebind` **is** measured (`serve_same_session_mutate_ok`) and used by `session dogfood` + **`pursue` (default `--prefer-session`)** → `worldline_backend=serve_mutate_rebind`, `cold_spawns=0`.
 3. Fiber orch worldlines *and* project-under-test as two named sessions on one shared tree (depends on gate 1–2).
 4. JSON-RPC “postman” as a primary surface — denied; serve stdin / sock is the attach, not a new product.
 

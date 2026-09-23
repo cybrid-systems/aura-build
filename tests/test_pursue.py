@@ -10,6 +10,11 @@ import pytest
 
 from aura_build.cli_parser import build_parser
 from aura_build.kernel import kernel_available, try_invoke_aura
+from aura_build.runtime import resolve_aura_bin
+from aura_build.serve_session import stop_session
+
+def resolve_aura_bin_safe() -> bool:
+    return bool(resolve_aura_bin(None))
 
 
 def test_pursue_parser_flags() -> None:
@@ -38,6 +43,8 @@ def test_pursue_parser_flags() -> None:
     assert args.mode == "simulated"
     assert args.with_llm is False
     assert args.harness_mutate is False
+    assert args.prefer_session is True
+    assert args.force_kernel is False
 
 
 @pytest.mark.skipif(not kernel_available()[0], reason="Aura binary/kernel unavailable")
@@ -75,3 +82,37 @@ def test_pursue_kernel_short(tmp_path: Path) -> None:
     if backend == "fiber_graph":
         assert fiber is True
     assert out.is_file() or kr.response.get("ok") is False
+
+
+@pytest.mark.skipif(not resolve_aura_bin_safe(), reason="Aura binary unavailable")
+def test_pursue_cli_prefer_session(tmp_path: Path) -> None:
+    from aura_build.cli import main
+
+    out = tmp_path / "pursue.jsonl"
+    code = main(
+        [
+            "pursue",
+            "--goal",
+            "emit GREET=aura",
+            "--min-fitness",
+            "0.8",
+            "--max-rounds",
+            "2",
+            "--worldlines",
+            "3",
+            "--seed",
+            "3",
+            "--out",
+            str(out),
+            "--json",
+            "--harness-root",
+            str(tmp_path),
+        ]
+    )
+    assert code == 0
+    assert out.is_file()
+    ep = json.loads(out.read_text().splitlines()[0])
+    assert ep["runtime"]["session_model"] == "serve"
+    assert ep["runtime"]["worldline_backend"] == "serve_mutate_rebind"
+    assert ep["runtime"]["dogfood"]["cold_spawns"] == 0
+    stop_session(harness_root=tmp_path)

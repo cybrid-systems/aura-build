@@ -144,6 +144,9 @@ def test_session_dogfood_closed_loop(tmp_path: Path) -> None:
     assert ep["runtime"]["serve_cross_session_shared_ast"] is False
     assert "serve_mode" in ep["runtime"]
     assert summary["serve_mode"] in ("sync", "async")
+    assert summary["serve_same_session_mutate_ok"] is True
+    assert summary["honesty"]["path_kind"] == "mutate_rebind"
+    assert ep["runtime"]["dogfood"]["path_kind"] == "mutate_rebind"
     stop_session(harness_root=tmp_path)
 
 
@@ -188,3 +191,61 @@ def test_probe_serve_async_soft_ready_measured() -> None:
         "soft_ready_refused_after_timeout",
         "soft_ready_inconclusive",
     )
+    if got["reason"] == "soft_ready_refused":
+        assert got.get("fail_bits") == "0x10"
+
+
+def test_decode_soft_ready_fail_bits_0x10() -> None:
+    from aura_build.serve_session import decode_soft_ready_fail_bits
+
+    got = decode_soft_ready_fail_bits("0x10")
+    assert got["mask"] == 0x10
+    assert got["bits"] == [4]
+    assert got["names"] == ["defaults_missing_soft"]
+    assert got["soft_defaults_only"] is True
+
+
+def test_probe_fail_bits_decoded() -> None:
+    from aura_build.serve_session import probe_serve_async_soft_ready
+
+    bin_path = resolve_aura_bin(None)
+    assert bin_path
+    got = probe_serve_async_soft_ready(bin_path)
+    assert got["ok"] is False
+    assert got.get("fail_bits") == "0x10"
+    decoded = got.get("fail_bits_decoded") or {}
+    assert decoded.get("soft_defaults_only") is True
+    assert "defaults_missing_soft" in (decoded.get("names") or [])
+
+
+def test_pursue_session_mutate_rebind(tmp_path: Path) -> None:
+    from aura_build.serve_session import run_pursue_session
+
+    out = tmp_path / "pursue.jsonl"
+    summary = run_pursue_session(
+        goal="emit GREET=aura on serve",
+        min_fitness=0.8,
+        max_rounds=2,
+        worldlines=3,
+        harness_root=tmp_path,
+        out=out,
+        seed=7,
+    )
+    assert summary["ok"] is True
+    assert summary["goal_met"] is True
+    assert summary["stop_reason"] == "goal_met"
+    assert summary["session_model"] == SESSION_SERVE
+    assert summary["path_kind"] == "mutate_rebind"
+    assert summary["worldline_backend"] == "serve_mutate_rebind"
+    assert summary["cold_spawns"] == 0
+    assert summary["serve_mode"] == "sync"
+    assert summary["serve_async_soft_ready_ok"] is False
+    assert summary["serve_async_soft_ready_fail_bits"] == "0x10"
+    assert summary["serve_cross_session_shared_ast"] is False
+    assert summary["serve_same_session_mutate_ok"] is True
+    assert out.is_file()
+    ep = json.loads(out.read_text().splitlines()[0])
+    assert ep["runtime"]["session_model"] == SESSION_SERVE
+    assert ep["runtime"]["worldline_backend"] == "serve_mutate_rebind"
+    assert ep["runtime"]["dogfood"]["cold_spawns"] == 0
+    stop_session(harness_root=tmp_path)

@@ -14,7 +14,7 @@
 | **M5** | TUI/ACP skeleton + L2 offline metadata plug | **done** | Metadata-only weights; TUI is status stub |
 | **Post-M5** | storm-still-incr prove-or-refuse + doctor + fiber probe | **done (harness)** | `incr_proven` stays false until measured; GLIBCXX ⇒ fail-closed |
 
-**Still refused / deferred:** true `--serve-async` Soft multi-worker + cross-session shared FlatAST (`serve_cross_session_shared_ast`); `incr_proven=true` without explicit incr-valid signal; real L2 tensor/mmap (`stub=False`); online L3; full Textual/rich TUI. **Shipped MVP:** host-managed long-lived `--serve` attach (`session_model=serve`, `aura-build session *`) — see [optimal-dev-loop.md](optimal-dev-loop.md). (`fiber_graph` worldlines require honest denseness probe — env alone cannot elevate.)
+**Still refused / deferred:** true `--serve-async` Soft multi-worker (#3098 `fail_bits=0x10` Soft defaults — [soft-ready-gate.md](soft-ready-gate.md)) + cross-session shared FlatAST (`serve_cross_session_shared_ast`); `incr_proven=true` without explicit incr-valid signal; real L2 tensor/mmap (`stub=False`); online L3; full Textual/rich TUI. **Shipped MVP:** host-managed long-lived `--serve` attach (`session_model=serve`, `aura-build session *`) + same-session `mutate:rebind` dogfood/pursue — see [optimal-dev-loop.md](optimal-dev-loop.md). (`fiber_graph` worldlines require honest denseness probe — env alone cannot elevate.)
 
 ## M0 — Stub floor
 
@@ -212,4 +212,4 @@
 - [x] Docs SSOT merged
 - [x] Session start/status/stop on box with AURA_BIN
 - [x] Session dogfood closed loop + cold compare
-- [ ] True Soft Ready serve-async + orch/project shared FlatAST (`serve_cross_session_shared_ast`); measured Soft refuse + same-session mutate ok shipped
+- [ ] True Soft Ready serve-async + orch/project shared FlatAST (`serve_cross_session_shared_ast`); Soft refuse `#3098`/`fail_bits=0x10` documented ([soft-ready-gate.md](soft-ready-gate.md)); same-session mutate dogfood + **pursue** (`serve_mutate_rebind`) shipped
