@@ -10,7 +10,8 @@ Architecture:
   with #3098 ``fail_bits=0x10``). Else sync ``--serve`` with
   ``serve_mode=sync`` (never env-fake async / production Ready).
 - ``serve_cross_session_shared_ast`` elevates only after a measured proof that
-  two named Aura serve sessions share one FlatAST (Soft ``--serve`` does not).
+  two named Aura serve sessions share one FlatAST (Soft sync ``--serve`` #4047 B
+  Soft shared graph, or sync side-probe when holder prefers async).
 """
 
 from __future__ import annotations
@@ -403,18 +404,89 @@ def _aura_line_for_mode(line_or_code: str, *, async_mode: bool, session: str | N
     return json.dumps(payload)
 
 
+def _probe_sync_cross_session_shared_ast(aura_bin: str) -> dict[str, Any]:
+    """Side-probe Soft sync ``aura --serve`` orch→project binding visibility.
+
+    Soft Ready holders prefer ``--serve-async``; async named-session fiber wake
+    can hang, so cross-session shared_ast is measured on a short-lived sync
+    serve (Aura #4047 B Soft shared graph). Never elevates from env.
+    """
+    out: dict[str, Any] = {
+        "serve_cross_session_shared_ast": False,
+        "cross_session_proof": "not_run",
+        "probe_path": "sync_side",
+    }
+    env = aura_subprocess_env(aura_bin)
+    try:
+        proc = subprocess.Popen(
+            [aura_bin, "--serve"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env,
+            bufsize=1,
+        )
+    except OSError as exc:
+        out["cross_session_proof"] = f"sync_side_spawn_failed:{exc}"
+        return out
+    try:
+        def send(line: str, *, timeout_s: float = 5.0) -> dict[str, Any]:
+            return _aura_send_line(proc, line, timeout_s=timeout_s)
+
+        r1 = send('{"cmd":"session","name":"orch"}', timeout_s=5.0)
+        if r1.get("status") not in ("ok", "created"):
+            out["cross_session_proof"] = f"session_create_orch_failed:{r1.get('msg')}"
+            return out
+        _ = send("(define shared-ast-token 7777)", timeout_s=5.0)
+        r3 = send('{"cmd":"session","name":"project"}', timeout_s=5.0)
+        if r3.get("status") not in ("ok", "created"):
+            out["cross_session_proof"] = (
+                f"session_create_project_failed:{r3.get('msg')}"
+            )
+            return out
+        r4 = send("shared-ast-token", timeout_s=5.0)
+        shared = (
+            r4.get("status") == "ok"
+            and str(r4.get("value") or "").strip() in ("7777", "7777.0")
+        )
+        out["serve_cross_session_shared_ast"] = bool(shared)
+        if shared:
+            out["cross_session_proof"] = (
+                "sync_side_project_session_read_orch_binding_shared-ast-token=7777"
+            )
+        else:
+            msg = str(r4.get("msg") or r4.get("status") or "")
+            out["cross_session_proof"] = (
+                f"sync_side_project_session_unbound_or_miss status={r4.get('status')} "
+                f"msg={msg[:120]}"
+            )
+        return out
+    finally:
+        try:
+            proc.kill()
+        except OSError:
+            pass
+        try:
+            proc.wait(timeout=2)
+        except Exception:
+            pass
+
+
 def _probe_shared_ast_on_proc(
     proc: subprocess.Popen[str],
     *,
     async_mode: bool = False,
+    aura_bin: str | None = None,
 ) -> dict[str, Any]:
     """Measure cross-session vs same-session FlatAST sharing on a live serve.
 
-    Cross-session (two named Aura sessions): Soft ``--serve`` uses separate
-    CompilerService instances — expect unbound across sessions.
-    Soft Ready ``--serve-async``: skip named-session cross probe for now
-    (session fiber wake residual can hang the holder); measure same-session
-    mutate via JSON exec on default. Never elevates shared_ast from env.
+    Soft ``--serve`` (#4047 B): named sessions share one CompilerService graph
+    — orch→project ``(define)`` is visible when measured on sync.
+    Soft Ready ``--serve-async``: skip named-session cross probe on the async
+    proc (fiber wake residual can hang); when ``aura_bin`` is set, run a sync
+    side-probe for binding share. Same-session mutate via JSON exec on default.
+    Never elevates shared_ast from env.
     """
     result: dict[str, Any] = {
         "serve_cross_session_shared_ast": False,
@@ -424,8 +496,8 @@ def _probe_shared_ast_on_proc(
         "async_mode": async_mode,
         "next_gate": (
             "Aura Soft Ready (#4047) enables --serve-async; cross-session "
-            "binding share still needs measured orch→project proof "
-            "(named-session fiber wake / FlatAST share)."
+            "binding share measured on Soft sync --serve (#4047 B) or when "
+            "async named-session fiber wake is fixed."
         ),
     }
 
@@ -436,11 +508,23 @@ def _probe_shared_ast_on_proc(
             timeout_s=timeout_s,
         )
 
-    # --- cross-session (sync only; async named-session can hang) ---
+    # --- cross-session ---
     if async_mode:
         result["cross_session_proof"] = (
             "deferred_async_named_session_fiber_wake_#4047B"
         )
+        if aura_bin:
+            side = _probe_sync_cross_session_shared_ast(aura_bin)
+            result["sync_side_probe"] = side
+            if side.get("serve_cross_session_shared_ast"):
+                result["serve_cross_session_shared_ast"] = True
+                result["cross_session_proof"] = str(side.get("cross_session_proof"))
+                result["next_gate"] = "measured_true_via_sync_side_probe_#4047B"
+            else:
+                result["next_gate"] = (
+                    "async named-session deferred; sync side-probe did not "
+                    f"prove share ({side.get('cross_session_proof')})"
+                )
     else:
         r1 = send('{"cmd":"session","name":"orch"}', timeout_s=5.0)
         if r1.get("status") not in ("ok", "created"):
@@ -509,8 +593,10 @@ def _probe_shared_ast_on_proc(
     if same_ok and not result["serve_cross_session_shared_ast"]:
         result["next_gate"] = (
             "same-session mutate:rebind+eval works; cross-session shared FlatAST "
-            "still deferred (#4047B named-session / binding share)"
+            "not yet measured (Soft sync #4047 B or async fiber wake)"
         )
+    elif result["serve_cross_session_shared_ast"] and same_ok:
+        result["next_gate"] = "measured_true"
     return result
 
 def _holder_main(harness_root: str, aura_bin: str) -> None:
@@ -572,7 +658,7 @@ def _holder_main(harness_root: str, aura_bin: str) -> None:
         clear_marker(hroot)
         sys.exit(2)
 
-    shared_probe = _probe_shared_ast_on_proc(proc, async_mode=prefer_async)
+    shared_probe = _probe_shared_ast_on_proc(proc, async_mode=prefer_async, aura_bin=aura_bin)
     # Env cannot elevate — force false unless measured true above.
     shared_ast = bool(shared_probe.get("serve_cross_session_shared_ast"))
     if (os.environ.get("AURA_BUILD_SERVE_SHARED_AST") or "").strip().lower() in (

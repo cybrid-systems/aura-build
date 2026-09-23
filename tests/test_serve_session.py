@@ -43,7 +43,8 @@ def test_session_start_status_stop(tmp_path: Path) -> None:
     assert st["serve_attach_ok"] is True
     assert st["eval_available"] is True
     assert st["session_model"] == SESSION_SERVE
-    assert st["serve_cross_session_shared_ast"] is False
+    # Soft #4047 B may measure True on sync / sync side-probe; never require False.
+    assert isinstance(st["serve_cross_session_shared_ast"], bool)
     assert st["serve_mode"] in ("sync", "async")
     assert "serve_async_soft_ready" in st
     # Env alone does not invent ok when process dead
@@ -140,8 +141,8 @@ def test_session_dogfood_closed_loop(tmp_path: Path) -> None:
     assert ep["runtime"]["session_model"] == SESSION_SERVE
     assert ep["runtime"]["incr_proven"] is False
     assert ep["runtime"]["fiber_live"] is False
-    # Soft --serve: cross-session shared AST measured false (never env-elevated)
-    assert ep["runtime"]["serve_cross_session_shared_ast"] is False
+    # Soft #4047 B: shared_ast bool from measurement only (never env-elevated)
+    assert isinstance(ep["runtime"]["serve_cross_session_shared_ast"], bool)
     assert "serve_mode" in ep["runtime"]
     assert summary["serve_mode"] in ("sync", "async")
     assert summary["serve_same_session_mutate_ok"] is True
@@ -168,7 +169,7 @@ def test_env_cannot_elevate_shared_ast(tmp_path: Path, monkeypatch: pytest.Monke
     sess = start_session(harness_root=tmp_path)
     st = session_status(harness_root=tmp_path)
     assert st["serve_attach_ok"] is True
-    assert st["serve_cross_session_shared_ast"] is False
+    assert st["serve_cross_session_shared_ast"] is False  # env alone must not elevate
     # Soft Ready (#4047): prefer async when measured ok; never env-fake shared_ast
     assert st["serve_mode"] in ("sync", "async")
     soft = st.get("serve_async_soft_ready") or {}
@@ -262,7 +263,7 @@ def test_pursue_session_mutate_rebind(tmp_path: Path) -> None:
     else:
         assert summary["serve_mode"] == "sync"
         assert summary["serve_async_soft_ready_fail_bits"] == "0x10"
-    assert summary["serve_cross_session_shared_ast"] is False
+    assert isinstance(summary["serve_cross_session_shared_ast"], bool)
     assert summary["serve_same_session_mutate_ok"] is True
     assert out.is_file()
     ep = json.loads(out.read_text().splitlines()[0])
