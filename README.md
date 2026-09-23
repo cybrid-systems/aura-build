@@ -57,11 +57,33 @@ Writes validated episode JSONL under `trajectories/` (gitignored). Sample shape 
 
 ## Status
 
-**M2** — Worldline API (parent → N stable refs on shared workspace) + `--profile aura-repo` fitness hooks around `build.py`. Trajectories record `discarded[]`, `compile_ms`, `incr_claimed`, and **`incr_proven=false`**. Session model: `shared_workspace_subprocess` (not long-lived Aura; not fiber-live).
+**M3** — Self-evolving **memory / harness** at L1: mutable harness config, canary propose→commit|heal|discard, file-backed memory under `.aura-build/`, L2 stub by weights id. **AUTOPROMOTE default OFF**. Trajectories keep **`incr_proven=false`**. Not fiber-live.
+
+**M2** — Worldline API (parent → N stable refs on shared workspace) + `--profile aura-repo` fitness hooks. Session model: `shared_workspace_subprocess`.
 
 **M1** — `RuntimeBackend`: `SimulatedBackend` + `AuraBackend` (subprocess mutate:rebind + eval-current). Honest `runtime.mode`.
 
-**Not yet:** fiber-live multi-worldline on one FlatAST; proven storm-still-incr (`incr_proven=true`); long-lived Aura multi-eval. Do not read `stable_ref` as live fibers.
+**Not yet (M4+):** RL export / specialist training notes; real L2 weight artifacts; fiber-live multi-worldline on one FlatAST; proven storm-still-incr (`incr_proven=true`); long-lived Aura multi-eval. Do not read `stable_ref` as live fibers.
+
+### Canary harness mutate demo
+
+```bash
+# AUTOPROMOTE off (default): canary may pass, but live harness is discarded (not committed)
+aura-build harness-mutate --prompt "demo canary" --seed 1 \
+  --set worldline_count=4 --fitness-weight tests=0.8
+
+# Reject bad L1 before default path (exit 1, outcome=heal)
+aura-build harness-mutate --prompt "bad L1" --set worldline_count=0
+
+# Demo commit (explicit): env or flag
+AURA_BUILD_AUTOPROMOTE=1 aura-build harness-mutate --prompt "promote demo" \
+  --set routing=auto --set l2_weights_id=specialist.stub.v0
+# or:  --autopropote
+
+aura-build harness-show
+aura-build memory set --profile default --key note --value "anti-postman"
+aura-build memory get --profile default --key note
+```
 
 ### aura-repo profile
 

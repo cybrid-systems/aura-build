@@ -33,7 +33,7 @@
 
 **Honesty note:** M1 `AuraBackend` is a **subprocess bridge**, not fiber-live multi-worldline on one FlatAST. Do not claim live worldlines yet.
 
-## M2 — aura-repo profile (current)
+## M2 — aura-repo profile
 
 **Deliver**
 
@@ -53,32 +53,44 @@
 
 **Honesty note:** M2 shared workspace is **not** fiber-live FlatAST. Default remains simulated-green CI. Live `build.py` hook uses a cheap discovery command unless callers pass a real compile command.
 
-## M3 — Memory/harness mutate + canary (next)
+## M3 — Memory/harness mutate + canary (current)
 
 **Deliver**
 
-- L1 strategy mutation under canary
-- L2 offline weight hook (load by id)
-- L3 remains experimental flag-gated
-- Preview: prove or keep refusing `incr_proven`; optional long-lived Aura session if binary healthy
+- Harness config as mutable object: `worldline_count`, `fitness_weights`, `routing` (when to use aura vs simulated)
+- Propose mutate → canary episode on **shadow** profile → commit or heal/discard
+- Default **AUTOPROMOTE OFF**; `AURA_BUILD_AUTOPROMOTE=1` / `--autopropote` for demos
+- Every harness change writes `mid` + trajectory `harness.actions[]`
+- Memory store: per-user/profile keyed notes (file-backed JSON under `.aura-build/memory/`)
+- L2 offline specialist weight: **stub hook by model id only** (no training)
+- L3 remains experimental / refused in orch
+- Keep **`incr_proven=false`**; do not claim fiber-live
 
 **Exit criteria**
 
-- [ ] Canary rejects bad L1 before default path
-- [ ] Episodes record harness ids correctly
+- [x] Canary rejects bad L1 (e.g. `worldline_count=0`) before default/live path
+- [x] Episodes record harness ids / mid / actions correctly
+- [x] AUTOPROMOTE default off; discard on pass unless flag/env
+- [x] Memory get/set via CLI + orch; L2 stub resolves by id
+- [ ] Fiber-live FlatAST / storm-still-incr proof (still deferred)
+- [ ] Real L2 weight load / training (deferred to M4+)
 
-## M4 — RL export + specialist notes
+**Honesty note:** M3 canary is a **shadow harness episode**, not fiber-live multi-worldline. Committing harness JSON under `.aura-build/` is not promoting online L3 weights.
+
+## M4 — RL export + specialist notes (next)
 
 **Deliver**
 
 - Batch export (JSON array / Parquet notes)
 - Specialist training notes from trajectory corpus
+- Real L2 weight artifact promotion notes (still offline)
 
 **Exit criteria**
 
 - [ ] Export validates against v0 schema
 - [ ] Privacy retention_class enforced in export filters
 - [ ] Off-runtime devaluation documented in training notes
+- [ ] RL export pipeline stubs consumed by offline jobs (no online L3)
 
 ## M5 — TUI / ACP (deferred)
 

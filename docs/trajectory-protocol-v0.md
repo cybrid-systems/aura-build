@@ -80,6 +80,23 @@ Every `aura-build run` appends one **episode** (JSON object) per line to a JSONL
 
 Do not treat `stable_ref` or `session_model=shared_workspace_subprocess` as fiber-live FlatAST.
 
+### M3 extensions (optional keys)
+
+| Field | Meaning |
+|-------|---------|
+| `harness.mid` | Mutation id for a harness change |
+| `harness.actions[]` | Ordered `propose` / `canary` / `commit` / `heal` / `discard` |
+| `harness.outcome` | Final decision for a canary episode |
+| `harness.autopropote` / `harness.committed` | Promote gate (default off) |
+| `harness.config` / `config_base` / `config_proposed` | Harness snapshots |
+| `harness.l2_ref` | Stub `{weights_id, loaded, stub:true}` — no training |
+| `runtime.shadow` / `runtime.harness_canary` | Canary ran on shadow profile |
+| `memory.profile_id` | Optional memory profile touched by orch |
+
+AUTOPROMOTE default is **OFF**. Canary reject → `heal` (live harness unchanged). Pass + autopropote off → `discard`. Pass + autopropote on → `commit` to `.aura-build/harness.json`.
+
+`incr_proven` remains **false**. Do not treat harness commit as fiber-live FlatAST.
+
 ## Export formats
 
 | Format | Use |

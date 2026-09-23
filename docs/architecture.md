@@ -84,6 +84,21 @@ Append-only episodes (see [trajectory-protocol-v0.md](trajectory-protocol-v0.md)
 | **L2** | Offline-trained weights | Promote after offline eval |
 | **L3** | Online weights | **Experimental only** |
 
+### M3 harness canary
+
+`HarnessConfig` (`.aura-build/harness.json`) is a mutable L1 object:
+
+- `worldline_count`, `fitness_weights`, `routing` (`simulated|aura|auto`)
+- `aura-build harness-mutate --set …` → **propose** → canary episode on shadow profile → **commit|heal|discard**
+- **AUTOPROMOTE default OFF** (`AURA_BUILD_AUTOPROMOTE` / `--autopropote`)
+- Every change records `harness.mid` + `harness.actions[]` in the trajectory
+
+Memory: `MemoryStore` under `.aura-build/memory/<profile>.json` (get/set via CLI or orch).
+
+L2: `resolve_l2_weights(id)` stub only — no training, no tensor load.
+
+Do **not** read a committed harness JSON or `stable_ref` as fiber-live FlatAST / proven incr.
+
 ## Anti-postman default
 
 Prefer hot-object worldlines over git-worktree mail. If the system falls back to “clone, patch, PR” as the only path, architecture has regressed.

@@ -1,0 +1,84 @@
+{
+  "schema_version": "trajectory.v0",
+  "episode_id": "00000000-0000-4000-8000-0000000000m3",
+  "ts_start": "2026-09-23T05:20:00+00:00",
+  "ts_end": "2026-09-23T05:20:00.100000+00:00",
+  "prompt": "example: harness canary mutate",
+  "runtime": {
+    "mode": "simulated",
+    "requested_mode": "simulated",
+    "aura_ref": null,
+    "seed": 3,
+    "incr_proven": false,
+    "shadow": true,
+    "harness_canary": true
+  },
+  "harness": {
+    "l1_strategy_id": "m3.harness.select_best",
+    "l2_weights_id": null,
+    "l3_online": false,
+    "mid": "mid-example0001",
+    "harness_id": "default",
+    "version_base": 1,
+    "version_proposed": 2,
+    "outcome": "discard",
+    "autopropote": false,
+    "committed": false,
+    "shadow_profile": "shadow:mid-example0001",
+    "actions": [
+      {
+        "op": "propose",
+        "mid": "mid-example0001",
+        "changes": [{"field": "worldline_count", "from": 3, "to": 4}]
+      },
+      {
+        "op": "canary",
+        "mid": "mid-example0001",
+        "accepted": true,
+        "reasons": [],
+        "baseline_fitness": 0.7,
+        "canary_fitness": 0.72
+      },
+      {
+        "op": "discard",
+        "mid": "mid-example0001",
+        "reasons": ["autopropote_off"]
+      }
+    ]
+  },
+  "worldlines": [
+    {
+      "id": "wl-0",
+      "parent_id": null,
+      "mutations": [
+        {
+          "op": "harness_mutate",
+          "target_id": "harness:default",
+          "summary": "canary mid=mid-example0001",
+          "mid": "mid-example0001"
+        }
+      ],
+      "eval": {
+        "fitness": 0.72,
+        "passed": true,
+        "metrics": {
+          "tests_passed": 1,
+          "tests_total": 1,
+          "compile_ms": 0,
+          "incr_compile_ms": 0,
+          "audit_ok": true,
+          "incr_claimed": false,
+          "incr_proven": false
+        },
+        "notes": "example harness canary"
+      }
+    }
+  ],
+  "selected_id": "wl-0",
+  "selection_reason": "harness_discard",
+  "discarded": [],
+  "privacy": {
+    "redacted": false,
+    "retention_class": "dogfood"
+  }
+}
