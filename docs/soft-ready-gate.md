@@ -12,25 +12,34 @@
 > [optimal-dev-loop.md](optimal-dev-loop.md). Never env-fake Soft Ready /
 > `serve_mode=async` / `serve_cross_session_shared_ast`.
 
-## What we measure on this box
+## What we measure on this box (post Aura #4047)
 
 ```text
-FATAL: production multi-worker Ready self-check failed (#3098 + #2955 + #3195)
-fail_bits=0x10 — multi-worker requires strong ABI + production_defaults_active
-+ residual-zero sticky wiring. Soft (AURA_SANDBOX=off) / !production_defaults_active
-under multi-worker is refused.
+aura: Soft Ready profile (#4047): multi-worker serve under Soft contracts —
+NOT production multi-worker Ready. Do not stamp production Ready /
+production_defaults from this path.
 ```
 
 Standalone probe (aura-build):
 
 ```bash
-export AURA_BIN=/workspace/aura-redis/.deps/aura/build/aura
-python -c 'from aura_build.serve_session import probe_serve_async_soft_ready, decode_soft_ready_fail_bits
+export AURA_BIN=/workspace/aura-redis/.deps/aura/build/aura   # or tip build/aura
+python -c 'from aura_build.serve_session import probe_serve_async_soft_ready
 import json,os; r=probe_serve_async_soft_ready(os.environ["AURA_BIN"]); print(json.dumps(r,indent=2))'
-# → ok=false reason=soft_ready_refused fail_bits=0x10
+# → ok=true serve_mode_preferred=async reason=soft_ready_profile_4047
 ```
 
-Holder therefore starts `aura --serve` and stamps `serve_mode=sync`.
+Holder starts `aura --serve-async` and stamps `serve_mode=async` when probe ok.
+`serve_cross_session_shared_ast` still requires measured orch→project binding
+proof (binding-level share deferred; Soft --serve sessions remain separate
+CompilerServices).
+
+### Historical Soft refuse (pre-#4047 tips)
+
+```text
+FATAL: production multi-worker Ready self-check failed (#3098 + #2955 + #3195)
+fail_bits=0x10 — … Soft … under multi-worker is refused.
+```
 
 ## `fail_bits` map (Aura `runtime_production_abi.h`)
 
