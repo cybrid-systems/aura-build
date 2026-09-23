@@ -412,13 +412,22 @@ aura-build llm-dogfood --project examples/projects/mini-queue \
 # registry alias:
 aura-build llm-dogfood --task queue --max-rounds 16 --worldlines 3 --prefer-session --json
 ./examples/projects/mini-queue/verify.sh examples/projects/mini-queue/stub  # expect fail
+
+# mini-pubsub (5-file topic/sub/pub/deliver — harder than mini-queue)
+aura-build llm-dogfood --project examples/projects/mini-pubsub \
+  --fiber-explore 3 --explore-tools rule,llm,intent --prefer-session \
+  --max-rounds 16 --worldlines 3 \
+  --out trajectories/mini_pubsub_dogfood.jsonl --json
+aura-build llm-dogfood --task pubsub --max-rounds 16 --worldlines 3 --prefer-session --json
+./examples/projects/mini-pubsub/verify.sh examples/projects/mini-pubsub/stub  # expect fail
 ```
 
 Tasks: `fib` (see `examples/minimax_fib_task.md`), `greet` (see
 `examples/projects/mini-greet/`), `calc` (see `examples/projects/mini-calc/` —
 named helpers + multi-line stdout), `kv` (see `examples/projects/mini-kv/` —
 `kv-set`/`kv-get` + GET_a/GET_b/MISS/GET_c), `queue` (see
-`examples/projects/mini-queue/` — 4-file lease/ack/expire). Prefer
+`examples/projects/mini-queue/` — 4-file lease/ack/expire), `pubsub` (see
+`examples/projects/mini-pubsub/` — 5-file topic/sub/pub/deliver). Prefer
 `llm-dogfood --project DIR` for new mini projects (`GOAL.md` + `stub.aura` +
 `verify.sh` / `dogfood.json`) so the TASKS registry stays thin. MiniMax is
 propose-only; project `verify.sh` (when present) is the fitness oracle;
@@ -460,6 +469,19 @@ actions/fitness; API keys are redacted.
 - **Friction → fix:** MiniMax often one-shot the 3-file router from the goal alone;
   `dogfood.json` `seed_from_stub: true` now verifies the sticky stub first and feeds
   that failure into round-0 repair so the closed loop exercises fail→repair.
+
+
+### Dogfood lessons (mini-pubsub / 5-file)
+
+- **Harder than mini-queue:** 5 files (topic/sub/pub/deliver/main) with fan-out
+  publish + unsubscribe changing later delivery counts — hardcoding `main.aura`
+  alone fails structural checks.
+- **Friction → fix:** Soft `--serve-async` JSON `display` often collapses
+  `(newline)` between `LABEL=` tokens (`SUBS=2PUB=2…`). Hot verify now
+  re-spaces collapsed display from expect labels (no invented tokens); cold
+  `verify.sh` remains the CLI multi-file oracle.
+- **Sticky stub:** publish fans out to only the first sub / unsubscribe no-op /
+  poll always `miss` / wrong COUNT so seed_from_stub exercises fail→repair.
 
 ### Self-evolve after external dogfood
 

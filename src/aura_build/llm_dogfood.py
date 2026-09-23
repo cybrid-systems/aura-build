@@ -47,6 +47,7 @@ TASK_BANK = "bank"
 TASK_ROUTER = "router"
 TASK_CACHE = "cache"
 TASK_QUEUE = "queue"
+TASK_PUBSUB = "pubsub"
 DEFAULT_TASK = TASK_FIB
 DEFAULT_MAX_ROUNDS = 8
 DEFAULT_WORLDLINES = 3
@@ -300,6 +301,14 @@ TASKS: dict[str, dict[str, Any]] = {
         "expect": "ENQ=2\nLEASE_A=j1\nLEASE_B=j2\nLEASE_MISS=miss\nACK_OK=1\nNACK_STATUS=pending\nAFTER_TICK=pending\nDONE=1\nCOUNT=4",
         "fallback": "",
     },
+    TASK_PUBSUB: {
+        "label": "pubsub",
+        "project": "examples/projects/mini-pubsub",
+        "verify_script": "examples/projects/mini-pubsub/verify.sh",
+        "user": "",
+        "expect": "SUBS=2\nPUB=2\nPOLL_A=hello\nPOLL_B=hello\nPOLL_MISS=miss\nAFTER_UNSUB=1\nPOLL_A2=miss\nPOLL_B2=world\nCOUNT=3",
+        "fallback": "",
+    },
 }
 
 
@@ -550,6 +559,48 @@ def _read_candidate_source(
         return ""
 
 
+
+def _normalize_soft_async_display(stdout: str, expect: str | None = None) -> str:
+    """Insert newlines Soft async display often collapses between LABEL= tokens.
+
+    Aura Soft ``--serve-async`` JSON ``display`` frequently concatenates
+    successive ``(display …)(newline)`` outputs without ``\n`` (e.g.
+    ``SUBS=2PUB=2…``). Regex expect still matches; line-order / human traj do
+    not. When ``expect`` lists ``KEY=value`` lines, re-split collapsed output
+    before those keys. Never invent tokens — only re-space what is already
+    present. No-op when stdout already has newlines or expect is empty.
+    """
+    out = stdout or ""
+    if not out or "\n" in out:
+        return out
+    exp = expect or ""
+    labels: list[str] = []
+    for line in exp.splitlines():
+        line = line.strip()
+        if not line or "=" not in line:
+            continue
+        labels.append(line.split("=", 1)[0].strip())
+    if len(labels) < 2:
+        return out
+    # Walk labels in order; insert newline before each subsequent label occurrence
+    normalized = out
+    for lab in labels[1:]:
+        token = f"{lab}="
+        # Only split when label is glued to previous content (no leading newline)
+        idx = 0
+        while True:
+            pos = normalized.find(token, idx)
+            if pos <= 0:
+                break
+            if normalized[pos - 1] != "\n":
+                normalized = normalized[:pos] + "\n" + normalized[pos:]
+                idx = pos + 1 + len(token)
+            else:
+                idx = pos + len(token)
+            break  # one insert per label (scenario prints each once)
+    return normalized
+
+
 def _score_from_stdout(
     *,
     stdout: str,
@@ -792,6 +843,17 @@ def verify_aura_program(
                 )
             except Exception:
                 pass
+            # Soft async JSON display often collapses (newline); re-space LABEL=
+            expect_hint = None
+            if isinstance(expect_re, list) and expect_re:
+                parts = []
+                for pat in expect_re:
+                    raw = pat.pattern if hasattr(pat, "pattern") else str(pat)
+                    parts.append(raw.replace(r"\s*", ""))
+                expect_hint = chr(10).join(parts)
+            elif expect_re is not None and hasattr(expect_re, "pattern"):
+                expect_hint = expect_re.pattern.replace(r"\s*", "")
+            stdout = _normalize_soft_async_display(stdout, expect_hint)
             hot = _score_from_stdout(
                 stdout=stdout,
                 stderr=stderr,
@@ -1103,8 +1165,129 @@ def _tool_rule_sources(
         or "lease_miss" in expect.lower()
         or "nack_status" in expect.lower()
     )
+    is_pubsub = (
+        label == "pubsub"
+        or "mini-pubsub" in project
+        or "after_unsub" in expect.lower()
+        or "poll_a2" in expect.lower()
+        or "bus-init" in str(task_spec.get("user_extra") or "").lower()
+        or "bus-init" in str(task_spec.get("source_res") or "").lower()
+    )
 
-    if is_queue and files:
+    if is_pubsub and files:
+        sources = {
+            "topic.aura": (
+                "(define topics '())\n"
+                "(define mailboxes '())\n"
+                "(define tick 0)\n"
+                "(define (bus-init)\n"
+                "  (set! topics '())\n"
+                "  (set! mailboxes '())\n"
+                "  (set! tick 0))\n"
+                "(define (topic-create name)\n"
+                "  (set! topics (cons (list name '()) topics)))\n"
+                "(define (len xs)\n"
+                "  (if (null? xs) 0 (+ 1 (len (cdr xs)))))\n"
+            ),
+            "sub.aura": (
+                "(define (find-topic name rs)\n"
+                "  (if (null? rs) #f\n"
+                "      (if (equal? (car (car rs)) name) (car rs)\n"
+                "          (find-topic name (cdr rs)))))\n"
+                "(define (set-topic name subs rs)\n"
+                "  (if (null? rs) (list (list name subs))\n"
+                "      (if (equal? (car (car rs)) name)\n"
+                "          (cons (list name subs) (cdr rs))\n"
+                "          (cons (car rs) (set-topic name subs (cdr rs))))))\n"
+                "(define (drop-id id xs)\n"
+                "  (if (null? xs) '()\n"
+                "      (if (equal? (car xs) id) (cdr xs)\n"
+                "          (cons (car xs) (drop-id id (cdr xs))))))\n"
+                "(define (mbox-has id rs)\n"
+                "  (if (null? rs) #f\n"
+                "      (if (equal? (car (car rs)) id) #t (mbox-has id (cdr rs)))))\n"
+                "(define (ensure-mbox id)\n"
+                "  (if (mbox-has id mailboxes) #t\n"
+                "      (set! mailboxes (cons (list id '()) mailboxes))))\n"
+                "(define (subscribe topic sub-id)\n"
+                "  (let ((t (find-topic topic topics)))\n"
+                "    (if t\n"
+                "        (begin\n"
+                "          (ensure-mbox sub-id)\n"
+                "          (set! topics (set-topic topic (append (car (cdr t)) (list sub-id)) topics)))\n"
+                "        #f)))\n"
+                "(define (unsubscribe topic sub-id)\n"
+                "  (let ((t (find-topic topic topics)))\n"
+                "    (if t\n"
+                "        (set! topics (set-topic topic (drop-id sub-id (car (cdr t))) topics))\n"
+                "        #f)))\n"
+                "(define (sub-list topic)\n"
+                "  (let ((t (find-topic topic topics)))\n"
+                "    (if t (car (cdr t)) '())))\n"
+            ),
+            "pub.aura": (
+                "(define (mbox-get id rs)\n"
+                "  (if (null? rs) #f\n"
+                "      (if (equal? (car (car rs)) id) (car rs) (mbox-get id (cdr rs)))))\n"
+                "(define (mbox-set id queue rs)\n"
+                "  (if (null? rs) (list (list id queue))\n"
+                "      (if (equal? (car (car rs)) id)\n"
+                "          (cons (list id queue) (cdr rs))\n"
+                "          (cons (car rs) (mbox-set id queue (cdr rs))))))\n"
+                "(define (enqueue-one id payload)\n"
+                "  (let ((m (mbox-get id mailboxes)))\n"
+                "    (if m\n"
+                "        (set! mailboxes (mbox-set id (append (car (cdr m)) (list payload)) mailboxes))\n"
+                "        (set! mailboxes (cons (list id (list payload)) mailboxes)))))\n"
+                "(define (fan-out ids payload)\n"
+                "  (if (null? ids) 0\n"
+                "      (begin (enqueue-one (car ids) payload)\n"
+                "             (+ 1 (fan-out (cdr ids) payload)))))\n"
+                "(define (publish topic payload)\n"
+                "  (fan-out (sub-list topic) payload))\n"
+            ),
+            "deliver.aura": (
+                "(define (pending-count sub-id)\n"
+                "  (let ((m (mbox-get sub-id mailboxes)))\n"
+                "    (if m (len (car (cdr m))) 0)))\n"
+                "(define (poll sub-id)\n"
+                "  (let ((m (mbox-get sub-id mailboxes)))\n"
+                "    (if (or (not m) (null? (car (cdr m))))\n"
+                "        \"miss\"\n"
+                "        (let ((q (car (cdr m))))\n"
+                "          (set! mailboxes (mbox-set sub-id (cdr q) mailboxes))\n"
+                "          (car q)))))\n"
+                "(define (bus-tick n)\n"
+                "  (set! tick (+ tick n)))\n"
+            ),
+            "main.aura": (
+                "(bus-init)\n"
+                "(define (show label val)\n"
+                "  (display label)(display \"=\")(display val)(newline))\n"
+                "(topic-create \"t\")\n"
+                "(subscribe \"t\" \"a\")\n"
+                "(subscribe \"t\" \"b\")\n"
+                "(show \"SUBS\" (len (sub-list \"t\")))\n"
+                "(show \"PUB\" (publish \"t\" \"hello\"))\n"
+                "(define pa (poll \"a\"))\n"
+                "(show \"POLL_A\" pa)\n"
+                "(define pb (poll \"b\"))\n"
+                "(show \"POLL_B\" pb)\n"
+                "(define pm (poll \"a\"))\n"
+                "(show \"POLL_MISS\" pm)\n"
+                "(unsubscribe \"t\" \"a\")\n"
+                "(show \"AFTER_UNSUB\" (publish \"t\" \"world\"))\n"
+                "(define pa2 (poll \"a\"))\n"
+                "(show \"POLL_A2\" pa2)\n"
+                "(define pb2 (poll \"b\"))\n"
+                "(show \"POLL_B2\" pb2)\n"
+                "(define (non-miss v)\n"
+                "  (if (equal? v \"miss\") 0 1))\n"
+                "(show \"COUNT\" (+ (non-miss pa) (+ (non-miss pb) (+ (non-miss pm) (+ (non-miss pa2) (non-miss pb2))))))\n"
+            ),
+        }
+        sources = {fn: sources[fn] for fn in files if fn in sources}
+    elif is_queue and files:
         sources = {
             "buf.aura": (
                 "(define pending '())\n"

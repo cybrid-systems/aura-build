@@ -1,0 +1,35 @@
+; Broken: unsubscribe is a no-op; sub-list may still report old members after "unsub"
+(define (find-topic name rs)
+  (if (null? rs)
+      #f
+      (if (equal? (car (car rs)) name)
+          (car rs)
+          (find-topic name (cdr rs)))))
+(define (set-topic name subs rs)
+  (if (null? rs)
+      (list (list name subs))
+      (if (equal? (car (car rs)) name)
+          (cons (list name subs) (cdr rs))
+          (cons (car rs) (set-topic name subs (cdr rs))))))
+(define (mbox-has id rs)
+  (if (null? rs) #f
+      (if (equal? (car (car rs)) id) #t (mbox-has id (cdr rs)))))
+(define (ensure-mbox id)
+  (if (mbox-has id mailboxes)
+      #t
+      (set! mailboxes (cons (list id '()) mailboxes))))
+(define (subscribe topic sub-id)
+  (let ((t (find-topic topic topics)))
+    (if t
+        (begin
+          (ensure-mbox sub-id)
+          (set! topics (set-topic topic (append (car (cdr t)) (list sub-id)) topics)))
+        #f)))
+(define (unsubscribe topic sub-id)
+  ; broken: ignore unsubscribe
+  #t)
+(define (sub-list topic)
+  (let ((t (find-topic topic topics)))
+    (if t (car (cdr t)) '())))
+(define (len xs)
+  (if (null? xs) 0 (+ 1 (len (cdr xs)))))

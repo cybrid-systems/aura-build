@@ -1,0 +1,9 @@
+; Broken: poll always returns "miss" (never pops mailbox)
+(define (pending-count sub-id)
+  (let ((m (mbox-get sub-id mailboxes)))
+    (if m (len (car (cdr m))) 0)))
+(define (poll sub-id)
+  ; broken: ignore mailbox
+  "miss")
+(define (bus-tick n)
+  (set! tick (+ tick n)))

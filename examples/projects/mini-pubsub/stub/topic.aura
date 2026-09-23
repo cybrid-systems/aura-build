@@ -1,0 +1,10 @@
+; Shared bus state — init/create OK; stubs elsewhere break fan-out / unsub / poll
+(define topics '())
+(define mailboxes '())
+(define tick 0)
+(define (bus-init)
+  (set! topics '())
+  (set! mailboxes '())
+  (set! tick 0))
+(define (topic-create name)
+  (set! topics (cons (list name '()) topics)))

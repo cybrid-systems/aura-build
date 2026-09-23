@@ -1,0 +1,23 @@
+; Broken: publish only delivers to the FIRST subscriber (no real fan-out)
+(define (mbox-get id rs)
+  (if (null? rs) #f
+      (if (equal? (car (car rs)) id) (car rs) (mbox-get id (cdr rs)))))
+(define (mbox-set id queue rs)
+  (if (null? rs)
+      (list (list id queue))
+      (if (equal? (car (car rs)) id)
+          (cons (list id queue) (cdr rs))
+          (cons (car rs) (mbox-set id queue (cdr rs))))))
+(define (enqueue-one id payload)
+  (let ((m (mbox-get id mailboxes)))
+    (if m
+        (set! mailboxes (mbox-set id (append (car (cdr m)) (list payload)) mailboxes))
+        (set! mailboxes (cons (list id (list payload)) mailboxes)))))
+(define (publish topic payload)
+  (let ((subs (sub-list topic)))
+    (if (null? subs)
+        0
+        ; broken: only first sub gets the message; still claims count=len
+        (begin
+          (enqueue-one (car subs) payload)
+          (len subs)))))

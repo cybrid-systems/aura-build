@@ -1,0 +1,39 @@
+{
+  "label": "pubsub",
+  "files": [
+    "topic.aura",
+    "sub.aura",
+    "pub.aura",
+    "deliver.aura",
+    "main.aura"
+  ],
+  "entry": "main.aura",
+  "run_mode": "cli_multi",
+  "expect": "SUBS=2\nPUB=2\nPOLL_A=hello\nPOLL_B=hello\nPOLL_MISS=miss\nAFTER_UNSUB=1\nPOLL_A2=miss\nPOLL_B2=world\nCOUNT=3",
+  "expect_res": [
+    "SUBS\\s*=\\s*2",
+    "PUB\\s*=\\s*2",
+    "POLL_A\\s*=\\s*hello",
+    "POLL_B\\s*=\\s*hello",
+    "POLL_MISS\\s*=\\s*miss",
+    "AFTER_UNSUB\\s*=\\s*1",
+    "POLL_A2\\s*=\\s*miss",
+    "POLL_B2\\s*=\\s*world",
+    "COUNT\\s*=\\s*3"
+  ],
+  "source_res": [
+    "\\(define\\s+\\(bus-init\\b",
+    "\\(define\\s+\\(topic-create\\b",
+    "\\(define\\s+\\(subscribe\\b",
+    "\\(define\\s+\\(unsubscribe\\b",
+    "\\(define\\s+\\(sub-list\\b",
+    "\\(define\\s+\\(publish\\b",
+    "\\(define\\s+\\(poll\\b",
+    "\\(define\\s+\\(pending-count\\b",
+    "subscribe",
+    "publish",
+    "poll"
+  ],
+  "user_extra": "topic.aura MUST define (bus-init) and (topic-create name). sub.aura MUST define (subscribe topic sub-id), (unsubscribe topic sub-id), (sub-list topic). pub.aura MUST define (publish topic payload) returning fan-out delivery count. deliver.aura MUST define (poll sub-id) and (pending-count sub-id). Fan-out model: publish appends payload to each CURRENT subscriber mailbox; unsubscribe removes from topic list so later publish skips them; poll pops FIFO or returns miss. main.aura MUST run the GOAL scenario and print SUBS/PUB/POLL_A/POLL_B/POLL_MISS/AFTER_UNSUB/POLL_A2/POLL_B2/COUNT=3. Named fences required for topic.aura, sub.aura, pub.aura, deliver.aura, main.aura in that order. Aura run: `aura topic.aura sub.aura pub.aura deliver.aura main.aura`.",
+  "seed_from_stub": true
+}
