@@ -729,6 +729,7 @@ def run_closed_loop(
     """
     repo = repo_root()
     registry_task = task
+    auto_loaded = False
     # Auto-load project dir only when registry entry opts in via verify_script
     # (keeps greet/calc baked prompts stable; kv + --project use verify.sh oracle).
     if project is None and task in TASKS and TASKS[task].get("verify_script"):
@@ -737,13 +738,14 @@ def run_closed_loop(
             cand = repo / proj_rel
             if (cand / "GOAL.md").is_file() and (cand / "verify.sh").is_file():
                 project = cand
-    task, task_spec = resolve_task_spec(task, project, repo=repo)
-    if (
-        registry_task
-        and registry_task in TASKS
-        and project is not None
-        and str(task_spec.get("label") or "") != registry_task
-    ):
+                auto_loaded = True
+    # When caller passed --project alone, ignore default --task fib so label
+    # comes from dogfood.json (friction: traj showed task=fib for mini-kv).
+    resolve_task = task
+    if project is not None and not auto_loaded and task == DEFAULT_TASK:
+        resolve_task = None
+    task, task_spec = resolve_task_spec(resolve_task, project, repo=repo)
+    if auto_loaded and registry_task in TASKS:
         task = registry_task
         task_spec = dict(task_spec)
         task_spec["label"] = registry_task

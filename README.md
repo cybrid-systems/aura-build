@@ -384,6 +384,9 @@ actions/fitness; API keys are redacted.
   now emit the actual `source_res` patterns (works for `kv-set`/`kv-get`).
 - **Friction → fix:** project `verify.sh` was docs-only; `--project` / kv task
   now prefer it as the verify oracle and feed its stderr into repair.
+- **Friction → fix:** `llm-dogfood --project …` still defaulted `--task fib`, so
+  traj/`summary.task` lied as `fib` while verifying mini-kv; now project label
+  wins unless the project was auto-loaded from an explicit registry `--task`.
 
 ### Self-evolve after external dogfood
 

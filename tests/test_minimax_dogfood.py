@@ -510,3 +510,55 @@ def test_closed_loop_mocked_kv_via_project(monkeypatch, tmp_path):
     ep = json.loads(out.read_text(encoding="utf-8").strip().splitlines()[0])
     assert ep["runtime"]["dogfood"]["task"] == "kv"
     assert "mini-kv" in (ep["runtime"]["dogfood"].get("project") or "")
+
+
+def test_project_alone_does_not_inherit_default_fib_label(monkeypatch, tmp_path):
+    """--project without --task must label traj as project label, not fib."""
+
+    class FakeCfg:
+        api_key = "sk-test-fake-key-not-real"
+        base_url = "https://api.minimaxi.com/v1"
+        model = "MiniMax-M3"
+        key_file = "/tmp/fake"
+        env_file = "/tmp/fake.env"
+
+        def public_dict(self):
+            return {
+                "provider": "minimax",
+                "base_url": self.base_url,
+                "model": self.model,
+                "api_key": "<redacted:secret>",
+            }
+
+    def fake_chat(messages, config=None, **kwargs):
+        return {
+            "ok": True,
+            "content": f"```aura\n{KV_SRC}```",
+            "model": "MiniMax-M3",
+            "error": "",
+        }
+
+    monkeypatch.setattr("aura_build.llm_dogfood.chat_completions", fake_chat)
+    monkeypatch.setattr("aura_build.llm_dogfood.prefer_aura_kernel", lambda: False)
+
+    from aura_build.llm_dogfood import run_closed_loop, DEFAULT_TASK
+    from aura_build.runtime import resolve_aura_bin
+    from aura_build.kernel import repo_root
+
+    if not resolve_aura_bin():
+        return
+
+    summary = run_closed_loop(
+        task=DEFAULT_TASK,  # simulates CLI default --task fib
+        project=repo_root() / "examples/projects/mini-kv",
+        max_rounds=1,
+        worldlines=1,
+        out=tmp_path / "traj.jsonl",
+        workspace=tmp_path / "ws",
+        harness_root=tmp_path / "harness",
+        keep_workspace=True,
+        config=FakeCfg(),  # type: ignore[arg-type]
+    )
+    assert summary["success"] is True
+    assert summary["task"] == "kv"
+    assert summary["task"] != "fib"
