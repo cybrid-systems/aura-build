@@ -1,0 +1,12 @@
+; Broken: lease works once/twice but tick never expires; no expire-tick stored
+(define (queue-lease worker ttl)
+  (if (null? pending)
+      "miss"
+      (let ((job (car pending)))
+        (set! pending (cdr pending))
+        ; broken: ignore ttl / worker; store without expire
+        (set! leased (cons (list (car job) (car (cdr job)) worker) leased))
+        (car job))))
+(define (queue-tick n)
+  ; broken: does not advance tick and does not expire leases
+  #t)

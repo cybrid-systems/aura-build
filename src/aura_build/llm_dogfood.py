@@ -46,6 +46,7 @@ TASK_STACK = "stack"
 TASK_BANK = "bank"
 TASK_ROUTER = "router"
 TASK_CACHE = "cache"
+TASK_QUEUE = "queue"
 DEFAULT_TASK = TASK_FIB
 DEFAULT_MAX_ROUNDS = 8
 DEFAULT_WORLDLINES = 3
@@ -289,6 +290,14 @@ TASKS: dict[str, dict[str, Any]] = {
         "verify_script": "examples/projects/mini-cache/verify.sh",
         "user": "",
         "expect": "GET_A=1\nGET_MISS=miss\nGET_B=2\nTTL_EXPIRED=miss\nCOUNT=2",
+        "fallback": "",
+    },
+    TASK_QUEUE: {
+        "label": "queue",
+        "project": "examples/projects/mini-queue",
+        "verify_script": "examples/projects/mini-queue/verify.sh",
+        "user": "",
+        "expect": "ENQ=2\nLEASE_A=j1\nLEASE_B=j2\nLEASE_MISS=miss\nACK_OK=1\nNACK_STATUS=pending\nAFTER_TICK=pending\nDONE=1\nCOUNT=4",
         "fallback": "",
     },
 }
@@ -1087,8 +1096,110 @@ def _tool_rule_sources(
     is_cache = label == "cache" or "mini-cache" in project or "cache-init" in expect.lower() or "ttl_expired" in expect.lower()
     is_router = label == "router" or "mini-router" in project or "post_api" in expect.lower()
     is_bank = label == "bank" or "mini-bank" in project
+    is_queue = (
+        label == "queue"
+        or "mini-queue" in project
+        or "queue-init" in expect.lower()
+        or "lease_miss" in expect.lower()
+        or "nack_status" in expect.lower()
+    )
 
-    if is_cache and files:
+    if is_queue and files:
+        sources = {
+            "buf.aura": (
+                "(define pending '())\n"
+                "(define leased '())\n"
+                "(define done '())\n"
+                "(define tick 0)\n"
+                "(define (queue-init)\n"
+                "  (set! pending '())\n"
+                "  (set! leased '())\n"
+                "  (set! done '())\n"
+                "  (set! tick 0))\n"
+                "(define (len xs)\n"
+                "  (if (null? xs) 0 (+ 1 (len (cdr xs)))))\n"
+                "(define (queue-enqueue id payload)\n"
+                "  (set! pending (append pending (list (list id payload))))\n"
+                "  (len pending))\n"
+            ),
+            "lease.aura": (
+                "(define (queue-lease worker ttl)\n"
+                "  (if (null? pending)\n"
+                "      \"miss\"\n"
+                "      (let ((job (car pending)))\n"
+                "        (set! pending (cdr pending))\n"
+                "        (set! leased (cons (list (car job) (car (cdr job)) worker (+ tick ttl)) leased))\n"
+                "        (car job))))\n"
+                "(define (expire-scan rs keep pend)\n"
+                "  (if (null? rs)\n"
+                "      (begin (set! leased keep) pend)\n"
+                "      (let ((e (car rs)))\n"
+                "        (let ((exp (car (cdr (cdr (cdr e))))))\n"
+                "          (if (not (< tick exp))\n"
+                "              (expire-scan (cdr rs) keep (append pend (list (list (car e) (car (cdr e))))))\n"
+                "              (expire-scan (cdr rs) (cons e keep) pend))))))\n"
+                "(define (queue-tick n)\n"
+                "  (set! tick (+ tick n))\n"
+                "  (let ((back (expire-scan leased '() '())))\n"
+                "    (set! pending (append pending back))))\n"
+            ),
+            "ops.aura": (
+                "(define (find-leased id rs)\n"
+                "  (if (null? rs) #f\n"
+                "      (if (equal? (car (car rs)) id) (car rs) (find-leased id (cdr rs)))))\n"
+                "(define (drop-leased id rs)\n"
+                "  (if (null? rs) '()\n"
+                "      (if (equal? (car (car rs)) id) (cdr rs)\n"
+                "          (cons (car rs) (drop-leased id (cdr rs))))))\n"
+                "(define (in-pending id rs)\n"
+                "  (if (null? rs) #f\n"
+                "      (if (equal? (car (car rs)) id) #t (in-pending id (cdr rs)))))\n"
+                "(define (in-done id rs)\n"
+                "  (if (null? rs) #f\n"
+                "      (if (equal? (car rs) id) #t (in-done id (cdr rs)))))\n"
+                "(define (queue-ack id)\n"
+                "  (if (find-leased id leased)\n"
+                "      (begin\n"
+                "        (set! leased (drop-leased id leased))\n"
+                "        (set! done (cons id done))\n"
+                "        1)\n"
+                "      0))\n"
+                "(define (queue-nack id)\n"
+                "  (if (find-leased id leased)\n"
+                "      (let ((e (find-leased id leased)))\n"
+                "        (set! leased (drop-leased id leased))\n"
+                "        (set! pending (append pending (list (list (car e) (car (cdr e))))))\n"
+                "        #t)\n"
+                "      #f))\n"
+                "(define (queue-status id)\n"
+                "  (if (in-done id done) \"done\"\n"
+                "      (if (find-leased id leased) \"leased\"\n"
+                "          (if (in-pending id pending) \"pending\" \"missing\"))))\n"
+            ),
+            "main.aura": (
+                "(queue-init)\n"
+                "(define (show label val)\n"
+                "  (display label)(display \"=\")(display val)(newline))\n"
+                "(queue-enqueue \"j1\" \"a\")\n"
+                "(show \"ENQ\" (queue-enqueue \"j2\" \"b\"))\n"
+                "(define a (queue-lease \"w1\" 5))\n"
+                "(show \"LEASE_A\" a)\n"
+                "(define b (queue-lease \"w1\" 5))\n"
+                "(show \"LEASE_B\" b)\n"
+                "(show \"LEASE_MISS\" (queue-lease \"w1\" 5))\n"
+                "(show \"ACK_OK\" (queue-ack \"j1\"))\n"
+                "(queue-nack \"j2\")\n"
+                "(show \"NACK_STATUS\" (queue-status \"j2\"))\n"
+                "(queue-lease \"w1\" 2)\n"
+                "(queue-tick 2)\n"
+                "(show \"AFTER_TICK\" (queue-status \"j2\"))\n"
+                "(define last (queue-lease \"w1\" 5))\n"
+                "(show \"DONE\" (if (equal? last \"miss\") 0 (queue-ack last)))\n"
+                "(show \"COUNT\" 4)\n"
+            ),
+        }
+        sources = {fn: sources[fn] for fn in files if fn in sources}
+    elif is_cache and files:
         sources = {
             "store.aura": (
                 "(define store '())\n"

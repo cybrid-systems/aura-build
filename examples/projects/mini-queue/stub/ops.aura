@@ -1,0 +1,45 @@
+; Broken: nack does not return to pending; status may lie after tick
+(define (find-leased id rs)
+  (if (null? rs)
+      #f
+      (if (equal? (car (car rs)) id)
+          (car rs)
+          (find-leased id (cdr rs)))))
+(define (drop-leased id rs)
+  (if (null? rs)
+      '()
+      (if (equal? (car (car rs)) id)
+          (cdr rs)
+          (cons (car rs) (drop-leased id (cdr rs))))))
+(define (in-list id rs)
+  (if (null? rs)
+      #f
+      (if (equal? (car (car rs)) id)
+          #t
+          (in-list id (cdr rs)))))
+(define (in-done id rs)
+  (if (null? rs)
+      #f
+      (if (equal? (car rs) id)
+          #t
+          (in-done id (cdr rs)))))
+(define (queue-ack id)
+  (if (find-leased id leased)
+      (begin
+        (set! leased (drop-leased id leased))
+        (set! done (cons id done))
+        1)
+      0))
+(define (queue-nack id)
+  ; broken: removes from leased but does NOT return to pending
+  (if (find-leased id leased)
+      (begin
+        (set! leased (drop-leased id leased))
+        #t)
+      #f))
+(define (queue-status id)
+  (cond
+    ((in-done id done) "done")
+    ((find-leased id leased) "leased")
+    ((in-list id pending) "pending")
+    (else "missing")))

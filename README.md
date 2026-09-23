@@ -403,12 +403,22 @@ aura-build llm-dogfood --project examples/projects/mini-cache \
   --fiber-explore 3 --explore-tools rule,llm,intent --prefer-session \
   --max-rounds 8 --worldlines 3 \
   --out trajectories/mini_cache_fiber_explore.jsonl --json
+
+# mini-queue (4-file lease/ack/expire — harder than mini-cache)
+aura-build llm-dogfood --project examples/projects/mini-queue \
+  --fiber-explore 3 --explore-tools rule,llm,intent --prefer-session \
+  --max-rounds 16 --worldlines 3 \
+  --out trajectories/mini_queue_dogfood.jsonl --json
+# registry alias:
+aura-build llm-dogfood --task queue --max-rounds 16 --worldlines 3 --prefer-session --json
+./examples/projects/mini-queue/verify.sh examples/projects/mini-queue/stub  # expect fail
 ```
 
 Tasks: `fib` (see `examples/minimax_fib_task.md`), `greet` (see
 `examples/projects/mini-greet/`), `calc` (see `examples/projects/mini-calc/` —
 named helpers + multi-line stdout), `kv` (see `examples/projects/mini-kv/` —
-`kv-set`/`kv-get` + GET_a/GET_b/MISS/GET_c). Prefer
+`kv-set`/`kv-get` + GET_a/GET_b/MISS/GET_c), `queue` (see
+`examples/projects/mini-queue/` — 4-file lease/ack/expire). Prefer
 `llm-dogfood --project DIR` for new mini projects (`GOAL.md` + `stub.aura` +
 `verify.sh` / `dogfood.json`) so the TASKS registry stays thin. MiniMax is
 propose-only; project `verify.sh` (when present) is the fitness oracle;

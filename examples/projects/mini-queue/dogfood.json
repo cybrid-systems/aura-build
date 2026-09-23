@@ -1,0 +1,37 @@
+{
+  "label": "queue",
+  "files": [
+    "buf.aura",
+    "lease.aura",
+    "ops.aura",
+    "main.aura"
+  ],
+  "entry": "main.aura",
+  "run_mode": "cli_multi",
+  "expect": "ENQ=2\nLEASE_A=j1\nLEASE_B=j2\nLEASE_MISS=miss\nACK_OK=1\nNACK_STATUS=pending\nAFTER_TICK=pending\nDONE=1\nCOUNT=4",
+  "expect_res": [
+    "ENQ\\s*=\\s*2",
+    "LEASE_A\\s*=\\s*j1",
+    "LEASE_B\\s*=\\s*j2",
+    "LEASE_MISS\\s*=\\s*miss",
+    "ACK_OK\\s*=\\s*1",
+    "NACK_STATUS\\s*=\\s*pending",
+    "AFTER_TICK\\s*=\\s*pending",
+    "DONE\\s*=\\s*1",
+    "COUNT\\s*=\\s*4"
+  ],
+  "source_res": [
+    "\\(define\\s+\\(queue-init\\b",
+    "\\(define\\s+\\(queue-enqueue\\b",
+    "\\(define\\s+\\(queue-lease\\b",
+    "\\(define\\s+\\(queue-tick\\b",
+    "\\(define\\s+\\(queue-ack\\b",
+    "\\(define\\s+\\(queue-nack\\b",
+    "\\(define\\s+\\(queue-status\\b",
+    "queue-lease",
+    "queue-tick",
+    "queue-ack"
+  ],
+  "user_extra": "buf.aura MUST define (queue-init) and (queue-enqueue id payload) returning pending count. lease.aura MUST define (queue-lease worker ttl) and (queue-tick n). ops.aura MUST define (queue-ack id), (queue-nack id), (queue-status id). Tick/lease model: pending FIFO; lease moves head to leased with expire-tick=tick+ttl; tick advances and returns expired leases to pending; ack marks done (return 1); nack returns leased→pending; status ∈ pending|leased|done|missing. main.aura MUST run the GOAL scenario and print ENQ/LEASE_A/LEASE_B/LEASE_MISS/ACK_OK/NACK_STATUS/AFTER_TICK/DONE/COUNT=4. Named fences required for buf.aura, lease.aura, ops.aura, main.aura in that order. Aura run: `aura buf.aura lease.aura ops.aura main.aura`.",
+  "seed_from_stub": true
+}
