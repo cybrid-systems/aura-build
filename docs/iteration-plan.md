@@ -1,4 +1,6 @@
-# Iteration plan — M0–M5 + Post-M5
+# Iteration plan — M0–M5 + Post-M5 + Aura kernel
+
+> **Kernel = Aura.** Core orch / worldline / prove / harness / traj / memory / L2 live under `aura/*.aura`. Python is thin host + CI fallback. See README.
 
 ## Status table (M0–M5 + Post-M5)
 
@@ -150,3 +152,21 @@
 
 **Honesty note:** On boxes where the Aura binary hits `GLIBCXX_` mismatch, expect `incr_proven=false` forever until a healthy runtime is measured. Do not flip the flag by hand.
 
+
+
+## Post-M5+ — Aura kernel rewrite
+
+**Deliver**
+
+- `aura/` modules: `main`, `orch`, `worldline`, `prove`, `harness`, `traj`, `memory`, `l2`, `util`
+- Thin Python `kernel.py` + CLI prefer Aura when binary+sidecar healthy
+- Trajectory JSONL still `trajectory.v0`; `runtime.kernel=aura` on kernel path
+- Honest prove-incr in-process (`incr_proven` only with measured epoch/invalidate deltas)
+- CI-safe: pytest + Python fallback when no `AURA_BIN`; optional live Aura job
+
+**Exit criteria**
+
+- [x] Primary `aura-build run` executes Aura kernel when Aura available
+- [x] Docs say kernel=Aura; list what Python still does
+- [x] Simulated + prove path smoke green (CI fallback + live when sidecar present)
+- [ ] Delete remaining Python orch once GHA provisions Aura (deferred shrink)

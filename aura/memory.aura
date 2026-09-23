@@ -1,0 +1,36 @@
+; aura-build kernel — per-profile memory notes under .aura-build/memory/
+(export memory-get memory-set memory-list memory-path)
+
+(require "util" all:)
+(require "std/io" all:)
+
+(define (memory-root harness-root)
+  (join-path harness-root "memory"))
+
+(define (memory-path harness-root profile)
+  (join-path (memory-root harness-root)
+             (string-append profile ".json")))
+
+(define (memory-load harness-root profile)
+  (let ((p (memory-path harness-root profile)))
+    (if (file-exists? p)
+      (json-parse (read-file p))
+      (hash))))
+
+(define (memory-save harness-root profile data)
+  (ensure-dir (memory-root harness-root))
+  (write-file (memory-path harness-root profile) (json-encode data))
+  data)
+
+(define (memory-get harness-root profile key)
+  (hash-ref (memory-load harness-root profile) key))
+
+(define (memory-set harness-root profile key value)
+  (let ((data (memory-load harness-root profile)))
+    (hash-set! data key value)
+    (hash-set! data "_updated" (iso-now))
+    (memory-save harness-root profile data)
+    (hash "profile" profile "key" key "value" value "updated" (hash-ref data "_updated"))))
+
+(define (memory-list harness-root profile)
+  (memory-load harness-root profile))

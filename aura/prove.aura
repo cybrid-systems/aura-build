@@ -1,0 +1,185 @@
+; aura-build kernel — storm-still-incr prove-or-refuse + doctor honesty
+; Never invent incr_proven/fiber_live; env alone cannot elevate.
+(export
+  prove-or-refuse write-prove-report load-prove-report
+  attach-prove-metadata merge-prove-into-runtime doctor-snapshot
+  default-prove-path ENV_INCR ENV_FIBER)
+
+(require "util" all:)
+(require "std/io" all:)
+
+(define ENV_INCR "AURA_BUILD_INCR_VALID")
+(define ENV_FIBER "AURA_BUILD_FIBER_SESSION_OK")
+(define REPORT_SCHEMA "prove_incr.v0")
+(define SESSION_SHARED "shared_workspace_subprocess")
+
+(define (default-prove-path root)
+  (join-path root "prove-incr-latest.json"))
+
+(define (empty-report reason)
+  (hash "schema_version" REPORT_SCHEMA
+        "ts" (iso-now)
+        "incr_proven" #f
+        "reason" reason
+        "measured" #f
+        "aura_healthy" #f
+        "aura_bin" (env-get "AURA_BIN" "")
+        "probe_error" ""
+        "session_model" SESSION_SHARED
+        "fiber_live" #f
+        "fiber_probe" (hash)
+        "cycles_requested" 0
+        "cycles_completed" 0
+        "cycles_ok" 0
+        "cycles_incr_valid" 0
+        "worldline_pressure" 0
+        "storm" (list)
+        "honesty" (hash "never_claim_without_measure" #t
+                        "fail_closed_on_unhealthy" #t
+                        "incr_valid_requires_explicit_signal" #t)))
+
+; One in-process mutate:rebind + epoch/invalidate delta check
+(define (storm-cycle index bump)
+  (set-code "(define (m1-cand n) (+ n 0))")
+  (eval-current)
+  (define epoch0 (or (stats:get "compile:epoch") 0))
+  (define h0 (stats:get "query:jit-stats-hash"))
+  (define inv0 (or (hash-ref h0 "hotswap-invalidate-total") 0))
+  (define mut0 (or (hash-ref h0 "mutation-epoch") 0))
+  (mutate:rebind "m1-cand"
+                 (string-append "(lambda (n) (+ n " (number->string bump) "))")
+                 (string-append "prove-cycle-" (number->string index)))
+  (eval-current)
+  (define epoch1 (or (stats:get "compile:epoch") 0))
+  (define h1 (stats:get "query:jit-stats-hash"))
+  (define inv1 (or (hash-ref h1 "hotswap-invalidate-total") 0))
+  (define mut1 (or (hash-ref h1 "mutation-epoch") 0))
+  (define val (m1-cand 40))
+  (define ok (= val (+ 40 bump)))
+  (define incr (or (> epoch1 epoch0) (> inv1 inv0) (> mut1 mut0)))
+  (hash "index" index
+        "ok" ok
+        "elapsed_ms" 0
+        "incr_valid" (if (and ok incr) #t #f)
+        "notes" (string-append "epoch " (number->string epoch0) "->"
+                               (number->string epoch1))
+        "aura_value" val))
+
+(define (pressure-cycles cycle-index pressure)
+  ; Returns (list storm-rev ok-all incr-all)
+  (let loop ((j 0) (storm (list)) (ok-all #t) (incr-all #t))
+    (if (>= j pressure)
+      (list storm ok-all incr-all)
+      (let ((c (storm-cycle cycle-index (+ j 1))))
+        (loop (+ j 1)
+              (cons c storm)
+              (if (hash-ref c "ok") ok-all #f)
+              (if (hash-ref c "incr_valid") incr-all #f))))))
+
+(define (prove-or-refuse cycles pressure)
+  (let ((bin (env-get "AURA_BIN" "")))
+    (if (equal? bin "")
+      (let ((r (empty-report "aura_binary_missing")))
+        (hash-set! r "cycles_requested" cycles)
+        (hash-set! r "worldline_pressure" pressure)
+        r)
+      (let loop ((i 0) (storm (list)) (ok-n 0) (incr-n 0))
+        (if (>= i cycles)
+          (let* ((proven (and (= ok-n cycles) (= incr-n cycles) (> cycles 0)))
+                 (reason (if proven "storm_incr_valid_measured"
+                           (if (= ok-n cycles) "incr_valid_incomplete" "storm_cycles_failed")))
+                 (r (empty-report reason)))
+            (hash-set! r "measured" #t)
+            (hash-set! r "aura_healthy" #t)
+            (hash-set! r "incr_proven" proven)
+            (hash-set! r "cycles_requested" cycles)
+            (hash-set! r "cycles_completed" cycles)
+            (hash-set! r "cycles_ok" ok-n)
+            (hash-set! r "cycles_incr_valid" incr-n)
+            (hash-set! r "worldline_pressure" pressure)
+            (hash-set! r "storm" (reverse storm))
+            (hash-set! r "fiber_live" #f)
+            (hash-set! r "fiber_probe"
+              (hash "available" #f
+                    "session_model" SESSION_SHARED
+                    "notes" "kernel in-process; not fiber-live multi-worldline"
+                    "probed" #t))
+            r)
+          (let* ((pr (pressure-cycles i pressure))
+                 (storm2 (append (car pr) storm))
+                 (ok-n2 (if (car (cdr pr)) (+ ok-n 1) ok-n))
+                 (incr-n2 (if (and (car (cdr pr)) (car (cdr (cdr pr)))) (+ incr-n 1) incr-n)))
+            (loop (+ i 1) storm2 ok-n2 incr-n2)))))))
+
+(define (write-prove-report report root)
+  (ensure-dir root)
+  (let ((p (default-prove-path root)))
+    (write-file p (json-encode report))
+    p))
+
+(define (load-prove-report root)
+  (let ((p (default-prove-path root)))
+    (if (file-exists? p)
+      (json-parse (read-file p))
+      #f)))
+
+; Attach honesty into traj runtime — never invent true from env alone.
+(define (attach-prove-metadata root)
+  (let* ((rep (load-prove-report root))
+         (env-incr (env-bool ENV_INCR #f))
+         (env-fiber (env-bool ENV_FIBER #f))
+         (notes (if env-fiber
+                  (if env-incr
+                    (list "env_ignored_unproven" "env_fiber_ignored_unproven")
+                    (list "env_fiber_ignored_unproven"))
+                  (if env-incr
+                    (list "env_ignored_unproven")
+                    (list "none")))))
+    (if (not rep)
+      (hash "attached" #t
+            "incr_proven" #f
+            "measured" #f
+            "fiber_live" #f
+            "session_model" SESSION_SHARED
+            "reason" "no_prove_report"
+            "env_notes" notes)
+      (let* ((proven (hash-ref rep "incr_proven" #f))
+             (measured (hash-ref rep "measured" #f))
+             (incr (if (and proven measured) #t #f))
+             (fiber (hash-ref rep "fiber_live" #f)))
+        (hash "attached" #t
+              "incr_proven" incr
+              "measured" measured
+              "fiber_live" (if fiber #t #f)
+              "session_model" (hash-ref rep "session_model" SESSION_SHARED)
+              "reason" (hash-ref rep "reason" "")
+              "env_notes" notes
+              "report_ts" (hash-ref rep "ts" ""))))))
+
+(define (merge-prove-into-runtime runtime fields)
+  (hash-set! runtime "incr_proven" (hash-ref fields "incr_proven" #f))
+  (hash-set! runtime "measured" (hash-ref fields "measured" #f))
+  (hash-set! runtime "fiber_live" (hash-ref fields "fiber_live" #f))
+  (hash-set! runtime "prove_incr" fields)
+  runtime)
+
+(define (doctor-snapshot root)
+  (let* ((rep (load-prove-report root))
+         (bin (env-get "AURA_BIN" ""))
+         (fields (attach-prove-metadata root)))
+    (hash "aura_bin" bin
+          "aura_probe_ok" (not (equal? bin ""))
+          "aura_probe_error" (if (equal? bin "") "aura_binary_missing" "")
+          "prove_incr_report_path" (default-prove-path root)
+          "prove_incr_latest" (if rep rep #f)
+          "honesty" (hash "incr_proven" (hash-ref fields "incr_proven")
+                          "fiber_live" (hash-ref fields "fiber_live")
+                          "session_model" (hash-ref fields "session_model")
+                          "l3_online" #f)
+          "fiber" (hash "fiber_live" #f
+                        "oneshot_fiber_ok" #f
+                        "serve_session_ok" #f
+                        "serve_cross_session_shared_ast" #f
+                        "missing_surface" "host worldline shared-AST not wired")
+          "tips" (list "kernel=Aura" "run aura-build prove-incr with healthy AURA_BIN"))))
+

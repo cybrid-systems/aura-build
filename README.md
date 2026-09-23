@@ -10,6 +10,27 @@ Prefer live-object worldlines over git-worktree mail; dogfood [cybrid-systems/au
 
 一句话：用活对象世界线代替邮差式 worktree；狗粮 Aura；把每次 mutate→eval→select 变成 RL / 专才蒸馏燃料。
 
+## Kernel = Aura (hard)
+
+**Product core is written in Aura** under [`aura/`](aura/): orchestration, worldlines,
+mutate/eval bridge, prove-incr / doctor honesty flags, harness L1 mutate+canary,
+trajectory write, memory, L2 stub metadata (`aura/main.aura` + modules).
+
+Python is a **thin CLI / test harness** that shells out to the `aura` binary
+(with the GCC16 libstdc++ sidecar). It still owns export/ACP/TUI stubs, schema
+validation, and a **CI-safe fallback** when no Aura binary is present
+(`AURA_BUILD_FORCE_PYTHON=1` forces the fallback).
+
+```bash
+# Primary path (Aura kernel) — requires AURA_BIN + sidecar
+export AURA_BIN=/workspace/aura-redis/.deps/aura/build/aura
+./scripts/run-aura-kernel.sh          # AURA_BUILD_CMD=run by default
+aura-build run --prompt "demo" --mode simulated   # CLI → Aura kernel when healthy
+aura-build prove-incr --cycles 2 --worldlines 1
+```
+
+Honest flags: never fake `incr_proven` / `fiber_live` (env alone cannot elevate).
+
 ## Non-goals / 非目标
 
 | Deny | Why |
@@ -32,7 +53,7 @@ Prefer live-object worldlines over git-worktree mail; dogfood [cybrid-systems/au
 ## Run
 
 ```bash
-./scripts/smoke.sh          # simulated backend; creates .venv, pytest, one episode
+./scripts/smoke.sh          # pytest (Python fallback) + Aura kernel episode when AURA_BIN healthy
 # or manually:
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"

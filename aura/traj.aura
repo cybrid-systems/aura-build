@@ -1,0 +1,30 @@
+; aura-build kernel — trajectory JSONL append (protocol v0 compatible)
+(export write-episode default-traj-path normalize-json-empties)
+
+(require "util" all:)
+(require "std/io" all:)
+(require "std/process" all:)
+
+(define (default-traj-path)
+  (env-get "AURA_BUILD_OUT" "trajectories/episodes.jsonl"))
+
+(define (normalize-json-empties s)
+  (let* ((root (env-get "AURA_BUILD_REPO_ROOT" "."))
+         (helper (string-append root "/scripts/normalize_json_empties.py"))
+         (tmp-in "/tmp/_aura_build_json_in")
+         (tmp-out "/tmp/_aura_build_json_out"))
+    (write-file tmp-in s)
+    (if (file-exists? helper)
+      (begin
+        (sh (string-append "python3 '" helper "' < " tmp-in " > " tmp-out))
+        (let ((out (read-file tmp-out)))
+          (sh (string-append "rm -f " tmp-in " " tmp-out))
+          out))
+      ; fallback: no helper — return raw
+      (begin (sh (string-append "rm -f " tmp-in)) s))))
+
+(define (write-episode episode path)
+  (let* ((p (if (or (null? path) (equal? path "")) (default-traj-path) path))
+         (line (normalize-json-empties (json-encode episode))))
+    (append-file p line)
+    p))

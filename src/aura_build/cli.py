@@ -1,4 +1,8 @@
-"""Headless CLI — `aura-build run|…|prove-incr|doctor`."""
+"""Headless CLI — thin host over the Aura kernel (`aura/*.aura`).
+
+Primary run/prove/harness/memory/l2 shells to Aura when healthy.
+Python keeps export/ACP/TUI, schema validate, and CI fallback.
+"""
 
 from __future__ import annotations
 
@@ -37,13 +41,64 @@ from aura_build.prove_incr import (
 )
 from aura_build.tui import format_status
 
+from aura_build.kernel import (
+    invoke_aura_kernel,
+    kernel_available,
+    prefer_aura_kernel,
+)
+
+
+
+def _try_aura_kernel(
+    cmd: str,
+    env_vars: dict[str, str],
+    *,
+    aura_bin: str | None = None,
+    aura_ref: str | None = None,
+    harness_root: Path | None = None,
+    timeout_s: float = 120.0,
+) -> int | None:
+    """Run Aura kernel when available; return exit code. None ⇒ caller fallback."""
+    if not prefer_aura_kernel():
+        return None
+    ok, _bin, _err = kernel_available(aura_bin, aura_ref)
+    if not ok:
+        return None
+    try:
+        result = invoke_aura_kernel(
+            cmd,
+            env_vars,
+            aura_bin=aura_bin,
+            aura_ref=aura_ref,
+            harness_root=harness_root,
+            timeout_s=timeout_s,
+        )
+    except AuraUnavailable as exc:
+        print(f"error: aura kernel: {exc}", file=sys.stderr)
+        return 2
+    # Replay kernel stdout; drop Aura trailing `#t`; coerce #t/#f for hosts
+    def _clean(s: str) -> str:
+        out = []
+        for ln in (s or "").splitlines():
+            if not ln.strip() or ln.strip() == "#t":
+                continue
+            out.append(ln.replace("=#t", "=True").replace("=#f", "=False"))
+        return "\n".join(out)
+    out = _clean(result.stdout)
+    if out:
+        print(out)
+    err = _clean(result.stderr)
+    if err:
+        print(err, file=sys.stderr)
+    return result.exit_code
+
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="aura-build",
         description=(
-            "Dev-time room on the Aura FlatAST floor "
-            "(Post-M5: prove-incr / doctor + M5 TUI/ACP + L2 metadata)."
+            "Dev-time room on the Aura FlatAST floor — kernel is Aura. "
+            "Thin Python host (Post-M5 prove-incr / M5 TUI/ACP / L2)."
         ),
     )
     p.add_argument("--version", action="version", version=f"aura-build {__version__}")
@@ -445,6 +500,41 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
+    root = Path(args.harness_root) if args.harness_root else default_root()
+    out = args.out or Path("trajectories/episodes.jsonl")
+    env = {
+        "AURA_BUILD_PROMPT": args.prompt,
+        "AURA_BUILD_MODE": args.mode,
+        "AURA_BUILD_REQUESTED_MODE": args.mode,
+        "AURA_BUILD_WORLDLINES": str(args.worldlines),
+        "AURA_BUILD_OUT": str(out),
+        "AURA_BUILD_ATTACH_PROVE": "1" if args.attach_prove else "0",
+    }
+    if args.seed is not None:
+        env["AURA_BUILD_SEED"] = str(args.seed)
+    if args.profile:
+        env["AURA_BUILD_PROFILE"] = args.profile
+    if args.workspace:
+        env["AURA_BUILD_WORKSPACE"] = str(args.workspace)
+    if args.l2_weights_id:
+        env["AURA_BUILD_L2"] = args.l2_weights_id
+    if args.memory_profile:
+        env["AURA_BUILD_MEMORY_PROFILE"] = args.memory_profile
+    if args.aura_ref:
+        env["AURA_BUILD_AURA_REF"] = args.aura_ref
+    # Prefer Aura kernel (product path). --json still falls back to Python
+    # so the full episode is printed from the writer path.
+    if not args.json:
+        kc = _try_aura_kernel(
+            "run",
+            env,
+            aura_bin=args.aura_bin,
+            aura_ref=args.aura_ref,
+            harness_root=root,
+        )
+        if kc is not None:
+            return kc
+
     cfg = OrchConfig(
         n_worldlines=args.worldlines,
         seed=args.seed,
@@ -505,6 +595,28 @@ def _cmd_harness_mutate(args: argparse.Namespace) -> int:
         )
         return 2
 
+    root = Path(args.harness_root) if args.harness_root else default_root()
+    out = args.out or Path("trajectories/episodes.jsonl")
+    env = {
+        "AURA_BUILD_PROMPT": args.prompt,
+        "AURA_BUILD_OUT": str(out),
+        "AURA_BUILD_HARNESS_PATCHES": json.dumps(patches or {}),
+        "AURA_BUILD_FITNESS_PATCHES": json.dumps(fitness_weight_patches or {}),
+        "AURA_BUILD_AUTOPROMOTE_FLAG": "1" if args.autopropote else "0",
+    }
+    if args.seed is not None:
+        env["AURA_BUILD_SEED"] = str(args.seed)
+    if not args.json:
+        kc = _try_aura_kernel(
+            "harness-mutate",
+            env,
+            aura_bin=args.aura_bin,
+            aura_ref=args.aura_ref,
+            harness_root=root,
+        )
+        if kc is not None:
+            return kc
+
     try:
         result = run_harness_canary(
             args.prompt,
@@ -546,6 +658,15 @@ def _cmd_harness_mutate(args: argparse.Namespace) -> int:
 
 def _cmd_memory(args: argparse.Namespace) -> int:
     root = Path(args.harness_root) if args.harness_root else default_root()
+    env = {
+        "AURA_BUILD_MEM_OP": args.mem_cmd,
+        "AURA_BUILD_MEM_PROFILE": getattr(args, "profile", "default") or "default",
+        "AURA_BUILD_MEM_KEY": getattr(args, "key", "") or "",
+        "AURA_BUILD_MEM_VALUE": getattr(args, "value", "") or "",
+    }
+    kc = _try_aura_kernel("memory", env, harness_root=root)
+    if kc is not None:
+        return kc
     store = MemoryStore(root=root / "memory")
     if args.mem_cmd == "get":
         val = store.get(args.profile, args.key)
@@ -570,6 +691,10 @@ def _cmd_memory(args: argparse.Namespace) -> int:
 
 def _cmd_harness_show(args: argparse.Namespace) -> int:
     root = Path(args.harness_root) if args.harness_root else default_root()
+    if not args.json:
+        kc = _try_aura_kernel("harness-show", {}, harness_root=root)
+        if kc is not None:
+            return kc
     cfg = load_harness(root)
     if args.json:
         print(json.dumps(cfg.to_dict(), indent=2, sort_keys=True))
@@ -720,7 +845,18 @@ def _cmd_acp(args: argparse.Namespace) -> int:
 
 
 def _cmd_l2(args: argparse.Namespace) -> int:
-    root = _harness_root_arg(args)
+    root = _harness_root_arg(args) or default_root()
+    if not args.json and args.l2_cmd in ("show", "list", "promote"):
+        env = {
+            "AURA_BUILD_L2_OP": args.l2_cmd,
+            "AURA_BUILD_L2_ID": getattr(args, "id", "") or "",
+            "AURA_BUILD_L2_NOTES": getattr(args, "notes", "") or "",
+        }
+        # promote --from-export stays Python (corpus gate)
+        if args.l2_cmd != "promote" or getattr(args, "from_export", None) is None:
+            kc = _try_aura_kernel("l2", env, harness_root=root)
+            if kc is not None:
+                return kc
     if args.l2_cmd == "show":
         ref = resolve_l2_weights(args.id, root=root)
         if ref is None:
@@ -779,10 +915,27 @@ def _cmd_prove_incr(args: argparse.Namespace) -> int:
 
     Exit 0 on refuse (unhealthy / unproven) and on proven — the report's
     ``incr_proven`` field is the honesty surface. Exit 2 only on bad args.
+    Prefer Aura kernel when binary healthy; Python fail-closed otherwise.
     """
     if args.cycles < 1 or args.worldlines < 1:
         print("error: --cycles and --worldlines must be >= 1", file=sys.stderr)
         return 2
+    root = Path(args.harness_root) if args.harness_root else default_root()
+    env = {
+        "AURA_BUILD_CYCLES": str(args.cycles),
+        "AURA_BUILD_WORLDLINES": str(args.worldlines),
+    }
+    if not args.json:
+        kc = _try_aura_kernel(
+            "prove-incr",
+            env,
+            aura_bin=args.aura_bin,
+            aura_ref=args.aura_ref,
+            harness_root=root,
+            timeout_s=max(60.0, float(args.timeout) * max(1, args.cycles)),
+        )
+        if kc is not None:
+            return kc
     report = prove_or_refuse(
         cycles=args.cycles,
         worldline_pressure=args.worldlines,
@@ -809,6 +962,17 @@ def _cmd_prove_incr(args: argparse.Namespace) -> int:
 
 
 def _cmd_doctor(args: argparse.Namespace) -> int:
+    root = Path(args.harness_root) if args.harness_root else default_root()
+    if not args.json and not args.skip_probe:
+        kc = _try_aura_kernel(
+            "doctor",
+            {},
+            aura_bin=args.aura_bin,
+            aura_ref=args.aura_ref,
+            harness_root=root,
+        )
+        if kc is not None:
+            return kc
     snap = doctor_snapshot(
         root=args.harness_root,
         aura_bin=args.aura_bin,

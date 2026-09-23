@@ -1,0 +1,118 @@
+; aura-build kernel — L1 harness mutate + canary decide (AUTOPROMOTE default OFF)
+(export
+  default-harness load-harness save-harness validate-harness
+  propose-mutate decide-canary harness-path)
+
+(require "util" all:)
+(require "std/io" all:)
+(require "std/hash" all:)
+
+(define (default-harness)
+  (hash "worldline_count" 3
+        "fitness_weights" (hash "tests" 0.7 "compile_ms" 0.2 "audit" 0.1)
+        "routing" "simulated"
+        "l1_strategy_id" "m3.harness.select_best"
+        "l2_weights_id" #f
+        "version" 1
+        "harness_id" "default"))
+
+(define (harness-path root)
+  (join-path root "harness.json"))
+
+(define (load-harness root)
+  (let ((p (harness-path root)))
+    (if (file-exists? p)
+      (json-parse (read-file p))
+      (default-harness))))
+
+(define (save-harness root cfg)
+  (ensure-dir root)
+  (write-file (harness-path root) (json-encode cfg))
+  cfg)
+
+(define (validate-harness cfg)
+  (let ((n (hash-ref cfg "worldline_count" 0))
+        (routing (hash-ref cfg "routing" ""))
+        (l1 (hash-ref cfg "l1_strategy_id" ""))
+        (reasons (list)))
+    (if (< n 1)
+      (set! reasons (cons "worldline_count must be >= 1" reasons))
+      #t)
+    (if (> n 32)
+      (set! reasons (cons "worldline_count too large" reasons))
+      #t)
+    (if (not (or (equal? routing "simulated")
+                 (equal? routing "aura")
+                 (equal? routing "auto")))
+      (set! reasons (cons "routing must be simulated|aura|auto" reasons))
+      #t)
+    (if (or (null? l1) (equal? l1 ""))
+      (set! reasons (cons "l1_strategy_id must be non-empty" reasons))
+      #t)
+    reasons))
+
+(define (copy-harness cfg)
+  (json-parse (json-encode cfg)))
+
+(define (propose-mutate base patches fitness-patches)
+  (let* ((proposed (copy-harness base))
+         (mid (string-append "mid-" (make-id)))
+         (changes (list)))
+    (if (hash? patches)
+      (hash-for-each patches
+        (lambda (k v)
+          (hash-set! proposed k v)
+          (set! changes (cons (hash "key" k "value" v) changes))))
+      #t)
+    (if (hash? fitness-patches)
+      (begin
+        (if (not (hash? (hash-ref proposed "fitness_weights")))
+          (hash-set! proposed "fitness_weights" (hash))
+          #t)
+        (let ((fw (hash-ref proposed "fitness_weights")))
+          (hash-for-each fitness-patches
+            (lambda (k v)
+              (hash-set! fw k v)
+              (set! changes (cons (hash "fitness_weight" k "value" v) changes))))))
+      #t)
+    (hash-set! proposed "version" (+ (hash-ref base "version" 1) 1))
+    (hash "mid" mid
+          "base" base
+          "proposed" proposed
+          "changes" changes
+          "shadow_profile" (string-append "shadow-" mid)
+          "action_propose" (hash "op" "propose" "mid" mid "ts" (iso-now)
+                                 "changes" changes))))
+
+(define (autopropote?)
+  (env-bool "AURA_BUILD_AUTOPROMOTE" #f))
+
+(define (decide-canary proposal accepted autopropote-flag root)
+  (let* ((promote (if (eq? autopropote-flag #t) #t
+                    (if (eq? autopropote-flag #f) #f
+                      (autopropote?))))
+         (mid (hash-ref proposal "mid"))
+         (actions (list (hash-ref proposal "action_propose"))))
+    (cond
+      ((not accepted)
+       (let ((act (hash "op" "heal" "mid" mid "ts" (iso-now))))
+         (hash "outcome" "heal" "autopropote" promote "committed" #f
+               "actions" (append actions (list
+                 (hash "op" "canary" "mid" mid "ts" (iso-now)
+                       "accepted" #f)
+                 act)))))
+      (promote
+       (save-harness root (hash-ref proposal "proposed"))
+       (let ((act (hash "op" "commit" "mid" mid "ts" (iso-now))))
+         (hash "outcome" "commit" "autopropote" #t "committed" #t
+               "actions" (append actions (list
+                 (hash "op" "canary" "mid" mid "ts" (iso-now)
+                       "accepted" #t)
+                 act)))))
+      (else
+       (let ((act (hash "op" "discard" "mid" mid "ts" (iso-now))))
+         (hash "outcome" "discard" "autopropote" #f "committed" #f
+               "actions" (append actions (list
+                 (hash "op" "canary" "mid" mid "ts" (iso-now)
+                       "accepted" #t)
+                 act))))))))

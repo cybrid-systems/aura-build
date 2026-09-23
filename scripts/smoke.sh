@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Simulated CI / local smoke (no Aura required): venv, pytest, episodes, harness canary, export, M5 tui/acp/l2, Post-M5 prove-incr + attach.
+# Smoke: pytest (Python fallback SSOT) + CLI episodes.
+# When AURA_BIN healthy, CLI prefer Aura kernel (runtime.kernel=aura).
+# Fail-closed prove-incr still uses missing-bin Python path.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -14,7 +16,7 @@ source "$VENV/bin/activate"
 
 python -m pip install -U pip -q
 python -m pip install -e ".[dev]" -q
-python -m pytest -q
+AURA_BUILD_FORCE_PYTHON=1 python -m pytest -q
 
 # Isolated harness root so dogfood `.aura-build/prove-incr-latest.json`
 # (possibly incr_proven=true) does not attach into simulated smoke episodes.

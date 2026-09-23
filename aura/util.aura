@@ -1,0 +1,133 @@
+; aura-build kernel — shared helpers (env, fs, time, id, fitness)
+(export
+  env-get env-int env-bool
+  ensure-dir append-file dirname-path
+  iso-now make-id
+  default-fitness seed-from-prompt
+  join-path abs-path string-trim string-downcase
+  round4)
+
+(require "std/io" all:)
+(require "std/process" all:)
+(require "std/datetime" all:)
+(require "std/uuid" all:)
+(require "std/string" all:)
+
+(define (env-get key default)
+  (let ((v (getenv key)))
+    (if (or (null? v) (equal? v ""))
+      default
+      v)))
+
+(define (env-int key default)
+  (let ((v (env-get key "")))
+    (if (equal? v "")
+      default
+      (let ((n (string->number v)))
+        (if (number? n) (floor n) default)))))
+
+(define (string-downcase s)
+  (list->string
+    (map (lambda (c)
+           (if (and (>= c 65) (<= c 90)) (+ c 32) c))
+         (string->list s))))
+
+(define (env-bool key default)
+  (let ((v (string-downcase (env-get key ""))))
+    (if (equal? v "")
+      default
+      (or (equal? v "1") (equal? v "true") (equal? v "yes") (equal? v "on")))))
+
+(define (string-trim s)
+  (let ((n (string-length s)))
+    (let l ((i 0))
+      (if (or (>= i n) (> (string-ref s i) 32))
+        (let r ((j (- n 1)))
+          (if (or (< j i) (> (string-ref s j) 32))
+            (substring s i (+ j 1))
+            (r (- j 1))))
+        (l (+ i 1))))))
+
+(define (ensure-dir path)
+  (sh (string-append "mkdir -p '" path "'"))
+  path)
+
+(define (dirname-path path)
+  (let ((tmp "/tmp/_aura_build_dirname"))
+    (sh (string-append "dirname '" path "' > " tmp " 2>/dev/null"))
+    (let ((d (string-trim (read-file tmp))))
+      (sh (string-append "rm -f " tmp))
+      (if (equal? d "") "." d))))
+
+(define (append-file path line)
+  (ensure-dir (dirname-path path))
+  (if (file-exists? path)
+    (write-file path (string-append (read-file path) line "\n"))
+    (write-file path (string-append line "\n")))
+  path)
+
+(define (iso-now) (now))
+
+(define *_id_seq* 0)
+(define (make-id)
+  (set! *_id_seq* (+ *_id_seq* 1))
+  (string-append "ep-" (number->string (timestamp-ms)) "-" (number->string *_id_seq*)))
+
+(define (join-path a b)
+  (if (or (equal? a "") (equal? a "."))
+    b
+    (let ((n (string-length a)))
+      (if (equal? (substring a (- n 1) n) "/")
+        (string-append a b)
+        (string-append a "/" b)))))
+
+(define (abs-path p)
+  (let ((tmp "/tmp/_aura_build_abspath"))
+    (sh (string-append "readlink -f '" p "' > " tmp " 2>/dev/null || echo '" p "' > " tmp))
+    (let ((d (string-trim (read-file tmp))))
+      (sh (string-append "rm -f " tmp))
+      (if (equal? d "") p d))))
+
+(define (round4 x)
+  (/ (floor (+ (* x 10000.0) 0.5)) 10000.0))
+
+(define (hex-digit c)
+  (if (and (>= c 48) (<= c 57)) (- c 48)
+    (if (and (>= c 97) (<= c 102)) (- c 87)
+      (if (and (>= c 65) (<= c 70)) (- c 55) 0))))
+
+(define (hex-n->int s n)
+  (let loop ((i 0) (acc 0))
+    (if (>= i n) acc
+      (loop (+ i 1) (+ (* acc 16) (hex-digit (string-ref s i)))))))
+
+; FNV-1a 32-bit → 16 hex chars (deterministic; matches CI-simulated path)
+(define (digest-hex s)
+  (let* ((cs (string->list s))
+         (h (let loop ((xs cs) (acc 2166136261))
+              (if (null? xs) acc
+                (let* ((xored (modulo (+ acc (car xs)) 4294967296))
+                       (mixed (modulo (* xored 16777619) 4294967296)))
+                  (loop (cdr xs) mixed)))))
+         (hex "0123456789abcdef")
+         (raw (let loop ((n h) (i 0) (out ""))
+                (if (>= i 8) out
+                  (loop (quotient n 16) (+ i 1)
+                        (string-append
+                          (list->string (list (string-ref hex (modulo n 16))))
+                          out))))))
+    (string-append raw raw)))
+
+(define (default-fitness prompt seed index)
+  (let* ((h (digest-hex (string-append (number->string seed) ":"
+                                       (number->string index) ":"
+                                       prompt)))
+         (base (/ (hex-n->int (substring h 0 6) 6) 16777215.0))
+         (bump (if (= index 1) 0.15 0.0))
+         (raw (+ (* base 0.85) bump)))
+    (round4 (if (> raw 1.0) 1.0 raw))))
+
+(define (seed-from-prompt prompt seed-opt)
+  (if (and (number? seed-opt) (>= seed-opt 0))
+    (floor seed-opt)
+    (hex-n->int (substring (digest-hex prompt) 0 8) 8)))

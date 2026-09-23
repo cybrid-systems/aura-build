@@ -1,0 +1,63 @@
+; aura-build kernel — L2 offline metadata weights (stub=true always)
+(export l2-resolve l2-list l2-promote l2-dir)
+
+(require "util" all:)
+(require "std/io" all:)
+(require "std/process" all:)
+
+(define (l2-dir harness-root)
+  (join-path harness-root "weights"))
+
+(define (l2-path harness-root id)
+  (join-path (l2-dir harness-root) (string-append id ".json")))
+
+(define (l2-resolve harness-root id)
+  (if (or (null? id) (equal? id ""))
+    #f
+    (let ((p (l2-path harness-root id)))
+      (if (file-exists? p)
+        (let ((art (json-parse (read-file p))))
+          (hash "weights_id" id
+                "loaded" #t
+                "stub" #t
+                "artifact_present" #t
+                "created" (hash-ref art "created" "")
+                "notes" (hash-ref art "notes" "")
+                "artifact_path" p))
+        (hash "weights_id" id
+              "loaded" #f
+              "stub" #t
+              "artifact_present" #f
+              "created" ""
+              "notes" ""
+              "artifact_path" "")))))
+
+(define (l2-list harness-root)
+  (ensure-dir (l2-dir harness-root))
+  (let ((tmp "/tmp/_aura_build_l2list"))
+    (sh (string-append "ls -1 '" (l2-dir harness-root) "'/*.json 2>/dev/null | xargs -n1 basename 2>/dev/null > " tmp " || true"))
+    (let ((content (read-file tmp)))
+      (sh (string-append "rm -f " tmp))
+      (if (or (null? content) (equal? content ""))
+        (list)
+        (map (lambda (name)
+               (let ((id (substring name 0 (- (string-length name) 5))))
+                 (l2-resolve harness-root id)))
+             (filter (lambda (s) (and (string? s) (> (string-length s) 5)))
+                     (string-split content "\n")))))))
+
+(define (filter pred xs)
+  (if (null? xs) (list)
+    (if (pred (car xs))
+      (cons (car xs) (filter pred (cdr xs)))
+      (filter pred (cdr xs)))))
+
+(define (l2-promote harness-root id notes)
+  (ensure-dir (l2-dir harness-root))
+  (let ((art (hash "id" id
+                   "created" (iso-now)
+                   "notes" notes
+                   "stub" #t
+                   "l3_online" #f)))
+    (write-file (l2-path harness-root id) (json-encode art))
+    (l2-resolve harness-root id)))

@@ -1,0 +1,104 @@
+; aura-build kernel — shared workspace stable refs (layout matches Python worldline.py)
+; NOT fiber-live FlatAST.
+(export
+  SESSION_SHARED
+  workspace-create workspace-fork-note workspace-discard-losers
+  workspace-runtime-fields)
+
+(require "util" all:)
+(require "std/io" all:)
+(require "traj" all:)
+
+(define SESSION_SHARED "shared_workspace_subprocess")
+
+(define (workspace-create root n)
+  (ensure-dir root)
+  (ensure-dir (join-path root "parent"))
+  (write-file (join-path root "parent" "SNAPSHOT") "parent_id=wl-parent\n")
+  (ensure-dir (join-path root "candidates"))
+  (let loop ((i 0) (cands (hash)) (cand-meta (hash)))
+    (if (>= i n)
+      (let* ((ws (hash "root" root
+                       "parent_ref" "wl-parent"
+                       "session_model" SESSION_SHARED
+                       "candidates" cands
+                       "n" n))
+             (meta (hash "episode_token" (make-id)
+                         "session_model" SESSION_SHARED
+                         "parent" (hash "ref_id" "wl-parent"
+                                        "parent_ref" #f
+                                        "workspace_relpath" "parent"
+                                        "kind" "parent")
+                         "candidates" cand-meta
+                         "discarded" (list)
+                         "incr_proven" #f
+                         "fiber_live" #f
+                         "honesty" "shared workspace + stable refs; not fiber-live")))
+        (write-file (join-path root "meta.json")
+                    (normalize-json-empties (json-encode meta)))
+        ws)
+      (let* ((cid (string-append "wl-" (number->string i)))
+             (rel (string-append "candidates/" cid))
+             (cdir (join-path root rel)))
+        (ensure-dir cdir)
+        (write-file (join-path cdir "REF")
+                    (string-append "ref_id=" cid "\nparent_ref=wl-parent\n"))
+        (hash-set! cands cid cid)
+        (hash-set! cand-meta cid
+                   (hash "ref_id" cid
+                         "parent_ref" "wl-parent"
+                         "workspace_relpath" rel
+                         "kind" "candidate"))
+        (loop (+ i 1) cands cand-meta)))))
+
+(define (workspace-fork-note ws cid summary)
+  (let* ((root (hash-ref ws "root"))
+         (rel (string-append "candidates/" cid))
+         (cdir (join-path root rel))
+         (payload (hash "op" "worldline_fork"
+                        "target_id" (string-append "stable:" cid)
+                        "summary" summary
+                        "parent_ref" "wl-parent"
+                        "stable_ref" cid
+                        "workspace_relpath" rel)))
+    (write-file (join-path cdir "mutation.json") (json-encode payload))
+    payload))
+
+(define (filter-truth xs)
+  (if (null? xs) (list)
+    (if (car xs)
+      (cons (car xs) (filter-truth (cdr xs)))
+      (filter-truth (cdr xs)))))
+
+(define (workspace-discard-losers ws selected-id fitness-by-id)
+  (let* ((root (hash-ref ws "root"))
+         (cands (hash-ref ws "candidates"))
+         (keys (hash-keys cands))
+         (recs (map (lambda (cid)
+                      (if (equal? cid selected-id)
+                        #f
+                        (let* ((fit (hash-ref fitness-by-id cid 0.0))
+                               (rel (string-append "candidates/" cid))
+                               (rec (hash "id" cid
+                                          "reason" "lower_fitness"
+                                          "fitness" fit
+                                          "stable_ref" cid)))
+                          (write-file (join-path root rel "DISCARDED")
+                                      (json-encode rec))
+                          rec)))
+                    keys))
+         (kept (filter-truth recs)))
+    (let ((meta-path (join-path root "meta.json")))
+      (if (file-exists? meta-path)
+        (let ((meta (json-parse (read-file meta-path))))
+          (hash-set! meta "discarded" kept)
+          (write-file meta-path (normalize-json-empties (json-encode meta))))
+        #t))
+    kept))
+
+(define (workspace-runtime-fields ws)
+  (hash "workspace" (hash-ref ws "root")
+        "session_model" (hash-ref ws "session_model")
+        "parent_ref" (hash-ref ws "parent_ref")
+        "stable_refs" (hash-keys (hash-ref ws "candidates"))
+        "fiber_live" #f))

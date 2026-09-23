@@ -1,0 +1,365 @@
+; aura-build kernel — scout → mutate → eval → select-best
+; Primary product path. Simulated = pure Aura fitness; aura = in-process mutate:rebind.
+(export run-episode run-harness-canary select-best)
+
+(require "util" all:)
+(require "traj" all:)
+(require "worldline" all:)
+(require "harness" all:)
+(require "prove" all:)
+(require "memory" all:)
+(require "l2" all:)
+(require "std/io" all:)
+(require "std/hash" all:)
+
+(define (select-best worldlines)
+  (if (null? worldlines)
+    (error "no worldlines to select")
+    (let loop ((xs (cdr worldlines)) (best (car worldlines)))
+      (if (null? xs) best
+        (let* ((w (car xs))
+               (wf (hash-ref (hash-ref w "eval") "fitness"))
+               (bf (hash-ref (hash-ref best "eval") "fitness"))
+               (wid (hash-ref w "id"))
+               (bid (hash-ref best "id")))
+          (if (or (> wf bf) (and (= wf bf) (string>? wid bid)))
+            (loop (cdr xs) w)
+            (loop (cdr xs) best)))))))
+
+(define (sim-mutate prompt seed n)
+  (let loop ((i 0) (out (list)))
+    (if (>= i n) (reverse out)
+      (loop (+ i 1)
+            (cons (hash "id" (string-append "wl-" (number->string i))
+                        "parent_id" #f
+                        "mutations" (list
+                          (hash "op" "simulated_edit"
+                                "target_id" (string-append "node:demo:" (number->string i))
+                                "summary" (string-append "candidate " (number->string i)
+                                                         " for: " (substring prompt 0 (min 80 (string-length prompt)))))))
+                  out)))))
+
+(define (sim-eval wl prompt seed index)
+  (let* ((fitness (default-fitness prompt seed index))
+         (passed (>= fitness 0.3)))
+    (hash "id" (hash-ref wl "id")
+          "parent_id" (hash-ref wl "parent_id" #f)
+          "mutations" (hash-ref wl "mutations")
+          "stable_ref" (hash-ref wl "stable_ref" #f)
+          "eval" (hash "fitness" fitness
+                       "passed" passed
+                       "metrics" (hash "tests_passed" (if passed 1 0)
+                                       "tests_total" 1
+                                       "incr_compile_ms" (+ 5 (* index 3))
+                                       "audit_ok" #t
+                                       "incr_proven" #f)
+                       "notes" "aura-kernel simulated eval"))))
+
+(define (aura-eval wl prompt seed index)
+  (let* ((mutations (hash-ref wl "mutations" (list)))
+         (bump (if (null? mutations) (+ index 1)
+                 (hash-ref (car mutations) "bump" (+ index 1)))))
+    (set-code "(define (m1-cand n) (+ n 0))")
+    (eval-current)
+    (define epoch0 (or (stats:get "compile:epoch") 0))
+    (define h0 (stats:get "query:jit-stats-hash"))
+    (define inv0 (or (hash-ref h0 "hotswap-invalidate-total") 0))
+    (mutate:rebind "m1-cand"
+                   (string-append "(lambda (n) (+ n " (number->string bump) "))")
+                   (string-append "orch-wl-" (number->string index)))
+    (eval-current)
+    (define epoch1 (or (stats:get "compile:epoch") 0))
+    (define h1 (stats:get "query:jit-stats-hash"))
+    (define inv1 (or (hash-ref h1 "hotswap-invalidate-total") 0))
+    (define val (m1-cand 40))
+    (define expected (+ 40 bump))
+    (define ok (= val expected))
+    (define incr (or (> epoch1 epoch0) (> inv1 inv0)))
+    (define fitness (if (and ok (= val expected))
+                      (round4 (+ 0.75 (* 0.05 (modulo index 4))))
+                      (if ok 0.45 0.1)))
+    (hash "id" (hash-ref wl "id")
+          "parent_id" (hash-ref wl "parent_id" #f)
+          "mutations" mutations
+          "eval" (hash "fitness" fitness
+                       "passed" ok
+                       "metrics" (hash "tests_passed" (if ok 1 0)
+                                       "tests_total" 1
+                                       "incr_compile_ms" 0
+                                       "audit_ok" ok
+                                       "aura_value" val
+                                       "incr_valid" incr
+                                       "incr_proven" #f)
+                       "notes" (if incr "aura-kernel mutate+eval; AURA_BUILD_INCR_VALID"
+                                     "aura-kernel mutate+eval-current")))))
+
+(define (aura-mutate prompt seed n)
+  (let loop ((i 0) (out (list)))
+    (if (>= i n) (reverse out)
+      (let ((bump (+ i 1)))
+        (loop (+ i 1)
+              (cons (hash "id" (string-append "wl-" (number->string i))
+                          "parent_id" #f
+                          "mutations" (list
+                            (hash "op" "aura_mutate_rebind"
+                                  "target_id" (string-append "m1-cand:" (number->string i))
+                                  "summary" (string-append "mutate:rebind bump=" (number->string bump))
+                                  "bump" bump)))
+                    out))))))
+
+(define (build-episode prompt seed mode evaluated selected reason runtime-extra harness-block discarded attach-root attach?)
+  (let* ((ts0 (iso-now))
+         (runtime (hash "mode" mode
+                        "requested_mode" (env-get "AURA_BUILD_REQUESTED_MODE" mode)
+                        "aura_ref" (env-get "AURA_BUILD_AURA_REF" #f)
+                        "seed" seed
+                        "incr_proven" #f
+                        "kernel" "aura"))
+         (_ (if (hash? runtime-extra)
+              (hash-for-each runtime-extra (lambda (k v) (hash-set! runtime k v)))
+              #t))
+         (fields (if attach? (attach-prove-metadata attach-root) #f))
+         (_2 (if fields (merge-prove-into-runtime runtime fields) #t))
+         (wls (map (lambda (w)
+                     (let ((e (hash "id" (hash-ref w "id")
+                                    "parent_id" (hash-ref w "parent_id" #f)
+                                    "mutations" (hash-ref w "mutations")
+                                    "eval" (hash-ref w "eval"))))
+                       (if (hash-ref w "stable_ref" #f)
+                         (begin (hash-set! e "stable_ref" (hash-ref w "stable_ref")) e)
+                         e)))
+                   evaluated)))
+    (hash "schema_version" "trajectory.v0"
+          "episode_id" (make-id)
+          "ts_start" ts0
+          "ts_end" (iso-now)
+          "prompt" prompt
+          "runtime" runtime
+          "harness" harness-block
+          "worldlines" wls
+          "selected_id" (hash-ref selected "id")
+          "selection_reason" reason
+          "discarded" (if discarded discarded (list))
+          "privacy" (hash "redacted" #f "retention_class" "dogfood"))))
+
+(define (filter-truth xs)
+  (if (null? xs) (list)
+    (if (car xs)
+      (cons (car xs) (filter-truth (cdr xs)))
+      (filter-truth (cdr xs)))))
+
+(define (run-backend-episode prompt seed n mode harness-root l1 l2-id attach?)
+  (let* ((raw (if (equal? mode "aura")
+                (aura-mutate prompt seed n)
+                (sim-mutate prompt seed n)))
+         (evaluated
+           (let loop ((i 0) (xs raw) (out (list)))
+             (if (null? xs) (reverse out)
+               (let ((got (if (equal? mode "aura")
+                            (aura-eval (car xs) prompt seed i)
+                            (sim-eval (car xs) prompt seed i))))
+                 (loop (+ i 1) (cdr xs) (cons got out))))))
+         (selected (select-best evaluated))
+         (harness-block (hash "l1_strategy_id" l1
+                              "l2_weights_id" l2-id
+                              "l3_online" #f))
+         (l2ref (if (and l2-id (not (equal? l2-id "")))
+                  (l2-resolve harness-root l2-id)
+                  #f))
+         (_ (if (and l2ref (hash-ref l2ref "artifact_present" #f))
+              (hash-set! harness-block "l2_ref" l2ref)
+              #t))
+         (ep (build-episode prompt seed mode evaluated selected "max_fitness"
+                            (hash) harness-block (list) harness-root attach?)))
+    (hash "episode" ep "selected" selected)))
+
+(define (run-aura-repo-episode prompt seed n mode harness-root l1 l2-id workspace attach?)
+  (let* ((ws-root (if (or (null? workspace) (equal? workspace ""))
+                    (join-path harness-root (string-append "ws-" (make-id)))
+                    workspace))
+         (ws (workspace-create ws-root n))
+         (cids (hash-keys (hash-ref ws "candidates")))
+         (evaluated
+           (let loop ((i 0) (xs cids) (out (list)))
+             (if (null? xs) (reverse out)
+               (let* ((cid (car xs))
+                      (mut (workspace-fork-note ws cid
+                             (string-append "aura-repo candidate " (number->string i)
+                                            " for: " (substring prompt 0 (min 80 (string-length prompt))))))
+                      (got (sim-eval (hash "id" cid
+                                           "parent_id" "wl-parent"
+                                           "mutations" (list mut)
+                                           "stable_ref" cid)
+                                     prompt seed i)))
+                 (loop (+ i 1) (cdr xs) (cons got out))))))
+         (selected (select-best evaluated))
+         (fit-map (let ((h (hash)))
+                    (for-each (lambda (w)
+                                (hash-set! h (hash-ref w "id")
+                                           (hash-ref (hash-ref w "eval") "fitness")))
+                              evaluated)
+                    h))
+         (discarded (filter-truth (workspace-discard-losers ws (hash-ref selected "id") fit-map)))
+         (rt (workspace-runtime-fields ws))
+         (harness-block (hash "l1_strategy_id" l1
+                              "l2_weights_id" l2-id
+                              "l3_online" #f))
+         (ep (build-episode prompt seed mode evaluated selected "max_fitness"
+                            rt harness-block discarded harness-root attach?)))
+    (hash-set! (hash-ref ep "runtime") "profile"
+               (hash "id" "aura-repo"
+                     "fitness_source" "simulated"
+                     "incr_claimed" #t
+                     "incr_proven" #f))
+    (hash "episode" ep "selected" selected)))
+
+(define (for-each f xs)
+  (if (null? xs) #t
+    (begin (f (car xs)) (for-each f (cdr xs)))))
+
+(define (run-episode)
+  (let* ((prompt (env-get "AURA_BUILD_PROMPT" "aura-kernel demo"))
+         (mode-req (env-get "AURA_BUILD_MODE" "simulated"))
+         (mode (if (equal? mode-req "auto") "simulated" mode-req))
+         ; auto→simulated when we can't probe another binary; in-kernel aura mode uses this process
+         (mode (if (equal? mode-req "aura") "aura"
+                 (if (equal? mode-req "auto")
+                   (if (equal? (env-get "AURA_BIN" "") "") "simulated" "aura")
+                   mode-req)))
+         (seed-opt (env-get "AURA_BUILD_SEED" ""))
+         (seed (seed-from-prompt prompt
+                 (if (equal? seed-opt "") #f (string->number seed-opt))))
+         (n (env-int "AURA_BUILD_WORLDLINES" 3))
+         (harness-root (env-get "AURA_BUILD_HARNESS_ROOT" ".aura-build"))
+         (out (env-get "AURA_BUILD_OUT" "trajectories/episodes.jsonl"))
+         (profile (env-get "AURA_BUILD_PROFILE" ""))
+         (workspace (env-get "AURA_BUILD_WORKSPACE" ""))
+         (l1 (env-get "AURA_BUILD_L1" "m3.harness.select_best"))
+         (l2-id (env-get "AURA_BUILD_L2" ""))
+         (attach? (env-bool "AURA_BUILD_ATTACH_PROVE" #t))
+         (mem-profile (env-get "AURA_BUILD_MEMORY_PROFILE" ""))
+         (result (if (equal? profile "aura-repo")
+                   (run-aura-repo-episode prompt seed n mode harness-root l1 l2-id workspace attach?)
+                   (run-backend-episode prompt seed n mode harness-root l1
+                     (if (equal? l2-id "") #f l2-id) attach?)))
+         (ep (hash-ref result "episode"))
+         (sel (hash-ref result "selected")))
+    (if (not (equal? mem-profile ""))
+      (begin
+        (memory-set harness-root mem-profile "last_selected_id" (hash-ref sel "id"))
+        (memory-set harness-root mem-profile "last_prompt" (substring prompt 0 (min 200 (string-length prompt))))
+        (memory-set harness-root mem-profile "last_fitness" (hash-ref (hash-ref sel "eval") "fitness"))
+        (hash-set! ep "memory" (hash "profile_id" mem-profile
+                                     "updated_keys" (list "last_selected_id" "last_prompt" "last_fitness"))))
+      #t)
+    (let ((path (write-episode ep out)))
+      (hash-set! ep "_wrote" path)
+      (hash "ok" #t "episode" ep "path" path "selected" sel))))
+
+(define (run-harness-canary)
+  (let* ((prompt (env-get "AURA_BUILD_PROMPT" "harness canary"))
+         (harness-root (env-get "AURA_BUILD_HARNESS_ROOT" ".aura-build"))
+         (out (env-get "AURA_BUILD_OUT" "trajectories/episodes.jsonl"))
+         (seed-opt (env-get "AURA_BUILD_SEED" ""))
+         (seed (seed-from-prompt prompt
+                 (if (equal? seed-opt "") #f (string->number seed-opt))))
+         (patches-json (env-get "AURA_BUILD_HARNESS_PATCHES" "{}"))
+         (fw-json (env-get "AURA_BUILD_FITNESS_PATCHES" "{}"))
+         (patches (json-parse patches-json))
+         (fw (json-parse fw-json))
+         (auto-flag (env-get "AURA_BUILD_AUTOPROMOTE_FLAG" ""))
+         (auto (if (equal? auto-flag "1") #t (if (equal? auto-flag "0") #f 'unset)))
+         (base (load-harness harness-root))
+         (proposal (propose-mutate base patches fw))
+         (pre (validate-harness (hash-ref proposal "proposed"))))
+    (if (not (null? pre))
+      (let* ((decision (decide-canary proposal #f auto harness-root))
+             (ep (harness-change-episode prompt proposal #f decision seed harness-root #f 0.0)))
+        (let ((path (write-episode ep out)))
+          (hash "ok" #t "accepted" #f "episode" ep "path" path
+                "outcome" (hash-ref decision "outcome")
+                "mid" (hash-ref proposal "mid"))))
+      (let* ((n (hash-ref (hash-ref proposal "proposed") "worldline_count"))
+             (mode (hash-ref (hash-ref proposal "proposed") "routing" "simulated"))
+             (mode (if (equal? mode "aura") "aura" "simulated"))
+             (base-n (hash-ref base "worldline_count"))
+             (base-mode (hash-ref base "routing" "simulated"))
+             (base-mode (if (equal? base-mode "aura") "aura" "simulated"))
+             (baseline (run-backend-episode prompt seed base-n base-mode harness-root
+                          (hash-ref base "l1_strategy_id")
+                          (hash-ref base "l2_weights_id" #f) #t))
+             (canary (run-backend-episode prompt seed n mode harness-root
+                          (hash-ref (hash-ref proposal "proposed") "l1_strategy_id")
+                          (hash-ref (hash-ref proposal "proposed") "l2_weights_id" #f) #t))
+             (bf (hash-ref (hash-ref (hash-ref baseline "selected") "eval") "fitness"))
+             (cf (hash-ref (hash-ref (hash-ref canary "selected") "eval") "fitness"))
+             (passed (hash-ref (hash-ref (hash-ref canary "selected") "eval") "passed"))
+             (accepted (and passed (>= cf (* bf 0.5))))
+             (decision (decide-canary proposal accepted auto harness-root))
+             (ep (harness-change-episode prompt proposal accepted decision seed harness-root
+                                         (hash-ref canary "episode") cf)))
+        (memory-set harness-root (hash-ref proposal "shadow_profile")
+                    "last_harness_mid" (hash-ref proposal "mid"))
+        (memory-set harness-root (hash-ref proposal "shadow_profile")
+                    "last_harness_outcome" (hash-ref decision "outcome"))
+        (let ((path (write-episode ep out)))
+          (hash "ok" #t "accepted" accepted "episode" ep "path" path
+                "outcome" (hash-ref decision "outcome")
+                "mid" (hash-ref proposal "mid")))))))
+
+(define (harness-change-episode prompt proposal accepted decision seed root nested cf)
+  (let* ((ts (iso-now))
+         (use-nested (and nested (hash? nested) (hash-ref nested "worldlines" #f)))
+         (worldlines (if use-nested (hash-ref nested "worldlines")
+                       (list (hash "id" "wl-harness-0"
+                                   "parent_id" #f
+                                   "mutations" (list
+                                     (hash "op" "harness_mutate"
+                                           "target_id" "harness:default"
+                                           "summary" (string-append "canary mid=" (hash-ref proposal "mid"))
+                                           "mid" (hash-ref proposal "mid")))
+                                   "eval" (hash "fitness" cf
+                                                "passed" accepted
+                                                "metrics" (hash "tests_passed" (if accepted 1 0)
+                                                                "tests_total" 1
+                                                                "incr_compile_ms" 0
+                                                                "compile_ms" 0
+                                                                "audit_ok" #t
+                                                                "incr_claimed" #f
+                                                                "incr_proven" #f)
+                                                "notes" (string-append "harness canary " (hash-ref decision "outcome")))))))
+         (selected-id (if use-nested (hash-ref nested "selected_id") "wl-harness-0"))
+         (runtime (hash "mode" (if use-nested (hash-ref (hash-ref nested "runtime") "mode") "simulated")
+                        "requested_mode" (hash-ref (hash-ref proposal "proposed") "routing")
+                        "aura_ref" #f
+                        "seed" seed
+                        "incr_proven" #f
+                        "shadow" #t
+                        "harness_canary" #t
+                        "kernel" "aura"))
+         (_ (merge-prove-into-runtime runtime (attach-prove-metadata root))))
+    (hash "schema_version" "trajectory.v0"
+          "episode_id" (make-id)
+          "ts_start" ts
+          "ts_end" (iso-now)
+          "prompt" prompt
+          "runtime" runtime
+          "harness" (hash "l1_strategy_id" (hash-ref (hash-ref proposal "proposed") "l1_strategy_id")
+                          "l2_weights_id" (hash-ref (hash-ref proposal "proposed") "l2_weights_id" #f)
+                          "l3_online" #f
+                          "mid" (hash-ref proposal "mid")
+                          "harness_id" (hash-ref (hash-ref proposal "proposed") "harness_id")
+                          "version_base" (hash-ref (hash-ref proposal "base") "version")
+                          "version_proposed" (hash-ref (hash-ref proposal "proposed") "version")
+                          "config_proposed" (hash-ref proposal "proposed")
+                          "config_base" (hash-ref proposal "base")
+                          "actions" (hash-ref decision "actions")
+                          "outcome" (hash-ref decision "outcome")
+                          "autopropote" (hash-ref decision "autopropote")
+                          "committed" (hash-ref decision "committed")
+                          "shadow_profile" (hash-ref proposal "shadow_profile"))
+          "worldlines" worldlines
+          "selected_id" selected-id
+          "selection_reason" (string-append "harness_" (hash-ref decision "outcome"))
+          "discarded" (list)
+          "privacy" (hash "redacted" #f "retention_class" "dogfood"))))

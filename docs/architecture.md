@@ -9,9 +9,9 @@
 └──────────────────────────┬──────────────────────────────┘
                            │ prompts, policy, I/O
 ┌──────────────────────────▼──────────────────────────────┐
-│  Aura control plane (aura-build orch)                   │
+│  Aura kernel (aura/*.aura) — PRODUCT CORE               │
 │  scout → mutate → eval → select-best                    │
-│  worldline fan-out (fibers) · anti-postman default      │
+│  worldline fan-out · prove-incr · harness · traj        │
 └──────────────┬───────────────────────────┬──────────────┘
                │                           │
 ┌──────────────▼──────────────┐ ┌──────────▼──────────────┐
@@ -28,11 +28,11 @@
 
 ## Host thin
 
-The host process is a **thin** adapter: argparse/CI entrypoints, path wiring, exit codes, plus M5 `tui`/`acp` stubs. Surface *shape* may follow grok-build (headless → CI → ACP/TUI). Product value does **not** live in host chrome. Soft ≠ Restricted; deny plugin-as-moat.
+The host process is a **thin** adapter: argparse/CI entrypoints that **shell out to the Aura kernel** (`aura/main.aura`), plus export / M5 `tui`/`acp` stubs. Product value lives in `aura/*.aura`, not Python scaffolding. Python orch modules remain as CI-safe fallback when `aura` is missing (`AURA_BUILD_FORCE_PYTHON=1`). Soft ≠ Restricted; deny plugin-as-moat.
 
 ## Aura control
 
-`orch` owns the episode loop:
+The **Aura kernel** (`aura/orch.aura`, entered via `aura/main.aura`) owns the episode loop:
 
 1. **Scout** — read task + optional harness hints (L1/L2).
 2. **Mutate** — propose N worldline mutations via `RuntimeBackend` (`SimulatedBackend` or `AuraBackend` shelling `mutate:rebind`).
@@ -125,3 +125,15 @@ GLIBCXX / missing binary). `aura-build doctor` aggregates probe + last report.
 Session model stays `shared_workspace_subprocess` unless a fiber session marker
 is observed. Details: [storm-still-incr.md](storm-still-incr.md).
 
+
+
+## What Python still does
+
+| Surface | Role |
+|---------|------|
+| `cli.py` + `kernel.py` | Argparse → env → `aura aura/main.aura`; exit-code mapping |
+| `export.py` / schema / trajectory validate | Batch export, privacy redaction, pytest SSOT |
+| `acp.py` / `tui.py` | Thin host stubs (not the product) |
+| `orch.py` / `prove_incr.py` / … | **CI fallback only** when Aura binary unavailable |
+
+Primary dogfood path: Aura kernel. Do not grow Python orch as the product.
