@@ -171,3 +171,25 @@
 - [x] Docs say kernel=Aura; list Aura-first CLIs vs Python-only surfaces
 - [x] Simulated + prove path smoke green (CI fallback + live when sidecar present)
 - [ ] Delete remaining Python orch once GHA provisions Aura (deferred shrink)
+
+
+## Post-M5++ — self-evolve (aura-build dogfood)
+
+**Deliver**
+
+- Aura-first `aura-build self-evolve`: dogfood mutate on this repo (harness L1
+  canary and/or worldlines over the aura-build tree)
+- Materialize winner into the git worktree (`aura/self_evolve_stamp.aura` + traj)
+- Verify (host smoke / prove-incr / kernel episode) — red ⇒ no commit/push; traj reason
+- Commit on `main` with traj id / harness mid / honesty flags (`incr_proven` /
+  `fiber_live` never invented); `runtime.kernel=aura`
+- Push `origin main` when verify green (skip CI wait); `--no-push` / `--no-commit` for dry runs
+- Thin Python CLI only; refuse without `AURA_BIN`
+- Tests: refuse + `--no-push` path CI-safe; live push not required in pytest
+
+**Exit criteria**
+
+- [x] `self-evolve` Aura kernel command + thin host commit/push edge
+- [x] `--no-push` / `--no-commit` / `--verify none|smoke|prove|kernel`
+- [x] Never fake `incr_proven` / `fiber_live`
+- [ ] Live fiber-multi worldline materialize (still deferred — stamp + L1 dogfood first)

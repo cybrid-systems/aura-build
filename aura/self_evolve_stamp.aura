@@ -1,0 +1,18 @@
+; aura-build self-evolve stamp — materialized winner
+; Not fiber-live. incr_proven only when prove measured it.
+; traj_id=ep-1790151616969-1
+; harness_mid=mid-ep-1790151616971-2
+; generation=1
+; fitness=0.6344
+; verify_ok=true
+; incr_proven=true
+; fiber_live=false
+; kernel=aura
+(export stamp-info)
+(define (stamp-info)
+  (hash "traj_id" "ep-1790151616969-1"
+        "harness_mid" "mid-ep-1790151616971-2"
+        "generation" 1
+        "kernel" "aura"
+        "incr_proven" #f
+        "fiber_live" #f))

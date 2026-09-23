@@ -26,6 +26,8 @@ from aura_build.l2_weights import host_cli as l2_host_cli
 from aura_build.memory import host_cli as memory_host_cli
 from aura_build.prove_incr import cli_refuse_prove, doctor_snapshot, format_doctor_text
 from aura_build.runtime import AuraUnavailable
+from aura_build.self_evolve_host import git_commit_and_maybe_push, run_host_verify
+from aura_build.kernel import repo_root as _kernel_repo_root
 
 # Re-export for tests/docs that import build_parser from cli
 __all__ = ["build_parser", "console_main", "main"]
@@ -94,6 +96,7 @@ def main(argv: list[str] | None = None) -> int:
         "l2": _cmd_l2,
         "prove-incr": _cmd_prove_incr,
         "doctor": _cmd_doctor,
+        "self-evolve": _cmd_self_evolve,
     }
     fn = handlers.get(args.cmd)
     return fn(args) if fn else 2
@@ -352,6 +355,132 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
     )
     print(json.dumps(snap, indent=2, sort_keys=True) if args.json else format_doctor_text(snap))
     return 0
+
+
+
+def _cmd_self_evolve(args: argparse.Namespace) -> int:
+    """Aura self-evolve → host verify → optional commit/push."""
+    root = _root(args)
+    try:
+        raw_sets = getattr(args, "sets", []) or []
+        raw_fw = getattr(args, "fitness_weights", []) or []
+        patches = coerce_harness_patches(parse_kv_list(raw_sets)) if raw_sets else {}
+        fw = {k: float(v) for k, v in parse_kv_list(raw_fw).items()} if raw_fw else {}
+    except SystemExit:
+        raise
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    repo = _kernel_repo_root()
+    env = {
+        "AURA_BUILD_PROMPT": args.prompt,
+        "AURA_BUILD_WORLDLINES": str(args.worldlines),
+        "AURA_BUILD_OUT": str(args.out or Path("trajectories/self_evolve.jsonl")),
+        "AURA_BUILD_REPO_ROOT": str(repo),
+        "AURA_BUILD_HARNESS_PATCHES": json.dumps(patches or {}),
+        "AURA_BUILD_FITNESS_PATCHES": json.dumps(fw or {}),
+        "AURA_BUILD_JSON": _b(args.json),
+    }
+    if args.seed is not None:
+        env["AURA_BUILD_SEED"] = str(args.seed)
+
+    got = _invoke_kr(
+        "self-evolve",
+        env,
+        refuse_as="self-evolve",
+        harness_root=root,
+    )
+    if isinstance(got, int):
+        return got
+
+    emit_kernel_io(got)
+    resp = dict(got.response or {})
+    if not resp.get("ok", False):
+        reason = resp.get("reason") or "self_evolve_failed"
+        print(f"self-evolve: fail reason={reason} (no commit/push)", file=sys.stderr)
+        code = kernel_exit_code(got)
+        return code if code != 0 else 1
+
+    verify = run_host_verify(
+        repo,
+        getattr(args, "verify", "smoke") or "smoke",
+        aura_bin=getattr(args, "aura_bin", None),
+        harness_root=root,
+    )
+    if not verify.get("ok"):
+        print(
+            f"self-evolve: verify failed mode={verify.get('mode')} "
+            f"reason={verify.get('reason')} (no commit/push)",
+            file=sys.stderr,
+        )
+        if verify.get("stdout"):
+            print(str(verify["stdout"])[-1000:], file=sys.stderr)
+        if verify.get("stderr"):
+            print(str(verify["stderr"])[-1000:], file=sys.stderr)
+        return int(verify.get("exit_code") or 1)
+
+    honesty = resp.get("honesty") or {}
+    print(
+        "self-evolve host_verify=ok"
+        f" incr_proven={bool(honesty.get('incr_proven', False))}"
+        f" fiber_live={bool(honesty.get('fiber_live', False))}"
+        f" kernel=aura"
+        f" traj={resp.get('traj_id', '')}"
+        f" mid={resp.get('harness_mid', '')}"
+    )
+
+    if getattr(args, "no_commit", False):
+        print("self-evolve: --no-commit set; skip git")
+        if args.json:
+            print(
+                json.dumps(
+                    {"response": resp, "verify": verify, "git": {"skipped": True}},
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+        return 0
+
+    paths = [str(p) for p in (resp.get("materialized") or [])]
+    for extra in (
+        "aura/self_evolve_stamp.aura",
+        "aura/self_evolve.aura",
+        "aura/main.aura",
+        "src/aura_build/cli.py",
+        "src/aura_build/cli_parser.py",
+        "src/aura_build/self_evolve_host.py",
+        "tests/test_self_evolve.py",
+        "docs/iteration-plan.md",
+        "README.md",
+    ):
+        if (repo / extra).exists() and extra not in paths:
+            paths.append(extra)
+
+    msg = resp.get("commit_message") or (
+        f"self-evolve: traj={resp.get('traj_id', '?')} mid={resp.get('harness_mid', '?')} "
+        "kernel=aura incr_proven=false fiber_live=false"
+    )
+    git_res = git_commit_and_maybe_push(
+        repo,
+        message=msg,
+        paths=paths,
+        no_push=bool(getattr(args, "no_push", False)),
+    )
+    print(
+        f"self-evolve git reason={git_res.get('reason')} tip={git_res.get('tip', '')} "
+        f"pushed={git_res.get('pushed', False)}"
+    )
+    if args.json:
+        print(
+            json.dumps(
+                {"response": resp, "verify": verify, "git": git_res},
+                indent=2,
+                sort_keys=True,
+            )
+        )
+    return 0 if git_res.get("ok", False) else 1
+
 
 
 def console_main() -> None:

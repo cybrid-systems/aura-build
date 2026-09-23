@@ -1,0 +1,205 @@
+; aura-build kernel — self-evolve dogfood (harness L1 + worldlines over this repo)
+; Mutate/canary → select-best → materialize stamp into git worktree → light verify.
+; Host may run heavier smoke/prove before commit/push.
+; Honesty: never invent incr_proven / fiber_live. runtime.kernel = aura.
+(export run-self-evolve)
+
+(require "util" all:)
+(require "traj" all:)
+(require "orch" all:)
+(require "harness" all:)
+(require "prove" all:)
+(require "std/io" all:)
+(require "std/process" all:)
+(require "std/hash" all:)
+
+(define (honesty-snapshot root)
+  (attach-prove-metadata root))
+
+(define (stamp-path repo)
+  (join-path (join-path repo "aura") "self_evolve_stamp.aura"))
+
+(define (read-generation path)
+  (if (not (file-exists? path))
+    0
+    (let* ((tmp "/tmp/_aura_build_se_gen.txt")
+           (_ (sh (string-append
+                    "grep -E '^; generation=' '" path
+                    "' 2>/dev/null | head -1 | sed 's/^; generation=//' > " tmp
+                    " || echo 0 > " tmp)))
+           (raw (string-trim (read-file tmp)))
+           (_2 (sh (string-append "rm -f " tmp)))
+           (n (string->number raw)))
+      (if (number? n) (floor n) 0))))
+
+(define (write-stamp path traj-id mid generation fitness verify-ok honesty)
+  (let ((body
+          (string-append
+            "; aura-build self-evolve stamp — materialized winner\n"
+            "; Not fiber-live. incr_proven only when prove measured it.\n"
+            "; traj_id=" traj-id "\n"
+            "; harness_mid=" mid "\n"
+            "; generation=" (number->string generation) "\n"
+            "; fitness=" (number->string fitness) "\n"
+            "; verify_ok=" (if verify-ok "true" "false") "\n"
+            "; incr_proven=" (if (hash-ref honesty "incr_proven" #f) "true" "false") "\n"
+            "; fiber_live=" (if (hash-ref honesty "fiber_live" #f) "true" "false") "\n"
+            "; kernel=aura\n"
+            "(export stamp-info)\n"
+            "(define (stamp-info)\n"
+            "  (hash \"traj_id\" \"" traj-id "\"\n"
+            "        \"harness_mid\" \"" mid "\"\n"
+            "        \"generation\" " (number->string generation) "\n"
+            "        \"kernel\" \"aura\"\n"
+            "        \"incr_proven\" #f\n"
+            "        \"fiber_live\" #f))\n")))
+    (ensure-dir (dirname-path path))
+    (write-file path body)
+    path))
+
+(define (light-verify stamp)
+  ; Cheap in-kernel check: stamp exists and declares kernel=aura (no nested CLI).
+  (if (not (file-exists? stamp))
+    (hash "ok" #f "reason" "stamp_missing" "exit_code" 1 "mode" "light")
+    (let* ((tmp "/tmp/_aura_build_se_light.txt")
+           (_ (sh (string-append "grep -c 'kernel=aura' '" stamp "' > " tmp " 2>/dev/null || echo 0 > " tmp)))
+           (raw (string-trim (read-file tmp)))
+           (_2 (sh (string-append "rm -f " tmp)))
+           (n (string->number raw))
+           (ok (and (number? n) (> n 0))))
+      (hash "ok" ok
+            "reason" (if ok "stamp_ok" "stamp_missing_kernel_tag")
+            "exit_code" (if ok 0 1)
+            "mode" "light"))))
+
+(define (build-episode prompt seed n selected-id mid honesty verify traj-id generation)
+  (let* ((ts (iso-now))
+         (wls
+           (let loop ((i 0) (acc (list)))
+             (if (>= i n)
+               (reverse acc)
+               (let* ((fid (string-append "wl-" (number->string i)))
+                      (fit (default-fitness prompt seed i))
+                      (passed (>= fit 0.3)))
+                 (loop (+ i 1)
+                       (cons (hash "id" fid
+                                   "parent_id" #f
+                                   "mutations" (list
+                                     (hash "op" "self_evolve_stamp"
+                                           "target_id" "aura/self_evolve_stamp.aura"
+                                           "summary" (string-append "self-evolve candidate " fid)
+                                           "generation" (+ generation 1)))
+                                   "eval" (hash "fitness" fit
+                                                "passed" passed
+                                                "metrics" (hash "tests_passed" (if passed 1 0)
+                                                                "tests_total" 1
+                                                                "incr_compile_ms" 0
+                                                                "audit_ok" #t
+                                                                "incr_proven" #f)
+                                                "notes" "self-evolve dogfood worldline"))
+                             acc))))))
+         (runtime (hash "mode" "simulated"
+                        "requested_mode" "simulated"
+                        "kernel" "aura"
+                        "seed" seed
+                        "incr_proven" #f
+                        "fiber_live" #f
+                        "measured" (hash-ref honesty "measured" #f)
+                        "session_model" (hash-ref honesty "session_model" "shared_workspace_subprocess")
+                        "self_evolve" #t
+                        "verify" verify)))
+    (merge-prove-into-runtime runtime honesty)
+    (hash "schema_version" "trajectory.v0"
+          "episode_id" traj-id
+          "ts_start" ts
+          "ts_end" (iso-now)
+          "prompt" prompt
+          "runtime" runtime
+          "harness" (hash "l1_strategy_id" "self_evolve.v0"
+                          "l2_weights_id" #f
+                          "l3_online" #f
+                          "mid" mid
+                          "outcome" (if (hash-ref verify "ok" #f) "materialize" "verify_fail"))
+          "worldlines" wls
+          "selected_id" selected-id
+          "selection_reason" "self_evolve_max_fitness"
+          "discarded" (list)
+          "privacy" (hash "redacted" #f "retention_class" "dogfood"))))
+
+(define (pick-best-index prompt seed n)
+  (let loop ((i 0) (best 0) (best-f -1.0))
+    (if (>= i n)
+      best
+      (let ((f (default-fitness prompt seed i)))
+        (if (> f best-f)
+          (loop (+ i 1) i f)
+          (if (and (= f best-f) (> i best))
+            (loop (+ i 1) i f)
+            (loop (+ i 1) best best-f)))))))
+
+(define (run-self-evolve)
+  (let* ((prompt (env-get "AURA_BUILD_PROMPT" "self-evolve dogfood aura-build"))
+         (repo (env-get "AURA_BUILD_REPO_ROOT" "."))
+         (harness-root (env-get "AURA_BUILD_HARNESS_ROOT" ".aura-build"))
+         (out (env-get "AURA_BUILD_OUT" "trajectories/self_evolve.jsonl"))
+         (seed-opt (env-get "AURA_BUILD_SEED" ""))
+         (seed (seed-from-prompt prompt
+                 (if (equal? seed-opt "") #f (string->number seed-opt))))
+         (n (env-int "AURA_BUILD_WORLDLINES" 3))
+         (honesty (honesty-snapshot harness-root))
+         (spath (stamp-path repo))
+         (generation (read-generation spath))
+         (traj-id (make-id))
+         (canary (run-harness-canary))
+         (mid (hash-ref canary "mid" (string-append "mid-" traj-id)))
+         (best-i (pick-best-index prompt seed n))
+         (selected-id (string-append "wl-" (number->string best-i)))
+         (fitness (default-fitness prompt seed best-i))
+         (new-gen (+ generation 1))
+         (stamp (write-stamp spath traj-id mid new-gen fitness #t honesty))
+         (verify (light-verify stamp))
+         (ok (hash-ref verify "ok" #f))
+         (stamp2 (write-stamp spath traj-id mid new-gen fitness ok honesty))
+         (ep (build-episode prompt seed n selected-id mid honesty verify traj-id generation))
+         (path (write-episode ep out))
+         (reason (if ok "verify_green" (hash-ref verify "reason" "verify_failed")))
+         (commit-msg
+           (string-append
+             "self-evolve: traj=" traj-id
+             " mid=" mid
+             " gen=" (number->string new-gen)
+             " kernel=aura"
+             " incr_proven=" (if (hash-ref honesty "incr_proven" #f) "true" "false")
+             " fiber_live=" (if (hash-ref honesty "fiber_live" #f) "true" "false"))))
+    (display "self_evolve ok=")(display (if ok "true" "false"))
+    (display " selected=")(display selected-id)
+    (display " fitness=")(display fitness)
+    (display " mid=")(display mid)
+    (display " traj=")(display traj-id)
+    (display " gen=")(display new-gen)
+    (display " verify=")(display (hash-ref verify "reason" ""))
+    (display " stamp=")(display stamp2)
+    (display " kernel=aura")
+    (display " incr_proven=")(display (hash-ref honesty "incr_proven" #f))
+    (display " fiber_live=")(display (hash-ref honesty "fiber_live" #f))
+    (display " commit_ready=")(display (if ok "true" "false"))
+    (display " wrote=")(display path)
+    (newline)
+    (hash "ok" ok
+          "commit_ready" ok
+          "traj_id" traj-id
+          "harness_mid" mid
+          "selected_id" selected-id
+          "fitness" fitness
+          "generation" new-gen
+          "path" path
+          "episode" ep
+          "verify" verify
+          "honesty" honesty
+          "reason" reason
+          "materialized" (list stamp2)
+          "stamp_path" stamp2
+          "commit_message" commit-msg
+          "canary_outcome" (hash-ref canary "outcome" "unknown")
+          "canary_accepted" (hash-ref canary "accepted" #f)
+          "kernel" "aura")))

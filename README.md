@@ -169,6 +169,25 @@ Example artifact shape: `examples/weights.specialist.stub.v0.json` → copy to `
 **No training. No tensor load. `stub=True` until real bytes exist.**
 
 
+
+### Self-evolve (Post-M5++)
+
+Dogfood mutate on **this** repo, materialize the winner, verify, then commit/push `main`:
+
+```bash
+# Requires AURA_BIN + sidecar. Dry run (no push):
+aura-build self-evolve --prompt "dogfood aura-build" --no-push --verify smoke
+
+# Materialize + verify only (no git):
+aura-build self-evolve --prompt "dry" --no-commit --verify none
+
+# Live: verify green ⇒ commit main + push origin main (skips CI wait)
+aura-build self-evolve --prompt "ship" --verify smoke
+```
+
+Honesty: never invents `incr_proven` / `fiber_live`. Commit message carries traj id,
+harness mid, and honesty flags. Without `AURA_BIN`, the command refuses.
+
 ### Prove-incr / doctor (Post-M5)
 
 ```bash

@@ -142,3 +142,18 @@ is observed. Details: [storm-still-incr.md](storm-still-incr.md).
 `harness-mutate`, `doctor`, `harness-show`, `acp`, `tui`, `export` (JSON), `memory`/`l2`
 (Aura when healthy). Trajectories record `runtime.kernel=aura`. Never invent
 `incr_proven` / `fiber_live`. Do not grow Python orch as the product.
+
+
+## Self-evolve (Post-M5++)
+
+`aura-build self-evolve` is Aura-kernel-first:
+
+1. Kernel (`aura/self_evolve.aura`) dogfoods harness L1 canary + worldline select-best
+   over this repo, materializes `aura/self_evolve_stamp.aura`, writes traj with
+   `runtime.kernel=aura` and honest `incr_proven` / `fiber_live`.
+2. Host runs optional heavier verify (`--verify smoke|prove|kernel`).
+3. On green: host commits on `main` (message carries traj id / harness mid / honesty)
+   and pushes `origin main` unless `--no-push`.
+
+Fail-closed: verify red or kernel `ok=false` ⇒ no commit/push. Python without
+`AURA_BIN` refuses (`kernel=python_deprecated`).

@@ -11,6 +11,7 @@
 (require "export" all:)
 (require "acp" all:)
 (require "tui" all:)
+(require "self_evolve" all:)
 (require "std/io" all:)
 
 (define (write-response obj)
@@ -193,6 +194,28 @@
 (define (cmd-tui)
   (tui-run))
 
+(define (cmd-self-evolve)
+  (let ((result (run-self-evolve)))
+    (write-response (hash "cmd" "self-evolve"
+                          "ok" (hash-ref result "ok" #f)
+                          "commit_ready" (hash-ref result "commit_ready" #f)
+                          "traj_id" (hash-ref result "traj_id" "")
+                          "harness_mid" (hash-ref result "harness_mid" "")
+                          "selected_id" (hash-ref result "selected_id" "")
+                          "fitness" (hash-ref result "fitness" 0)
+                          "generation" (hash-ref result "generation" 0)
+                          "path" (hash-ref result "path" "")
+                          "stamp_path" (hash-ref result "stamp_path" "")
+                          "commit_message" (hash-ref result "commit_message" "")
+                          "reason" (hash-ref result "reason" "")
+                          "verify" (hash-ref result "verify" (hash))
+                          "honesty" (hash-ref result "honesty" (hash))
+                          "materialized" (hash-ref result "materialized" (list))
+                          "canary_outcome" (hash-ref result "canary_outcome" "")
+                          "kernel" "aura"))
+    (if (hash-ref result "ok" #f) 0 1)))
+
+
 (define (kernel-main)
   (let ((cmd (env-get "AURA_BUILD_CMD" "run")))
     (display "AURA_BUILD_KERNEL cmd=")(display cmd)(newline)
@@ -207,6 +230,7 @@
       ((equal? cmd "export") (cmd-export))
       ((equal? cmd "acp") (cmd-acp))
       ((equal? cmd "tui") (cmd-tui))
+      ((equal? cmd "self-evolve") (cmd-self-evolve))
       (else
         (display "unknown AURA_BUILD_CMD=")(display cmd)(newline)
         (write-response (hash "ok" #f "error" "unknown_cmd"))

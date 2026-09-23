@@ -163,6 +163,45 @@ def build_parser() -> argparse.ArgumentParser:
     _opt(prove, "--out", type=Path, default=None)
     _common(prove, aura=True)
 
+    se = sub.add_parser(
+        "self-evolve",
+        help=(
+            "dogfood mutate this repo (harness L1 + worldlines), materialize winner, "
+            "verify, commit main; push unless --no-push (Aura kernel)"
+        ),
+    )
+    _opt(se, "--prompt", default="self-evolve dogfood aura-build")
+    _opt(se, "--worldlines", type=int, default=3)
+    _opt(se, "--seed", type=int, default=None)
+    _opt(se, "--out", type=Path, default=None)
+    _opt(
+        se,
+        "--verify",
+        choices=("none", "smoke", "prove", "kernel"),
+        default="smoke",
+        help="host verify after Aura materialize (default smoke)",
+    )
+    _opt(se, "--no-push", action="store_true", help="commit only / dry-run push skip")
+    _opt(se, "--no-commit", action="store_true", help="skip git commit (materialize+verify only)")
+    _opt(
+        se,
+        "--set",
+        dest="sets",
+        action="append",
+        default=[],
+        metavar="KEY=VAL",
+        help="optional harness L1 patch (same keys as harness-mutate)",
+    )
+    _opt(
+        se,
+        "--fitness-weight",
+        dest="fitness_weights",
+        action="append",
+        default=[],
+        metavar="KEY=VAL",
+    )
+    _common(se, aura=True)
+
     doc = sub.add_parser("doctor", help="Aura probe + last prove-incr report")
     _opt(doc, "--skip-probe", action="store_true")
     _common(doc, aura=True)
