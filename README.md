@@ -349,22 +349,28 @@ aura-build llm-dogfood --task fib --max-rounds 8 --worldlines 3 --json
 # Tiny external project dogfood (examples/projects/mini-greet → GREET=aura)
 aura-build llm-dogfood --task greet --max-rounds 8 --worldlines 3 --json
 ./examples/projects/mini-greet/verify.sh examples/projects/mini-greet/stub.aura  # expect fail
+
+# Slightly harder: mini-calc → ADD=7 / MUL=12 / MIX=17 via define add/mul
+aura-build llm-dogfood --task calc --max-rounds 8 --worldlines 3 \
+  --out trajectories/mini_calc_dogfood.jsonl --json
+./examples/projects/mini-calc/verify.sh examples/projects/mini-calc/stub.aura  # expect fail
 ```
 
 Tasks: `fib` (see `examples/minimax_fib_task.md`), `greet` (see
-`examples/projects/mini-greet/`). MiniMax is propose-only; Aura binary verifies;
+`examples/projects/mini-greet/`), `calc` (see `examples/projects/mini-calc/` —
+named helpers + multi-line stdout). MiniMax is propose-only; Aura binary verifies;
 worldlines select-best + repair. Honesty: `fiber_live` only when prove says so;
 otherwise `session_model=shared_workspace_subprocess`. Trajectories record
 `runtime.kernel=aura`, `runtime.llm.model`, actions/fitness; API keys are redacted.
 
 ### Self-evolve after external dogfood
 
-Once mini projects like `mini-greet` verify green, aura-build can evolve **its own**
+Once mini projects like `mini-greet` / `mini-calc` verify green, aura-build can evolve **its own**
 product code (still Aura-kernel + thin host):
 
 ```bash
 # Dry / no-push smoke only — prefer after external dogfood is green
-aura-build self-evolve --prompt "dry after mini-greet" --no-push --verify smoke
+aura-build self-evolve --prompt "dry after mini-calc" --no-push --verify smoke
 ```
 
 Do not push self-evolve unless verify is green and the diff is clearly product-useful.

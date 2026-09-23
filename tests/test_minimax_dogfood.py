@@ -145,6 +145,7 @@ def test_parser_lists_greet_task():
     assert task_choices is not None
     assert "greet" in task_choices
     assert "fib" in task_choices
+    assert "calc" in task_choices
 
 
 def test_verify_good_greet(tmp_path):
@@ -213,3 +214,119 @@ def test_closed_loop_mocked_greet(monkeypatch, tmp_path):
     assert summary["expect"] == "GREET=aura"
     assert Path(summary["final_program"]).is_file()
     assert "GREET=aura" in Path(summary["final_program"]).read_text(encoding="utf-8")
+
+
+CALC_SRC = """(define (add a b) (+ a b))
+(define (mul a b) (* a b))
+(display "ADD=")(display (add 3 4))(newline)
+(display "MUL=")(display (mul 3 4))(newline)
+(display "MIX=")(display (add (mul 3 4) 5))(newline)
+"""
+
+CALC_HARDCODE = """(display "ADD=7")(newline)
+(display "MUL=12")(newline)
+(display "MIX=17")(newline)
+"""
+
+
+def test_verify_good_calc(tmp_path):
+    from aura_build.llm_dogfood import (
+        CALC_SOURCE_RES,
+        CALC_SUCCESS_RES,
+        verify_aura_program,
+    )
+    from aura_build.runtime import resolve_aura_bin
+
+    bin_path = resolve_aura_bin()
+    if not bin_path:
+        return
+    prog = tmp_path / "calc.aura"
+    prog.write_text(CALC_SRC, encoding="utf-8")
+    got = verify_aura_program(
+        prog,
+        expect_re=CALC_SUCCESS_RES,
+        source_res=CALC_SOURCE_RES,
+        aura_bin=bin_path,
+    )
+    assert got["passed"] is True
+    assert got["fitness"] == 1.0
+    assert got["structure_ok"] is True
+
+
+def test_verify_calc_rejects_hardcode(tmp_path):
+    from aura_build.llm_dogfood import (
+        CALC_SOURCE_RES,
+        CALC_SUCCESS_RES,
+        verify_aura_program,
+    )
+    from aura_build.runtime import resolve_aura_bin
+
+    bin_path = resolve_aura_bin()
+    if not bin_path:
+        return
+    prog = tmp_path / "hard.aura"
+    prog.write_text(CALC_HARDCODE, encoding="utf-8")
+    got = verify_aura_program(
+        prog,
+        expect_re=CALC_SUCCESS_RES,
+        source_res=CALC_SOURCE_RES,
+        aura_bin=bin_path,
+    )
+    assert got["passed"] is False
+    assert got["matched_expect"] is True
+    assert got["structure_ok"] is False
+
+
+def test_closed_loop_mocked_calc(monkeypatch, tmp_path):
+    """One propose returns good calc; ensure select-best + traj without live API."""
+
+    class FakeCfg:
+        api_key = "sk-test-fake-key-not-real"
+        base_url = "https://api.minimaxi.com/v1"
+        model = "MiniMax-M3"
+        key_file = "/tmp/fake"
+        env_file = "/tmp/fake.env"
+
+        def public_dict(self):
+            return {
+                "provider": "minimax",
+                "base_url": self.base_url,
+                "model": self.model,
+                "api_key": "<redacted:secret>",
+            }
+
+    def fake_chat(messages, config=None, **kwargs):
+        return {
+            "ok": True,
+            "content": f"```aura\n{CALC_SRC}```",
+            "model": "MiniMax-M3",
+            "error": "",
+        }
+
+    monkeypatch.setattr("aura_build.llm_dogfood.chat_completions", fake_chat)
+    monkeypatch.setattr("aura_build.llm_dogfood.prefer_aura_kernel", lambda: False)
+
+    from aura_build.llm_dogfood import run_closed_loop
+    from aura_build.runtime import resolve_aura_bin
+
+    if not resolve_aura_bin():
+        return
+
+    out = tmp_path / "traj.jsonl"
+    ws = tmp_path / "ws"
+    summary = run_closed_loop(
+        task="calc",
+        max_rounds=2,
+        worldlines=2,
+        out=out,
+        workspace=ws,
+        harness_root=tmp_path / "harness",
+        keep_workspace=True,
+        config=FakeCfg(),  # type: ignore[arg-type]
+    )
+    assert summary["success"] is True
+    assert summary["task"] == "calc"
+    assert "ADD=7" in summary["expect"]
+    final = Path(summary["final_program"]).read_text(encoding="utf-8")
+    assert "(define (add" in final
+    assert "(define (mul" in final

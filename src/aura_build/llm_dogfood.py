@@ -33,6 +33,7 @@ SESSION_SHARED = "shared_workspace_subprocess"
 
 TASK_FIB = "fib"
 TASK_GREET = "greet"
+TASK_CALC = "calc"
 DEFAULT_TASK = TASK_FIB
 DEFAULT_MAX_ROUNDS = 8
 DEFAULT_WORLDLINES = 3
@@ -70,10 +71,41 @@ GREET_FALLBACK = (
     '(display "GREET=wrong")(newline)\n'
 )
 
+CALC_USER = """Write a small Aura program that defines named helpers and prints exactly:
+ADD=7
+MUL=12
+MIX=17
+each followed by a newline.
+Semantics: ADD = (add 3 4) = 3+4; MUL = (mul 3 4) = 3*4; MIX = (add (mul 3 4) 5) = (3*4)+5.
+You MUST include (define (add a b) ...) and (define (mul a b) ...) and call them —
+do not only hardcode the three display strings. Prefer display/newline/+/*.
+No extra prose outside the code fence.
+"""
+
+CALC_EXPECT = "ADD=7\nMUL=12\nMIX=17"
+CALC_SUCCESS_RES = [
+    re.compile(r"ADD\s*=\s*7"),
+    re.compile(r"MUL\s*=\s*12"),
+    re.compile(r"MIX\s*=\s*17"),
+]
+CALC_SOURCE_RES = [
+    re.compile(r"\(define\s+\(add\b"),
+    re.compile(r"\(define\s+\(mul\b"),
+]
+CALC_FALLBACK = (
+    '; empty model reply fallback\n'
+    '(define (add a b) (- a b))\n'
+    '(display "ADD=")(display (add 3 4))(newline)\n'
+    '(display "MUL=0")(newline)\n'
+    '(display "MIX=0")(newline)\n'
+)
+
 REPAIR_STEER = """The previous Aura candidate failed verification under the Aura binary.
 Fix the program. Keep the same required output contract.
 Common Aura pitfalls: balanced parentheses; use (display x) (newline); recursion via
 (define (fib n) (if (<= n 1) n (+ (fib (- n 1)) (fib (- n 2))))); no Python syntax.
+If the task requires named helpers (e.g. add/mul), keep (define (add …)) / (define (mul …))
+and call them — do not only hardcode display strings.
 Return ONE corrected Aura program in a ```aura fence.
 """
 
@@ -94,6 +126,15 @@ TASKS: dict[str, dict[str, Any]] = {
         "fallback": GREET_FALLBACK,
         "label": "greet",
         "project": "examples/projects/mini-greet",
+    },
+    TASK_CALC: {
+        "user": CALC_USER,
+        "expect": CALC_EXPECT,
+        "expect_re": CALC_SUCCESS_RES,
+        "source_res": CALC_SOURCE_RES,
+        "fallback": CALC_FALLBACK,
+        "label": "calc",
+        "project": "examples/projects/mini-calc",
     },
 }
 
@@ -141,11 +182,17 @@ def load_honesty(harness_root: Path) -> dict[str, Any]:
 def verify_aura_program(
     source_path: Path,
     *,
-    expect_re: re.Pattern[str],
+    expect_re: re.Pattern[str] | list[re.Pattern[str]],
+    source_res: list[re.Pattern[str]] | None = None,
     aura_bin: str | None = None,
     timeout_s: float = 15.0,
 ) -> dict[str, Any]:
-    """Compile/run candidate with Aura binary; fitness from pass + error signal."""
+    """Compile/run candidate with Aura binary; fitness from pass + error signal.
+
+    ``expect_re`` may be one pattern or a list (all must match stdout).
+    Optional ``source_res`` patterns must all match the candidate source
+    (structural checks, e.g. require ``(define (add`` / ``(define (mul``).
+    """
     bin_path = resolve_aura_bin(aura_bin)
     if not bin_path:
         return {
@@ -174,10 +221,21 @@ def verify_aura_program(
         re.search(r"(?i)\berror:|\bunbound variable\b|\bsyntax\b", stderr)
         or re.search(r"(?i)\berror:|\bunbound variable\b", stdout)
     )
-    matched = bool(expect_re.search(stdout))
-    passed = matched and not has_error
+    patterns = expect_re if isinstance(expect_re, list) else [expect_re]
+    matched = all(bool(p.search(stdout)) for p in patterns) if patterns else False
+    try:
+        source_text = source_path.read_text(encoding="utf-8")
+    except OSError:
+        source_text = ""
+    structure_ok = True
+    if source_res:
+        structure_ok = all(bool(p.search(source_text)) for p in source_res)
+    passed = matched and structure_ok and not has_error
     if passed:
         fitness = 1.0
+    elif matched and not structure_ok:
+        # stdout looks right but missing required defines — still fail
+        fitness = 0.4
     elif matched and has_error:
         fitness = 0.35
     elif stdout.strip() and not has_error:
@@ -196,6 +254,7 @@ def verify_aura_program(
         "exit_code": proc.returncode,
         "ms": ms,
         "matched_expect": matched,
+        "structure_ok": structure_ok,
         "has_error": has_error,
     }
 
@@ -421,7 +480,7 @@ def run_closed_loop(
             f"unsupported task {task!r} (supported: {', '.join(sorted(TASKS))})"
         )
     task_spec = TASKS[task]
-    expect_re: re.Pattern[str] = task_spec["expect_re"]
+    expect_re = task_spec["expect_re"]
     cfg = config or load_minimax_config()
     repo = repo_root()
     hroot = harness_root or (repo / ".aura-build")
@@ -542,7 +601,10 @@ def run_closed_loop(
                 encoding="utf-8",
             )
             ver = verify_aura_program(
-                prog_path, expect_re=expect_re, aura_bin=aura_bin
+                prog_path,
+                expect_re=expect_re,
+                source_res=task_spec.get("source_res"),
+                aura_bin=aura_bin,
             )
             fitness_by_id[cid] = float(ver["fitness"])
             sources[cid] = source
@@ -585,7 +647,15 @@ def run_closed_loop(
                             "matched_expect": ver.get("matched_expect", False),
                         },
                         "notes": redact_secrets(
-                            (ver["stderr"] or ver["stdout"] or "")[:500],
+                            (
+                                (
+                                    "structure_fail: need (define (add …)) and "
+                                    "(define (mul …)) in source\n"
+                                    if ver.get("structure_ok") is False
+                                    else ""
+                                )
+                                + (ver["stderr"] or ver["stdout"] or "")
+                            )[:500],
                             cfg.api_key,
                         ),
                     },
