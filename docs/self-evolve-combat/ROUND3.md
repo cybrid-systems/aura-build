@@ -85,3 +85,12 @@ Never env-elevated `fiber_live` / `fiber_graph` / `llm_parallel=fiber` / `incr_p
 1. aura-build: per-file Aura parse gate before accepting a worldline rewrite; structured single-file patch format; optional longer max-rounds once syntax gate lands.
 2. Or dogfood **mini-clearing** / **mini-oms** after exchange concurrent-llm greens.
 3. Soft: optional dig on rare `http_post_or_b64_missing` under long sessions — **not** a #4055 reopen.
+
+## Course correction — contract_heal reverted (2026-09-24 ~18:20 CST)
+
+Parent steering: `487bcf3` / `319e4a7` GOAL-contract heal = gold under another name. **Reverted** (`06e27fb`, `dde6bd2`). Offline "green" via heal is **not** reportable as pure-MiniMax.
+
+**Still valid product levers:** elitist carry, per-file Aura parse gate, finer expect-line fitness, honest llm_parallel aggregate (`12eaaba`); GOAL.md + failing verify lines + implicated files; staged few-file repair; more candidates/rounds. Fixture-specific FEES=14/EQ=1/FILL1 literals removed from product repair helpers (derive from verify diffs + GOAL text).
+
+**Honest best pure MiniMax so far:** fitness **0.7385** @ `combat_20260924-175921` (not green). Next: ≤3 generic-only combat attempts.
+

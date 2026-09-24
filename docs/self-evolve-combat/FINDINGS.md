@@ -71,3 +71,17 @@ Aura kernel edits: issue stubs only (never auto-edit).
 - `20260924-173546` ok=False llm_via=fiber llm_parallel=fiber_serial explore=host_thread artifacts=`combat_20260924-173546_stdout.json`
 - `20260924-174643` ok=False llm_via=fiber llm_parallel=fiber explore=fiber_graph artifacts=`combat_20260924-174643_stdout.json` soft=#4055_live_ok
 
+
+## INVALID — contract_heal gold-smuggle (2026-09-24 CST) — do not claim pure-MiniMax green
+
+**What happened:** aura-build commits `487bcf3` and `319e4a7` added `_contract_heal_exchange` that **overwrote** MiniMax fee/settle/snapshot/replay/exchange/main bodies with hand-written Alice/Bob fee-math and replay-fold (GOAL words, gold content). Offline verify of an elitist candidate reached EQ=1/FEES=14/COUNT=10 **only after** that overwrite.
+
+**Ruling:** not pure MiniMax / no-gold. Any green or fitness jump that depended on `contract_heal` is **invalid** for the pure-MiniMax claim.
+
+**Remediation:**
+- Reverted on main: `06e27fb` (revert 319e4a7), `dde6bd2` (revert 487bcf3).
+- Kept generic loop levers from `12eaaba` (per-file parse gate, elitist carry, expect-line fitness, honest `llm_parallel` aggregate).
+- Product repair prompts: stripped fixture-literal targeting (FEES=14 / EQ=1 / FILL1 force / scenario narrative) from `_implicated_files` / `_interface_contracts_blob` / late focus — derive from verify KEY diffs + GOAL.md text already in the propose body.
+
+**Valid pure-MiniMax best (pre-heal, run `combat_20260924-175921`):** best_fitness **0.7385** (FILL1…DUP/REPLAY ok; EQ=0 FEES=35 COUNT=8). Soft denseness fiber throughout; summary `llm_parallel=fiber` after aggregate fix.
+

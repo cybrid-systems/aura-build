@@ -2300,56 +2300,77 @@ def _implicated_files(
     *,
     prev_sources: dict[str, str] | None = None,
 ) -> list[str]:
-    """Heuristic: which files verify implicated for targeted repair."""
+    """Heuristic: which files verify implicated for targeted repair.
+
+    Derives keys from verify mismatch / error text and maps them to module
+    name stems present in ``file_list``. No fixture-specific expected values.
+    """
+    import re
+
     low = (err or "").lower()
     hit: list[str] = []
     for fn in file_list:
         stem = fn.rsplit(".", 1)[0].lower()
         if fn.lower() in low or stem + ".aura" in low or f"/{fn.lower()}" in low:
             hit.append(fn)
-    # Parse / unbound often cite line numbers after a file load order — bias to
-    # match/order/main/exchange when FILL/LEFT/STP/risk semantics fail.
-    semantic_map = [
-        (("fill1", "left1", "partial", "filled", "resting"), ["main.aura", "order.aura", "match.aura", "query.aura"]),
-        (("stp",), ["match.aura", "order.aura", "main.aura"]),
-        (("risk", "reject"), ["risk.aura", "order.aura", "main.aura"]),
-        (("cxl", "cancel"), ["order.aura", "book.aura", "main.aura"]),
-        (("halt", "resume", "rej_halt"), ["halt.aura", "order.aura", "exchange.aura", "main.aura"]),
-        (("dup", "idemp"), ["idemp.aura", "order.aura", "main.aura"]),
-        (("replay", "eq=", "eq\n", "snapshot"), ["replay.aura", "snapshot.aura", "exchange.aura", "journal.aura", "main.aura"]),
-        (("fees", "fee", "fees=14", "fees=35"), ["fee.aura", "settle.aura", "query.aura", "main.aura"]),
-        (("eq=", "eq=0", "eq=1", "replay"), ["replay.aura", "snapshot.aura", "journal.aura", "exchange.aura", "main.aura"]),
-        (("count", "count=8", "count=10"), ["main.aura"]),
-        (("parse error", "unbalanced", "unbound", "warning: unbalanced"),
-         ["match.aura", "order.aura", "exchange.aura", "main.aura", "book.aura", "settle.aura"]),
+
+    # KEY=value tokens from verify diffs (expected/got lines) → generic stems.
+    key_stems: set[str] = set()
+    for m in re.finditer(
+        r"(?:expected|got)\s+'([A-Za-z_][A-Za-z0-9_]*)\s*=",
+        err or "",
+        flags=re.I,
+    ):
+        key_stems.add(m.group(1).lower())
+    for m in re.finditer(r"\b([A-Za-z_][A-Za-z0-9_]*)=", err or ""):
+        # Only short/uppercase-ish expect keys, not paths
+        k = m.group(1)
+        if k.isupper() or (k[:1].isupper() and len(k) <= 12):
+            key_stems.add(k.lower())
+
+    # Semantic family → preferred module stems (matched against file_list names).
+    family_to_stems: list[tuple[tuple[str, ...], tuple[str, ...]]] = [
+        (("fill", "left", "partial", "filled", "resting"), ("main", "order", "match", "query")),
+        (("stp",), ("match", "order", "main")),
+        (("risk", "reject"), ("risk", "order", "main")),
+        (("cxl", "cancel"), ("order", "book", "main")),
+        (("halt", "resume"), ("halt", "order", "exchange", "main")),
+        (("dup", "idemp"), ("idemp", "order", "main")),
+        (("replay", "eq", "snapshot"), ("replay", "snapshot", "exchange", "journal", "main")),
+        (("fee", "fees"), ("fee", "settle", "query", "main")),
+        (("count",), ("main",)),
+        (("parse", "unbalanced", "unbound"), ("match", "order", "exchange", "main", "book", "settle")),
     ]
-    # If FILL1 is wrong (filled/resting/other) force order/match/query/main into the set.
-    if "fill1" in low and "partial" in low:
-        for f in ("order.aura", "match.aura", "query.aura", "main.aura"):
-            if f in file_list and f not in hit:
-                hit.append(f)
-    for keys, files in semantic_map:
-        if any(k in low for k in keys):
-            for f in files:
-                if f in file_list and f not in hit:
-                    hit.append(f)
+    # Also treat bare tokens in err as family triggers (no literal expected values).
+    for keys, stems in family_to_stems:
+        if any(k in low for k in keys) or any(
+            any(ks == k or ks.startswith(k) for k in keys) for ks in key_stems
+        ):
+            for stem in stems:
+                for fn in file_list:
+                    if fn.rsplit(".", 1)[0].lower() == stem and fn not in hit:
+                        hit.append(fn)
+
     if not hit:
-        # Fall back to files that differ from empty / very small stubs
         for fn in file_list:
             body = (prev_sources or {}).get(fn) or ""
             if body.strip():
                 hit.append(fn)
             if len(hit) >= 6:
                 break
-    # Always include main/entry when present for stdout contract
     for must in ("main.aura", "exchange.aura"):
         if must in file_list and must not in hit:
             hit.append(must)
     return hit
 
 
+
 def _interface_contracts_blob(task_spec: dict[str, Any]) -> str:
-    """Compact API contract list from source_res / files."""
+    """Compact contracts from task expect / source_res — not fixture narratives.
+
+    Scenario detail belongs in GOAL.md (already in the propose user body).
+    Here we only restate expect lines + generic anti-hardcode / parse guidance.
+    """
     file_list = list(task_spec.get("files") or [])
     src_res = task_spec.get("source_res") or []
     lines: list[str] = []
@@ -2357,32 +2378,25 @@ def _interface_contracts_blob(task_spec: dict[str, Any]) -> str:
         for p in src_res:
             pat = getattr(p, "pattern", str(p))
             lines.append(f"- must match: {pat}")
-    # Exchange scenario checklist when applicable
-    expect = str(task_spec.get("expect") or "")
-    if "FILL1=partial" in expect or any(f == "match.aura" for f in file_list):
+    expect = str(task_spec.get("expect") or "").strip()
+    if expect:
+        exp_lines = [ln for ln in expect.splitlines() if ln.strip()]
+        if exp_lines:
+            bullet = chr(10).join(f"  {ln}" for ln in exp_lines[:40])
+            lines.append(
+                "Expected stdout lines (compute via APIs — never hardcode KEY=value):"
+                + chr(10)
+                + bullet
+            )
+    if file_list:
         lines.append(
-            "Scenario anchors (do not hardcode stdout — compute via APIs):\n"
-            "  place A1 Alice buy 5 10 → rest; place B1 Bob sell 5 7 → fill 7;\n"
-            "  query-left A1 → 3 ⇒ FILL1=partial LEFT1=3; fee 1/qty/side ⇒ FEES=14;\n"
-            "  BIG Alice buy 9 100 → RISK=reject; A2 Alice sell 5 3 STP vs own → STP=0;\n"
-            "  cancel A1 → CXL=cancelled; halt → place B2 reject; resume; re-place A1 → DUP;\n"
-            "  snapshot+replay → REPLAY=ok EQ=1; COUNT=10 holds.\n"
-            "Stub hardcodes to DELETE: FILL1=\"filled\", STP=7, COUNT=0 — replace with\n"
-            "  (define left1 (query-left \"A1\")) (define fill1 (if (= left1 3) \"partial\" \"other\"))\n"
-            "  and real STP/COUNT from APIs. order-place must return \"partial\" when rem>0.\n"
-            "FEES must be 14 = fee-rate 1 × qty 7 × both sides (buyer+seller) on the B1 fill;\n"
-            "  do not double-charge resting/cancels/STP-zero. If FEES>14, settle-fill/fee-charge\n"
-            "  is over-firing — fix fee.aura/settle.aura only.\n"
-            "EQ=1 requires snapshot-fp identical before/after exchange-replay (replay must\n"
-            "  rebuild ledger/book/fees from journal-oldest-first without drift).\n"
-            "COUNT=10 counts holds among {FILL1 partial, LEFT1 3, RISK reject, STP 0, CXL cancelled,\n"
-            "  HALT halted, REJ_HALT reject, RESUME open, DUP dup, EQ 1} — fix EQ/FEES first.\n"
-            "If verify mentions unbalanced parentheses / parse error: fix ONLY that file's\n"
-            "parens first; do not rewrite unrelated modules in the same turn."
+            "Repair discipline: rewrite only implicated files; keep cross-file callee "
+            "names; if verify cites unbalanced parentheses / parse error, fix ONLY that "
+            "file's parens in this turn."
         )
     if not lines:
         return ""
-    return "## Interface / scenario contracts\n" + "\n".join(lines) + "\n"
+    return "## Interface / expect contracts" + chr(10) + chr(10).join(lines) + chr(10)
 
 
 
@@ -2648,26 +2662,6 @@ def _repair_focus_files(
         for f in implicated:
             if f not in focus:
                 focus.append(f)
-        # Late-stage: when EQ/FEES/COUNT dominate the error, prefer those modules.
-        err_l = (err or "").lower()
-        if "fees=" in err_l or "eq=" in err_l or "count=" in err_l:
-            late = [
-                f
-                for f in (
-                    "fee.aura",
-                    "settle.aura",
-                    "replay.aura",
-                    "snapshot.aura",
-                    "journal.aura",
-                    "exchange.aura",
-                    "main.aura",
-                    "query.aura",
-                )
-                if f in files
-            ]
-            for f in late:
-                if f not in focus:
-                    focus.append(f)
         return focus or implicated or list(files)
     return implicated or list(files)
 
