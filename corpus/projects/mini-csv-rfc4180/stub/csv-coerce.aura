@@ -1,0 +1,145 @@
+;; csv-coerce.aura
+;; Coerces a raw cell string into a typed `cell` record.
+;;
+;; Coercion rules (matching the GOAL scenario expectations):
+;;   - Exactly "true"  (case-sensitive) -> boolean #t, kind 'bool
+;;   - Exactly "false" (case-sensitive) -> boolean #f, kind 'bool
+;;   - Otherwise, if the string parses as an exact integer (e.g. "42",
+;;     "-3", "+7") -> integer, kind 'number
+;;   - Otherwise, if the string parses as a decimal number with an
+;;     optional fractional part or exponent (e.g. "2.5", "0.1", "-1.5e2")
+;;     -> real, kind 'number
+;;   - Otherwise, keep it as a string, kind 'string
+;;
+;; Empty strings become a string cell (kind 'string, value "").
+;;
+;; Dependency: csv-types.aura must be loaded first so `make-cell` exists.
+
+;; Helper: every character in `s` is a digit?
+(define (all-digits? s)
+  (let loop ((i 0))
+    (cond
+      ((>= i (string-length s)) #t)
+      ((char-numeric? (string-ref s i)) (loop (+ i 1)))
+      (else #f))))
+
+;; Helper: parses an integer string. Allowed forms:
+;;   [+|-]? [0-9]+
+;; Returns the integer or #f if not well-formed.
+(define (parse-integer s)
+  (let ((len (string-length s)))
+    (cond
+      ((= len 0) #f)
+      (else
+       (let ((start 0)
+             (neg? #f))
+         (cond
+           ((char=? (string-ref s 0) #\+)
+            (set! start 1))
+           ((char=? (string-ref s 0) #\-)
+            (set! start 1)
+            (set! neg? #t))
+           (else #t))
+         (cond
+           ((>= start len) #f)
+           ((all-digits? (substring s start len))
+            (let ((n (string->number s)))
+              (if (number? n) (if neg? (- 0 n) n) #f)))
+           (else #f)))))))
+
+;; Helper: parses a real number string using Aura's `string->number`.
+;; We only accept it if it parses to an exact real number (not NaN/inf).
+;; We also reject lone "+"/"-" and "+e3" etc. by re-validating structure:
+;;   [+|-]? digits ( . digits )? ( [eE] [+|-]? digits )?
+(define (parse-real s)
+  (let ((len (string-length s)))
+    (cond
+      ((= len 0) #f)
+      (else
+       (let ((start 0)
+             (i 0)
+             (digits-seen 0)
+             (frac-seen 0)
+             (exp-seen 0))
+         ;; optional sign
+         (cond
+           ((char=? (string-ref s 0) #\+)
+            (set! start 1)
+            (set! i 1))
+           ((char=? (string-ref s 0) #\-)
+            (set! start 1)
+            (set! i 1))
+           (else (set! i 0)))
+         ;; integer part digits
+         (let loop-int ((j i))
+           (cond
+             ((>= j len) (set! i j))
+             ((char-numeric? (string-ref s j))
+              (begin
+                (set! digits-seen (+ digits-seen 1))
+                (loop-int (+ j 1))))
+             (else (set! i j))))
+         ;; optional fractional part
+         (cond
+           ((and (< i len) (char=? (string-ref s i) #\.))
+            (begin
+              (set! i (+ i 1))
+              (let loop-frac ((j i))
+                (cond
+                  ((>= j len) (set! i j))
+                  ((char-numeric? (string-ref s j))
+                   (begin
+                     (set! frac-seen (+ frac-seen 1))
+                     (loop-frac (+ j 1))))
+                  (else (set! i j))))))
+           (else #t))
+         ;; optional exponent
+         (cond
+           ((and (< i len) (or (char=? (string-ref s i) #\e)
+                               (char=? (string-ref s i) #\E)))
+            (begin
+              (set! i (+ i 1))
+              (cond
+                ((and (< i len)
+                      (or (char=? (string-ref s i) #\+)
+                          (char=? (string-ref s i) #\-)))
+                 (set! i (+ i 1)))
+                (else #t))
+              (let loop-exp ((j i))
+                (cond
+                  ((>= j len) (set! i j))
+                  ((char-numeric? (string-ref s j))
+                   (begin
+                     (set! exp-seen (+ exp-seen 1))
+                     (loop-exp (+ j 1))))
+                  (else (set! i j))))))
+           (else #t))
+         ;; validate and parse
+         (cond
+           ((or (not (= i len))
+                (= digits-seen 0)
+                (and (= digits-seen 0) (= frac-seen 0)))
+            #f)
+           (else
+            (let ((n (string->number s)))
+              (if (and (number? n)
+                       (not (char=? (string-ref s 0) #\ )))
+                  n
+                  #f)))))))))
+
+;; Main coercion: string -> cell record.
+;; Boolean literals first (case-sensitive, per GOAL), then integer, then
+;; real, else string.
+(define (csv-coerce str)
+  (cond
+    ((string=? str "true")  (make-cell #t 'bool))
+    ((string=? str "false") (make-cell #f 'bool))
+    (else
+     (let ((n (parse-integer str)))
+       (cond
+         ((not (eq? n #f)) (make-cell n 'number))
+         (else
+          (let ((r (parse-real str)))
+            (cond
+              ((not (eq? r #f)) (make-cell r 'number))
+              (else (make-cell str 'string))))))))))

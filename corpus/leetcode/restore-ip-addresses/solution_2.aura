@@ -1,0 +1,95 @@
+(define (valid-octet? substr start len)
+  ;; substr is the full string as list of chars (digits); start and len are integers
+  (let ((v 0))
+    (let loop ((i 0) (v 0))
+      (cond ((= i len)
+             (and (>= v 0) (<= v 255)
+                  ;; no leading zero check: if len > 1, first char must not be #\0
+                  (or (= len 1)
+                      (not (char=? (list-ref substr start) #\0)))))
+            (else
+             (let ((c (list-ref substr (+ start i))))
+               (let ((d (- (char->integer c) (char->integer #\0))))
+                 (loop (+ i 1) (+ (* v 10) d)))))))))
+
+(define (take-chars lst n)
+  (let loop ((i 0) (acc '()) (xs lst))
+    (if (= i n)
+        (reverse acc)
+        (loop (+ i 1) (cons (car xs) acc) (cdr xs)))))
+
+(define (drop-chars lst n)
+  (if (= n 0)
+      lst
+      (drop-chars (cdr lst) (- n 1))))
+
+(define (length lst)
+  (if (null? lst) 0 (+ 1 (length (cdr lst)))))
+
+(define (string->list-of-chars s)
+  (let loop ((i 0) (acc '()))
+    (if (= i (string-length s))
+        acc
+        (loop (+ i 1) (cons (string-ref s i) acc)))))
+
+(define (list-of-chars->string lst)
+  (let loop ((xs (reverse lst)) (acc ""))
+    (if (null? xs)
+        acc
+        (loop (cdr xs) (string-append acc (string (car xs)))))))
+
+(define (substring-by-len s start len)
+  (list-of-chars->string (take-chars (drop-chars s start) len)))
+
+(define (backtrack chars-lst pos parts results)
+  (cond ((= (length parts) 4)
+         (if (= pos (length chars-lst))
+             (let ((ip (apply string-append
+                              (let loop ((ps parts) (acc '()))
+                                (if (null? ps)
+                                    acc
+                                    (loop (cdr ps)
+                                          (if (null? acc)
+                                              (list (car ps))
+                                              (append acc (list "." (car ps)))))))))))
+               (set! results (append results (list ip))))
+             results))
+        (else
+         (let loop-len ((l 1) (res results))
+           (cond ((> l 3) res)
+                 ((> (+ pos l) (length chars-lst)) res)
+                 (else
+                  (let ((sub (substring-by-len chars-lst pos l)))
+                    (if (valid-octet? chars-lst pos l)
+                        (let ((new-parts (append parts (list sub))))
+                          (let ((r (backtrack chars-lst (+ pos l) new-parts results)))
+                            (loop-len (+ l 1) r)))
+                        (loop-len (+ l 1) res)))))))))
+
+(define (solve s)
+  (let ((n (string-length s)))
+    (if (or (< n 4) (> n 12))
+        '()
+        (let ((chars (string->list-of-chars s)))
+          (backtrack chars 0 '() '())))))
+
+;; Test harness
+(define (display-list-of-strings lst)
+  (display "(")
+  (let loop ((xs lst) (first #t))
+    (cond ((null? xs) (display ")"))
+          (else
+           (if first (set! first #f) (display " "))
+           (display "\"")
+           (display (car xs))
+           (display "\"")
+           (loop (cdr xs) first)))))
+
+(display "CASE0=") (display-list-of-strings (solve "25525511135")) (newline)
+(display "CASE1=") (display-list-of-strings (solve "00000")) (newline)
+(display "CASE2=") (display-list-of-strings (solve "101023")) (newline)
+(display "CASE3=") (display-list-of-strings (solve "0000")) (newline)
+(display "CASE4=") (display-list-of-strings (solve "1111")) (newline)
+(display "CASE5=") (display-list-of-strings (solve "010010")) (newline)
+(display "CASE6=") (display-list-of-strings (solve "256256256256")) (newline)
+(display "CASE7=") (display-list-of-strings (solve "12345")) (newline)

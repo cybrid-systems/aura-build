@@ -1,0 +1,77 @@
+(define (substring s start end)
+  ;; extract substring from start (inclusive) to end (exclusive)
+  (let loop ((i 0) (acc '()) (s s) (start start) (end end))
+    (if (= i end)
+        (list->string (reverse acc))
+        (if (< i start)
+            (loop (+ i 1) acc s start end)
+            (loop (+ i 1) (cons (string-ref s i) acc) s start end)))))
+
+(define (is-palindrome? s)
+  (let* ((len (string-length s))
+         (half (quotient len 2)))
+    (let loop ((i 0))
+      (cond ((>= i half) #t)
+            ((not (char=? (string-ref s i) (string-ref s (- len 1 i))))
+             #f)
+            (else (loop (+ i 1)))))))
+
+(define (string-length s)
+  (let loop ((i 0))
+    (if (eof-object? (string-ref s i))
+        i
+        (loop (+ i 1)))))
+
+(define (list->string lst)
+  (let loop ((lst lst) (acc ""))
+    (if (null? lst)
+        acc
+        (loop (cdr lst) (string-append acc (string (car lst)))))))
+
+(define (solve s)
+  (let* ((len (string-length s))
+         (result '()))
+    (define (backtrack start current)
+      (cond ((= start len)
+             (set! result (cons (reverse current) result)))
+            (else
+             (let loop ((end (+ start 1)))
+               (cond ((> end len) #t)
+                     (else
+                      (let ((sub (substring s start end)))
+                        (if (is-palindrome? sub)
+                            (begin
+                              (backtrack end (cons sub current))
+                              (loop (+ end 1)))
+                            (loop (+ end 1))))))))))
+    (backtrack 0 '())
+    (reverse result)))
+
+(define (display-list lst)
+  (display "[")
+  (let loop ((first? #t) (lst lst))
+    (cond ((null? lst) (display "]"))
+          (else
+           (if first?
+               (begin (display #f) (display (car lst)))
+               (begin (display ",") (display (car lst))))
+           (loop #f (cdr lst))))))
+
+(define (display-partitions partitions)
+  (display "[")
+  (let loop ((first? #t) (ps partitions))
+    (cond ((null? ps) (display "]"))
+          (else
+           (if first?
+               (begin (display #f) (display-list (car ps)))
+               (begin (display ",") (display-list (car ps))))
+           (loop #f (cdr ps))))))
+
+(display "CASE0=") (display-partitions (solve "aab")) (newline)
+(display "CASE1=") (display-partitions (solve "a")) (newline)
+(display "CASE2=") (display-partitions (solve "aba")) (newline)
+(display "CASE3=") (display-partitions (solve "abba")) (newline)
+(display "CASE4=") (display-partitions (solve "aaaa")) (newline)
+(display "CASE5=") (display-partitions (solve "abc")) (newline)
+(display "CASE6=") (display-partitions (solve "aabaa")) (newline)
+(display "CASE7=") (display-partitions (solve "ab")) (newline)

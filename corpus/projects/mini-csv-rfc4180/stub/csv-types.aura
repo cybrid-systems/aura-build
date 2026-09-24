@@ -1,0 +1,39 @@
+;; csv-types.aura
+;; Defines the core data types used by the mini-csv-rfc4180 library:
+;;   - `cell`   : a single parsed CSV cell with a value and kind tag
+;;   - `row`    : a parsed CSV row holding a list of cells
+;;   - EOF sentinel and predicate
+
+;; A `cell` is a record containing the coerced value and its type kind.
+(define-record cell value kind)
+
+;; A `row` is a record containing a list of cells.
+(define-record row cells)
+
+;; Constructor for a row.
+(define (make-row cells)
+  (make-row-record cells))
+
+;; Accessor for the cells of a row.
+(define (row-cells r)
+  (row-cells-record r))
+
+;; Constructor for a cell. Kind should be one of:
+;;   'number, 'bool, 'string
+(define (make-cell value kind)
+  (make-cell-record value kind))
+
+;; Accessor for the value of a cell.
+(define (cell-value c)
+  (cell-value-record c))
+
+;; Accessor for the kind tag of a cell.
+(define (cell-kind c)
+  (cell-kind-record c))
+
+;; EOF sentinel returned by streaming parsers when the stream is exhausted.
+(define eof-sentinel 'eof)
+
+;; Predicate: is the given value the EOF sentinel?
+(define (eof? v)
+  (eq? v eof-sentinel))

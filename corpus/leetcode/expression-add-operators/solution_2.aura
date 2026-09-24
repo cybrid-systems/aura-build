@@ -1,0 +1,226 @@
+(define (string-ref s i)
+  (char->string (string-ref s i)))
+
+(define (string-length s)
+  (let ((len 0))
+    (let loop ((i 0))
+      (if (< i (string-length-ref s))
+          (begin (set! len (+ len 1)) (loop (+ i 1)))
+          len))))
+
+(define (string-length-ref s)
+  ;; helper that exposes internal string length
+  (string-length s))
+
+(define (num->int s)
+  (let ((n 0))
+    (let loop ((i 0))
+      (if (< i (string-length s))
+          (begin
+            (set! n (+ (* n 10)
+                       (- (char->integer (string-ref s i)) (char->integer #\0))))
+            (loop (+ i 1)))
+          n))))
+
+(define (int->string n)
+  (number->string n))
+
+(define (list-rev xs)
+  (let loop ((acc '()) (xs xs))
+    (if (null? xs) acc (loop (cons (car xs) acc) (cdr xs)))))
+
+(define (list->string xs)
+  (let loop ((acc "") (xs xs))
+    (if (null? xs) acc (loop (string-append acc (car xs)) (cdr xs)))))
+
+(define (contains? xs x)
+  (cond ((null? xs) #f)
+        ((equal? (car xs) x) #t)
+        (else (contains? (cdr xs) x))))
+
+(define results '())
+
+(define (push-result r)
+  (set! results (append results (list r))))
+
+(define (remove-last xs)
+  (cond ((null? xs) '())
+        ((null? (cdr xs)) '())
+        (else (cons (car xs) (remove-last (cdr xs))))))
+
+(define (append-x xs x)
+  (append xs (list x)))
+
+;; Backtrack helper: builds expression on stack of strings; keeps
+;; current numeric value (val) and last term (last) to handle '*' correctly.
+;; On '+': val := val + last; last := cur; lastSign := +1
+;; On '-': val := val - last; last := cur; lastSign := -1
+;; On '*': val := val - last; last := last * cur (then re-apply lastSign via last-term updates handled outside).
+;; To keep this correct we instead carry:
+;;   val   : running total of all completed terms
+;;   last  : the value of the most recent term (so we can multiply it)
+;;   cur   : the currently being built operand
+;;   mult  : a boolean flag set when the *next* op will be '*' but we
+;;           haven't applied it yet. We commit operator at each step.
+
+;; Cleaner: we commit at each decision. Operators considered:
+;;   op = '+': previous term finishes; total := total + last; last := cur; cur := 0
+;;   op = '-': total := total + last; last := -cur; cur := 0
+;;   op = '*': last := last * cur; cur := 0
+;; Then we extend cur and either emit operator or finish.
+
+(define (rec num n pos expr val last cur)
+  (cond
+    ((= pos n)
+     ;; decide: if cur empty (i.e., last digit already absorbed), evaluate as is
+     (let ((final-last
+            (if (= cur 0)
+                last
+                (if (= pos (+ (- pos (- pos pos)) 0)) ;; trick? we'll handle below
+                    last
+                    last))))
+       ;; Actually simpler: when pos==n, finish the in-progress operand
+       (let ((op-result
+              (cond
+                ;; We'll instead call with a final-commit step.
+                (else '()))))
+         '())))
+    (else
+     ;; extend current operand by digit
+     (let ((d (- (char->integer (string-ref num pos)) (char->integer #\0)))))
+       ;; not exactly, but we need char->integer of digits
+       '())))
+
+;; Simpler implementation using direct tracking without cur flag complexity:
+;; Express the state as:
+;;   pos   : next index in num to read
+;;   val   : running total of finished terms (sum of all *committed* terms after considering +/-)
+;;   last  : the most recent term's value, possibly multiplied; this is the one *not yet* added to val if pending.
+;;   prev-op: the operator between 'last' and the term before it, encoded as +1 (for +), -1 (for -), 0 for '*'.
+;; But '*' combines with 'last', so prev-op '*' means no commit yet.
+
+;; State:
+;;   val   : committed sum (all terms except possibly the trailing one are added with their sign)
+;;   last  : value of the trailing term being built (could be multiplied internally)
+;;   mult? : #t means the last operation between the previous committed term and current trailing term is '*' (i.e., last was multiplied into). So next op we'll need to commit.
+;; Actually let's use:
+;;   pos, val (sum of committed terms), tail (current running term), pending-op (one of +, -, *, or 'start')
+;; After picking a digit-run as next operand k:
+;;   if pending-op = 'start': tail := k
+;;   if pending-op = '+':   val := val + tail; tail := k
+;;   if pending-op = '-':   val := val + tail; tail := 0 - k
+;;   if pending-op = '*':   tail := tail * k
+;; Then continue.
+
+(define (recurse num n pos val tail pending expr-stack)
+  (cond
+    ((= pos n)
+     ;; commit final tail
+     (let ((final-val (+ val tail)))
+       (if (= final-val target)
+           (push-result
+            (list->string (reverse expr-stack)))
+           '())))
+    (else
+     (let loop-extend ((start pos) (cur-val 0) (expr-stack expr-stack))
+       (let ((d (- (char->integer (string-ref num start)) (char->integer #\0))))
+         (let ((new-cur (+ (* cur-val 10) d)))
+           (cond
+             ((= start (- n 1))
+              ;; last digit, commit operand, then final tail evaluated in 'pos==n' branch
+              (let ((new-stack (append (reverse expr-stack) '()))) ;; not used
+                (let ((pending-val
+                       (cond
+                         ((equal? pending '+) (+ val tail))
+                         ((equal? pending '-) (+ val tail))
+                         (else val))))
+                  (let ((new-tail
+                         (cond
+                           ((equal? pending 'start) new-cur)
+                           ((equal? pending '+) new-cur)
+                           ((equal? pending '-) (- 0 new-cur))
+                           ((equal? pending '*) (* tail new-cur))
+                           (else new-cur))))
+                    (recurse num n (+ pos 1) pending-val new-tail 'done
+                             (cons (int->string new-cur) expr-stack))))))
+             (else
+              ;; need to commit with operator and try each operator, then try extending further
+              (let ((digit-str
+                     (if (= cur-val 0)
+                         (string (integer->char (+ (char->integer #\0) d)))
+                         (string-append (int->string cur-val) (string (integer->char (+ (char->integer #\0) d)))))))
+                ;; Actually digit-str we use the operand built so far. Keep accumulator.
+                ;; Try operators between this partial operand and next.
+                ;; Only after fully consuming a contiguous digit run do we pick an operator.
+                ;; First, recurse keeping pending same and extending operand.
+                (let ((pending-val
+                       (cond
+                         ((equal? pending 'start) val)
+                         ((equal? pending '+) val)
+                         ((equal? pending '-) val)
+                         ((equal? pending '*) val)
+                         (else val)))
+                      (new-tail
+                       (cond
+                         ((equal? pending 'start) new-cur)
+                         ((equal? pending '+) new-cur)
+                         ((equal? pending '-) (- 0 new-cur))
+                         ((equal? pending '*) (* tail new-cur))
+                         (else new-cur))))
+                  ;; recurse with extended operand and pending preserved
+                  (recurse num n (+ pos 1) pending-val new-tail pending
+                           (cons (int->string new-cur) expr-stack))
+                  ;; and try operators if not at end and (operand not starting with 0 unless single digit)
+                  (let ((is-leading-zero-ok?
+                         (or (= cur-val 0)
+                             (not (= d 0)))))
+                    (when is-leading-zero-ok?
+                      (let ((committed-val
+                             (cond
+                               ((equal? pending 'start) val)
+                               ((equal? pending '+) (+ val tail))
+                               ((equal? pending '-) (+ val tail))
+                               ((equal? pending '*) val)
+                               (else val)))
+                            (next-tail
+                             (cond
+                               ((equal? pending 'start) new-cur)
+                               ((equal? pending '+) new-cur)
+                               ((equal? pending '-) (- 0 new-cur))
+                               ((equal? pending '*) (* tail new-cur))
+                               (else new-cur))))
+                        ;; operator '+'
+                        (recurse num n (+ pos 1) committed-val next-tail '+
+                                 (cons "+" (cons (int->string new-cur) expr-stack)))
+                        ;; operator '-'
+                        (recurse num n (+ pos 1) committed-val next-tail '-
+                                 (cons "-" (cons (int->string new-cur) expr-stack)))
+                        ;; operator '*'
+                        (recurse num n (+ pos 1) committed-val next-tail '*
+                                 (cons "*" (cons (int->string new-cur) expr-stack)))))))
+                ))))))))
+
+(define (solve num target)
+  (set! results '())
+  (let loop ((i 0))
+    (when (< i (string-length num))
+      (let ((d (- (char->integer (string-ref num i)) (char->integer #\0))))
+        (let ((cur-val d))
+          ;; recurse from this single-digit start
+          (if (= i (- (string-length num) 1))
+              ;; last digit, finalize
+              (if (= target cur-val)
+                  (push-result (string (integer->char (+ (char->integer #\0) d))))
+                  '())
+              (let extend-loop ((start i) (cur cur-val) (expr (list (string (integer->char (+ (char->integer #\0) d))))))
+                (let ((next (+ start 1)))
+                  (when (< next (string-length num))
+                    (let ((dn (- (char->integer (string-ref num next)) (char->integer #\0))))
+                      (let ((new-cur (+ (* cur 10) dn)))
+                        ;; leading zero restriction: if cur is 0 and dn != 0, invalid extension
+                        (when (or (= cur 0) (= dn 0))
+                          ;; try extending with this digit
+                          (extend-loop next new-cur (cons (int->string new-cur) '())) ;; placeholder
+                          ;; also try operators after current operand
+                          )))))))))))
+  results)

@@ -498,6 +498,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     cg_sub = cg.add_subparsers(dest="corpus_gen_cmd", required=True)
     cg_cat = cg_sub.add_parser("catalog", help="generate/extend catalog.jsonl via MiniMax")
+    _opt(cg_cat, "--track", choices=("leetcode", "projects"), default="leetcode")
     _opt(cg_cat, "--corpus-dir", type=Path, default=Path("corpus/leetcode"))
     _opt(cg_cat, "--target", type=int, default=300, help="desired catalog size")
     _opt(cg_cat, "--env-file", type=Path, default=None)
@@ -507,8 +508,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     cg_burn = cg_sub.add_parser(
         "burn",
-        help="generate ref.py/tests/Aura variants; resumable; optional --continuous",
+        help="generate ref/tests/Aura variants; resumable; optional --continuous",
     )
+    _opt(cg_burn, "--track", choices=("leetcode", "projects"), default="leetcode")
     _opt(cg_burn, "--corpus-dir", type=Path, default=Path("corpus/leetcode"))
     _opt(cg_burn, "--scratch", type=Path, default=Path("scratch/corpus_gen"))
     _opt(cg_burn, "--run-log", type=Path, default=None)
@@ -531,13 +533,15 @@ def build_parser() -> argparse.ArgumentParser:
     _opt(cg_burn, "--py-timeout", type=float, default=20.0)
     _common(cg_burn, aura=True, harness=False, json_flag=False)
 
-    cg_sum = cg_sub.add_parser("summary", help="corpus + burn-rate stats")
+    cg_sum = cg_sub.add_parser("summary", help="corpus + burn-rate stats (both tracks if --track all)")
+    _opt(cg_sum, "--track", choices=("leetcode", "projects", "all"), default="all")
     _opt(cg_sum, "--corpus-dir", type=Path, default=Path("corpus/leetcode"))
     _opt(cg_sum, "--run-log", type=Path, default=Path("scratch/corpus_gen/run_log.jsonl"))
     _common(cg_sum, harness=False, json_flag=False)
 
-    cg_stop = cg_sub.add_parser("stop", help="write STOP flag + SIGTERM burn pid")
-    _opt(cg_stop, "--scratch", type=Path, default=Path("scratch/corpus_gen"))
+    cg_stop = cg_sub.add_parser("stop", help="STOP + SIGTERM for leetcode and/or projects burns")
+    _opt(cg_stop, "--track", choices=("leetcode", "projects", "all"), default="all")
+    _opt(cg_stop, "--scratch", type=Path, default=None, help="override scratch (default per-track)")
     _common(cg_stop, harness=False, json_flag=False)
 
     doc = sub.add_parser("doctor", help="Aura probe + last prove-incr report")

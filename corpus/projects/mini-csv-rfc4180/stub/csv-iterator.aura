@@ -1,0 +1,52 @@
+;; csv-iterator.aura
+;; Pull-style iterator API on top of the row-oriented lexer.
+;;
+;; The lexer in csv-lexer.aura already provides `lexer-next-row`, which
+;; returns either a `row` (list of cells) or the symbol `'eof`. The
+;; iterator layer here wraps that lexer in a small struct that exposes
+;; a friendlier, pull-style API:
+;;
+;;   (make-csv-iter source :key delimiter) -> iterator
+;;   (iter-next iter)                     -> row | 'eof
+;;   (iter-rest iter)                     -> list of rows (drains)
+;;   (iter-count iter)                    -> number of rows consumed
+;;
+;; `iter-rest` drains the iterator to EOF and returns every row it saw.
+;; `iter-count` is the running tally of rows produced so far.
+;;
+;; This file does no parsing of its own — it delegates to the lexer and
+;; just tracks bookkeeping state.
+
+;; Internal constructor for an iterator record.
+(define-record iter lexer n)
+
+;; Public constructor.
+;; `source` may be either a string or an Aura input port; the lexer
+;; accepts both. `delimiter` defaults to #\,.
+(define (make-csv-iter source :key delimiter)
+  (let ((d (if (null? delimiter) #\, delimiter)))
+    (make-iter-record (csv-open source :delimiter d) 0)))
+
+;; Pull one row from the iterator.
+;; Returns a `row` (list of cells) or `'eof` when the stream is exhausted.
+;; Side effect: increments the internal row counter.
+(define (iter-next iter)
+  (let ((row (lexer-next-row (iter-lexer-record iter))))
+    (if (eof? row)
+        row
+        (begin
+          (set-iter-n-record! iter (+ (iter-n-record iter) 1))
+          row))))
+
+;; Drain the iterator, returning a list of all remaining rows.
+;; The internal counter reflects the total number of rows produced.
+(define (iter-rest iter)
+  (let loop ((acc '()))
+    (let ((row (iter-next iter)))
+      (if (eof? row)
+          (reverse acc)
+          (loop (cons row acc))))))
+
+;; Return the number of rows the iterator has produced so far.
+(define (iter-count iter)
+  (iter-n-record iter))

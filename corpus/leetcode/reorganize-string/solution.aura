@@ -1,0 +1,122 @@
+;; Reorganize String - greedy with max-heap
+;; Counts char frequencies, places most frequent valid char next.
+
+(define (make-heap)
+  ;; heap as list of (count . char) pairs, max-heap by count
+  '())
+
+(define (heap-empty? h) (null? h))
+
+(define (heap-insert h item)
+  ;; insert item, maintain max-heap order (descending by count)
+  (cond
+    ((null? h) (list item))
+    ((> (car item) (car (car h)))
+     (cons item h))
+    (else (cons (car h) (heap-insert (cdr h) item)))))
+
+(define (heap-pop h)
+  ;; returns (item . rest-heap)
+  (cons (car h) (cdr h)))
+
+(define (char-count s)
+  ;; returns association list of char -> count
+  (let ((counts '()))
+    (let loop ((i 0) (n (string-length s)))
+      (if (>= i n)
+          counts
+          (let ((c (string-ref s i)))
+            (let loop2 ((cs counts))
+              (cond
+                ((null? cs)
+                 (set! counts (cons (cons c 1) counts))
+                 (loop (+ i 1) n))
+                ((char=? (car (car cs)) c)
+                 (set-cdr! (car cs) (+ (cdr (car cs)) 1))
+                 (loop (+ i 1) n))
+                (else (loop2 (cdr cs))))))))))
+
+(define (solve s)
+  (let ((n (string-length s)))
+    (if (= n 0)
+        ""
+        (let ((counts (char-count s)))
+          ;; build heap of (count . char)
+          (let ((heap (let loop ((c counts) (h '()))
+                        (if (null? c)
+                            h
+                            (loop (cdr c) (heap-insert h (car c))))))))
+            ;; if any count > ceiling(n/2), impossible
+            (let ((max-allowed (quotient (+ n 1) 2)))
+              (let loop2 ((h heap))
+                (cond
+                  ((null? h) #t)
+                  ((> (car (car h)) max-allowed) #f)
+                  (else (loop2 (cdr h))))))
+              (if (not (let loop3 ((h heap))
+                         (cond
+                           ((null? h) #t)
+                           ((> (car (car h)) max-allowed) #f)
+                           (else (loop3 (cdr h))))))
+                  ""
+                  (let loop ((h heap) (result "")
+                      (last-char #\?) (last-count 0))
+                  (cond
+                    ((null? h)
+                     result)
+                    ((and (char=? (car (car h)) last-char)
+                          (> last-count 0)
+                          (null? (cdr h)))
+                     ;; only same char left but no alternation possible
+                     "")
+                    ((and (char=? (car (car h)) last-char)
+                          (null? (cdr h)))
+                     ;; last entry matches last, only one left, just append all
+                     (string-append result
+                                    (make-string last-count last-char)))
+                    ((char=? (car (car h)) last-char)
+                     ;; top is same as last, take second
+                     (let ((picked (car (cdr h))))
+                       (let ((rest (cdr (cdr h))))
+                         (let ((new-count (- (car picked) 1)))
+                           (let ((h2 (if (> new-count 0)
+                                         (heap-insert rest
+                                                      (cons new-count (cdr picked)))
+                                         rest)))
+                             (loop h2
+                                   (string-append result
+                                                  (string (cdr picked)))
+                                   last-char last-count))))))
+                    (else
+                     ;; take top
+                     (let ((picked (car h)))
+                       (let ((rest (cdr h)))
+                       (let ((new-count (- (car picked) 1)))
+                         (let ((h2 (if (> new-count 0)
+                                       (heap-insert rest
+                                                    (cons new-count (cdr picked)))
+                                       rest)))
+                           (loop h2
+                                 (string-append result
+                                                (string (cdr picked)))
+                                 (cdr picked)
+                                 (car picked)))))))))))))))
+
+;; Display results
+(define (display-case i result)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display result)
+  (newline))
+
+(define inputs
+  '("" "a" "aa" "aaab" "aab" "abc" "aabbcc" "aaabc" "vvvlo"
+    "aaaaaaaaaab" "bbbbbbaaa" "ababab" "aaabbbccc" "aabbc"))
+
+(let loop ((i 0) (ins inputs))
+  (if (null? ins)
+      '()
+      (begin
+        (display-case i (solve (car ins)))
+        (loop (+ i 1) (cdr ins)))))

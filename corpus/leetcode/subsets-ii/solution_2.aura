@@ -1,0 +1,85 @@
+(define (length xs)
+  (if (null? xs) 0 (+ 1 (length (cdr xs)))))
+
+(define (append a b)
+  (if (null? a) b (cons (car a) (append (cdr a) b))))
+
+(define (reverse-helper xs acc)
+  (if (null? xs) acc (reverse-helper (cdr xs) (cons (car xs) acc))))
+
+(define (reverse xs) (reverse-helper xs '()))
+
+(define (sort-list xs)
+  (if (null? xs) '()
+      (let ((rest (sort-list (cdr xs))))
+        (let loop ((p rest) (acc '()))
+          (if (null? p)
+              (append acc (list (car xs)))
+              (if (< (car xs) (car p))
+                  (append acc (cons (car xs) p))
+                  (loop (cdr p) (cons (car p) acc))))))))
+
+(define (make-list n val)
+  (if (= n 0) '() (cons val (make-list (- n 1) val))))
+
+(define (list-ref xs i)
+  (if (= i 0) (car xs) (list-ref (cdr xs) (- i 1))))
+
+(define (list-set xs i v)
+  (if (= i 0)
+      (cons v (cdr xs))
+      (cons (car xs) (list-set (cdr xs) (- i 1) v))))
+
+(define (display-list xs)
+  (display "[")
+  (let loop ((first? #t) (xs xs))
+    (cond
+      ((null? xs) (display "]"))
+      (else
+       (if first? (display "") (display ", "))
+       (display (car xs))
+       (loop #f (cdr xs))))))
+
+(define (display-subsets subs)
+  (display "[")
+  (let loop ((first? #t) (xs subs))
+    (cond
+      ((null? xs) (display "]"))
+      (else
+       (if first? (display "") (display ", "))
+       (display-list (car xs))
+       (loop #f (cdr xs))))))
+
+(define (backtrack nums start path result)
+  (let ((n (length nums)))
+    (begin
+      (set! result (append result (list (reverse path))))
+      (let loop ((i start))
+        (if (< i n)
+            (begin
+              (if (and (> i start)
+                       (equal? (list-ref nums i) (list-ref nums (- i 1))))
+                  (begin)
+                  (set! result
+                        (backtrack nums
+                                   (+ i 1)
+                                   (cons (list-ref nums i) path)
+                                   result)))
+              (loop (+ i 1)))
+            result)))))
+
+(define (subsets-ii nums)
+  (let ((sorted (sort-list nums)))
+    (reverse (backtrack sorted 0 '() '()))))
+
+(define (solve nums)
+  (subsets-ii nums))
+
+(display "CASE0=") (display-subsets (solve '(1 2 2))) (newline)
+(display "CASE1=") (display-subsets (solve '(0))) (newline)
+(display "CASE2=") (display-subsets (solve '(1 2 3))) (newline)
+(display "CASE3=") (display-subsets (solve '(1 1 1))) (newline)
+(display "CASE4=") (display-subsets (solve '(2 1 2))) (newline)
+(display "CASE5=") (display-subsets (solve '(-1 0 1))) (newline)
+(display "CASE6=") (display-subsets (solve '(1))) (newline)
+(display "CASE7=") (display-subsets (solve '(5 5 5 5))) (newline)

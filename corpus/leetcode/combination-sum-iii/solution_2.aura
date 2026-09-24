@@ -1,0 +1,102 @@
+;; Combination Sum III - backtracking over digits 1..9
+;; Each combination: list of k distinct digits in 1..9 summing to n.
+;; Within each combination, digits are ascending. Across combinations, output
+;; in the order generated (which is already lexicographic ascending due to
+;; the ascending-start backtracking).
+
+(define (range a b)
+  (if (> a b) '() (cons a (range (+ a 1) b))))
+
+(define (sum lst)
+  (if (null? lst) 0 (+ (car lst) (sum (cdr lst)))))
+
+(define (min-sum-of-remain-positions remaining start)
+  ;; Minimum sum if we pick the smallest `remaining` digits from start..9.
+  (if (= remaining 0)
+      0
+      (+ start (min-sum-of-remain-positions (- remaining 1) (+ start 1)))))
+
+(define (max-sum-of-remain-positions remaining start)
+  ;; Maximum sum if we pick the largest `remaining` digits from start..9.
+  (if (= remaining 0)
+      0
+      (+ start (max-sum-of-remain-positions (- remaining 1) (+ start 1)))))
+
+(define (backtrack start need target current acc results)
+  ;; Need more picks; target is the remaining sum to reach.
+  (cond
+    ((= need 0)
+     (if (= target 0)
+         (set! acc (cons (reverse current) acc))
+         acc))
+    (else
+     (let loop ((s start) (acc acc))
+       (if (> s 9)
+           acc
+           (let ((new-target (- target s))
+                 (min-rest (min-sum-of-remain-positions (- need 1) (+ s 1)))
+                 (max-rest (max-sum-of-remain-positions (- need 1) (+ s 1))))
+             (if (and (>= new-target min-rest)
+                      (<= new-target max-rest)
+                      (<= s new-target))
+                 (let ((acc2 (backtrack (+ s 1)
+                                        (- need 1)
+                                        new-target
+                                        (cons s current)
+                                        acc)))
+                   (loop (+ s 1) acc2))
+                 (loop (+ s 1) acc))))))))
+
+(define (solve k n)
+  ;; Returns the list of combinations. acc is built in reverse-of-output order
+  ;; but we then reverse it to get ascending-order output.
+  (reverse (backtrack 1 k n '() '())))
+
+;; Display a single combination as space-separated digits.
+(define (display-combo c)
+  (define (loop rest)
+    (cond ((null? rest) (display ""))
+          ((null? (cdr rest))
+           (display (number->string (car rest))))
+          (else
+           (display (number->string (car rest)))
+           (display " ")
+           (loop (cdr rest)))))
+  (loop c))
+
+(define (display-result result)
+  (define (loop rest)
+    (cond ((null? rest) (display ""))
+          ((null? (cdr rest))
+           (display-combo (car rest)))
+          (else
+           (display-combo (car rest))
+           (newline)
+           (loop (cdr rest))))))
+  (loop result))
+
+(define (run-case i k n)
+  (let ((r (solve k n)))
+    (display "CASE")
+    (display (number->string i))
+    (display "=")
+    (display-result r)
+    (newline)))
+
+;; Test cases
+(run-case 0 3 7)
+(newline)
+(run-case 1 3 9)
+(newline)
+(run-case 2 4 1)
+(newline)
+(run-case 3 2 10)
+(newline)
+(run-case 4 9 45)
+(newline)
+(run-case 5 9 46)
+(newline)
+(run-case 6 2 17)
+(newline)
+(run-case 7 3 15)
+(newline)

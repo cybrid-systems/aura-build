@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:57:10Z",
+      "ts_local": "2026-09-24 22:57:10 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2945,
+        "total_characters": 0,
+        "prompt_tokens": 1400,
+        "completion_tokens": 1545,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.112,
+      "tests_passed": 0,
+      "tests_total": 6,
+      "stderr_snippet": "warning: unbalanced parentheses in input\n",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:57:21Z",
+      "ts_local": "2026-09-24 22:57:21 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 3823,
+        "total_characters": 0,
+        "prompt_tokens": 1400,
+        "completion_tokens": 2423,
+        "prompt_tokens_details": {
+          "cached_tokens": 1399
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.338,
+      "tests_passed": 0,
+      "tests_total": 6,
+      "stderr_snippet": "error: 1:59: parse error: expected expression, got '('\n   |\n  1 | (define case0-board '((#\\o #\\a #\\a #\\n) (#\\e #\\t #\\a #\\e) (#\\i #\\h #\\k #\\r) (#\\i #\\f #\\l #\\v)))\n   |                                                           ^\nerror: 1:55: parse error: expected expression, got '('\n   |\n  1 | (define case0-words '((#\\o #\\a #\\t #\\h) (#\\p #\\e #\\a) (#\\e #\\a #\\t) (#\\r #\\a #\\i #\\n)))\n   |                                                       ^\nerror: 1:42: parse error: expected expression, got ')'\n   ",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "word-search-ii",
+  "title": "Word Search II",
+  "category": "backtracking",
+  "updated_at": "2026-09-24T14:57:21Z",
+  "updated_at_local": "2026-09-24 22:57:21 CST"
+}

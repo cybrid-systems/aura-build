@@ -1,0 +1,110 @@
+;; Subsets II - backtracking with duplicate skipping
+
+(define (sort-list xs)
+  (let ((arr (list->vector xs)))
+    ;; simple insertion sort (n <= 10)
+    (define n (vector-length arr))
+    (define (insert i j)
+      (if (or (= j 0) (<= (vector-ref arr j) (vector-ref arr (- j 1))))
+          (begin
+            (vector-set! arr i (vector-ref arr (- j 1)))
+            (vector-set! arr (- j 1) 0))
+          (begin
+            (vector-set! arr i (vector-ref arr j))
+            (vector-set! arr j 0)
+            (insert i (- j 1)))))
+    ;; Actually let's just do a simpler selection-sort style
+    (let loop ((k 0))
+      (if (>= k n) xs
+          (let ((min-i k) (min-v (vector-ref arr k)))
+            (let inner ((j (+ k 1)))
+              (if (>= j n) 
+                  (begin
+                    (vector-set! arr k min-v)
+                    (loop (+ k 1)))
+                  (begin
+                    (if (< (vector-ref arr j) min-v)
+                        (begin
+                          (set! min-i j)
+                          (set! min-v (vector-ref arr j))))
+                    (inner (+ j 1)))))))))
+
+(define (vec->list v)
+  (let loop ((i (- (vector-length v) 1)) (acc '()))
+    (if (< i 0) acc (loop (- i 1) (cons (vector-ref v i) acc)))))
+
+(define (list->vec2 xs)
+  (let ((v (make-vector (length xs) 0)))
+    (let loop ((i 0) (xs xs))
+      (if (null? xs) v
+          (begin
+            (vector-set! v i (car xs))
+            (loop (+ i 1) (cdr xs)))))))
+
+(define (sorted xs)
+  (vec->list (let ((v (list->vec2 xs)))
+    (let ((n (vector-length v)))
+      (let loop ((i 1))
+        (if (>= i n) v
+            (let ((key (vector-ref v i)) (j (- i 1)))
+              (let inner ()
+                (if (and (>= j 0) (< (vector-ref v j) key))
+                    (begin
+                      (vector-set! v (+ j 1) (vector-ref v j))
+                      (set! j (- j 1))
+                      (inner))
+                    (begin
+                      (vector-set! v (+ j 1) key)
+                      (loop (+ i 1))))))))))))
+
+(define (subsets-helper sorted-nums start path result)
+  (set! result (cons (reverse path) result))
+  (let loop ((i start))
+    (if (>= i (length sorted-nums)) result
+        (let ((num (list-ref sorted-nums i)))
+          (if (and (> i start)
+                   (equal? num (list-ref sorted-nums (- i 1))))
+              (loop (+ i 1))
+              (set! result
+                (subsets-helper sorted-nums (+ i 1) (cons num path) result))))))
+
+(define (subsets nums)
+  (let ((s (sorted nums)))
+    (subsets-helper s 0 '() '())))
+
+(define (solve nums)
+  (subsets nums))
+
+;; Display helper for list of lists
+(define (display-list-of-lists lst)
+  (display "[")
+  (let loop ((first? #t) (l lst))
+    (cond ((null? l) (display "]"))
+          (else
+           (if first? (set! first? #f) (display ", "))
+           (display "[")
+           (let inner ((first2? #t) (sub (car l)))
+             (cond ((null? sub) (display "]"))
+                   (else
+                    (if first2? (set! first2? #f) (display ","))
+                    (display " ")
+                    (display (car sub))
+                    (inner first2? (cdr sub)))))
+           (loop first? (cdr l))))))
+
+(define (run-case i nums)
+  (let ((r (solve nums)))
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display-list-of-lists r)
+    (newline)))
+
+(run-case 0 '(1 2 2))
+(run-case 1 '(0))
+(run-case 2 '(1 2 3))
+(run-case 3 '(1 1 1))
+(run-case 4 '(2 1 2))
+(run-case 5 '(-1 0 1))
+(run-case 6 '(1))
+(run-case 7 '(5 5 5 5))

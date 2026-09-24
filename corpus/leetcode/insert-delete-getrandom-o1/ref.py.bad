@@ -1,6 +1,6 @@
 import random
 import json
-
+from typing import List
 
 class RandomizedSet:
     def __init__(self):
@@ -26,10 +26,10 @@ class RandomizedSet:
         return True
 
     def getRandom(self) -> int:
-        return self.arr[random.randrange(len(self.arr))]
+        return random.choice(self.arr)
 
 
-def solve(operations, args):
+def solve(operations: List[str], args: List[List[int]]) -> list:
     rs = RandomizedSet()
     results = []
     for op, a in zip(operations, args):
@@ -44,53 +44,43 @@ def solve(operations, args):
 
 CASES = [
     {
-        'operations': ['insert', 'remove', 'insert', 'getRandom', 'remove'],
-        'args': [[1], [2], [2], [], [1]],
+        "operations": ["insert", "remove", "insert", "getRandom", "remove", "insert", "getRandom"],
+        "args": [[1], [2], [2], [], [1], [2], []],
     },
     {
-        'operations': ['insert', 'insert', 'insert', 'getRandom', 'getRandom', 'getRandom'],
-        'args': [[0], [1], [2], [], [], []],
+        "operations": ["insert", "insert", "remove", "remove", "insert", "getRandom", "remove", "getRandom"],
+        "args": [[0], [1], [0], [0], [0], [], [0], []],
     },
     {
-        'operations': ['insert', 'remove', 'getRandom'],
-        'args': [[0], [0], []],
+        "operations": ["getRandom"],
+        "args": [[]],
     },
     {
-        'operations': ['insert', 'insert', 'remove', 'insert', 'remove', 'getRandom'],
-        'args': [[5], [5], [5], [5], [5], []],
+        "operations": ["insert", "insert", "insert", "insert", "remove", "remove", "remove", "remove", "getRandom"],
+        "args": [[1], [2], [3], [4], [4], [3], [2], [1], []],
     },
     {
-        'operations': ['insert', 'insert', 'insert', 'remove', 'remove', 'insert', 'getRandom'],
-        'args': [[1], [2], [3], [1], [3], [4], []],
+        "operations": ["insert", "remove", "remove", "insert", "getRandom"],
+        "args": [[5], [5], [5], [5], []],
     },
     {
-        'operations': ['insert', 'insert', 'getRandom', 'remove', 'insert', 'getRandom', 'getRandom'],
-        'args': [[10], [20], [], [10], [30], [], []],
-    },
-    {
-        'operations': ['insert', 'insert', 'remove', 'remove', 'remove', 'getRandom'],
-        'args': [[-1], [-2], [-1], [-2], [-3], []],
+        "operations": ["insert", "insert", "insert", "getRandom", "getRandom", "getRandom"],
+        "args": [[10], [20], [30], [], [], []],
     },
 ]
-
-
-def canonical(v):
-    if isinstance(v, bool):
-        return 'true' if v else 'false'
-    return str(v)
 
 
 if __name__ == '__main__':
     out = []
     for i, c in enumerate(CASES):
-        result = solve(c['operations'], c['args'])
-        expected_lines = [canonical(x) for x in result]
+        r = solve(c["operations"], c["args"])
+        encoded_input = {
+            "operations": c["operations"],
+            "args": c["args"],
+        }
         out.append({
-            'id': i,
-            'input': {
-                'operations': c['operations'],
-                'args': c['args'],
-            },
-            'expected': '\n'.join(expected_lines),
+            "id": i,
+            "input": encoded_input,
+            "expected": json.dumps(r, separators=(',', ':'), ensure_ascii=False),
         })
     print(json.dumps(out, separators=(',', ':'), ensure_ascii=False))

@@ -1,0 +1,187 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "src_dir": "src",
+      "temperature": 0.3,
+      "ts": "2026-09-24T14:57:28Z",
+      "ts_local": "2026-09-24 22:57:28 CST",
+      "usage": {
+        "prompt_tokens": 17806,
+        "completion_tokens": 9336,
+        "total_tokens": 27142
+      },
+      "files": [
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 1774,
+            "total_characters": 0,
+            "prompt_tokens": 1478,
+            "completion_tokens": 296,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "csv-types.aura",
+          "temperature": 0.3,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 2380,
+            "total_characters": 0,
+            "prompt_tokens": 1701,
+            "completion_tokens": 679,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "csv-util.aura",
+          "temperature": 0.3,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 5398,
+            "total_characters": 0,
+            "prompt_tokens": 1898,
+            "completion_tokens": 3500,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "csv-lexer.aura",
+          "temperature": 0.3,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 3531,
+            "total_characters": 0,
+            "prompt_tokens": 2135,
+            "completion_tokens": 1396,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "csv-coerce.aura",
+          "temperature": 0.3,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 2880,
+            "total_characters": 0,
+            "prompt_tokens": 2379,
+            "completion_tokens": 501,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "csv-iterator.aura",
+          "temperature": 0.3,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 3658,
+            "total_characters": 0,
+            "prompt_tokens": 2594,
+            "completion_tokens": 1064,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "csv-fixture.aura",
+          "temperature": 0.3,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 4440,
+            "total_characters": 0,
+            "prompt_tokens": 2819,
+            "completion_tokens": 1621,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "csv-report.aura",
+          "temperature": 0.3,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 3081,
+            "total_characters": 0,
+            "prompt_tokens": 2802,
+            "completion_tokens": 279,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "main.aura",
+          "temperature": 0.3,
+          "parse_ok": false,
+          "exists": true
+        }
+      ],
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.205,
+      "scenarios_passed": 0,
+      "scenarios_total": 15,
+      "stderr_snippet": "warning: unbalanced parentheses in input\nerror: 1:2: unbound variable: define-record\n   |\n  1 | (define-record cell value kind)\n   |  ^^^^^^^^^^^^^\nerror: 1:2: unbound variable: define-record\n   |\n  1 | (define-record row cells)\n   |  ^^^^^^^^^^^^^\nerror: 8:16: unbound variable: ch\n   |\n  8 |       ((char=? ch #\\return)\n   |                ^^\nerror: 45:2: unbound variable: define-record\n   |\n 45 | (define-record lexer port\n   |  ^^^^^^^^^^^^^\n",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "mini-csv-rfc4180",
+  "title": "Streaming RFC 4180 CSV parser",
+  "domain": "parsers",
+  "files": [
+    "csv-types.aura",
+    "csv-util.aura",
+    "csv-lexer.aura",
+    "csv-coerce.aura",
+    "csv-iterator.aura",
+    "csv-fixture.aura",
+    "csv-report.aura",
+    "main.aura"
+  ],
+  "updated_at": "2026-09-24T14:57:28Z",
+  "updated_at_local": "2026-09-24 22:57:28 CST"
+}

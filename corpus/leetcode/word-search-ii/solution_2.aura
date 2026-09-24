@@ -1,0 +1,207 @@
+;; Word Search II - Trie + DFS solution in Aura
+
+(define (make-node)
+  (let ((node (list #f #f #f #f #f #f #f #f #f #f #f #f #f #f #f #f #f #f #f #f #f #f #f #f #f #f)))
+    (cons #f node)))
+
+(define (node-children node) (cdr node))
+(define (node-word node) (car node))
+(define (set-node-word! node w) (set-car! node w))
+(define (set-node-child! node c child) 
+  (let ((children (node-children node)))
+    (set-car! (list-tail children (- (char->integer c) (char->integer #\a))) child)
+    ;; simpler: direct mutation
+    ))
+
+;; Better: use vector-like with assoc list or just 26 fields
+;; Let's restructure: a node is a pair (word . children) where children is a list of (char . node) pairs
+
+(define (new-node)
+  (cons #f '()))
+
+(define (node-word node) (car node))
+(define (node-children node) (cdr node))
+(define (set-node-word! node w) (set-car! node w))
+
+(define (char->int c) (- (char->integer c) (char->integer #\a)))
+
+(define (find-child node c)
+  (let loop ((cs (node-children node)))
+    (cond ((null? cs) #f)
+          ((equal? (char->integer (car (car cs))) (char->integer c)) (car cs))
+          (else (loop (cdr cs))))))
+
+(define (add-child! node c child)
+  (set-cdr! node (cons (cons c child) (node-children node))))
+
+(define (trie-insert trie word)
+  (let loop ((node trie) (w word))
+    (if (null? w)
+        (set-node-word! node word)
+        (let* ((c (car w)) (rest (cdr w))
+               (existing (find-child node c)))
+          (if existing
+              (loop (cdr existing) rest)
+              (let ((child (new-node)))
+                (add-child! node c child)
+                (loop child rest)))))))
+
+(define (trie-search-prefix trie word)
+  (let loop ((node trie) (w word))
+    (if (null? w)
+        node
+        (let ((existing (find-child node (car w))))
+          (if existing
+              (loop (cdr existing) (cdr w))
+              #f)))))
+
+(define (row-len board) (length (car board)))
+(define (board-rows board) (length board))
+
+(define (make-board n m)
+  (let loop ((i 0) (acc '()))
+    (if (= i n)
+        (reverse acc)
+        (loop (+ i 1) (cons (make-list m '()) acc)))))
+
+(define (board-ref board r c)
+  (list-ref (list-ref board r) c))
+
+(define (board-set! board r c v)
+  (let ((row (list-ref board r)))
+    (let loop ((i 0) (acc '()))
+      (if (= i (length row))
+          (begin (set-car! (list-tail board r) (reverse acc)) #t)
+          (loop (+ i 1) 
+                (cons (if (= i c) v (list-ref row i)) acc))))))
+
+;; board operations using mutation on structure copies
+;; Better approach: maintain a separate visited 2D list
+
+(define (make-visited n m)
+  (let loop ((i 0) (acc '()))
+    (if (= i n)
+        (reverse acc)
+        (loop (+ i 1) (cons (make-list m #f) acc)))))
+
+(define (visited-ref vis r c)
+  (list-ref (list-ref vis r) c))
+
+;; To set visited, we mutate the list
+(define (set-vis! vis r c v)
+  (let ((row (list-ref vis r)))
+    ;; row is a list; we need to replace c-th element
+    (let loop ((i 0) (rest row) (acc '()))
+      (if (= i (length row))
+          (begin
+            (set-car! (list-tail vis r) (reverse acc))
+            #t)
+          (loop (+ i 1)
+                (cdr rest)
+                (cons (if (= i c) v (car rest)) acc))))))
+
+;; Directions: up, down, left, right
+(define dirs '((-1 . 0) (1 . 0) (0 . -1) (0 . 1)))
+
+(define (in-bounds board r c)
+  (and (>= r 0) (>= c 0) (< r (board-rows board)) (< c (row-len board))))
+
+(define (dfs board vis r c node path results)
+  (let* ((ch (board-ref board r c))
+         (child (find-child node ch)))
+    (if child
+        (begin
+          (set-vis! vis r c #t)
+          (let ((new-path (append path (list ch))))
+            (when (node-word child)
+              (set! results (cons (node-word child) results))
+              (set-node-word! child #f)) ; avoid duplicates
+            (let loop ((d dirs) (r2 results))
+              (if (null? d)
+                  (begin (set-vis! vis r c #f) r2)
+                  (let* ((dr (car (car d))) (dc (cdr (car d)))
+                         (nr (+ r dr)) (nc (+ c dc)))
+                    (if (and (in-bounds board nr nc) 
+                             (not (visited-ref vis nr nc)))
+                        (loop (cdr d) (dfs board vis nr nc child new-path r2))
+                        (loop (cdr d) r2))))))
+          )
+        results)))
+
+(define (find-words board words)
+  (let* ((trie (new-node)))
+    (for-each (lambda (w) (trie-insert trie w)) words)
+    (let ((n (board-rows board)) (m (row-len board))
+          (results '()))
+      (let row-loop ((r 0) (results results))
+        (if (= r n)
+            results
+            (let col-loop ((c 0) (results results))
+              (if (= c m)
+                  (row-loop (+ r 1) results)
+                  (let ((vis (make-visited n m)))
+                    (col-loop (+ c 1) 
+                              (dfs board vis r c trie '() results))))))))))
+
+(define (solve board words)
+  (find-words board words))
+
+;; Helper to print result list
+(define (print-list lst)
+  (display "[")
+  (let loop ((l lst) (first? #t))
+    (cond ((null? l) (display "]"))
+          (else
+           (unless first? (display ", "))
+           (display (car l))
+           (loop (cdr l) #f)))))
+
+;; Helper to convert board list-of-lists to Aura internal format
+;; Input boards come as lists like (("o" "a" ...) ("e" "t" ...) ...)
+;; Aura strings need char conversion
+(define (str->char-list s)
+  (let ((len (string-length s)))
+    (let loop ((i 0) (acc '()))
+      (if (= i len)
+          (reverse acc)
+          (loop (+ i 1) (cons (string-ref s i) acc))))))
+
+(define (board->internal board)
+  (map (lambda (row) (map (lambda (s) (string-ref s 0)) row)) board))
+
+(define (words->internal words)
+  (map str->char-list words))
+
+;; Embedded test cases
+(define case0-board '((#\o #\a #\a #\n) (#\e #\t #\a #\e) (#\i #\h #\k #\r) (#\i #\f #\l #\v)))
+(define case0-words '((#\o #\a #\t #\h) (#\p #\e #\a) (#\e #\a #\t) (#\r #\a #\i #\n)))
+
+(define case1-board '((#\a #\b) (#\c #\d)))
+(define case1-words '((#\a #\b) (#\c #\b) (#\a #\b #\c #\d) (#\a #\b #\c) (#\b #\d) (#\a #\c #\b #\d) (#\a #\b #\c #\b #\d) (#\a #\b #\c #\b #\d)))
+
+(define case2-board '((#\a)))
+(define case2-words '((#\a) (#\b) (#\a #\a)))
+
+(define case3-board '((#\a #\a #\a) (#\a #\a #\a) (#\a #\a #\a)))
+(define case3-words '((#\a) (#\a #\a) (#\a #\a #\a) (#\a #\a #\a #\a) (#\b)))
+
+(define case4-board '((#\o #\a #\a #\n) (#\e #\t #\a #\e) (#\i #\h #\k #\r) (#\i #\f #\l #\v)))
+(define case4-words '((#\o #\a #\t #\h) (#\p #\e #\a) (#\e #\a #\t) (#\r #\a #\i #\n) (#\o #\a #\t #\h) (#\o #\a #\t) (#\o #\a #\t #\h #\o) (#\o #\a #\t #\f)))
+
+(define case5-board '((#\a #\b #\c) (#\d #\e #\f) (#\g #\h #\i)))
+(define case5-words '((#\a #\b #\c) (#\a #\e #\i) (#\c #\f #\i) (#\a) (#\z) (#\a #\b #\f #\i #\e) (#\a #\b #\f #\i #\e #\c)))
+
+;; Print results
+(define (run-case name board words)
+  (let ((result (solve board words)))
+    (display name)
+    (display "=")
+    (print-list result)
+    (newline)))
+
+(run-case "CASE0" case0-board case0-words)
+(run-case "CASE1" case1-board case1-words)
+(run-case "CASE2" case2-board case2-words)
+(run-case "CASE3" case3-board case3-words)
+(run-case "CASE4" case4-board case4-words)
+(run-case "CASE5" case5-board case5-words)

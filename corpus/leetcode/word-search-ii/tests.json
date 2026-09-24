@@ -1,0 +1,186 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "board": [
+        [
+          "o",
+          "a",
+          "a",
+          "n"
+        ],
+        [
+          "e",
+          "t",
+          "a",
+          "e"
+        ],
+        [
+          "i",
+          "h",
+          "k",
+          "r"
+        ],
+        [
+          "i",
+          "f",
+          "l",
+          "v"
+        ]
+      ],
+      "words": [
+        "oath",
+        "pea",
+        "eat",
+        "rain"
+      ]
+    },
+    "expected": "[\"eat\",\"oath\"]"
+  },
+  {
+    "id": 1,
+    "input": {
+      "board": [
+        [
+          "a",
+          "b"
+        ],
+        [
+          "c",
+          "d"
+        ]
+      ],
+      "words": [
+        "ab",
+        "cb",
+        "abcd",
+        "abc",
+        "bd",
+        "acbd",
+        "abcbd",
+        "abcbd"
+      ]
+    },
+    "expected": "[\"ab\",\"bd\"]"
+  },
+  {
+    "id": 2,
+    "input": {
+      "board": [
+        [
+          "a"
+        ]
+      ],
+      "words": [
+        "a",
+        "b",
+        "aa"
+      ]
+    },
+    "expected": "[\"a\"]"
+  },
+  {
+    "id": 3,
+    "input": {
+      "board": [
+        [
+          "a",
+          "a",
+          "a"
+        ],
+        [
+          "a",
+          "a",
+          "a"
+        ],
+        [
+          "a",
+          "a",
+          "a"
+        ]
+      ],
+      "words": [
+        "a",
+        "aa",
+        "aaa",
+        "aaaa",
+        "b"
+      ]
+    },
+    "expected": "[\"a\",\"aa\",\"aaa\",\"aaaa\"]"
+  },
+  {
+    "id": 4,
+    "input": {
+      "board": [
+        [
+          "o",
+          "a",
+          "a",
+          "n"
+        ],
+        [
+          "e",
+          "t",
+          "a",
+          "e"
+        ],
+        [
+          "i",
+          "h",
+          "k",
+          "r"
+        ],
+        [
+          "i",
+          "f",
+          "l",
+          "v"
+        ]
+      ],
+      "words": [
+        "oath",
+        "pea",
+        "eat",
+        "rain",
+        "oath",
+        "oat",
+        "oatho",
+        "oatf"
+      ]
+    },
+    "expected": "[\"eat\",\"oat\",\"oath\"]"
+  },
+  {
+    "id": 5,
+    "input": {
+      "board": [
+        [
+          "a",
+          "b",
+          "c"
+        ],
+        [
+          "d",
+          "e",
+          "f"
+        ],
+        [
+          "g",
+          "h",
+          "i"
+        ]
+      ],
+      "words": [
+        "abc",
+        "aei",
+        "cfi",
+        "a",
+        "z",
+        "abfie",
+        "abfiec"
+      ]
+    },
+    "expected": "[\"a\",\"abc\",\"cfi\"]"
+  }
+]

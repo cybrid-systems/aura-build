@@ -982,37 +982,130 @@ def _cmd_pursue(args: argparse.Namespace) -> int:
 
 
 def _cmd_corpus_gen(args: argparse.Namespace) -> int:
-    """LeetCode-style MiniMax→Aura corpus burner (product layer only)."""
+    """MiniMax→Aura corpus burner (leetcode + projects tracks; product layer only)."""
+    import json
     from pathlib import Path
 
-    from aura_build.corpus_gen import (
-        DEFAULT_RUN_LOG,
-        DEFAULT_SCRATCH,
-        build_burn_config_from_args,
-        cmd_burn,
-        cmd_catalog,
-        cmd_stop,
-        cmd_summary,
-    )
+    from aura_build import corpus_gen as lc
+    from aura_build import corpus_projects as proj
 
     sub = getattr(args, "corpus_gen_cmd", None)
+    track = getattr(args, "track", "leetcode")
+
+    def _lc_paths():
+        corpus = Path(getattr(args, "corpus_dir", None) or lc.DEFAULT_CORPUS)
+        # if user left default leetcode path but asked projects, remap
+        return corpus
+
+    def _proj_paths():
+        corpus = Path(getattr(args, "corpus_dir", None) or proj.DEFAULT_CORPUS)
+        if str(corpus) in ("corpus/leetcode", "corpus/leetcode/"):
+            corpus = proj.DEFAULT_CORPUS
+        return corpus
+
     if sub == "catalog":
-        scratch = Path(args.scratch or DEFAULT_SCRATCH)
-        run_log = Path(args.run_log) if args.run_log else (scratch / "run_log.jsonl")
-        return cmd_catalog(
-            corpus_dir=Path(args.corpus_dir),
+        if track == "projects":
+            scratch = Path(getattr(args, "scratch", None) or proj.DEFAULT_SCRATCH)
+            run_log = Path(args.run_log) if getattr(args, "run_log", None) else (scratch / "run_log.jsonl")
+            corpus = _proj_paths()
+            return proj.cmd_catalog(
+                corpus_dir=corpus,
+                target=int(args.target),
+                env_file=args.env_file,
+                run_log=run_log,
+                scratch=scratch,
+            )
+        scratch = Path(getattr(args, "scratch", None) or lc.DEFAULT_SCRATCH)
+        run_log = Path(args.run_log) if getattr(args, "run_log", None) else (scratch / "run_log.jsonl")
+        return lc.cmd_catalog(
+            corpus_dir=Path(getattr(args, "corpus_dir", None) or lc.DEFAULT_CORPUS),
             target=int(args.target),
             env_file=args.env_file,
             run_log=run_log,
             scratch=scratch,
         )
+
     if sub == "burn":
-        bc = build_burn_config_from_args(args)
-        return cmd_burn(bc)
+        if track == "projects":
+            # remap defaults when --track projects
+            if not getattr(args, "corpus_dir", None) or str(args.corpus_dir) == "corpus/leetcode":
+                args.corpus_dir = proj.DEFAULT_CORPUS
+            if not getattr(args, "scratch", None) or str(args.scratch) == "scratch/corpus_gen":
+                args.scratch = proj.DEFAULT_SCRATCH
+            if getattr(args, "workers", None) == 6:
+                args.workers = proj.DEFAULT_WORKERS
+            if getattr(args, "commit_every", None) == 20:
+                args.commit_every = 5
+            bc = proj.build_config_from_args(args)
+            return proj.cmd_burn(bc)
+        bc = lc.build_burn_config_from_args(args)
+        return lc.cmd_burn(bc)
+
     if sub == "summary":
-        return cmd_summary(Path(args.corpus_dir), Path(args.run_log) if args.run_log else None)
+        out: dict = {"ts_local": None, "tracks": {}}
+        if track in ("leetcode", "all"):
+            lc_corpus = Path("corpus/leetcode")
+            if getattr(args, "corpus_dir", None) and track == "leetcode":
+                lc_corpus = Path(args.corpus_dir)
+            lc_log = Path("scratch/corpus_gen/run_log.jsonl")
+            # reuse lc.cmd_summary but capture via redirect is hard; call internals
+            import io
+            from contextlib import redirect_stdout
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                lc.cmd_summary(lc_corpus, lc_log)
+            try:
+                out["tracks"]["leetcode"] = json.loads(buf.getvalue())
+            except json.JSONDecodeError:
+                out["tracks"]["leetcode"] = {"raw": buf.getvalue()[:500]}
+        if track in ("projects", "all"):
+            p_corpus = Path("corpus/projects")
+            p_log = Path("scratch/corpus_gen_projects/run_log.jsonl")
+            out["tracks"]["projects"] = proj.cmd_summary(p_corpus, p_log)
+        # combined rate
+        combined_calls = 0
+        combined_tok = 0
+        hours = []
+        for tr in out["tracks"].values():
+            rl = (tr or {}).get("run_log") or {}
+            combined_calls += int(rl.get("calls") or 0)
+            combined_tok += int(rl.get("total_tokens") or 0)
+            if rl.get("hours"):
+                hours.append(float(rl["hours"]))
+        h = max(hours) if hours else None
+        out["combined"] = {
+            "calls": combined_calls,
+            "total_tokens": combined_tok,
+            "hours_span_max": h,
+            "calls_per_hour": round(combined_calls / h, 2) if h else None,
+            "tokens_per_hour": round(combined_tok / h, 2) if h else None,
+        }
+        from aura_build.corpus_gen import _shanghai_now
+        out["ts_local"] = _shanghai_now()
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+        return 0
+
     if sub == "stop":
-        return cmd_stop(Path(args.scratch or DEFAULT_SCRATCH))
+        results = []
+        if track in ("leetcode", "all"):
+            scratch = Path(args.scratch) if args.scratch else lc.DEFAULT_SCRATCH
+            # cmd_stop prints; capture message
+            import io
+            from contextlib import redirect_stdout
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                lc.cmd_stop(scratch)
+            try:
+                results.append(json.loads(buf.getvalue()))
+            except json.JSONDecodeError:
+                results.append({"track": "leetcode", "raw": buf.getvalue()})
+        if track in ("projects", "all"):
+            scratch = Path(args.scratch) if (args.scratch and track == "projects") else proj.DEFAULT_SCRATCH
+            if track == "all":
+                scratch = proj.DEFAULT_SCRATCH
+            results.append(proj.cmd_stop(scratch))
+        print(json.dumps({"event": "stop", "results": results}, ensure_ascii=False))
+        return 0
     return 2
 
 

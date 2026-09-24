@@ -1,0 +1,65 @@
+(define (append-all a b)
+  (if (null? a) b (cons (car a) (append-all (cdr a) b))))
+
+(define (subsets nums)
+  (letrec
+    ((build
+      (lambda (xs acc)
+        (if (null? xs)
+            acc
+            (build (cdr xs)
+                   (append-all acc
+                               (letrec
+                                 ((map-add
+                                   (lambda (ys)
+                                     (if (null? ys)
+                                         '()
+                                         (cons (cons (car xs) (car ys))
+                                               (map-add (cdr ys)))))))
+                                 (map-add acc))))))))
+    (build nums '(()))))
+
+(define (flatten-display lst)
+  (display "(")
+  (let loop ((l lst) (first #t))
+    (cond
+      ((null? l) (display ")"))
+      (else
+       (if first (set! first #f) (display " "))
+       (cond
+         ((null? (car l))
+          (display "()"))
+         ((pair? (car l))
+          (flatten-display (car l)))
+         (else
+          (display (car l))))
+       (loop (cdr l) #f)))))
+
+(define (solve nums)
+  (subsets nums))
+
+(define (run-case label nums)
+  (begin
+    (display "CASE")
+    (display label)
+    (display "=")
+    (flatten-display (solve nums))
+    (newline)))
+
+(letrec
+  ((run-all
+    (lambda (cases)
+      (if (null? cases)
+          '()
+          (begin
+            (run-case (car (car cases)) (car (cdr (car cases))))
+            (run-all (cdr cases)))))))
+  (run-all
+    (list
+      (cons 0 (list 1 2 3))
+      (cons 1 (list 0))
+      (cons 2 (quote ()))
+      (cons 3 (list 1))
+      (cons 4 (list 1 2))
+      (cons 5 (list 1 2 3 4))
+      (cons 6 (list -1 0 1)))))

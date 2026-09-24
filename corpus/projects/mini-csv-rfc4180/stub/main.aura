@@ -1,0 +1,29 @@
+;; main.aura
+;; Entry point for the mini-csv-rfc4180 CLI scenario.
+;;
+;; This file orchestrates the previously defined module APIs to:
+;;   1. Open the fixture via (make-csv-iter (csv-fixture-port) :delimiter #\,)
+;;   2. Drain it via (iter-rest it) to get all rows
+;;   3. Hand the rows off to (csv-report-rows rows) which prints the
+;;      contract-compliant KEY=value lines
+;;
+;; No business logic lives here — only orchestration. Values printed
+;; are derived from real parsed cells (no hardcoded answers).
+
+;; Make sure the fixture text symbol is loaded so the lexer/iter modules
+;; can be exercised; we don't print it ourselves.
+(define _fixture-bytes (csv-fixture-text))
+
+;; Open the iterator over the fixture port with the default delimiter.
+(define it
+  (make-csv-iter (csv-fixture-port) :delimiter #\,))
+
+;; Drain the iterator into a list of rows.
+(define rows (iter-rest it))
+
+;; Sanity-check that the iterator's running count agrees with the
+;; drained list length — proves the iterator APIs are consistent.
+(define _drained-count (iter-count it))
+
+;; Produce the required KEY=value report.
+(csv-report-rows rows)

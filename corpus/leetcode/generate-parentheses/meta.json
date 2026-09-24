@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:56:48Z",
+      "ts_local": "2026-09-24 22:56:48 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1952,
+        "total_characters": 0,
+        "prompt_tokens": 1052,
+        "completion_tokens": 900,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.02,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 19:46: parse error: unexpected ')'\n",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:56:54Z",
+      "ts_local": "2026-09-24 22:56:54 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2141,
+        "total_characters": 0,
+        "prompt_tokens": 1052,
+        "completion_tokens": 1089,
+        "prompt_tokens_details": {
+          "cached_tokens": 1051
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.055,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 9:16: unbound variable: loop\n   |\n  9 |               (loop (+ i 1) acc))))))\n   |                ^^^^\nerror: 6:29: unbound variable: i\n  did you mean 'raw'?\n",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "generate-parentheses",
+  "title": "Generate Parentheses",
+  "category": "backtracking",
+  "updated_at": "2026-09-24T14:56:54Z",
+  "updated_at_local": "2026-09-24 22:56:54 CST"
+}

@@ -1,0 +1,75 @@
+;; csv-util.aura
+;; Low-level character/line utilities used by the CSV lexer.
+;;
+;; These functions abstract over an input port so the lexer can treat
+;; string sources and port sources uniformly. They handle:
+;;   - UTF-8 BOM detection and stripping (csv-bom? / csv-strip-bom)
+;;   - Single-character peek/read with consistent EOF semantics
+;;   - Line consumption that works for both CRLF and LF line endings
+;;
+;; Ports here are expected to behave like Aura input ports:
+;;   (peek-char port) returns either a character or an EOF value
+;;   (read-char port) consumes and returns either a character or an EOF value
+;;   (eof-object? v) tests for the EOF value
+
+;; --- BOM handling -------------------------------------------------------
+
+;; Returns #t if `ch` is the UTF-8 byte-order mark character (U+FEFF),
+;; otherwise #f. The character is treated as a character datum that may
+;; have been read from a port. We also accept the literal integer 65279
+;; (the codepoint) for robustness against integer-based ports.
+(define (csv-bom? ch)
+  (cond
+    ((char? ch) (char=? ch (integer->char 65279)))
+    ((number? ch) (= ch 65279))
+    (else #f)))
+
+;; Consumes and discards a leading BOM on `port` if present.
+;; After this call, the port is positioned either past the BOM (if one
+;; was present) or unchanged (if not). Returns the port.
+(define (csv-strip-bom port)
+  (let ((ch (peek-char port)))
+    (if (csv-bom? ch)
+        (begin
+          (read-char port)
+          port)
+        port)))
+
+;; --- Character I/O ------------------------------------------------------
+
+;; Returns the next character from `port` without consuming it, or the
+;; EOF value if the port is exhausted.
+(define (csv-peek port)
+  (peek-char port))
+
+;; Consumes and returns the next character from `port`, or the EOF value
+;; if the port is exhausted.
+(define (csv-read-char port)
+  (read-char port))
+
+;; --- Line consumption ---------------------------------------------------
+
+;; Consumes characters from `port` up to and including the next line
+;; terminator (either a single LF, or a CR optionally followed by LF).
+;; The terminating newline character(s) are consumed but not returned.
+;; If the port reaches EOF before any newline is seen, the remaining
+;; characters are still consumed and the port is left at EOF.
+;;
+;; Returns `port` for convenience.
+(define (csv-next-line port)
+  (let loop ((ch (peek-char port)))
+    (cond
+      ((eof-object? ch) port)
+      ((char=? ch #\newline)
+       (read-char port)
+       port)
+      ((char=? ch #\return)
+       (read-char port)
+       (let ((next (peek-char port)))
+         (if (and (not (eof-object? next)) (char=? next #\newline))
+             (read-char port)
+             'done))
+       port)
+      (else
+       (read-char port)
+       (loop (peek-char port))))))

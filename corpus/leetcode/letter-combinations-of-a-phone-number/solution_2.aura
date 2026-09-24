@@ -1,0 +1,62 @@
+;; Map digit char to its letters string
+(define (digit-letters d)
+  (cond ((equal? d #\2) "abc")
+        ((equal? d #\3) "def")
+        ((equal? d #\4) "ghi")
+        ((equal? d #\5) "jkl")
+        ((equal? d #\6) "mno")
+        ((equal? d #\7) "pqrs")
+        ((equal? d #\8) "tuv")
+        ((equal? d #\9) "wxyz")
+        (else "")))
+
+;; Backtracking: build combinations from digits list, index i, current acc string, results list
+(define (backtrack digits i acc results)
+  (if (= i (string-length digits))
+      (begin
+        (set! results (cons acc results))
+        results)
+      (let ((letters (digit-letters (string-ref digits i)))
+            (new-results results))
+        (let ((j 0)
+              (ll (string-length letters)))
+          (let loop ()
+            (if (< j ll)
+                (begin
+                  (set! new-results (backtrack digits (+ i 1) (string-append acc (substring letters j (+ j 1))) new-results))
+                  (set! j (+ j 1))
+                  (loop))
+                new-results))))))
+
+(define (solve digits)
+  (if (= 0 (string-length digits))
+      '()
+      (let ((result (backtrack digits 0 "" '())))
+        ;; Reverse because we cons'd in reverse order
+        (define (rev lst)
+          (define (rev-acc lst acc)
+            (if (null? lst) acc (rev-acc (cdr lst) (cons (car lst) acc))))
+          (rev-acc lst '()))
+        (rev result))))
+
+;; Display helper for CASE output: print each combination on its own line
+(define (display-results results)
+  (if (null? results)
+      (display "")
+      (begin
+        (display (car results))
+        (display "\n")
+        (display-results (cdr results)))))
+
+;; Define test inputs as variables
+(define digits "")
+
+;; Run all cases
+(display "CASE0=") (display-results (solve "")) (newline)
+(display "CASE1=") (display-results (solve "2")) (newline)
+(display "CASE2=") (display-results (solve "7")) (newline)
+(display "CASE3=") (display-results (solve "23")) (newline)
+(display "CASE4=") (display-results (solve "234")) (newline)
+(display "CASE5=") (display-results (solve "79")) (newline)
+(display "CASE6=") (display-results (solve "237")) (newline)
+(display "CASE7=") (display-results (solve "9")) (newline)

@@ -1,0 +1,60 @@
+(define digit->letters
+  '("" "" "abc" "def" "ghi" "jkl" "mno" "pqrs" "tuv" "wxyz"))
+
+(define (digits->combos digits)
+  (if (= (string-length digits) 0)
+      '()
+      (let ((chars (string->list digits)))
+        (let loop ((remaining chars) (acc '()))
+          (if (null? remaining)
+              (list (list->string (reverse acc)))
+              (let* ((d (- (char->integer (car remaining)) (char->integer #\0)))
+                     (letters (list-ref digit->letters d))
+                     (letter-chars (string->list letters)))
+                (let inner ((lcs letter-chars) (r remaining) (a acc) (out '()))
+                  (if (null? lcs)
+                      (loop (cdr r) (cons (car r) a))
+                      (inner (cdr lcs) r a
+                             (cons (append (reverse (list (car lcs))) a) out))))))))))
+
+(define (solve digits)
+  (digits->combos digits))
+
+(define (display-list-of-strings xs)
+  (cond ((null? xs) '())
+        (else
+         (display (car xs))
+         (newline)
+         (display-list-of-strings (cdr xs)))))
+
+(define digits "")
+(display "CASE0=") (newline)
+(display-list-of-strings (solve digits))
+
+(set! digits "2")
+(display "CASE1=") (newline)
+(display-list-of-strings (solve digits))
+
+(set! digits "7")
+(display "CASE2=") (newline)
+(display-list-of-strings (solve digits))
+
+(set! digits "23")
+(display "CASE3=") (newline)
+(display-list-of-strings (solve digits))
+
+(set! digits "234")
+(display "CASE4=") (newline)
+(display-list-of-strings (solve digits))
+
+(set! digits "79")
+(display "CASE5=") (newline)
+(display-list-of-strings (solve digits))
+
+(set! digits "237")
+(display "CASE6=") (newline)
+(display-list-of-strings (solve digits))
+
+(set! digits "9")
+(display "CASE7=") (newline)
+(display-list-of-strings (solve digits))

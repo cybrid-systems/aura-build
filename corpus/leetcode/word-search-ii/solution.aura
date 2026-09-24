@@ -1,0 +1,155 @@
+;; Word Search II: trie + DFS over board
+;; All test inputs embedded as literals; harness drives solve.
+
+(define (list->string lst)
+  (let loop ((l lst) (acc ""))
+    (if (null? l)
+        acc
+        (loop (cdr l) (string-append acc (string (car l)))))))
+
+(define (string->list-of-chars s)
+  (let ((len (string-length s)))
+    (let loop ((i 0) (acc '()))
+      (if (>= i len)
+          (reverse acc)
+          (loop (+ i 1) (cons (string-ref s i) acc))))))
+
+(define (char=? a b) (string=? (string a) (string b)))
+
+(define (make-node)
+  (let ((n (make-vector 27 #f)))
+    n))
+
+(define (node-child n idx)
+  (vector-ref n idx))
+
+(define (node-set-child! n idx c)
+  (vector-set! n idx c))
+
+(define (char->idx c) (- (char->integer c) (char->integer #\a)))
+
+(define (trie-insert root word)
+  (let loop ((node root) (chars (string->list-of-chars word)))
+    (if (null? chars)
+        (begin
+          (vector-set! node 26 #t)
+          'done)
+        (let ((c (car chars))
+              (rest (cdr chars)))
+          (let ((idx (char->idx c))
+                (next (node-child node idx)))
+            (if next
+                (loop next rest)
+                (let ((new (make-node)))
+                  (node-set-child! node idx new)
+                  (loop new rest))))))))
+
+(define (board-get board r c)
+  (list-ref (list-ref board r) c))
+
+(define (board-set! board r c v)
+  (let ((row (list-ref board r)))
+    (list-set! row c v)
+    'done))
+
+(define (list-set! lst i v)
+  (define (helper l n)
+    (if (= n 0)
+        (cons v (cdr l))
+        (cons (car l) (helper (cdr l) (- n 1)))))
+  (helper lst i))
+
+(define (dfs board r c node path result)
+  (let ((ch (board-get board r c)))
+    (let ((idx (char->idx ch))
+          (next (node-child node idx)))
+      (if (not next)
+          '()
+          (begin
+            (board-set! board r c #\*)
+            (let ((new-path (cons ch path)))
+              (when (vector-ref next 26)
+                (let ((word (list->string (reverse new-path))))
+                  (when (not (member word result string=?))
+                    (set! result (cons word result)))))
+              (let ((m (length board)))
+                (let ((cols (length (list-ref board 0))))
+                  ;; neighbors
+                  (define (try nr nc)
+                    (if (and (>= nr 0) (< nr m) (>= nc 0) (< nc cols))
+                        (let ((nc2 (board-get board nr nc)))
+                          (if (not (char=? nc2 #\*))
+                              (let ((ci (char->idx nc2)))
+                                (if (node-child next ci)
+                                    (set! result (dfs board nr nc next new-path result))
+                                    result))
+                              result))
+                        result))
+                  (set! result (try (- r 1) c))
+                  (set! result (try (+ r 1) c))
+                  (set! result (try r (- c 1)))
+                  (set! result (try r (+ c 1)))))
+            (board-set! board r c ch)
+            result)))))
+
+(define (solve board words)
+  (let ((root (make-node)))
+    (for-each (lambda (w) (trie-insert root w)) words)
+    (let ((m (length board)))
+      (if (= m 0)
+          '()
+          (let ((cols (length (list-ref board 0))))
+            (let loop ((r 0) (c 0) (result '()))
+              (cond
+                ((>= r m) (reverse result))
+                ((>= c cols) (loop (+ r 1) 0 result))
+                (else
+                 (let ((ch (board-get board r c)))
+                   (let ((idx (char->idx ch))
+                         (next (node-child root idx)))
+                     (let ((new-result
+                             (if next
+                                 (dfs board r c root '() result)
+                                 result)))
+                       (loop r (+ c 1) new-result))))))))))))
+
+(define (display-list lst)
+  (display "[")
+  (let loop ((l lst) (first? #t))
+    (cond
+      ((null? l) (display "]"))
+      (else
+       (if first? (set! first? #f) (display ","))
+       (display (car l))
+       (loop (cdr l) first?)))))
+
+(define case0-board '(("o" "a" "a" "n") ("e" "t" "a" "e") ("i" "h" "k" "r") ("i" "f" "l" "v")))
+(define case0-words '("oath" "pea" "eat" "rain"))
+
+(define case1-board '(("a" "b") ("c" "d")))
+(define case1-words '("ab" "cb" "abcd" "abc" "bd" "acbd" "abcbd" "abcbd"))
+
+(define case2-board '(("a")))
+(define case2-words '("a" "b" "aa"))
+
+(define case3-board '(("a" "a" "a") ("a" "a" "a") ("a" "a" "a")))
+(define case3-words '("a" "aa" "aaa" "aaaa" "b"))
+
+(define case4-board '(("o" "a" "a" "n") ("e" "t" "a" "e") ("i" "h" "k" "r") ("i" "f" "l" "v")))
+(define case4-words '("oath" "pea" "eat" "rain" "oath" "oat" "oatho" "oatf"))
+
+(define case5-board '(("a" "b" "c") ("d" "e" "f") ("g" "h" "i")))
+(define case5-words '("abc" "aei" "cfi" "a" "z" "abfie" "abfiec"))
+
+(define (run-case i board words)
+  (let ((r (solve board words)))
+    (display (string-append "CASE" (number->string i) "="))
+    (display-list r)
+    (newline)))
+
+(run-case 0 case0-board case0-words)
+(run-case 1 case1-board case1-words)
+(run-case 2 case2-board case2-words)
+(run-case 3 case3-board case3-words)
+(run-case 4 case4-board case4-words)
+(run-case 5 case5-board case5-words)

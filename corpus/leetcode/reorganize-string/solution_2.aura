@@ -1,0 +1,123 @@
+;; Reorganize String - greedy with max-heap
+;; Strategy: at each step, pick the character with the highest remaining
+;; count that is different from the last placed character. If no such
+;; character exists, rearrangement is impossible.
+
+;; Count characters: returns a list of (char . count) pairs.
+(define (count-chars s)
+  (let ((counts (make-vector 26 0)))
+    (let loop ((i 0))
+      (if (= i (string-length s))
+          counts
+          (begin
+            (let ((c (string-ref s i)))
+              (let ((idx (- (char->integer c) (char->integer #\a))))
+                (vector-set! counts idx (+ (vector-ref counts idx) 1))))
+            (loop (+ i 1)))))))
+
+;; Build initial heap from counts (as list of (count . char) entries)
+(define (build-heap counts)
+  (let loop ((i 0) (acc '()))
+    (if (= i 26)
+        acc
+        (let ((c (vector-ref counts i)))
+          (if (> c 0)
+              (loop (+ i 1) (cons (cons c (integer->char (+ i (char->integer #\a)))) acc))
+              (loop (+ i 1) acc))))))
+
+;; Heap is a max-heap by count. We use a simple list-based approach:
+;; the heap is a list of (count . char) pairs.
+;; insert: insert entry into heap list keeping it sorted descending by count.
+(define (heap-insert h entry)
+  (cond
+    ((null? h) (cons entry '()))
+    ((> (car entry) (car (car h)))
+     (cons entry h))
+    (else (cons (car h) (heap-insert (cdr h) entry)))))
+
+;; pop-max: returns (max-entry . rest-heap)
+(define (heap-pop h)
+  (cons (car h) (cdr h)))
+
+(define (reorganize s)
+  (if (= (string-length s) 0)
+      ""
+      (let* ((counts (count-chars s))
+             (n (string-length s))
+             (max-allowed (+ (quotient n 2) (modulo n 2))))
+        ;; Quick feasibility check
+        (let ((feasible #t))
+          (let check ((i 0))
+            (cond
+              ((= i 26) #f)
+              ((> (vector-ref counts i) max-allowed)
+               (begin (set! feasible #f) #t))
+              (else (check (+ i 1))))))
+        (if (not feasible)
+            ""
+            (let ((heap (build-heap counts))
+                  (result '())
+                  (last #\space))
+              ;; last = #\space sentinel meaning "no last character placed"
+              (let build ((h heap))
+                (cond
+                  ((null? h)
+                   (list->string (reverse result)))
+                  (else
+                   (let* ((top (car h))
+                          (rest (cdr h))
+                          (ch (cdr top))
+                          (cnt (car top)))
+                     (if (char=? ch last)
+                         ;; Need to take next character instead
+                         (cond
+                           ((null? rest) "")
+                           (else
+                            (let* ((second (car rest))
+                                   (rest2 (cdr rest))
+                                   (ch2 (cdr second))
+                                   (cnt2 (car second)))
+                              (if (<= cnt2 0)
+                                  ""
+                                  (let ((new-h (heap-insert rest2 second)))
+                                    (if (char=? ch2 last)
+                                        ""
+                                        (begin
+                                          (set! result (cons ch2 result))
+                                          ;; Decrement count
+                                          (let ((dec (cons (- cnt2 1) ch2)))
+                                            (if (> (- cnt2 1) 0)
+                                                (build (heap-insert '() dec))
+                                                (build rest2))))))))))
+                         (begin
+                           (set! result (cons ch result))
+                           (if (> (- cnt 1) 0)
+                               (let ((dec (cons (- cnt 1) ch)))
+                                 (build (heap-insert rest dec)))
+                               (build rest))))))))))))))
+
+(define (solve s)
+  (reorganize s))
+
+;; ---- Test harness ----
+(define (run-test i s)
+  (display "CASE")
+  (display (number->string i))
+  (display "=")
+  (display (solve s))
+  (newline))
+
+(run-test 0 "")
+(run-test 1 "a")
+(run-test 2 "aa")
+(run-test 3 "aaab")
+(run-test 4 "aab")
+(run-test 5 "abc")
+(run-test 6 "aabbcc")
+(run-test 7 "aaabc")
+(run-test 8 "vvvlo")
+(run-test 9 "aaaaaaaaaab")
+(run-test 10 "bbbbbbaaa")
+(run-test 11 "ababab")
+(run-test 12 "aaabbbccc")
+(run-test 13 "aabbc")

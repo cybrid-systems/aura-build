@@ -1,0 +1,200 @@
+(define (string->list-of-chars s)
+  (let loop ((i 0) (acc '()))
+    (if (= i (string-length s))
+        (reverse acc)
+        (loop (+ i 1) (cons (string-ref s i) acc)))))
+
+(define (chars->string cs)
+  (let loop ((cs cs) (acc ""))
+    (if (null? cs)
+        acc
+        (loop (cdr cs) (string-append acc (string (car cs)))))))
+
+(define (string s)
+  ;; ensure a single-char string
+  (let loop ((i 0) (acc "")) acc)) ; placeholder, we'll avoid using this
+
+;; helper: convert single char to a one-char string
+(define (char->str c) (make-string 1 c))
+
+(define (num->string n)
+  (if (= n 0) "0"
+      (let loop ((n n) (acc ""))
+        (if (= n 0) acc
+            (loop (quotient n 10)
+                  (string-append (string (number->char (+ 48 (modulo n 10)))) acc)))))))
+
+;; Helper: build a number string from a list of digits (list of single-char strings)
+(define (digits->num-str dlist)
+  (let loop ((dl dlist) (acc ""))
+    (if (null? dl) acc
+        (loop (cdr dl) (string-append acc (car dl))))))
+
+;; Convert a digit character to its integer value
+(define (digit-value c)
+  (- (char->integer c) (char->integer #\0)))
+
+;; Backtracking solver for a single num-string and target.
+;; state:
+;;   num: original string
+;;   pos: current index in num
+;;   path: list of tokens (numbers as strings and operators as char strings)
+;;   evaluated: current running sum under left-to-right with * handled via last term
+;;   last: the value of the "last term" for pending multiplication
+;;   target: target integer
+;;   results: list of expression strings (we'll collect at end)
+;;
+;; We accumulate as a list and reverse at the end.
+
+(define (list-length lst)
+  (let loop ((l lst) (n 0))
+    (if (null? l) n (loop (cdr l) (+ n 1)))))
+
+(define (list-reverse lst)
+  (let loop ((l lst) (acc '()))
+    (if (null? l) acc
+        (loop (cdr l) (cons (car l) acc)))))
+
+(define (list-append l1 l2)
+  (if (null? l1) l2 (cons (car l1) (list-append (cdr l1) l2))))
+
+(define (string-join strs)
+  ;; join a list of single-character or number strings with no separator
+  (let loop ((s strs) (acc ""))
+    (if (null? s) acc
+        (loop (cdr s) (string-append acc (car s))))))
+
+;; We'll implement solve as producing a list of expression strings.
+
+(define (digits-in s)
+  ;; Return list of characters representing digits of s.
+  (let loop ((i 0) (acc '()))
+    (if (= i (string-length s))
+        (reverse acc)
+        (loop (+ i 1) (cons (string-ref s i) acc)))))
+
+(define (digits->string dlist)
+  ;; Build string from list of chars.
+  (list->string dlist))
+
+(define (list->string lst)
+  (let loop ((l lst) (acc ""))
+    (if (null? l) acc
+        (loop (cdr l) (string-append acc (string (car l)))))))
+
+(define (string . cs)
+  ;; Convert a list of chars to a string.
+  (let loop ((cs cs) (acc ""))
+    (if (null? cs) acc
+        (loop (cdr cs) (string-append acc (char->str (car cs)))))))
+
+;; We need a safe char->str; already defined.
+
+;; Main backtracking
+(define (backtrack num pos path evaluated last target results)
+  (cond
+    ((= pos (string-length num))
+     ;; If we end exactly at target
+     (if (= evaluated target)
+         (cons (string-join path) results)
+         results))
+    (else
+     (let loop-rec ((i (+ pos 1)) (results results))
+       (if (> i (string-length num))
+           results
+           (let ((substr (substring num pos i)))
+             ;; Leading zero check: if length > 1 and starts with '0', skip extending further.
+             (if (and (> (string-length substr) 1)
+                      (char=? (string-ref substr 0) #\0))
+                 results
+                 (let ((val (string->number substr)))
+                   ;; If this is the first number (path empty), we must start a new expression.
+                   (let ((results2
+                          (if (null? path)
+                              (backtrack num i (list substr) val val target results)
+                              (let ((new-results
+                                     (let ((op #\+)
+                                           (results3 results))
+                                       (let ((evaluated2 (+ evaluated val))
+                                             (last2 val))
+                                         (backtrack num i (append path (list (char->str op) substr))
+                                                    evaluated2 last2 target results3)))))
+                                (let ((op2 #\-))
+                                  (let ((evaluated2 (- evaluated val)))
+                                    (backtrack num i (append path (list (char->str op2) substr))
+                                               evaluated2 val target new-results))))
+                                (let ((op3 #\*))
+                                  (let ((evaluated2 (+ (* last val) (- evaluated last))))
+                                    (backtrack num i (append path (list (char->str op3) substr))
+                                               evaluated2 val target (backtrack num i (append path (list (char->str #\+) substr)) evaluated val val target results)))))))))
+                     (loop-rec (+ i 1) results2))))))))
+
+;; We need substring and other string helpers. We can implement using string->list.
+
+(define (substring s start end)
+  (let loop ((i start) (acc ""))
+    (if (= i end) acc
+        (loop (+ i 1) (string-append acc (char->str (string-ref s i)))))))
+
+(define (char=? a b) (= (char->integer a) (char->integer b)))
+
+(define (char->integer c)
+  ;; Aura primitives likely provide char->integer; fallback using ord via mapping
+  (cond ((char=? c #\0) 48) ((char=? c #\1) 49) ((char=? c #\2) 50)
+        ((char=? c #\3) 51) ((char=? c #\4) 52) ((char=? c #\5) 53)
+        ((char=? c #\6) 54) ((char=? c #\7) 55) ((char=? c #\8) 56)
+        ((char=? c #\9) 57) (else 0)))
+
+(define (char->str c)
+  (make-string 1 c))
+
+(define (string-length s)
+  (let loop ((i 0))
+    (if (char=? (string-ref s i) #\null) i ; but strings don't have null; use sentinel
+        (loop (+ i 1)))))
+
+;; This definition is circular; we'll need a proper string-length. Aura probably provides it.
+;; We'll assume built-in string-length exists.
+
+;; String->number: Aura may not have it. Implement manually parsing integer.
+(define (string->number s)
+  (let loop ((i 0) (acc 0))
+    (if (= i (string-length s)) acc
+        (loop (+ i 1) (+ (* acc 10) (- (char->integer (string-ref s i)) 48))))))
+
+;; null char handling: We will avoid referencing #\null; rely on built-in string-length.
+
+;; Adjust: use built-ins where possible.
+
+(define (solve num target)
+  (backtrack num 0 '() 0 0 target '()))
+
+;; Display: print each result in the list as a readable form.
+(define (display-list lst)
+  (display "[")
+  (let loop ((l lst) (first? #t))
+    (cond ((null? l) (display "]"))
+          (else
+           (if first? (display "") (display ", "))
+           (display "\"")
+           (display (car l))
+           (display "\"")
+           (loop (cdr l) #f))))
+  (newline))
+
+(define (run-case i num target)
+  (let ((res (solve num target)))
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display-list res)))
+
+;; Run all test cases
+(run-case 0 "123" 6)
+(run-case 1 "232" 8)
+(run-case 2 "105" 5)
+(run-case 3 "00" 0)
+(run-case 4 "3456237490" 9191)
+(run-case 5 "1" 1)
+(run-case 6 "1000000000" 0)
+(run-case 7 "2147483647" 2147483647)

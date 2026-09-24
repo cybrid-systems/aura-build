@@ -1,0 +1,51 @@
+{
+  "label": "mini-wal-segment",
+  "files": [
+    "crc32.aura",
+    "page.aura",
+    "segment.aura",
+    "torn_write.aura",
+    "recovery.aura",
+    "lsn.aura",
+    "stats.aura",
+    "wal_replay.aura",
+    "wal.aura",
+    "main.aura"
+  ],
+  "entry": "main.aura",
+  "run_mode": "cli_multi",
+  "expect": "",
+  "expect_res": [],
+  "source_res": [
+    "\\(define\\s+\\(api-crc32\\b",
+    "\\(define\\s+\\(api-make-page\\b",
+    "\\(define\\s+\\(api-segment-write!\\b",
+    "\\(define\\s+\\(api-detect-torn\\b",
+    "\\(define\\s+\\(api-truncate-torn!\\b",
+    "\\(define\\s+\\(api-recover-wal\\b",
+    "\\(define\\s+\\(api-next-lsn\\b",
+    "\\(define\\s+\\(api-wal-stats\\b",
+    "\\(define\\s+\\(api-replay-segment\\b",
+    "\\(define\\s+\\(api-wal-open\\b"
+  ],
+  "expect_keys": [
+    "SEG_COUNT",
+    "BYTES_APPENDED",
+    "CURRENT_LSN",
+    "PAGE_SIZE",
+    "SEG0_FRAMES",
+    "SEG1_FRAMES",
+    "LAST_FRAME_LSN",
+    "CHECKSUM_OK",
+    "RECOVER_LSN",
+    "TRUNCATED_BYTES",
+    "ACTIVE_SEG",
+    "SEG0_BYTES",
+    "SEG1_BYTES",
+    "TOTAL_RECS",
+    "REPLAY_OK",
+    "CRC_MATCH"
+  ],
+  "seed_from_stub": true,
+  "user_extra": "Multi-file project mini-wal-segment; implement GOAL.md APIs; print KEY=value via main.aura using module calls."
+}

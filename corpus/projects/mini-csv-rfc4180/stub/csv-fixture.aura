@@ -1,0 +1,113 @@
+;; csv-fixture.aura
+;; Provides the canonical RFC 4180 tricky-case fixture used by the
+;; scenario in main.aura.
+;;
+;; The fixture is a single string containing the cases the GOAL excerpt
+;; calls out:
+;;   - UTF-8 BOM at the very start of the stream
+;;   - Quoted fields containing commas
+;;   - Escaped double-quotes inside quoted fields
+;;   - CRLF (\r\n) line endings on some rows
+;;   - LF (\n) line endings on other rows
+;;   - Empty fields between delimiters
+;;   - A blank trailing row
+;;   - Mixed types across rows (strings, integers, reals, booleans)
+;;
+;; Public API:
+;;   (define csv-fixture-text)   ;; the fixture as a Scheme string
+;;   (define (csv-fixture-port)) ;; opens the fixture as an input port
+;;
+;; The fixture text is constructed by string-append of small pieces so
+;; the structure stays readable and the BOM is explicit.
+
+;; --- BOM ---------------------------------------------------------------
+;; The UTF-8 byte-order mark, expressed as a Scheme string.
+(define csv-bom "\xEF\xBB\xBF")
+
+;; --- Header row --------------------------------------------------------
+;; Column header row, comma-separated, CRLF terminated.
+(define csv-fixture-h0 "h0,h1,h2,h3")
+
+;; --- Row 1 -------------------------------------------------------------
+;; - c0: bare string "foo"
+;; - c1: quoted field containing a comma
+;; - c2: integer "42"
+;; - c3: bare string "bar"
+;; Uses CRLF line ending.
+(define csv-fixture-r1 "foo,\"hello, world\",42,bar")
+
+;; --- Row 2 -------------------------------------------------------------
+;; - c0: quoted field containing an escaped double-quote
+;; - c1: bare string "baz"
+;; - c2: empty field between delimiters
+;; - c3: bare string "qux"
+;; Uses CRLF line ending.
+(define csv-fixture-r2 "\"he said \"\"hi\"\"\",baz,,qux")
+
+;; --- Row 3 -------------------------------------------------------------
+;; - c0: bare string "one"
+;; - c1: bare string "two"
+;; - c2: bare string "three"
+;; - c3: bare string "four"
+;; Uses LF line ending (no carriage return).
+(define csv-fixture-r3 "one,two,three,four")
+
+;; --- Row 4 -------------------------------------------------------------
+;; - c0: bare string "x"
+;; - c1: bare string "y"
+;; - c2: bare string "z"
+;; - c3: real number "2.5"
+;; Uses LF line ending.
+(define csv-fixture-r4 "x,y,z,2.5")
+
+;; --- Row 5 -------------------------------------------------------------
+;; - c0: empty field
+;; - c1: bare string "trailing"
+;; Uses CRLF line ending so we can then have a blank trailing row.
+(define csv-fixture-r5 ",trailing")
+
+;; --- Blank trailing row ------------------------------------------------
+;; A row consisting of a single empty field. This is what the parser
+;; will surface as a non-empty row of length 1 (or, depending on how
+;; csv-next-line treats a bare "\r\n", as a row of length 0). The main
+;; scenario's ROW5_C0 expectation is driven by row 5's leading empty
+;; field, so this blank row exists to test the trailing-edge case but
+;; must not corrupt the cell-count assertions.
+(define csv-fixture-r6 "")
+
+;; --- Line-ending and row separators -----------------------------------
+;; RFC 4180 says records are separated by CRLF. We mix CRLF and LF on
+;; purpose to prove the lexer accepts both.
+(define csv-crlf "\r\n")
+(define csv-lf "\n")
+
+;; --- Full fixture text -------------------------------------------------
+;; Concatenate: BOM + header + CRLF + r1 + CRLF + r2 + CRLF + r3 + LF
+;;            + r4 + LF + r5 + CRLF + r6
+;;
+;; We use string-append repeatedly so the resulting string is fully
+;; evaluated at load time and `csv-fixture-text` is bound to a single
+;; concrete value.
+(define csv-fixture-text
+  (string-append
+    csv-bom
+    csv-fixture-h0
+    csv-crlf
+    csv-fixture-r1
+    csv-crlf
+    csv-fixture-r2
+    csv-crlf
+    csv-fixture-r3
+    csv-lf
+    csv-fixture-r4
+    csv-lf
+    csv-fixture-r5
+    csv-crlf
+    csv-fixture-r6))
+
+;; --- Port accessor -----------------------------------------------------
+;; Open the fixture text as an input port. Aura exposes `open-input-string`
+;; for exactly this purpose. The caller is responsible for any BOM
+;; stripping (csv-util.aura handles that uniformly for any port).
+(define (csv-fixture-port)
+  (open-input-string csv-fixture-text))

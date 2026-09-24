@@ -1,0 +1,93 @@
+;; Parse integer from a string
+(define (string->number-helper s)
+  (let loop ((i 0) (acc 0))
+    (if (= i (string-length s))
+        acc
+        (let ((c (string-ref s i)))
+          (if (and (>= (char->integer c) (char->integer #\0))
+                   (<= (char->integer c) (char->integer #\9)))
+              (loop (+ i 1) (+ (* acc 10) (- (char->integer c) (char->integer #\0))))
+              (loop (+ i 1) acc))))))
+
+(define (parse-int s)
+  (string->number-helper s))
+
+;; Get value of env var as string
+(define (getenv-or-empty name)
+  (let ((val (getenv name)))
+    (if (string? val) val "")))
+
+;; Helper to convert env value to int (skip leading "name=")
+(define (getenv-int name)
+  (let ((raw (getenv-or-empty name)))
+    (let loop ((i 0))
+      (if (or (= i (string-length raw))
+              (char=? (string-ref raw i) #\=))
+          (substring raw (+ i 1) (string-length raw))
+          (loop (+ i 1))))))
+
+;; Generate parentheses using backtracking
+;; Returns list of strings
+(define (gen-para n)
+  (let ((result '()))
+    (define (backtrack current open close)
+      (cond
+        ((= (string-length current) (* n 2))
+         (set! result (cons current result)))
+        (else
+         (when (< open n)
+           (backtrack (string-append current "(") (+ open 1) close))
+         (when (< close open)
+           (backtrack (string-append current ")") open (+ close 1))))))
+    (backtrack "" 0 n)
+    (reverse result)))
+
+(define (solve n)
+  (gen-para n))
+
+;; Display a list of strings in readable form
+(define (display-string-list lst)
+  (display "[")
+  (let loop ((rest lst) (first? #t))
+    (cond
+      ((null? rest)
+       (display "]"))
+      (else
+       (if first?
+           (begin
+             (display "\"")
+             (display (car rest))
+             (display "\"")
+             (loop (cdr rest) #f))
+           (begin
+             (display ",\"")
+             (display (car rest))
+             (display "\"")
+             (loop (cdr rest) #f)))))))
+
+;; Run all test cases
+(define (run-case n idx)
+  (let ((result (solve n)))
+    (display (string-append "CASE" (number->string idx) "="))
+    (display-string-list result)
+    (newline)))
+
+(define (main)
+  (let ((n0 (parse-int (getenv-int "CASE0"))))
+    (run-case n0 0))
+  (let ((n1 (parse-int (getenv-int "CASE1"))))
+    (run-case n1 1))
+  (let ((n2 (parse-int (getenv-int "CASE2"))))
+    (run-case n2 2))
+  (let ((n3 (parse-int (getenv-int "CASE3"))))
+    (run-case n3 3))
+  (let ((n4 (parse-int (getenv-int "CASE4"))))
+    (run-case n4 4))
+  (let ((n5 (parse-int (getenv-int "CASE5"))))
+    (run-case n5 5))
+  (let ((n6 (parse-int (getenv-int "CASE6"))))
+    (run-case n6 6))
+  (let ((n7 (parse-int (getenv-int "CASE7"))))
+    (run-case n7 7)))
+
+(main)

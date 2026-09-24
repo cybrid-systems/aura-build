@@ -1,0 +1,163 @@
+;; csv-report.aura
+;; Reporting helpers for the mini-csv-rfc4180 CLI scenario.
+;;
+;; The main scenario prints a fixed set of KEY=value lines describing the
+;; parsed fixture. This file defines the small formatting helpers used by
+;; main.aura to build those lines. No printing happens in this file; it
+;; only formats strings and walks a list of rows to extract per-row cell
+;; values for the report.
+;;
+;; Public API:
+;;   (csv-report-rows rows)
+;;       Prints the full KEY=value report for the parsed rows to stdout.
+;;       Each line is of the form "KEY=value" where the value is computed
+;;       from the actual parsed cells (not hardcoded).
+;;
+;;   (csv-format-key prefix idx n) -> string
+;;       Returns a key string of the form "<prefix><idx>_C<n>" where
+;;       `<idx>` is the 1-based row index formatted with the given
+;;       width derived from `n` (the total row count). For example:
+;;         (csv-format-key "ROW" 1 6)  => "ROW1_C0"
+;;         (csv-format-key "ROW" 12 100) => "ROW012_C3"
+;;
+;; The helpers are deliberately tiny so main.aura stays a thin orchestrator
+;; over the public APIs of the other modules.
+
+;; ------------------------------------------------------------------------
+;; Row counter
+;; ------------------------------------------------------------------------
+
+;; Internal helper: number of rows in a list of rows.
+(define (csv-report-row-count rows)
+  (let loop ((xs rows) (n 0))
+    (if (null? xs)
+        n
+        (loop (cdr xs) (+ n 1)))))
+
+;; Internal helper: take the i-th element of a list (0-based).
+(define (csv-report-list-ref xs i)
+  (let loop ((xs xs) (i i))
+    (cond
+      ((null? xs) (error "csv-report-list-ref: index out of range" i))
+      ((= i 0) (car xs))
+      (else (loop (cdr xs) (- i 1))))))
+
+;; Internal helper: number of digits in a non-negative integer.
+;; Used to pad row indices so all ROWn_Cm keys line up nicely.
+(define (report-num-digits n)
+  (let loop ((n n) (d 0))
+    (if (< n 10)
+        (+ d 1)
+        (loop (quotient n 10) (+ d 1)))))
+
+;; ------------------------------------------------------------------------
+;; Key formatting
+;; ------------------------------------------------------------------------
+
+;; Pad an integer to a given width using leading zeros.
+(define (report-pad-int n width)
+  (let ((s (number->string n)))
+    (let loop ((s s) (pad (- width (string-length s))))
+      (if (<= pad 0)
+          s
+          (loop (string-append "0" s) (- pad 1))))))
+
+;; (csv-format-key prefix idx n) -> string
+;; Builds a key like "ROW1_C0" or "ROW012_C3".
+;;   prefix : leading word, e.g. "ROW"
+;;   idx    : 1-based row index
+;;   n      : total number of rows; used to determine zero-padding width
+(define (csv-format-key prefix idx n)
+  (let ((digits (report-num-digits n))
+        (idx-s  (report-pad-int idx digits)))
+    (string-append prefix idx-s "_C" (number->string idx))))
+
+;; ------------------------------------------------------------------------
+;; Cell extraction
+;; ------------------------------------------------------------------------
+
+;; Internal helper: get the value of the i-th cell (0-based) in a row.
+;; The row may be shorter than expected (e.g. a "blank" trailing row);
+;; in that case we return the empty string, matching the GOAL spec for
+;; missing cells (e.g. ROW7_C0 is empty because there is no row 7).
+(define (csv-report-cell-value row i)
+  (let ((cells (row-cells row)))
+    (if (>= i (length cells))
+        ""
+        (let* ((cell (csv-report-list-ref cells i))
+               (v    (cell-value cell)))
+          (cond
+            ((number? v) (number->string v))
+            ((or (eq? v #t) (eq? v #f))
+             (if v "true" "false"))
+            (else (if (string? v) v "")))))))
+
+;; ------------------------------------------------------------------------
+;; Top-level report printer
+;; ------------------------------------------------------------------------
+
+;; Print one "KEY=value" line.
+(define (csv-report-print-line key value)
+  (display key)
+  (display "=")
+  (display value)
+  (newline))
+
+;; Print the per-row cell values the GOAL excerpt asks about.
+;; We always print ROW<i>_LEN, then ROW<i>_C0..ROW<i>_C3 (or fewer if the
+;; row is short), for every row in `rows`. The values themselves come
+;; from the parsed cells, so the report reflects what the parser actually
+;; produced.
+(define (csv-report-row-lines rows n i)
+  (if (> i n)
+      '()
+      (let* ((row        (csv-report-list-ref rows (- i 1)))
+             (cells      (row-cells row))
+             (len        (length cells))
+             (len-key    (string-append (csv-format-key "ROW" i n) "_LEN"))
+             (c0-key     (csv-format-key "ROW" i n))
+             (c0-val     (csv-report-cell-value row 0))
+             (rest-keys  (let loop ((k 1) (acc '()))
+                           (if (> k 3)
+                               (reverse acc)
+                               (loop (+ k 1)
+                                     (cons (string-append
+                                            (csv-format-key "ROW" i n)
+                                            "_C"
+                                            (number->string k))
+                                           acc))))))
+        (begin
+          (csv-report-print-line len-key (number->string len))
+          (csv-report-print-line c0-key c0-val)
+          (let loop ((k 1) (rest-keys rest-keys))
+            (if (null? rest-keys)
+                '()
+                (begin
+                  (csv-report-print-line
+                   (car rest-keys)
+                   (csv-report-cell-value row k))
+                  (loop (+ k 1) (cdr rest-keys)))))))))
+
+;; (csv-report-rows rows)
+;; The single public entry point used by main.aura. Walks the list of
+;; rows produced by (iter-rest it) and prints a KEY=value line for each
+;; piece of information the GOAL excerpt requires.
+;;
+;; Layout per row index `i` (1-based):
+;;   ROW<i>_LEN = <number of cells in that row>
+;;   ROW<i>_C0  = <value of cell 0>      ; always printed
+;;   ROW<i>_C1  = <value of cell 1>      ; always printed
+;;   ROW<i>_C2  = <value of cell 2>      ; always printed
+;;   ROW<i>_C3  = <value of cell 3>      ; always printed
+;;
+;; Cells past the end of a short row are emitted as empty strings, which
+;; matches the GOAL requirement for "missing" cells (e.g. the blank
+;; trailing row has ROW<n>_C1..C3 empty).
+(define (csv-report-rows rows)
+  (let ((n (csv-report-row-count rows)))
+    (let loop ((i 1))
+      (if (> i n)
+          '()
+          (begin
+            (csv-report-row-lines rows n i)
+            (loop (+ i 1)))))))
