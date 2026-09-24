@@ -1,0 +1,131 @@
+; tier-overflow.aura — cold, capped overflow tier.
+;
+; This is the coldest tier: once a key's hot data has been promoted through
+; hashmap → sorted, very large or rarely-touched keys spill here. The overflow
+; tier has a hard cap; once full, further insertions evict the smallest entry
+; (FIFO-ish eviction by insertion order) and return a flag so the engine can
+; decide what to do (typically drop the spill and keep the key in sorted).
+;
+; The tier interface is the same as the other tiers; only the storage and
+; `tier-promote?` policy differ.
+
+; Build a fresh empty overflow tier with capacity `cap`.
+; Returns a tier whose kind is 'overflow.
+; Internal layout:
+;   (tier 'overflow cap map touches insertion-order)
+; where:
+;   map             — alist (k . v)
+;   touches         — alist (k . n)
+;   insertion-order — list of keys in the order they were inserted,
+;                     used for eviction.
+(define (api overflow-tier-new cap)
+  (list 'tier 'overflow cap '() '() '()))
+
+; ---- helpers ----
+
+; Find the (k . v) cell for k in an alist, or #f.
+(define (overflow-find-cell map k)
+  (cond ((null? map) #f)
+        ((equal? (car (car map)) k) (car map))
+        (else (overflow-find-cell (cdr map) k))))
+
+; Bump a key's touch counter, returning a new alist.
+(define (overflow-bump-touch touches k)
+  (cond ((null? touches)
+         (list (cons k 1)))
+        ((equal? (car (car touches)) k)
+         (cons (cons k (+ (cdr (car touches)) 1))
+               (cdr touches)))
+        (else
+         (cons (car touches)
+               (overflow-bump-touch (cdr touches) k)))))
+
+; Insert (k . v) into an alist, replacing any existing entry for k.
+(define (overflow-map-put map k v)
+  (cond ((null? map)
+         (list (cons k v)))
+        ((equal? (car (car map)) k)
+         (cons (cons k v) (cdr map)))
+        (else
+         (cons (car map)
+               (overflow-map-put (cdr map) k v)))))
+
+; Is k already present in map?
+(define (overflow-contains? map k)
+  (cond ((null? map) #f)
+        ((equal? (car (car map)) k) #t)
+        (else (overflow-contains? (cdr map) k))))
+
+; Append k to the end of an insertion-order list if it isn't already there.
+; If k is already in the list we leave the order alone (don't re-insert).
+(define (overflow-order-append order k)
+  (cond ((null? order)
+         (list k))
+        ((equal? (car order) k)
+         order)
+        (else
+         (cons (car order)
+               (overflow-order-append (cdr order) k)))))
+
+; ---- interface implementations ----
+
+; tier-step: apply delta to key k in overflow tier t.
+; If k already present, add delta to its current value.
+; Else, if room, insert (k . delta).
+; Else, evict the oldest insertion and insert (k . delta) at the end.
+; Returns the new tier value (does not mutate the input).
+;
+; Tier shape: (tier 'overflow cap map touches insertion-order)
+(define (api tier-step t k delta)
+  (let ((kind (car (cdr t)))
+        (cap  (car (cdr (cdr t))))
+        (map  (car (cdr (cdr (cdr t)))))
+        (touches (car (cdr (cdr (cdr (cdr t))))))
+        (order (car (cdr (cdr (cdr (cdr (cdr t))))))))
+    (let ((cell (overflow-find-cell map k)))
+      (cond
+        ((not (eq? kind 'overflow))
+         t)
+        (cell
+         ; Update existing key: add delta, bump touch count.
+         (let ((new-v (+ (cdr cell) delta)))
+           (list 'tier 'overflow cap
+                 (overflow-map-put map k new-v)
+                 (overflow-bump-touch touches k)
+                 order)))
+        ((< (length map) cap)
+         ; Room to insert.
+         (list 'tier 'overflow cap
+               (overflow-map-put map k delta)
+               (overflow-bump-touch touches k)
+               (overflow-order-append order k)))
+        (else
+         ; Full: evict the oldest insertion (the head of order), then insert.
+         (let ((victim (car order)))
+           (let ((map2 (overflow-map-put map victim 0)))
+             (let ((order2 (cdr order)))
+               (list 'tier 'overflow cap
+                     (overflow-map-put map2 k delta)
+                     (overflow-bump-touch touches k)
+                     (overflow-order-append order2 k)))))))))
+
+; tier-get: current value at key k, or 0 if absent.
+(define (api tier-get t k)
+  (let ((map (car (cdr (cdr (cdr t))))))
+    (let ((cell (overflow-find-cell map k)))
+      (if cell (cdr cell) 0))))
+
+; tier-keys: list of all keys in the overflow tier.
+(define (api tier-keys t)
+  (let ((map (car (cdr (cdr (cdr t)))))))
+    (map car map)))
+
+; tier-size: number of distinct keys currently held.
+(define (api tier-size t)
+  (length (car (cdr (cdr (cdr t)))))))
+
+; tier-promote?: overflow tier never promotes further — it's already the
+; coldest tier. A key here means the data has been fully demoted.
+; Returns #f unconditionally.
+(define (api tier-promote? t k)
+  #f)

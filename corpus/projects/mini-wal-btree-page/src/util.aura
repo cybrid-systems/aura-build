@@ -1,0 +1,84 @@
+;; util.aura — small helpers shared across the WAL/B+tree stack.
+
+;; --- bit / byte conversions ---------------------------------------------
+
+;; `u16` packs the low 16 bits of `x` into an unsigned 16-bit value
+;; represented as an exact integer. Negative inputs are masked the same way.
+(define (u16 x)
+  (let ((v (modulo x 65536)))
+    v))
+
+;; `u8` packs the low 8 bits of `x` into an unsigned 8-bit value.
+(define (u8 x)
+  (modulo x 256))
+
+;; --- checksum ------------------------------------------------------------
+
+;; XOR-based 16-bit rolling checksum over a list of byte values.
+;; Iterates with an accumulator; never recurses on `xs` directly so it
+;; is safe for arbitrarily long inputs (no stack blow-up).
+(define (crc16 xs)
+  (let loop ((rest xs) (acc 0))
+    (if (null? rest)
+        (u16 acc)
+        (loop (cdr rest)
+              (u16 (xor16 acc (car rest)))))))
+
+;; 16-bit XOR helper. Both args are reduced mod 65536 first.
+(define (xor16 a b)
+  (u16 (bitwise-xor (u16 a) (u16 b))))
+
+;; `bitwise-xor` may not exist as a primitive in every Aura build, so
+;; fall back to a portable definition using arithmetic on integers.
+;; (Aura numbers are unbounded; this works for the 0..65535 range.)
+(define (bitwise-xor a b)
+  (let loop ((shift 0) (result 0) (x a) (y b))
+    (if (>= shift 16)
+        result
+        (let ((bx (modulo x 2))
+              (by (modulo y 2)))
+          (loop (+ shift 1)
+                (+ result (* (modulo (+ bx by) 2) (expt 2 shift)))
+                (quotient x 2)
+                (quotient y 2))))))
+
+;; --- list comparisons ----------------------------------------------------
+
+;; Constant-time-ish structural equality on lists of bytes (or anything `=`-comparable).
+;; Compares lengths first, then element-wise.
+(define (bytes=? a b)
+  (cond
+    ((and (null? a) (null? b)) #t)
+    ((or (null? a) (null? b)) #f)
+    ((not (= (length-helper a) (length-helper b))) #f)
+    (else (bytes=-loop a b))))
+
+(define (bytes=-loop a b)
+  (cond
+    ((null? a) #t)
+    ((not (= (car a) (car b))) #f)
+    (else (bytes=-loop (cdr a) (cdr b)))))
+
+(define (length-helper xs)
+  (let loop ((rest xs) (n 0))
+    (if (null? rest)
+        n
+        (loop (cdr rest) (+ n 1)))))
+
+;; --- list slicing --------------------------------------------------------
+
+;; `take n xs` returns the first `n` elements of `xs` (or all of them if
+;; `xs` is shorter). Implemented iteratively to avoid deep recursion.
+(define (take n xs)
+  (let loop ((rest xs) (k n) (acc '()))
+    (if (or (= k 0) (null? rest))
+        (reverse acc)
+        (loop (cdr rest) (- k 1) (cons (car rest) acc)))))
+
+;; `drop n xs` returns `xs` with the first `n` elements removed.
+;; If `n` exceeds the length of `xs`, the empty list is returned.
+(define (drop n xs)
+  (let loop ((rest xs) (k n))
+    (if (or (= k 0) (null? rest))
+        rest
+        (loop (cdr rest) (- k 1)))))

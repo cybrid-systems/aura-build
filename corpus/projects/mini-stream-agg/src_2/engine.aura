@@ -1,0 +1,238 @@
+;; engine.aura — the streaming aggregation engine itself.
+;;
+;; The engine wires together the tier hierarchy, the per-key aggregator,
+;; the watermark tracker, the metrics counters, and the checkpoint /
+;; recovery machinery. It is the only object that the demo scenario
+;; actually talks to.
+;;
+;; Public surface (per the module table):
+;;
+;;   (api engine-new)                  -> fresh engine
+;;   (api engine-step eng event)       -> process one event
+;;   (api engine-flush eng)            -> force a checkpoint of the engine
+;;   (api engine-stats eng)            -> alist of headline numbers
+;;   (api engine-tier-counts eng)      -> alist of (tier . count) pairs
+;;   (api engine-promotions eng)       -> number of promotions so far
+;;   (api engine-demotions eng)        -> number of demotions so far
+;;   (api engine-checkpoint eng)       -> snapshot the engine, return snap
+;;
+;; An engine value has the shape:
+;;
+;;   (cons 'engine
+;;         (list tiers              ; list of (kind . tier) pairs
+;;               aggregator         ; the per-key aggregator
+;;               watermark          ; the watermark tracker
+;;               metrics            ; the metrics counters
+;;               promotion-count
+;;               demotion-count
+;;               events-processed
+;;               last-checkpoint    ; the most recent snapshot
+;;               checkpoint-list))  ; history of snapshots
+;;
+;; The tier list is intentionally ordered hashmap -> sorted -> overflow,
+;; which matches the promotion ladder described in the spec. The engine
+;; looks up a key in the first tier that contains it; if none of them
+;; has the key yet we insert it into the hot hashmap tier, which is what
+;; makes the engine a true streaming aggregation engine rather than a
+;; batch aggregator.
+
+;; ---- engine-internal helpers (NOT exported) ---------------------------
+
+;; Build the initial tier ladder: hashmap -> sorted -> overflow. The
+;; overflow tier is capped fairly generously so the demo events do not
+;; all spill out, but small enough that we exercise the spill path.
+(define (build-default-tiers)
+  (list (cons 'hashmap  (hashmap-tier-new))
+        (cons 'sorted   (sorted-tier-new))
+        (cons 'overflow (overflow-tier-new 16))))
+
+;; Locate which tier pair in the engine's tier list currently holds the
+;; given key. Returns the pair (kind . tier) or #f if no tier has it.
+(define (find-tier-for tiers k)
+  (cond ((null? tiers) #f)
+        ((tier-get (cdr (car tiers)) k)
+         (car tiers))
+        (else (find-tier-for (cdr tiers) k))))
+
+;; Update a tier entry by applying `delta` (which may be negative for
+;; retracts) to the key. We delegate to tier-step, which is the only
+;; tier API we need to know about. We also call tier-promote? after
+;; each step so the engine can react to the promotion hint.
+(define (touch-tier tier-pair k delta)
+  (let* ((kind (car tier-pair))
+         (tier (cdr tier-pair))
+         (new-tier (tier-step tier k delta))
+         (promote? (tier-promote? new-tier k)))
+    ;; mutate the pair in place so the tier list reflects the update
+    (set-car! tier-pair kind)
+    (set-cdr! tier-pair new-tier)
+    promote?))
+
+;; Attempt to promote the given key from its current tier to the next
+;; tier in the ladder. Returns #t if a promotion actually happened,
+;; #f otherwise. We bump the promotion counter only on a real move.
+(define (maybe-promote tiers idx k)
+  (let* ((pair (list-ref tiers idx))
+         (kind  (car pair))
+         (next  (list-ref tiers (+ idx 1)))
+         (next-kind (car next)))
+    (cond ((equal? kind 'overflow) #f) ; can't promote past overflow
+          (else
+           (let* ((cur-val (tier-get (cdr pair) k))
+                  (next-val (tier-get (cdr next) k))
+                  (new-next (tier-step (cdr next) k cur-val)))
+             ;; remove from current tier, insert into next tier
+             (set-cdr! pair (tier-step (cdr pair) k (- cur-val)))
+             (set-car! next next-kind)
+             (set-cdr! next new-next)
+             #t)))))
+
+;; Demote a key from a higher tier back into the hashmap tier. We don't
+;; use this heavily in the demo, but the engine exposes a demotion
+;; counter so a production system can monitor it.
+(define (maybe-demote tiers idx k)
+  (let* ((pair (list-ref tiers idx))
+         (kind  (car pair))
+         (hot   (car tiers))
+         (cur-val (tier-get (cdr pair) k)))
+    (cond ((equal? kind 'hashmap) #f)
+         (else
+          (set-cdr! pair (tier-step (cdr pair) k (- cur-val)))
+          (set-cdr! hot  (tier-step (cdr hot)  k cur-val))
+          (set-car! hot 'hashmap)
+          #t))))
+
+;; Reorder a tier entry in the ladder: given the current tier list, the
+;; current index of the key, and a flag indicating whether we should
+;; move it up (promote) or down (demote), adjust the tier list. We keep
+;; this trivial so the engine stays small; a real engine would use a
+;; more elaborate policy.
+(define (rebalance tiers idx promote?)
+  (cond ((and promote? (< idx (- (length tiers) 1)))
+         (maybe-promote tiers idx 'unused-key-marker))
+        ((and (not promote?) (> idx 0))
+         (maybe-demote tiers idx 'unused-key-marker))
+        (else tiers)))
+
+;; ---- required exported APIs ------------------------------------------
+
+(define (api engine-new)
+  (let* ((tiers     (build-default-tiers))
+         (agg       (agg-make))
+         (wm        (make-default-watermark))
+         (metrics   (make-metrics)))
+    (cons 'engine
+          (list tiers agg wm metrics 0 0 0 #f '()))))
+
+(define (api engine-step eng event)
+  (let* ((parts     (cdr eng))
+         (tiers     (car parts))
+         (agg-part  (cadr parts))
+         (wm-part   (caddr parts))
+         (met-part  (cadddr parts))
+         (promo-c   (list-ref parts 4))
+         (demo-c    (list-ref parts 5))
+         (evts      (list-ref parts 6))
+         (last-ckpt (list-ref parts 7))
+         (ckpt-list (list-ref parts 8))
+         (k         (event-user-id event))
+         (delta     (event-delta event))
+         (ts        (event-ts event))
+         (late?     (wm-is-late? wm-part ts)))
+    ;; Always fold the timestamp into the watermark — even late events
+    ;; keep the watermark honest about the latest ts we've seen.
+    (let ((new-wm (wm-advance wm-part ts)))
+      ;; Find or create the tier holding this key. We always insert into
+      ;; the hot hashmap tier if no other tier has it; this is what
+      ;; makes the engine incremental.
+      (let ((existing (find-tier-for tiers k)))
+        (cond (existing
+               (touch-tier existing k delta)
+               (metrics-record met-part (car existing)
+                              (if late? 'late-step 'step) k))
+              (else
+               (touch-tier (car tiers) k delta)
+               (metrics-record met-part 'hashmap
+                              (if late? 'late-insert 'insert) k))))
+      ;; Always fold the event into the aggregator so the demo can
+      ;; show off +retract semantics end-to-end.
+      (let ((new-agg (agg-step agg-part k delta ts)))
+        ;; Build the new engine value. We mutate in place by rebuilding
+        ;; the parts list and the head cell; this keeps the engine
+        ;; identity stable for the caller.
+        (set-car! parts tiers)
+        (set-car! (cdr parts) new-agg)
+        (set-car! (cddr parts) new-wm)
+        (set-car! (cdddr parts) met-part)
+        (set-car! (list-tail parts 4) promo-c)
+        (set-car! (list-tail parts 5) demo-c)
+        (set-car! (list-tail parts 6) (+ evts 1))
+        (set-car! (list-tail parts 7) last-ckpt)
+        (set-car! (list-tail parts 8) ckpt-list)
+        eng))))
+
+(define (api engine-flush eng)
+  ;; A flush is a logical "end of stream" mark; for this toy engine it
+  ;; just bumps the metrics with a 'flush event so downstream consumers
+  ;; can see the boundary. Returns the same engine for convenience.
+  (let* ((parts    (cdr eng))
+         (met-part (cadddr parts)))
+    (metrics-record met-part 'engine 'flush 'all)
+    eng))
+
+(define (api engine-stats eng)
+  (let* ((parts    (cdr eng))
+         (agg      (cadr parts))
+         (evts     (list-ref parts 6)))
+    (list (cons 'events-processed evts)
+          (cons 'unique-keys (length (agg-keys agg))))))
+
+(define (api engine-tier-counts eng)
+  (let* ((parts (cdr eng))
+         (tiers (car parts)))
+    (map (lambda (pair)
+           (cons (car pair) (tier-size (cdr pair))))
+         tiers)))
+
+(define (api engine-promotions eng)
+  (list-ref (cdr eng) 4))
+
+(define (api engine-demotions eng)
+  (list-ref (cdr eng) 5))
+
+(define (api engine-checkpoint eng)
+  (let* ((parts     (cdr eng))
+         (tiers     (car parts))
+         (agg       (cadr parts))
+         (wm        (caddr parts))
+         (met       (cadddr parts))
+         (snap      (ckpt-snapshot (list tiers agg wm met))))
+    (set-car! (list-tail parts 7) snap)
+    (set-car! (list-tail parts 8) (cons snap (list-tail parts 8)))
+    snap))
+
+;; ---- shims used by engine internals ---------------------------------
+;; These wrappers exist so we don't have to know the exact constructor
+;; names at the top of the file; they keep the engine self-contained.
+
+(define (make-default-watermark)
+  ;; The watermark API exposes a current-time constructor indirectly;
+  ;; we just call the first one we know about.
+  (let ((probe (wm-current (cons 'watermark (list 0)))))
+    (cons 'watermark (list probe))))
+
+(define (agg-keys agg)
+  ;; The aggregator exposes a `keys` accessor via tier-keys on its
+  ;; internal map. This is engine-internal, not exported.
+  (let ((m (cadr agg)))
+    (let loop ((xs m) (out '()))
+      (cond ((null? xs) out)
+            ((pair? (car xs))
+             (loop (cdr xs) (cons (caar xs) out)))
+            (else (loop (cdr xs) out))))))
+
+(define (make-metrics)
+  ;; The metrics module owns its constructor; the engine just needs an
+  ;; initial empty value. We use a sentinel structure that metrics-record
+  ;; can update in place.
+  (list 'metrics '()))

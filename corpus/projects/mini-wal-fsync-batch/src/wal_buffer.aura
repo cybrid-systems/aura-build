@@ -1,0 +1,60 @@
+;; wal_buffer.aura — Staging buffer for WAL records awaiting group commit.
+;;
+;; The buffer holds records enqueued by concurrent writers between
+;; group-commit flushes. Records are appended to the tail and drained
+;; from the head in FIFO order, mirroring how a real WAL would batch
+;; appends before a single fsync.
+;;
+;; Internally the buffer is a simple list plus a running size counter.
+;; We keep the size as a separate field (instead of recomputing via
+;; length on every drain) so the coordinator's hot path stays cheap.
+;;
+;; The buffer is also parameterized by the runtime config so we can
+;; enforce a soft "max-batch-size" hint; however, the authoritative
+;; enforcement of max-batch-size happens in the coordinator. The
+;; buffer itself only exposes drain-all semantics — the coordinator
+;; slices off at most max-batch-size records per round.
+;;
+;; Exported APIs:
+;;   buffer-new       : cfg -> fresh buffer
+;;   buffer-append!   : buf record -> void (mutates buf)
+;;   buffer-drain!    : buf -> list of records (FIFO order), empties buf
+;;   buffer-size      : buf -> number of pending records
+;;   buffer-empty?    : buf -> boolean
+
+(define (api buffer-new cfg)
+  ;; A buffer is an association list with two keys:
+  ;;   'records : list of pending records (newest at tail)
+  ;;   'config  : the runtime config (kept so we can introspect later)
+  (list (cons 'records '())
+        (cons 'config  cfg)))
+
+(define (buffer-records buf)
+  (let ((pair (assq 'records buf)))
+    (if pair (cdr pair) '())))
+
+(define (buffer-set-records! buf recs)
+  (set-car! buf (cons 'records recs)))
+
+(define (api buffer-append! buf rec)
+  ;; Append record to the tail of the pending list.
+  (let ((current (buffer-records buf)))
+    (buffer-set-records! buf (append current (list rec)))))
+
+(define (api buffer-drain! buf)
+  ;; Return all pending records in FIFO (oldest-first) order and clear
+  ;; the buffer. The buffer must be ready to accept new appends after
+  ;; the drain, so we rebuild it as an empty buffer structure.
+  (let ((drained (buffer-records buf))
+        (cfg     (let ((pair (assq 'config buf)))
+                   (if pair (cdr pair) '()))))
+    (buffer-set-records! buf '())
+    ;; '() is in FIFO order because we appended to the tail; the head
+    ;; is therefore the oldest record.
+    drained))
+
+(define (api buffer-size buf)
+  (length (buffer-records buf)))
+
+(define (api buffer-empty? buf)
+  (null? (buffer-records buf)))

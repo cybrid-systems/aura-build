@@ -1,0 +1,41 @@
+;; wal_record.aura — WAL record construction.
+;;
+;; A record represents a single transaction append to the WAL. We model it
+;; as an association list with three keys:
+;;   'tx-id    — numeric transaction identifier (writer-assigned)
+;;   'payload  — the record body (a list; we don't introspect deeply)
+;;   'size     — cached serialized byte count (for wal_bytes accounting)
+;;
+;; The "serialized bytes" for a record are counted as a fixed header
+;; (8 bytes) plus 1 byte per character of the textual payload, mirroring
+;; the kind of length-prefixed framing a real WAL would use. We expose
+;; this through record->bytes so the segment module can sum WAL_BYTES
+;; without knowing the internal layout.
+;;
+;; Exported APIs:
+;;   make-record     : (tx-id payload) -> record
+;;   record-tx-id    : record -> tx-id
+;;   record-payload  : record -> payload
+;;   record->bytes   : record -> byte count (integer)
+
+(define (api make-record tx-id payload)
+  (let* ((body (if (string? payload)
+                   payload
+                   (number->string (if (number? payload) payload 0))))
+         (body-len (string-length body))
+         (byte-count (+ 8 body-len)))
+    (list (cons 'tx-id tx-id)
+          (cons 'payload payload)
+          (cons 'size byte-count))))
+
+(define (api record-tx-id r)
+  (let ((pair (assq 'tx-id r)))
+    (if pair (cdr pair) 0)))
+
+(define (api record-payload r)
+  (let ((pair (assq 'payload r)))
+    (if pair (cdr pair) '())))
+
+(define (api record->bytes r)
+  (let ((pair (assq 'size r)))
+    (if pair (cdr pair) 0)))

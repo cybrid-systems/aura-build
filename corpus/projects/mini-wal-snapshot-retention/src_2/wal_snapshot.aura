@@ -1,0 +1,35 @@
+;; wal_snapshot.aura
+;; A snapshot is a marker that records the LSN at which the WAL state
+;; was frozen. Snapshots are "live" until released. Live snapshots
+;; anchor the prune LSN: the lowest live snapshot LSN defines the
+;; minimum LSN the system must still be able to serve.
+;;
+;; Snapshot fields (stored as an association list):
+;;   id      - a monotonically increasing integer (assigned at creation)
+;;   lsn     - the LSN captured by this snapshot
+;;   live    - #t while the snapshot is held; #f after release
+;;
+;; The constructor is private to this module (called by wal_manager.aura)
+;; while the (api ...) forms below expose only the read/release surface.
+
+(define SNAPSHOT-ID-COUNTER 0)
+
+(define (make-snapshot lsn)
+  (set! SNAPSHOT-ID-COUNTER (+ SNAPSHOT-ID-COUNTER 1))
+  (list 'snapshot
+        (cons 'id SNAPSHOT-ID-COUNTER)
+        (cons 'lsn lsn)
+        (cons 'live #t)))
+
+(define (snapshot-lsn snap)
+  (cdr (assq 'lsn (cdr snap))))
+
+(define (snapshot-id snap)
+  (cdr (assq 'id (cdr snap))))
+
+(define (snapshot-live? snap)
+  (cdr (assq 'live (cdr snap))))
+
+(define (snapshot-release snap)
+  (set-cdr! (assq 'live (cdr snap)) #f)
+  snap)

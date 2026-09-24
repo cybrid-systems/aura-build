@@ -1,0 +1,86 @@
+;; wal_runtime.aura — Runtime scheduler that decides when the coordinator
+;; should fsync. Owns the writer registry and the fsync-target tracking.
+;;
+;; State layout for a runtime:
+;;   (cons cfg (cons writers (cons pending-target-lsn (cons last-fsync-lsn (cons metrics '()))))))
+;;
+;;   cfg                — the WAL config (so we can consult fsync-on-commit?)
+;;   writers            — list of registered writer records
+;;   pending-target-lsn — the LSN threshold at which the next fsync must occur,
+;;                         computed from the writer that holds the highest
+;;                         in-flight (current) LSN. When the coordinator has
+;;                         persisted up through this LSN, the runtime considers
+;;                         the fsync "satisfied" and may retire it.
+;;   last-fsync-lsn     — the broadcast LSN of the most recent fsync
+;;   metrics            — shared metrics record (batches/fsyncs/records)
+
+(define (runtime-new cfg)
+  (cons cfg
+        (cons '()
+              (cons 0
+                    (cons 0
+                          (cons (metrics-new) '()))))))
+
+(define (rt-cfg rt) (car rt))
+(define (rt-writers rt) (car (cdr rt)))
+(define (rt-target-lsn rt) (car (cdr (cdr rt))))
+(define (rt-last-fsync-lsn rt) (car (cdr (cdr (cdr rt)))))
+(define (rt-metrics rt) (car (cdr (cdr (cdr (cdr rt))))))
+
+(define (rt-set-writers! rt ws)        (set-car! (cdr rt) ws))
+(define (rt-set-target-lsn! rt n)      (set-car! (cdr (cdr rt)) n))
+(define (rt-set-last-fsync-lsn! rt n)  (set-car! (cdr (cdr (cdr rt))) n))
+
+;; Register a writer with the runtime. The runtime keeps an ordered list of
+;; writers (order of registration is preserved; callers index them W0..Wn).
+(define (runtime-register-writer! rt w)
+  (rt-set-writers! rt (append (rt-writers rt) (list w)))
+  ;; Bump the pending fsync target up to this writer's current LSN. We use
+  ;; the highest observed writer-current-lsn as the next fsync target so
+  ;; that a single fsync persists everything buffered so far.
+  (let ((cur (writer-current-lsn w)))
+    (if (> cur (rt-target-lsn rt))
+        (rt-set-target-lsn! rt cur)
+        rt))
+  rt)
+
+;; Advance the runtime by one tick. For this toy simulation the tick is
+;; driven by main.aura explicitly; we still recompute the fsync target from
+;; the live writers each tick in case writers have appended since the last
+;; tick or registration.
+(define (runtime-tick! rt)
+  (let ((max-lsn 0)
+        (ws (rt-writers rt)))
+    (let loop ((xs ws))
+      (cond ((null? xs) max-lsn)
+            (else
+             (let ((c (writer-current-lsn (car xs))))
+               (if (> c max-lsn)
+                   (loop (cdr xs))
+                   (loop (cdr xs)))))))
+    (rt-set-target-lsn! rt max-lsn))
+  rt)
+
+;; Accessors for the writer registry.
+(define (runtime-writers rt)
+  (rt-writers rt))
+
+;; The runtime considers an fsync necessary whenever the pending target LSN
+;; has advanced past the most recently broadcast fsync LSN. In other words,
+;; if there are buffered records whose LSN exceeds the durability watermark,
+;; we owe an fsync.
+(define (runtime-should-fsync? rt)
+  (> (rt-target-lsn rt) (rt-last-fsync-lsn rt)))
+
+;; The LSN the coordinator must persist through for the pending fsync to
+;; be considered satisfied. This is the highest in-flight LSN observed
+;; across all registered writers.
+(define (runtime-fsync-target rt)
+  (rt-target-lsn rt))
+
+;; Helper for the coordinator / main: after an fsync has been broadcast at
+;; a particular LSN, record that watermark so should-fsync? flips back to #f
+;; until more records arrive.
+(define (runtime-mark-fsync! rt lsn)
+  (rt-set-last-fsync-lsn! rt lsn)
+  rt)

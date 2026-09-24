@@ -1,0 +1,454 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "src_dir": "src",
+      "temperature": 0.35,
+      "ts": "2026-09-24T15:13:58Z",
+      "ts_local": "2026-09-24 23:13:58 CST",
+      "usage": {
+        "prompt_tokens": 25917,
+        "completion_tokens": 9563,
+        "total_tokens": 35480
+      },
+      "files": [
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 1702,
+            "total_characters": 0,
+            "prompt_tokens": 1596,
+            "completion_tokens": 106,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "wal_config.aura",
+          "temperature": 0.35,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 1884,
+            "total_characters": 0,
+            "prompt_tokens": 1708,
+            "completion_tokens": 176,
+            "prompt_tokens_details": {
+              "cached_tokens": 492
+            }
+          },
+          "error": "",
+          "file": "wal_lsn.aura",
+          "temperature": 0.35,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 2299,
+            "total_characters": 0,
+            "prompt_tokens": 1891,
+            "completion_tokens": 408,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "wal_record.aura",
+          "temperature": 0.35,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 2710,
+            "total_characters": 0,
+            "prompt_tokens": 2096,
+            "completion_tokens": 614,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 384
+            }
+          },
+          "error": "",
+          "file": "wal_buffer.aura",
+          "temperature": 0.35,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 3487,
+            "total_characters": 0,
+            "prompt_tokens": 2283,
+            "completion_tokens": 1204,
+            "prompt_tokens_details": {
+              "cached_tokens": 489
+            }
+          },
+          "error": "",
+          "file": "wal_writer.aura",
+          "temperature": 0.35,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 4498,
+            "total_characters": 0,
+            "prompt_tokens": 2480,
+            "completion_tokens": 2018,
+            "prompt_tokens_details": {
+              "cached_tokens": 491
+            }
+          },
+          "error": "",
+          "file": "wal_coordinator.aura",
+          "temperature": 0.35,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 3275,
+            "total_characters": 0,
+            "prompt_tokens": 2689,
+            "completion_tokens": 586,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 384
+            }
+          },
+          "error": "",
+          "file": "wal_segment.aura",
+          "temperature": 0.35,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 3340,
+            "total_characters": 0,
+            "prompt_tokens": 2794,
+            "completion_tokens": 546,
+            "prompt_tokens_details": {
+              "cached_tokens": 491
+            }
+          },
+          "error": "",
+          "file": "wal_waiter.aura",
+          "temperature": 0.35,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 3321,
+            "total_characters": 0,
+            "prompt_tokens": 2808,
+            "completion_tokens": 513,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 384
+            }
+          },
+          "error": "",
+          "file": "wal_metrics.aura",
+          "temperature": 0.35,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 3592,
+            "total_characters": 0,
+            "prompt_tokens": 2787,
+            "completion_tokens": 805,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "wal_runtime.aura",
+          "temperature": 0.35,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 5372,
+            "total_characters": 0,
+            "prompt_tokens": 2785,
+            "completion_tokens": 2587,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "main.aura",
+          "temperature": 0.35,
+          "parse_ok": false,
+          "exists": true
+        }
+      ],
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 4.186,
+      "scenarios_passed": 1,
+      "scenarios_total": 16,
+      "stderr_snippet": "error: 1:6: unbound variable: metrics-new\n   |\n  1 | (api metrics-new (lambda () '((batches . 0) (fsyncs . 0) (records . 0))))\n   |      ^^^^^^^^^^^\nerror: 1:6: unbound variable: metrics-record-batch!\n   |\n  1 | (api metrics-record-batch!\n   |      ^^^^^^^^^^^^^^^^^^^^^\nerror: 1:6: unbound variable: metrics-record-fsync!\n   |\n  1 | (api metrics-record-fsync!\n   |      ^^^^^^^^^^^^^^^^^^^^^\nerror: 1:6: unbound variable: metrics-batches\n   |\n  1 | (api metrics-batches (lambda (m) (cdr (assq 'batch",
+      "stdout_snippet": "BATCHES_FLUSHED=\nFSYNC_CALLS=\nRECORDS_PERSISTED=\nWRITERS=4\nMAX_BATCH_SIZE=\nGROUP_COMMIT_WAITERS=\nLSN_FIRST=\nLSN_LAST=\nW0_LSN=\nW1_LSN=\nW2_LSN=\nW3_LSN=\nSYNC_COMMIT_OK=\nASYNC_COMMIT_OK=\nWAL_BYTES=\nDURABILITY=()\n"
+    },
+    {
+      "variant": 2,
+      "src_dir": "src_2",
+      "temperature": 0.75,
+      "ts": "2026-09-24T15:15:20Z",
+      "ts_local": "2026-09-24 23:15:20 CST",
+      "usage": {
+        "prompt_tokens": 26628,
+        "completion_tokens": 6290,
+        "total_tokens": 32918
+      },
+      "files": [
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 1697,
+            "total_characters": 0,
+            "prompt_tokens": 1596,
+            "completion_tokens": 101,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "wal_config.aura",
+          "temperature": 0.75,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 1794,
+            "total_characters": 0,
+            "prompt_tokens": 1703,
+            "completion_tokens": 91,
+            "prompt_tokens_details": {
+              "cached_tokens": 491
+            }
+          },
+          "error": "",
+          "file": "wal_lsn.aura",
+          "temperature": 0.75,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 2024,
+            "total_characters": 0,
+            "prompt_tokens": 1801,
+            "completion_tokens": 223,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "wal_record.aura",
+          "temperature": 0.75,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 2289,
+            "total_characters": 0,
+            "prompt_tokens": 2032,
+            "completion_tokens": 257,
+            "prompt_tokens_details": {
+              "cached_tokens": 491
+            }
+          },
+          "error": "",
+          "file": "wal_buffer.aura",
+          "temperature": 0.75,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 2815,
+            "total_characters": 0,
+            "prompt_tokens": 2260,
+            "completion_tokens": 555,
+            "prompt_tokens_details": {
+              "cached_tokens": 256
+            }
+          },
+          "error": "",
+          "file": "wal_writer.aura",
+          "temperature": 0.75,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 3733,
+            "total_characters": 0,
+            "prompt_tokens": 2497,
+            "completion_tokens": 1236,
+            "prompt_tokens_details": {
+              "cached_tokens": 491
+            }
+          },
+          "error": "",
+          "file": "wal_coordinator.aura",
+          "temperature": 0.75,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 3267,
+            "total_characters": 0,
+            "prompt_tokens": 2741,
+            "completion_tokens": 526,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "wal_segment.aura",
+          "temperature": 0.75,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 3380,
+            "total_characters": 0,
+            "prompt_tokens": 2889,
+            "completion_tokens": 491,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "wal_waiter.aura",
+          "temperature": 0.75,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 3390,
+            "total_characters": 0,
+            "prompt_tokens": 3019,
+            "completion_tokens": 371,
+            "prompt_tokens_details": {
+              "cached_tokens": 491
+            }
+          },
+          "error": "",
+          "file": "wal_metrics.aura",
+          "temperature": 0.75,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 3992,
+            "total_characters": 0,
+            "prompt_tokens": 3046,
+            "completion_tokens": 946,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 384
+            }
+          },
+          "error": "",
+          "file": "wal_runtime.aura",
+          "temperature": 0.75,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 4537,
+            "total_characters": 0,
+            "prompt_tokens": 3044,
+            "completion_tokens": 1493,
+            "prompt_tokens_details": {
+              "cached_tokens": 489
+            }
+          },
+          "error": "",
+          "file": "main.aura",
+          "temperature": 0.75,
+          "parse_ok": false,
+          "exists": true
+        }
+      ],
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 5.835,
+      "scenarios_passed": 1,
+      "scenarios_total": 16,
+      "stderr_snippet": "error: 1:2: unbound variable: api\n   |\n  1 | (api wal-default-config)\n   |  ^^^\nerror: 1:2: unbound variable: api\n   |\n  1 | (api wal-max-batch-size cfg)\n   |  ^^^\nerror: 1:2: unbound variable: api\n   |\n  1 | (api wal-fsync-on-commit? cfg)\n   |  ^^^\nerror: 1:2: unbound variable: api\n   |\n  1 | (api lsn-next cur)\n   |  ^^^\nerror: 1:2: unbound variable: api\n   |\n  1 | (api lsn-equal? a b)\n   |  ^^^\nerror: 1:2: unbound variable: api\n   |\n  1 | (api lsn->string l)\n   |  ^^^\nerror: 1:2: unbound varia",
+      "stdout_snippet": "RECORDS_PERSISTED=3\n(0 0 #f)=()\nGROUP_COMMIT_WAITERS=1\n(1 #f 1)=()\nSYNC_COMMIT_OK=()\n(1 #f 1)=()\nASYNC_COMMIT_OK=()\n(0 0 #f)=()\nWAL_BYTES=()\n(0 0 #f)=()\nDURABILITY=()\n"
+    }
+  ],
+  "slug": "mini-wal-fsync-batch",
+  "title": "Group-commit WAL with fsync batching",
+  "domain": "storage_wal",
+  "files": [
+    "wal_config.aura",
+    "wal_lsn.aura",
+    "wal_record.aura",
+    "wal_buffer.aura",
+    "wal_writer.aura",
+    "wal_coordinator.aura",
+    "wal_segment.aura",
+    "wal_waiter.aura",
+    "wal_metrics.aura",
+    "wal_runtime.aura",
+    "main.aura"
+  ],
+  "updated_at": "2026-09-24T15:15:20Z",
+  "updated_at_local": "2026-09-24 23:15:20 CST"
+}

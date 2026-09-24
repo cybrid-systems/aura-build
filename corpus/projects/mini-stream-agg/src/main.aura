@@ -1,0 +1,78 @@
+; main.aura — scenario driver for the streaming aggregation engine.
+;
+; This file orchestrates the full demonstration of the streaming engine:
+; it builds a deterministic event stream, drives the engine through every
+; event (taking a checkpoint every 5th event), flushes pending state,
+; performs an exactly-once recovery replay, and finally prints a stable
+; set of KEY=value lines that downstream tests / graders can compare
+; against.
+
+; Helper: count events in a list.
+(define (count-events lst)
+  (cond ((null? lst) 0)
+        (else (+ 1 (count-events (cdr lst))))))
+
+; Helper: invoke engine-checkpoint on every 5th event (indices 5, 10, 15, …).
+; Walks the event list with a 1-based index; calls the side-effect
+; (engine-checkpoint eng) when `(modulo idx 5) = 0`.
+(define (drive-events eng evts idx)
+  (cond ((null? evts) (begin))
+        (else
+         (engine-step eng (car evts))
+         (if (= (modulo idx 5) 0)
+             (engine-checkpoint eng)
+             (begin))
+         (drive-events eng (cdr evts) (+ idx 1)))))
+
+; Helper: take a checkpoint using a fresh engine and walk the same
+; prefix of events; rebuilds the "replayed prefix" checkpoint list used
+; by recovery-replay.
+(define (build-replay-checkpoints prefix-len events)
+  (let ((eng (engine-new)))
+    (let loop ((i 0) (cps '()))
+      (if (= i prefix-len)
+          (reverse cps)
+          (begin
+            (engine-step eng (list-ref events i))
+            (if (= (modulo (+ i 1) 5) 0)
+                (loop (+ i 1) (cons (engine-checkpoint eng) cps))
+                (loop (+ i 1) cps)))))))
+
+; Helper: simple list-ref — there is no built-in list-ref in our subset.
+(define (list-ref lst n)
+  (cond ((null? lst) (begin))
+        ((= n 0) (car lst))
+        (else (list-ref (cdr lst) (- n 1)))))
+
+; Helper: sum all values in a tier-counts alist ((tier . n) …).
+(define (sum-tier-counts alist)
+  (cond ((null? alist) 0)
+        (else (+ (cdr (car alist)) (sum-tier-counts (cdr alist))))))
+
+; Helper: format a non-negative integer in decimal using display-style
+; conversion. We rely on `number->string` which exists in Aura.
+(define (n->s n) (number->string n))
+
+; Helper: format the engine state hash as a hex string. `hash-fold`
+; returns an integer; we render it in hex by repeatedly taking the low
+; nibble. We emit exactly 16 hex digits (zero-padded) which fits the
+; "non-negative integer folded to a hex string" requirement.
+(define (hex-digit n)
+  (let ((d (modulo (- n))) ; double-modulo trick: ensure positive result
+        )
+    (cond ((< d 10) (string-append "" (n->s d)))
+          ((= d 10) "a")
+          ((= d 11) "b")
+          ((= d 12) "c")
+          ((= d 13) "d")
+          ((= d 14) "e")
+          (else "f"))))
+
+(define (hex-render n)
+  (let loop ((i 0) (acc ""))
+    (if (= i 16)
+        acc
+        (let ((d (modulo (- n))) ; re-normalise to non-negative each step
+              )
+          (loop (+ i 1)
+                (string-append acc (hex-digit (- n (* (modulo n 16) 1)))))))))

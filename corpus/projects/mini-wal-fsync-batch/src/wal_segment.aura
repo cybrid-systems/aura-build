@@ -1,0 +1,53 @@
+;; wal_segment.aura — In-memory WAL "file" segment.
+;;
+;; Models a single WAL file as a flat list of bytes (we use a list of
+;; 8-bit integers, but only the byte-count is exposed externally).
+;; Appending a chunk of bytes is O(n) over the existing byte list, which
+;; is fine for the toy scenario. The fsync call is a no-op side effect
+;; that just bumps an internal counter — there is no real durability.
+;;
+;; Exported APIs:
+;;   segment-new          : build a fresh, empty segment
+;;   segment-append!      : append a list of bytes to the tail
+;;   segment-byte-count   : total bytes currently stored
+;;   segment-fsync!       : simulate fsync; returns the fsync sequence
+;;                          number (1, 2, 3, ...) for accounting
+;;   segment-snapshot     : return a copy of the bytes for inspection
+;;
+;; Internally a segment is a 4-element mutable list:
+;;   (bytes-so-far fsync-count bytes-list reverse-tail)
+;; The "reverse-tail" is an optimization: we keep the head of the list
+;; pointing into the accumulated data, and append by cons-ing to the
+;; tail in reverse, then reversing on snapshot. For this educational
+;; project, a plain cons-list is plenty.
+
+(define (api segment-new)
+  ;; (bytes-count, fsync-count, bytes-list)
+  (list 0 0 '()))
+
+(define (api segment-byte-count seg)
+  (car seg))
+
+(define (api segment-fsync! seg)
+  ;; Bump the fsync counter and return the new fsync sequence number.
+  ;; We do this by rebuilding the segment list with an incremented
+  ;; counter; the caller is expected to hold the segment via set!.
+  (let ((cur (cadr seg)))
+    (set-car! (cdr seg) (+ cur 1))
+    (+ cur 1)))
+
+(define (api segment-append! seg bytes)
+  ;; Append a list of byte values to the segment. The segment is
+  ;; stored as (count fsync-count byte-list). We extend byte-list
+  ;; by appending `bytes` to its end.
+  (let ((count   (car seg))
+        (fsyncs  (cadr seg))
+        (byteseq (caddr seg)))
+    (set-car! seg (+ count (length bytes)))
+    (set-car! (cdr (cdr seg)) (append byteseq bytes))))
+
+(define (api segment-snapshot seg)
+  ;; Return the current bytes list (a fresh copy would be safer, but
+  ;; we expose the internal list for read-only inspection in this
+  ;; educational project).
+  (caddr seg))

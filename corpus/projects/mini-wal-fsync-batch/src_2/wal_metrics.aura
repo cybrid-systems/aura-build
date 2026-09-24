@@ -1,0 +1,41 @@
+;; wal_metrics.aura — Counters for batches, fsync calls, and records persisted.
+
+(define (metrics-new)
+  ;; State: (cons batches (cons fsyncs (cons records '())))
+  (cons 0 (cons 0 (cons 0 '()))))
+
+(define (metrics-batches-c m) (car m))
+(define (metrics-fsyncs-c m) (car (cdr m)))
+(define (metrics-records-c m) (car (cdr (cdr m))))
+
+(define (metrics-set-batches! m n) (set-car! m n))
+(define (metrics-set-fsyncs! m n) (set-car! (cdr m) n))
+(define (metrics-set-records! m n) (set-car! (cdr (cdr m)) n))
+
+;; Add n to the records-persisted counter.
+(define (metrics-record-batch! m n)
+  (metrics-set-records! m (+ (metrics-records-c m) n)))
+
+;; Increment the fsync-call counter.
+(define (metrics-record-fsync! m)
+  (metrics-set-fsyncs! m (+ (metrics-fsyncs-c m) 1)))
+
+;; Increment the batches-flushed counter (called once per drained batch).
+(define (metrics-record-batch-flushed! m)
+  (metrics-set-batches! m (+ (metrics-batches-c m) 1)))
+
+(define (metrics-batches m)
+  (metrics-batches-c m))
+
+(define (metrics-fsyncs m)
+  (metrics-fsyncs-c m))
+
+(define (metrics-records m)
+  (metrics-records-c m))
+
+(api metrics-new)
+(api metrics-record-batch! m n)
+(api metrics-record-fsync! m)
+(api metrics-batches m)
+(api metrics-fsyncs m)
+(api metrics-records m)

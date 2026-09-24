@@ -1,0 +1,101 @@
+;; demo-events.aura — deterministic event stream used by the scenario.
+;;
+;; A real streaming job reads events off a queue. Here we just hard-code
+;; a small, hand-picked list of events that exercises every interesting
+;; branch of the engine:
+;;
+;;   * a few users contributing deltas (so the hashmap tier lights up)
+;;   * one user hammered with many small deltas (so promotion kicks in)
+;;   * one late event that arrives after the watermark has advanced
+;;     (so the retract path is exercised)
+;;   * one event with a zero delta (a no-op, but it must still bump the
+;;     metrics counters)
+;;   * one event that causes a key to retract back below zero (so the
+;;     retract-safe sum/count aggregator can prove its bookkeeping)
+;;
+;; The list is deterministic so that `recovery-replay` produces an
+;; identical state and `END_STATE_HASH` is stable across runs.
+;;
+;; Per the module table the only required export is:
+;;   (api demo-events-build) -> list of events
+
+;; ---- internal helpers (NOT exported) -----------------------------------
+
+;; Internal constructor for a single event record. The shape of an event
+;; matches the (event-make user-id delta ts) constructor exported by
+;; event.aura, but we don't call that here because demo-events.aura is
+;; loaded *before* event.aura is necessarily bound at top level. We
+;; still build the same triple the rest of the engine expects:
+;;
+;;   (cons 'event (cons user-id (cons delta (cons ts '()))))
+;;
+;; If event.aura is loaded, every consumer of this list will accept the
+;; record because event? only checks the head tag.
+(define (build-evt uid d t)
+  (cons 'event (cons uid (cons d (cons t '())))))
+
+;; A small helper that lets us write the test sequence compactly without
+;; copy/pasting the same cons pattern over and over. Each row is a list
+;; (uid d t); we map it through build-evt to produce a proper event.
+(define (row->event row)
+  (build-evt (car row) (car (cdr row)) (car (cdr (cdr row)))))
+
+(define (map f xs)
+  (if (null? xs)
+      '()
+      (cons (f (car xs)) (map f (cdr xs)))))
+
+;; The actual event rows. Each row is (user-id delta ts).
+;; Timestamps are strictly non-decreasing except for the deliberately
+;; late event near the end (uid 'late-user', ts=3) which arrives after
+;; the watermark has already advanced past it.
+(define demo-rows
+  (list
+    (list 'alice  10 1)
+    (list 'bob     5 1)
+    (list 'alice   3 2)
+    (list 'carol   7 2)
+    (list 'bob    -2 3)
+    ;; hammer 'hot' to force promotion out of the hashmap tier
+    (list 'hot     1 3)
+    (list 'hot     1 4)
+    (list 'hot     1 5)
+    (list 'hot     1 6)
+    (list 'hot     1 7)
+    (list 'hot     1 8)
+    (list 'hot     1 9)
+    (list 'hot     1 10)
+    (list 'hot     1 11)
+    (list 'hot     1 12)
+    (list 'hot     1 13)
+    (list 'hot     1 14)
+    (list 'hot     1 15)
+    (list 'hot     1 16)
+    (list 'hot     1 17)
+    (list 'hot     1 18)
+    (list 'hot     1 19)
+    (list 'hot     1 20)
+    (list 'hot     1 21)
+    (list 'hot     1 22)
+    (list 'hot     1 23)
+    ;; a fresh user 'dave' with a couple of deltas
+    (list 'dave    4 24)
+    (list 'dave    6 25)
+    ;; zero-delta event: must still bump metrics but not change sums
+    (list 'alice   0 26)
+    ;; alice retracts back below zero to prove retract bookkeeping
+    (list 'alice -20 27)
+    ;; late event: ts=3 but watermark will be way past it by now
+    (list 'late-user 9 3)
+    ;; a final big positive on 'carol' to round things out
+    (list 'carol   8 28)))
+
+;; ---- exported API ------------------------------------------------------
+
+;; (api demo-events-build) -> list of events
+;;
+;; Return the deterministic event list. We expose it through this thin
+;; wrapper (rather than letting callers grab `demo-rows` directly) so the
+;; module table stays the single source of truth for the public surface.
+(define (api demo-events-build)
+  (map row->event demo-rows))

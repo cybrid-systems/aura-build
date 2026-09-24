@@ -1,0 +1,142 @@
+;; compact.aura — compaction + re-key pass over the encrypted WAL.
+;;
+;; The compaction module takes a WAL and a keyring, plus a threshold that
+;; determines how many of the oldest segments must be re-encrypted under
+;; the current key version. It returns a new (new-wal . new-keys . stats)
+;; triple where stats is (rekeyed-segments . reencrypted-records).
+;;
+;; Re-encryption re-seals each targeted segment's records under the current
+;; key version, producing fresh ciphertexts and tags. Segment context
+;; (key version + key bytes) is updated accordingly. The segment list shape
+;; (length and ordering) is preserved.
+;;
+;; The module also exposes `api-compact-lag`, which compares the segment
+;; count before and after compaction and returns the number of segments
+;; that were dropped.
+
+;; ---------------------------------------------------------------------------
+;; Internal helpers
+;; ---------------------------------------------------------------------------
+
+;; Return the current key version number from a keyring alist.
+(define (compact-current-version ks)
+  (let loop ((kvs ks)
+             (best -1))
+    (cond
+      ((null? kvs) best)
+      (else
+       (let ((v (car (car kvs))))
+         (if (> v best)
+             (loop (cdr kvs) v)
+             (loop (cdr kvs) best)))))))
+
+;; Look up the byte list for a given version in the keyring.
+(define (compact-lookup-version-bytes ks v)
+  (let loop ((kvs ks))
+    (cond
+      ((null? kvs) #f)
+      ((= (car (car kvs)) v) (cdr (car kvs)))
+      (else (loop (cdr kvs))))))
+
+;; Count the records in a segment. A segment is
+;;   (sealed-1 sealed-2 ... sealed-n seg-version seg-key-bytes rec-bytes)
+;; where each sealed-i is a (header . body) cons cell.
+(define (compact-segment-record-count seg)
+  ;; The trailing two entries are seg-version and seg-key-bytes; the entry
+  ;; before that is rec-bytes (the concatenated original bytes). The actual
+  ;; number of sealed records is the length minus 3.
+  (max 0 (- (length seg) 3)))
+
+;; Extract the trailing metadata triple from a segment:
+;;   (seg-version seg-key-bytes rec-bytes)
+(define (compact-segment-meta seg)
+  (let ((n (length seg)))
+    (list
+      (list-ref seg (- n 3))
+      (list-ref seg (- n 2))
+      (list-ref seg (- n 1)))))
+
+;; Re-seal a single segment's records under the given key bytes, returning
+;; a new segment with the same number of sealed records but fresh
+;; ciphertexts and an updated trailing (version . key-bytes . rec-bytes)
+;; triple. The trailing `rec-bytes` is preserved verbatim (we never need
+;; to reconstruct individual payloads — we just re-seal the existing
+;; ciphertexts under the new key, which is what a real re-key would do for
+;; an authenticated-encryption scheme where the underlying plaintext
+;; doesn't change).
+(define (compact-reseal-segment seg new-version new-key-bytes)
+  (let ((meta (compact-segment-meta seg)))
+    (let ((rec-bytes (caddr meta)))
+      (let ((sealeds (let loop ((i (- (length seg) 4))
+                                (acc '()))
+                       (if (< i 0)
+                           acc
+                           (loop (- i 1)
+                                 (cons (list-ref seg i) acc))))))
+        (let loop ((ss sealeds)
+                   (out '()))
+          (cond
+            ((null? ss)
+             (append (reverse out)
+                     (list new-version new-key-bytes rec-bytes)))
+            (else
+             ;; Re-seal the existing ciphertext body under the new key. The
+             ;; `seal` operation produces a (header . body) cons cell. We
+             ;; use the cipher API to do this.
+             (let* ((ct (car ss))
+                    (old-body (cdr ct))
+                    (new-ct (api-cipher-seal new-key-bytes old-body)))
+               (loop (cdr ss)
+                     (cons new-ct out))))))))))
+
+;; ---------------------------------------------------------------------------
+;; Public API
+;; ---------------------------------------------------------------------------
+
+;; Run a re-key pass over the WAL.
+;;   wal      — current WAL (list of segments)
+;;   ks       — current keyring alist
+;;   threshold — number of oldest segments to re-encrypt under current key
+;;
+;; Re-encrypts the first `threshold` segments under the current key
+;; version. Segments beyond the threshold are left untouched. Returns
+;; (new-wal . new-keys . stats) where stats is the pair
+;; (rekeyed-segments . reencrypted-records).
+(define (api-compact-rekey wal keys threshold)
+  (let* ((cur-version (compact-current-version keys))
+         (cur-bytes (compact-lookup-version-bytes keys cur-version))
+         (n-segs (length wal))
+         (k (if (> threshold n-segs) n-segs threshold)))
+    (let loop ((i 0)
+               (src wal)
+               (out '())
+               (rekeyed 0)
+               (records 0))
+      (cond
+        ((null? src)
+         (let ((new-wal (reverse out))
+               (stats (cons rekeyed records)))
+           (cons new-wal (cons keys (cons stats '())))))
+        ((< i k)
+         ;; Re-encrypt this segment under the current key.
+         (let ((seg (car src)))
+           (let ((rcount (compact-segment-record-count seg)))
+             (let ((new-seg (compact-reseal-segment seg cur-version cur-bytes)))
+               (loop (+ i 1)
+                     (cdr src)
+                     (cons new-seg out)
+                     (+ rekeyed 1)
+                     (+ records rcount))))))
+        (else
+         ;; Leave this segment alone.
+         (loop (+ i 1)
+               (cdr src)
+               (cons (car src) out)
+               rekeyed
+               records))))))
+
+;; Compute the number of segments dropped by compaction. With our current
+;; re-key implementation no segments are dropped (only re-encrypted), so
+;; the lag is the difference in segment counts.
+(define (api-compact-lag old-wal new-wal)
+  (max 0 (- (length old-wal) (length new-wal))))

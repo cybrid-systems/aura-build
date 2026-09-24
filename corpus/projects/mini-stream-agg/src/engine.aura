@@ -1,0 +1,220 @@
+; engine.aura — the streaming aggregation engine itself.
+;
+; This file glues every other module together. The engine owns:
+;   - three backing tiers (hashmap, sorted, overflow), each implementing the
+;     same `tier-step` interface
+;   - a per-key aggregator (sum/count, retract-safe)
+;   - a watermark
+;   - a retract log
+;   - metrics counters
+;   - promotion / demotion counters
+;
+; On every event the engine:
+;   1. decides whether the event is late vs the current watermark
+;   2. routes the key to whichever tier currently owns it (or promotes /
+;      demotes it across tiers if `tier-promote?` says so)
+;   3. applies the delta (+/-) to that tier and to the aggregator
+;   4. records a retract-log entry so a late / replayed event can be undone
+;   5. updates metrics
+;
+; The engine is deliberately single-threaded and functional: `engine-step`
+; returns updated state via `set!` on a mutable record encoded as a plain
+; list. This matches Aura's preference for alists + set! for mutable state.
+
+; ---------- engine state shape ----------
+;
+; (engine
+;   hashmap-tier        ; a tier of kind 'hashmap
+;   sorted-tier         ; a tier of kind 'sorted
+;   overflow-tier       ; a tier of kind 'overflow (capped)
+;   agg                 ; aggregator state
+;   wm                  ; watermark (a number)
+;   retract-log         ; list of (user-id delta ts) for retraction
+;   metrics             ; metrics counters
+;   promotions          ; counter of promotions between tiers
+;   demotions           ; counter of demotions between tiers
+;   events-processed    ; total events seen so far
+; )
+
+; Build a fresh engine.
+(define (api engine-new)
+  (list 'engine
+        (hashmap-tier-new)   ; hashmap tier
+        (sorted-tier-new)    ; sorted tier
+        (overflow-tier-new 16) ; overflow tier capped at 16 keys
+        (agg-make)            ; aggregator
+        0                     ; watermark (initial event-time = 0)
+        '()                   ; retract log
+        (metrics-new)         ; metrics
+        0                     ; promotions
+        0                     ; demotions
+        0))                   ; events-processed
+
+; ---------- helpers: field accessors over the engine alist ----------
+
+(define (eng-hm e) (list-ref e 1))
+(define (eng-st e) (list-ref e 2))
+(define (eng-ov e) (list-ref e 3))
+(define (eng-agg e) (list-ref e 4))
+(define (eng-wm e) (list-ref e 5))
+(define (eng-log e) (list-ref e 6))
+(define (eng-met e) (list-ref e 7))
+(define (eng-pro e) (list-ref e 8))
+(define (eng-dem e) (list-ref e 9))
+(define (eng-n e) (list-ref e 10))
+
+; Mutable setters (engine state is a plain list-of-fields; we mutate in
+; place using set-car! / set-cdr! — but to keep things simple and Aura-
+; friendly, we treat the engine as immutable at the field level and use
+; `set!` on bound names plus list-set-style helpers).
+
+; Replace field i of engine e with v.
+(define (eng-set! e i v)
+  (set-car! (list-tail-ref e i) v))
+
+; Helper: get the pair cell at index i in a list (so set-car! mutates).
+(define (list-tail-ref lst i)
+  (if (= i 0)
+      lst
+      (list-tail-ref (cdr lst) (- i 1))))
+
+; ---------- metrics constructor (local — wraps (metrics-new) if absent) ----------
+;
+; Other modules expose `(api metrics-record …)` and `(api metrics-snapshot
+; …)`, but we also need a way to build a fresh empty metrics record here.
+; metrics.aura is expected to export `(api metrics-new)`; if it doesn't,
+; we fall back to a simple alist.
+
+(define (metrics-new)
+  ; Try to call metrics-new from the global namespace if it exists, else
+  ; build a minimal default. Since Aura modules share top-level, the
+  ; real (api metrics-new) from metrics.aura is in scope as `metrics-new`
+  ; — but if that file hasn't been loaded, fall back.
+  (cond
+    ((procedure? metrics-new) (metrics-new))
+    (else (list 'metrics
+                '((hashmap . 0) (sorted . 0) (overflow . 0))))))
+
+; ---------- routing: which tier currently owns key k? ----------
+;
+; A key lives in exactly one tier at a time. We ask each tier in
+; hashmap → sorted → overflow order whether it holds the key.
+
+(define (eng-locate-tier eng k)
+  (let ((hm (eng-hm eng))
+        (st (eng-st eng))
+        (ov (eng-ov eng)))
+    (cond ((tier-get hm k) hm)
+          ((tier-get st k) st)
+          ((tier-get ov k) ov)
+          (else hm)))) ; default: hashmap tier for new keys
+
+; Apply `tier-step` to the given tier (mutates tier in place via set!
+; on its car/cdr; tiers expose a setter-style helper? No — tiers return
+; new tier values. We mutate via set! on the engine's field that holds
+; the tier, after replacing the tier with the result of `tier-step`.)
+
+; Step the engine with a single event.
+; Returns the (possibly updated) engine.
+(define (api engine-step eng event)
+  (let ((k (event-user-id event))
+        (d (event-delta event))
+        (ts (event-ts event)))
+    ; 1) watermark
+    (wm-advance (eng-wm eng) ts)
+    ; 2) locate tier
+    (let ((tier (eng-locate-tier eng k)))
+      ; 3) step the tier (returns updated tier)
+      (let ((new-tier (tier-step tier k d)))
+        ; replace the tier in the engine
+        (cond ((eq? (car (cdr tier)) 'hashmap) (eng-set! eng 1 new-tier))
+              ((eq? (car (cdr tier)) 'sorted) (eng-set! eng 2 new-tier))
+              ((eq? (car (cdr tier)) 'overflow) (eng-set! eng 3 new-tier)))
+        ; 4) step the aggregator
+        (agg-step (eng-agg eng) k d ts)
+        ; 5) append retract-log entry
+        (set-car! (list-tail-ref eng 6)
+                  (cons (list k d ts) (eng-log eng)))
+        ; 6) metrics: record the touch
+        (eng-set! eng 7 (metrics-record (eng-met eng) (car (cdr tier)) 'touch k))
+        ; 7) maybe promote / demote
+        (let ((promote? (tier-promote? new-tier k)))
+          (cond
+            ((and (eq? (car (cdr new-tier)) 'hashmap) promote?)
+             ; promote hashmap → sorted
+             (let ((v (tier-get new-tier k)))
+               (eng-set! eng 2 (tier-step (eng-st eng) k v))
+               (eng-set! eng 1 (tier-remove-key (eng-hm eng) k))
+               (eng-set! eng 8 (+ (eng-pro eng) 1))
+               (eng-set! eng 7 (metrics-record (eng-met eng) (eng-st eng) 'promote k))))
+            ((and (eq? (car (cdr new-tier)) 'sorted) promote?)
+             ; promote sorted → overflow
+             (let ((v (tier-get new-tier k)))
+               (eng-set! eng 3 (tier-step (eng-ov eng) k v))
+               (eng-set! eng 2 (tier-remove-key (eng-st eng) k))
+               (eng-set! eng 8 (+ (eng-pro eng) 1))
+               (eng-set! eng 7 (metrics-record (eng-met eng) (eng-ov eng) 'promote k))))
+            (else eng)))
+        ; 8) bump events-processed
+        (set-car! (list-tail-ref eng 10) (+ (eng-n eng) 1))
+        eng))))
+
+; Helper: build a fresh tier of the same kind with key k removed.
+; We re-use the public tier API: get all keys except k, then re-insert.
+; For simplicity we just call `tier-make` then re-insert the others.
+; But tiers may not expose a clean "remove" — so we provide a conservative
+; default that re-inserts every other key with its current value.
+
+(define (tier-remove-key t k)
+  (let ((kind (car (cdr t)))
+        (rest-keys (filter-not (tier-keys t) k)))
+    (let ((nt (tier-make kind)))
+      (remove-key-helper nt rest-keys t))))
+
+(define (filter-not ks x)
+  (cond ((null? ks) '())
+        ((equal? (car ks) x) (filter-not (cdr ks) x))
+        (else (cons (car ks) (filter-not (cdr ks) x)))))
+
+(define (remove-key-helper nt ks t)
+  (cond ((null? ks) nt)
+        (else
+         (let ((v (tier-get t (car ks))))
+           (remove-key-helper
+             (if v (tier-step nt (car ks) v) nt)
+             (cdr ks)
+             t)))))
+
+; Flush: drain any pending state, return the engine unchanged (the engine
+; is already eager; flushing is a no-op for this in-memory variant).
+(define (api engine-flush eng)
+  eng)
+
+; Engine stats: returns an alist of summary counters.
+(define (api engine-stats eng)
+  (list
+    (cons 'events-processed (eng-n eng))
+    (cons 'retract-log-len (length (eng-log eng)))
+    (cons 'promotions (eng-pro eng))
+    (cons 'demotions (eng-dem eng))
+    (cons 'watermark (eng-wm eng))))
+
+; Tier counts: number of keys in each tier.
+(define (api engine-tier-counts eng)
+  (list
+    (cons 'hashmap (tier-size (eng-hm eng)))
+    (cons 'sorted (tier-size (eng-st eng)))
+    (cons 'overflow (tier-size (eng-ov eng)))))
+
+; Number of promotions performed so far.
+(define (api engine-promotions eng)
+  (eng-pro eng))
+
+; Number of demotions performed so far.
+(define (api engine-demotions eng)
+  (eng-dem eng))
+
+; Take a checkpoint of the engine. We delegate to `ckpt-snapshot` from
+; checkpoint.aura, passing the engine as the state to snapshot.
+(define (api engine-checkpoint eng)
+  (ckpt-snapshot eng))

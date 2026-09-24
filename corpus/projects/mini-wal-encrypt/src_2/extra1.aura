@@ -1,0 +1,133 @@
+;; extra1.aura — auxiliary helpers for the encrypted WAL project.
+;;
+;; This module provides three small but useful APIs that complement the
+;; core keys/cipher/wal/compact/tamper/stats stack:
+;;
+;;   (api-extra-segment-keys wal)            → alist mapping seg-idx → key-version
+;;   (api-extra-wal-fingerprint wal keys)    → short hex string over all tags
+;;   (api-extra-find-by-key-version wal v)   → list of seg-indices sealed under v
+;;
+;; All helpers read-only operate on the same segment shape used by
+;; wal.aura: (sealed-cipher seg-version seg-key-bytes rec-bytes).
+;; They do not mutate the WAL.
+
+;; ----
+;; Internal helpers
+;; ----
+
+;; Length of a possibly improper list (terminates on non-pair).
+(define (extra-safe-length xs)
+  (let loop ((src xs) (n 0))
+    (if (pair? src)
+        (loop (cdr src) (+ n 1))
+        n)))
+
+;; Render a non-negative integer as a 2-char lowercase hex string with
+;; leading zero padding. Used for the fingerprint helper.
+(define (extra-nibble->hex n)
+  (let ((hi (quotient n 16))
+        (lo (modulo n 16)))
+    (string-append
+      (list-ref '("0" "1" "2" "3" "4" "5" "6" "7"
+                  "8" "9" "a" "b" "c" "d" "e" "f") hi)
+      (list-ref '("0" "1" "2" "3" "4" "5" "6" "7"
+                  "8" "9" "a" "b" "c" "d" "e" "f") lo))))
+
+;; Render any non-negative integer as a hex string with at least 1 digit.
+(define (extra-int->hex n)
+  (if (< n 16)
+      (extra-nibble->hex n)
+      (string-append (extra-int->hex (quotient n 16))
+                     (extra-nibble->hex (modulo n 16)))))
+
+;; Walk the segment list and produce an alist (seg-idx . seg-version).
+;; seg-indices are 1-based to match api-wal-seal-version expectations.
+(define (extra-collect-keys segs)
+  (let loop ((src segs) (idx 1) (acc '()))
+    (if (null? src)
+        (reverse acc)
+        (loop (cdr src)
+              (+ idx 1)
+              (cons (cons idx (car (cdr (car src)))) acc)))))
+
+;; Walk tags of every segment and accumulate a 32-bit folded hash, then
+;; render as 8-char hex. Mirrors the cipher's truncated-hash style so the
+;; fingerprint stays compact and deterministic across calls.
+(define (extra-fold-tags segs mix)
+  (let loop ((src segs) (acc mix))
+    (if (null? src)
+        (modulo acc 4294967295)
+        (let* ((seg (car src))
+               (ct  (car seg))
+               (body (cdr ct))
+               (tag (car (cdr (car ct)))))
+          (loop (cdr src)
+                (modulo (+ (* acc 33) (extra-tag-as-int tag (cdr src))) 4294967295))))))
+
+;; Convert a tag hex string into an integer by folding byte pairs.
+(define (extra-tag-as-int tag seed-hint)
+  (let ((len (string-length tag)))
+    (let loop ((i 0) (acc 0))
+      (if (>= i len)
+          (modulo acc 4294967295)
+          (let ((c (string-ref tag i)))
+            (loop (+ i 1)
+                  (modulo (+ (* acc 17) (char->integer c)) 4294967295)))))))
+
+;; Convert a character code 0..15 (hex digit) into its integer value.
+;; We don't have char->digit in the small Aura subset, so we use a
+;; lookup table indexed by ASCII code (only '0'..'9','a'..'f').
+(define (extra-hex-digit-value c)
+  (cond
+    ((char=? c #\0) 0) ((char=? c #\1) 1) ((char=? c #\2) 2)
+    ((char=? c #\3) 3) ((char=? c #\4) 4) ((char=? c #\5) 5)
+    ((char=? c #\6) 6) ((char=? c #\7) 7) ((char=? c #\8) 8)
+    ((char=? c #\9) 9) ((char=? c #\a) 10) ((char=? c #\b) 11)
+    ((char=? c #\c) 12) ((char=? c #\d) 13) ((char=? c #\e) 14)
+    ((char=? c #\f) 15)
+    (else 0)))
+
+;; Walk all segments and gather indices whose sealing key version equals v.
+(define (extra-filter-by-version segs v)
+  (let loop ((src segs) (idx 1) (acc '()))
+    (if (null? src)
+        (reverse acc)
+        (let ((segv (car (cdr (car src)))))
+          (if (= segv v)
+              (loop (cdr src) (+ idx 1) (cons idx acc))
+              (loop (cdr src) (+ idx 1) acc))))))
+
+;; ----
+;; Exported API
+;; ----
+
+;; (api-extra-segment-keys wal) → alist of (seg-idx . key-version)
+(define (api-extra-segment-keys wal)
+  (extra-collect-keys wal))
+
+;; (api-extra-wal-fingerprint wal keys) → 8-char hex string
+;; Mixes each segment's tag with the current key version's bytes, then
+;; truncates to 32 bits and renders as 8 hex chars. Re-key produces a
+;; different fingerprint even if segment count is unchanged.
+(define (api-extra-wal-fingerprint wal keys)
+  (let* ((cur-v (api-keys-current keys))
+         (cur-bytes (api-keys-version-bytes keys cur-v))
+         (mix (extra-safe-length cur-bytes)))
+    (let ((folded (extra-fold-tags wal (* mix 2654435761))))
+      (let ((hex (extra-int->hex folded)))
+        (let ((pad (extra-pad-hex hex 8)))
+          pad)))))
+
+;; Left-pad a hex string with leading "0" characters to reach width n.
+(define (extra-pad-hex s n)
+  (let ((len (string-length s)))
+    (if (>= len n)
+        s
+        (let loop ((i 0) (acc ""))
+          (if (= (+ i len) n)
+              (string-append acc s)
+              (loop (+ i 1) (string-append acc "0")))))))
+
+;; (api-extra-find-by-key-version wal v) → list of 1-based segment indices
+(define (api-extra-find-by-key-version wal v)
+  (extra-filter-by-version wal v))

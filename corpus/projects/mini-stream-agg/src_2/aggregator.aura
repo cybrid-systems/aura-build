@@ -1,0 +1,101 @@
+;; aggregator.aura — retract-safe sum/count aggregator.
+;;
+;; A aggregator represents the per-key aggregated state for the streaming
+;; engine. Because we support +retract semantics (late events may subtract
+;; a previously-added delta), we keep *both* a running sum and a count
+;; rather than just a sum. The count lets the recovery / replay checks
+;; distinguish "key never seen" from "key retracted to zero", and it also
+;; gives downstream consumers something more interesting than a scalar.
+;;
+;; A aggregator is represented as a tagged association list mapping each
+;; key to a pair (sum . count):
+;;
+;;   (cons 'aggregator (list (cons key (cons sum count)) ...))
+;;
+;; We use assoc-style lookup because we only have a handful of keys per
+;; aggregator in the demo scenario; this keeps the code straightforward
+;; and avoids pulling in structures we are not allowed to use.
+;;
+;; Required exports (per the module table):
+;;   (api agg-make)             -> fresh empty aggregator
+;;   (api agg-step agg k delta ts) -> apply +delta at time ts to key k
+;;   (api agg-final agg k)      -> final aggregated value for key k
+
+;; ---- internal helpers (NOT exported) -----------------------------------
+
+;; Build an empty aggregator.
+(define (agg-empty)
+  (cons 'aggregator '()))
+
+;; Look up the (sum . count) pair for key k inside aggregator agg.
+;; Returns #f if the key is not present.
+(define (agg-lookup agg k)
+  (if (pair? agg)
+      (let ((body (cdr agg)))
+        (if (null? body)
+            #f
+            (let ((head (car body))
+                  (tail (cdr body)))
+              (if (equal? (car head) k)
+                  (cdr head)
+                  (let ((hit (agg-lookup (cons 'agg-scan tail) k)))
+                    hit)))))
+      #f))
+
+;; Look up the (sum . count) pair for key k inside aggregator agg,
+;; starting from the given alist body directly (avoids re-wrapping).
+(define (agg-lookup-body body k)
+  (cond ((null? body) #f)
+        ((equal? (caar body) k) (cdar body))
+        (else (agg-lookup-body (cdr body) k))))
+
+;; Replace the entry for k inside body with new-pair. If k is not
+;; present it is prepended (front of list). Returns the new body.
+(define (agg-replace body k new-pair)
+  (cond ((null? body)
+         (cons (cons k new-pair) '()))
+        ((equal? (caar body) k)
+         (cons (cons k new-pair) (cdr body)))
+        (else
+         (cons (car body)
+               (agg-replace (cdr body) k new-pair)))))
+
+;; Sanity helper: clamp a number to 0 if it would go negative. The
+;; streaming engine treats negative totals as a bug (events should
+;; always come in matched +/- pairs), but we still want the demo to
+;; produce non-negative END_STATE_HASH inputs and so we floor at 0.
+(define (agg-nonneg n)
+  (if (< n 0) 0 n))
+
+;; ---- exported API ------------------------------------------------------
+
+;; (api agg-make) -> aggregator
+;; Build a fresh empty aggregator.
+(define (agg-make)
+  (agg-empty))
+
+;; (api agg-step agg k delta ts) -> aggregator
+;; Apply a +delta (or -delta) update to key k at timestamp ts. The ts
+;; argument is accepted for symmetry with the real engine but is not
+;; used here — it would feed a windowed aggregation in a fuller
+;; implementation.
+(define (agg-step agg k delta ts)
+  (let ((_ignore ts))
+    (let ((body (cdr agg)))
+      (let ((prev (agg-lookup-body body k)))
+        (let ((old-sum (if prev (car prev) 0))
+              (old-cnt (if prev (cdr prev) 0)))
+          (let ((new-sum (agg-nonneg (+ old-sum delta)))
+                (new-cnt (+ old-cnt 1)))
+            (cons 'aggregator
+                  (agg-replace body k (cons new-sum new-cnt)))))))))
+
+;; (api agg-final agg k) -> value
+;; Return the final aggregated value for key k. If the key has never
+;; been touched, returns 0 (sum) along with count 0 as a pair. We
+;; return a pair (sum . count) so callers can use either field; the
+;; engine typically uses the sum.
+(define (agg-final agg k)
+  (let ((body (cdr agg)))
+    (let ((prev (agg-lookup-body body k)))
+      (if prev prev (cons 0 0)))))

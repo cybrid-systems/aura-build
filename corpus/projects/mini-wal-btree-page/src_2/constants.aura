@@ -1,0 +1,37 @@
+;; constants.aura
+;; Global constants for the mini WAL + B+tree engine.
+;; These are the foundational sizing / framing values used by
+;; every downstream module (util, lsn, wal, page, cache, btree, ...).
+
+;; ---- Page geometry ----------------------------------------------------
+;; A B+tree page can hold at most (2 * PAGE_ORDER) cells when we count
+;; only keys/values, but the on-page layout also needs a sibling pointer
+;; and a small header, so MAX_CELLS_PER_PAGE is derived from PAGE_ORDER.
+(define PAGE_ORDER 4)
+(define PAGE_BYTES 128)
+
+;; Number of (key . value) cells a single page can hold once we account
+;; for the header, sibling pointer, and CRC trailer. Computed from
+;; PAGE_BYTES / cell-size rather than hard-coded, so changing PAGE_ORDER
+;; (or PAGE_BYTES) propagates automatically.
+(define MAX_CELLS_PER_PAGE
+  ;; A cell is one key + one value pointer; in this list-of-cells model
+  ;; each cell consumes 8 bytes of payload on the page, plus a 4-byte
+  ;; page header, plus a 4-byte sibling pointer, plus a 2-byte CRC.
+  ;; So: floor((PAGE_BYTES - 4 - 4 - 2) / 8)
+  (let ((usable (- PAGE_BYTES 4 4 2)))
+    (quotient usable 8)))
+
+;; ---- WAL framing -------------------------------------------------------
+;; Four-character magic prefix written at the head of every WAL file.
+;; Stored as a string so it can be compared with (string=? ...).
+(define WAL_MAGIC_STR "WAL1")
+
+;; Starting LSN for a freshly opened WAL. Recovery and txn begin/commit
+;; sequences all reference this as their floor.
+(define LSN_START 1)
+
+;; ---- Re-export the derived ceiling for convenience --------------------
+;; Some modules prefer to speak in terms of "max cells" directly; expose
+;; it under a stable name as well as the computed MAX_CELLS_PER_PAGE.
+(define PAGE_MAX_CELLS MAX_CELLS_PER_PAGE)

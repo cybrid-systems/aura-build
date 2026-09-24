@@ -1,0 +1,54 @@
+;; stats.aura — Tree / cache / WAL statistics.
+;;
+;; Provides a single façade that gathers counters from every layer of the
+;; engine: the B+tree itself (root id, key count, height), the cache
+;; (entries, dirty pages), and the WAL (frame count, oldest/newest LSN).
+;; The returned value is an association list so callers can pull any
+;; field by name without depending on positional order.
+;;
+;; `make-stats` accepts the live engine pieces (tree, cache, wal) and
+;; returns an alist. `stat-ref` looks a key up, `stat->string` renders
+;; the alist as a single-line KEY=VALUE summary (used by main.aura for
+;; the contract).
+
+(define (make-stats tree cache wal)
+  (let ((bt-stats (btree-stats tree)))
+    (list
+      (cons 'tree-root-pid (car bt-stats))
+      (cons 'tree-root-key (car (cdr bt-stats)))
+      (cons 'tree-keys     (car (cdr (cdr bt-stats))))
+      (cons 'tree-height   (car (cdr (cdr (cdr bt-stats)))))
+      (cons 'cache-size    (length (car (cdr cache))))
+      (cons 'cache-dirty   (length (car cache)))
+      (cons 'wal-frames    (length (wal-frames wal)))
+      (cons 'wal-oldest    (if (null? (wal-frames wal))
+                               0
+                               (wal-frame-lsn (car (wal-frames wal)))))
+      (cons 'wal-newest    (if (null? (wal-frames wal))
+                               0
+                               (wal-frame-lsn (car (reverse (wal-frames wal)))))))))
+
+;; Look up a single statistic by key in the alist returned by make-stats.
+;; Returns #f if the key is not present so callers can detect missing
+;; entries explicitly.
+(define (stat-ref stats key)
+  (cond ((null? stats) #f)
+        ((equal? (car (car stats)) key) (cdr (car stats)))
+        (else (stat-ref (cdr stats) key))))
+
+;; Render an alist of stats as a single space-separated "K1=V1 K2=V2 ..."
+;; string. Used by main.aura to print the summary line that closes the
+;; contract (the COUNT_KEYS=... marker).
+(define (stat->string stats)
+  (cond ((null? stats) "")
+        ((null? (cdr stats))
+         (string-append (symbol->string (car (car stats)))
+                        "="
+                        (number->string (cdr (car stats)))))
+        (else
+          (string-append
+            (symbol->string (car (car stats)))
+            "="
+            (number->string (cdr (car stats)))
+            " "
+            (stat->string (cdr stats))))))

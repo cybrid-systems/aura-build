@@ -1,0 +1,89 @@
+;; wal_main.aura
+;; Scenario driver for the mini-WAL snapshot-retention project.
+;;
+;; This file runs the full scenario described in GOAL.md, exercising the
+;; APIs from every other module. It prints the 16 KEY=value lines that
+;; constitute the stdout contract.
+;;
+;; Required API: (main)
+
+(define (main)
+  ;; Step 1: fresh manager.
+  (define mgr (manager-new))
+
+  ;; Step 2: append 50 records. We feed a small synthetic payload that
+  ;; encodes the record index, so the LSN output isn't tied to a literal.
+  (define (append-n m n)
+    (if (= n 0)
+        m
+        (append-n (manager-append m (number->string n)) (- n 1))))
+  (define mgr (append-n mgr 50))
+  (define last-lsn (- (manager-lsn mgr) 1))
+
+  ;; Step 3: ask the manager for its segments and emit the high-water
+  ;; LSN of the first five segments.
+  (define segs (manager-segments mgr))
+  (define seg0 (car segs))
+  (define seg1 (car (cdr segs)))
+  (define seg2 (car (cdr (cdr segs))))
+  (define seg3 (car (cdr (cdr (cdr segs)))))
+  (define seg4 (car (cdr (cdr (cdr (cdr segs))))))
+  (display (string-append "SEG0_HI=" (number->string (seg-high seg0))))
+  (newline)
+  (display (string-append "SEG1_HI=" (number->string (seg-high seg1))))
+  (newline)
+  (display (string-append "SEG2_HI=" (number->string (seg-high seg2))))
+  (newline)
+  (display (string-append "SEG3_HI=" (number->string (seg-high seg3))))
+  (newline)
+  (display (string-append "SEG4_HI=" (number->string (seg-high seg4))))
+  (newline)
+  (display (string-append "LAST_LSN=" (number->string last-lsn)))
+  (newline)
+
+  ;; Step 4: take a snapshot at LSN 9.
+  (define mgr2 (manager-take-snapshot mgr 9))
+  (define snaps (manager-snapshots mgr2))
+  (define first-snap (car snaps))
+  (define snap-lsn (snapshot-lsn first-snap))
+  (define snap-count (length snaps))
+  (display (string-append "SNAPSHOT_LSN=" (number->string snap-lsn)))
+  (newline)
+  (display (string-append "SNAPSHOT_COUNT=" (number->string snap-count)))
+  (newline)
+
+  ;; Step 5: release the snapshot.
+  (define released (snapshot-release first-snap))
+  (define after-live (if (snapshot-live? released) 1 0))
+  (display (string-append "AFTER_RELEASE_LIVE=" (number->string after-live)))
+  (newline)
+
+  ;; Step 6: prune LSN, prune segment count, reclaim bytes.
+  (define prune-lsn (manager-prune-lsn mgr2))
+  (define prune-segs (manager-prune-segments mgr2))
+  (define reclaim (manager-reclaim-bytes mgr2))
+  (display (string-append "PRUNE_LSN=" (number->string prune-lsn)))
+  (newline)
+  (display (string-append "PRUNE_SEGMENTS=" (number->string prune-segs)))
+  (newline)
+  (display (string-append "RECLAIM_BYTES=" (number->string reclaim)))
+  (newline)
+
+  ;; Step 7: replay view, which confirms manager state can be re-derived
+  ;; from the WAL alone. Even after release, the snapshot record is still
+  ;; present in the manager's history, so replay-snapshot-lsn should be 9.
+  (define replay (replay-build mgr2))
+  (define replay-snap (replay-snapshot-lsn replay))
+  (define replay-last (replay-last-lsn replay))
+  (display (string-append "REPLAY_SNAPSHOT_LSN=" (number->string replay-snap)))
+  (newline)
+  (display (string-append "REPLAY_LAST_LSN=" (number->string replay-last)))
+  (newline))
+
+;; Wire up the scenario entry point.
+(define (api name)
+  (lambda args
+    (apply (cond
+             ((equal? name 'main) main)
+             (else (lambda _ (error "unknown wal_main api"))))
+           args)))

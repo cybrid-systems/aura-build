@@ -1,0 +1,73 @@
+;; wal_main.aura
+;; The scenario driver for the mini-WAL snapshot retention exercise.
+;; This file is loaded last by the Aura CLI multi-file loader; its
+;; `main` procedure runs the GOAL scenario and prints the required
+;; KEY=value lines.
+
+(define (main)
+  ;; Step 1: create a manager.
+  (define mgr (manager-new))
+
+  ;; Step 2: append 50 records. Each payload is the string
+  ;; representation of the index (e.g. "0", "1", ...).
+  (let loop ((i 0))
+    (if (< i 50)
+        (begin
+          (manager-append mgr (number->string i))
+          (loop (+ i 1)))
+        '()))
+
+  ;; Step 3: read the underlying WAL segments and print SEGk_HI
+  ;; for k = 0..4.
+  (define segs (manager-segments mgr))
+  (let ((s0 (list-ref segs 0))
+        (s1 (list-ref segs 1))
+        (s2 (list-ref segs 2))
+        (s3 (list-ref segs 3))
+        (s4 (list-ref segs 4)))
+    (display "SEG0_HI=") (display (seg-high s0)) (newline)
+    (display "SEG1_HI=") (display (seg-high s1)) (newline)
+    (display "SEG2_HI=") (display (seg-high s2)) (newline)
+    (display "SEG3_HI=") (display (seg-high s3)) (newline)
+    (display "SEG4_HI=") (display (seg-high s4)) (newline))
+
+  ;; Step 4: take a snapshot at LSN 9, store it, print values.
+  (define snap (manager-take-snapshot mgr 9))
+  (display "SNAPSHOT_LSN=") (display (snapshot-lsn snap)) (newline)
+  (display "SNAPSHOT_COUNT=")
+  (display (length (manager-snapshots mgr)))
+  (newline)
+
+  ;; Step 5: release the snapshot, then print AFTER_RELEASE_LIVE.
+  (snapshot-release snap)
+  (display "AFTER_RELEASE_LIVE=")
+  (display (if (snapshot-live? snap) #t #f))
+  (newline)
+
+  ;; Step 6: ask the manager for prune stats.
+  (display "PRUNE_LSN=")
+  (display (manager-prune-lsn mgr))
+  (newline)
+  (display "PRUNE_SEGMENTS=")
+  (display (manager-prune-segments mgr))
+  (newline)
+  (display "RECLAIM_BYTES=")
+  (display (manager-reclaim-bytes mgr))
+  (newline)
+
+  ;; Step 7: build a replay view and print its snapshot LSN and
+  ;; last LSN. The snapshot LSN confirms that a snapshot taken at
+  ;; LSN 9 is still recoverable from the WAL alone, even though
+  ;; the live snapshot has been released.
+  (define replay (replay-build mgr))
+  (display "REPLAY_SNAPSHOT_LSN=")
+  (display (replay-snapshot-lsn replay))
+  (newline)
+  (display "REPLAY_LAST_LSN=")
+  (display (replay-last-lsn replay))
+  (newline)
+
+  ;; Also print LAST_LSN for completeness — the 50th append yields 49.
+  (display "LAST_LSN=")
+  (display (manager-lsn mgr))
+  (newline))

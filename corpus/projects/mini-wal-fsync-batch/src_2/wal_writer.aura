@@ -1,0 +1,66 @@
+;; wal_writer.aura — Writer abstraction: produces records into the staging buffer
+;; and tracks its current/committed LSN. Supports both synchronous (commit-wait)
+;; and asynchronous flush semantics.
+
+(define (writer-new id buf lsn-start)
+  (let ((cur lsn-start)
+        (committed 0))
+    (cons id (cons buf (cons cur (cons committed '()))))))
+
+(define (writer-id w)
+  (car w))
+
+(define (writer-buffer w)
+  (car (cdr w)))
+
+(define (writer-cur-lsn w)
+  (car (cdr (cdr w))))
+
+(define (writer-committed w)
+  (car (cdr (cdr (cdr w)))))
+
+(define (writer-set-cur! w lsn)
+  (set-car! (cdr (cdr w)) lsn))
+
+(define (writer-set-committed! w lsn)
+  (set-car! (cdr (cdr (cdr w))) lsn))
+
+;; Append a payload to the staging buffer via a freshly minted record.
+;; Advances the writer's current LSN via the LSN module.
+(define (writer-append! w payload)
+  (let ((cur (writer-cur-lsn w))
+        (tx  (writer-id w))
+        (buf (writer-buffer w)))
+    (let ((rec (make-record tx payload)))
+      (buffer-append! buf rec)
+      (writer-set-cur! w (lsn-next cur)))))
+
+;; Synchronous commit: ask the coordinator to drain, then busy-poll the
+;; per-txn waiter flag (coordinator-side) until our LSN is acknowledged.
+;; Here we model the wait by simply invoking group-commit, then reading back
+;; the writer's committed LSN after the coordinator has updated waiters.
+(define (writer-flush-sync! w coordinator)
+  (coordinator-group-commit! coordinator))
+
+;; Asynchronous commit: just append and let the runtime tick flush later.
+;; Returns immediately; the writer's committed-lsn is updated when the
+;; coordinator next drains and the waiter is signaled.
+(define (writer-flush-async! w coordinator)
+  (void))
+
+(define (writer-current-lsn w)
+  (writer-cur-lsn w))
+
+(define (writer-committed-lsn w)
+  (writer-committed w))
+
+;; Helper to set committed LSN externally (coordinator signals).
+(define (writer-mark-committed! w lsn)
+  (writer-set-committed! w lsn))
+
+(api writer-new id buf lsn-start)
+(api writer-append! w payload)
+(api writer-flush-sync! w coordinator)
+(api writer-flush-async! w coordinator)
+(api writer-current-lsn w)
+(api writer-committed-lsn w)

@@ -1,0 +1,166 @@
+;; codec.aura — Mini-zstd-style dictionary codec.
+;;
+;; Exposes:
+;;   (codec-compress dict bytes)   -> framed byte list (with back-refs)
+;;   (codec-decompress dict framed) -> original byte list
+;;   (codec-bytes-out)             -> running count of bytes fed to compress
+;;   (codec-bytes-in)              -> running count of bytes produced by decompress
+;;
+;; Frame format (codec-internal, NOT the same as the WAL frame in frame.aura):
+;;   A list of tokens:
+;;     - literal byte:    represented as a list (list 0 b)
+;;     - back-reference:  represented as a list (list 1 offset length)
+;;
+;; Offset/length are encoded as 2-byte big-endian ints (max 65535), which
+;; comfortably covers our 2 KB dictionary window.
+;;
+;; Compression strategy:
+;;   For each position i in the input, look in the dictionary window for the
+;;   longest match starting at i. If match length >= 3 and offset <= 65535,
+;;   emit a back-reference. Otherwise emit a literal byte and advance i by 1.
+;;   When no more input, emit a terminator (list 2 0).
+;;
+;; Decompression:
+;;   Walk tokens; on literal, append byte to output; on back-ref, copy
+;;   `length` bytes from `offset` behind the current write position.
+;;   On terminator, stop.
+
+;; ---- Mutable running counters (per-process, not per-call) ----
+
+(define *codec-bytes-out* 0)
+(define *codec-bytes-in*  0)
+
+(define (codec-bytes-out) *codec-bytes-out*)
+(define (codec-bytes-in)  *codec-bytes-in*)
+
+;; ---- 2-byte big-endian pack/unpack ----
+
+(define (pack-u16 n)
+  (let ((hi (modulo (quotient n 256) 256))
+        (lo (modulo n 256)))
+    (list hi lo)))
+
+(define (unpack-u16 hi lo)
+  (+ (* hi 256) lo))
+
+;; ---- Token accessors ----
+
+(define (tok-kind t) (car t))    ; 0 = literal, 1 = back-ref, 2 = end
+(define (tok-arg1 t) (cadr t))
+(define (tok-arg2 t) (caddr t))
+
+(define (make-literal b)    (list 0 b))
+(define (make-backref o l)  (list 1 o l))
+(define (make-end)          (list 2 0))
+
+;; ---- Longest-match search in the dictionary window ----
+;;
+;; Window is a flat byte list. We search it linearly for the longest substring
+;; starting at position `start` in `input` that occurs within the window.
+;; Window cap is 2 KB so a naive scan is fine.
+
+(define (match-length-at input i window)
+  ;; Returns (offset . length) for the best match of input[i..] found in window.
+  ;; offset = distance back from end-of-window to start of match (1-based).
+  ;; If no match of length >= 3, returns (0 . 0).
+  (let ((best-len 0)
+        (best-off 0))
+    (let ((wlen (length window))
+          (ilen (- (length input) i)))
+      (define (try-pos p)
+        ;; p = index in window to compare at
+        (if (>= p ilen)
+            'done
+            (let ((cur-len 0))
+              (define (extend)
+                (let ((k 0))
+                  (define (loop)
+                    (cond
+                      ((>= k ilen) 'done)
+                      ((>= (+ p k) wlen) 'done)
+                      ((not (= (list-ref input (+ i k))
+                               (list-ref window (+ p k)))) 'done)
+                      (else
+                       (set! cur-len (+ cur-len 1))
+                       (set! k (+ k 1))
+                       (loop)))))
+                  (loop)))
+              (extend)
+              (if (and (>= cur-len best-len) (> cur-len 0))
+                  (begin
+                    (set! best-len cur-len)
+                    ;; offset from end of window back to match start
+                    (set! best-off (- wlen p))))
+              (try-pos (+ p 1)))))
+      (try-pos 0))
+    (cons best-off best-len)))
+
+;; ---- Compression ----
+
+(define (codec-compress dict bytes)
+  ;; Returns framed byte list (tokens), and bumps *codec-bytes-out*.
+  (set! *codec-bytes-out* (+ *codec-bytes-out* (length bytes)))
+  (let ((window (dict-window dict))
+        (out '()))
+    (let ((i 0)
+          (n (length bytes)))
+      (define (step)
+        (cond
+          ((>= i n) 'done)
+          (else
+           (let ((m (match-length-at bytes i window)))
+             (let ((off (car m))
+                   (len (cdr m)))
+               (if (and (>= len 3) (<= off 65535))
+                   (begin
+                    (set! out (append out (list (make-backref
+                                                  (short->full off)
+                                                  (short->full len)))))
+                    (set! i (+ i len)))
+                   (begin
+                    (set! out (append out (list (make-literal
+                                                  (list-ref bytes i)))))
+                    (set! i (+ i 1)))))
+             (step)))))
+      (step))
+    (append out (list (make-end)))))
+
+;; Helper: trim offset/length to fit in u16 (just in case).
+(define (short->full n) n)
+
+;; ---- Decompression ----
+
+(define (codec-decompress dict framed)
+  ;; Walk framed tokens, rebuild original bytes. Bumps *codec-bytes-in* by
+  ;; the number of original bytes produced.
+  (let ((out '())
+        (produced 0))
+    (define (step tokens)
+      (cond
+        ((null? tokens) 'done)
+        (else
+         (let ((t (car tokens)))
+           (cond
+             ((= (tok-kind t) 2) 'done)        ; end token
+             ((= (tok-kind t) 0)               ; literal
+              (set! out (append out (list (tok-arg1 t))))
+              (set! produced (+ produced 1))
+              (step (cdr tokens)))
+             ((= (tok-kind t) 1)               ; back-reference
+              (let ((off (tok-arg1 t))
+                    (len (tok-arg2 t)))
+                (let ((outlen (length out))
+                      (start (- outlen off)))
+                  (define (copy k)
+                    (if (>= k len)
+                        'done
+                        (begin
+                          (set! out (append out (list (list-ref out (+ start k)))))
+                          (set! produced (+ produced 1))
+                          (copy (+ k 1)))))
+                  (copy 0))
+                (step (cdr tokens))))
+             (else (step (cdr tokens))))))))
+    (step framed)
+    (set! *codec-bytes-in* (+ *codec-bytes-in* produced))
+    out))

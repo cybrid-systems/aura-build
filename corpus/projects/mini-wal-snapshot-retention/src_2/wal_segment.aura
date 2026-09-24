@@ -1,0 +1,38 @@
+;; wal_segment.aura
+;; A segment groups a fixed number of WAL records.
+;; A segment holds 10 records (per the GOAL contract).
+;; Segment fields are stored as an association list so we stay
+;; within Aura's allowed primitives.
+
+(define SEG-CAPACITY 10)
+
+(define (make-segment)
+  (list 'segment
+        (cons 'high -1)      ;; high-water LSN; -1 means empty
+        (cons 'records '())  ;; list of (lsn . payload) pairs, in order
+        (cons 'size 0)))     ;; total payload bytes
+
+(define (seg-high seg)
+  (cdr (assq 'high (cdr seg))))
+
+(define (seg-records seg)
+  (cdr (assq 'records (cdr seg))))
+
+(define (seg-size seg)
+  (cdr (assq 'size (cdr seg))))
+
+;; Internal mutators used by wal_log.aura.
+(define (seg-set-high! seg hi)
+  (set-cdr! (assq 'high (cdr seg)) hi))
+
+(define (seg-set-records! seg recs)
+  (set-cdr! (assq 'records (cdr seg)) recs))
+
+(define (seg-set-size! seg sz)
+  (set-cdr! (assq 'size (cdr seg)) sz))
+
+(define (seg-empty? seg)
+  (< (seg-high seg) 0))
+
+(define (seg-full? seg)
+  (= (seg-size seg) SEG-CAPACITY))

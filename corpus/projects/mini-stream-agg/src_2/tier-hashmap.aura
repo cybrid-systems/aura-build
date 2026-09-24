@@ -1,0 +1,125 @@
+;; tier-hashmap.aura — concrete "fast" hashmap-backed tier.
+;;
+;; This tier is the hot tier of the streaming aggregator: every new
+;; key lands here first, and every lookup is a single cons-cell walk.
+;; It implements the same interface as tier-sorted and tier-overflow
+;; so the engine can swap it out transparently.
+;;
+;; The internal representation is intentionally just a tagged association
+;; list. Aura does not have a native hashmap, so we *simulate* one with
+;; alists. The "kind" symbol is what tier-make normally wraps around the
+;; generic structure, but here we return a fully-formed tier value that
+;; also satisfies the same shape, so downstream code can treat it as a
+;; regular tier.
+
+;; ---- internal helpers (NOT exported) -----------------------------------
+
+;; Build the empty state payload shared by all tiers. We keep the same
+;; triple so the tier interface in tier.aura stays uniform across kinds.
+(define (hashmap-empty-state)
+  (list '()  ;; map: (cons (key . value) '()) for each key
+        '()  ;; touches: (cons (cons key count) '())
+        0))  ;; size: number of distinct keys
+
+;; Look up a key's current aggregated value in the map alist.
+;; Returns 0 if the key is absent (semantically: sum of an empty group).
+(define (hashmap-map-get mp k)
+  (cond
+    ((null? mp) 0)
+    ((= (car (car mp)) k) (cdr (car mp)))
+    (else (hashmap-map-get (cdr mp) k))))
+
+;; Look up the touch count for a key. Returns 0 if never touched.
+(define (hashmap-touch-get tc k)
+  (cond
+    ((null? tc) 0)
+    ((= (car (car tc)) k) (cdr (car tc)))
+    (else (hashmap-touch-get (cdr tc) k))))
+
+;; Return a NEW map alist with k's value replaced by v. If v is 0 and we
+;; already store it as 0, leave the entry alone (avoid spurious updates).
+;; If the key is missing, cons a fresh pair at the head.
+(define (hashmap-map-set mp k v)
+  (cond
+    ((null? mp) (cons (cons k v) '()))
+    ((= (car (car mp)) k)
+     (if (= v 0)
+         ;; value of 0 is allowed — keep it explicit so retracts stay
+         ;; visible. We just rewrite the same cell.
+         (cons (cons k 0) (cdr mp))
+         (cons (cons k v) (cdr mp))))
+    (else (cons (car mp) (hashmap-map-set (cdr mp) k v)))))
+
+;; Return a NEW touch-count alist with k's count incremented by 1.
+(define (hashmap-touch-bump tc k)
+  (cond
+    ((null? tc) (cons (cons k 1) '()))
+    ((= (car (car tc)) k)
+     (cons (cons k (+ (cdr (car tc)) 1)) (cdr tc)))
+    (else (cons (car tc) (hashmap-touch-bump (cdr tc) k)))))
+
+;; Collect the keys of a map alist into a flat list, in insertion order.
+;; We expose it via tier-keys so the engine can iterate groups.
+(define (hashmap-keys-of mp)
+  (cond
+    ((null? mp) '())
+    (else (cons (car (car mp)) (hashmap-keys-of (cdr mp))))))
+
+;; ---- exported API ------------------------------------------------------
+
+;; (api hashmap-tier-new) -> tier
+;; Returns a fresh tier tagged with the kind symbol 'hashmap. The tier
+;; stores key->value pairs, per-key touch counters, and a key count.
+(define (hashmap-tier-new)
+  (cons 'hashmap (hashmap-empty-state)))
+
+;; (api hashmap-tier-step t k delta) -> new tier
+;; Apply an incremental +/- delta update for key k. Returns a NEW tier
+;; value; the original is left untouched so checkpoints remain stable
+;; until an explicit copy happens.
+(define (hashmap-tier-step t k delta)
+  (let ((state (cdr t))
+        (kind (car t)))
+    (let ((mp   (car  state))
+          (tc   (car  (cdr  state)))
+          (size (car  (cdr  (cdr state)))))
+      (let ((old-val (hashmap-map-get mp k))
+            (new-val (+ old-val delta))
+            (old-tc  (hashmap-touch-get tc k))
+            (was-there? (if (= old-val 0)
+                            (if (= old-tc 0) #f #t)
+                            #t)))
+        (let ((new-mp (hashmap-map-set mp k new-val))
+              (new-tc (hashmap-touch-bump tc k)))
+          (let ((new-size (if was-there? size (+ size 1))))
+            (cons kind (list new-mp new-tc new-size))))))))
+
+;; (api hashmap-tier-get t k) -> number
+;; Read the current aggregated value for k. Returns 0 for missing keys.
+(define (hashmap-tier-get t k)
+  (let ((state (cdr t)))
+    (hashmap-map-get (car state) k)))
+
+;; (api hashmap-tier-keys t) -> list of keys
+;; All keys currently held by this tier, in insertion order.
+(define (hashmap-tier-keys t)
+  (let ((state (cdr t)))
+    (hashmap-keys-of (car state))))
+
+;; (api hashmap-tier-size t) -> non-negative integer
+;; Number of distinct keys in this tier.
+(define (hashmap-tier-size t)
+  (let ((state (cdr t)))
+    (car (cdr (cdr state)))))
+
+;; (api hashmap-tier-promote? t k) -> boolean
+;; Decide whether key k should be promoted out of the hot hashmap tier.
+;; A key is "hot" if its touch count crosses a small threshold; this is
+;; what tells the engine to move it into the sorted tier (or, if it gets
+;; even bigger, the overflow tier). We pick a deliberately low threshold
+;; (3 touches) so the demo scenario actually exercises promotion on the
+;; supplied event stream without being flaky.
+(define (hashmap-tier-promote? t k)
+  (let ((state (cdr t)))
+    (let ((tc (hashmap-touch-get (car (cdr state)) k)))
+      (>= tc 3))))

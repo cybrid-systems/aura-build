@@ -1,0 +1,79 @@
+;; wal_runtime.aura — Tick-driven runtime that decides when to fsync.
+;;
+;; The runtime sits between the writers (which only know how to append
+;; to the staging buffer) and the coordinator (which only knows how to
+;; drain-and-persist a single batch). It owns:
+;;
+;;   - the shared config (so it can read wal-max-batch-size etc.)
+;;   - the list of registered writers (so it can fan out sync requests)
+;;   - a "should-fsync?" decision: true when the staging buffer has
+;;     accumulated at least one record AND we've crossed the runtime's
+;;     own tick threshold. For this toy we use a trivial policy: fsync
+;;     whenever the buffer is non-empty, capped at max-batch-size per
+;;     tick. The coordinator is responsible for the actual cap; the
+;;     runtime just decides "is it time to try?".
+;;
+;; A "tick" in this simulation is simply a call to runtime-tick!, which
+;; asks the coordinator to do a group-commit on whatever is currently
+;; staged. The runtime is deliberately stateless across ticks beyond
+;; the writer list — the coordinator owns all persistence state.
+;;
+;; Exported APIs:
+;;   runtime-new            : (cfg) -> runtime
+;;   runtime-register-writer: (rt w) -> void, registers a writer
+;;   runtime-tick!          : (rt) -> void, asks coordinator to fsync
+;;   runtime-writers        : (rt) -> list of registered writers
+;;   runtime-should-fsync?  : (rt) -> bool, true when there's work
+;;   runtime-fsync-target    : (rt) -> coordinator, what to call next
+
+(define (runtime-new cfg)
+  (list 'runtime cfg '()))
+
+(define (runtime-cfg rt)
+  (car (cdr rt)))
+
+(define (runtime-writers-list rt)
+  (car (cdr (cdr rt))))
+
+(define (runtime-register-writer! rt w)
+  (set-car! (cdr (cdr rt))
+            (cons w (runtime-writers-list rt))))
+
+(define (runtime-writers rt)
+  (reverse (runtime-writers-list rt)))
+
+(define (runtime-should-fsync? rt)
+  (let ((ws (runtime-writers-list rt)))
+    (cond ((null? ws) #f)
+          (else
+           (let loop ((remaining ws))
+             (cond ((null? remaining) #f)
+                   (else
+                    (let ((b (writer-buffer (car remaining))))
+                      (cond ((buffer-empty? b) (loop (cdr remaining)))
+                            (else #t))))))))))
+
+(define (runtime-fsync-target rt)
+  ;; The coordinator is stashed inside the runtime as a fourth field by
+  ;; the scenario driver. If it's not there we fabricate a fresh one
+  ;; from the config + a fresh segment so the runtime is still usable
+  ;; in isolation.
+  (let ((rest (cdr (cdr (cdr rt)))))
+    (cond ((null? rest)
+           (coordinator-new (runtime-cfg rt) (segment-new)))
+          (else (car rest)))))
+
+(define (runtime-attach-coordinator! rt c)
+  (set-cdr! (cdr (cdr rt)) (cons c '())))
+
+(define (runtime-tick! rt)
+  (let ((c (runtime-fsync-target rt)))
+    (coordinator-group-commit! c)))
+
+(define (writer-buffer w)
+  ;; Writers expose their staging buffer as the third field of their
+  ;; internal representation. The runtime needs to peek at it to
+  ;; decide whether a tick is worth doing. We tolerate either layout:
+  ;; (writer id buffer lsn-start last-lsn committed-lsn) — the buffer
+  ;; is always the third element.
+  (car (cdr (cdr w))))

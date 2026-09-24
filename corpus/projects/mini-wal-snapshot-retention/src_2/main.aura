@@ -1,0 +1,78 @@
+;; main.aura
+;; The scenario driver for the mini-WAL snapshot retention exercise.
+;; This file is loaded last by the Aura CLI multi-file loader; its
+;; `main` procedure runs the GOAL scenario and prints the required
+;; KEY=value lines.
+
+(define (main)
+  ;; Step 1: create a manager.
+  (define mgr (manager-new))
+
+  ;; Step 2: append 50 records. Each payload is the string
+  ;; representation of the index (e.g. "0", "1", ...).
+  (let loop ((i 0))
+    (if (< i 50)
+        (begin
+          (manager-append mgr (number->string i))
+          (loop (+ i 1)))
+        '()))
+
+  ;; Step 3: read the underlying WAL segments and print SEGk_HI
+  ;; for k = 0..4.
+  (define segs (manager-segments mgr))
+  (display (string-append "SEG0_HI=" (number->string (seg-high (list-ref segs 0)))))
+  (newline)
+  (display (string-append "SEG1_HI=" (number->string (seg-high (list-ref segs 1)))))
+  (newline)
+  (display (string-append "SEG2_HI=" (number->string (seg-high (list-ref segs 2)))))
+  (newline)
+  (display (string-append "SEG3_HI=" (number->string (seg-high (list-ref segs 3)))))
+  (newline)
+  (display (string-append "SEG4_HI=" (number->string (seg-high (list-ref segs 4)))))
+  (newline)
+
+  ;; Step 4: take a snapshot at LSN 9, print SNAPSHOT_LSN and
+  ;; SNAPSHOT_COUNT.
+  (define snap (manager-take-snapshot mgr 9))
+  (define snaps (manager-snapshots mgr))
+  (display (string-append "SNAPSHOT_LSN=" (number->string (snapshot-lsn snap))))
+  (newline)
+  (display (string-append "SNAPSHOT_COUNT=" (number->string (length snaps))))
+  (newline)
+
+  ;; Step 5: release the snapshot, then print AFTER_RELEASE_LIVE.
+  (snapshot-release snap)
+  (display (string-append "AFTER_RELEASE_LIVE="
+                         (if (snapshot-live? snap) "true" "false")))
+  (newline)
+
+  ;; Step 6: ask the manager for prune info.
+  (display (string-append "PRUNE_LSN=" (number->string (manager-prune-lsn mgr))))
+  (newline)
+  (display (string-append "PRUNE_SEGMENTS="
+                         (number->string (manager-prune-segments mgr))))
+  (newline)
+  (display (string-append "RECLAIM_BYTES="
+                         (number->string (manager-reclaim-bytes mgr))))
+  (newline)
+
+  ;; Step 7: build a replay view and print its snapshot LSN and
+  ;; last LSN. The snapshot LSN here corresponds to the snapshot we
+  ;; took at LSN 9 (the replay view re-derives it from WAL state).
+  (define replay (replay-build mgr))
+  (display (string-append "REPLAY_SNAPSHOT_LSN="
+                         (number->string (replay-snapshot-lsn replay))))
+  (newline)
+  (display (string-append "REPLAY_LAST_LSN="
+                         (number->string (replay-last-lsn replay))))
+  (newline)
+
+  ;; Final summary keys required by the GOAL contract.
+  (display (string-append "LAST_LSN=" (number->string (manager-lsn mgr))))
+  (newline)
+  (display (string-append "TOTAL_RECORDS="
+                         (number->string (wal-record-count
+                                          (list-ref (cdr (assq 'wal (cdr mgr))) 1)))))
+  (newline))
+
+(main)

@@ -1,0 +1,47 @@
+;; wal_segment.aura
+;; Segment abstraction for the in-memory WAL.
+;;
+;; A segment is represented as a simple association list:
+;;   ((high . <lsn>) (records . <list-of-records>) (size . <bytes>))
+;;
+;; Records themselves are pairs: (lsn . payload).
+;;
+;; Public APIs:
+;;   (seg-high seg)      -> high-water LSN of the segment
+;;   (seg-records seg)   -> list of (lsn . payload) records
+;;   (seg-size seg)      -> logical byte size of the segment
+
+(define (api name)
+  (lambda args
+    (apply (cond
+             ((equal? name 'seg-high)     seg-high)
+             ((equal? name 'seg-records)  seg-records)
+             ((equal? name 'seg-size)     seg-size)
+             (else (lambda _ (error "unknown segment api"))))
+           args)))
+
+;; ---- internal helpers ----
+
+;; Look up a key in an alist.
+(define (seg-assq key seg)
+  (cond ((null? seg) #f)
+        ((equal? (car (car seg)) key) (car seg))
+        (else (seg-assq key (cdr seg)))))
+
+;; Build a fresh segment with the given high-water LSN, records list
+;; and logical size (defaults to the record count if unspecified).
+(define (make-segment high records size)
+  (list (cons 'high high)
+        (cons 'records records)
+        (cons 'size size)))
+
+;; ---- public accessors ----
+
+(define (seg-high seg)
+  (cdr (seg-assq 'high seg)))
+
+(define (seg-records seg)
+  (cdr (seg-assq 'records seg)))
+
+(define (seg-size seg)
+  (cdr (seg-assq 'size seg)))

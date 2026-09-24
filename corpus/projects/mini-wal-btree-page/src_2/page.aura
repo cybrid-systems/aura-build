@@ -1,0 +1,164 @@
+;; page.aura
+;; Page abstraction for the mini WAL + B+tree engine.
+;;
+;; A "page" here is a fixed-size container of cells. Each cell is a
+;; (key . value) pair (or, for the special sibling-pointer slot, a
+;; (key . pid) pair — we treat the sibling pointer as just another
+;; cell whose value happens to be a page id). The page itself is a
+;; tagged list:
+;;
+;;     (PAGE pid lsn cells sibling)
+;;
+;; where `pid` is the page id, `lsn` is the last LSN that touched
+;; the page (used for write-ahead ordering), `cells` is the list of
+;; (key . value) cells in key order, and `sibling` is either #f or
+;; the pid of the next leaf on the right.
+;;
+;; Splits and merges preserve key ordering and respect the page
+;; capacity derived from PAGE_ORDER (defined in constants.aura).
+
+;; ---------------------------------------------------------------
+;; Constructors / accessors
+;; ---------------------------------------------------------------
+
+;; Build an empty page with the given page id. No cells, no sibling,
+;; and the page-LSN defaults to 0 (i.e. "never written").
+(define (page-empty pid)
+  (list 'PAGE pid 0 '() #f))
+
+;; Extract the page id.
+(define (page-id p)
+  (car (cdr p)))
+
+;; Extract the cells list (in key order).
+(define (page-cells p)
+  (car (cdr (cdr p))))
+
+;; Return a new page struct identical to `p` but with `cs` as its
+;; cells. This is the functional update path — it does NOT mutate
+;; the underlying list (Aura lists are immutable), but it does
+;; preserve the page-LSN and sibling pointer. Callers that want to
+;; bump the LSN should follow up with `page-set-lsn!` (which uses
+;; set! on the cached page object in the page cache).
+(define (page-set-cells p cs)
+  (list 'PAGE (page-id p) (page-lsn p) cs (page-sibling p)))
+
+;; Page LSN (the highest LSN that has touched this page).
+(define (page-lsn p)
+  (car (cdr (cdr p))))
+
+;; Destructively set the LSN slot of a cached page object. The cache
+;; stores pages as plain lists, so we use set! on the cddr of the
+;; cons cell to update the third element in place. For freshly
+;; constructed pages that haven't been installed in the cache yet,
+;; this still works because set! just mutates the local binding.
+(define (page-set-lsn! p lsn)
+  (set-car! (cdr (cdr p)) lsn))
+
+;; Sibling pointer accessor (kept internal but exposed via helpers
+;; below; defined here so page-set-cells can preserve it).
+(define (page-sibling p)
+  (car (cdr (cdr (cdr p)))))
+
+;; Set the sibling pointer of a page (functional update).
+(define (page-set-sibling p sib)
+  (list 'PAGE (page-id p) (page-lsn p) (page-cells p) sib))
+
+;; ---------------------------------------------------------------
+;; Capacity
+;; ---------------------------------------------------------------
+
+;; A page is "full" when it has reached MAX_CELLS_PER_PAGE entries.
+;; MAX_CELLS_PER_PAGE is defined in constants.aura and is derived
+;; from PAGE_ORDER, so changing the order automatically resizes
+;; every page in the tree.
+(define (page-full? p)
+  (>= (length (page-cells p)) MAX_CELLS_PER_PAGE))
+
+;; ---------------------------------------------------------------
+;; Splits
+;; ---------------------------------------------------------------
+
+;; Split a full page into two pages. The left half stays on `p`
+;; (we mutate its cells list in place via set-car! / set-cdr!
+;; through `page-set-cells!`, which the cache uses), and the right
+;; half is returned as a freshly-allocated page with `new-pid`.
+;;
+;; The first key of the right page is the "split key" and would be
+;; pushed up into the parent by the B+tree layer; we return it as
+;; the second value via the side-channel list so callers can fish
+;; it out without a separate API.
+;;
+;; Convention: with PAGE_ORDER = 4, MAX_CELLS_PER_PAGE = 8, so a
+;; full page has 8 cells and we split 4/4. The split key is the
+;; first key of the right half.
+(define (page-split p new-pid)
+  (let* ((cs (page-cells p))
+         (half (quotient (length cs) 2))
+         (left (take half cs))
+         (right (drop half cs))
+         (split-key (car (car right))))
+    ;; Mutate the original page's cells in place to be the left
+    ;; half. We walk the cons cells to install set-car!/set-cdr!
+    ;; safely without changing the page tag/lsn slots.
+    (page-set-cells! p left)
+    ;; Wire the sibling pointer: old sibling becomes right's
+    ;; sibling, right becomes old sibling of left.
+    (let ((old-sib (page-sibling p)))
+      (page-set-sibling! p new-pid)
+      (let ((right-page (page-empty new-pid)))
+        (page-set-cells! right-page right)
+        (page-set-sibling! right-page old-sib)
+        (list right-page split-key)))))
+
+;; In-place mutation variant of page-set-cells used by the split
+;; path. Walks the list-of-list structure to replace the cells slot
+;; of `p` directly. We do this by rebuilding the cons cells rather
+;; than splicing — Aura has set-cdr! so we can mutate the existing
+;; list's tail pointers.
+(define (page-set-cells! p cs)
+  (set-car! (cdr (cdr (cdr p))) cs))
+
+;; In-place mutation variant of page-set-sibling.
+(define (page-set-sibling! p sib)
+  (set-car! (cdr (cdr (cdr (cdr p)))) sib))
+
+;; ---------------------------------------------------------------
+;; Merges
+;; ---------------------------------------------------------------
+
+;; Merge page `b` into page `a`. All cells of `b` are appended to
+;; the cells of `a`, and `a`'s sibling pointer is updated to `b`'s
+;; sibling (i.e. we skip over `b` in the leaf chain). Returns the
+;; merged page (`a`). The LSN of the merged page is the max of the
+;; two source LSNs so that recovery's LSN-pinned rules still work.
+(define (page-merge a b)
+  (let* ((merged-cells (append (page-cells a) (page-cells b)))
+         (merged-lsn (if (> (page-lsn a) (page-lsn b))
+                         (page-lsn a)
+                         (page-lsn b))))
+    (page-set-cells! a merged-cells)
+    (page-set-sibling! a (page-sibling b))
+    (page-set-lsn! a merged-lsn)
+    a))
+
+;; ---------------------------------------------------------------
+;; Integrity (CRC)
+;; ---------------------------------------------------------------
+
+;; Compute a CRC over the page's logical contents: its pid, LSN,
+;; cells, and sibling pointer. We use crc16 (from util.aura) over a
+;; flat byte stream assembled by encoding each cell. This is the
+;; value the cache flushes into the WAL trailer and verifies on
+;; replay.
+(define (page-crc p)
+  (let* ((pid-bytes (u16 (page-id p)))
+         (lsn-bytes (u16 (page-lsn p)))
+         (cell-bytes (apply append (map (lambda (c)
+                                          (encode-cell (car c) (cdr c)))
+                                        (page-cells p))))
+         (sib-bytes (if (page-sibling p)
+                        (u16 (page-sibling p))
+                        '(0 0)))
+         (all (append pid-bytes lsn-bytes cell-bytes sib-bytes)))
+    (crc16 all)))

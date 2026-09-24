@@ -1,0 +1,77 @@
+;; wal_log.aura
+;; A Write-Ahead Log is an ordered list of fixed-capacity segments.
+;; Records are appended by LSN; each segment holds up to SEG-CAPACITY
+;; records (defined in wal_segment.aura). The first record's LSN is 0.
+
+(define (make-wal)
+  (list 'wal
+        (cons 'segments (list (make-segment)))  ;; start with one empty segment
+        (cons 'count 0)))                       ;; total records appended
+
+(define (wal-segments wal)
+  (cdr (assq 'segments (cdr wal))))
+
+(define (wal-record-count wal)
+  (cdr (assq 'count (cdr wal))))
+
+(define (wal-lsn wal)
+  ;; Next LSN to assign is the current record count (starts at 0).
+  (wal-record-count wal))
+
+;; Internal helper: the last segment in the WAL.
+(define (wal-last-segment wal)
+  (let ((segs (wal-segments wal)))
+    (if (null? segs)
+        '()
+        (let loop ((s segs) (acc '()))
+          (if (null? s)
+              acc
+              (loop (cdr s) (car s)))))))
+
+;; Internal helper: how many records currently live in a segment.
+(define (segment-record-len seg)
+  (length (seg-records seg)))
+
+;; Determine payload byte size from a payload value. We treat strings as
+;; their character count, numbers as their decimal digit count, and
+;; anything else (symbols, booleans, lists) as 0 bytes — the scenario
+;; only uses string payloads, so this is the relevant path.
+(define (payload-size p)
+  (cond ((string? p) (string-length p))
+        ((number? p) (string-length (number->string p)))
+        (else 0)))
+
+;; Append a record with the given LSN and payload to the WAL.
+;; Caller must supply monotonically increasing LSNs (typically the
+;; next sequential LSN). This matches the contract expected by the
+;; scenario: 50 appends → LSNs 0..49.
+(define (wal-append wal lsn payload)
+  (let ((segs (wal-segments wal)))
+    (let ((last-seg (if (null? segs) '() (car (reverse segs)))))
+      (cond
+        ;; No segments at all → create a fresh one.
+        ((null? last-seg)
+         (let ((fresh (make-segment)))
+           (append-record-to-segment! fresh lsn payload)
+           (set-cdr! (assq 'segments (cdr wal)) (list fresh))))
+        ;; Last segment has room → append there.
+        ((< (length (seg-records last-seg)) SEG-CAPACITY)
+         (append-record-to-segment! last-seg lsn payload))
+        ;; Last segment is full → start a new one.
+        (else
+         (let ((fresh (make-segment)))
+           (append-record-to-segment! fresh lsn payload)
+           (set-cdr! (assq 'segments (cdr wal))
+                     (append (wal-segments wal) (list fresh)))))))
+    ;; Bump the total record count.
+    (set-cdr! (assq 'count (cdr wal))
+              (+ (wal-record-count wal) 1))))
+
+;; Internal: place (lsn . payload) onto a segment and update its
+;; high-water mark and accumulated size.
+(define (append-record-to-segment! seg lsn payload)
+  (let ((recs-cell (assq 'records (cdr seg))))
+    (set-cdr! recs-cell (append (cdr recs-cell) (list (cons lsn payload)))))
+  (seg-set-high! seg lsn)
+  (let ((size-cell (assq 'size (cdr seg))))
+    (set-cdr! size-cell (+ (cdr size-cell) (payload-size payload)))))

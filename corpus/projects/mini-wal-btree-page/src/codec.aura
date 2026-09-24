@@ -1,0 +1,110 @@
+;; codec.aura — Wire format for WAL payloads.
+;;
+;; A WAL payload is just a list of byte values (small exact integers in
+;; 0..255). Higher layers page.aura / btree.aura hand us (key, value)
+;; pairs or sentinel operations (skip / delete) and we have to turn them
+;; into a byte stream the WAL can append, and back again on recovery.
+;;
+;; The format we commit to across all frames is intentionally trivial:
+;;
+;;   cell        : 0x01 kLEN kBYTES... vLEN vBYTES...
+;;   delete      : 0x02 kLEN kBYTES...
+;;   skip        : 0x03 kLEN kBYTES...
+;;
+;; Sentinel "operations" (delete / skip) carry only a key. Ordinary cells
+;; carry key+value. The tag byte is what tells `decode-cell` (and the
+;; recovery layer) what kind of frame this is and how to parse the rest.
+;;
+;; `encode-cell`, `encode-delete`, and `encode-skip` all return a *list
+;; of byte values* — never a string or a blob — so the result can be
+;; fed straight to wal-append / crc16 / list operations.
+;;
+;; Lengths are encoded as a single byte: keys and values must therefore
+;; fit in 0..255 bytes (true for everything we ever store). Length > 255
+;; is a programmer error and we signal it by returning a tagged error
+;; list — callers are expected to honor the precondition.
+
+;; --- length-prefix a byte sequence -----------------------------------------
+
+;; Internal: wrap a single byte (low 8 bits) for emission.
+(define (codec-u8 x) (modulo x 256))
+
+;; Internal: emit an (n-prefixed) byte string `bs`.
+;; Returns the empty list if `bs` is empty or its length exceeds 255.
+(define (codec-prefix-bytes bs)
+  (let ((n (length bs)))
+    (if (> n 255)
+        '()
+        (cons (codec-u8 n) bs))))
+
+;; --- public encoders -------------------------------------------------------
+
+;; Encode a (key, value) cell into a WAL-ready byte list.
+;; Both `k` and `v` must be lists of byte values; if either is too long
+;; we return the empty list so the layer above can detect the violation.
+(define (encode-cell k v)
+  (let ((kp (codec-prefix-bytes k))
+        (vp (codec-prefix-bytes v)))
+    (if (or (null? kp) (null? vp))
+        '()
+        (append (cons (codec-u8 1) kp) vp))))
+
+;; Encode a "skip" sentinel: the page layer uses this to record a
+;; no-op key that still needs an LSN pinned (e.g. for a freshly split
+;; page that has not yet received real data on the recovery side).
+(define (encode-skip key)
+  (let ((kp (codec-prefix-bytes key)))
+    (if (null? kp)
+        '()
+        (cons (codec-u8 3) kp))))
+
+;; Encode a "delete" sentinel: marks the removal of `key` from its page.
+(define (encode-delete key)
+  (let ((kp (codec-prefix-bytes key)))
+    (if (null? kp)
+        '()
+        (cons (codec-u8 2) kp))))
+
+;; --- decoder --------------------------------------------------------------
+
+;; Internal: pull the first length-prefixed byte run out of `xs`.
+;; Returns (cons run rest) on success, or #f if the stream is
+;; malformed (truncated length or fewer bytes than promised).
+(define (codec-take-prefixed xs)
+  (if (or (null? xs) (< (length xs) 1))
+      #f
+      (let ((n (car xs)))
+        (let loop ((rest (cdr xs)) (i 0) (acc '()))
+          (cond ((= i n) (cons (reverse acc) rest))
+                ((null? rest) #f)
+                (else (loop (cdr rest) (+ i 1) (cons (car rest) acc))))))))
+
+;; Decode a payload byte list produced by encode-{cell,delete,skip}.
+;; Returns one of:
+;;   '(cell   key value)          — ordinary key/value
+;;   '(delete key)                — delete sentinel
+;;   '(skip   key)                — skip sentinel
+;;   '()                          — empty / malformed payload
+(define (decode-cell xs)
+  (cond ((null? xs) '())
+        ((null? (cdr xs)) '())
+        (else
+         (let ((tag (car xs))
+               (body (cdr xs)))
+           (cond ((= tag 1)
+                  (let ((k1 (codec-take-prefixed body)))
+                    (if (not k1) '()
+                        (let ((key (car k1))
+                              (rest (cdr k1)))
+                          (let ((v1 (codec-take-prefixed rest)))
+                            (if (not v1) '()
+                                (list 'cell key (car v1))))))))
+                 ((= tag 2)
+                  (let ((k1 (codec-take-prefixed body)))
+                    (if (not k1) '()
+                        (list 'delete (car k1)))))
+                 ((= tag 3)
+                  (let ((k1 (codec-take-prefixed body)))
+                    (if (not k1) '()
+                        (list 'skip (car k1)))))
+                 (else '()))))))

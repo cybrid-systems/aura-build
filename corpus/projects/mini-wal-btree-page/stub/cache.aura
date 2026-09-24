@@ -1,0 +1,91 @@
+;; cache.aura — Page cache layer over the B+tree.
+;;
+;; The cache maps page-id -> page, tracking which pages have been modified
+;; in memory (the "dirty" set). Flushes append WAL frames for every dirty
+;; page so that, on recovery, the WAL can replay into the cache.
+;;
+;; A cache is a 2-element list '(dirty-ids entries) where:
+;;   - dirty-ids : list of page-ids whose pages have been modified since
+;;                 the last flush (kept in insertion order)
+;;   - entries   : association list mapping page-id -> page
+;;
+;; Both halves are mutated through set! so the cache value itself is
+;; stable (callers can hold onto it across calls).
+
+;; Build a brand-new, empty cache.
+(define (cache-new)
+  (list '() '()))
+
+;; Fetch the page associated with `pid` in cache `c`, or #f if absent.
+(define (cache-get c pid)
+  (let ((entries (car (cdr c))))
+    (cond
+      ((null? entries) #f)
+      ((= (car (car entries)) pid) (car (cdr (car entries))))
+      (else
+       (let loop ((rest (cdr entries)))
+         (cond
+           ((null? rest) #f)
+           ((= (car (car rest)) pid) (car (cdr (car rest))))
+           (else (loop (cdr rest)))))))))
+
+;; Insert/overwrite the page for `pid`. Marks the page as dirty if it is
+;; new (not previously cached). Updates `c` in place via set!.
+(define (cache-put! c pid page)
+  (let ((dirty (car c))
+        (entries (car (cdr c))))
+    ;; Remove any existing entry for pid.
+    (let loop ((rest entries) (acc '()))
+      (cond
+        ((null? rest)
+         ;; Not found — append new entry and mark dirty.
+         (set-car! (cdr c) (append entries (list (cons pid page))))
+         (set-car! c (append dirty (list pid))))
+        ((= (car (car rest)) pid)
+         ;; Replace existing entry; not newly dirty.
+         (set-car! (cdr c) (append (reverse acc)
+                                   (cons (cons pid page) rest))))
+        (else (loop (cdr rest) (cons (car rest) acc)))))))
+
+;; Remove the entry for `pid` from the cache entirely (used when a page
+;; has been merged away or freed). No-op if absent.
+(define (cache-evict c pid)
+  (let ((dirty (car c))
+        (entries (car (cdr c))))
+    (let ((new-entries
+           (let loop ((rest entries) (acc '()))
+             (cond
+               ((null? rest) (reverse acc))
+               ((= (car (car rest)) pid) (append (reverse acc) (cdr rest)))
+               (else (loop (cdr rest) (cons (car rest) acc)))))))
+      (set-car! (cdr c) new-entries))
+    (let ((new-dirty
+           (let loop ((rest dirty) (acc '()))
+             (cond
+               ((null? rest) (reverse acc))
+               ((= (car rest) pid) (append (reverse acc) (cdr rest)))
+               (else (loop (cdr rest) (cons (car rest) acc)))))))
+      (set-car! c new-dirty))))
+
+;; Return the list of dirty page-ids in the cache (insertion order).
+(define (cache-dirty-ids c)
+  (car c))
+
+;; Flush all dirty pages through `wal` by appending one WAL frame per
+;; dirty page (payload is the cell list, lsn stamp stamped on each page).
+;; Pages become clean afterwards. Returns the number of frames flushed.
+(define (cache-flush! c wal)
+  (let ((dirty (car c)))
+    (let loop ((rest dirty) (n 0))
+      (cond
+        ((null? rest)
+         (set-car! c '())
+         n)
+        (else
+         (let ((pid (car rest)))
+           (let ((p (cache-get c pid)))
+             (if p
+                 (let ((lsn (page-lsn p)))
+                   (wal-append wal (list lsn (page-cells p)))
+                   (page-set-lsn! p lsn)))
+             (loop (cdr rest) (+ n 1)))))))))

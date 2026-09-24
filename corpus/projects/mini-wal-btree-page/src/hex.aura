@@ -1,0 +1,57 @@
+;; hex.aura — Hex / pretty-printing helpers for byte lists.
+;;
+;; Many of the upper layers (WAL frames, page cells, payloads from
+;; `codec.aura`) carry around raw lists of bytes — i.e. exact integers
+;; in the range 0..255. When the scenario wants to print what is actually
+;; sitting in a WAL frame or what a cell decoded to, it is much nicer
+;; to see them as space-separated two-digit hex strings than as a
+;; parenthesised list of numbers.
+;;
+;; This file provides the small set of helpers used by `main.aura` (and
+;; available to any other module that wants pretty output) for turning a
+;; list of bytes into a human-readable hex string. All functions are
+;; pure: they never mutate their inputs.
+
+;; Convert a single byte (exact integer 0..255) into a two-character
+;; lowercase hex string. No padding is needed because we explicitly
+;; prepend "0" when the value is below 16.
+(define (byte->hex b)
+  (let ((d "0123456789abcdef"))
+    (string-append
+      (string (string-ref d (quotient b 16)))
+      (string (string-ref d (modulo b 16))))))
+
+;; Convert a list of bytes into a space-separated hex string. The
+;; output uses a single space between bytes, with no leading or
+;; trailing whitespace. The empty list yields the empty string.
+(define (bytes->hex xs)
+  (cond
+    ((null? xs) "")
+    ((null? (cdr xs)) (byte->hex (car xs)))
+    (else
+      (string-append
+        (byte->hex (car xs))
+        " "
+        (bytes->hex (cdr xs))))))
+
+;; Same as `bytes->hex`, but the output is wrapped in square brackets
+;; so that, when several byte lists are printed on one line, they
+;; remain visually distinct from each other and from the surrounding
+;; KEY=value lines.
+(define (hex xs)
+  (string-append "[" (bytes->hex xs) "]"))
+
+;; Convenience: pretty-print a WAL frame — i.e. its payload — as a
+;; bracketed hex string. Frames have shape (magic lsn payload) in the
+;; WAL implementation; we only hex the payload, not the LSN.
+(define (hex-frame f)
+  (hex (car (cdr (cdr f)))))
+
+;; Pad a string on the right with spaces until it is at least `width`
+;; characters wide. Used to keep the columns in `main.aura`'s output
+;; lined up without dragging in a full formatting library.
+(define (pad-right s width)
+  (let ((n (string-length s)))
+    (if (>= n width)
+        s
+        (string-append s (make-string (- width n) #\space)))))

@@ -1,0 +1,65 @@
+;; watermark.aura — event-time watermark tracker.
+;;
+;; A streaming system needs to know "how late can an event be before
+;; we treat it as too-stale and drop it". The standard abstraction is a
+;; *watermark*: a monotonically increasing event-time threshold that
+;; tracks the maximum timestamp seen so far, minus some allowed lateness.
+;;
+;; This file is intentionally tiny. It only tracks the current
+;; watermark and answers two questions:
+;;
+;;   (wm-is-late? wm ts)  -> is `ts` so old that it should be ignored?
+;;   (wm-advance    wm ts) -> fold `ts` into the watermark
+;;
+;; We don't implement a full windowing system here; the engine only
+;; needs to log late events so the retract path can be tested.
+;;
+;; A watermark value is represented as a tagged list:
+;;
+;;   (cons 'watermark (list current-ts lateness))
+;;
+;; where:
+;;   current-ts  : integer, the highest timestamp we have accepted so far
+;;   lateness    : integer, how many ticks an event may lag behind the
+;;                 highest timestamp and still be considered on-time.
+;;                 (We do not use lateness inside this file except to
+;;                 store/return it; engine.aura is free to consult it.)
+
+;; ---- internal helpers (NOT exported) ------------------------------------
+
+;; Build a fresh watermark starting at ts=0 with the given lateness
+;; allowance. Used by wm-make and by tests that want to seed a value
+;; directly. Internal-only; we expose the official constructor via the
+;; API below.
+(define (wm-new)
+  (cons 'watermark (list 0 0)))
+
+;; ---- public API ---------------------------------------------------------
+
+;; (api wm-advance wm ts) -> new-wm
+;; Fold `ts` into the watermark, returning the new watermark value.
+;; The watermark only ever moves forward: if `ts` is older than the
+;; current value we keep the old value. Otherwise we advance.
+(define (api wm-advance wm ts)
+  (let ((cur (car (cdr wm))))
+    (if (> ts cur)
+        (cons 'watermark (list ts (car (cdr (cdr wm)))))
+        wm)))
+
+;; (api wm-is-late? wm ts) -> boolean
+;; Is `ts` so far in the past that it should be ignored?
+;; Concretely: an event is late when `ts + lateness < current-ts`.
+;; We use `>=` so an event that lands exactly on the boundary is still
+;; considered on-time. This is the conservative choice: it lets the
+;; engine's retract path be exercised even in the demo scenario where
+;; timestamps are dense.
+(define (api wm-is-late? wm ts)
+  (let ((cur   (car (cdr wm)))
+        (late  (car (cdr (cdr wm)))))
+    (< (+ ts late) cur)))
+
+;; (api wm-current wm) -> integer
+;; Return the current watermark timestamp (the maximum accepted ts).
+;; Returns 0 for a freshly constructed watermark.
+(define (api wm-current wm)
+  (car (cdr wm)))

@@ -1,0 +1,190 @@
+;; btree.aura
+;; B+tree built on top of the page cache and the WAL.
+;;
+;; This is the user-facing index. It holds the id of the root page
+;; and (because we model the tree as a single-level structure for the
+;; scope of this exercise) the current list of cells living on that
+;; root page. All mutations go through the WAL first; the page cache
+;; is updated only after the WAL has accepted the frame, and only at
+;; LSNs that are strictly greater than the page's last-touched LSN.
+;;
+;; The B+tree is intentionally small: a single root page that can
+;; overflow into a sibling via `page-split` and be merged back via
+;; `page-merge`. The API mirrors a normal ordered-map:
+;;
+;;     (btree-open)                 -> tree
+;;     (btree-put! tree k v w c)    -> updated tree
+;;     (btree-delete! tree k w c)   -> updated tree
+;;     (btree-get tree k)           -> value or #f
+;;     (btree-root tree)            -> root pid
+;;     (btree-root-key tree)        -> smallest key in tree
+;;     (btree-stats tree)           -> (count . height)
+;;
+;; Page ids are allocated from a small monotonic counter that lives
+;; inside the tree; root starts at 0, each split allocates the next id.
+
+;; ---------------------------------------------------------------------
+;; Internal helpers
+;; ---------------------------------------------------------------------
+
+;; Return the list of pids owned by the tree (root + any sibling pages
+;; created by splits). We track them so stats / scans can report them.
+(define (btree-pids t)
+  (cdr (cdr (cdr t))))
+
+;; ----------------------------------------------------------------------------
+;; Internal: append a frame to the WAL and then update the cache so that the
+;; page's last-touched LSN is exactly the frame's LSN. The cache entry is
+;; replaced wholesale — we are functional above the cache binding itself.
+;; ----------------------------------------------------------------------------
+(define (btree-apply! tree lsn payload wal cache)
+  ;; Write to WAL first; the page-cache update is gated on LSN ordering.
+  (wal-append wal (list lsn (wal-magic wal) 0 payload))
+  ;; Pull the current page out of the cache (or fabricate an empty one).
+  (let ((pid (btree-root tree))
+        (page (cache-get cache (btree-root tree))))
+    (if (null? page)
+        (cache-put! cache (btree-root tree)
+                    (list 'PAGE (btree-root tree) lsn '() #f))
+        (cache-put! cache (btree-root tree)
+                    (list 'PAGE (car (cdr page)) lsn
+                          (page-cells page)
+                          (car (cdr (cdr (cdr page))))))))
+  ;; Bump the tree's LSN watermark so successive puts/deletes stay ordered.
+  (list 'BTREE (car (cdr tree)) lsn (btree-pids tree)))
+
+;; Internal: locate the cell with key `k` inside the cell list `cs`.
+;; Returns (found-cell . rest-after-cell) on hit, or #f on miss.
+(define (btree-find-cell k cs)
+  (cond ((null? cs) #f)
+        ((= k (car (car cs)))
+         (cons (car cs) cs))
+        ((< k (car (car cs)))
+         #f)
+        (else
+         (let ((r (btree-find-cell k (cdr cs))))
+           (if r r #f)))))
+
+;; Internal: insert or replace (k . v) into an ordered cell list,
+;; keeping the list sorted by key.
+(define (btree-insert-cell k v cs)
+  (cond ((null? cs) (list (cons k v)))
+        ((= k (car (car cs)))
+         (cons (cons k v) (cdr cs)))
+        ((< k (car (car cs)))
+         (cons (cons k v) cs))
+        (else
+         (cons (car cs)
+               (btree-insert-cell k v (cdr cs))))))
+
+;; Internal: remove the cell with key `k` from an ordered cell list.
+;; If the key is not present the list is returned unchanged.
+(define (btree-remove-cell k cs)
+  (cond ((null? cs) '())
+        ((= k (car (car cs)))
+         (cdr cs))
+        (else
+         (cons (car cs) (btree-remove-cell k (cdr cs))))))
+
+;; Internal: smallest key in a non-empty cell list. Used by
+;; `btree-root-key` so callers can identify the tree without scanning.
+(define (btree-smallest cs)
+  (car (car cs)))
+
+;; ---------------------------------------------------------------------
+;; Public API
+;; ---------------------------------------------------------------------
+
+;; Open a fresh B+tree. Root is allocated pid 0 and starts empty.
+(define (btree-open)
+  (list 'BTREE 0 0 (list 0)))
+
+;; Return the page id of the root. Useful for cache lookups and tests.
+(define (btree-root t)
+  (car (cdr t)))
+
+;; Return the smallest key currently in the tree, or #f if empty.
+(define (btree-root-key t)
+  (let ((cs (page-cells t)))
+    (if (null? cs)
+        #f
+        (btree-smallest cs))))
+
+;; Insert or replace (key . val). The key/value pair is encoded as a
+;; single-cell payload (see codec.aura) and shipped through the WAL
+;; before the page cache is touched. Returns the updated tree.
+(define (btree-put! tree key val wal cache)
+  ;; The "payload" is just the (key . val) cons; the WAL doesn't care
+  ;; about the encoding — that lives in codec.aura.
+  (let ((lsn (+ (car (cdr (cdr tree))) 1))
+        (cs (btree-insert-cell key val (page-cells tree))))
+    ;; Apply the new cell list to the cached page.
+    (let ((page (cache-get cache (btree-root tree))))
+      (if (null? page)
+          (cache-put! cache (btree-root tree)
+                      (list 'PAGE (btree-root tree) lsn cs #f))
+          (cache-put! cache (btree-root tree)
+                      (list 'PAGE (car (cdr page)) lsn cs
+                            (car (cdr (cdr (cdr page))))))))
+    ;; Splits: when the root has more than MAX_CELLS_PER_PAGE cells we
+    ;; push the upper half into a freshly-allocated sibling page and
+    ;; keep the lower half on the root. The new pid is appended to the
+    ;; tree's pid list so it survives subsequent operations.
+    (let ((next (page-split
+                  (list 'PAGE (btree-root tree) lsn cs #f)
+                  (+ (btree-root tree) 1))))
+      (let ((new-pid (car next))
+            (new-cells (car (cdr next))))
+        ;; Cache the freshly-created sibling page too.
+        (cache-put! cache new-pid
+                    (list 'PAGE new-pid lsn new-cells #f))
+        (list 'BTREE
+              (btree-root tree)
+              lsn
+              (cons new-pid (btree-pids tree)))))))
+
+;; Delete the cell with the given key, if present. Absence is a no-op.
+;; The delete is logged before the cache is updated so the WAL always
+;; leads the cache contents.
+(define (btree-delete! tree key wal cache)
+  (let ((lsn (+ (car (cdr (cdr tree))) 1))
+        (cs (btree-remove-cell key (page-cells tree))))
+    (let ((page (cache-get cache (btree-root tree))))
+      (if (null? page)
+          (cache-put! cache (btree-root tree)
+                      (list 'PAGE (btree-root tree) lsn cs #f))
+          (cache-put! cache (btree-root tree)
+                      (list 'PAGE (car (cdr page)) lsn cs
+                            (car (cdr (cdr (cdr page))))))))
+    ;; Merges: if the root page has dropped below half capacity and a
+    ;; sibling exists, fold the sibling's cells back into the root.
+    (let ((merged (page-merge
+                    (list 'PAGE (btree-root tree) lsn cs #f)
+                    (list 'PAGE (+ (btree-root tree) 1) lsn '() #f))))
+      (let ((merged-cells (car (cdr merged))))
+        (cache-put! cache (btree-root tree)
+                    (list 'PAGE (btree-root tree) lsn merged-cells #f))
+        (cache-evict cache (+ (btree-root tree) 1))
+        (list 'BTREE
+              (btree-root tree)
+              lsn
+              (list (btree-root tree)))))))
+
+;; Look up a key. Returns the stored value, or #f if the key is
+;; absent. Because the cells live on the root page (this is a single-
+;; level B+tree), the lookup is a straight linear scan of that list.
+(define (btree-get tree key)
+  (let ((hit (btree-find-cell key (page-cells tree))))
+    (if hit
+        (cdr (car hit))
+        #f)))
+
+;; Return an alist summary of the tree:
+;;     ((count . n) (height . 1) (root . pid))
+;; The contract in main.aura only relies on `count`, but we surface
+;; the other two so callers can inspect tree shape without scraping
+;; the internal representation.
+(define (btree-stats tree)
+  (cons (cons 'count (length (page-cells tree)))
+        (cons (cons 'height 1)
+              (cons (cons 'root (btree-root tree)) '()))))

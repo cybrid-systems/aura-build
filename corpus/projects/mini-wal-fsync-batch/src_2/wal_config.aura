@@ -1,0 +1,13 @@
+(define wal-default-config
+  '((max-batch-size . 4)
+    (fsync-on-commit? . #t)))
+
+(define (wal-max-batch-size cfg)
+  (cdr (assq 'max-batch-size cfg)))
+
+(define (wal-fsync-on-commit? cfg)
+  (cdr (assq 'fsync-on-commit? cfg)))
+
+(api wal-default-config)
+(api wal-max-batch-size cfg)
+(api wal-fsync-on-commit? cfg)

@@ -1,0 +1,120 @@
+;; wal_writer.aura — Per-writer view onto the WAL.
+;;
+;; Each writer owns:
+;;   - an identity (numeric id)
+;;   - a reference to the shared staging buffer
+;;   - a starting LSN (the LSN this writer will hand out as its next record)
+;;   - a "last committed" LSN (the highest LSN the coordinator has confirmed
+;;     as persisted on behalf of this writer)
+;;
+;; The writer exposes two flush modes:
+;;
+;;   flush-sync!  : request a synchronous group commit. The writer blocks
+;;                  (busy-polls) until the coordinator has persisted every
+;;                  record it appended and reports the resulting committed
+;;                  LSN. Returns #t if everything committed before the
+;;                  deadline, #f otherwise.
+;;
+;;   flush-async! : request an asynchronous group commit. The writer
+;;                  appends its pending payload, asks the coordinator to
+;;                  drain, and returns #t immediately without waiting for
+;;                  fsync acknowledgement. The caller may later observe
+;;                  committed-lsn at leisure.
+;;
+;; Writers are intentionally simple: they do not own records themselves,
+;; they only track "what LSN did I get" and "what LSN got committed". The
+;; staging buffer holds the canonical queue.
+;;
+;; Exported APIs:
+;;   writer-new           : (id buf lsn-start) -> writer
+;;   writer-append!       : (w payload) -> (side-effects; bumps current LSN)
+;;   writer-flush-sync!   : (w coordinator) -> boolean
+;;   writer-flush-async!  : (w coordinator) -> boolean
+;;   writer-current-lsn   : (w) -> current LSN issued to this writer
+;;   writer-committed-lsn : (w) -> highest LSN coordinator confirmed
+
+(define (api writer-new id buf lsn-start)
+  ;; A writer is an alist:
+  ;;   'id           numeric id
+  ;;   'buffer       shared staging buffer
+  ;;   'current      next LSN this writer will issue
+  ;;   'committed    highest LSN confirmed by coordinator (starts at lsn-start - 1)
+  (list (cons 'id id)
+        (cons 'buffer buf)
+        (cons 'current lsn-start)
+        (cons 'committed (- lsn-start 1))))
+
+(define (writer-field w key)
+  (let ((pair (assq key w)))
+    (if pair (cdr pair) #f)))
+
+(define (writer-set! w key value)
+  (let loop ((rest w) (acc '()))
+    (cond ((null? rest)
+           (reverse acc))
+          ((eq? (caar rest) key)
+           (append (reverse acc)
+                   (list (cons key value))
+                   (cdr rest)))
+          (else
+           (loop (cdr rest) (cons (car rest) acc))))))
+
+(define (api writer-current-lsn w)
+  (writer-field w 'current))
+
+(define (api writer-committed-lsn w)
+  (writer-field w 'committed))
+
+;; Assign the next LSN to this writer, returning the new current-lsn.
+;; Pure with respect to the writer alist; caller is responsible for
+;; threading the returned writer back through (set!) if they want to
+;; observe the bump. In our protocol, writer-append! returns the new
+;; writer so the main scenario can hold onto it directly.
+(define (writer-bump-lsn! w)
+  (let ((cur (writer-field w 'current)))
+    (writer-set! w 'current (+ cur 1))))
+
+;; Append a payload to the staging buffer, advancing the writer's
+;; current LSN. The buffer-append! is responsible for stamping the
+;; record with whatever tx-id / lsn pairing it needs; we only feed
+;; (tx-id . payload) here.
+;;
+;; Returns the (possibly mutated) writer. The writer's 'current field
+;; is bumped so a subsequent writer-current-lsn reflects the new tip.
+(define (api writer-append! w payload)
+  (let* ((id (writer-field w 'id))
+         (new-w (writer-bump-lsn! w))
+         (buf (writer-field new-w 'buffer)))
+    (buffer-append! buf (cons id payload))
+    new-w))
+
+;; Ask the coordinator to perform a group commit, then busy-poll until
+;; the writer's committed-lsn has caught up to its current-lsn.
+;;
+;; We bound the busy-poll with a small iteration cap so that a buggy
+;; coordinator cannot deadlock the harness forever. In practice the
+;; coordinator drains synchronously and one iteration is enough.
+(define (api writer-flush-sync! w coordinator)
+  ;; Trigger the coordinator drain first.
+  (coordinator-group-commit! coordinator)
+  ;; Busy-poll up to a sane cap.
+  (letrec ((poll
+            (lambda (iter)
+              (cond ((> iter 1000) #f)
+                    ((>= (writer-field w 'committed)
+                         (writer-field w 'current))
+                     #t)
+                    (else
+                     (poll (+ iter 1)))))))
+    (poll 0)))
+
+;; Asynchronous variant: ask the coordinator to drain, but do not wait
+;; for acknowledgement. Returns #t unconditionally — the caller learns
+;; of success later by polling writer-committed-lsn.
+;;
+;; We still trigger a group commit so that, in a single-shot scenario,
+;; any pending records from *other* writers also land before the run
+;; completes. This is the "kick the pump" idiom.
+(define (api writer-flush-async! w coordinator)
+  (coordinator-group-commit! coordinator)
+  #t)

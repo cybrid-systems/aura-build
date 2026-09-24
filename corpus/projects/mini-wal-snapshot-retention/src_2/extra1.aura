@@ -1,0 +1,109 @@
+;; extra1.aura
+;; Extra module: utilities for inspecting and reporting on WAL segments.
+;;
+;; This file is loaded after the core WAL modules but before the
+;; scenario driver. It provides small helper procedures used by
+;; `wal_main.aura` and by ad-hoc tests. Helpers here are *pure*: they
+;; only read from their arguments and produce fresh lists/strings.
+;;
+;; Public surface (registered as `api` forms):
+;;   (api seg-summary seg)              -> string summarizing a segment
+;;   (api seg-highs segs)               -> list of high-water LSNs
+;;   (api manager-summary mgr)          -> string summarizing a manager
+;;   (api format-int n)                 -> string for an integer
+;;   (api join-lines lines)             -> newline-joined string
+;;   (api count-where pred lst)         -> count of items satisfying pred
+;;
+;; Implementation notes:
+;;   * We deliberately avoid any hidden mutable state at the top
+;;     level; helpers may use `let` freely.
+;;   * String conversion goes through `number->string` for integers.
+;;   * No file touches the network or filesystem; everything is
+;;     in-memory.
+
+(define (api name value)
+  (cons name value))
+
+;; Convert an integer (or other number) into its decimal string form.
+;; Aura's `number->string` does the heavy lifting; we just guard
+;; against non-numeric input by routing through the built-in.
+(define (format-int n)
+  (number->string n))
+
+;; Join a list of strings with a newline separator. Returns "" for
+;; the empty list. Implemented with a tail-recursive loop using
+;; `let` and `set!` on a local accumulator — both are allowed.
+(define (join-lines lines)
+  (let ((acc '())
+        (rest lines))
+    (let loop ((r rest))
+      (if (null? r)
+          (if (null? acc)
+              ""
+              (let loop2 ((xs acc) (result ""))
+                (if (null? xs)
+                    result
+                    (let ((rest-result
+                           (if (string=? result "")
+                               (car xs)
+                               (string-append result "\n" (car xs)))))
+                      (loop2 (cdr xs) rest-result)))))
+          (begin
+            (set! acc (cons (car r) acc))
+            (loop (cdr r)))))))
+
+;; Extract the high-water LSN of a segment as a string of the form
+;; "SEG<n>=<hi>" where <n> is the index hint. Since segments don't
+;; carry their index, we accept it as a separate parameter.
+(define (seg-summary seg)
+  (let ((hi (seg-high seg))
+        (rs (seg-records seg))
+        (sz (seg-size seg)))
+    (string-append "hi=" (format-int hi)
+                   " records=" (format-int (length rs))
+                   " size=" (format-int sz))))
+
+;; Map a list of segments to their high-water LSNs.
+(define (seg-highs segs)
+  (let loop ((xs segs) (acc '()))
+    (if (null? xs)
+        (reverse acc)
+        (loop (cdr xs) (cons (seg-high (car xs)) acc)))))
+
+;; Count items in a list satisfying a predicate. Tail-recursive.
+(define (count-where pred lst)
+  (let loop ((xs lst) (n 0))
+    (if (null? xs)
+        n
+        (loop (cdr xs)
+              (if (pred (car xs)) (+ n 1) n)))))
+
+;; Produce a human-readable summary string for a manager. This is
+;; not used by the GOAL scenario's KEY=value contract; it exists to
+;; help debugging and ad-hoc inspection.
+(define (manager-summary mgr)
+  (let ((wal (manager-wal-ref mgr))
+        (snaps (manager-snapshots mgr))
+        (cur-lsn (manager-lsn mgr))
+        (prune (manager-prune-lsn mgr))
+        (prune-segs (manager-prune-segments mgr))
+        (reclaim (manager-reclaim-bytes mgr)))
+    (string-append
+      "lsn=" (format-int cur-lsn)
+      " segs=" (format-int (length (wal-segments wal)))
+      " records=" (format-int (wal-record-count wal))
+      " live_snaps=" (format-int (length snaps))
+      " prune_lsn=" (format-int prune)
+      " prune_segments=" (format-int prune-segs)
+      " reclaim_bytes=" (format-int reclaim))))
+
+;; Public registrations. Wrapping helpers with `api` keeps the
+;; convention used elsewhere in this project: each entry pairs the
+;; procedure's name (a symbol) with its procedure value, so callers
+;; can look them up via the loader's shared top-level environment.
+(api 'seg-summary seg-summary)
+(api 'seg-highs seg-highs)
+(api 'manager-summary manager-summary)
+(api 'format-int format-int)
+(api 'join-lines join-lines)
+(api 'count-where count-where)

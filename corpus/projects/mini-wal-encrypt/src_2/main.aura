@@ -1,0 +1,181 @@
+;; main.aura — orchestrates the encrypted-WAL scenario and prints KEY=value lines.
+
+;; ----
+;; Helpers
+;; ----
+
+;; Build a flat list of n records, each a list of 15 bytes (0..255 cycling).
+(define (main-build-records n)
+  (let loop ((i 0) (acc '()))
+    (if (= i n)
+        (reverse acc)
+        (let ((rec (let loop2 ((j 0) (r '()))
+                     (if (= j 15)
+                         (reverse r)
+                         (loop2 (+ j 1)
+                                (cons (modulo (+ (* i 7) (* j 13) 31) 256) r))))))
+          (loop (+ i 1) (cons rec acc))))))
+
+;; Append records to a wal, breaking into segments of `per` records each,
+;; using `ver` as the sealing key version for each segment produced in
+;; this batch. Returns the updated wal.
+(define (main-append-batch wal keys ver records per)
+  (let loop ((rs records) (w wal))
+    (if (null? rs)
+        w
+        (let ((chunk (let take ((src rs) (k per) (acc '()))
+                       (if (or (= k 0) (null? src))
+                           (reverse acc)
+                           (take (cdr src) (- k 1) (cons (car src) acc))))))
+          (let ((w2 (api-wal-append w ver chunk)))
+            (loop (let drop ((src rs) (k per))
+                    (if (= k 0)
+                        src
+                        (drop (cdr src) (- k 1))))
+                  w2))))))
+
+;; Resolve the current key version from a keyring.
+(define (main-current-ver ks)
+  (api-keys-current ks))
+
+;; Force rotate until current version equals target. Returns new keyring.
+(define (main-rotate-to ks target)
+  (let loop ((k ks))
+    (if (= (api-keys-current k) target)
+        k
+        (loop (api-keys-rotate k)))))
+
+;; Count occurrences of v in list of indices (or in a flat list of vers).
+(define (main-count v xs)
+  (let loop ((src xs) (n 0))
+    (cond ((null? src) n)
+          ((= (car src) v) (loop (cdr src) (+ n 1)))
+          (else (loop (cdr src) n)))))
+
+;; Check whether `v` appears anywhere in xs.
+(define (main-contains v xs)
+  (cond ((null? xs) #f)
+        ((= (car src) v) #t) (define src xs)
+        (else (main-contains v (cdr xs)))))
+
+;; ----
+;; Scenario
+;; ----
+
+(define keys0 (api-keys-make-init))
+;; Initial ring has 2 versions; current = 2 (per keys.aura semantics).
+(define v-start (api-keys-current keys0))   ; current = 2
+;; Per spec, segment 1 uses v1, segments 2-3 use v1, then rotate so
+;; segment 4 uses v2, etc.  We need to be able to seal with v1 first.
+;; We model "rotation" by reducing current to v1 via fresh rotations on a
+;; working ring.  To keep the scenario faithful, we rotate a working ring
+;; so that its current version = v-start, and call that v1.
+(define ks (main-rotate-to keys0 v-start))
+(define v1 v-start)
+
+;; Step 1+2 done. Step 3: append 120 records as 8 segments of 15.
+(define records (main-build-records 120))
+
+;; Segments 1-3 sealed with v1.
+(define wal (main-append-batch (api-wal-new ks) ks v1
+                               (let take120 ((src records) (k 120) (acc '()))
+                                 (if (= k 0) (reverse acc)
+                                     (take120 (cdr src) (- k 1)
+                                              (cons (car src) acc))))
+                               15))
+
+;; Rotate to next version -> v2 (segments 4-6).
+(define ks (api-keys-rotate ks))
+(define v2 (api-keys-current ks))
+
+;; Segments 4-6 with v2 (records 46..90).
+(define wal (main-append-batch wal ks v2
+                               (let drop ((src records) (k 45))
+                                 (if (= k 0) src (drop (cdr src) (- k 1))))
+                               45))
+
+;; Rotate -> v3 (segment 7).
+(define ks (api-keys-rotate ks))
+(define v3 (api-keys-current ks))
+(define wal (main-append-batch wal ks v3
+                               (let drop ((src records) (k 90))
+                                 (if (= k 0) src (drop (cdr src) (- k 1))))
+                               15))
+
+;; Rotate -> v4 (segment 8).
+(define ks (api-keys-rotate ks))
+(define v4 (api-keys-current ks))
+(define wal (main-append-batch wal ks v4
+                               (let drop ((src records) (k 105))
+                                 (if (= k 0) src (drop (cdr src) (- k 1))))
+                               15))
+
+;; Step 4: verify before tamper.
+(define tampered0 (api-wal-verify wal ks))
+
+;; Step 5: tamper two distinct segments. Pick seg 2 and seg 5 (both v1/v2).
+(define wal-t (api-tamper-flip-bit wal 2))
+(define wal-t (api-tamper-flip-bit wal-t 5))
+(define tampered1 (api-wal-verify wal-t ks))
+(define tcount1 (length tampered1))
+
+;; Step 6: run re-key on the tampered wal to force oldest 2 segments to be
+;; re-encrypted under current key version (v4).  Threshold = 2.
+(define rekey-result (api-compact-rekey wal-t ks 2))
+(define wal-rk (car rekey-result))
+(define ks-rk (cadr rekey-result))
+(define stats  (caddr rekey-result))
+(define rekeyed-segs    (car stats))
+(define reencrypted-rec (cdr stats))
+
+;; Step 7: re-verify after re-key.  Should be clean (compaction recreated
+;; fresh ciphertexts for the targeted segments; tamper was on segment
+;; bodies which got replaced).
+(define tampered2 (api-wal-verify wal-rk ks-rk))
+
+;; Step 8: active-key-range after re-key (current = v4, all 8 segments
+;; sealed under v4).
+(define akt-range (api-stats-active-key-range wal-rk))
+(define akt-min (car akt-range))
+(define akt-max (cdr akt-range))
+
+;; Step 9: compaction lag.
+(define lag (api-compact-lag wal-t wal-rk))
+
+;; Sanity numbers.
+(define n-segs     (api-wal-segs wal))
+(define n-recs     (api-wal-records wal))
+(define lsn-range  (api-wal-lsn-range wal))
+(define lsn-min    (car lsn-range))
+(define lsn-max    (cdr lsn-range))
+
+;; ----
+;; Print KEY=value lines (13 lines, exact order)
+;; ----
+
+(display (string-append "segments=" (number->string n-segs)))
+(newline)
+(display (string-append "records=" (number->string n-recs)))
+(newline)
+(display (string-append "lsn_min=" (number->string lsn-min)))
+(newline)
+(display (string-append "lsn_max=" (number->string lsn-max)))
+(newline)
+(display (string-append "current_key_version=" (number->string (api-keys-current ks-rk))))
+(newline)
+(display (string-append "verify_clean_before_tamper=" (number->string (length tampered0))))
+(newline)
+(display (string-append "tampered_after=" (number->string tcount1)))
+(newline)
+(display (string-append "rekeyed_segments=" (number->string rekeyed-segs)))
+(newline)
+(display (string-append "reencrypted_records=" (number->string reencrypted-rec)))
+(newline)
+(display (string-append "verify_clean_after_rekey=" (number->string (length tampered2))))
+(newline)
+(display (string-append "active_key_min_seg=" (number->string akt-min)))
+(newline)
+(display (string-append "active_key_max_seg=" (number->string akt-max)))
+(newline)
+(display (string-append "compact_lag=" (number->string lag)))
+(newline)

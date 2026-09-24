@@ -1,0 +1,130 @@
+; recovery.aura — exactly-once replay over a prefix of events + checkpoints.
+;
+; The recovery step proves that the streaming engine is deterministic and
+; exactly-once: given the original list of events and a list of checkpoints
+; taken during the original run, replaying the events through a fresh
+; engine and restoring at each checkpoint boundary must yield a final
+; state whose content-hash equals the original run's final content-hash.
+;
+; This is the shape of what a production stream job does on restart: it
+; reads back its last checkpoint from durable storage, restores the state
+; machine, then replays the events that have accumulated since the
+; checkpoint. If the hash matches, the engine has recovered exactly-once.
+;
+; Strategy:
+;   1. Walk the original events, snapshotting the live engine state every
+;      N events (matching main.aura's checkpoint cadence).
+;   2. Build a parallel replay engine and replay the same events, restoring
+;      from each checkpoint at the matching boundary.
+;   3. Compare the final state hashes. If equal, replay was exact.
+;
+; The live-engine side here is only used to (a) collect checkpoints at the
+; same boundaries main.aura uses, and (b) obtain the original final hash.
+; The actual live-run work is performed by main.aura; this module's job
+; is purely the *replay* + *comparison*.
+;
+; API:
+;   (api recovery-replay events checkpoints)
+;     events       — the full event list, in order
+;     checkpoints  — alist of (boundary . snap) pairs, where boundary is the
+;                    event-index at which the snapshot was taken (i.e. the
+;                    count of events already processed BEFORE the snapshot,
+;                    so restoring and then replaying the next slice lands
+;                    on the same state).
+;     returns      — (values replay-state match?) where match? is #t iff
+;                    the replay's final content-hash equals the live run's.
+
+; --- helpers --------------------------------------------------------------
+
+; Length of a list.
+(define (recovery-len xs)
+  (cond ((null? xs) 0)
+        (else (+ 1 (recovery-len (cdr xs))))))
+
+; Find the checkpoint snapshot for boundary `n` in an alist of
+; (n . snap) entries. Returns #f if not present.
+(define (recovery-find-ckpt ckpts n)
+  (cond ((null? ckpts) #f)
+        ((= (car (car ckpts)) n) (cdr (car ckpts)))
+        (else (recovery-find-ckpt (cdr ckpts) n))))
+
+; Walk events with an engine closure, applying `step-fn` at each event and
+; `ckpt-fn` after every `period` events. Returns the final engine state
+; plus the list of checkpoint snapshots (in order).
+;
+; step-fn : (engine event) -> engine
+; ckpt-fn : engine -> snapshot
+; period  : positive integer; checkpoint cadence.
+(define (recovery-walk events engine step-fn ckpt-fn period)
+  (recovery-walk-loop events engine 0 step-fn ckpt-fn period '()))
+
+(define (recovery-walk-loop events engine idx step-fn ckpt-fn period acc)
+  (cond ((null? events)
+         ; Done: reverse the accumulated snapshots so they're in order.
+         (cons engine (reverse acc)))
+        (else
+         (let ((eng2 (step-fn engine (car events))))
+           (let ((idx2 (+ idx 1)))
+             (if (= (modulo idx2 period) 0)
+                 (let ((snap (ckpt-fn eng2)))
+                   (recovery-walk-loop (cdr events) eng2 idx2 step-fn ckpt-fn
+                                       period (cons snap acc)))
+                 (recovery-walk-loop (cdr events) eng2 idx2 step-fn ckpt-fn
+                                     period acc)))))))
+
+; Extract the final engine from a (engine . snapshots) pair returned by
+; recovery-walk.
+(define (recovery-final-eng result)
+  (car result))
+
+; Extract the snapshot list from a (engine . snapshots) pair.
+(define (recovery-snapshots result)
+  (cdr result))
+
+; --- API ------------------------------------------------------------------
+
+; Replay `events` against a fresh engine, restoring from each provided
+; checkpoint at the matching boundary. Compare the replay's final
+; content-hash against the live run's final content-hash.
+;
+; checkpoints is expected to be an alist (boundary . snap) ... where the
+; live run's checkpoint at boundary B is restored before replaying event B
+; (1-indexed) — i.e. restoring means "set engine state to what it looked
+; like AFTER processing B events", then we replay events (B+1)..end.
+;
+; We assume checkpoints are sorted by ascending boundary. If multiple
+; checkpoints exist, we restore the latest one whose boundary is <= the
+; current event index.
+;
+; Returns (values replay-final-state match?).
+(define (api recovery-replay events checkpoints)
+  (let* ((period 5)                              ; matches main.aura
+         (live-result
+          (recovery-walk events (engine-new) engine-step engine-checkpoint period))
+         (live-final (recovery-final-eng live-result))
+         (live-hash  (ckpt-hash live-final))
+
+         ;; Build a replay walk that, at each boundary where a checkpoint
+         ;; exists, restores the engine from that snapshot before stepping
+         ;; further. We do this by replaying event-by-event and consulting
+         ;; the checkpoint alist at each step.
+         (replay-final
+          (recovery-replay-loop events (engine-new) 0 checkpoints))
+
+         (replay-hash (ckpt-hash replay-final)))
+    (if (string=? live-hash replay-hash)
+        (values replay-final #t)
+        (values replay-final #f))))
+
+; Per-event replay loop. At each event index `idx` (0-based), if a
+; checkpoint exists at boundary idx, restore from it first, then step the
+; event.
+(define (recovery-replay-loop events engine idx checkpoints)
+  (cond ((null? events) engine)
+        (else
+         (let ((snap (recovery-find-ckpt checkpoints idx)))
+           (let ((eng (if snap (ckpt-restore snap) engine)))
+             (recovery-replay-loop (cdr events)
+                                   (engine-step eng (car events))
+                                   (+ idx 1)
+                                   checkpoints))))))

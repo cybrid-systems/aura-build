@@ -1,0 +1,39 @@
+;; wal_buffer.aura — In-memory staging buffer for WAL records awaiting group commit.
+;; Bounded by cfg max-batch-size; oldest-first FIFO ordering.
+
+(define (buffer-new cfg)
+  (let ((cap (wal-max-batch-size cfg)))
+    (cons cap '())))
+
+(define (buffer-capacity buf)
+  (car buf))
+
+(define (buffer-items buf)
+  (cdr buf))
+
+(define (buffer-append! buf rec)
+  (let ((cap (buffer-capacity buf))
+        (items (buffer-items buf)))
+    (if (>= (length items) cap)
+        (error "buffer-full" rec)
+        (set-cdr! buf (append items (list rec))))))
+
+(define (buffer-drain! buf)
+  (let ((items (buffer-items buf)))
+    (set-cdr! buf '())
+    items))
+
+(define (buffer-size buf)
+  (length (buffer-items buf)))
+
+(define (buffer-empty? buf)
+  (null? (buffer-items buf)))
+
+(define (buffer-full? buf)
+  (>= (buffer-size buf) (buffer-capacity buf)))
+
+(api buffer-new cfg)
+(api buffer-append! buf rec)
+(api buffer-drain! buf)
+(api buffer-size buf)
+(api buffer-empty? buf)

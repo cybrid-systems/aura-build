@@ -1,0 +1,149 @@
+;; wal.aura — in-memory write-ahead log composed of sealed segments.
+;;
+;; A WAL is represented as a list of segments (newest last). Each segment is
+;; a list of sealed records:
+;;
+;;   segment = (list sealed-cipher ciphertext seg-version seg-key-bytes rec-bytes)
+;;
+;; We store enough per-segment context to (a) recompute tags for verification,
+;; (b) report which key version sealed the segment, and (c) drive the
+;; re-key pass during compaction. State is purely alists + lists.
+
+;; Internal helper: split a flat list of bytes into chunks of size n (last
+;; chunk may be shorter). Returns a list of chunks.
+(define (wal-chunk-bytes bs n)
+  (let loop ((src bs)
+             (acc '())
+             (cur '()))
+    (cond
+      ((null? src)
+       (reverse (cons (reverse cur) acc)))
+      ((= (length cur) n)
+       (loop src (cons (reverse cur) acc) '()))
+      (else
+       (loop (cdr src) acc (cons (car src) cur))))))
+
+;; Internal helper: pull the key bytes for a given version out of the keyring.
+(define (wal-key-for ks v)
+  (let loop ((rest ks))
+    (cond
+      ((null? rest) '())
+      ((= (car (car rest)) v) (cdr (car rest)))
+      (else (loop (cdr rest))))))
+
+;; Internal helper: pull the current version number out of the keyring.
+(define (wal-current-version ks)
+  (car ks))
+
+;; Build an empty WAL bound to a keyring. We carry the keyring reference so
+;; that helpers can resolve key bytes lazily during verify / rekey.
+(define (api-wal-new keys)
+  (list 'wal 'v1 keys '() 0 0 0 0)
+  )
+
+;; Extractors used by other modules. Keep these simple — they only read the
+;; outer wal structure and return the relevant piece.
+(define (wal-keys w) (list-ref w 2))
+(define (wal-segments w) (list-ref w 3))
+(define (wal-seg-count w) (list-ref w 4))
+(define (wal-rec-count w) (list-ref w 5))
+(define (wal-min-lsn w) (list-ref w 6))
+(define (wal-max-lsn w) (list-ref w 7))
+
+;; Update the segment list inside a wal value while preserving the other
+;; fields. Returns a fresh wal cons cell.
+(define (wal-set-segments w segs)
+  (list 'wal 'v1 (wal-keys w) segs (length segs) (wal-rec-count w)
+        (wal-min-lsn w) (wal-max-lsn w)))
+
+;; Update record count + LSN bookkeeping.
+(define (wal-bump-counts w delta-segs delta-recs)
+  (list 'wal 'v1 (wal-keys w) (wal-segments w)
+        (+ (wal-seg-count w) delta-segs)
+        (+ (wal-rec-count w) delta-recs)
+        (wal-min-lsn w)
+        (wal-max-lsn w)))
+
+;; Append a single sealed record to the most recent open segment, or open a
+;; new segment when the current segment already holds `seg-size` records.
+;; `bytes` is the raw payload; `key-version` selects which key to seal under.
+;;
+;; We do NOT call into cipher.aura directly here — instead we delegate to
+;; api-cipher-seal and api-cipher-tag so this module stays a pure orchestrator.
+;; To keep this file self-contained we accept the cipher primitives as
+;; dynamically-bound globals (see the wrapper below).
+(define wal-seg-size 15)
+
+(define (api-wal-append wal key-version bytes)
+  (let* ((keys (wal-keys wal))
+         (key-bytes (wal-key-for keys key-version))
+         (segs (wal-segments wal))
+         (open-seg
+          (if (null? segs)
+              '()
+              (car (reverse segs))))
+         (open-len (length open-seg))
+         (cipher api-cipher-seal)
+         (tag-fn api-cipher-tag)
+         (ct (cipher key-bytes bytes))
+         (tag (tag-fn ct))
+         (sealed (list ct tag key-version key-bytes bytes))
+         (new-open
+          (if (or (null? segs) (= open-len wal-seg-size))
+              (list sealed)
+              (append open-seg (list sealed))))
+         (stripped-segs
+          (if (or (null? segs) (= open-len wal-seg-size))
+              (append segs (list new-open))
+              (append (butlast segs (length segs)) (list new-open))))
+         (delta-segs
+          (if (or (null? segs) (= open-len wal-seg-size)) 1 0))
+         (delta-recs 1)
+         (w1 (wal-set-segments wal stripped-segs))
+         (w2 (wal-bump-counts w1 delta-segs delta-recs)))
+    ;; Update LSN range (records numbered from 1).
+    (let ((new-min
+           (if (= (wal-rec-count w2) 1) 1 (wal-min-lsn w2)))
+          (new-max (+ (wal-max-lsn w2) 1)))
+      (list 'wal 'v1 (wal-keys w2) (wal-segments w2)
+            (wal-seg-count w2) (wal-rec-count w2)
+            (if (= (wal-rec-count w2) 1) 1 (wal-min-lsn w2))
+            (+ (wal-max-lsn w2) 1)))))
+
+(define (api-wal-segs wal)
+  (wal-seg-count wal))
+
+(define (api-wal-records wal)
+  (wal-rec-count wal))
+
+(define (api-wal-lsn-range wal)
+  (cons (wal-min-lsn wal) (wal-max-lsn wal)))
+
+;; Look up the key version that sealed a given segment index (0-based).
+(define (api-wal-seal-version wal seg-idx)
+  (let ((seg (list-ref (wal-segments wal) seg-idx)))
+    (list-ref seg 2)))
+
+;; Verify every segment in the wal using the supplied keyring. Returns a
+;; list of segment indices whose tag does not match what we'd recompute from
+;; their stored body bytes and the key bytes for the version they claim to
+;; be sealed under.
+(define (api-wal-verify wal keys)
+  (let ((open-fn api-cipher-open)
+        (tag-fn api-cipher-tag))
+    (let loop ((i 0)
+               (segs (wal-segments wal))
+               (bad '()))
+      (cond
+        ((null? segs) (reverse bad))
+        (else
+         (let* ((seg (car segs))
+                (sealed (list-ref seg 0))
+                (stored-tag (list-ref seg 1))
+                (v (list-ref seg 2))
+                (key-bytes (wal-key-for keys v))
+                (plain (open-fn key-bytes sealed)))
+           (if (or (eq? plain #f)
+                   (not (string=? stored-tag (tag-fn sealed))))
+               (loop (+ i 1) (cdr segs) (cons i bad))
+               (loop (+ i 1) (cdr segs) bad))))))))

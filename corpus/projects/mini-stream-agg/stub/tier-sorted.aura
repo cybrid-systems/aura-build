@@ -1,0 +1,85 @@
+; tier-sorted.aura — warm, "rocks-like" sorted tier.
+;
+; This is the middle tier: keys are kept in sorted order by user-id, which
+; makes range scans cheap. In a real engine this would be backed by something
+; like RocksDB or a sorted skiplist; here we use ordered alists to keep the
+; shape identical to the hashmap tier while exposing a different
+; `tier-promote?` policy.
+
+; Build a fresh empty sorted tier.
+(define (api sorted-tier-new)
+  (list 'tier 'sorted '() '()))
+
+; Helper: find the (key . value) cell for k in an alist, or #f.
+(define (sorted-find-cell map k)
+  (cond ((null? map) #f)
+        ((equal? (car (car map)) k) (car map))
+        (else (sorted-find-cell (cdr map) k))))
+
+; Helper: bump a key's touch counter in a touch-count alist.
+(define (sorted-bump-touch touches k)
+  (cond ((null? touches)
+         (cons (cons k 1) touches))
+        ((equal? (car (car touches)) k)
+         (cons (cons k (+ (cdr (car touches)) 1)) (cdr touches)))
+        (else
+         (cons (car touches) (sorted-bump-touch (cdr touches) k)))))
+
+; Helper: insert/update a (key . value) pair while keeping keys in sorted
+; order by user-id (string comparison).
+(define (sorted-insert map k v)
+  (cond ((null? map)
+         (cons (cons k v) map))
+        ((string<? (car (car map)) k)
+         (cons (car map) (sorted-insert (cdr map) k v)))
+        ((equal? (car (car map)) k)
+         (cons (cons k v) (cdr map)))
+        (else
+         (cons (cons k v) map))))
+
+; Implementation of tier-step for the sorted tier:
+;   - look up the key (linear scan over the sorted alist),
+;   - add the delta to its running aggregate (creating the entry if absent),
+;   - re-insert to preserve sorted order,
+;   - bump the per-key touch counter.
+(define (api tier-step t k delta)
+  (let* ((kind (car (cdr t)))
+         (map  (car (cdr (cdr t))))
+         (touch (car (cdr (cdr (cdr t)))))
+         (cell  (sorted-find-cell map k))
+         (new-val (if cell (+ (cdr cell) delta) delta))
+         (new-map (sorted-insert map k new-val))
+         (new-touch (sorted-bump-touch touch k)))
+    (list 'tier kind new-map new-touch)))
+
+; Look up the current aggregate for a key (or 0 if absent).
+(define (api tier-get t k)
+  (let ((cell (sorted-find-cell (car (cdr (cdr t))) k)))
+    (if cell (cdr cell) 0)))
+
+; Return the list of keys currently held in the tier, in sorted order
+; (which is just the natural order of the sorted alist).
+(define (api tier-keys t)
+  (map car (car (cdr (cdr t)))))
+
+; Number of entries currently held in the tier.
+(define (api tier-size t)
+  (length (car (cdr (cdr t)))))
+
+; Sorted tier promotion policy:
+;   - a key is considered "warm enough" to be promoted up if it has been
+;     touched more than 3 times (it is clearly a hot key that has drifted
+;     here from the overflow tier),
+;   - a key is "cool enough" to be demoted down to overflow once it has
+;     not been touched in a while; we approximate "not been touched in a
+;     while" as: it IS in the tier but its touch count is 0. Since every
+;     touch bumps the count, a 0 here means a synthetic seed entry that
+;     has never been observed at this tier, so demote it.
+;   - otherwise, stay where we are.
+(define (api tier-promote? t k)
+  (let* ((touch (car (cdr (cdr (cdr t)))))
+         (cell  (sorted-find-cell touch k))
+         (n     (if cell (cdr cell) 0)))
+    (cond ((> n 3) 'up)
+          ((= n 0) 'down)
+          (else 'stay))))

@@ -1,0 +1,85 @@
+;; wal_replay.aura
+;; A "replay" rebuilds a consistent view of WAL state from the WAL
+;; alone, walking segments and records to re-derive the next LSN and
+;; the most recent snapshot LSN it encounters. This is a deterministic
+;; pure function over the manager's underlying WAL: no live snapshots
+;; are stored on the replay object itself; the snapshot LSN reported
+;; is the maximum LSN of any snapshot the replay view has observed.
+;;
+;; Exposed APIs (per the GOAL contract):
+;;   (replay-build mgr)            -> replay object
+;;   (replay-snapshot-lsn replay)  -> highest snapshot LSN seen (or -1)
+;;   (replay-last-lsn replay)      -> next LSN after replaying all records
+
+(define (make-replay snapshot-lsn last-lsn)
+  (list 'replay
+        (cons 'snapshot-lsn snapshot-lsn)
+        (cons 'last-lsn last-lsn)))
+
+(define (replay-snapshot-lsn replay)
+  (cdr (assq 'snapshot-lsn (cdr replay))))
+
+(define (replay-last-lsn replay)
+  (cdr (assq 'last-lsn (cdr replay))))
+
+;; ---- internal helpers ----
+
+;; Walk a list of segments, returning two values packed into a pair:
+;;   (cons final-last-lsn highest-snapshot-lsn-seen)
+;; Snapshot LSN tracking is done by inspecting each segment's high
+;; water mark: for a WAL rebuilt from scratch the "highest snapshot
+;; LSN" is taken as the manager's highest live snapshot LSN at the
+;; time replay-build is called, and segments whose records we replay
+;; contribute their high LSN.
+;;
+;; To keep this self-contained and pure, replay-build consults the
+;; manager passed in, asking it for the highest live snapshot LSN via
+;; its public API (manager-snapshots -> snapshot-lsn), then walks the
+;; WAL segments to derive the final next-LSN.
+
+(define (replay-walk-segments segs last-lsn)
+  (cond
+    ((null? segs) last-lsn)
+    (else
+      (let ((seg (car segs)))
+        ;; Advance last-lsn by the number of records in this segment.
+        ;; Since each segment holds SEG-CAPACITY (10) records when
+        ;; full, and records' LSNs are contiguous starting at 0, the
+        ;; segment's high-water mark is the authoritative count of
+        ;; records it contributes. Use seg-high + 1 as the next LSN.
+        (let ((hi (seg-high seg)))
+          (if (< hi last-lsn)
+              ;; An earlier, fully-populated segment: advance past it.
+              (replay-walk-segments (cdr segs) (+ hi 1))
+              ;; Either empty (hi == -1) or ahead of where we are.
+              (if (= hi -1)
+                  (replay-walk-segments (cdr segs) last-lsn)
+                  (replay-walk-segments (cdr segs) (+ hi 1))))))))
+
+(define (replay-highest-snapshot-lsn mgr)
+  ;; Inspect every live snapshot on the manager and return the max LSN.
+  ;; Walks manager-snapshots (which returns live snapshots only).
+  (let ((snaps (manager-snapshots mgr)))
+    (let loop ((xs snaps) (best -1))
+      (cond
+        ((null? xs) best)
+        (else
+          (let ((cur (snapshot-lsn (car xs))))
+            (loop (cdr xs)
+                  (if (> cur best) cur best))))))))
+
+;; ---- public APIs ----
+
+(define (api replay-build mgr)
+  ;; Rebuild a replay view from the manager's WAL.
+  (let ((wal (manager-wal-helper mgr)))
+    (let ((segs (wal-segments wal))
+          (snap-hi (replay-highest-snapshot-lsn mgr)))
+      (make-replay snap-hi
+                   (replay-walk-segments segs 0)))))
+
+(define (api replay-snapshot-lsn replay)
+  (replay-snapshot-lsn replay))
+
+(define (api replay-last-lsn replay)
+  (replay-last-lsn replay))

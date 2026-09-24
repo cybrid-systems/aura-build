@@ -1,0 +1,108 @@
+;; wal_manager.aura
+;; The manager coordinates a WAL with live snapshots. It exposes the
+;; APIs required by the GOAL contract:
+;;   manager-new
+;;   manager-append
+;;   manager-lsn
+;;   manager-take-snapshot
+;;   manager-snapshots
+;;   manager-prune-lsn
+;;   manager-prune-segments
+;;   manager-reclaim-bytes
+;;   manager-segments
+;;
+;; A manager is an association list with:
+;;   wal       - the underlying WAL object (see wal_log.aura)
+;;   snapshots - list of live snapshots (newest first)
+;;
+;; All APIs are pure with respect to the caller; the manager owns its
+;; mutable state in the cells referenced by the assq entries.
+
+(define (make-manager)
+  (list 'manager
+        (cons 'wal (make-wal))
+        (cons 'snapshots '())))
+
+;; ---- core read helpers (also exposed as public APIs) ----
+
+(define (manager-wal mgr)
+  (cdr (assq 'wal (cdr mgr))))
+
+(define (manager-snapshot-list mgr)
+  (cdr (assq 'snapshots (cdr mgr))))
+
+(define (manager-set-snapshot-list! mgr snaps)
+  (set-cdr! (assq 'snapshots (cdr mgr)) snaps))
+
+;; ---- public API ----
+
+(define (api manager-new)
+  (make-manager))
+
+(define (api manager-append mgr payload)
+  ;; Append a record to the underlying WAL. The LSN is assigned by the
+  ;; WAL itself (it equals the current record count).
+  (wal-append (manager-wal mgr) (wal-lsn (manager-wal mgr)) payload))
+
+(define (api manager-lsn mgr)
+  ;; Next LSN to be assigned by an append.
+  (wal-lsn (manager-wal mgr)))
+
+(define (api manager-take-snapshot mgr lsn)
+  ;; Capture a live snapshot at the given LSN. The snapshot is
+  ;; prepended to the live snapshot list.
+  (let ((snap (make-snapshot lsn)))
+    (manager-set-snapshot-list!
+      mgr
+      (cons snap (manager-snapshot-list mgr)))
+    snap))
+
+(define (api manager-snapshots mgr)
+  ;; Live snapshot list, newest first.
+  (manager-snapshot-list mgr))
+
+(define (api manager-prune-lsn mgr)
+  ;; The lowest LSN still required by any live snapshot. With no live
+  ;; snapshots the prune LSN is 0 (i.e. nothing needs to be retained).
+  (let loop ((snaps (manager-snapshot-list mgr))
+             (best 0))
+    (cond
+      ((null? snaps) best)
+      (else
+       (let ((s-lsn (snapshot-lsn (car snaps))))
+         (loop (cdr snls)
+               (if (and (number? s-lsn)
+                        (or (= best 0) (< s-lsn best)))
+                   s-lsn
+                   best)))))))
+
+(define (api manager-prune-segments mgr)
+  ;; Count of segments whose high-water LSN is strictly below the
+  ;; prune LSN. Those segments hold no data any live snapshot needs.
+  (let ((plsn (manager-prune-lsn mgr))
+        (segs (wal-segments (manager-wal mgr))))
+    (let loop ((ss segs) (n 0))
+      (cond
+        ((null? ss) n)
+        (else
+         (let ((hi (seg-high (car ss))))
+           (if (and (number? hi) (< hi plsn))
+               (loop (cdr ss) (+ n 1))
+               (loop (cdr ss) n))))))))
+
+(define (api manager-reclaim-bytes mgr)
+  ;; Sum of seg-size over segments fully below the prune LSN.
+  (let ((plsn (manager-prune-lsn mgr))
+        (segs (wal-segments (manager-wal mgr))))
+    (let loop ((ss segs) (bytes 0))
+      (cond
+        ((null? ss) bytes)
+        (else
+         (let ((hi (seg-high (car ss))))
+           (if (and (number? hi) (< hi plsn))
+               (loop (cdr ss) (+ bytes (seg-size (car ss))))
+               (loop (cdr ss) bytes))))))))
+
+(define (api manager-segments mgr)
+  ;; Direct view of the WAL's segment list.
+  (wal-segments (manager-wal mgr)))

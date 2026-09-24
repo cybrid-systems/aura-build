@@ -1,0 +1,101 @@
+;; wal.aura — Write-Ahead Log framing.
+;;
+;; A WAL is modeled as an ordered list of *frames*. Each frame holds:
+;;
+;;   (magic lsn payload)
+;;
+;; where `magic` is the 4-character WAL magic string (WAL_MAGIC_STR from
+;; constants.aura), `lsn` is the monotonically increasing LSN assigned on
+;; append, and `payload` is an arbitrary list of byte values produced by the
+;; codec / page layers.
+;;
+;; The WAL is append-only in normal operation; `wal-truncate-before` discards
+;; frames whose LSN is strictly less than the cutoff (used after checkpoint /
+;; recovery completion). `wal-rewrite` is used during undo to replace the
+;; payload of an already-appended frame in place — this is how redo/undo
+;; protocols pin a frame to a known LSN without renumbering later frames.
+
+;; Build a brand-new WAL with the given magic tag.
+;; The returned value is a mutable pair (cons 'wal '()) wrapped state list;
+;; the underlying frame list starts empty. We attach the magic string as a
+;; property by carrying it in a small alist at the head.
+(define (wal-open magic)
+  (let ((state (cons 'wal (list (cons 'magic magic) (cons 'frames '())))))
+    state))
+
+;; Helper: pull the magic out of a wal state list.
+(define (wal-magic wal)
+  (cdr (assq 'magic wal)))
+
+;; Helper: pull the frame list out of a wal state list.
+(define (wal-frame-list wal)
+  (cdr (assq 'frames wal)))
+
+;; Helper: write the frame list back into the wal state (mutating it).
+(define (wal-set-frame-list! wal fs)
+  (set-cdr! (assq 'frames wal) fs))
+
+;; --- append --------------------------------------------------------------
+
+;; Assign the next LSN by counting existing frames, starting from LSN_START.
+;; (Frame count n -> next LSN is LSN_START + n.)
+(define (wal-next-lsn wal)
+  (+ LSN_START (length (wal-frame-list wal))))
+
+;; Append a frame containing `payload` to `wal`. Returns the freshly assigned
+;; LSN so the caller can pin page LSNs / txn records.
+(define (wal-append wal payload)
+  (let ((lsn (wal-next-lsn wal)))
+    (let ((frame (list (wal-magic wal) lsn payload)))
+      (wal-set-frame-list! wal (append (wal-frame-list wal) (list frame)))
+      lsn)))
+
+;; --- truncation ----------------------------------------------------------
+
+;; Drop every frame whose LSN is strictly less than `cutoff`. Frames at or
+;; above `cutoff` are preserved. Returns the number of frames dropped.
+(define (wal-truncate-before wal cutoff)
+  (let loop ((rest (wal-frame-list wal))
+             (kept '())
+             (dropped 0))
+    (cond
+      ((null? rest)
+       (wal-set-frame-list! wal (reverse kept))
+       dropped)
+      (else
+       (let ((f (car rest)))
+         (if (lsn<? (wal-frame-lsn f) cutoff)
+             (loop (cdr rest) kept (+ dropped 1))
+             (loop (cdr rest) (cons f kept) dropped)))))))
+
+;; --- accessors -----------------------------------------------------------
+
+;; Return the full list of frames currently held by `wal`.
+(define (wal-frames wal)
+  (wal-frame-list wal))
+
+;; LSN component of a frame.
+(define (wal-frame-lsn f)
+  (car (cdr f)))
+
+;; Payload component of a frame.
+(define (wal-frame-payload f)
+  (car (cdr (cdr f))))
+
+;; --- in-place rewrite (used by undo) --------------------------------------
+
+;; Replace the payload of the frame whose LSN equals `lsn` with `payload`.
+;; Walks the frame list until the matching LSN is found, then mutates the
+;; payload cell. Returns #t on success, #f if no frame with that LSN exists.
+;;
+;; We mutate the frame list's cdr pointers in place so other references to
+;; the same frame observe the new payload (this matters for logscan / cache
+;; flush paths that keep the frame handle around).
+(define (wal-rewrite wal lsn payload)
+  (let loop ((rest (wal-frame-list wal)))
+    (cond
+      ((null? rest) #f)
+      ((lsn-equal? (wal-frame-lsn (car rest)) lsn)
+       (set-car! (cdr (cdr (car rest))) payload)
+       #t)
+      (else (loop (cdr rest))))))

@@ -1,0 +1,73 @@
+;; wal_replay.aura
+;; Replay view over a manager + WAL.
+;;
+;; The replay layer reconstructs a minimal picture of the WAL by
+;; walking the underlying records directly. From those records we can
+;; re-derive:
+;;   * the LSN captured by the most recent live snapshot (if any)
+;;   * the highest LSN actually present in the WAL
+;;
+;; Building a replay view is pure: it does not mutate the manager.
+;; The replay value itself is an association list:
+;;   ((snapshot-lsn . <number>)   ; LSN of last live snapshot, or 0
+;;    (last-lsn     . <number>))  ; highest LSN in the WAL records
+;;
+;; Public APIs:
+;;   (replay-build mgr)              -> build a fresh replay view
+;;   (replay-snapshot-lsn replay)    -> snapshot LSN recorded by replay
+;;   (replay-last-lsn replay)        -> highest LSN present in WAL
+
+(define (api name)
+  (lambda args
+    (apply (cond
+             ((equal? name 'replay-build)         replay-build)
+             ((equal? name 'replay-snapshot-lsn)  replay-snapshot-lsn)
+             ((equal? name 'replay-last-lsn)      replay-last-lsn)
+             (else (lambda _ (error "unknown replay api"))))
+           args)))
+
+;; ---- internal helpers ----
+
+;; Walk a list of snapshots and return the LSN of the most recent live
+;; one, or 0 if none are live.
+(define (replay-pick-snapshot-lsn snaps)
+  (let loop ((ss snaps) (best 0))
+    (cond
+      ((null? ss) best)
+      (else
+       (let ((snap (car ss)))
+         (let ((lsn (snapshot-lsn snap))
+               (live (snapshot-live? snap)))
+           (if (and live (> lsn best))
+               (loop (cdr ss) lsn)
+               (loop (cdr ss) best))))))))
+
+;; Iterate over a list of (lsn . payload) records and return the
+;; highest LSN observed (or 0 for an empty log).
+(define (replay-max-lsn recs)
+  (let loop ((rs recs) (hi 0))
+    (cond
+      ((null? rs) hi)
+      (else
+       (let ((lsn (car (car rs))))
+         (if (> lsn hi)
+             (loop (cdr rs) lsn)
+             (loop (cdr rs) hi)))))))
+
+;; ---- public API ----
+
+;; Build a replay view from a manager. We consult the manager's live
+;; snapshots (if any) and the records of the underlying WAL.
+(define (replay-build mgr)
+  (let* ((snaps (manager-snapshots mgr))
+         (recs  (wal-records (manager-wal mgr)))
+         (snap-lsn (replay-pick-snapshot-lsn snaps))
+         (last-lsn (replay-max-lsn recs)))
+    (list (cons 'snapshot-lsn snap-lsn)
+          (cons 'last-lsn     last-lsn))))
+
+(define (replay-snapshot-lsn replay)
+  (cdr (assq 'snapshot-lsn replay)))
+
+(define (replay-last-lsn replay)
+  (cdr (assq 'last-lsn replay)))

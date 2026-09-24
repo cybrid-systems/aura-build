@@ -1,0 +1,51 @@
+;; wal_waiter.aura — Commit-wait primitive.
+;;
+;; A waiter represents a writer (or any caller) that wants to be notified
+;; when a particular LSN has been durably persisted by the coordinator's
+;; group-commit fsync. The waiter is built around a per-txn flag that the
+;; owner busy-polls (waiter-poll) until the coordinator signals it via
+;; waiter-signal!. waiter-ready? reports the current flag state.
+
+(define (waiter-new lsn)
+  ;; State: (cons target-lsn (cons signaled? (cons signaled-lsn '())))
+  ;; signaled? defaults to #f; when coordinator signals with a broadcast
+  ;; LSN, we set signaled? to #t and store the broadcast LSN.
+  (cons lsn (cons #f (cons lsn '()))))
+
+(define (waiter-target-lsn w)
+  (car w))
+
+(define (waiter-signaled? w)
+  (car (cdr w)))
+
+(define (waiter-signaled-lsn w)
+  (car (cdr (cdr w))))
+
+(define (waiter-set-signaled! w v)
+  (set-car! (cdr w) v))
+
+(define (waiter-set-signaled-lsn! w v)
+  (set-car! (cdr (cdr w)) v))
+
+;; Signal the waiter that an LSN has been broadcast (persisted up through
+;; at least lsn-broadcast). After signaling, waiter-ready? returns #t.
+(define (waiter-signal! w lsn-broadcast)
+  (waiter-set-signaled-lsn! w lsn-broadcast)
+  (waiter-set-signaled! w #t))
+
+;; Has the waiter been signaled yet?
+(define (waiter-ready? w)
+  (waiter-signaled? w))
+
+;; Busy-poll the waiter, blocking (in a tight recursive loop) until it
+;; becomes ready. Returns the signaled LSN once ready. This models the
+;; "commit-wait" semantics: the writer spins until its record is durable.
+(define (waiter-poll w)
+  (if (waiter-ready? w)
+      (waiter-signaled-lsn w)
+      (waiter-poll w)))
+
+(api waiter-new lsn)
+(api waiter-signal! w lsn-broadcast)
+(api waiter-ready? w)
+(api waiter-poll w)

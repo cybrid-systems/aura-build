@@ -1,0 +1,61 @@
+;; wal_snapshot.aura
+;; Snapshot abstraction for the WAL retention policy.
+;;
+;; A snapshot captures the state of the WAL at a given LSN. Live
+;; snapshots hold back the prune LSN so the manager can safely
+;; discard only segments strictly below the lowest live snapshot LSN.
+;;
+;; A snapshot is represented as an association list:
+;;   ((id     . <number>)   ; monotonically increasing identifier
+;;    (lsn    . <number>)   ; LSN at which the snapshot was taken
+;;    (live?  . <boolean>)) ; #t while held, #f after release
+;;
+;; Public APIs:
+;;   (snapshot-lsn snap)      -> LSN captured by the snapshot
+;;   (snapshot-id snap)       -> unique identifier for the snapshot
+;;   (snapshot-live? snap)    -> #t if the snapshot is still held
+;;   (snapshot-release snap)  -> marks the snapshot as released
+
+(define (api name)
+  (lambda args
+    (apply (cond
+             ((equal? name 'snapshot-lsn)     snapshot-lsn)
+             ((equal? name 'snapshot-id)      snapshot-id)
+             ((equal? name 'snapshot-live?)   snapshot-live?)
+             ((equal? name 'snapshot-release) snapshot-release)
+             (else (lambda _ (error "unknown snapshot api"))))
+           args)))
+
+;; ---- internal helpers ----
+
+;; Look up a key in an association list.
+(define (snap-ref key snap)
+  (cdr (assq key snap)))
+
+;; ---- constructor (internal, used by wal_manager.aura) ----
+
+;; Build a fresh snapshot at the given LSN with the given id.
+(define (make-snapshot id lsn)
+  (list (cons 'id id)
+        (cons 'lsn lsn)
+        (cons 'live? #t)))
+
+;; ---- public accessors / mutators ----
+
+;; Return the LSN captured by the snapshot.
+(define (snapshot-lsn snap)
+  (snap-ref 'lsn snap))
+
+;; Return the snapshot's unique identifier.
+(define (snapshot-id snap)
+  (snap-ref 'id snap))
+
+;; Is the snapshot still live (held by a caller)?
+(define (snapshot-live? snap)
+  (snap-ref 'live? snap))
+
+;; Release the snapshot so it no longer holds back the prune LSN.
+;; Returns the same snapshot object with live? flipped to #f.
+(define (snapshot-release snap)
+  (set-cdr! (assq 'live? snap) #f)
+  snap)

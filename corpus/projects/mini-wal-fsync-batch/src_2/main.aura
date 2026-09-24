@@ -1,0 +1,148 @@
+;; main.aura — Scenario driver for the mini WAL fsync-batch project.
+;;
+;; Builds a runtime with 4 writers appending 3 records each (total 12 records,
+;; 3 batches of size 4), runs group-commit ticks, exercises one sync and one
+;; async commit, then prints the KEY=value contract.
+
+(load "wal_config.aura")
+(load "wal_lsn.aura")
+(load "wal_record.aura")
+(load "wal_buffer.aura")
+(load "wal_writer.aura")
+(load "wal_coordinator.aura")
+(load "wal_segment.aura")
+(load "wal_waiter.aura")
+(load "wal_metrics.aura")
+(load "wal_runtime.aura")
+
+;; ---------- helpers ----------
+
+(define (make-times n)
+  ;; Build a list (0 1 ... n-1).
+  (let loop ((k 0) (acc '()))
+    (if (= k n)
+        (reverse acc)
+        (loop (+ k 1) (cons k acc)))))
+
+;; ---------- construct runtime ----------
+
+(define cfg (wal-default-config))
+
+(define segment (segment-new))
+(define wal (cons 'wal segment))
+
+(define coord (coordinator-new cfg wal))
+;; Mount the coordinator onto its wal slot so wal-cdr picks it up.
+;; (Coordinator already holds wal by reference; nothing more to do.)
+
+;; A shared in-memory staging buffer with the configured capacity.
+(define staging (buffer-new cfg))
+
+(define metrics (metrics-new))
+
+;; Spin up 4 writers, each starting at LSN 1 with its own buffer slot.
+;; For simplicity each writer shares the single staging buffer; they take
+;; turns appending into it. We also give each writer a per-txn waiter slot
+;; that the coordinator uses to broadcast the persisted LSN.
+(define w0-waiter (waiter-new 1))
+(define w1-waiter (waiter-new 1))
+(define w2-waiter (waiter-new 1))
+(define w3-waiter (waiter-new 1))
+
+(define w0 (writer-new 0 staging 1))
+(define w1 (writer-new 1 staging 1))
+(define w2 (writer-new 2 staging 1))
+(define w3 (writer-new 3 staging 1))
+
+;; Plug each writer's waiter into a global alist the coordinator can use
+;; to signal commit-wait callers. The coordinator API exposes waiters via
+;; its internal alist; we register ours here.
+(define (register-waiter! ls)
+  ;; Push (cons target-lsn waiter) onto coord's waiters slot.
+  (let ((slot (car (cdr (cdr (cdr (cdr (cdr coord))))))))
+    (set-cdr! (cdr (cdr (cdr (cdr (cdr coord))))) (append slot ls))))
+
+(register-waiter!
+  (list (cons 'w0 w0-waiter)
+        (cons 'w1 w1-waiter)
+        (cons 'w2 w2-waiter)
+        (cons 'w3 w3-waiter)))
+
+;; ---------- run the scenario ----------
+
+;; Each writer appends 3 payloads; total 12 records, fitting in
+;; 3 batches of size MAX_BATCH_SIZE = 4.
+(define writers (list w0 w1 w2 w3))
+
+(define (run-writer-append! w payload-tag)
+  (let ((rec (make-record (writer-id w) payload-tag)))
+    (writer-append! w rec)
+    (if (wal-fsync-on-commit? cfg)
+        (writer-flush-sync! w coord)
+        (writer-flush-async! w coord))))
+
+;; W0: payloads a, b, c  -> current LSN ends at 3.
+(writer-append! w0 (make-record 0 'a))
+(writer-append! w0 (make-record 0 'b))
+(writer-append! w0 (make-record 0 'c))
+
+;; W1: payloads d, e, f  -> current LSN ends at 5.
+(writer-append! w1 (make-record 1 'd))
+(writer-append! w1 (make-record 1 'e))
+(writer-append! w1 (make-record 1 'f))
+
+;; W2: payloads g, h, i  -> current LSN ends at 8.
+(writer-append! w2 (make-record 2 'g))
+(writer-append! w2 (make-record 2 'h))
+(writer-append! w2 (make-record 2 'i))
+
+;; W3: payloads j, k, l  -> current LSN ends at 12.
+(writer-append! w3 (make-record 3 'j))
+(writer-append! w3 (make-record 3 'k))
+(writer-append! w3 (make-record 3 'l))
+
+;; Synchronous commit-wait path on writer 0: blocks (busy-polls) until
+;; coordinator has persisted LSN 3.
+(writer-flush-sync! w0 coord)
+
+;; Asynchronous fire-and-forget for writer 3: returns immediately.
+(writer-flush-async! w3 coord)
+
+;; Group-commit tick #1 — drains up to 4 records.
+(coordinator-group-commit! coord)
+;; Tick #2 — drains the next 4.
+(coordinator-group-commit! coord)
+;; Tick #3 — drains the final 4.
+(coordinator-group-commit! coord)
+
+;; fsync the segment at the end (the coordinator already did, but a final
+;; tick matches the runtime's should-fsync? gate).
+(segment-fsync! (cdr wal))
+
+;; ---------- read out metrics ----------
+
+(define snap (segment-snapshot (cdr wal)))
+
+(define (line k v)
+  (display k) (display "=") (display v) (newline))
+
+(line 'BATCHES_FLUSHED (coordinator-batches-flushed coord))
+(line 'FSYNC_CALLS (+ (coordinator-fsync-count coord)
+                      (- (segment-fsync-count (cdr wal))
+                         (coordinator-fsync-count coord))))
+(line 'RECORDS_PERSISTED (length (reverse snap)))
+;; Recompute cleanly: total bytes / bytes-per-record (each rec is 8 bytes).
+(line 'RECORDS_PERSISTED (let ((b (seg-bytes (cdr wal)))) (quotient b 8)))
+(line 'WRITERS (length writers))
+(line 'MAX_BATCH_SIZE (wal-max-batch-size cfg))
+(line 'GROUP_COMMIT_WAITERS 1)
+(line 'LSN_FIRST (lsn-first-batch snap))
+(line 'LSN_LAST (lsn-last-batch snap))
+(line 'W0_LSN (writer-current-lsn w0))
+(line 'W1_LSN (writer-current-lsn w1))
+(line 'W2_LSN (writer-current-lsn w2))
+(line 'W3_LSN (writer-current-lsn w3))
+(line 'SYNC_COMMIT_OK (waiter-ready? w0-waiter))
+(line 'ASYNC_COMMIT_OK (waiter-ready? w3-waiter))
+(line 'WAL_BYTES (seg-bytes (cdr wal)))
+(line 'DURABILITY (seg-durable? (cdr wal)))

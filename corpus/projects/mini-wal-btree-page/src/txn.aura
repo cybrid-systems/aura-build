@@ -1,0 +1,107 @@
+;; txn.aura — Transaction lifecycle and redo/undo protocol.
+;;
+;; A transaction wraps a sequence of WAL frames that share a common
+;; "begin LSN" and an end-marker. The frames between begin and commit
+;; are the transaction's body; on commit we append a COMMIT frame
+;; whose LSN becomes the transaction's commit-LSN, and on abort we
+;; append an ABORT frame. Both commit and abort are recorded in the
+;; WAL itself so that recovery can distinguish completed transactions
+;; from in-flight ones.
+;;
+;; A transaction value is a 5-element list:
+;;
+;;   '(tag begin-lsn frames commit-lsn status)
+;;
+;; where:
+;;   tag         : 'TXN (sentinel for type-checking)
+;;   begin-lsn   : LSN of the BEGIN frame
+;;   frames      : list of LSNs belonging to this txn (in append order,
+;;                 not including BEGIN / COMMIT / ABORT)
+;;   commit-lsn  : LSN of the COMMIT frame, or 0 if not yet committed
+;;   status      : one of 'OPEN, 'COMMITTED, 'ABORTED
+;;
+;; `txn-redo` replays every frame in the body forward into a freshly
+;; materialized cache (used by recovery to reconstruct committed
+;; state). `txn-undo` walks the body backward and replaces each
+;; already-written WAL frame's payload with a "skip" sentinel so that
+;; a subsequent redo pass ignores it — the LSN itself is pinned so
+;; earlier frames in the same WAL are unaffected.
+
+;; Begin a new transaction anchored at LSN `lsn`. The transaction is
+;; initially OPEN with no body frames and no commit-LSN.
+(define (txn-begin lsn)
+  (list 'TXN lsn '() 0 'OPEN))
+
+;; Commit an OPEN transaction by appending a COMMIT frame to `wal`.
+;; The transaction's status flips to 'COMMITTED and its commit-lsn
+;; becomes the LSN of the COMMIT frame. Aborting twice or committing
+;; a non-open transaction is a no-op (returns the txn unchanged).
+(define (txn-commit! txn wal)
+  (let ((tag (car txn))
+        (begin-lsn (car (cdr txn)))
+        (frames (car (cdr (cdr txn))))
+        (commit-lsn (car (cdr (cdr (cdr txn)))))
+        (status (car (cdr (cdr (cdr (cdr txn)))))))
+    (if (and (eq? tag 'TXN) (eq? status 'OPEN))
+        (let ((frame (list commit-lsn '(72 79 68))))
+          (wal-append wal frame)
+          (set-car! (cdr (cdr (cdr (cdr txn)))) 'COMMITTED))
+        txn)))
+
+;; Abort an OPEN transaction by appending an ABORT frame to `wal`.
+;; The transaction's status flips to 'ABORTED. Like commit!, aborting
+;; a non-open transaction is a no-op.
+(define (txn-abort! txn wal)
+  (let ((tag (car txn))
+        (begin-lsn (car (cdr txn)))
+        (frames (car (cdr (cdr txn))))
+        (commit-lsn (car (cdr (cdr (cdr txn)))))
+        (status (car (cdr (cdr (cdr (cdr txn)))))))
+    (if (and (eq? tag 'TXN) (eq? status 'OPEN))
+        (begin
+          (wal-append wal (list commit-lsn '(65 66 78)))
+          (set-car! (cdr (cdr (cdr (cdr txn)))) 'ABORTED))
+        txn)))
+
+;; Redo a transaction by replaying its body frames forward. Returns a
+;; list of (lsn . payload) pairs in body order; the actual application
+;; of these to a page cache is the caller's responsibility (recovery
+;; uses this to rebuild state, the WAL itself is the source of truth).
+;; For a non-COMMITTED transaction there is nothing to redo.
+(define (txn-redo txn)
+  (let ((tag (car txn))
+        (begin-lsn (car (cdr txn)))
+        (frames (car (cdr (cdr txn))))
+        (commit-lsn (car (cdr (cdr (cdr txn)))))
+        (status (car (cdr (cdr (cdr (cdr txn)))))))
+    (if (and (eq? tag 'TXN) (eq? status 'COMMITTED))
+        frames
+        '())))
+
+;; Undo a transaction by walking its body frames in reverse and
+;; rewriting each one's payload in the WAL to a "skip" sentinel for
+;; that key. The LSNs themselves are preserved so that other
+;; transactions sharing the WAL remain correctly ordered. Returns the
+;; list of LSNs that were rewritten (in body order, not reverse).
+;; For a non-ABORTED transaction there is nothing to undo.
+(define (txn-undo txn)
+  (let ((tag (car txn))
+        (begin-lsn (car (cdr txn)))
+        (frames (car (cdr (cdr txn))))
+        (commit-lsn (car (cdr (cdr (cdr txn)))))
+        (status (car (cdr (cdr (cdr (cdr txn)))))))
+    (if (and (eq? tag 'TXN) (eq? status 'ABORTED))
+        (begin
+          (let loop ((rest frames))
+            (if (null? rest)
+                '()
+                (begin
+                  (let ((frame-lsn (car (car rest)))
+                        (frame-payload (car (cdr (car rest)))))
+                    (let ((key-len (car frame-payload))
+                          (key-bytes (car (cdr frame-payload))))
+                      (wal-rewrite '() frame-lsn
+                                   (cons 3 (cons key-len key-bytes)))))
+                  (cons (car (car rest)) (loop (cdr rest))))))
+          frames)
+        '())))

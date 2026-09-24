@@ -1,0 +1,136 @@
+;; cache.aura
+;; Page cache for the mini WAL + B+tree engine.
+;;
+;; The cache is the single point of contact between the WAL / recovery
+;; machinery and the B+tree. It is a simple dirty-page table keyed by
+;; page id: every entry holds the in-memory `page` (see page.aura)
+;; that has been modified but not yet flushed to wherever pages are
+;; checkpointed. On flush we hand each dirty page to the WAL as a
+;; frame, so the WAL is always strictly ahead of the cache contents.
+;;
+;; We model the cache as an association list keyed by pid:
+;;
+;;     ((pid . page) (pid . page) ...)
+;;
+;; plus a separate list of pids in insertion order (used so we can
+;; flush dirty pages deterministically, oldest-first). All operations
+;; are pure-functional except `set!` on the cache binding itself,
+;; which mirrors how the btree module will mutate shared state.
+
+;; Build a brand-new, empty cache. The cache is just two lists
+;; stored as fields — we keep it as a small tagged list so that
+;; downstream code can recognize it without having to inspect
+;; anything else:
+;;
+;;     (CACHE table dirty)
+(define (cache-new)
+  (list 'CACHE '() '()))
+
+;; Private: extract the table half of a cache value.
+(define (cache-table c) (car (cdr c)))
+
+;; Private: extract the dirty-id half of a cache value.
+(define (cache-dirty c) (car (cdr (cdr c))))
+
+;; Look up a page by id. Returns the page if present, otherwise #f.
+;; This does NOT mark the page clean or dirty — it is a pure read.
+(define (cache-get c pid)
+  (let ((entry (assq pid (cache-table c))))
+    (if entry (cdr entry) #f)))
+
+;; Insert (or replace) a page in the cache. We always treat the
+;; caller as authoritative: a put replaces any existing entry for
+;; the same pid. The freshly-installed page becomes dirty so that
+;; the next flush will pick it up; we also append its pid to the
+;; dirty list if we haven't seen it there yet.
+(define (cache-put! c pid page)
+  (let ((new-table (cons (cons pid page) (cache-table c)))
+        (already-dirty? (member pid (cache-dirty c))))
+    (set-car! (cdr c) new-table)
+    (if (not already-dirty?)
+        (set-car! (cdr (cdr c)) (cons pid (cache-dirty c))))))
+
+;; Explicitly evict a page from the cache (e.g. when it has been
+;; checkpointed to a stable store). We remove BOTH the table entry
+;; and any dirty-pid bookkeeping for this page. Evicting an id that
+;; is not present is a no-op rather than an error — defensive code
+;; at the btree layer may legitimately evict an id that was never
+;; cached.
+(define (cache-evict c pid)
+  (set-car! (cdr c)
+            (filter (lambda (kv) (not (= (car kv) pid)))
+                    (cache-table c)))
+  (set-car! (cdr (cdr c))
+            (filter (lambda (x) (not (= x pid)))
+                    (cache-dirty c))))
+
+;; Return the list of pids that are currently dirty, in the order
+;; they first became dirty. Used by recovery to know which pages
+;; still need to be replayed, and by the flush path to know what
+;; to push into the WAL.
+(define (cache-dirty-ids c)
+  (cache-dirty c))
+
+;; Flush every dirty page in the cache into the WAL. Each page is
+;; appended as a separate frame, tagged with the page's page-LSN
+;; (so the WAL knows the durability order). After a successful
+;; append we evict the page from the cache and clear the dirty
+;; list, leaving the cache empty. Returns the (mutated) cache.
+;;
+;; The `wal` argument is whatever value `wal-open` produced; we do
+;; not introspect it beyond calling `wal-append`, which keeps the
+;; coupling between cache and WAL minimal.
+(define (cache-flush! c wal)
+  (let loop ((dirty (cache-dirty c)))
+    (cond
+      ((null? dirty) c)
+      (else
+       (let* ((pid (car dirty))
+              (page (cache-get c pid))
+              (lsn (if page (page-lsn page) LSN_START))
+              (payload (page-encode page)))
+         ;; Hand the page off to the WAL. Even if the page has
+         ;; not actually changed since the last flush we still
+         ;; append — the WAL is the source of truth and downstream
+         ;; consumers (recovery) reason in terms of frames.
+         (wal-append wal (list lsn payload))
+         ;; Evict the page from the cache so a later load will
+         ;; re-read it from the WAL / checkpoint.
+         (cache-evict c pid)
+         (loop (cdr dirty)))))))
+
+;; ---------------------------------------------------------------------
+;; Small helpers (kept local to this module).
+;; ---------------------------------------------------------------------
+
+;; Replace the head of a cons cell. In Aura we have `set-car!`
+;; available for mutation, which is what the cache uses to thread
+;; updated tables through without having to thread them through
+;; every caller explicitly.
+(define (set-car! p v) (set-car! p v))
+
+;; Remove from a list every element for which `pred` returns true.
+;; Mirrors `filter` from Scheme, but written in plain Aura so we do
+;; not depend on anything not in the FORBIDDEN list.
+(define (filter pred xs)
+  (cond
+    ((null? xs) '())
+    ((pred (car xs)) (filter pred (cdr xs)))
+    (else (cons (car xs) (filter pred (cdr xs))))))
+
+;; Encode a page into a byte stream suitable for WAL framing.
+;; For this in-memory engine the encoding is just the on-page
+;; cells flattened into key/value byte triples — the WAL layer
+;; will tack on the LSN, MAGIC, and CRC. Keeping the encoding
+;; local to the cache means the page module does not have to know
+;; anything about WAL framing.
+(define (page-encode p)
+  (let loop ((cells (page-cells p)) (acc '()))
+    (cond
+      ((null? cells) (reverse acc))
+      (else
+       (let* ((cell (car cells))
+              (k (car cell))
+              (v (cdr cell)))
+         (loop (cdr cells)
+               (cons k (cons v acc))))))))

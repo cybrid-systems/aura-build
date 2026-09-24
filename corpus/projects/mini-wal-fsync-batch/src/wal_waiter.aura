@@ -1,0 +1,51 @@
+;; wal_waiter.aura — Synchronous-commit waiters.
+;;
+;; A waiter represents a writer that has requested a synchronous group
+;; commit and is blocked (busy-polling) until the coordinator has
+;; persisted at least up to a target LSN.
+;;
+;; Each waiter carries:
+;;   - target-lsn : the LSN this writer needs to see persisted before it
+;;                  considers its synchronous commit complete
+;;   - ready?     : a flag flipped to #t once the coordinator signals that
+;;                  the broadcast LSN has met or exceeded target-lsn
+;;   - polls      : a counter incremented on every busy-poll call (handy
+;;                  for debugging/testing; not required by the contract)
+;;
+;; Exported APIs:
+;;   waiter-new           : (lsn) -> waiter
+;;   waiter-signal!       : (waiter lsn-broadcast) -> void
+;;                          marks the waiter ready iff lsn-broadcast >=
+;;                          target-lsn
+;;   waiter-ready?        : (waiter) -> bool
+;;   waiter-poll          : (waiter) -> polls counter (incremented each
+;;                          call, regardless of readiness)
+
+(define (api waiter-new lsn)
+  (list (cons 'target-lsn lsn)
+        (cons 'ready?      #f)
+        (cons 'polls       0)))
+
+(define (api waiter-signal! w lsn-broadcast)
+  (let ((target (cdr (assq 'target-lsn w))))
+    (if (>= lsn-broadcast target)
+        (set! w (list (cons 'target-lsn target)
+                      (cons 'ready?      #t)
+                      (cons 'polls       (cdr (assq 'polls w)))))
+        w))
+  w)
+
+(define (api waiter-ready? w)
+  (cdr (assq 'ready? w)))
+
+(define (api waiter-poll w)
+  (let ((target (cdr (assq 'target-lsn w)))
+        (ready  (cdr (assq 'ready? w)))
+        (polls  (cdr (assq 'polls w))))
+    ;; In a real impl we'd busy-spin; here we just count polls. The
+    ;; caller (writer-flush-sync!) is expected to invoke this in a loop
+    ;; until waiter-ready? returns #t.
+    (set! w (list (cons 'target-lsn target)
+                  (cons 'ready?      ready)
+                  (cons 'polls       (+ polls 1))))
+    (cdr (assq 'polls w))))

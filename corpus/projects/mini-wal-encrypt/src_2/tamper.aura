@@ -1,0 +1,104 @@
+;; tamper.aura — bit-flipping and key-version rewriting attacks on the WAL.
+;;
+;; Both attack helpers operate on a WAL returned by `api-wal-*` helpers
+;; from wal.aura. We model the WAL as a list of segments, where each
+;; segment is a list shaped like:
+;;
+;;   (sealed-cipher seg-version seg-key-bytes rec-bytes)
+;;
+;; (The exact carrier order is whatever wal.aura uses; we only need to be
+;; able to reach the sealed ciphertext cons cell and the recorded key
+;; version slot. We assume the sealed-cipher is the first element and the
+;; recorded seg-version is the second element, matching the wal.aura
+;; segment shape used elsewhere in this project.)
+;;
+;; Bit flipping mutates one byte inside the ciphertext body, which will
+;; cause the truncated-hash tag to mismatch on the next verification pass.
+;; Key-version rewriting overwrites the per-segment sealed-version slot
+;; without re-sealing, which also produces a verification failure when
+;; the WAL tries to lookup key bytes for the rewritten version.
+
+;; ---- helpers ----
+
+;; Locate the n-th segment (0-indexed) in a WAL, returning the segment
+;; list itself. Returns '() if the index is out of range.
+(define (tamper-segment-at wal idx)
+  (let loop ((ws wal) (i 0))
+    (cond
+      ((null? ws) '())
+      ((= i idx) (car ws))
+      (else (loop (cdr ws) (+ i 1))))))
+
+;; Locate the k-th element of a segment list (0-indexed). Returns '() if
+;; out of range.
+(define (tamper-seg-nth seg k)
+  (let loop ((s seg) (i 0))
+    (cond
+      ((null? s) '())
+      ((= i k) (car s))
+      (else (loop (cdr s) (+ i 1))))))
+
+;; Reconstruct a WAL with one segment replaced. The replacement function
+;; receives the original segment and must return the new segment. Other
+;; segments pass through unchanged.
+(define (tamper-replace-segment wal idx replace-fn)
+  (let loop ((ws wal) (i 0) (acc '()))
+    (cond
+      ((null? ws) (reverse acc))
+      ((= i idx)
+       (append (reverse acc)
+               (cons (replace-fn (car ws)) (cdr ws))))
+      (else
+       (loop (cdr ws) (+ i 1) (cons (car ws) acc))))))
+
+;; XOR a single byte with 0x01 to flip its lowest bit. Operates on the
+;; plain number stored in the byte list.
+(define (tamper-flip-byte b)
+  (if (number? b)
+      (modulo (if (odd? b) (- b 1) (+ b 1)) 256)
+      b))
+
+;; Flip the lowest bit of the first byte of a ciphertext body. If the
+;; body is empty we simply return the cons cell unchanged.
+(define (tamper-flip-body-byte ct)
+  (let ((h (car ct))
+        (b (cdr ct)))
+    (cond
+      ((null? b) ct)
+      (else
+       (cons h (cons (tamper-flip-byte (car b)) (cdr b)))))))
+
+;; ---- exported APIs ----
+
+;; Flip one bit in the ciphertext body of the segment at `seg-idx`.
+;; Walks the WAL, finds the matching segment, and rewrites its sealed
+;; cons cell so the body now has a corrupted byte. The per-segment
+;; metadata (recorded version + key bytes) is left untouched, so the
+;; mismatch surfaces as a tag/lookup failure on the next verify pass.
+(define (api-tamper-flip-bit wal seg-idx)
+  (tamper-replace-segment
+   wal
+   seg-idx
+   (lambda (seg)
+     (let ((ct (tamper-seg-nth seg 0)))
+       (cons (tamper-flip-body-byte ct)
+             (cdr seg))))))
+
+;; Rewrite the recorded key-version slot of segment `seg-idx` to `new-v`
+;; without re-sealing. This desynchronises the segment's header from the
+;; actual ciphertext bytes, which the verifier should detect.
+;;
+;; We assume the per-segment shape places the recorded version in slot 1
+;; (i.e. the second element of the segment list), matching the convention
+;; used by wal.aura's segment builder.
+(define (api-tamper-key-version wal seg-idx new-v)
+  (tamper-replace-segment
+   wal
+   seg-idx
+   (lambda (seg)
+     (cond
+      ((null? seg) seg)
+      ((null? (cdr seg))
+       (cons (car seg) (cons new-v '())))
+      (else
+       (cons (car seg) (cons new-v (cdr (cdr seg)))))))))

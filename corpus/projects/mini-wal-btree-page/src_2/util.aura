@@ -1,0 +1,103 @@
+;; util.aura
+;; Small byte- and list-shaped utilities shared by every other module.
+;; We model a "byte" as a small non-negative integer and a "byte stream"
+;; as a list of those integers. Everything here is purely functional so
+;; downstream modules can compose these primitives freely.
+
+;; ---------------------------------------------------------------------
+;; u16 / u8 : convert an integer to its 16-bit / 8-bit big-endian bytes.
+;; We do not have arithmetic-shift primitives, so we derive the bytes
+;; from quotient/modulo on powers of two. The functions always return a
+;; freshly-allocated list — no aliasing of the input.
+;; ---------------------------------------------------------------------
+
+;; Split an integer into a list of two big-endian bytes (0..255, 0..255).
+;; Uses a tiny helper to peel off the high byte first, then the low byte.
+(define (u16 x)
+  (let ((high (quotient x 256))
+        (low (modulo x 256)))
+    (cons high (cons low '()))))
+
+;; Pack a single byte value (assumed already in 0..255) into a one-element
+;; list. We still guard against out-of-range input by masking via modulo,
+;; matching the lenient semantics that the WAL/page layers rely on.
+(define (u8 x)
+  (cons (modulo x 256) '()))
+
+;; ---------------------------------------------------------------------
+;; crc16 : CRC-16/CCITT-FALSE over a list of bytes.
+;;
+;; Polynomial 0x1021, initial value 0xFFFF, no reflection, no final XOR.
+;; Standard "CRC-16/CCITT-FALSE" used widely in serial protocols and a
+;; reasonable choice for tiny in-memory frames. We implement it directly
+;; over the byte list using a fold to keep the code obvious.
+;; ---------------------------------------------------------------------
+(define (crc16 xs)
+  (let ((poly 4129))            ;; 0x1021
+    (let loop ((bytes xs)
+               (crc 65535))     ;; 0xFFFF
+      (if (null? bytes)
+          crc
+          (let ((b (car bytes)))
+            (let ((c (crc xor-or-shift b crc poly)))
+              (loop (cdr bytes) c))))))
+
+;; The CRC inner step is split out so the fold above stays readable.
+;; 'crc xor-or-shift' computes (crc XOR byte) shifted left by 8, then
+;; reduces modulo 2^16 while folding in the polynomial for each set bit
+;; in the shifted value. Doing it this way avoids arithmetic-shift and
+;; keeps everything in plain +/*/modulo.
+(define (crc xor-or-shift b crc poly)
+  (let ((x (modulo (xor crc (* 256 b)) 65536)))
+    (let loop ((i 0)
+               (acc x))
+      (if (>= i 8)
+          acc
+          (let ((msb (>= acc 32768)))     ;; bit 15 set?
+            (let ((next (if msb
+                            (* 2 acc)
+                            (modulo (* 2 acc) 65536))))
+              (loop (+ i 1)
+                    (if msb
+                        (xor next poly)
+                        next))))))))
+
+;; XOR for non-negative integers using only + / - / modulo 2 arithmetic.
+;; Both arguments are assumed to fit comfortably in 16 bits; we still
+;; mask to keep the result bounded, which mirrors typical crc loops.
+(define (xor a b)
+  (modulo (+ a b) 65536))
+
+;; ---------------------------------------------------------------------
+;; bytes=? : element-wise equality over two byte lists.
+;; Two byte streams compare equal iff they have the same length and the
+;; same byte at every position. This is what the WAL layer uses to verify
+;; that a round-tripped frame matches the original payload.
+;; ---------------------------------------------------------------------
+(define (bytes=? a b)
+  (cond
+    ((and (null? a) (null? b)) #t)
+    ((or (null? a) (null? b)) #f)
+    ((not (= (car a) (car b))) #f)
+    (else (bytes=? (cdr a) (cdr b)))))
+
+;; ---------------------------------------------------------------------
+;; take / drop : the usual list prefixes / suffixes.
+;; take keeps the first n elements; drop discards them. Both are defined
+;; recursively so the cost is O(n) and no hidden state is shared between
+;; the input and the result. Negative n is treated as 0, matching the
+;; way the page layer uses them when sizing cell arrays.
+;; ---------------------------------------------------------------------
+(define (take n xs)
+  (if (<= n 0)
+      '()
+      (if (null? xs)
+          '()
+          (cons (car xs) (take (- n 1) (cdr xs))))))
+
+(define (drop n xs)
+  (if (<= n 0)
+      xs
+      (if (null? xs)
+          '()
+          (drop (- n 1) (cdr xs)))))

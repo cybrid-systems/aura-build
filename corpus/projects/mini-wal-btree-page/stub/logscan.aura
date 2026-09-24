@@ -1,0 +1,126 @@
+;; logscan.aura — Sequential WAL scanner.
+;;
+;; Walks a WAL's frame list and emits derived views useful for recovery
+;; and diagnostics. The scanner is stateless: callers pass in the WAL
+;; (or just its frame list) and get back a list of "records" — one per
+;; frame — annotated with the frame's LSN, its payload tag, its key, and
+;; (for cells) its value.
+;;
+;; The scanner has to be robust to the various payload shapes emitted by
+;; codec.aura: cells (tag 0x01) carry key+value, deletes (0x02) and skips
+;; (0x03) carry key only. We don't need to decode length prefixes — the
+;; higher-level `decode-cell` in codec.aura already does that; here we
+;; just need a quick *classification* of each frame plus its key/value
+;; extracted in a uniform shape.
+;;
+;; The exposed API:
+;;
+;;   (scan-wal wal)               -> list of records, oldest-first
+;;   (scan-frames frames)         -> same, but operating on a raw frame list
+;;   (record-lsn r)               -> LSN of a record
+;;   (record-tag r)               -> symbol: 'cell / 'delete / 'skip / 'unknown
+;;   (record-key r)               -> key bytes (list) of a record
+;;   (record-value r)             -> value bytes (list) of a record ('() if absent)
+;;   (scan-filter-by-tag records tag) -> subset of records matching a tag
+;;   (scan-keys records)          -> list of keys (in scan order)
+;;   (scan-last records)          -> last record, or #f if empty
+
+;; Pull the payload's tag byte (first element) without decoding lengths.
+;; Frames are '(magic lsn payload); payload starts with the tag byte.
+(define (scan-tag-of payload)
+  (if (null? payload)
+      #f
+      (car payload)))
+
+;; Classify a payload into 'cell / 'delete / 'skip / 'unknown based on
+;; its leading tag byte. Any other tag (including COMMIT/ABORT markers
+;; that might be appended by txn.aura) shows up as 'unknown.
+(define (scan-classify payload)
+  (let ((t (scan-tag-of payload)))
+    (cond
+      ((not t) 'unknown)
+      ((= t 1) 'cell)
+      ((= t 2) 'delete)
+      ((= t 3) 'skip)
+      (else 'unknown))))
+
+;; Recover the key byte list from a raw payload. We don't trust the
+;; length prefix here — `decode-cell` in codec.aura is the authoritative
+;; parser — so we just grab everything *after* the tag byte, up to the
+;; first sentinel byte (0x00) or the end of the list, whichever comes
+;; first. This keeps the scanner cheap and free of codec-layer coupling.
+;;
+;; A "key" in this engine is a sequence of small non-zero bytes, so the
+;; first 0x00 byte marks the boundary between key and value. If no 0x00
+;; is present the whole tail is the key.
+(define (scan-take-until-zero xs)
+  (let loop ((acc '())
+             (rest xs))
+    (cond
+      ((null? rest) (reverse acc))
+      ((= (car rest) 0) (reverse acc))
+      (else (loop (cons (car rest) acc) (cdr rest))))))
+
+;; Drop the tag byte and then read the key portion.
+(define (scan-key-of payload)
+  (if (or (null? payload) (null? (cdr payload)))
+      '()
+      (scan-take-until-zero (cdr payload))))
+
+;; Read the value portion of a cell: everything after the key sentinel.
+;; If there's no sentinel the value is empty.
+(define (scan-value-of payload)
+  (if (or (null? payload) (null? (cdr payload)))
+      '()
+      (let loop ((rest (cdr payload)))
+        (cond
+          ((null? rest) '())
+          ((= (car rest) 0) (cdr rest))
+          (else (loop (cdr rest)))))))
+
+;; Build a single record from a frame. Records are 4-element lists:
+;;   '(lsn tag-symbol key-bytes value-bytes)
+;; value-bytes is '() for non-cell records.
+(define (scan-record-of frame)
+  (let ((lsn (car (cdr frame)))
+        (payload (car (cdr (cdr frame)))))
+    (list lsn
+          (scan-classify payload)
+          (scan-key-of payload)
+          (if (eq? (scan-classify payload) 'cell)
+              (scan-value-of payload)
+              '()))))
+
+;; Scan a raw frame list (bypassing wal-frames, useful for tests).
+(define (scan-frames frames)
+  (map scan-record-of frames))
+
+;; Scan a WAL value as produced by wal-open. We extract the frame list
+;; via wal-frames so the scanner stays decoupled from the WAL struct.
+(define (scan-wal wal)
+  (scan-frames (wal-frames wal)))
+
+;; Accessors for a record produced above.
+(define (record-lsn r) (car r))
+(define (record-tag r) (car (cdr r)))
+(define (record-key r) (car (cdr (cdr r))))
+(define (record-value r) (car (cdr (cdr (cdr r)))))
+
+;; Filter a record list by tag symbol. Returns records whose tag matches.
+(define (scan-filter-by-tag records tag)
+  (let loop ((rs records) (acc '()))
+    (cond
+      ((null? rs) (reverse acc))
+      ((eq? (record-tag (car rs)) tag)
+       (loop (cdr rs) (cons (car rs) acc)))
+      (else (loop (cdr rs) acc)))))
+
+;; Extract just the keys, in scan order.
+(define (scan-keys records)
+  (map record-key records))
+
+;; Last record, or #f if the scan is empty.
+(define (scan-last records)
+  (if (null? records)
+      #f
+      (list-ref records (- (length records) 1))))

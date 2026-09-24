@@ -1,0 +1,99 @@
+;; metrics.aura — per-key, per-tier, per-event-kind metrics counters.
+;;
+;; The engine emits a *lot* of small events: each engine-step on a given
+;; key may add a delta, retract a delta, promote the key to a warmer
+;; tier, demote it to a colder tier, drop a late event, etc. We want to
+;; count all of those so a human (or a test harness) can later ask
+;; "how many times was user-7 promoted?" or "how many adds landed in
+;; the sorted tier vs the hashmap tier?".
+;;
+;; We deliberately do NOT use a real hashmap — Aura doesn't have one —
+;; so a metric value is just an association list keyed by the triple
+;; (tier kind key). The metric value shape is:
+;;
+;;   (cons 'metrics (cons counter (list (cons (cons tier (cons kind key)) n) ...)))
+;;
+;; `counter` is a running total of every metrics-record call ever made
+;; (useful as a cheap sanity check). The alist entries are the per-cell
+;; counts, kept in the order they were first inserted.
+;;
+;; Required exported (define (api …) …) forms (per the module table):
+;;   (api metrics-record m tier kind key)
+;;   (api metrics-snapshot m)
+;;
+;; metrics-record increments the counter for the (tier, kind, key) cell
+;; and returns the updated metrics value. metrics-snapshot returns a
+;; human-readable association list suitable for engine-stats.
+
+;; ---- internal helpers (NOT exported) -----------------------------------
+
+;; Build the empty metrics value.
+(define (metrics-new)
+  (cons 'metrics (cons 0 '())))
+
+;; Find an existing entry for the cell (tier . (kind . key)) in alist,
+;; returning the (cell . count) pair or #f.
+(define (metrics-find-cell alist tier kind key)
+  (cond
+    ((null? alist) #f)
+    (else
+      (let ((entry (car alist)))
+        (let ((cell (car entry)))
+          (if (and (equal? (car cell) tier)
+                   (equal? (car (cdr cell)) kind)
+                   (equal? (cdr (cdr cell)) key))
+              entry
+              (metrics-find-cell (cdr alist) tier kind key)))))))
+
+;; Walk an alist and return a new alist with the matching entry's
+;; count bumped by 1. If no matching entry exists, a new entry is
+;; prepended with count 1.
+(define (metrics-bump alist tier kind key)
+  (let ((existing (metrics-find-cell alist tier kind key)))
+    (cond
+      ((null? alist)
+       (list (cons (cons tier (cons kind key)) 1)))
+      ((not existing)
+       (cons (cons (cons tier (cons kind key)) 1) alist))
+      (else
+        ;; Rebuild the alist, replacing `existing` with bumped count.
+        ;; We keep the original position so order is stable.
+        (cond
+          ((eq? (car alist) existing)
+           (cons (cons (car existing) (+ (cdr existing) 1)) (cdr alist)))
+          (else
+            (cons (car alist)
+                  (metrics-bump (cdr alist) tier kind key))))))))
+
+;; Format a metrics value as a flat list of (tier kind key count) tuples
+;; plus the total counter. Used by metrics-snapshot.
+(define (metrics-format alist)
+  (cond
+    ((null? alist) '())
+    (else
+      (let ((entry (car alist)))
+        (let ((cell (car entry)))
+          (list
+            (list (car cell) (car (cdr cell)) (cdr (cdr cell)) (cdr entry))
+            (metrics-format (cdr alist))))))))
+
+;; ---- exported APIs -----------------------------------------------------
+
+;; (api metrics-record m tier kind key) -> updated-metrics
+;; Increments the (tier, kind, key) cell counter and the total counter.
+;; `tier`, `kind`, `key` are arbitrary Aura values (typically symbols).
+(define (api metrics-record m tier kind key)
+  (let ((counter (car (cdr m))))
+    (let ((alist (cdr (cdr m))))
+      (cons 'metrics
+            (cons (+ counter 1)
+                  (metrics-bump alist tier kind key))))))
+
+;; (api metrics-snapshot m) -> a-list
+;; Returns a list of (tier kind key count) tuples in insertion order,
+;; suitable for human inspection or for comparison between two engines.
+(define (api metrics-snapshot m)
+  (let ((counter (car (cdr m))))
+    (let ((alist (cdr (cdr m))))
+      (cons (list 'total counter)
+            (metrics-format alist)))))

@@ -1,0 +1,25 @@
+;; keys.aura — Key metrics derived from a WAL.
+;;
+;; Exposes:
+;;   (key-first wal)  -> the key string of the first record appended
+;;   (key-last wal)   -> the key string of the last record appended
+;;   (key-count wal)  -> total number of records in the WAL
+;;
+;; These are computed by walking the WAL's record list (an alist of
+;; (key . value) pairs in insertion order). For very large WALs a caller
+;; could cache the head/tail, but the spec keeps it simple: just inspect.
+
+(define (key-first wal)
+  (let ((recs (wal-records wal)))
+    (if (null? recs)
+        ""
+        (car (car recs)))))
+
+(define (key-last wal)
+  (let ((recs (wal-records wal)))
+    (if (null? recs)
+        ""
+        (car (car (reverse recs))))))
+
+(define (key-count wal)
+  (length (wal-records wal)))

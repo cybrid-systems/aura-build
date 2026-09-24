@@ -1,0 +1,77 @@
+;; crc32.aura — CRC32 implementation (IEEE 802.3 polynomial 0xEDB88320)
+;; Provides incremental and one-shot CRC32 over byte lists.
+
+;; Build the 256-entry lookup table.
+(define (crc32-init)
+  (let ((table '()))
+    (let ((i 0))
+      (define (build-loop)
+        (if (>= i 256)
+            'done
+            (begin
+              (let ((c i)
+                    (j 0))
+                (define (inner-loop)
+                  (if (>= j 8)
+                      'done
+                      (begin
+                        (if (= (modulo c 2) 1)
+                            (set! c (modulo (+ #xEDB88320 (quotient (- c (modulo c 2)) 2)) #x100000000))
+                            (set! c (quotient c 2)))
+                        (set! j (+ j 1))
+                        (inner-loop)))))
+                (inner-loop)
+                (set! table (append table (list c)))))
+              (set! i (+ i 1))
+              (build-loop))))
+    (build-loop)
+    table))
+
+;; Lookup helper: (crc32-table-ref table idx)
+(define (crc32-table-ref table idx)
+  (let loop ((t table) (i 0))
+    (if (= i idx) (car t) (loop (cdr t) (+ i 1)))))
+
+;; Update CRC with a single byte. crc is an integer in [0, #xFFFFFFFF].
+;; Returns the new CRC value (caller is responsible for masking at the end).
+(define (crc32-update crc byte)
+  (let ((idx (modulo (+ (modulo crc 256) byte) 256))
+        (rest (quotient crc 256)))
+    (modulo (+ (crc32-table-ref *crc32-table* idx)
+               (* rest 256))
+            #x100000000)))
+
+;; Finalize CRC: XOR with 0xFFFFFFFF and return as unsigned 32-bit integer.
+(define (crc32-final crc)
+  (modulo (logxor crc #xFFFFFFFF) #x100000000))
+
+;; One-shot CRC32 over a byte list. Returns the IEEE CRC32 of the data.
+(define (crc32 buf)
+  (let ((c #xFFFFFFFF))
+    (let loop ((bs buf))
+      (if (null? bs)
+          (crc32-final c)
+          (begin
+            (set! c (crc32-update c (car bs)))
+            (loop (cdr bs)))))))
+
+;; logxor is not a primitive in this Aura runtime, so we define it.
+(define (logxor a b)
+  (cond ((= a b) 0)
+        ((= a 0) b)
+        ((= b 0) a)
+        ((< a b) (logxor b a))
+        (else
+         (logxor-helper a b 0)))
+
+  (define (logxor-helper x y acc)
+    (cond ((= x 0) (+ (* acc 2) y))
+          ((= y 0) (+ (* acc 2) x))
+          (else
+           (let ((bx (modulo x 2)) (by (modulo y 2)))
+             (logxor-helper (quotient x 2) (quotient y 2)
+                            (+ acc (if (= bx by) 0 1))))))))
+
+;; Eagerly initialize the table at load time so all other modules
+;; can reference *crc32-table* directly.
+(define *crc32-table* (crc32-init))

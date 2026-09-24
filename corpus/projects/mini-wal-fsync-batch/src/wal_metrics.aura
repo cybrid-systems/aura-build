@@ -1,0 +1,46 @@
+;; wal_metrics.aura — Lightweight metrics accumulator for the WAL runtime.
+;;
+;; Tracks aggregate counters that the main scenario prints at the end:
+;;   - batches   : how many group-commit batches have been flushed
+;;   - fsyncs    : how many fsync calls have been issued (one per batch
+;;                 in this design, but kept independent for flexibility)
+;;   - records   : how many individual records have been persisted to
+;;                 the WAL segment across all batches
+;;
+;; Internally a metrics object is a simple association list with three
+;; numeric counters. The API is intentionally tiny: just three "record"
+;; mutators and three readers. We don't bother with invariants or
+;; pretty-printing here — main.aura is responsible for rendering.
+;;
+;; Exported APIs:
+;;   metrics-new             : build a fresh, zeroed metrics object
+;;   metrics-record-batch!   : increment the batches counter (by 1) and
+;;                             add n to the records counter
+;;   metrics-record-fsync!   : increment the fsyncs counter (by 1)
+;;   metrics-batches         : read the batches counter
+;;   metrics-fsyncs          : read the fsyncs counter
+;;   metrics-records         : read the records counter
+
+(api metrics-new (lambda () '((batches . 0) (fsyncs . 0) (records . 0))))
+
+(api metrics-record-batch!
+     (lambda (m n)
+       (set! m
+             (list (cons 'batches (+ (cdr (assq 'batches m)) 1))
+                   (cons 'fsyncs (cdr (assq 'fsyncs m)))
+                   (cons 'records (+ (cdr (assq 'records m)) n))))
+       m))
+
+(api metrics-record-fsync!
+     (lambda (m)
+       (set! m
+             (list (cons 'batches (cdr (assq 'batches m)))
+                   (cons 'fsyncs (+ (cdr (assq 'fsyncs m)) 1))
+                   (cons 'records (cdr (assq 'records m)))))
+       m))
+
+(api metrics-batches (lambda (m) (cdr (assq 'batches m))))
+
+(api metrics-fsyncs (lambda (m) (cdr (assq 'fsyncs m))))
+
+(api metrics-records (lambda (m) (cdr (assq 'records m))))

@@ -1,0 +1,110 @@
+;; page.aura — Fixed-size page abstraction over a list of cells.
+;;
+;; A "page" is the unit of disk / cache storage in the B+tree. Each page has:
+;;   - a page id (pid)                  — which page slot this is
+;;   - a list of cells (key/value pairs) ordered by key
+;;   - an LSN stamp marking the most recent WAL frame that touched it
+;;
+;; In a real engine a page is a fixed byte buffer (PAGE_BYTES). Here we model
+;; the bytes abstractly as a list whose length is bounded by MAX_CELLS_PER_PAGE,
+;; and `page-crc` produces a small integrity tag over the cell list.
+
+;; Build an empty page for `pid` with no cells and LSN = 0 (meaning "never
+;; written"). The returned value is a 3-element list '(pid cells lsn) so that
+;; updates via set! / page-set-cells / page-set-lsn! mutate in place.
+(define (page-empty pid)
+  (list pid '() 0))
+
+;; Accessors ---------------------------------------------------------------
+
+(define (page-id p)
+  (car p))
+
+(define (page-cells p)
+  (car (cdr p)))
+
+;; `page-set-cells` is the functional setter used during recovery / redo,
+;; where we construct a brand-new page value. Cache mutations use the
+;; destructive `page-set-cells!` (below) instead.
+(define (page-set-cells p cs)
+  (list (page-id p) cs (page-lsn p)))
+
+(define (page-lsn p)
+  (car (cdr (cdr p))))
+
+;; Destructive setters (used by the cache / btree on the live page value).
+
+(define (page-set-lsn! p lsn)
+  (set-car! (cdr (cdr p)) lsn))
+
+(define (page-set-cells! p cs)
+  (set-car! (cdr p) cs))
+
+;; Capacity ---------------------------------------------------------------
+
+;; A page is "full" once its cell list reaches MAX_CELLS_PER_PAGE.
+(define (page-full? p)
+  (>= (length (page-cells p)) MAX_CELLS_PER_PAGE))
+
+;; Splitting --------------------------------------------------------------
+;;
+;; Split the page roughly in half: the left half stays on `p`, the right
+;; half is moved to a new page whose id is `new-pid`. The LSN on the new
+;; page is inherited from `p` so that downstream WAL frames can reason
+;; about ordering.
+;;
+;; Returns the new page. Mutates `p`'s cell list in place.
+
+(define (page-split p new-pid)
+  (let* ((cells (page-cells p))
+         (n (length cells))
+         (mid (quotient n 2))
+         (left (take mid cells))
+         (right (drop mid cells))
+         (lsn-stamp (page-lsn p)))
+    (page-set-cells! p left)
+    (let ((new-p (page-empty new-pid)))
+      (page-set-cells! new-p right)
+      (page-set-lsn! new-p lsn-stamp)
+      new-p)))
+
+;; Merging ----------------------------------------------------------------
+;;
+;; Concatenate page `b`'s cells onto page `a`. The resulting page keeps
+;; `a`'s pid; `b` is logically absorbed and should be discarded by the
+;; caller (it is *not* mutated here so the caller can still inspect it).
+;; The merged page inherits the higher of the two LSNs so that recovery
+;; can correctly reason about which frame most recently affected it.
+
+(define (page-merge a b)
+  (let* ((cells-a (page-cells a))
+         (cells-b (page-cells b))
+         (merged  (append cells-a cells-b))
+         (max-lsn (lsn-max (page-lsn a) (page-lsn b))))
+    (page-set-cells! a merged)
+    (page-set-lsn! a max-lsn)
+    a))
+
+;; Integrity tag ----------------------------------------------------------
+;;
+;; Produce a small rolling checksum over the page's cells. We use the
+;; shared `crc16` helper from util.aura so that the value depends only on
+;; the page contents — not the pid or lsn — which is what callers expect
+;; when verifying a freshly-flushed page against its stored tag.
+;;
+;; We flatten each cell to a list of its byte values before folding so
+;; that nested lists (key, value) contribute all their bytes.
+
+(define (page-crc p)
+  (let ((cells (page-cells p)))
+    (let loop ((rest cells) (acc '()))
+      (if (null? rest)
+          (crc16 acc)
+          (let* ((cell (car rest))
+                 (flat (if (list? cell)
+                           (let flatten ((xs cell) (out '()))
+                             (if (null? xs)
+                                 (reverse out)
+                                 (flatten (cdr xs) (cons (car xs) out))))
+                           (list cell))))
+            (loop (cdr rest) (append acc flat)))))))

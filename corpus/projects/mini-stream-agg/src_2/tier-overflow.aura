@@ -1,0 +1,62 @@
+;; tier-overflow.aura — concrete "cold" overflow tier.
+;;
+;; This is the third and final tier in the promotion ladder. Keys that
+;; have outgrown even the sorted tier get spilled here. An overflow
+;; tier has a hard capacity: once it holds `cap` distinct keys, any
+;; further addition returns a special overflow signal so the engine
+;; can decide to demote / drop / page the data.
+;;
+;; The interface matches tier-hashmap and tier-sorted so the engine
+;; can swap tiers transparently. Internally we use the same tagged
+;; association list shape as the other tiers, plus an explicit
+;; capacity counter and a flag indicating whether the tier has
+;; already overflowed.
+;;
+;; Per the module table the only required export is:
+;;   (api overflow-tier-new cap) -> tier
+
+;; ---- internal helpers (NOT exported) -----------------------------------
+
+;; Build the empty state for an overflow tier.
+;; state shape: (cons 'overflow-state (list cap max-size overflowed?))
+;; - cap:        the maximum number of distinct keys this tier may hold.
+;; - max-size:   the highest distinct-key count we have ever seen
+;;               (used by the engine to detect "we outgrew the overflow
+;;               tier" if it ever needs to).
+;; - overflowed?: #t once cap has been reached.
+(define (overflow-state-new cap)
+  (cons 'overflow-state (list cap 0 #f)))
+
+;; Recognizer for the internal state shape.
+(define (overflow-state? s)
+  (if (pair? s)
+      (eq? (car s) 'overflow-state)
+      #f))
+
+;; Extract cap from state.
+(define (overflow-state-cap s)
+  (car (cdr s)))
+
+;; Extract max-size from state.
+(define (overflow-state-max-size s)
+  (car (cdr (cdr s))))
+
+;; Extract overflowed? flag.
+(define (overflow-state-overflowed? s)
+  (car (cdr (cdr (cdr s)))))
+
+;; Build the wrapped tier value from an empty state. We use the same
+;; tier envelope shape as tier-hashmap / tier-sorted so the generic
+;; tier code can introspect kind.
+;; tier shape: (list 'tier 'overflow state)
+(define (overflow-tier-empty cap)
+  (list 'tier 'overflow (overflow-state-new cap)))
+
+;; ---- public API ---------------------------------------------------------
+
+;; (api overflow-tier-new cap) -> tier
+;; Build a new overflow tier with the given capacity `cap` (a
+;; non-negative integer). The returned value conforms to the generic
+;; tier interface used throughout the engine.
+(define (overflow-tier-new cap)
+  (overflow-tier-empty cap))

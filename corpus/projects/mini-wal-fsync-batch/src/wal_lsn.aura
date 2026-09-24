@@ -1,0 +1,19 @@
+;; wal_lsn.aura — LSN (Log Sequence Number) helpers.
+;;
+;; An LSN is simply a positive integer assigned monotonically to each
+;; record appended to the WAL. We model it as an Aura integer.
+;;
+;; Exported APIs:
+;;   lsn-next      : bump an LSN counter to the next value, return the new LSN
+;;   lsn-equal?    : structural equality on LSNs
+;;   lsn->string   : human-readable rendering (decimal)
+
+(define (api lsn-next cur)
+  ;; cur is the current "last issued" LSN. Returns cur+1.
+  (+ cur 1))
+
+(define (api lsn-equal? a b)
+  (= a b))
+
+(define (api lsn->string l)
+  (number->string l))

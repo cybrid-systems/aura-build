@@ -1,0 +1,120 @@
+;; tier.aura — abstract tier interface for the streaming aggregation engine.
+;;
+;; A tier is a small per-key aggregate store. Three concrete tiers exist
+;; (hashmap, sorted, overflow) and they all conform to this interface.
+;;
+;; A tier is represented as an association list mapping keys to their
+;; current aggregated value (a number). A separate "touch counter"
+;; association list tracks how many times each key has been updated,
+;; which the promotion logic uses to decide when to spill a hot key
+;; into a slower / larger tier.
+;;
+;; The tier API is intentionally tiny and value-oriented: it does not
+;; hide its state behind closures, because checkpoint.aura needs to be
+;; able to serialize the live tier state into a snapshot. Returning a
+;; plain tagged list makes that trivial.
+
+;; ---- internal helpers ---------------------------------------------------
+
+;; build the canonical empty tier state for a given kind tag.
+(define (tier-empty-state kind)
+  (list 'tier kind '() '() 0))   ;; (tier kind values touches size)
+
+;; Extract the kind tag from a tier.
+(define (tier-kind-of t) (car (cdr t)))
+
+;; Extract the (key . value) alist from a tier.
+(define (tier-vals-of t) (car (cdr (cdr t))))
+
+;; Extract the (key . touch-count) alist from a tier.
+(define (tier-touches-of t) (car (cdr (cdr (cdr t)))))
+
+;; Extract the cached size field (number of distinct keys) from a tier.
+(define (tier-size-field t) (car (cdr (cdr (cdr (cdr t))))))
+
+;; Rebuild a tier with possibly-updated fields. We keep this as a plain
+;; constructor so callers (and tests) can produce variants without
+;; poking into list positions directly.
+(define (tier-rebuild kind vals touches size)
+  (list 'tier kind vals touches size))
+
+;; Look up key k in an alist (list of (key . val) pairs). Returns the
+;; value or #f if not present.
+(define (tier-alist-ref al k)
+  (cond ((null? al) #f)
+        ((equal? (car (car al)) k) (cdr (car al)))
+        (else (tier-alist-ref (cdr al) k))))
+
+;; Update or insert key k -> v in an alist. The alist is treated as
+;; ordered by insertion order (not sorted) — that matches what
+;; tier-hashmap and tier-sorted both expect.
+(define (tier-alist-set al k v)
+  (cond ((null? al) (cons (cons k v) '()))
+        ((equal? (car (car al)) k)
+         (cons (cons k v) (cdr al)))
+        (else
+         (cons (car al)
+               (tier-alist-set (cdr al) k v)))))
+
+;; Bump the touch count for key k in the touch alist, creating an entry
+;; if it doesn't exist yet.
+(define (tier-touch-bump touches k)
+  (let ((cur (tier-alist-ref touches k)))
+    (tier-alist-set touches k (+ (if cur cur 0) 1))))
+
+;; ---- exported API --------------------------------------------------------
+
+;; (api tier-make kind) -> tier
+;; Create a fresh, empty tier tagged with the given kind symbol.
+;; kind is typically 'hashmap, 'sorted or 'overflow.
+(define (api tier-make kind)
+  (tier-empty-state kind))
+
+;; (api tier-step t k delta) -> tier
+;; Apply a delta (number, possibly negative for retracts) to the
+;; aggregate for key k inside tier t, returning a new tier value.
+;; Increments the touch count for k as a side effect on the touch map.
+(define (api tier-step t k delta)
+  (let* ((kind (tier-kind-of t))
+         (vals (tier-vals-of t))
+         (touches (tier-touches-of t))
+         (cur (tier-alist-ref vals k))
+         (new-val (+ (if cur cur 0) delta))
+         (new-vals (tier-alist-set vals k new-val))
+         (new-touches (tier-touch-bump touches k))
+         (had-key? (if cur #t #f))
+         (new-size (+ (tier-size-field t) (if had-key? 0 1))))
+    (tier-rebuild kind new-vals new-touches new-size)))
+
+;; (api tier-get t k) -> number-or-false
+;; Return the current aggregate value for key k in tier t, or #f if
+;; the key is not present.
+(define (api tier-get t k)
+  (tier-alist-ref (tier-vals-of t) k))
+
+;; (api tier-keys t) -> list-of-keys
+;; Return the list of distinct keys currently held in tier t, in
+;; insertion order. Order matters because checkpoints serialize it.
+(define (api tier-keys t)
+  (let loop ((rest (tier-vals-of t)) (acc '()))
+    (if (null? rest)
+        (reverse acc)
+        (loop (cdr rest) (cons (car (car rest)) acc)))))
+
+;; (api tier-size t) -> non-negative-integer
+;; Return the number of distinct keys stored in the tier. This is
+;; maintained incrementally by tier-step, so it's O(1).
+(define (api tier-size t)
+  (tier-size-field t))
+
+;; (api tier-promote? t k) -> boolean
+;; Promotion heuristic: a key is considered "hot" once it has been
+;; touched at least 3 times. The engine uses this signal to decide
+;; whether to move a record from the hashmap tier into the sorted tier.
+;; Return #t if key k has touched-count >= 3, else #f. If k isn't in
+;; the touch map at all, return #f.
+(define (api tier-promote? t k)
+  (let ((tc (tier-alist-ref (tier-touches-of t) k)))
+    (if tc
+        (>= tc 3)
+        #f)))

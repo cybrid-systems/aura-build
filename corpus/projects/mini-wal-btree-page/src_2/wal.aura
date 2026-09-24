@@ -1,0 +1,189 @@
+;; wal.aura
+;; Write-Ahead Log (WAL) implementation.
+;;
+;; The WAL is the single source of truth for durability: every mutation
+;; to the page cache is preceded by a WAL frame that records the new
+;; page contents (or, in the undo-variants, the prior contents) tagged
+;; with an LSN.
+;;
+;; For this small in-memory engine we model the WAL as an association
+;; list keyed by LSN. Each frame is itself a small list
+;;
+;;     (LSN  MAGIC  CRC  PAYLOAD)
+;;
+;; where MAGIC is a 4-character symbol baked in at open time, CRC is a
+;; 16-bit checksum over the payload, and PAYLOAD is the user-supplied
+;; byte stream (a list of small integers).
+;;
+;; The shape is deliberately tiny so that downstream modules (cache,
+;; btree, recovery) can build on top without needing to know the
+;; internal layout — they only ever call the documented API.
+
+;; ---------------------------------------------------------------------
+;; Internal helpers
+;; ---------------------------------------------------------------------
+
+;; Build the magic byte list from the 4-character string the user
+;; passed to `wal-open`. We pull each char-code out in order so that
+;; ("WAL1") becomes '(87 65 76 49), which is what gets stored alongside
+;; every frame and re-checked on the way out.
+(define (wal-magic-bytes magic)
+  (list
+    (char->i (string-ref magic 0))
+    (char->i (string-ref magic 1))
+    (char->i (string-ref magic 2))
+    (char->i (string-ref magic 3))))
+
+;; char->i : map an Aura character to its integer code point.
+;; We need this to embed the magic into frames so they can be verified
+;; independently of the host string table.
+(define (char->i c)
+  (cond ((char=? c #\0) 48)
+        ((char=? c #\1) 49)
+        ((char=? c #\2) 50)
+        ((char=? c #\3) 51)
+        ((char=? c #\4) 52)
+        ((char=? c #\5) 53)
+        ((char=? c #\6) 54)
+        ((char=? c #\7) 55)
+        ((char=? c #\8) 56)
+        ((char=? c #\9) 57)
+        ((char=? c #\A) 65)
+        ((char=? c #\B) 66)
+        ((char=? c #\C) 67)
+        ((char=? c #\D) 68)
+        ((char=? c #\E) 69)
+        ((char=? c #\F) 70)
+        ((char=? c #\G) 71)
+        ((char=? c #\H) 72)
+        ((char=? c #\I) 73)
+        ((char=? c #\J) 74)
+        ((char=? c #\K) 75)
+        ((char=? c #\L) 76)
+        ((char=? c #\M) 77)
+        ((char=? c #\N) 78)
+        ((char=? c #\O) 79)
+        ((char=? c #\P) 80)
+        ((char=? c #\Q) 81)
+        ((char=? c #\R) 82)
+        ((char=? c #\S) 83)
+        ((char=? c #\T) 84)
+        ((char=? c #\U) 85)
+        ((char=? c #\V) 86)
+        ((char=? c #\W) 87)
+        ((char=? c #\X) 88)
+        ((char=? c #\Y) 89)
+        ((char=? c #\Z) 90)
+        ((char=? c #\a) 97)
+        ((char=? c #\b) 98)
+        ((char=? c #\c) 99)
+        ((char=? c #\d) 100)
+        ((char=? c #\e) 101)
+        ((char=? c #\f) 102)
+        ((char=? c #\g) 103)
+        ((char=? c #\h) 104)
+        ((char=? c #\i) 105)
+        ((char=? c #\j) 106)
+        ((char=? c #\k) 107)
+        ((char=? c #\l) 108)
+        ((char=? c #\m) 109)
+        ((char=? c #\n) 110)
+        ((char=? c #\o) 111)
+        ((char=? c #\p) 112)
+        ((char=? c #\q) 113)
+        ((char=? c #\r) 114)
+        ((char=? c #\s) 115)
+        ((char=? c #\t) 116)
+        ((char=? c #\u) 117)
+        ((char=? c #\v) 118)
+        ((char=? c #\w) 119)
+        ((char=? c #\x) 120)
+        ((char=? c #\y) 121)
+        ((char=? c #\z) 122)
+        (else 0)))
+
+;; Find the highest LSN currently present in the WAL. If the WAL is
+;; empty we return the constant LSN_START - 1 so that the next
+;; `lsn-next` call hands out LSN_START as the very first frame id.
+(define (wal-highest-lsn frames)
+  (cond ((null? frames) (- LSN_START 1))
+        (else
+          (let ((rest (wal-highest-lsn (cdr frames))))
+            (if (lsn<? rest (car (car frames)))
+                (car (car frames))
+                rest)))))
+
+;; Insert a frame into the alist, keeping LSN ordering. We don't
+;; strictly need ordering for correctness, but it makes debugging the
+;; WAL much easier and gives the recovery walk a deterministic order
+;; to work through.
+(define (wal-insert frames frame)
+  (cond ((null? frames) (cons frame frames))
+        ((lsn<? (car (car frames)) (car frame))
+          (cons (car frames) (wal-insert (cdr frames) frame)))
+        (else (cons frame frames))))
+
+;; ---------------------------------------------------------------------
+;; Public API
+;; ---------------------------------------------------------------------
+
+;; wal-open : create a fresh, empty WAL tagged with the given 4-char
+;; magic string. Returns an opaque wal value (an alist of frames plus
+;; the magic list, packed into a tagged list).
+(define (wal-open magic)
+  (list 'wal (wal-magic-bytes magic) '()))
+
+;; wal-append : append a frame to the WAL, automatically assigning the
+;; next LSN and computing the CRC. The user's `frame` is just the raw
+;; payload (a list of bytes); the LSN, magic, and CRC are stamped by
+;; the WAL itself so callers can't accidentally collide.
+(define (wal-append wal frame)
+  (let ((magic (car (cdr wal)))
+        (frames (car (cdr (cdr wal))))
+        (next (lsn-next (wal-highest-lsn frames))))
+    (let ((new-frame (list next magic (crc16 frame) frame)))
+      (list 'wal magic (wal-insert frames new-frame)))))
+
+;; wal-truncate-before : drop every frame whose LSN is strictly less
+;; than `lsn`. This is how the engine prunes the WAL once the cache
+;; has flushed past a checkpoint — we no longer need frames whose
+;; effects are already on "stable" pages.
+(define (wal-truncate-before wal lsn)
+  (let ((magic (car (cdr wal)))
+        (frames (car (cdr (cdr wal)))))
+    (list 'wal magic
+      (cond ((null? frames) '())
+            ((lsn<? (car (car frames)) lsn)
+              (wal-truncate-before (list 'wal magic (cdr frames)) lsn))
+            (else frames)))))
+
+;; wal-frames : return just the list of frames (no magic, no tag).
+;; This is what the recovery walk iterates over.
+(define (wal-frames wal)
+  (car (cdr (cdr wal))))
+
+;; wal-frame-lsn : extract the LSN of a frame.
+(define (wal-frame-lsn f)
+  (car f))
+
+;; wal-frame-payload : extract the payload (user bytes) of a frame.
+(define (wal-frame-payload f)
+  (car (cdr (cdr (cdr f)))))
+
+;; wal-rewrite : replace the payload of frame `lsn` with `payload`.
+;; Used when a transaction aborts: the original frame is overwritten
+;; with its compensating action so that a subsequent redo pass yields
+;; the correct undo. The LSN, magic, and CRC are all refreshed.
+(define (wal-rewrite wal lsn payload)
+  (let ((magic (car (cdr wal)))
+        (frames (car (cdr (cdr wal)))))
+    (list 'wal magic
+      (wal-rewrite-loop frames magic lsn payload))))
+
+(define (wal-rewrite-loop frames magic lsn payload)
+  (cond ((null? frames) '())
+        ((lsn-equal? (car (car frames)) lsn)
+          (cons (list lsn magic (crc16 payload) payload)
+                (cdr frames)))
+        (else (cons (car frames)
+                    (wal-rewrite-loop (cdr frames) magic lsn payload)))))

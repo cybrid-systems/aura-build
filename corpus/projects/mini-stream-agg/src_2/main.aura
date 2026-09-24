@@ -1,0 +1,132 @@
+;; main.aura — scenario driver for mini-stream-agg.
+;;
+;; This is the only file that prints anything. It builds the
+;; deterministic event stream, runs the engine, takes periodic
+;; checkpoints, flushes, then performs a recovery replay against the
+;; original event list to prove exactly-once semantics. It then
+;; collects a handful of statistics and prints them in the exact
+;; KEY=value order required by the stdout contract.
+
+;; ---- helpers ----------------------------------------------------------
+
+;; Look up the numeric value of a counter that lives inside a metrics
+;; snapshot. A snapshot is whatever metrics-snapshot returns; here
+;; we treat it as an alist (tag 'metrics) and use assq to find the
+;; counter we want. Returns 0 if the counter is missing.
+(define (metric-lookup snap tag)
+  (let ((entry (assq tag (cdr snap))))
+    (if entry (cdr entry) 0)))
+
+;; Walk an engine's tier list and add up the per-tier sizes. We use
+;; tier-size from the tier interface, so this works regardless of
+;; which concrete tier is currently installed.
+(define (sum-tier-sizes tiers)
+  (if (null? tiers)
+      0
+      (+ (tier-size (car tiers))
+         (sum-tier-sizes (cdr tiers)))))
+
+;; ---- main scenario ----------------------------------------------------
+
+(define events (demo-events-build))
+(define eng    (engine-new))
+
+;; Process every event. On every 5th event (5, 10, 15, ...) take a
+;; checkpoint as well. We accumulate checkpoint snapshots in a list
+;; so the recovery step has something to compare against later.
+(define n-events (length events))
+
+(define (run-loop idx evs processed checkpoints)
+  (cond
+    ((null? evs)
+     (cons processed (cons checkpoints '())))
+    (else
+     (let ((processed2 (+ processed 1)))
+       (engine-step eng (car evs))
+       (let ((checkpoints2
+              (if (= (modulo processed2 5) 0)
+                  (cons (engine-checkpoint eng) checkpoints)
+                  checkpoints)))
+         (run-loop (+ idx 1) (cdr evs) processed2 checkpoints2))))))
+
+(define after-loop (run-loop 1 events 0 '()))
+(define processed   (car after-loop))
+(define checkpoints (cadr after-loop))
+
+(engine-flush eng)
+
+;; ---- recovery replay --------------------------------------------------
+;;
+;; The recovery module needs (a) the original event list and (b) the
+;; checkpoints taken during processing. It returns two values:
+;; the replayed state and a boolean match flag. We discard the
+;; replayed state — we only care about the match flag for stdout.
+
+(define replay-result (recovery-replay events checkpoints))
+(define replay-state  (car replay-result))
+(define replay-match  (cdr replay-result))
+
+;; ---- stats ------------------------------------------------------------
+
+(define stats          (engine-stats eng))
+(define tier-counts    (engine-tier-counts eng))
+(define promotions     (engine-promotions eng))
+(define demotions      (engine-demotions eng))
+(define metrics-snap   (metrics-snapshot (cdr (assq 'metrics stats))))
+
+;; `events_processed` is literally the count of inputs we fed the
+;; engine. `replay_match` must be #t to prove exactly-once semantics.
+;; `end_state_hash` is the hex string the checkpoint module produces
+;; for the current engine state.
+
+(define events-processed processed)
+(define replay-match-out replay-match)
+(define end-state-hash   (ckpt-hash eng))
+
+;; Tier-level metrics: how many keys live in each tier right now.
+;; We expose three keys, one per backing tier, so the contract is
+;; stable regardless of which tier is "hot" in this run.
+(define hashmap-keys (tier-size (car tier-counts)))
+(define sorted-keys  (tier-size (cadr tier-counts)))
+(define overflow-keys (tier-size (caddr tier-counts)))
+
+(define total-promotions promotions)
+(define total-demotions  demotions)
+(define total-keys (+ hashmap-keys sorted-keys overflow-keys))
+
+;; Metrics counters exposed via the metrics module.
+(define late-events (metric-lookup metrics-snap 'late))
+(define retracts    (metric-lookup metrics-snap 'retract))
+(define promotions-c (metric-lookup metrics-snap 'promotions))
+(define demotions-c  (metric-lookup metrics-snap 'demotions))
+
+;; ---- stdout -----------------------------------------------------------
+;;
+;; Print all KEY=value lines in the exact order required by the GOAL.
+
+(display (string-append "EVENTS_PROCESSED=" (number->string events-processed)))
+(newline)
+(display (string-append "REPLAY_MATCH=" (if replay-match-out "#t" "#f")))
+(newline)
+(display (string-append "END_STATE_HASH=" end-state-hash))
+(newline)
+(display (string-append "HASHMAP_KEYS=" (number->string hashmap-keys)))
+(newline)
+(display (string-append "SORTED_KEYS=" (number->string sorted-keys)))
+(newline)
+(display (string-append "OVERFLOW_KEYS=" (number->string overflow-keys)))
+(newline)
+(display (string-append "PROMOTIONS=" (number->string total-promotions)))
+(newline)
+(display (string-append "DEMOTIONS=" (number->string total-demotions)))
+(newline)
+(display (string-append "LATE_EVENTS=" (number->string late-events)))
+(newline)
+(display (string-append "RETractS=" (number->string retracts)))
+(newline)
+(display (string-append "METRIC_PROMOTIONS=" (number->string promotions-c)))
+(newline)
+(display (string-append "METRIC_DEMOTIONS=" (number->string demotions-c)))
+(newline)
+(display (string-append "TOTAL_KEYS=" (number->string total-keys)))
+(newline)

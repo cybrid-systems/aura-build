@@ -1,0 +1,168 @@
+;; wal_manager.aura
+;; Manager that ties together a WAL, snapshots, and a retention policy.
+;;
+;; The manager owns:
+;;   * a single in-memory WAL
+;;   * a list of snapshots ever taken (live or released)
+;;   * the next snapshot identifier to assign
+;;
+;; A snapshot at LSN `S` keeps alive everything from `S` onwards, so
+;; the lowest live snapshot LSN defines the "prune LSN" -- the LSN
+;; below which segments may be safely reclaimed.
+;;
+;; Public APIs:
+;;   (manager-new)                   -> a fresh manager
+;;   (manager-append mgr payload)    -> new manager with one record appended
+;;   (manager-lsn mgr)               -> next LSN to assign (= current record count)
+;;   (manager-take-snapshot mgr lsn) -> new manager with a snapshot added
+;;   (manager-snapshots mgr)         -> list of all snapshots (live first)
+;;   (manager-prune-lsn mgr)         -> lowest LSN still needed (0 if none live)
+;;   (manager-prune-segments mgr)    -> count of segments fully below prune LSN
+;;   (manager-reclaim-bytes mgr)     -> total bytes of those reclaimable segments
+;;   (manager-segments mgr)          -> materialized segments from underlying WAL
+
+(define (api name)
+  (lambda args
+    (apply (cond
+             ((equal? name 'manager-new)             manager-new)
+             ((equal? name 'manager-append)          manager-append)
+             ((equal? name 'manager-lsn)            manager-lsn)
+             ((equal? name 'manager-take-snapshot)   manager-take-snapshot)
+             ((equal? name 'manager-snapshots)      manager-snapshots)
+             ((equal? name 'manager-prune-lsn)       manager-prune-lsn)
+             ((equal? name 'manager-prune-segments)  manager-prune-segments)
+             ((equal? name 'manager-reclaim-bytes)   manager-reclaim-bytes)
+             ((equal? name 'manager-segments)       manager-segments)
+             (else (lambda _ (error "unknown manager api"))))
+           args)))
+
+;; ---- internal helpers ----
+
+;; Look up a key in an alist.
+(define (mgr-assq key alist)
+  (cond ((null? alist) #f)
+        ((equal? key (car (car alist))) (car alist))
+        (else (mgr-assq key (cdr alist)))))
+
+(define (mgr-assoc-ref alist key)
+  (let ((p (mgr-assq key alist)))
+    (if p (cdr p) #f)))
+
+(define (mgr-assoc-set alist key value)
+  (cons (cons key value)
+        (filter (lambda (cell) (not (equal? key (car cell)))) alist)))
+
+(define (filter pred xs)
+  (cond ((null? xs) '())
+        ((pred (car xs)) (cons (car xs) (filter pred (cdr xs))))
+        (else (filter pred (cdr xs)))))
+
+;; ---- manager construction ----
+
+(define (manager-new)
+  (let ((wal (wal-new)))
+    (list (cons 'wal wal)
+          (cons 'snapshots '())
+          (cons 'next-id 1))))
+
+;; ---- accessors ----
+
+(define (manager-wal mgr)
+  (mgr-assoc-ref mgr 'wal))
+
+(define (manager-snapshots-list mgr)
+  (mgr-assoc-ref mgr 'snapshots))
+
+(define (manager-next-id mgr)
+  (mgr-assoc-ref mgr 'next-id))
+
+;; ---- mutating helpers (return new manager) ----
+
+(define (manager-set-wal mgr wal)
+  (mgr-assoc-set mgr 'wal wal))
+
+(define (manager-set-snapshots mgr snaps)
+  (mgr-assoc-set mgr 'snapshots snaps))
+
+(define (manager-set-next-id mgr id)
+  (mgr-assoc-set mgr 'next-id id))
+
+;; ---- public: append ----
+
+(define (manager-append mgr payload)
+  (let* ((wal  (manager-wal mgr))
+         (lsn  (wal-lsn wal))
+         (wal2 (wal-append wal lsn payload)))
+    (manager-set-wal mgr wal2)))
+
+;; ---- public: lsn ----
+
+(define (manager-lsn mgr)
+  (wal-lsn (manager-wal mgr)))
+
+;; ---- public: take snapshot ----
+
+(define (manager-take-snapshot mgr lsn)
+  (let* ((snaps     (manager-snapshots-list mgr))
+         (next-id   (manager-next-id mgr))
+         (snap      (list (cons 'id next-id)
+                          (cons 'lsn lsn)
+                          (cons 'live? #t)))
+         (new-snaps (cons snap snaps)))
+    (manager-set-next-id
+      (manager-set-snapshots mgr new-snaps)
+      (+ next-id 1))))
+
+;; ---- public: snapshots list ----
+
+;; Return snapshots ordered with live ones first (stable otherwise).
+(define (manager-snapshots mgr)
+  (let* ((snaps (manager-snapshots-list mgr))
+         (live  (filter (lambda (s) (snapshot-live? s)) snaps))
+         (dead  (filter (lambda (s) (not (snapshot-live? s))) snaps)))
+    (append live dead)))
+
+;; ---- public: prune lsn ----
+
+;; The prune LSN is the lowest LSN among live snapshots, or 0 if no
+;; snapshot is live.
+(define (manager-prune-lsn mgr)
+  (let ((snaps (manager-snapshots-list mgr)))
+    (let loop ((ss snaps) (best #f))
+      (cond ((null? ss)
+             (if best best 0))
+            ((snapshot-live? (car ss))
+             (let ((lsn (snapshot-lsn (car ss))))
+               (loop (cdr ss)
+                     (if best (if (< lsn best) lsn best) lsn))))
+            (else
+             (loop (cdr ss) best))))))
+
+;; ---- public: prune segments ----
+
+;; Count segments whose high-water LSN is strictly below the prune LSN.
+(define (manager-prune-segments mgr)
+  (let* ((prune (manager-prune-lsn mgr))
+         (segs  (manager-segments mgr)))
+    (let loop ((ss segs) (n 0))
+      (cond ((null? ss) n)
+            ((< (seg-high (car ss)) prune)
+             (loop (cdr ss) (+ n 1)))
+            (else (loop (cdr ss) n))))))
+
+;; ---- public: reclaim bytes ----
+
+;; Sum seg-size over segments strictly below the prune LSN.
+(define (manager-reclaim-bytes mgr)
+  (let* ((prune (manager-prune-lsn mgr))
+         (segs  (manager-segments mgr)))
+    (let loop ((ss segs) (total 0))
+      (cond ((null? ss) total)
+            ((< (seg-high (car ss)) prune)
+             (loop (cdr ss) (+ total (seg-size (car ss)))))
+            (else (loop (cdr ss) total))))))
+
+;; ---- public: segments ----
+
+(define (manager-segments mgr)
+  (wal-segments (manager-wal mgr)))

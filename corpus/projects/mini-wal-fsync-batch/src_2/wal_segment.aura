@@ -1,0 +1,55 @@
+;; wal_segment.aura — In-memory WAL segment (a "file" abstraction).
+;;
+;; Models an append-only byte stream with an fsync counter. There is no real
+;; filesystem; the segment simply accumulates bytes that have been "appended"
+;; and tracks how many times fsync has been called on it. After fsync, the
+;; bytes are considered "durable" for the purposes of this simulation.
+
+(define (segment-new)
+  ;; State: (cons bytes-so-far (cons fsync-count (cons fsynced? '())))
+  (cons 0 (cons 0 (cons #f '()))))
+
+(define (seg-bytes s) (car s))
+(define (seg-fsync-count s) (car (cdr s)))
+(define (seg-durable? s) (car (cdr (cdr s))))
+
+(define (seg-set-bytes! s n)
+  (set-car! s n))
+
+(define (seg-set-fsync-count! s n)
+  (set-car! (cdr s) n))
+
+(define (seg-set-durable! s v)
+  (set-car! (cdr (cdr s)) v))
+
+;; Append `bytes` to the segment. Accumulates the byte count so that
+;; (segment-byte-count seg) reflects total bytes appended over the lifetime
+;; of the segment (including those still pending fsync).
+(define (segment-append! seg bytes)
+  (let ((cur (seg-bytes seg)))
+    (seg-set-bytes! seg (+ cur bytes))))
+
+;; Total bytes that have ever been appended to the segment.
+(define (segment-byte-count seg)
+  (seg-bytes seg))
+
+;; Perform a single fsync on the segment. Marks the segment as durable and
+;; increments the fsync counter. The WAL is conceptually "on disk" after
+;; this call; in reality nothing is persisted, but the simulation counts
+;; the fsync.
+(define (segment-fsync! seg)
+  (seg-set-fsync-count! seg (+ (seg-fsync-count seg) 1))
+  (seg-set-durable! seg #t))
+
+;; Return a snapshot of the segment suitable for inspection: a list
+;; (bytes fsync-count durable?) describing the current state.
+(define (segment-snapshot seg)
+  (list (seg-bytes seg)
+        (seg-fsync-count seg)
+        (seg-durable? seg)))
+
+(api segment-new)
+(api segment-append! seg bytes)
+(api segment-byte-count seg)
+(api segment-fsync! seg)
+(api segment-snapshot seg)

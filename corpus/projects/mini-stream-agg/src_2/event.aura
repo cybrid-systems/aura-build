@@ -1,0 +1,38 @@
+;; event.aura — event record for the streaming aggregation engine.
+;;
+;; An event is a small immutable struct-like value represented as a tagged
+;; list:  (cons 'event (list user-id delta ts))
+;;
+;; We avoid define-record / struct (forbidden in this runtime) and instead
+;; use list-based records with explicit accessors. This keeps the file
+;; self-contained and consistent with the rest of the project.
+
+;; (api event-make user-id delta ts) -> event
+;; Build a new event. Inputs may be any Aura values; this engine uses
+;; non-negative integers for user-id, delta (signed is fine) and ts.
+(define (event-make user-id delta ts)
+  (cons 'event (list user-id delta ts)))
+
+;; (api event? x) -> boolean
+;; Recognizer: is x an event produced by event-make?
+(define (event? x)
+  (if (pair? x)
+      (eq? (car x) 'event)
+      #f))
+
+;; Helper: assert an event, otherwise return #f. We keep this internal so
+;; the public accessors can assume a well-formed list payload.
+(define (event-payload e)
+  (if (event? e) (cdr e) '()))
+
+;; (api event-user-id e) -> user-id
+(define (event-user-id e)
+  (car (event-payload e)))
+
+;; (api event-delta e) -> delta
+(define (event-delta e)
+  (car (cdr (event-payload e))))
+
+;; (api event-ts e) -> ts
+(define (event-ts e)
+  (car (cdr (cdr (event-payload e)))))

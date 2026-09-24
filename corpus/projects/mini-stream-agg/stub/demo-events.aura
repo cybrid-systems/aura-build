@@ -1,0 +1,41 @@
+; demo-events.aura — deterministic event stream used by the scenario.
+;
+; Returns a fixed list of events with a known distribution of user-ids,
+; deltas (+/-), and timestamps so the engine's tier promotion, retraction,
+; and checkpoint behavior can be exercised in a stable, repeatable way.
+;
+; Each event has shape (event user-id delta ts).
+;
+; Layout of the stream (17 events total):
+;   * Mostly small positive deltas for two "regular" users (u1, u2).
+;   * One "power" user (u3) that gets touched many times so promotion to
+;     the sorted tier fires.
+;   * A couple of negative deltas (retractions) to exercise retract-safe
+;     semantics.
+;   * A late event (timestamp < prior watermark) so the watermark path is
+;     actually traversed.
+;   * One "spammer" key (u9) whose bucket overflows past the overflow
+;     tier cap so the eviction path is taken.
+;
+; Timestamps are strictly non-decreasing except for the deliberately-late
+; event at the end.
+
+(define (api demo-events-build)
+  (list
+    (list 'event 'u1 +1  10)
+    (list 'event 'u1 +1  20)
+    (list 'event 'u2 +2  30)
+    (list 'event 'u1 +3  40)
+    (list 'event 'u3 +1  50)
+    (list 'event 'u2 -1  60)
+    (list 'event 'u3 +1  70)
+    (list 'event 'u1 +2  80)
+    (list 'event 'u3 +1  90)
+    (list 'event 'u3 +1 100)
+    (list 'event 'u3 +1 110)
+    (list 'event 'u2 +1 120)
+    (list 'event 'u3 +1 130)
+    (list 'event 'u3 +1 140)
+    (list 'event 'u9 +1 150)
+    (list 'event 'u9 +1 160)
+    (list 'event 'u1 -2   5)))

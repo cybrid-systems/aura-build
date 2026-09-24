@@ -1,0 +1,115 @@
+;; wal_coordinator.aura — Group-commit coordinator.
+;;
+;; Drains the staging buffer up to max-batch-size records, appends them to
+;; the WAL segment, performs a single fsync per drained batch, advances the
+;; committed LSN, and signals any waiters whose target LSN is now durably
+;; persisted.
+
+(define (coordinator-new cfg wal)
+  ;; State: (cons cfg (cons wal (cons next-lsn (cons fsync-count (cons batches-flushed (cons waiters '()))))))
+  ;; next-lsn = LSN that will be assigned to the *next* record appended.
+  (cons cfg (cons wal (cons 1 (cons 0 (cons 0 (cons '() '())))))))
+
+(define (coord-cfg c) (car c))
+(define (coord-wal c) (car (cdr c)))
+(define (coord-next-lsn c) (car (cdr (cdr c))))
+(define (coord-fsync-count c) (car (cdr (cdr (cdr c)))))
+(define (coord-batches-flushed c) (car (cdr (cdr (cdr (cdr c))))))
+(define (coord-waiters c) (cdr (cdr (cdr (cdr (cdr c))))))
+
+(define (coord-set-next-lsn! c v) (set-car! (cdr (cdr c)) v))
+(define (coord-set-fsync-count! c v) (set-car! (cdr (cdr (cdr c))) v))
+(define (coord-set-batches-flushed! c v) (set-car! (cdr (cdr (cdr (cdr c)))) v))
+(define (coord-set-waiters! c v) (set-cdr! (cdr (cdr (cdr (cdr c)))) v))
+
+;; Public read of next-lsn (used by writers to assign LSNs).
+(define (coordinator-next-lsn c)
+  (coord-next-lsn c))
+
+;; Drain the staging buffer (passed in), append records to WAL segment,
+;; fsync once, update bookkeeping, and signal waiters.
+;;
+;; Batch size is capped by (wal-max-batch-size cfg). Returns the number of
+;; records actually flushed (0 if buffer empty).
+(define (coordinator-group-commit! c staging-buffer)
+  (let ((cap (wal-max-batch-size (coord-cfg c)))
+        (wal (coord-wal c)))
+    (if (buffer-empty? staging-buffer)
+        0
+        (let* ((drained (buffer-drain! staging-buffer))
+               (take-n (min cap (length drained)))
+               (batch (list-head drained take-n))
+               ;; Anything beyond cap stays in the buffer (caller can re-tick).
+               (remainder (list-tail drained take-n))
+               (n (length batch)))
+          ;; Re-stash overflow back into the buffer (front of FIFO order).
+          (when (not (null? remainder))
+            (let loop ((rs remainder))
+              (if (null? rs)
+                  'done
+                  (begin
+                    ;; Direct mutation via buffer API to keep order correct.
+                    (buffer-append! staging-buffer (car rs))
+                    (loop (cdr rs))))))
+          (let loop ((recs batch) (bytes-so-far 0))
+            (if (null? recs)
+                bytes-so-far
+                (let ((b (record->bytes (car recs))))
+                  (segment-append! wal b)
+                  (loop (cdr recs) (+ bytes-so-far b)))))
+          ;; One fsync per drained batch.
+          (segment-fsync! wal)
+          ;; Advance bookkeeping.
+          (let ((next-before (coord-next-lsn c)))
+            (coord-set-next-lsn! c (+ next-before n)))
+          (coord-set-fsync-count! c (+ (coord-fsync-count c) 1))
+          (coord-set-batches-flushed! c (+ (coord-batches-flushed c) 1))
+          ;; Signal any waiters whose target LSN is now persisted.
+          (let ((newly-persisted (coord-next-lsn c)))
+            (coordinator-signal-waiters! c newly-persisted))
+          n))))
+
+;; Signal all waiters with target LSN <= up-to LSN.
+(define (coordinator-signal-waiters! c up-to-lsn)
+  (let ((ws (coord-waiters c)))
+    (let loop ((ws ws))
+      (if (null? ws)
+          'done
+          (begin
+            (waiter-signal! (car ws) up-to-lsn)
+            (loop (cdr ws)))))))
+
+;; Register a waiter (a synchronous-commit consumer).
+(define (coordinator-add-waiter! c waiter)
+  (coord-set-waiters! c (append (coord-waiters c) (list waiter))))
+
+;; Public accessors required by the module table.
+(define (coordinator-fsync-count c)
+  (coord-fsync-count c))
+
+(define (coordinator-batches-flushed c)
+  (coord-batches-flushed c))
+
+(define (coordinator-wal c)
+  (coord-wal c))
+
+;; --- small list helpers (no built-ins for take/drop beyond what's available) ---
+(define (list-head lst n)
+  (let loop ((xs lst) (k n) (acc '()))
+    (if (= k 0)
+        (reverse acc)
+        (loop (cdr xs) (- k 1) (cons (car xs) acc)))))
+
+(define (list-tail lst n)
+  (let loop ((xs lst) (k n))
+    (if (= k 0)
+        xs
+        (loop (cdr xs) (- k 1)))))
+
+(define (min a b) (if (< a b) a b))
+
+(api coordinator-new cfg wal)
+(api coordinator-group-commit! c)
+(api coordinator-fsync-count c)
+(api coordinator-batches-flushed c)
+(api coordinator-wal c)

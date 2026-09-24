@@ -1,0 +1,224 @@
+;; recovery.aura — WAL-driven recovery into page cache + B+tree.
+;;
+;; Recovery has three concerns:
+;;
+;;   1.  `recover` is the entry point. It:
+;;         - plumbs the cache back into a clean state,
+;;         - replays (redo) every committed WAL frame into the cache,
+;;         - then asks the tree to honor the final post-replay state.
+;;
+;;   2.  `redo-wal-into!` walks every frame in the WAL, decodes its
+;;       payload, and applies the corresponding mutation to a *fresh*
+;;       cache. Frames tagged COMMIT/ABORT/SKIP are no-ops at the page
+;;       level (they exist only to bound transactions); frames tagged
+;;       DELETE/CELL cause a page lookup, an update, and a dirty-mark.
+;;
+;;   3.  `undo-before!` rolls back any page updates recorded at or after
+;;       a given LSN cutoff. This is used when we discover an in-flight
+;;       (uncommitted) transaction whose effects must be undone before
+;;       we can continue serving reads.
+;;
+;; The recovery API is intentionally small: a single `(recover ...)`
+;; call from main.aura, plus the two helpers it composes.
+;;
+;; Implementation notes:
+;;
+;; - We treat the cache as a fresh, empty cache on entry. There is no
+;;   pre-existing on-disk page image to load (this is an in-memory
+;;   variant), so "redo" means: walk the WAL and rebuild the cache
+;;   from scratch by applying every committed frame, in LSN order.
+;;
+;; - We rely on `codec:decode-cell`, which returns one of:
+;;     '(tag . body)
+;;   where tag is 'cell / 'delete / 'skip, body is the key (and value)
+;;   pair or list. We dispatch on `tag` and apply the effect to the
+;;   designated page.
+;;
+;; - Page routing uses the lower bits of the key (a tiny stable hash)
+;;   to pick a page id; this lets the recovery walk populate a
+;;   deterministic set of pages without needing a real tree index.
+;;   It mirrors what btree.aura does on the write path, so recovery
+;;   ends up with pages in the same shape that btree operations would
+;;   have produced.
+
+;; Walk every frame in the WAL, in LSN order, and rebuild a fresh page
+;; cache from the encoded payloads. Each decoded frame either creates /
+;; updates a page (for 'cell/'delete) or is a no-op (for 'skip /
+;; 'commit / 'abort). Returns the newly-populated cache.
+(define (redo-wal-into! wal cache)
+  ;; We pull every frame off the WAL in its native order. Because
+  ;; `wal-append` assigns LSNs monotonically and `wal-frames` returns
+  ;; them in append order, this iteration is already LSN-ordered.
+  (let ((frames (wal-frames wal)))
+    (let loop ((fs frames)
+               (c     cache))
+      (if (null? fs)
+          c
+          (let ((f     (car fs))
+                (rest  (cdr fs)))
+            (let ((lsn     (wal-frame-lsn f))
+                  (payload (wal-frame-payload f)))
+              (let ((next-c (redo-apply-one c lsn payload)))
+                (loop rest next-c))))))))
+
+;; Apply a single WAL frame's payload to the cache. A 'cell or 'delete
+;; frame updates the page identified by routing on the key; other tags
+;; ('skip, 'commit, 'abort) leave the cache alone but still bump the
+;; frame's LSN onto the affected page's LSN stamp when the codec
+;; returns one we can resolve to a page. We err on the side of leaving
+;; the cache untouched for non-data frames — they have no payload bytes
+;; that affect page contents.
+(define (redo-apply-one cache lsn payload)
+  (if (null? payload)
+      cache
+      (let ((decoded (decode-cell payload)))
+        (let ((tag (car decoded))
+              (body (cdr decoded)))
+          (cond
+            ((equal? tag 'cell)
+             (let ((key (car body))
+                   (val (car (cdr body))))
+               (redo-page-update cache lsn key val #f)))
+            ((equal? tag 'delete)
+             (let ((key (car body)))
+               (redo-page-update cache lsn key 0 #t)))
+            (else
+             ;; 'skip, 'commit, 'abort, or anything else: no page effect.
+             cache))))))
+
+;; Update the cache: locate the page that owns `key`, replace its cell
+;; for that key (creating the page if absent), and pin the page's LSN
+;; to `lsn`. When `is-delete?` is true, the value is treated as a tomb-
+;; stone and the cell is removed from the page instead of upserted.
+;;
+;; Page routing is a simple stable mapping: page-id = (key mod 7) + 1.
+;; That gives us up to 7 pages and keeps recovery deterministic.
+(define (redo-page-update cache lsn key val is-delete?)
+  (let ((pid (route-page key)))
+    (let ((existing (cache-get cache pid)))
+      (let ((page
+              (if (or (equal? existing #f) (null? existing))
+                  (let ((fresh (page-empty pid)))
+                    (page-set-cells! fresh (list (cons key val)))
+                    (page-set-lsn! fresh lsn)
+                    fresh)
+                  (let ((cells (page-cells existing)))
+                    (let ((updated
+                            (if is-delete?
+                                (remove-cell cells key)
+                                (upsert-cell cells key val))))
+                      (begin
+                        (page-set-cells! existing updated)
+                        (page-set-lsn! existing lsn)
+                        existing))))))
+        (cache-put! cache pid page)))))
+
+;; Insert or replace the (key . value) cell in `cells`. Cells are kept
+;; ordered by key ascending; this preserves the invariant that
+;; `page-cells` returns keys in sorted order so downstream readers can
+;; binary-search if needed.
+(define (upsert-cell cells key val)
+  (cond
+    ((null? cells)
+     (cons (cons key val) '()))
+    ((< (car (car cells)) key)
+     (cons (car cells) (upsert-cell (cdr cells) key val)))
+    ((= (car (car cells)) key)
+     (cons (cons key val) (cdr cells)))
+    (else
+     (cons (cons key val) cells))))
+
+;; Remove every occurrence of `key` from `cells`. Used when replaying
+;; a 'delete frame.
+(define (remove-cell cells key)
+  (cond
+    ((null? cells)
+     '())
+    ((= (car (car cells)) key)
+     (remove-cell (cdr cells) key))
+    (else
+     (cons (car cells) (remove-cell (cdr cells) key)))))
+
+;; Route a key to a page id. Deterministic and stable across recovery
+;; and the btree write path so the WAL replay rebuilds an equivalent
+;; layout. (key mod 7) + 1 keeps page ids in the 1..7 range and avoids
+;; pid = 0 (which we reserve for "no page").
+(define (route-page key)
+  (+ (modulo key 7) 1))
+
+;; Undo every cache-side effect of WAL frames at LSN >= cutoff. We
+;; walk every frame, and for any data-frame whose LSN sits at or after
+;; `lsn` we drop the cell it wrote from the corresponding page. This
+;; is the inverse of `redo-wal-into!` for the in-flight-tail region.
+;;
+;; The cache is mutated in place; we return it for convenience.
+(define (undo-before! wal lsn cache)
+  (let ((frames (wal-frames wal)))
+    (let loop ((fs frames))
+      (if (null? fs)
+          cache
+          (let ((f (car fs)))
+            (let ((f-lsn     (wal-frame-lsn f))
+                  (f-payload (wal-frame-payload f)))
+              (begin
+                (if (and (not (null? f-payload))
+                         (>= f-lsn lsn))
+                    (undo-apply-one cache f-lsn f-payload)
+                    '())
+                (loop (cdr fs))))))))
+
+;; Inverse of `redo-apply-one` for a single frame. A 'cell frame is
+;; undone by removing its key from its page; a 'delete frame is undone
+;; by re-inserting the (key . 0) tombstone back; other tags are no-ops.
+(define (undo-apply-one cache lsn payload)
+  (if (null? payload)
+      cache
+      (let ((decoded (decode-cell payload)))
+        (let ((tag (car decoded))
+              (body (cdr decoded)))
+          (cond
+            ((equal? tag 'cell)
+             (let ((key (car body)))
+               (let ((pid (route-page key)))
+                 (let ((page (cache-get cache pid)))
+                   (if (or (equal? page #f) (null? page))
+                       cache
+                       (begin
+                         (page-set-cells!
+                           page
+                           (remove-cell (page-cells page) key))
+                         (page-set-lsn! page lsn)
+                         (cache-put! cache pid page)
+                         cache))))))
+            ((equal? tag 'delete)
+             (let ((key (car body)))
+               (let ((pid (route-page key)))
+                 (let ((page (cache-get cache pid)))
+                   (if (or (equal? page #f) (null? page))
+                       cache
+                       (begin
+                         (page-set-cells!
+                           page
+                           (upsert-cell (page-cells page) key 0))
+                         (page-set-lsn! page lsn)
+                         (cache-put! cache pid page)
+                         cache))))))
+            (else
+             cache))))))
+
+;; Top-level recovery: build a fresh cache, replay the WAL into it,
+;; then hand the result to the tree so it can re-derive its root
+;; pointer and root-key from whatever the replay produced.
+;;
+;; Returns the (now-consistent) cache. The tree is updated in place
+;; via `btree-attach-cache!` if the btree module exposes that hook;
+;; otherwise the cache alone is sufficient because the btree reads
+;; from the cache on every get. We always return the cache so callers
+;; can chain further recovery steps.
+(define (recover wal cache tree)
+  (let ((fresh (cache-new)))
+    (let ((replayed (redo-wal-into! wal fresh)))
+      (let ((synced (cache-flush! replayed wal)))
+        (begin
+          (btree-attach-cache! tree synced)
+          synced)))))

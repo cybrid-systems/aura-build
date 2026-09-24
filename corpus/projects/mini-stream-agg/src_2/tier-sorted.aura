@@ -1,0 +1,139 @@
+;; tier-sorted.aura — concrete "warm" sorted tier.
+;;
+;; This is the second tier in the promotion ladder. Keys that get
+;; touched very often get promoted out of the fast hashmap tier into
+;; this sorted tier. Conceptually a sorted tier is backed by a
+;; balanced tree or a sorted on-disk structure; here we just keep the
+;; keys in sorted order so that scans / range queries are predictable.
+;;
+;; The interface matches tier-hashmap and tier-overflow so the engine
+;; can swap tiers transparently. The internal representation is the
+;; same tagged association list as the other tiers, plus an
+;; explicit "sorted?" flag and the maximum key count we've ever seen,
+;; so the promotion logic has something to compare against.
+;;
+;; Per the module table the only required export is
+;;   (api sorted-tier-new)
+;; but we also define a couple of internal helpers used by the engine
+;; when it wants to inspect sorted-ness or rebuild order after a
+;; promotion. Those helpers are not exported.
+
+;; ---- internal helpers (NOT exported) -----------------------------------
+
+;; Build the empty state of a sorted tier.
+;; Shape: (cons 'tier (list 'sorted '() '() 0))
+;;   field 1 = sorted state, field 2 = touch counts, field 3 = max size
+(define (sorted-empty-state)
+  (cons 'tier (list 'sorted '() '() 0)))
+
+;; (sorted-keys t) -> list of keys currently stored, sorted ascending.
+;; We assume keys here are integers (user-id) so < works directly.
+;; The state slot is at car of the cdr of the tier wrapper.
+(define (sorted-keys-of t)
+  (cadr t))
+
+;; (sorted-touches t) -> alist of (key . count)
+(define (sorted-touches-of t)
+  (caddr t))
+
+;; (sorted-max-size t) -> highest number of keys this tier has held
+(define (sorted-max-size-of t)
+  (cadddr t))
+
+;; Insert/replace a key->value mapping into a sorted-key alist.
+;; Keys are kept in strictly ascending numeric order. If the key is
+;; already present the value is overwritten in place.
+(define (sorted-alist-insert alist k v)
+  (cond
+    ((null? alist)
+     (cons (cons k v) '()))
+    ((< k (car (car alist)))
+     (cons (cons k v) alist))
+    ((= k (car (car alist)))
+     (cons (cons k v) (cdr alist)))
+    (else
+     (cons (car alist)
+           (sorted-alist-insert (cdr alist) k v)))))
+
+;; Look up a key in a sorted alist. We could do a binary search but
+;; a linear walk is fine for the tiny data sizes in this toy engine.
+(define (sorted-alist-lookup alist k)
+  (cond
+    ((null? alist) #f)
+    ((= k (car (car alist))) (cdr (car alist)))
+    ((< k (car (car alist))) #f)
+    (else (sorted-alist-lookup (cdr alist) k))))
+
+;; Bump the touch counter for k in an alist of (key . count).
+;; Returns a new alist (does not mutate the input).
+(define (sorted-touches-bump touches k)
+  (cond
+    ((null? touches)
+     (cons (cons k 1) '()))
+    ((= k (car (car touches)))
+     (cons (cons k (+ (cdr (car touches)) 1)) (cdr touches)))
+    (else
+     (cons (car touches)
+           (sorted-touches-bump (cdr touches) k)))))
+
+;; Walk the alist, count how many entries there are.
+(define (sorted-count alist)
+  (if (null? alist)
+      0
+      (+ 1 (sorted-count (cdr alist)))))
+
+;; (sorted-max-of a b) -> whichever is larger.
+(define (sorted-max-of a b)
+  (if (> a b) a b))
+
+;; ---- the exported factory ----------------------------------------------
+
+;; (api sorted-tier-new) -> tier
+;; Build a fresh, empty sorted tier. The returned value is shaped
+;; exactly like a generic tier (see tier.aura), so the engine can
+;; treat it uniformly with the hashmap and overflow tiers.
+(define (sorted-tier-new)
+  (sorted-empty-state))
+
+;; ---- a couple of bonus helpers used internally by the engine ----------
+;;
+;; These are NOT required by the module table, but the engine code
+;; naturally wants to be able to ask "is this alist actually sorted?"
+;; after a promotion. We expose them as plain definitions so other
+;; files can use them if needed; they are not in the (api ...) form.
+
+;; (sorted-verify t) -> #t if the tier's state is in ascending order.
+(define (sorted-verify t)
+  (let ((ks (sorted-keys-of t)))
+    (sorted-verify-helper ks)))
+
+(define (sorted-verify-helper ks)
+  (cond
+    ((null? ks) #t)
+    ((null? (cdr ks)) #t)
+    ((< (car (car ks)) (car (cadr ks)))
+     (sorted-verify-helper (cdr ks)))
+    (else #f)))
+
+;; (sorted-rebuild t) -> tier with keys re-sorted (used after a bulk
+;; promotion that may have inserted keys out of order). We rebuild
+;; from the existing entries by extracting them and re-inserting.
+(define (sorted-rebuild t)
+  (let ((old (sorted-keys-of t)))
+    (let loop ((acc '()) (rest old))
+      (if (null? rest)
+          (cons 'tier
+                (list 'sorted acc
+                      (sorted-touches-of t)
+                      (sorted-count acc)))
+          (loop (sorted-alist-insert acc
+                                     (car (car rest))
+                                     (cdr (car rest)))
+                (cdr rest))))))
+
+;; And that's the whole sorted tier. Tier-step / tier-get / tier-keys
+;; / tier-size / tier-promote? are dispatched generically from
+;; tier.aura by matching on the 'sorted kind tag, so we don't redefine
+;; them here — but we do provide the concrete backing helpers
+;; (sorted-alist-insert, sorted-alist-lookup, sorted-touches-bump)
+;; that the generic tier-step / tier-promote? implementations use.

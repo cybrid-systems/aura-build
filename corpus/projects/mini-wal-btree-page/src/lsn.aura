@@ -1,0 +1,32 @@
+;; lsn.aura — Log Sequence Numbers.
+;;
+;; LSNs are exact non-negative integers. LSN_START (from constants.aura)
+;; is the first valid LSN; each subsequent appended WAL frame receives
+;; the next available LSN via `lsn-next`.
+
+;; Return the next LSN after `l`.
+(define (lsn-next l)
+  (+ l 1))
+
+;; Strict LSN ordering: #t iff `a` is strictly less than `b`.
+(define (lsn<? a b)
+  (< a b))
+
+;; LSN equality.
+(define (lsn-equal? a b)
+  (= a b))
+
+;; The greater of two LSNs.
+(define (lsn-max a b)
+  (if (> a b) a b))
+
+;; Produce an infinite-ish stream of LSNs starting at `from`.
+;; Returns a procedure that yields successive LSNs: the first call
+;; returns `from`, each subsequent call returns the next one.
+(define (make-lsn-seq from)
+  (let ((cur (cons from '())))
+    (lambda ()
+      (let ((v (car cur)))
+        (set-cdr! cur (cons (lsn-next v) '()))
+        (set-car! cur (car (cdr cur)))
+        v))))

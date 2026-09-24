@@ -1,0 +1,196 @@
+;; wal_coordinator.aura — Group-commit coordinator.
+;;
+;; The coordinator owns the per-batch fsync counter, the running list of
+;; waiters awaiting synchronous commit, and the side-effects of persisting
+;; a drained batch into the WAL segment. It does NOT decide when to flush
+;; — that's the runtime's job. The runtime calls `group-commit!` once per
+;; tick when it decides a flush is due, and the coordinator:
+;;
+;;   1. Drains the staging buffer (up to max-batch-size records).
+;;   2. Appends each record's serialized bytes to the segment.
+;;   3. fsyncs the segment once for the whole batch.
+;;   4. Updates per-writer committed-lsn based on the records it drained.
+;;   5. Wakes every registered synchronous waiter whose target LSN landed
+;;      in (or before) this batch.
+;;
+;; We deliberately keep the coordinator's state in plain alists/lists so
+;; the simulation remains transparent: you can inspect `waiters` and see
+;; exactly which transactions are still blocking.
+;;
+;; Exported APIs:
+;;   coordinator-new            : build a coordinator with initial counters
+;;   coordinator-group-commit!  : drain+fsync the staging buffer once
+;;   coordinator-fsync-count    : number of fsync calls issued so far
+;;   coordinator-batches-flushed: number of completed batches
+;;   coordinator-wal            : the segment the coordinator writes into
+
+(define api-tag 'coordinator)
+
+;; --- internal accessors (not exported) ----------------------------------
+
+(define (coord-cfg c) (car c))
+(define (coord-wal c) (cadr c))
+(define (coord-fsyncs c) (caddr c))
+(define (coord-batches c) (cadddr c))
+(define (coord-waiters c) ; list of waiter structs (see wal_waiter.aura)
+  (car (cddddr c)))
+(define (coord-last-lsn c)
+  (cdr (cddddr c)))
+
+(define (set-coord-waiters! c w)
+  (set-car! (cddddr c) w))
+(define (set-coord-last-lsn! c l)
+  (set-cdr! (cddddr c) l))
+
+;; --- constructor --------------------------------------------------------
+
+(define (api coordinator-new cfg wal)
+  ;; Layout: (cfg wal fsyncs batches waiters last-lsn)
+  (list cfg wal 0 0 '() 0))
+
+;; --- helpers ------------------------------------------------------------
+
+;; Drain up to max-batch-size records from the buffer, oldest first.
+;; Returns the drained list (in original order) without modifying the
+;; buffer beyond what buffer-drain! already does.
+(define (coord-drain-up-to c buf)
+  (let ((cap (wal-max-batch-size (coord-cfg c))))
+    (let loop ((acc '())
+               (remaining cap))
+      (cond
+        ((<= remaining 0) (reverse acc))
+        ((buffer-empty? buf) (reverse acc))
+        (else
+         (let ((rest (buffer-drain! buf)))
+           (if (null? rest)
+               (reverse acc)
+               (loop (cons (car rest) acc) (- remaining 1)))))))))
+
+;; Update each writer's committed-lsn based on the records we just
+;; persisted. The records list is in the order they were drained, so the
+;; last record's LSN (computed from its position in the sequence) is the
+;; "high water mark" for any writer touched by this batch.
+;;
+;; Writers are looked up by tx-id; we walk the runtime's writer list
+;; (passed in by the caller) and mutate the writer struct in place via
+;; set!.
+;;
+;; Note: writers are mutated by reference. The writer struct is itself a
+;; mutable list, so set! on (car (cdr (cdr (cdr w)))) updates the
+;; committed-lsn slot in place.
+(define (coord-apply-commits! records writers)
+  ;; records is a list of record structs; we don't actually need their
+  ;; LSNs here because each writer tracks its own LSN counter. The act
+  ;; of draining records from the buffer tells us "everything in this
+  ;; list is now durable", and we bump each affected writer's
+  ;; committed-lsn by the number of its own records in the batch.
+  (let loop ((rs records)
+             (ws writers))
+    (cond
+        ((null? rs) #t)
+        ((null? ws) #t)
+        (else
+         (let ((rec (car rs))
+               (wri (car ws)))
+           (if (and (number? rec) (= rec (record-tx-id (car ws))))
+               (begin
+                 ;; bump committed-lsn of wri
+                 (set-car! (cdddr wri)
+                           (lsn-next (car (cdddr wri))))
+                 (loop (cdr rs) (cdr ws)))
+               (loop rs (cdr ws))))))))
+
+;; Wait, the writers are real writer structs (see wal_writer.aura), not
+;; raw records. We need to inspect writer id and bump its committed-lsn
+;; whenever a record belonging to that writer appears in the drained
+;; batch. Rewrite more carefully:
+
+(define (coord-bump-writers! records writers)
+  ;; For each record in the drained batch, find the matching writer and
+  ;; advance its committed-lsn by one. Since writers all share a single
+  ;; LSN space (the coordinator hands out LSNs implicitly via drain
+  ;; order), advancing by 1 per record is correct.
+  (let loop ((rs records))
+    (cond
+      ((null? rs) #t)
+      (else
+       (let* ((rec (car rs))
+              (tx  (record-tx-id rec))
+              (w   (find-writer-by-id writers tx)))
+         (if w
+             (begin
+               ;; writer layout: (id buf last-issued committed-lsn ...)
+               ;; committed-lsn is the 4th element (cadddr).
+               (set-car! (cdddr w)
+                         (lsn-next (car (cdddr w))))
+               #t)
+             #t)
+         (loop (cdr rs)))))))
+
+(define (find-writer-by-id writers id)
+  (cond
+    ((null? writers) #f)
+    ((= (car (car writers)) id) (car writers))
+    (else (find-writer-by-id (cdr writers) id))))
+
+;; Wake all waiters whose target LSN has been reached. A waiter is
+;; "ready" if its target LSN is <= the high-water-mark LSN of the last
+;; batch (i.e., the new last-lsn tracked by the coordinator).
+;;
+;; In practice, each waiter polls on its own; here we simply mark any
+;; waiter whose target has been hit. We rely on the waiter module's
+;; signal! to flip the per-waiter flag.
+(define (coord-wake-waiters! c new-hwm)
+  (let ((waiters (coord-waiters c)))
+    (let loop ((ws waiters))
+      (cond
+        ((null? ws) #t)
+        (else
+         (let ((w (car ws)))
+           (if (<= (car (cdr w)) new-hwm)
+               (set-car! (cdr (cdr w)) #t)) ; mark ready
+           (loop (cdr ws))))))))
+
+;; --- group commit --------------------------------------------------------
+
+(define (api coordinator-group-commit! c)
+  ;; The runtime passes us the buffer and writers via side channels. We
+  ;; expect the coordinator to know which buffer to drain — that's
+  ;; stored in cfg as 'buffer, and writers as 'writers, both set up by
+  ;; the runtime before the first tick.
+  (let* ((cfg  (coord-cfg c))
+         (buf  (let ((p (assq 'buffer cfg))) (if p (cdr p) #f)))
+         (wls  (let ((p (assq 'writers cfg))) (if p (cdr p) '())))
+         (seg  (coord-wal c))
+         (batch (if buf (coord-drain-up-to c buf) '()))
+         (n    (length batch))
+         (new-hwm (+ (coord-last-lsn c) n)))
+    ;; Append each record's bytes to the segment.
+    (let loop ((rs batch))
+      (cond
+        ((null? rs) #t)
+        (else
+         (segment-append! seg (record->bytes (car rs)))
+         (loop (cdr rs)))))
+    ;; Single fsync per batch.
+    (segment-fsync! seg)
+    ;; Bump per-writer committed LSNs.
+    (coord-bump-writers! batch wls)
+    ;; Wake any waiters whose target LSN has now been persisted.
+    (coord-wake-waiters! c new-hwm)
+    ;; Update coordinator counters.
+    (set-car! (cddr c) (+ (coord-fsyncs c) 1))
+    (set-car! (cdddr c) (+ (coord-batches c) 1))
+    (set-coord-last-lsn! c new-hwm)
+    n))
+
+;; --- inspectors ----------------------------------------------------------
+
+(define (api coordinator-fsync-count c)
+  (coord-fsyncs c))
+
+(define (api coordinator-batches-flushed c)
+  (coord-batches c))
+
+(define (api coordinator-wal c)
+  (coord-wal c))

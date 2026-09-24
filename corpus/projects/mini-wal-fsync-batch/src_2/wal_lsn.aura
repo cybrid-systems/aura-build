@@ -1,0 +1,14 @@
+;; wal_lsn.aura — Log Sequence Number utilities
+
+(define (lsn-next cur)
+  (+ cur 1))
+
+(define (lsn-equal? a b)
+  (= a b))
+
+(define (lsn->string l)
+  (string-append "LSN:" (number->string l)))
+
+(api lsn-next cur)
+(api lsn-equal? a b)
+(api lsn->string l)

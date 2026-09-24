@@ -1,0 +1,44 @@
+;; lsn.aura
+;; Log Sequence Number (LSN) helpers.
+;;
+;; An LSN is just a monotonically-increasing non-negative integer that
+;; identifies the position of a WAL frame. Every write that goes through
+;; the WAL gets the next available LSN; every page in the cache remembers
+;; the highest LSN that has touched it; recovery uses LSN ordering to
+;; decide what to redo and what to undo.
+;;
+;; All comparisons here are plain integer comparisons — no wrapping, no
+;; modular arithmetic. The runtime invariant is that LSNs only ever move
+;; forward within a single incarnation of the WAL.
+
+;; Return the next LSN after `l`. This is the operation that the WAL
+;; uses every time it appends a frame, so it has to be cheap.
+(define (lsn-next l)
+  (+ l 1))
+
+;; Strict LSN ordering. Used during recovery to decide whether a WAL
+;; frame is "newer than" the page it would touch, and by the cache when
+;; ordering dirty pages for flushing.
+(define (lsn<? a b)
+  (< a b))
+
+;; LSN equality. Provided as a named predicate so callers can compare
+;; LSNs without leaking the raw `=` into application code.
+(define (lsn-equal? a b)
+  (= a b))
+
+;; Return whichever LSN is the larger of the two. Used by the page
+;; cache when merging a page's existing LSN with a freshly-applied
+;; write's LSN — the page must remember the highest LSN it has seen.
+(define (lsn-max a b)
+  (if (lsn<? a b) b a))
+
+;; Produce an infinite stream of LSNs starting at `from` and going
+;; forward by one each time. The stream is a thunk-returning pair:
+;;   (car pair)  -> the next available LSN
+;;   (cdr pair)  -> another pair of the same shape, advanced by one
+;; so callers can either pull one LSN with `car` or recurse with `cdr`
+;; to generate a whole sequence. This is what the WAL uses internally
+;; instead of mutating a global counter.
+(define (make-lsn-seq from)
+  (cons from (lambda () (make-lsn-seq (lsn-next from)))))

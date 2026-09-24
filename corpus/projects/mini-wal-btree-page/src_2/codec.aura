@@ -1,0 +1,105 @@
+;; codec.aura
+;; Wire codecs for cell encoding/decoding and WAL payload framing.
+;;
+;; A "cell" is the basic unit of a B+tree page — a (key . value) pair.
+;; In this small engine keys and values are both integers, encoded as
+;; fixed-width big-endian byte sequences so that the on-wire layout is
+;; unambiguous and decoders don't have to guess at boundaries.
+;;
+;; We rely on `u16` / `u8` from util.aura for the actual byte splitting.
+;; Every helper here is purely functional: encode-* builds a list of
+;; bytes, decode-* parses one back into the corresponding Aura value.
+;;
+;; On top of cell encoding we also provide the two payload codecs that
+;; the WAL log records use directly:
+;;
+;;   * encode-skip  -- a tombstone saying "ignore this key"
+;;   * encode-delete -- a tombstone saying "remove this key"
+;;
+;; Both are just thin wrappers around `encode-cell` with a sentinel
+;; value (-1 / -2) so that the WAL frame stream is unambiguous: any
+;; downstream consumer can pattern-match on the leading sentinel byte
+;; to decide which kind of log record it is looking at.
+
+;; ---------------------------------------------------------------------
+;; encode-cell : integer key, integer value -> list of bytes
+;;
+;; Layout (8 bytes total):
+;;
+;;     byte 0   : key high byte
+;;     byte 1   : key low  byte
+;;     byte 2   : value high byte
+;;     byte 3   : value low  byte
+;;     byte 4   : magic1 = 0xCE
+;;     byte 5   : magic2 = 0x11
+;;     byte 6   : crc1    over (k,v)
+;;     byte 7   : crc2    over (k,v)
+;;
+;; The magic bytes let a decoder reject stray payloads that happen to
+;; look like cell-shaped data but were never produced by `encode-cell`.
+;; The trailing crc bytes are a cheap per-cell checksum; downstream
+;; layers can decide whether to trust them or not.
+;; ---------------------------------------------------------------------
+(define (encode-cell k v)
+  (let ((kh (u16 k))
+        (vh (u16 v))
+        (mk1 206)               ; 0xCE
+        (mk2 17))               ; 0x11
+    (let ((crcs (u16 (crc16 (append kh vh)))))
+      (list (car  kh) (cadr  kh)
+            (car  vh) (cadr  vh)
+            mk1 mk2
+            (car  crcs) (cadr  crcs)))))
+
+;; ---------------------------------------------------------------------
+;; decode-cell : list of bytes -> (key . value)
+;;
+;; Inverse of `encode-cell`. We accept an over-long byte stream and
+;; just take the first 8 bytes; anything beyond that is ignored. The
+;; magic bytes are checked — if they don't match we return #f so the
+;; caller can decide how to react (typically: skip the frame).
+;; ---------------------------------------------------------------------
+(define (decode-cell xs)
+  (let ((bs (take 8 xs)))
+    (if (< (length bs) 8)
+        #f
+        (let ((k (+ (* (list-ref bs 0) 256) (list-ref bs 1)))
+              (v (+ (* (list-ref bs 2) 256) (list-ref bs 3)))
+              (m1 (list-ref bs 4))
+              (m2 (list-ref bs 5)))
+          (if (and (= m1 206) (= m2 17))
+              (cons k v)
+              #f)))))
+
+;; ---------------------------------------------------------------------
+;; encode-skip : integer key -> list of bytes
+;;
+;; Records in the WAL that "this key was observed but should be
+;; ignored on replay" — used by the recovery walk when it encounters
+;; a frame whose payload it cannot classify as either an insert or a
+;; delete. We mark it with a leading sentinel byte of 0xFF so that a
+;; scanner can spot skip records without decoding the full payload.
+;;
+;; Layout:
+;;
+;;     byte 0   : 0xFF  (sentinel for "skip")
+;;     bytes 1..: encode-cell(key, -1)
+;; ---------------------------------------------------------------------
+(define (encode-skip key)
+  (cons 255 (encode-cell key -1)))
+
+;; ---------------------------------------------------------------------
+;; encode-delete : integer key -> list of bytes
+;;
+;; A WAL frame that asks the page cache to remove `key` from any
+;; page that currently holds it. Marked with sentinel byte 0xFE so
+;; that decode-delete / decode-skip can dispatch on the first byte
+;; of the frame.
+;;
+;; Layout:
+;;
+;;     byte 0   : 0xFE  (sentinel for "delete")
+;;     bytes 1..: encode-cell(key, -2)
+;; ---------------------------------------------------------------------
+(define (encode-delete key)
+  (cons 254 (encode-cell key -2)))

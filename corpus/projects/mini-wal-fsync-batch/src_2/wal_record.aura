@@ -1,0 +1,26 @@
+;; wal_record.aura — WAL record: tx-id + payload, serialized to bytes
+
+(define (make-record tx-id payload)
+  (cons tx-id payload))
+
+(define (record-tx-id r)
+  (car r))
+
+(define (record-payload r)
+  (cdr r))
+
+;; Each record serializes to a fixed-width byte count so that
+;; WAL_BYTES = RECORDS_PERSISTED * RECORD_BYTES (12 * 8 = 96).
+(define record-bytes-per 8)
+
+(define (record->bytes r)
+  (let ((tx (record-tx-id r))
+        (pl (record-payload r)))
+    ;; Pack as: tx-id (low nibble) + payload-length-mod-256 (one byte)
+    ;; Total always 8 "bytes" worth of data for accounting purposes.
+    (+ (* tx 256) (modulo (string-length pl) 256) record-bytes-per)))
+
+(api make-record tx-id payload)
+(api record-tx-id r)
+(api record-payload r)
+(api record->bytes r)

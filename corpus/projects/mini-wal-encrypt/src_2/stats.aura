@@ -1,0 +1,63 @@
+;; stats.aura — analytical statistics over the encrypted WAL.
+;;
+;; Provides a single exported API: (api-stats-active-key-range wal).
+;;
+;; Given a WAL whose segments store their sealing key version, this helper
+;; finds the minimum and maximum segment indices (1-based, contiguous) that
+;; were sealed under the key version equal to the *current* key version in
+;; the keyring implied by the segment list. Concretely, we determine the
+;; "current" version as the version of the *last* segment (newest in time),
+;; mirroring how keys.aura's "current" version is the latest one issued.
+;;
+;; The returned pair is (min-seg-with-current . max-seg-with-current).
+;; If no segment uses the current version, both sides are 0.
+
+;; ----
+;; Internal helpers
+;; ----
+
+;; Compute the length of a (possibly improper) flat list of segments.
+;; Segments are always a proper list, but we use a tiny recursive counter
+;; for clarity and to avoid relying on `length` performance characteristics.
+(define (stats-seg-count wal)
+  (let loop ((xs wal) (n 0))
+    (if (null? xs)
+        n
+        (loop (cdr xs) (+ n 1)))))
+
+;; Walk the segment list and return the recorded key version of the
+;; last segment. Falls back to 0 if the WAL is empty.
+(define (stats-last-version wal)
+  (if (null? wal)
+      0
+      (car (cdr (car (reverse wal))))))
+
+;; Walk the segment list and collect the 1-based indices of segments whose
+;; recorded key version equals `target-v`. Returns a list of integer indices.
+(define (stats-indices-with-version wal target-v)
+  (let loop ((xs wal)
+             (i 1)
+             (acc '()))
+    (cond
+      ((null? xs)
+       (reverse acc))
+      ((= (car (cdr (car xs))) target-v)
+       (loop (cdr xs) (+ i 1) (cons i acc)))
+      (else
+       (loop (cdr xs) (+ i 1) acc)))))
+
+;; ----
+;; Public API
+;; ----
+
+;; (api-stats-active-key-range wal)
+;;   wal  : a WAL as produced by api-wal-* helpers (list of segments).
+;; Returns (min . max) where min is the smallest 1-based segment index
+;; sealed under the current key version, and max is the largest such
+;; index. If no segment uses the current version, returns (0 . 0).
+(define (api-stats-active-key-range wal)
+  (let ((cur-v (stats-last-version wal)))
+    (let ((hits (stats-indices-with-version wal cur-v)))
+      (if (null? hits)
+          (cons 0 0)
+          (cons (car (reverse hits)) (car hits))))))
