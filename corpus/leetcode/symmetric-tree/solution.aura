@@ -1,0 +1,118 @@
+;; Tokenize input string into list of tokens
+(define (tokenize s)
+  (let ((len (string-length s)))
+    (let loop ((i 0) (acc '()))
+      (if (>= i len)
+          (reverse acc)
+          (let ((c (string-ref s i)))
+            (cond
+              ((char=? c #\space) (loop (+ i 1) acc))
+              ((char=? c #\() (loop (+ i 1) (cons "(" acc)))
+              ((char=? c #\)) (loop (+ i 1) (cons ")" acc)))
+              ((char=? c #\#) (loop (+ i 1) (cons "#" acc)))
+              (else
+               ;; collect a number or 'null'
+               (let collect ((j i) (chars '()))
+                 (if (>= j len)
+                     (loop j (cons (list->string (reverse chars)) acc))
+                     (let ((cj (string-ref s j)))
+                       (if (or (char=? cj #\space) (char=? cj #\)) (char=? cj #\())
+                           (loop j (cons (list->string (reverse chars)) acc))
+                           (collect (+ j 1) (cons cj chars))))))))))))))
+
+(define (tokens-match? tok)
+  (cond ((null? tok) #f)
+        ((equal? (car tok) "(") #t)
+        ((equal? (car tok) "#") #t)
+        (else #t)))
+
+;; Parse tokens starting at index i; return (parsed-tree . next-index)
+;; A tree is either 'null or (value left right)
+(define (parse-tree tokens i)
+  (if (equal? (list-ref tokens i) "#")
+      (cons 'null (+ i 1))
+      ;; must be "("
+      (let ((i2 (+ i 1)))
+        (let ((val (list-ref tokens i2)))
+          (let ((i3 (+ i2 1)))
+            (let ((left-result (parse-tree tokens i3)))
+              (let ((left (car left-result))
+                    (i4 (cdr left-result)))
+                (let ((right-result (parse-tree tokens i4)))
+                  (let ((right (car right-result))
+                        (i5 (cdr right-result)))
+                    (cons (list val left right) (+ i5 1)))))))))))
+
+(define (parse-input s)
+  (let ((toks (tokenize s)))
+    (parse-tree toks 0)))
+
+;; Check if two trees are mirrors
+(define (mirror? a b)
+  (cond
+    ((and (null? a) (null? b)) #t)
+    ((or (null? a) (null? b)) #f)
+    (else
+     (let ((va (car a)) (la (cadr a)) (ra (caddr a)))
+       (let ((vb (car b)) (lb (cadr b)) (rb (caddr b)))
+         (and (equal? va vb)
+              (mirror? la rb)
+              (mirror? ra lb)))))))
+
+(define (symmetric? root)
+  (if (null? root) #t (mirror? (cadr root) (caddr root))))
+
+(define (solve s)
+  (let ((root (parse-input s)))
+    (if (symmetric? root) #t #f)))
+
+;; helper to display boolean
+(define (display-bool b) (display (if b "true" "false")))
+
+;; Extract value between "CASE0=" and "#"
+(define (extract-value s)
+  (let ((len (string-length s)))
+    (let loop ((i 0))
+      (if (>= i len) ""
+          (if (and (< (+ i 5) len)
+                   (char=? (string-ref s i) #\C)
+                   (char=? (string-ref s (+ i 1)) #\A)
+                   (char=? (string-ref s (+ i 2)) #\S)
+                   (char=? (string-ref s (+ i 3)) #\E)
+                   (char=? (string-ref s (+ i 4)) #\0)
+                   (char=? (string-ref s (+ i 5)) #\=))
+              (substring s (+ i 6) len)
+              (loop (+ i 1)))))))
+
+(define (substring s start end)
+  (let ((len (- end start)))
+    (let loop ((i 0) (acc '()))
+      (if (>= i len)
+          (list->string (reverse acc))
+          (loop (+ i 1) (cons (string-ref s (+ start i)) acc))))))
+
+;; Test inputs
+(define test0 "CASE0=(1 (2 (3 # #) (4 # #)) (2 (4 # #) (3 # #)))#")
+(define test1 "CASE0=(1 (2 # #) (2 # #))#")
+(define test2 "CASE0=(1 (2 # #) (3 # #))#")
+(define test3 "CASE0=(1)#")
+(define test4 "CASE0=null#")
+(define test5 "CASE0=(1 (2 (3 # #) #) (2 # (3 # #)))#")
+(define test6 "CASE0=(1 (2 # (3 # #)) (2 (3 # #) #))#")
+(define test7 "CASE0=(1 (2 (4 # #) (3 # #)) (2 (3 # #) (4 # #)))#")
+
+(define (run-test i s)
+  (let ((val (extract-value s)))
+    (let ((result (solve val)))
+      (display "CASE") (display i) (display "=")
+      (display-bool result)
+      (newline))))
+
+(run-test 0 test0)
+(run-test 1 test1)
+(run-test 2 test2)
+(run-test 3 test3)
+(run-test 4 test4)
+(run-test 5 test5)
+(run-test 6 test6)
+(run-test 7 test7)

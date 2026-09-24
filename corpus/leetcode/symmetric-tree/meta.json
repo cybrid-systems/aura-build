@@ -1,5 +1,60 @@
 {
-  "variants": [],
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:47:13Z",
+      "ts_local": "2026-09-24 22:47:13 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2602,
+        "total_characters": 0,
+        "prompt_tokens": 1119,
+        "completion_tokens": 1483,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.019,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 21:72: parse error: unexpected ')'\n",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:47:40Z",
+      "ts_local": "2026-09-24 22:47:40 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2274,
+        "total_characters": 0,
+        "prompt_tokens": 1119,
+        "completion_tokens": 1155,
+        "prompt_tokens_details": {
+          "cached_tokens": 1118
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": -1,
+      "timeout": true,
+      "duration_s": 20.007,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "timeout",
+      "stdout_snippet": ""
+    }
+  ],
   "slug": "symmetric-tree",
   "title": "Symmetric Tree",
   "category": "trees",
@@ -28,5 +83,6 @@
     },
     "ts": "2026-09-24T14:45:42Z"
   },
-  "updated_at": "2026-09-24T14:45:42Z"
+  "updated_at": "2026-09-24T14:47:40Z",
+  "updated_at_local": "2026-09-24 22:47:40 CST"
 }

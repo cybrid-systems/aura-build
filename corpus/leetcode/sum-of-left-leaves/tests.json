@@ -1,0 +1,44 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "raw": "( 3 ( 2 ( nil nil ) ( nil nil ) ) ( 2 ( 5 ( nil nil ) ( nil nil ) ) ( 6 ( nil nil ) ( nil nil ) ) ) )"
+    },
+    "expected": "2"
+  },
+  {
+    "id": 1,
+    "input": {
+      "raw": "( 1 ( 2 ( nil nil ) ( nil nil ) ) ( 3 ( nil nil ) ( nil nil ) ) )"
+    },
+    "expected": "2"
+  },
+  {
+    "id": 2,
+    "input": {
+      "raw": "nil"
+    },
+    "expected": "0"
+  },
+  {
+    "id": 3,
+    "input": {
+      "raw": "( 7 ( nil nil ) ( nil nil ) )"
+    },
+    "expected": "0"
+  },
+  {
+    "id": 4,
+    "input": {
+      "raw": "( 1 ( nil nil ) ( 2 ( 4 ( nil nil ) ( nil nil ) ) ( nil nil ) ) )"
+    },
+    "expected": "0"
+  },
+  {
+    "id": 5,
+    "input": {
+      "raw": "( 10 ( 5 ( 3 ( nil nil ) ( nil nil ) ) ( 7 ( nil nil ) ( nil nil ) ) ) ( 15 ( nil nil ) ( 20 ( nil nil ) ( nil nil ) ) ) )"
+    },
+    "expected": "3"
+  }
+]

@@ -1,0 +1,58 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "raw": "CASE0=(1 (2 (3 # #) (4 # #)) (2 (4 # #) (3 # #)))#"
+    },
+    "expected": "true"
+  },
+  {
+    "id": 1,
+    "input": {
+      "raw": "CASE0=(1 (2 # #) (2 # #))#"
+    },
+    "expected": "true"
+  },
+  {
+    "id": 2,
+    "input": {
+      "raw": "CASE0=(1 (2 # #) (3 # #))#"
+    },
+    "expected": "false"
+  },
+  {
+    "id": 3,
+    "input": {
+      "raw": "CASE0=(1)#"
+    },
+    "expected": "true"
+  },
+  {
+    "id": 4,
+    "input": {
+      "raw": "CASE0=null#"
+    },
+    "expected": "true"
+  },
+  {
+    "id": 5,
+    "input": {
+      "raw": "CASE0=(1 (2 (3 # #) #) (2 # (3 # #)))#"
+    },
+    "expected": "true"
+  },
+  {
+    "id": 6,
+    "input": {
+      "raw": "CASE0=(1 (2 # (3 # #)) (2 (3 # #) #))#"
+    },
+    "expected": "true"
+  },
+  {
+    "id": 7,
+    "input": {
+      "raw": "CASE0=(1 (2 (4 # #) (3 # #)) (2 (3 # #) (4 # #)))#"
+    },
+    "expected": "true"
+  }
+]

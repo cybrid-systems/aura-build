@@ -1,0 +1,224 @@
+;; Parse input string into a tree structure
+(define (tokenize s)
+  (let ((cleaned (string-append s "")))
+    cleaned))
+
+(define (skip-ws s i)
+  (let ((n (string-length s)))
+    (let loop ((i i))
+      (if (>= i n) i
+          (let ((c (string-ref s i)))
+            (if (or (char=? c #\space) (char=? c #\tab) (char=? c #\newline))
+                (loop (+ i 1))
+                i))))))
+
+(define (parse-tree s)
+  (let ((n (string-length s)))
+    (let ((i (skip-ws s 0)))
+      (if (>= i n) '()
+          (let ((c (string-ref s i)))
+            (cond
+              ((char=? c #\() 
+               (parse-from s (+ i 1)))
+              ((char=? c #\n) 
+               (if (and (< (+ i 1) n) (char=? (string-ref s (+ i 1)) #\i)
+                        (< (+ i 2) n) (char=? (string-ref s (+ i 2)) #\l))
+                   (begin (list 'nil) 'skipped)
+                   '()))
+              (else '())))))))
+
+(define (parse-from s i)
+  (let ((n (string-length s)))
+    (let ((i (skip-ws s i)))
+      (if (>= i n) '()
+          (let ((c (string-ref s i)))
+            (cond
+              ((char=? c #\n)
+               (if (and (< (+ i 1) n) (char=? (string-ref s (+ i 1)) #\i)
+                        (< (+ i 2) n) (char=? (string-ref s (+ i 2)) #\l))
+                   (begin (skip-ws s (+ i 3)) (list 'nil))
+                   '()))
+              ((char=? c #\()
+               (let ((r (parse-subtree s (+ i 1) '())))
+                 (let ((rest (skip-ws s (+ i 1))))
+                   rest)))
+              (else '())))))))
+
+(define (parse-subtree s i acc)
+  (let ((n (string-length s)))
+    (let ((i (skip-ws s i)))
+      (if (>= i n) (reverse acc)
+          (let ((c (string-ref s i)))
+            (cond
+              ((or (char=? c #\0) (char=? c #\1) (char=? c #\2)
+                   (char=? c #\3) (char=? c #\4) (char=? c #\5)
+                   (char=? c #\6) (char=? c #\7) (char=? c #\8)
+                   (char=? c #\9) (char=? c #\-))
+               (let loop ((j i) (acc-num '()))
+                 (if (>= j n) (list (list->number (reverse acc-num)))
+                     (let ((cj (string-ref s j)))
+                       (if (or (char>=? cj #\0) (char=? cj #\-))
+                           (loop (+ j 1) (cons cj acc-num))
+                           (list (list->number (reverse acc-num))))))))
+              (else '())))))))
+
+(define (list->number lst)
+  (let loop ((lst lst) (acc 0))
+    (if (null? lst) acc
+        (loop (cdr lst) (+ (* acc 10) (- (char->integer (car lst)) (char->integer #\0)))))))
+
+;; ---- Tree parser using read-from-string-like approach ----
+;; Simpler: use a token stream
+
+(define (tokenize-list s)
+  ;; returns list of tokens
+  (let ((n (string-length s)))
+    (let loop ((i 0) (tokens '()) (cur '()))
+      (cond
+        ((>= i n) 
+         (if (null? cur) (reverse tokens)
+             (reverse (cons (list->string (reverse cur)) tokens))))
+        (else
+         (let ((c (string-ref s i)))
+           (cond
+             ((or (char=? c #\space) (char=? c #\tab) (char=? c #\newline))
+              (if (null? cur) (loop (+ i 1) tokens cur)
+                  (loop (+ i 1) (cons (list->string (reverse cur)) tokens) '())))
+             ((char=? c #\()
+              (loop (+ i 1) (cons "(" tokens) cur))
+             ((char=? c #\))
+              (if (null? cur) (loop (+ i 1) (cons ")" tokens) cur)
+                  (loop (+ i 1) (cons (list->string (reverse cur)) (cons ")" tokens)) '())))
+             (else
+              (loop (+ i 1) tokens (cons c cur))))))))))
+
+(define (parse-tokens tokens)
+  ;; tokens: list of strings, parse a tree
+  (let loop ((toks tokens) (stack '()) (result '()))
+    (cond
+      ((null? toks) (car stack))
+      (else
+       (let ((tok (car toks)))
+         (cond
+           ((string=? tok "(")
+            (loop (cdr toks) (cons "(" stack) result))
+           ((string=? tok ")")
+            (let ((collected '()))
+              (let inner ((st stack) (acc '()))
+                (cond
+                  ((null? st) (cons (reverse acc) collected))
+                  ((string=? (car st) "(")
+                   (let ((new-elem (reverse acc)))
+                     (let ((new-stack (cdr st)))
+                       (if (null? new-stack) (cons new-elem collected)
+                           (cons new-elem (cons new-elem '())))))))))))
+           (else
+            (loop (cdr toks) (cons tok stack) result))))))))
+
+;; Approach: build tree incrementally
+(define (build-tree tokens)
+  ;; returns the tree built from token list
+  (let ((n (length tokens)))
+    (let loop ((i 0) (stack '()))
+      (cond
+        ((>= i n) 
+         (let ((final (reverse stack)))
+           (if (null? final) 'nil (car final))))
+        (else
+         (let ((tok (list-ref tokens i)))
+           (cond
+             ((string=? tok "(")
+              (loop (+ i 1) (cons "(" stack)))
+             ((string=? tok ")")
+              ;; pop until "(", gather elements
+              (let inner ((st stack) (elems '()))
+                (cond
+                  ((null? st) (loop (+ i 1) (cons '() stack)))
+                  ((eq? (car st) '(') 
+                   (let ((node (cons (reverse elems) '())))
+                     ;; node is (child1 child2 ...) - need to pair with mark
+                     (loop (+ i 1) (cons node (cdr st)))))
+                  (else
+                   (inner (cdr st) (cons (car st) elems))))))
+             (else
+              ;; number or nil
+              (let ((val (if (string=? tok "nil") 'nil (string->number tok))))
+                (loop (+ i 1) (cons val stack)))))))))))
+
+;; Final tree structure: a node is (val left right) or 'nil
+;; Let's redesign with proper cons pair (val . (left . right))
+
+(define (build-tree2 tokens)
+  (let loop ((toks tokens) (stack '()))
+    (cond
+      ((null? toks)
+       (if (null? stack) 'nil (car stack)))
+      (else
+       (let ((tok (car toks)))
+         (cond
+           ((string=? tok "(")
+            (loop (cdr toks) (cons 'MARK stack)))
+           ((string=? tok ")")
+            ;; gather items until MARK
+            (let inner ((st stack) (items '()))
+              (cond
+                ((null? st) '())
+                ((eq? (car st) 'MARK)
+                 ;; build node from items (in reverse)
+                 (let ((rev-items (reverse items)))
+                   (let ((n (length rev-items)))
+                     (let ((node 
+                             (cond
+                               ((= n 0) '())
+                               ((= n 1) (list (car rev-items) 'nil 'nil))
+                               ((= n 2) (list (car rev-items) (cadr rev-items) 'nil))
+                               (else (list (car rev-items) (cadr rev-items) (caddr rev-items))))))
+                       (loop (cdr toks) (cons node (cdr st)))))))
+                (else
+                 (inner (cdr st) (cons (car st) items))))))
+           (else
+            (let ((val (if (string=? tok "nil") 'nil (string->number tok))))
+              (loop (cdr toks) (cons val stack))))))))))
+
+;; Parse input string into tree
+(define (parse-input s)
+  (let ((toks (tokenize-list s)))
+    (build-tree2 toks)))
+
+;; ---- solve: sum of left leaves ----
+;; A left leaf is a node whose parent identifies it as left child,
+;; and the node itself is a leaf (both children nil).
+;; Recursive approach: traverse; for each node, check if its children are leaves.
+;; Tree node: (val left right) or 'nil
+
+(define (is-leaf? node)
+  (if (eq? node 'nil) #f
+      (and (eq? (car (cdr node)) 'nil) 
+           (eq? (car (cdr (cdr node))) 'nil))))
+
+(define (left-val node)
+  (car (cdr node)))
+
+(define (right-val node)
+  (car (cdr (cdr node))))
+
+(define (node-val node)
+  (car node))
+
+(define (sum-left-leaves node)
+  (if (eq? node 'nil) 0
+      (let ((l (left-val node))
+            (r (right-val node)))
+        (+ (if (is-leaf? l) (node-val l) (sum-left-leaves l))
+           (sum-left-leaves r)))))
+
+(define (solve root)
+  (sum-left-leaves root))
+
+;; ---- Driver ----
+(display "CASE0=") (display (solve (parse-input " ( 3 ( 2 ( nil nil ) ( nil nil ) ) ( 2 ( 5 ( nil nil ) ( nil nil ) ) ( 6 ( nil nil ) ( nil nil ) ) ) ) "))) (newline)
+(display "CASE1=") (display (solve (parse-input " ( 1 ( 2 ( nil nil ) ( nil nil ) ) ( 3 ( nil nil ) ( nil nil ) ) ) "))) (newline)
+(display "CASE2=") (display (solve (parse-input "nil"))) (newline)
+(display "CASE3=") (display (solve (parse-input " ( 7 ( nil nil ) ( nil nil ) ) "))) (newline)
+(display "CASE4=") (display (solve (parse-input " ( 1 ( nil nil ) ( 2 ( 4 ( nil nil ) ( nil nil ) ) ( nil nil ) ) ) "))) (newline)
+(display "CASE5=") (display (solve (parse-input " ( 10 ( 5 ( 3 ( nil nil ) ( nil nil ) ) ( 7 ( nil nil ) ( nil nil ) ) ) ( 15 ( nil nil ) ( 20 ( nil nil ) ( nil nil ) ) ) "))) (newline)

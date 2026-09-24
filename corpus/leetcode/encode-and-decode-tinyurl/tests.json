@@ -1,0 +1,129 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "operations": [
+        {
+          "type": "ENCODE",
+          "url": "https://leetcode.com/problems/design-tinyurl"
+        }
+      ]
+    },
+    "expected": "[\"http://tiny.url/1\"]"
+  },
+  {
+    "id": 1,
+    "input": {
+      "operations": [
+        {
+          "type": "ENCODE",
+          "url": "https://example.com/very/long/path"
+        },
+        {
+          "type": "ENCODE",
+          "url": "https://example.com/very/long/path"
+        },
+        {
+          "type": "ENCODE",
+          "url": "https://another.com"
+        }
+      ]
+    },
+    "expected": "[\"http://tiny.url/1\",\"http://tiny.url/1\",\"http://tiny.url/2\"]"
+  },
+  {
+    "id": 2,
+    "input": {
+      "operations": [
+        {
+          "type": "ENCODE",
+          "url": "https://a.com"
+        },
+        {
+          "type": "ENCODE",
+          "url": "https://b.com"
+        },
+        {
+          "type": "ENCODE",
+          "url": "https://c.com"
+        }
+      ]
+    },
+    "expected": "[\"http://tiny.url/1\",\"http://tiny.url/2\",\"http://tiny.url/3\"]"
+  },
+  {
+    "id": 3,
+    "input": {
+      "operations": [
+        {
+          "type": "DECODE",
+          "url": "http://tiny.url/1"
+        }
+      ]
+    },
+    "expected": "[\"\"]"
+  },
+  {
+    "id": 4,
+    "input": {
+      "operations": [
+        {
+          "type": "ENCODE",
+          "url": "https://x.com"
+        },
+        {
+          "type": "DECODE",
+          "url": "http://tiny.url/1"
+        }
+      ]
+    },
+    "expected": "[\"http://tiny.url/1\",\"https://x.com\"]"
+  },
+  {
+    "id": 5,
+    "input": {
+      "operations": [
+        {
+          "type": "ENCODE",
+          "url": "https://test.com/path?query=1"
+        },
+        {
+          "type": "ENCODE",
+          "url": "https://test.com/path?query=2"
+        },
+        {
+          "type": "ENCODE",
+          "url": "https://test.com/path?query=1"
+        }
+      ]
+    },
+    "expected": "[\"http://tiny.url/1\",\"http://tiny.url/2\",\"http://tiny.url/1\"]"
+  },
+  {
+    "id": 6,
+    "input": {
+      "operations": []
+    },
+    "expected": "[]"
+  },
+  {
+    "id": 7,
+    "input": {
+      "operations": [
+        {
+          "type": "ENCODE",
+          "url": "https://single.com"
+        },
+        {
+          "type": "ENCODE",
+          "url": "https://single.com"
+        },
+        {
+          "type": "ENCODE",
+          "url": "https://single.com"
+        }
+      ]
+    },
+    "expected": "[\"http://tiny.url/1\",\"http://tiny.url/1\",\"http://tiny.url/1\"]"
+  }
+]

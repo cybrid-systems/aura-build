@@ -1,0 +1,87 @@
+;; Solution for Delete Node in a Linked List
+;; Nodes are represented as mutable variables holding cons cells (value . next)
+
+(define nodes '())  ;; list of node pairs (value . next)
+
+;; Build a fresh node and return its cons cell
+(define (make-node val)
+  (let ((n (cons val '())))
+    (set! nodes (cons n nodes))
+    n))
+
+;; Get the value of a node
+(define (node-val n) (car n))
+
+;; Get the next pointer of a node
+(define (node-next n) (cdr n))
+
+;; Set the value of a node
+(define (set-node-val! n v) (set-car! n v))
+
+;; Set the next pointer of a node
+(define (set-node-next! n nxt) (set-cdr! n nxt))
+
+;; The solve function: copy successor's value, skip successor
+(define (solve node)
+  (let ((nxt (node-next node)))
+    (set-node-val! node (node-val nxt))
+    (set-node-next! node (node-next nxt))))
+
+;; Build list from values, return (head . target-node)
+(define (build-list vals target-idx)
+  (let ((len (length vals))
+        (head '())
+        (target '()))
+    (let loop ((i 0) (prev '()) (remaining vals))
+        (if (null? remaining)
+            (cons head target)
+            (let ((n (make-node (car remaining))))
+              (if (null? prev)
+                  (set! head n)
+                  (set-node-next! prev n))
+              (if (= i target-idx)
+                  (set! target n))
+              (loop (+ i 1) n (cdr remaining)))))))
+
+;; Display the list from head as space-separated values
+(define (display-list n)
+  (if (null? n)
+      (newline)
+      (begin
+        (display (node-val n))
+        (display " ")
+        (display-list (node-next n)))))
+
+;; Harness to run all cases
+(define (run-case vals idx case-num)
+  (set! nodes '())
+  (let ((built (build-list vals idx))
+        (h (cons 'dummy '())))
+    ;; Reset nodes display
+    (let ((result (build-list-helper vals idx)))
+      (display "CASE")
+      (display case-num)
+      (display "=")
+      (display-list (car result))
+      (set! nodes '())
+      result)))
+
+;; Simpler harness
+(define (case vals idx case-num)
+  (set! nodes '())
+  (let* ((built (build-list vals idx))
+         (head (car built))
+         (target (cdr built)))
+    (solve target)
+    (display "CASE")
+    (display case-num)
+    (display "=")
+    (display-list head)
+    (newline)
+    (set! nodes '())))
+
+(define (set-car! p v)
+  (set-car! p v))
+
+;; Aura doesn't have set-car!/set-cdr! - need to use mutation differently
+;; Let me redesign using vector-like structures or just direct mutation

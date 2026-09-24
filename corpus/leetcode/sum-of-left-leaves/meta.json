@@ -1,5 +1,60 @@
 {
-  "variants": [],
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:49:20Z",
+      "ts_local": "2026-09-24 22:49:20 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 5255,
+        "total_characters": 0,
+        "prompt_tokens": 1255,
+        "completion_tokens": 4000,
+        "prompt_tokens_details": {
+          "cached_tokens": 528
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": -1,
+      "timeout": true,
+      "duration_s": 20.013,
+      "tests_passed": 0,
+      "tests_total": 6,
+      "stderr_snippet": "warning: unbalanced parentheses in input\n",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:49:37Z",
+      "ts_local": "2026-09-24 22:49:37 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2917,
+        "total_characters": 0,
+        "prompt_tokens": 1255,
+        "completion_tokens": 1662,
+        "prompt_tokens_details": {
+          "cached_tokens": 1254
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.121,
+      "tests_passed": 0,
+      "tests_total": 6,
+      "stderr_snippet": "error: 22:38: unbound variable: tokens\n   |\n 22 |                 (set! tokens (append tokens (list \")\")))\n   |                                      ^^^^^^\n⚠ program returned an uncalled function\n⚠ program returned an uncalled function\n⚠ program returned an uncalled function\n⚠ program returned an uncalled function\n⚠ program returned an uncalled function\n⚠ program returned an uncalled function\n",
+      "stdout_snippet": "CASE0=#<procedure>0\nCASE1=#<procedure>0\nCASE2=#<procedure>0\nCASE3=#<procedure>0\nCASE4=#<procedure>0\nCASE5=#<procedure>0\n"
+    }
+  ],
   "slug": "sum-of-left-leaves",
   "title": "Sum of Left Leaves",
   "category": "trees",
@@ -8,10 +63,10 @@
       "ok": true,
       "error": "",
       "usage": {
-        "total_tokens": 4367,
+        "total_tokens": 1683,
         "total_characters": 0,
         "prompt_tokens": 867,
-        "completion_tokens": 3500,
+        "completion_tokens": 816,
         "prompt_tokens_details": {
           "cached_tokens": 866
         }
@@ -21,12 +76,13 @@
     "run": {
       "ref_ok": false,
       "exit_code": 1,
-      "stderr": "  File \"/workspace/aura-build/corpus/leetcode/sum-of-left-leaves/ref.py\", line 97\n    {\"input\": {\"root\": [3, [2, None, None], [2, [5, None, None], [6, None, None]]]]}, \"expected\": 7},\n                                                                                  ^\nSyntaxError: closing parenthesis ']' does not match opening parenthesis '{'\n",
-      "duration_s": 0.021,
+      "stderr": "Traceback (most recent call last):\n  File \"/workspace/aura-build/corpus/leetcode/sum-of-left-leaves/ref.py\", line 111, in <module>\n    root = parse_tree_from_tokens(cleaned)\n  File \"/workspace/aura-build/corpus/leetcode/sum-of-left-leaves/ref.py\", line 22, in parse_tree_from_tokens\n    return parse()\n  File \"/workspace/aura-build/corpus/leetcode/sum-of-left-leaves/ref.py\", line 19, in parse\n    right = parse()\n  File \"/workspace/aura-build/corpus/leetcode/sum-of-left-leaves/ref.py\", line 19, in ",
+      "duration_s": 0.03,
       "timeout": false,
       "n_tests": 0
     },
-    "ts": "2026-09-24T14:45:59Z"
+    "ts": "2026-09-24T14:48:16Z"
   },
-  "updated_at": "2026-09-24T14:45:59Z"
+  "updated_at": "2026-09-24T14:49:37Z",
+  "updated_at_local": "2026-09-24 22:49:37 CST"
 }

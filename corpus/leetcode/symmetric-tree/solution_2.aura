@@ -1,0 +1,121 @@
+;; Symmetric Tree - parse s-expression style tree, check symmetry
+;; Tree node represented as (val left right) or 'null
+
+(define (list-ref-safe lst i)
+  (if (null? lst)
+      'null
+      (if (= i 0)
+          (car lst)
+          (list-ref-safe (cdr lst) (- i 1)))))
+
+(define (node-val n)
+  (car n))
+
+(define (node-left n)
+  (cadr n))
+
+(define (node-right n)
+  (caddr n))
+
+(define (make-node v l r)
+  (list v l r))
+
+(define (null-node? n)
+  (equal? n 'null))
+
+;; Parse tokens from string like "(1 (2 # #) (3 # #))#"
+;; Produces (root . rest-tokens)
+(define (tokenize s)
+  ;; returns list of tokens (parentheses, numbers, #, null)
+  (let loop ((i 0) (acc '()))
+    (if (>= i (string-length s))
+        (reverse acc)
+        (let ((c (string-ref s i)))
+          (cond
+            ((char=? c #\space) (loop (+ i 1) acc))
+            ((char=? c #\() (loop (+ i 1) (cons "(" acc)))
+            ((char=? c #\)) (loop (+ i 1) (cons ")" acc)))
+            ((char=? c #\#) (loop (+ i 1) (cons "#" acc)))
+            (else
+             ;; read alphanumeric token until space/paren/hash
+             (let loop2 ((j i) (acc2 '()))
+               (if (>= j (string-length s))
+                   (loop j (cons (list->string (reverse acc2)) acc))
+                   (let ((c2 (string-ref s j)))
+                     (cond
+                       ((or (char=? c2 #\space) (char=? c2 #\() (char=? c2 #\)) (char=? c2 #\#))
+                        (loop j (cons (list->string (reverse acc2)) acc)))
+                       (else
+                        (loop2 (+ j 1) (cons c2 acc2)))))))))))))
+
+(define (take-while fn lst)
+  (let loop ((l lst) (acc '()))
+    (if (or (null? l) (not (fn (car l))))
+        (reverse acc)
+        (loop (cdr l) (cons (car l) acc)))))
+
+;; Parse one tree from tokens; returns (parsed . rest-tokens)
+(define (parse-tree tokens)
+  (let ((first (car tokens)))
+    (cond
+      ((equal? first "#")
+       (cons 'null (cdr tokens)))
+      ((equal? first "(")
+       ;; parse value token, then left, then right, then ")"
+       (let* ((rest1 (cdr tokens))
+              (val (car rest1))
+              (rest2 (cdr rest1))
+              (p1 (parse-tree rest2))
+              (left (car p1))
+              (rest3 (cdr p1))
+              (p2 (parse-tree rest3))
+              (right (car p2))
+              (rest4 (cdr p2))
+              ;; rest4 starts with ")"
+              (rest5 (cdr rest4)))
+         (cons (list (string->number val) left right) rest5)))
+      (else
+       (error "unexpected token" first)))))
+
+;; Check if two nodes are mirrors
+(define (mirror? a b)
+  (cond
+    ((and (null-node? a) (null-node? b)) #t)
+    ((or (null-node? a) (null-node? b)) #f)
+    (else
+     (let ((va (node-val a))
+           (vb (node-val b)))
+       (if (not (= va vb))
+           #f
+           (and (mirror? (node-left a) (node-right b))
+                (mirror? (node-right a) (node-left b))))))))
+
+(define (is-symmetric? root)
+  (if (null-node? root)
+      #t
+      (mirror? (node-left root) (node-right root))))
+
+(define (solve input-str)
+  (let* ((tokens (tokenize input-str))
+         (parsed (parse-tree tokens))
+         (root (car parsed)))
+    (is-symmetric? root)))
+
+;; Test inputs
+(define (bool->str b) (if b "true" "false"))
+
+(define (run-case n s)
+  (display "CASE")
+  (display n)
+  (display "=")
+  (display (bool->str (solve s)))
+  (newline))
+
+(run-case 0 "(1 (2 (3 # #) (4 # #)) (2 (4 # #) (3 # #)))#")
+(run-case 1 "(1 (2 # #) (2 # #))#")
+(run-case 2 "(1 (2 # #) (3 # #))#")
+(run-case 3 "(1)#")
+(run-case 4 "null#")
+(run-case 5 "(1 (2 (3 # #) #) (2 # (3 # #)))#")
+(run-case 6 "(1 (2 # (3 # #)) (2 (3 # #) #))#")
+(run-case 7 "(1 (2 (4 # #) (3 # #)) (2 (3 # #) (4 # #)))#")

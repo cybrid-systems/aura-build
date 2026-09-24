@@ -1,0 +1,134 @@
+;; Helper: check if a node is a leaf (both children nil)
+(define (leaf? node)
+  (and (not (null? node))
+       (null? (car (cdr node)))
+       (null? (cdr (cdr node)))))
+
+;; Helper: get node value
+(define (node-val node) (car node))
+
+;; Helper: get left child
+(define (node-left node) (car (cdr node)))
+
+;; Helper: get right child
+(define (node-right node) (cdr (cdr node)))
+
+;; Check if left child of node is a left leaf; return its value or 0
+(define (left-leaf-val node)
+  (let ((l (node-left node)))
+    (if (leaf? l) (node-val l) 0)))
+
+;; Sum of left leaves: process left subtree (collect all left leaves),
+;; then check if right subtree's left child is a left leaf, recurse into right subtree
+(define (sum-left-leaves node)
+  (if (null? node)
+      0
+      (let ((l (node-left node))
+            (r (node-right node)))
+        (+ (sum-left-leaves l)
+           (left-leaf-val node)
+           (sum-left-leaves r)))))
+
+;; Parser: read a tree from list of tokens.
+;; Grammar: nil | ( value left right )
+(define (parse-tokens tokens)
+  (let ((pos (list 0)))
+    (define (peek) (list-ref tokens (car pos)))
+    (define (next!) (set-car! pos (+ (car pos) 1)) (car (cdr pos)))
+    ;; Advance pos by 1, return new pos value (unused here)
+    (define (advance!) (set-car! pos (+ (car pos) 1)))
+    (define (parse-one)
+      (let ((tok (peek)))
+        (cond
+          ((equal? tok "nil") (advance!) '())
+          ((equal? tok "(")
+           (advance!) ;; consume '('
+           ;; next token is value
+           (let ((val-str (peek)))
+             (advance!)
+             (let ((val (string->number val-str))
+                   (ltoks (parse-one))
+                   (rtoks (parse-one)))
+               ;; expect ')' but ignore strict check
+               (advance!) ;; skip ')'
+               (list val ltoks rtoks)))))))
+    (parse-one)))
+
+;; Parse a raw string like "( 3 ( 2 nil nil ) ... )" into a tree
+(define (parse-raw raw)
+  ;; Tokenize: split on parentheses and whitespace
+  (define (tokenize s)
+    (let ((chars (string->list s))
+          (len (string-length s))
+          (tokens '())
+          (i 0))
+      ;; not easily iterative; use a recursive helper with mutation via global
+      (set! tokens '())
+      (define (tok-helper j)
+        (cond
+          ((>= j len) tokens)
+          (else
+           (let ((c (string-ref s j)))
+             (cond
+               ((or (char-whitespace? c) (char=? c #\,))
+                (tok-helper (+ j 1)))
+               ((char=? c #\()
+                (set! tokens (append tokens (list "(")))
+                (tok-helper (+ j 1)))
+               ((char=? c #\))
+                (set! tokens (append tokens (list ")")))
+                (tok-helper (+ j 1)))
+               (else
+                ;; collect a token (number or 'nil')
+                (let ((start j))
+                  (define (collect-end k)
+                    (cond
+                      ((or (>= k len)
+                           (char-whitespace? (string-ref s k))
+                           (char=? (string-ref s k) #\()
+                           (char=? (string-ref s k) #\)))
+                       k)
+                      (else (collect-end (+ k 1)))))
+                  (let ((end (collect-end j)))
+                    (set! tokens
+                      (append tokens (list (substring s start end))))
+                    (tok-helper end)))))))))
+      (tok-helper 0)))
+
+  (define toks (tokenize raw))
+  (if (or (null? toks) (and (null? (cdr toks)) (equal? (car toks) "nil")))
+      '()
+      (parse-tokens toks)))
+
+;; Display a number or value
+(define (show-val v)
+  (if (number? v) (display (number->string v)) (display v)))
+
+;; Run single test case; raw is a string for the tree
+(define (run-case raw)
+  (let ((tree (parse-raw raw)))
+    (let ((result (sum-left-leaves tree)))
+      result)))
+
+;; MAIN
+(define (solve raw)
+  (sum-left-leaves (parse-raw raw)))
+
+;; Execute test cases
+(define RAW0 "( 3 ( 2 ( nil nil ) ( nil nil ) ) ( 2 ( 5 ( nil nil ) ( nil nil ) ) ( 6 ( nil nil ) ( nil nil ) ) ) )")
+(display "CASE0=") (display (number->string (solve RAW0))) (newline)
+
+(define RAW1 "( 1 ( 2 ( nil nil ) ( nil nil ) ) ( 3 ( nil nil ) ( nil nil ) ) )")
+(display "CASE1=") (display (number->string (solve RAW1))) (newline)
+
+(define RAW2 "nil")
+(display "CASE2=") (display (number->string (solve RAW2))) (newline)
+
+(define RAW3 "( 7 ( nil nil ) ( nil nil ) )")
+(display "CASE3=") (display (number->string (solve RAW3))) (newline)
+
+(define RAW4 "( 1 ( nil nil ) ( 2 ( 4 ( nil nil ) ( nil nil ) ) ( nil nil ) ) )")
+(display "CASE4=") (display (number->string (solve RAW4))) (newline)
+
+(define RAW5 "( 10 ( 5 ( 3 ( nil nil ) ( nil nil ) ) ( 7 ( nil nil ) ( nil nil ) ) ) ( 15 ( nil nil ) ( 20 ( nil nil ) ( nil nil ) ) ) )")
+(display "CASE5=") (display (number->string (solve RAW5))) (newline)

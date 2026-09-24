@@ -1,0 +1,60 @@
+;; Solution for "Delete Node in a Linked List"
+
+;; Build a mutable linked list from a list of values.
+;; Each node is a pair: (car = value, cdr = next-node or '())
+;; We mutate via set-car! / set-cdr!.
+(define (build-list vals)
+  (let loop ((vs vals) (head '()) (tail '()))
+    (if (null? vs)
+        head
+        (let ((n (cons (car vs) '())))
+          (if (null? head)
+              (loop (cdr vs) n n)
+              (begin
+                (set-cdr! tail n)
+                (loop (cdr vs) head n)))))))
+
+;; Walk n steps from start, returning the node.
+(define (nth-node start n)
+  (if (= n 0)
+      start
+      (nth-node (cdr start) (- n 1))))
+
+;; The classic "copy-next" deletion:
+;; node is guaranteed non-null and not the tail.
+(define (solve node)
+  (let ((next-node (cdr node)))
+    (set-car! node (car next-node))
+    (set-cdr! node (cdr next-node))))
+
+;; Print the resulting list (head given), one line, space-separated.
+(define (print-list head)
+  (let loop ((cur head) (first? #t))
+    (if (null? cur)
+        (begin (display "") (newline))
+        (begin
+          (if first?
+              (display "")
+              (display " "))
+          (display (car cur))
+          (loop (cdr cur) #f)))))
+
+(define (run-case vals idx i)
+  (let ((head (build-list vals))
+        (target (nth-node (build-list vals) idx)))
+    (solve target)
+    (display "CASE")
+    (display i)
+    (display "=")
+    (print-list head)))
+
+;; --- Embedded test inputs (printed via solve) ---
+
+(run-case '(4 5 1 9) 1 0)
+(run-case '(1 2 3 4 5) 0 1)
+(run-case '(1 2 3 4 5) 3 2)
+(run-case '(7 8) 0 3)
+(run-case '(10 20 30) 1 4)
+(run-case '(1 2 3 4 5 6 7 8 9 10) 4 5)
+(run-case '(42 -1 0 99) 2 6)
+(run-case '(1 2) 0 7)
