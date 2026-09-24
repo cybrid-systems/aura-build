@@ -1,0 +1,137 @@
+;; Helper to check if a value is a non-empty list
+(define (pair? x) (and (not (null? x)) (not (number? x)) (not (string? x)) (not (eq? x #t)) (not (eq? x #f))))
+
+;; Check if a tree node is "null" or missing
+(define (null-tree? t) 
+  (cond ((null? t) #t)
+        ((eq? t 'NIL) #t)
+        ((and (pair? t) (eq? (car t) 'NIL)) #t)
+        ((and (pair? t) (null? (cdr t))) #t)
+        (else #f)))
+
+;; Extract the VAL integer from a node like (VAL 5) or a bare number
+(define (get-val t)
+  (cond ((number? t) t)
+        ((and (pair? t) (eq? (car t) 'VAL)) (car (cdr t)))
+        ((and (pair? t) (eq? (car t) 'NODE)) (get-val (car (cdr t))))
+        ((and (pair? t) (eq? (car t) 'ROOT)) (get-val (car (cdr t))))
+        (else #f)))
+
+;; Extract LEFT subtree
+(define (get-left t)
+  (cond ((null-tree? t) 'NIL)
+        ((and (pair? t) (eq? (car t) 'NODE))
+         (let loop ((rest (cdr (cdr t))) (acc '()))
+           (cond ((null? rest) (reverse acc))
+                 ((and (pair? rest) (eq? (car rest) 'LEFT))
+                  (car (cdr rest)))
+                 (else (loop (cdr rest) acc)))))
+        ((and (pair? t) (eq? (car t) 'ROOT))
+         (let loop ((rest (cdr (cdr t))) (acc '()))
+           (cond ((null? rest) (reverse acc))
+                 ((and (pair? rest) (eq? (car rest) 'LEFT))
+                  (car (cdr rest)))
+                 (else (loop (cdr rest) acc)))))
+        (else 'NIL)))
+
+;; Extract RIGHT subtree
+(define (get-right t)
+  (cond ((null-tree? t) 'NIL)
+        ((and (pair? t) (eq? (car t) 'NODE))
+         (let loop ((rest (cdr (cdr t))) (acc '()))
+           (cond ((null? rest) (reverse acc))
+                 ((and (pair? rest) (eq? (car rest) 'RIGHT))
+                  (car (cdr rest)))
+                 (else (loop (cdr rest) acc)))))
+        ((and (pair? t) (eq? (car t) 'ROOT))
+         (let loop ((rest (cdr (cdr t))) (acc '()))
+           (cond ((null? rest) (reverse acc))
+                 ((and (pair? rest) (eq? (car rest) 'RIGHT))
+                  (car (cdr rest)))
+                 (else (loop (cdr rest) acc)))))
+        (else 'NIL)))
+
+;; Reverse a list
+(define (my-reverse lst)
+  (let loop ((l lst) (acc '()))
+    (if (null? l) acc
+        (loop (cdr l) (cons (car l) acc)))))
+
+;; BFS zigzag level order traversal
+(define (zigzag root)
+  (if (null-tree? root) '()
+      (let loop ((queue (list (list root 0))) (result '()))
+        (if (null? queue)
+            (reverse result)
+            (let* ((front (car queue))
+                   (node (car front))
+                   (level (car (cdr front)))
+                   (rest-q (cdr queue))
+                   (val (get-val node))
+                   (left (get-left node))
+                   (right (get-right node))
+                   (new-q rest-q))
+              (let ((q2 (if (null-tree? left) new-q 
+                          (append new-q (list (list left (+ level 1)))))))
+                (let ((q3 (if (null-tree? right) q2
+                            (append q2 (list (list right (+ level 1)))))))
+                  ;; Check if next item in queue has different level
+                  (let ((next-level (if (null? q3) #f (car (cdr (car q3))))))
+                    (if (or (null? q3) (not (= level next-level)))
+                        ;; End of current level
+                        (let ((level-vals (cons val (let collect ((qq q3) (cv '()))
+                                                       (if (null? qq) (reverse cv)
+                                                           (if (= (car (cdr (car qq))) level)
+                                                               (collect (cdr qq) (cons (get-val (car (car qq))) cv))
+                                                               (reverse cv)))))))
+                          (let ((final-level-vals 
+                                 (if (even? level) level-vals (my-reverse level-vals))))
+                            ;; Remove same-level items from q3
+                            (let loop2 ((qq q3) (newq '()))
+                              (if (null? qq) newq
+                                  (if (= (car (cdr (car qq))) level)
+                                      (loop2 (cdr qq) newq)
+                                      (loop2 (cdr qq) (cons (car qq) newq)))))
+                            (loop (loop2 q3 '()) (cons final-level-vals result)))))
+                        (loop q3 (cons (cons val '()) result))))))))))
+
+(define (solve case)
+  (zigzag case))
+
+;; Display helper for nested lists
+(define (display-list lst)
+  (display "(")
+  (let loop ((l lst) (first #t))
+    (cond ((null? l) (display ")"))
+          (else
+           (if first (set! first #f) (display " "))
+           (let ((v (car l)))
+             (cond ((number? v) (display v))
+                   ((pair? v) (display-list v))
+                   (else (display v))))
+           (loop (cdr l) first)))))
+
+;; Test inputs as Aura structures
+(define CASE0 'NIL)
+(define CASE1 '(ROOT (VAL 1)))
+(define CASE2 '(ROOT (VAL 3) (VAL 9) (VAL 20) (NODE (VAL 15)) (NODE (VAL 7))))
+(define CASE3 '(ROOT (VAL 1) (NODE (VAL 2) (NODE (VAL 4)) (NODE (VAL 5))) (NODE (VAL 3) (NODE (VAL 6)) (NODE (VAL 7)))))
+(define CASE4 '(ROOT (VAL 1) (VAL 2)))
+(define CASE5 '(ROOT (VAL 1)))
+
+(define (display-result r)
+  (cond ((null? r) (display "(NIL)"))
+        (else (display "(LEVEL")
+              (let loop ((l r))
+                (cond ((null? l) (display ")"))
+                      (else (display " (")
+                            (display-list (car l))
+                            (display ")")
+                            (loop (cdr l))))))))
+
+(display "CASE0=") (display-result (solve CASE0)) (newline)
+(display "CASE1=") (display-result (solve CASE1)) (newline)
+(display "CASE2=") (display-result (solve CASE2)) (newline)
+(display "CASE3=") (display-result (solve CASE3)) (newline)
+(display "CASE4=") (display-result (solve CASE4)) (newline)
+(display "CASE5=") (display-result (solve CASE5)) (newline)

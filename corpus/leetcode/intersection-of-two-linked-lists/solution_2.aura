@@ -1,0 +1,120 @@
+;; Linked-list node helpers (using 1D association lists)
+
+(define (make-node val next) (cons val next))
+(define (node-val n) (car n))
+(define (node-next n) (cdr n))
+(define (node? x) (and (pair? x) (or (number? (car x)) (null? (car x)))))
+
+;; Two-pointer intersection algorithm
+;; pA walks A; when it hits end, it switches to head of B
+;; pB walks B; when it hits end, it switches to head of A
+;; After at most n+m steps they either meet (intersection) or both are '()
+
+(define (solve headA headB)
+  (let loop ((pa headA) (pb headB))
+    (cond
+      ((and (null? pa) (null? pb)) '())
+      ((equal? pa pb) pa)
+      (else
+        (let ((pa2 (if (null? pa) headB (node-next pa)))
+              (pb2 (if (null? pb) headA (node-next pb))))
+          (loop pa2 pb2))))))
+
+;; Display helper for a node result
+(define (display-result n)
+  (cond
+    ((null? n) (display "None"))
+    ((node? n) (display "ListNode(val=") (display (node-val n)) (display ")"))
+    (else (display n))))
+
+;; --- Build the shared suffix nodes once ---
+;; Shared tail: 8 -> 4 -> 5
+(define n8  (make-node 8  '()))
+(define n4  (make-node 4  '()))
+(define n5  (make-node 5  '()))
+(set-cdr! n8 n4)
+(set-cdr! n4 n5)
+
+;; --- CASE0 ---
+;; A: 4 -> 1 -> 8 -> 4 -> 5
+;; B: 5 -> 6 -> 1 -> 8 -> 4 -> 5
+;; Intersection at node 8
+(define A0a (make-node 4 '())) (define A0b (make-node 1 '()))
+(set-cdr! A0a A0b) (set-cdr! A0b n8)
+(define B0a (make-node 5 '())) (define B0b (make-node 6 '())) (define B0c (make-node 1 '()))
+(set-cdr! B0a B0b) (set-cdr! B0b B0c) (set-cdr! B0c n8)
+
+;; --- CASE1 ---
+;; A: 4 -> 1 -> 8 -> 4 -> 5
+;; B: 5 -> 6 -> 1 -> 8 -> 4 -> 5
+;; (same structure as CASE0; different "ids" conceptually)
+(define A1a (make-node 4 '())) (define A1b (make-node 1 '()))
+(set-cdr! A1a A1b) (set-cdr! A1b n8)
+(define B1a (make-node 5 '())) (define B1b (make-node 6 '())) (define B1c (make-node 1 '()))
+(set-cdr! B1a B1b) (set-cdr! B1b B1c) (set-cdr! B1c n8)
+
+;; --- CASE2 ---
+;; A: 2 -> 6 -> 4
+;; B: 1 -> 5
+;; Disjoint → None
+(define A2a (make-node 2 '())) (define A2b (make-node 6 '())) (define A2c (make-node 4 '()))
+(set-cdr! A2a A2b) (set-cdr! A2b A2c) (set-cdr! A2c '())
+(define B2a (make-node 1 '())) (define B2b (make-node 5 '()))
+(set-cdr! B2a B2b) (set-cdr! B2b '())
+
+;; --- CASE3 ---
+;; A: 1 -> 9 -> 1 -> 2 -> 4
+;; B: 3 -> 2 -> 4
+;; Intersect at node 2
+(define C3 (make-node 2 '())) (define C3b (make-node 4 '()))
+(set-cdr! C3 C3b) (set-cdr! C3b '())
+(define A3a (make-node 1 '())) (define A3b (make-node 9 '())) (define A3c (make-node 1 '()))
+(set-cdr! A3a A3b) (set-cdr! A3b A3c) (set-cdr! A3c C3)
+(define B3a (make-node 3 '()))
+(set-cdr! B3a C3)
+
+;; --- CASE4 ---
+;; A: 1 -> 2 -> 3
+;; B: 4 -> 5
+;; Disjoint → None
+(define A4a (make-node 1 '())) (define A4b (make-node 2 '())) (define A4c (make-node 3 '()))
+(set-cdr! A4a A4b) (set-cdr! A4b A4c) (set-cdr! A4c '())
+(define B4a (make-node 4 '())) (define B4b (make-node 5 '()))
+(set-cdr! B4a B4b) (set-cdr! B4b '())
+
+;; --- CASE5 ---
+;; Same node passed for both → trivially intersect at that node
+;; A: 7 -> 8 -> 9, B: 7 -> 8 -> 9, intersect at head (val=7)
+(define C5a (make-node 7 '())) (define C5b (make-node 8 '())) (define C5c (make-node 9 '()))
+(set-cdr! C5a C5b) (set-cdr! C5b C5c) (set-cdr! C5c '())
+
+;; --- CASE6 ---
+;; headA is null, headB non-empty → None
+(define B6a (make-node 1 '()))
+(set-cdr! B6a '())
+
+;; --- CASE7 ---
+;; A: 0 -> 1 -> 2, B: 0 -> 1 -> 2, intersect at head (val=0)
+;; (Different physical nodes but same structure — should be disjoint since no shared node.)
+;; Actually, let's make them truly intersecting at the 0-node.
+(define C7a (make-node 0 '())) (define C7b (make-node 1 '())) (define C7c (make-node 2 '()))
+(set-cdr! C7a C7b) (set-cdr! C7b C7c) (set-cdr! C7c '())
+
+;; Run all cases and print results
+(define r0 (solve A0a B0a))
+(define r1 (solve A1a B1a))
+(define r2 (solve A2a B2a))
+(define r3 (solve A3a B3a))
+(define r4 (solve A4a B4a))
+(define r5 (solve C5a C5a))
+(define r6 (solve '() B6a))
+(define r7 (solve C7a C7a))
+
+(display "CASE0=") (display-result r0) (newline)
+(display "CASE1=") (display-result r1) (newline)
+(display "CASE2=") (display-result r2) (newline)
+(display "CASE3=") (display-result r3) (newline)
+(display "CASE4=") (display-result r4) (newline)
+(display "CASE5=") (display-result r5) (newline)
+(display "CASE6=") (display-result r6) (newline)
+(display "CASE7=") (display-result r7) (newline)

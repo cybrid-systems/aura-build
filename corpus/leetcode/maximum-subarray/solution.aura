@@ -1,0 +1,45 @@
+(define (max-subarray nums)
+  (let loop ((xs nums)
+             (current (car nums))
+             (best (car nums)))
+    (if (null? (cdr xs))
+        best
+        (let* ((next (cadr xs))
+               (new-current (if (> current 0) (+ current next) next))
+               (new-best (if (> new-current best) new-current best)))
+          (loop (cdr xs) new-current new-best)))))
+
+(define (solve nums)
+  (max-subarray nums))
+
+(define (display-list lst)
+  (display "(")
+  (let loop ((xs lst) (first #t))
+    (cond ((null? xs) (display ")"))
+          (else
+           (if first (set! first #f) (display " "))
+           (display (car xs))
+           (loop (cdr xs) #f)))))
+
+(define (run-case n nums)
+  (display "CASE")
+  (display n)
+  (display "=")
+  (display (solve nums))
+  (newline))
+
+(let ((cases (list
+               (list 0 (list 1 -2 3 -1 2 -1 5 -4))
+               (list 1 (list -1))
+               (list 2 (list -2 -3 -1 -5))
+               (list 3 (list 5))
+               (list 4 (list 1 2 3 4 5))
+               (list 5 (list -1 2 -3 4 -1 2 1 -5 4))
+               (list 6 (list 0 0 0 0))
+               (list 7 (list 2 -1 2 -1 2 -1 2)))))
+  (let loop ((cs cases))
+    (if (null? cs)
+        'done
+        (let ((c (car cs)))
+          (run-case (car c) (cadr c))
+          (loop (cdr cs))))))

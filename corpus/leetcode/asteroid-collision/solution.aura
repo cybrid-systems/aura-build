@@ -1,0 +1,44 @@
+(define (solve asteroids)
+  (let loop ((xs asteroids) (stack '()))
+    (cond
+      ((null? xs) stack)
+      (else
+       (let ((a (car xs)) (rest (cdr xs)))
+         (let handle ((ast a) (stk stack))
+           (cond
+             ((null? stk)
+              (cons ast (loop rest (cons ast '()))))
+             ((or (> ast 0) (< (car stk) 0))
+              (cons ast (loop rest (cons ast stk))))
+             ((= (+ ast (car stk)) 0)
+              (loop rest (cdr stk)))
+             ((> (abs ast) (abs (car stk)))
+              (handle ast (cdr stk)))
+             ((< (abs ast) (abs (car stk)))
+              (loop rest stk))
+             (else (loop rest stk)))))))))
+
+(define (display-list xs)
+  (cond
+    ((null? xs) (display "[]"))
+    (else
+     (display "[")
+     (let loop ((l xs))
+       (display (car l))
+       (cond
+         ((null? (cdr l)) (display "]"))
+         (else
+          (display " ")
+          (loop (cdr l))))))))
+
+(define (run-case i asteroids)
+  (let ((result (solve asteroids)))
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display-list result)
+    (newline)))
+
+(run-case 0 '(5 10 -5))
+(run-case 1 '(8 -8))
+(run-case 2 '(10 2 -5))

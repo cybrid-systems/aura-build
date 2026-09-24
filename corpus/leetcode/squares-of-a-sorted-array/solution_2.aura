@@ -1,0 +1,57 @@
+(define (square x) (* x x))
+
+(define (abs-val x) (if (< x 0) (- 0 x) x))
+
+(define (len lst)
+  (if (null? lst) 0 (+ 1 (len (cdr lst)))))
+
+(define (list-ref lst i)
+  (if (= i 0) (car lst) (list-ref (cdr lst) (- i 1))))
+
+(define (sorted-squares-helper nums n left right idx result)
+  (cond
+    ((< idx 0) result)
+    (else
+      (let ((lv (abs-val (list-ref nums left)))
+            (rv (abs-val (list-ref nums right))))
+        (if (> lv rv)
+            (sorted-squares-helper nums n (+ left 1) right (- idx 1)
+              (cons (square lv) result))
+            (sorted-squares-helper nums n left (- right 1) (- idx 1)
+              (cons (square rv) result)))))))
+
+(define (reverse-list lst)
+  (define (rev acc l)
+    (if (null? l) acc (rev (cons (car l) acc) (cdr l))))
+  (rev '() lst))
+
+(define (sorted-squares nums)
+  (let ((n (len nums)))
+    (if (= n 0) '()
+        (reverse-list
+          (sorted-squares-helper nums n 0 (- n 1) (- n 1) '())))))
+
+(define (solve nums)
+  (sorted-squares nums))
+
+(define (display-list lst)
+  (display "(")
+  (define (loop l first?)
+    (if (null? l)
+        #t
+        (begin
+          (if (not first?) (display " ") #t)
+          (display (car l))
+          (loop (cdr l) #f))))
+  (loop lst #t)
+  (display ")")
+  (newline))
+
+(display "CASE0=") (display-list (solve '(1 2 3 4)))
+(display "CASE1=") (display-list (solve '(-4 -1 0 3 10)))
+(display "CASE2=") (display-list (solve '(-5 -3 -2 -1)))
+(display "CASE3=") (display-list (solve '()))
+(display "CASE4=") (display-list (solve '(-7 -3 2 3 11)))
+(display "CASE5=") (display-list (solve '(-1)))
+(display "CASE6=") (display-list (solve '(-3 -3 -2 -2)))
+(display "CASE7=") (display-list (solve '(0 0 0 1 2)))

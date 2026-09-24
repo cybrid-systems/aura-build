@@ -1,0 +1,132 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "k": 3,
+      "operations": [
+        "insertLast",
+        "1",
+        "insertLast",
+        "2",
+        "insertFront",
+        "3",
+        "insertFront",
+        "4",
+        "getRear",
+        "isFull",
+        "deleteLast",
+        "insertFront",
+        "4",
+        "getFront"
+      ]
+    },
+    "expected": "[true,true,true,false,2,true,2,true,4]"
+  },
+  {
+    "id": 1,
+    "input": {
+      "k": 1,
+      "operations": [
+        "insertLast",
+        "10",
+        "getFront",
+        "getRear",
+        "isFull",
+        "deleteLast",
+        "isEmpty",
+        "insertFront",
+        "20",
+        "getFront",
+        "insertLast",
+        "30"
+      ]
+    },
+    "expected": "[true,10,10,true,10,true,true,20,false]"
+  },
+  {
+    "id": 2,
+    "input": {
+      "k": 4,
+      "operations": [
+        "isEmpty",
+        "insertFront",
+        "1",
+        "insertLast",
+        "2",
+        "getFront",
+        "getRear",
+        "deleteFront",
+        "deleteLast",
+        "isEmpty",
+        "isFull"
+      ]
+    },
+    "expected": "[true,true,true,1,2,1,2,true,false]"
+  },
+  {
+    "id": 3,
+    "input": {
+      "k": 2,
+      "operations": [
+        "insertFront",
+        "1",
+        "insertLast",
+        "2",
+        "insertFront",
+        "3",
+        "getFront",
+        "getRear",
+        "isFull",
+        "deleteFront",
+        "deleteLast",
+        "deleteFront",
+        "isEmpty"
+      ]
+    },
+    "expected": "[true,true,false,1,2,true,1,2,-1,true]"
+  },
+  {
+    "id": 4,
+    "input": {
+      "k": 5,
+      "operations": [
+        "insertLast",
+        "1",
+        "insertLast",
+        "2",
+        "insertLast",
+        "3",
+        "insertLast",
+        "4",
+        "deleteFront",
+        "deleteLast",
+        "getFront",
+        "getRear",
+        "insertFront",
+        "0",
+        "insertLast",
+        "5",
+        "isFull",
+        "getRear",
+        "deleteFront",
+        "deleteLast"
+      ]
+    },
+    "expected": "[true,true,true,true,1,4,2,3,true,true,false,5,0,5]"
+  },
+  {
+    "id": 5,
+    "input": {
+      "k": 3,
+      "operations": [
+        "getFront",
+        "getRear",
+        "deleteFront",
+        "deleteLast",
+        "isEmpty",
+        "isFull"
+      ]
+    },
+    "expected": "[-1,-1,-1,-1,true,false]"
+  }
+]

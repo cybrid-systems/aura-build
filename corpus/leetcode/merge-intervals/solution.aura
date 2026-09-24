@@ -1,0 +1,97 @@
+(define (car2 p) (car p))
+(define (cdr2 p) (cdr p))
+
+(define (make-interval a b) (cons a b))
+
+(define (interval-start i) (car i))
+(define (interval-end i) (cdr i))
+
+(define (interval-equal? a b)
+  (and (= (interval-start a) (interval-start b))
+       (= (interval-end a) (interval-end b))))
+
+(define (interval-less? a b)
+  (cond ((< (interval-start a) (interval-start b)) #t)
+        ((> (interval-start a) (interval-start b)) #f)
+        ((< (interval-end a) (interval-end b)) #t)
+        (else #f)))
+
+(define (insert-sorted x xs)
+  (cond ((null? xs) (cons x '()))
+        ((interval-less? x (car xs)) (cons x xs))
+        (else (cons (car xs) (insert-sorted x (cdr xs))))))
+
+(define (sort-intervals xs)
+  (cond ((null? xs) '())
+        (else (insert-sorted (car xs) (sort-intervals (cdr xs))))))
+
+(define (remove-dups xs)
+  (cond ((null? xs) '())
+        ((null? (cdr xs)) xs)
+        ((interval-equal? (car xs) (cadr xs))
+         (remove-dups (cons (car xs) (cddr xs))))
+        (else (cons (car xs) (remove-dups (cdr xs))))))
+
+(define (merge-pair a b)
+  (let ((s (min (interval-start a) (interval-start b)))
+        (e (max (interval-end a) (interval-end b))))
+    (make-interval s e)))
+
+(define (merge-helper current rest)
+  (cond ((null? rest) (cons current '()))
+        (else
+         (let ((next (car rest)))
+           (if (<= (interval-start next) (interval-end current))
+               (merge-helper (merge-pair current next) (cdr rest))
+               (cons current (merge-helper next (cdr rest))))))))
+
+(define (solve intervals)
+  (let ((sorted (sort-intervals intervals)))
+    (cond ((null? sorted) '())
+          ((null? (cdr sorted)) sorted)
+          (else
+           (let ((deduped (remove-dups sorted)))
+             (cond ((null? deduped) '())
+                   ((null? (cdr deduped)) deduped)
+                   (else (merge-helper (car deduped) (cdr deduped)))))))))
+
+(define (display-interval i)
+  (display "[")
+  (display (interval-start i))
+  (display ", ")
+  (display (interval-end i))
+  (display "]"))
+
+(define (display-list xs)
+  (display "[")
+  (cond ((null? xs) (display "]"))
+        (else
+         (display-interval (car xs))
+         (display-interval-list (cdr xs)))))
+
+(define (display-interval-list xs)
+  (cond ((null? xs) (display "]"))
+        (else
+         (display ", ")
+         (display-interval (car xs))
+         (display-interval-list (cdr xs)))))
+
+(define (display-result xs)
+  (cond ((null? xs) (display "[]"))
+        (else (display-list xs))))
+
+(define (run-case n intervals)
+  (display "CASE")
+  (display n)
+  (display "=")
+  (display-result (solve intervals))
+  (newline))
+
+(run-case 0 (list (make-interval 1 3) (make-interval 2 6) (make-interval 8 10) (make-interval 15 18)))
+(run-case 1 (list (make-interval 1 4) (make-interval 4 5)))
+(run-case 2 (list (make-interval 1 4) (make-interval 0 4)))
+(run-case 3 '())
+(run-case 4 (list (make-interval 1 4) (make-interval 2 3)))
+(run-case 5 (list (make-interval 1 4)))
+(run-case 6 (list (make-interval 4 4) (make-interval 1 4) (make-interval 2 6) (make-interval 0 0) (make-interval 8 10) (make-interval 15 18)))
+(run-case 7 (list (make-interval 3 5) (make-interval -2 1) (make-interval 1 4) (make-interval 10 12) (make-interval 12 15)))

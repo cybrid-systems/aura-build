@@ -1,0 +1,73 @@
+(define (len lst)
+  (if (null? lst) 0 (+ 1 (len (cdr lst)))))
+
+(define (list-ref-aux lst i)
+  (if (= i 0) (car lst) (list-ref-aux (cdr lst) (- i 1))))
+
+(define (list-ref lst i) (list-ref-aux lst i))
+
+(define (take lst n)
+  (if (= n 0) '() (cons (car lst) (take (cdr lst) (- n 1)))))
+
+(define (drop lst n)
+  (if (= n 0) lst (drop (cdr lst) (- n 1))))
+
+(define (append a b)
+  (if (null? a) b (cons (car a) (append (cdr a) b))))
+
+(define (reverse-aux lst acc)
+  (if (null? lst) acc (reverse-aux (cdr lst) (cons (car lst) acc))))
+
+(define (my-reverse lst) (reverse-aux lst '()))
+
+(define (rotate nums k)
+  ; Rotate right by k steps: new = last k + first (n-k)
+  (let* ((n (len nums))
+         (k (modulo k n))
+         (split (- n k)))
+    (append (drop nums split) (take nums split))))
+
+(define (display-list xs)
+  (display "[")
+  (let loop ((xs xs) (first? #t))
+    (cond ((null? xs)
+           (display "]"))
+          (else
+           (if first? (set! first? #f) (begin (display ", ") #f))
+           (display (car xs))
+           (loop (cdr xs) first?)))))
+
+(define (solve nums k)
+  (rotate nums k))
+
+; Embedded test inputs
+(define cases
+  (list
+    (list (quote (1 2 3 4 5 6 7)) 3)
+    (list (quote (-1 -100 3 99)) 2)
+    (list (quote (1 2 3)) 0)
+    (list (quote (1 2 3)) 3)
+    (quote ())
+    (list (quote (42)) 7)
+    (list (quote (1 2 3 4 5)) 7)
+    (list (quote (0 0 0 1)) 2)))
+
+(define (run-case i)
+  (let* ((c (list-ref cases i))
+         (nums (car c))
+         (k (car (cdr c)))
+         (result (solve nums k)))
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display-list result)
+    (newline)))
+
+(run-case 0)
+(run-case 1)
+(run-case 2)
+(run-case 3)
+(run-case 4)
+(run-case 5)
+(run-case 6)
+(run-case 7)

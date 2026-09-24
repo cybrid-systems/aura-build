@@ -1,0 +1,75 @@
+;; Longest Substring with At Most K Distinct Characters
+;; Sliding window approach using association list as frequency map.
+
+(define (make-counts) '())
+
+(define (count-ref counts ch)
+  (let ((pair (assoc ch counts)))
+    (if pair (cdr pair) 0)))
+
+(define (count-set counts ch v)
+  (let ((pair (assoc ch counts)))
+    (if pair
+        (cons (cons ch v) (cdr (member pair counts)))
+        (cons (cons ch v) counts))))
+
+(define (solve s k)
+  (if (or (<= k 0) (null? (string->list s)))
+      0
+      (let* ((chars (string->list s))
+             (n (length chars))
+             (result 0)
+             (left 0)
+             (counts '())
+             (distinct 0))
+        ;; We can't easily mutate in a clean functional way inside let,
+        ;; so we use a helper that takes state and returns new state + result.
+        (letrec ((loop
+                  (lambda (i counts distinct left result)
+                    (if (>= i n)
+                        result
+                        (let* ((c (list-ref chars i))
+                               (prev (count-ref counts c))
+                               (new-counts (count-set counts c (+ prev 1)))
+                               (new-distinct (if (= prev 0) (+ distinct 1) distinct)))
+                          (let shrink ((cs new-counts)
+                                       (d new-distinct)
+                                       (l left)
+                                       (rm (list-ref chars l)))
+                            (if (> d k)
+                                (let* ((cp (count-ref cs rm))
+                                       (cs2 (count-set cs rm (- cp 1)))
+                                       (d2 (if (= cp 1) (- d 1) d)))
+                                  (shrink cs2 d2 (+ l 1)
+                                          (list-ref chars (+ l 1))))
+                                (let ((len (- (+ i 1) l)))
+                                  (if (> len result)
+                                      (loop (+ i 1) cs d l len)
+                                      (loop (+ i 1) cs d l result))))))))))
+          (loop 0 counts distinct 0 result)))))
+
+;; Display helper for integers
+(define (display-int x)
+  (display (number->string x)))
+
+;; Embed test inputs and call solve for each CASE.
+(let ((cases
+       (list
+         (cons "eceba" 2)
+         (cons "aa" 1)
+         (cons "" 3)
+         (cons "abc" 0)
+         (cons "a" 1)
+         (cons "abaccc" 2)
+         (cons "abcdefghijklmnopqrstuvwxyz" 3)
+         (cons "aaaaaaaaaa" 5))))
+  (let loop ((cs cases) (i 0))
+    (if (null? cs)
+        'done
+        (begin
+          (display "CASE")
+          (display-int i)
+          (display "=")
+          (display-int (solve (car (car cs)) (cdr (car cs))))
+          (newline)
+          (loop (cdr cs) (+ i 1))))))

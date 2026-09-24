@@ -1,0 +1,69 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:28:10Z",
+      "ts_local": "2026-09-24 22:28:10 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1307,
+        "total_characters": 0,
+        "prompt_tokens": 1004,
+        "completion_tokens": 303,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 512
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.025,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 23:39: unbound variable: best\n   |\n 23 |                       (set! best (max best window-lreq_len)))\n   |                                       ^^^^\n",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:28:21Z",
+      "ts_local": "2026-09-24 22:28:21 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2059,
+        "total_characters": 0,
+        "prompt_tokens": 1004,
+        "completion_tokens": 1055,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 896
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.034,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "warning: unbalanced parentheses in input\n",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "longest-repeating-character-replacement",
+  "title": "Longest Repeating Character Replacement",
+  "category": "sliding_window",
+  "updated_at": "2026-09-24T14:28:21Z",
+  "updated_at_local": "2026-09-24 22:28:21 CST"
+}

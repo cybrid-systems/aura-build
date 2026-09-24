@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:27:08Z",
+      "ts_local": "2026-09-24 22:27:08 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1689,
+        "total_characters": 0,
+        "prompt_tokens": 1208,
+        "completion_tokens": 481,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.03,
+      "tests_passed": 4,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=False\nCASE1=False\nCASE2=True\nCASE3=False\nCASE4=False\nCASE5=False\nCASE6=True\nCASE7=False\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:27:34Z",
+      "ts_local": "2026-09-24 22:27:34 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2172,
+        "total_characters": 0,
+        "prompt_tokens": 1208,
+        "completion_tokens": 964,
+        "prompt_tokens_details": {
+          "cached_tokens": 1207
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": -1,
+      "timeout": true,
+      "duration_s": 20.024,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "timeout",
+      "stdout_snippet": "CASE0="
+    }
+  ],
+  "slug": "check-if-all-characters-have-equal-number-of-occurrences",
+  "title": "Check if All Characters Have Equal Number of Occurrences",
+  "category": "hashing",
+  "updated_at": "2026-09-24T14:27:34Z",
+  "updated_at_local": "2026-09-24 22:27:34 CST"
+}

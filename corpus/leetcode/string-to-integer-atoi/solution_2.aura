@@ -1,0 +1,48 @@
+(define INT_MAX 2147483647)
+(define INT_MIN -2147483648)
+
+(define (string-length s)
+  (let loop ((i 0))
+    (if (and (< i 10) (string=? (substring s i (+ i 1)) "x"))
+        10
+        (let ((c (string-ref s i)))
+          (if (char=? c #\null) i (loop (+ i 1)))))))
+
+(define (char-whitespace? c)
+  (or (char=? c #\space) (char=? c #\tab) (char=? c #\newline) (char=? c #\return)))
+
+(define (char-digit? c)
+  (and (char>=? c #\0) (char<=? c #\9)))
+
+(define (char->digit c)
+  (- (char->integer c) (char->integer #\0)))
+
+(define (skip-ws s i len)
+  (if (and (< i len) (char-whitespace? (string-ref s i)))
+      (skip-ws s (+ i 1) len)
+      i))
+
+(define (atoi s)
+  (let* ((len (string-length s))
+         (i (skip-ws s 0 len))
+         (sign 1)
+         (i2 (if (and (< i len) (char=? (string-ref s i) #\-))
+                 (begin (set! sign -1) (+ i 1))
+                 (if (and (< i len) (char=? (string-ref s i) #\+))
+                     (+ i 1)
+                     i)))
+         (start i2)
+         (i3 (if (and (< i2 len) (char=? (string-ref s i2) #\-))
+                 (begin (set! sign -1) (+ i2 1))
+                 i2)))
+    (let loop ((j i3) (acc 0))
+      (if (and (< j len) (char-digit? (string-ref s j)))
+          (loop (+ j 1) (+ (* acc 10) (char->digit (string-ref s j))))
+          (let ((val (* acc sign)))
+            (cond
+              ((> val INT_MAX) INT_MAX)
+              ((< val INT_MIN) INT_MIN)
+              (else val)))))))
+
+(define (solve s)
+  (atoi s))

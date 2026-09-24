@@ -1,0 +1,55 @@
+(define (string-length s)
+  (let loop ((i 0) (s s))
+    (if (= (string-ref s i) #\nul)
+        i
+        (loop (+ i 1) s))))
+
+(define (char-at s i)
+  (substring s i (+ i 1)))
+
+(define (string=? a b)
+  (= (string-length a) (string-length b)))
+
+(define (solve s t)
+  (let ((n (string-length s)))
+    (if (not (= (string-length s) (string-length t)))
+        #f
+        (let ((map1 '()) (map2 '()))
+          (let loop ((i 0) (map1 map1) (map2 map2) (ok #t))
+            (cond
+              ((not ok) #f)
+              ((= i n) #t)
+              (else
+               (let ((c1 (char-at s i)) (c2 (char-at t i)))
+                 (let ((r1 (assoc c1 map1)) (r2 (assoc c2 map2)))
+                   (cond
+                     ((and (pair? r1) (pair? r2))
+                      (if (and (string=? (cdr r1) c2) (string=? (cdr r2) c1))
+                          (loop (+ i 1) map1 map2 #t)
+                          (loop (+ i 1) map1 map2 #f)))
+                     ((and (not (pair? r1)) (not (pair? r2)))
+                      (loop (+ i 1)
+                            (cons (cons c1 c2) map1)
+                            (cons (cons c2 c1) map2)
+                            #t))
+                     (else
+                      (loop (+ i 1) map1 map2 #f))))))))))))
+
+(define (display-bool b)
+  (if b (display "#t") (display "#f")))
+
+(define (display-case i s t)
+  (display "CASE")
+  (display (number->string i))
+  (display "=")
+  (display-bool (solve s t))
+  (newline))
+
+(display-case 0 "egg" "add")
+(display-case 1 "foo" "bar")
+(display-case 2 "paper" "title")
+(display-case 3 "ab" "aa")
+(display-case 4 "" "")
+(display-case 5 "a" "a")
+(display-case 6 "abc" "abcd")
+(display-case 7 "badc" "baba")

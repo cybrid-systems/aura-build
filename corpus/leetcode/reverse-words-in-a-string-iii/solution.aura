@@ -1,0 +1,68 @@
+;; Reverse each word in place using two-pointer technique.
+
+(define (list-ref lst i)
+  (if (= i 0)
+      (car lst)
+      (list-ref (cdr lst) (- i 1))))
+
+(define (list-set! lst i v)
+  (if (= i 0)
+      (set-car! lst v)
+      (list-set! (cdr lst) (- i 1) v)))
+
+(define (string->chars s)
+  (let loop ((i 0) (acc '()))
+    (if (= i (string-length s))
+        acc
+        (loop (+ i 1) (append acc (list (string-ref s i)))))))
+
+(define (chars->string chars)
+  (let loop ((cs chars) (acc ""))
+    (if (null? cs)
+        acc
+        (loop (cdr cs) (string-append acc (string (car cs)))))))
+
+(define (string s)
+  (let loop ((i 0) (acc ""))
+    (if (= i (string-length s))
+        acc
+        (loop (+ i 1)
+              (string-append acc (string (char->integer (string-ref s i)) -1))))))
+
+;; Simplified string helpers using char->integer/integer->char in compatible range.
+;; Better approach: use a mutable bytevector for true in-place swaps.
+
+(define (solve s)
+  (let* ((n (string-length s))
+         (bv (string->list s)))
+    ;; Convert list to mutable bytevector via list->vector then string-set!
+    (let ((v (list->vector bv)))
+      (let loop ((i 0))
+        (cond
+          ((= i n) #f)
+          (else
+           (let ((start i))
+             ;; find end of word
+             (let loop2 ((j i))
+               (cond
+                 ((or (= j n) (char=? (vector-ref v j) #\space))
+                  ;; reverse chars [start, j-1] in place using string mutation
+                  (let rev ((l start) (r (- j 1)))
+                    (if (>= l r)
+                        (loop (+ j 1))
+                        (begin
+                          (let ((tmp (string-ref s l)))
+                            ;; string is immutable in standard scheme; emulate in-place
+                            ;; We'll rebuild via vector which we can mutate through display
+                            (vector-set! v l (string-ref s r))
+                            (vector-set! v r tmp)
+                            (rev (+ l 1) (- r 1))))))
+                 (else (loop2 (+ j 1)))))))))))
+    ;; Build result from vector
+    (let ((result (make-string n)))
+      (let loop ((i 0))
+        (cond
+          ((= i n) result)
+          (else
+           (string-set! result i (vector-ref v i))
+           (loop (+ i 1)))))))

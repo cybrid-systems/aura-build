@@ -1,0 +1,69 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:29:40Z",
+      "ts_local": "2026-09-24 22:29:40 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2080,
+        "total_characters": 0,
+        "prompt_tokens": 1120,
+        "completion_tokens": 960,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 512
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.064,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 3:32: unbound variable: solve\n",
+      "stdout_snippet": "CASE0=CASE0="
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:29:47Z",
+      "ts_local": "2026-09-24 22:29:47 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1720,
+        "total_characters": 0,
+        "prompt_tokens": 1120,
+        "completion_tokens": 600,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 1024
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.031,
+      "tests_passed": 5,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=4\nCASE1=1000000006\nCASE2=6\nCASE3=18\nCASE4=2\nCASE5=24\nCASE6=0\nCASE7=1000000005\n"
+    }
+  ],
+  "slug": "k-concatenation-maximum-sum",
+  "title": "K-Concatenation Maximum Sum",
+  "category": "sliding_window",
+  "updated_at": "2026-09-24T14:29:47Z",
+  "updated_at_local": "2026-09-24 22:29:47 CST"
+}

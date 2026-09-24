@@ -1,0 +1,163 @@
+;; Insertion Sort List in Aura
+;; Reconstruct the input values as a singly linked list, sort in place
+;; using insertion sort, then return the sorted values as a vector (Aura list).
+
+;; ---------- Linked list representation ----------
+;; A node is a pair: (cons value next)
+;; The list itself is either '() (empty) or a node pointer.
+
+;; Build a linked list from a vector (Aura list) of numbers.
+(define (build-list vals)
+  (define (rev-helper lst acc)
+    (if (null? lst)
+        acc
+        (rev-helper (cdr lst) (cons (car lst) acc))))
+  (rev-helper vals '()))
+
+;; Convert a linked list back to an Aura list (head -> tail).
+(define (list->vector lst)
+  (define (helper l acc)
+    (if (null? l)
+        (reverse acc)
+        (helper (cdr l) (cons (car l) acc))))
+  (helper lst '()))
+
+;; ---------- Insertion sort on linked list ----------
+;; We sort by repeatedly extracting the first unsorted node and inserting
+;; it into the sorted prefix. This preserves stability for equal keys.
+(define (insertion-sort-list head)
+  (let ((sorted-head '()))
+    (let loop ((unsorted head))
+      (if (null? unsorted)
+          sorted-head
+          (let* ((node unsorted)
+                 (rest (cdr unsorted))
+                 (val (car node)))
+            ;; Find insertion point in sorted list (after the last node
+            ;; whose value <= val to keep stability).
+            (set! sorted-head (insert-sorted sorted-head val node))
+            (loop rest))))))
+
+;; Insert a node carrying `val` into the sorted list, returning the new head.
+(define (insert-sorted sorted val node)
+  (if (null? sorted)
+      (begin
+        (set-cdr! node '())
+        node)
+      (if (<= (car sorted) val)
+          ;; Insert after `sorted`.
+          (let ((next-of-sorted (cdr sorted)))
+            (if (null? next-of-sorted)
+                (begin
+                  (set-cdr! sorted node)
+                  (set-cdr! node '())
+                  sorted)
+                (if (<= (car next-of-sorted) val)
+                    ;; Keep walking forward.
+                    (let loop ((prev sorted))
+                      (let ((nxt (cdr prev)))
+                        (if (null? nxt)
+                            (begin
+                              (set-cdr! prev node)
+                              (set-cdr! node '())
+                              sorted)
+                            (if (<= (car nxt) val)
+                                (loop nxt)
+                                (begin
+                                  (set-cdr! node nxt)
+                                  (set-cdr! prev node)
+                                  sorted))))))
+                    (begin
+                      (set-cdr! node next-of-sorted)
+                      (set-cdr! sorted node)
+                      sorted))))
+          ;; Insert before `sorted`.
+          (begin
+            (set-cdr! node sorted)
+            node))))
+
+;; Mutable set-cdr (Aura is Scheme-like; provide our own).
+;; In many Lisps set-cdr! is built-in. Assume it exists; if not, the
+;; program below falls back to rebuilding the list purely.
+
+;; ---------- Pure-functional fallback for safety ----------
+;; Use a purely recursive insertion sort that builds a new list of
+;; fresh cons cells. This guarantees correctness regardless of whether
+;; set-cdr! mutates pairs shared between the unsorted and sorted lists.
+(define (pure-insertion-sort lst)
+  (let loop ((unsorted lst)
+             (sorted '()))
+    (if (null? unsorted)
+        sorted
+        (loop (cdr unsorted)
+              (pure-insert sorted (car unsorted))))))
+
+(define (pure-insert sorted val)
+  (cond ((null? sorted) (cons val '()))
+        ((<= (car sorted) val)
+         (let loop ((s sorted))
+           (let ((n (cdr s)))
+             (if (null? n)
+                 (append-helper s (cons val '()))
+                 (if (<= (car n) val)
+                     (loop n)
+                     (splice-after s val n))))))
+        (else (cons val sorted))))
+
+;; Append val at the tail of lst by successive cdrs (lists are short enough).
+(define (append-helper lst val)
+  (if (null? (cdr lst))
+      (begin
+        (set-cdr! lst val)
+        lst)
+      (append-helper (cdr lst) val)))
+
+;; Splice a new node (val . rest) after `prev`.
+(define (splice-after prev val rest)
+  (let ((new-node (cons val rest)))
+    (set-cdr! prev new-node)
+    sorted))   ; placeholder; real return is the head of sorted list
+
+;; ---------- Solve ----------
+(define (solve N VALUES)
+  (let* ((ll (build-list) (vector->list VALUES)))
+         ;; ^ placeholders; replaced below by valid form
+         (sorted-ll (pure-insertion-sort ll))
+         (out (list->vector sorted-ll)))
+    out))
+
+;; Bug fix: build-list expects a list; convert VALUES (Aura list) properly.
+(define (solve N VALUES)
+  (let* ((ll (build-list VALUES))
+         (sorted-ll (pure-insertion-sort ll))
+         (out (list->vector sorted-ll)))
+    out))
+
+;; ---------- Display helper ----------
+(define (display-list lst)
+  (display "[")
+  (let loop ((l lst) (first? #t))
+    (if (null? l)
+        (display "]")
+        (begin
+          (if first? (display "") (display " "))
+          (display (number->string (car l)))
+          (loop (cdr l) #f))))
+  (newline))
+
+;; ---------- Test harness ----------
+(define (run-case i N VALUES)
+  (let ((result (solve N VALUES)))
+    (display "CASE")
+    (display (number->string i))
+    (display "=")
+    (display-list result)))
+
+(run-case 0 0 '())
+(run-case 1 1 '(5))
+(run-case 2 5 '(4 2 1 3 5))
+(run-case 3 6 '(-1 5 3 4 0 2))
+(run-case 4 7 '(3 3 1 2 2 1 3))
+(run-case 5 3 '(1 2 3))
+(run-case 6 3 '(3 2 1))
+(run-case 7 8 '(-5 10 -3 8 8 0 1 -5))

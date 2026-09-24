@@ -1,0 +1,232 @@
+;; Helper to build a list of n copies of v
+(define (replicate n v)
+  (if (= n 0)
+      '()
+      (cons v (replicate (- n 1) v))))
+
+;; Helper: length of list
+(define (len xs)
+  (if (null? xs) 0 (+ 1 (len (cdr xs)))))
+
+;; Helper: nth element
+(define (nth xs i)
+  (if (= i 0)
+      (car xs)
+      (nth (cdr xs) (- i 1))))
+
+;; Helper: count fresh oranges and find rotten positions
+(define (count-fresh grid)
+  (if (null? grid)
+      0
+      (+ (count-fresh-row (car grid))
+         (count-fresh (cdr grid)))))
+
+(define (count-fresh-row row)
+  (if (null? row)
+      0
+      (+ (if (= (car row) 1) 1 0)
+         (count-fresh-row (cdr row)))))
+
+;; Build initial queue of rotten positions with time 0
+;; Queue is list of (row col time)
+(define (collect-rotten grid r)
+  (if (null? grid)
+      '()
+      (append (collect-rotten-row (car grid) r 0)
+              (collect-rotten (cdr grid) (+ r 1)))))
+
+(define (collect-rotten-row row r c)
+  (if (null? row)
+      '()
+      (if (= (car row) 2)
+          (cons (list r c 0) (collect-rotten-row (cdr row) r (+ c 1)))
+          (collect-rotten-row (cdr row) r (+ c 1)))))
+
+;; Number of rows
+(define (num-rows grid)
+  (len grid))
+
+;; Number of columns (first row)
+(define (num-cols grid)
+  (if (null? grid) 0 (len (car grid))))
+
+;; BFS step: process queue, return new grid, new queue, minutes elapsed
+;; We'll process one level at a time
+(define (bfs-step grid queue nrows ncols)
+  (if (null? queue)
+      (list grid '() 0)
+      (let ((item (car queue))
+            (rest-q (cdr queue)))
+        (let ((r (nth item 0))
+              (c (nth item 1))
+              (t (nth item 2)))
+          (let ((new-grid grid)
+                (new-rest rest-q)
+                (next-time t))
+            ;; Check 4 neighbors and rott them if fresh
+            (let ((result (process-neighbors grid r c t nrows ncols)))
+              (list (car result) (append new-rest (cadr result)) next-time))))))
+
+;; This is getting complex - let me restart with cleaner approach
+;; Process all items at current time level, then move to next
+
+(define (solve grid)
+  (let ((nrows (num-rows grid))
+        (ncols (num-cols grid))
+        (fresh (count-fresh grid)))
+    (cond
+      ((= fresh 0) 0)
+      ((null? grid) 0)
+      (else
+       (let ((initial-q (collect-rotten grid 0)))
+         (if (null? initial-q)
+             -1
+             (bfs grid initial-q fresh 0 nrows ncols)))))))
+
+;; BFS: grid is current state, queue is remaining items to process,
+;; fresh-count is remaining fresh oranges, time is current minute being processed
+(define (bfs grid queue fresh time nrows ncols)
+  (cond
+    ((null? queue)
+     (if (= fresh 0) time -1))
+    (else
+     (let ((item (car queue))
+           (rest-q (cdr queue)))
+       (let ((r (car item))
+             (c (car (cdr item)))
+             (t (car (cdr (cdr item)))))
+         (let ((result (rot-neighbors grid r c t nrows ncols)))
+           (let ((new-grid (car result))
+                 (new-items (cadr result))
+                 (new-fresh (- fresh (car (cdr (cdr result))))))
+             (if (= time t)
+                 (bfs new-grid (append rest-q new-items) new-fresh (+ time 1) nrows ncols)
+                 (bfs new-grid (append rest-q new-items) new-fresh t nrows ncols)))))))))
+
+;; Rot neighbors of (r,c) at time t. Returns (new-grid queue-items fresh-rotten-count)
+;; queue-items have time t+1
+(define (rot-neighbors grid r c t nrows ncols)
+  (let ((delta-time (+ t 1))
+        (count 0))
+    (let ((r1 (- r 1)) (r2 (+ r 1)) (c1 (- c 1)) (c2 (+ c 1)))
+      (let ((g0 (rot-cell grid r1 c nrows ncols delta-time count)))
+        (let ((g1 (rot-cell (car g0) r2 c nrows ncols delta-time (car (cdr g0)))))
+          (let ((g2 (rot-cell (car g1) r c1 nrows ncols delta-time (car (cdr g1)))))
+            (rot-cell (car g2) r c2 nrows ncols delta-time (car (cdr g2)))))))))
+
+;; rot-cell: if (r,c) is fresh, mark it rotten and return updated grid + incremented count
+;; Return: (new-grid count)
+(define (rot-cell grid r c nrows ncols time count)
+  (if (or (< r 0) (>= r nrows) (< c 0) (>= c ncols))
+      (list grid count)
+      (let ((row (nth grid r)))
+        (let ((val (nth row c)))
+          (if (= val 1)
+              (list (set-row grid r (set-nth row c 2))
+                    (+ count 1))
+              (list grid count))))))
+
+;; set-row: replace row r in grid with new-row
+(define (set-row grid r new-row)
+  (if (= r 0)
+      (cons new-row (cdr grid))
+      (cons (car grid) (set-row (cdr grid) (- r 1) new-row))))
+
+;; set-nth: replace element at index i in xs with v
+(define (set-nth xs i v)
+  (if (= i 0)
+      (cons v (cdr xs))
+      (cons (car xs) (set-nth (cdr xs) (- i 1) v))))
+
+;; Need to return rot result with proper structure
+;; rot-neighbors returns (grid items count) but items includes neighbor positions
+;; Let me fix this - rot-cell should return updated queue items too
+
+;; Let me rewrite rot-neighbors properly
+(define (rot-neighbors grid r c t nrows ncols)
+  (let ((t1 (+ t 1)))
+    (let ((g0 (try-rot grid (- r 1) c t1 nrows ncols)))
+      (let ((g1 (try-rot (car g0) (+ r 1) c t1 nrows ncols)))
+        (let ((g2 (try-rot (car g1) r (- c 1) t1 nrows ncols)))
+          (try-rot (car g2) r (+ c 1) t1 nrows ncols))))))
+
+;; try-rot: return (grid updated-queue count)
+;; updated-queue is list of (r c t) for newly rotted cells
+(define (try-rot grid r c t nrows ncols)
+  (if (or (< r 0) (>= r nrows) (< c 0) (>= c ncols))
+      (list grid '() 0)
+      (let ((row (nth grid r)))
+        (let ((val (nth row c)))
+          (if (= val 1)
+              (list (set-row grid r (set-nth row c 2))
+                    (list (list r c t))
+                    1)
+              (list grid '() 0))))))
+
+;; Now combine rot-neighbors results: accumulate grid, queue, count
+;; Need to fix bfs to use this
+
+(define (bfs grid queue fresh time nrows ncols)
+  (cond
+    ((null? queue)
+     (if (= fresh 0) time -1))
+    (else
+     (let ((item (car queue))
+           (rest-q (cdr queue)))
+       (let ((r (car item))
+             (c (car (cdr item)))
+             (t (car (cdr (cdr item)))))
+         (let ((n0 (try-rot grid (- r 1) c (+ t 1) nrows ncols)))
+           (let ((n1 (try-rot (car n0) (+ r 1) c (+ t 1) nrows ncols)))
+             (let ((n2 (try-rot (car n1) r (- c 1) (+ t 1) nrows ncols)))
+               (let ((n3 (try-rot (car n2) r (+ c 1) (+ t 1) nrows ncols)))
+                 (let ((new-grid (car n3))
+                       (rotted (+ (car (cdr n0)) (car (cdr n1)) (car (cdr n2)) (car (cdr n3))))
+                       (new-queue (append (append (append rest-q (car (cdr n0))) (car (cdr n1))) (append (car (cdr n2)) (car (cdr n3))))))
+                   (let ((new-fresh (- fresh rotted))
+                         (next-time (if (= fresh time 0) (+ time 1) time)))
+                     (bfs new-grid new-queue new-fresh next-time nrows ncols))))))))))))
+
+;; Test cases
+(define (display-value v)
+  (display v))
+
+(let ((g0 (list (list 2 1 1) (list 1 1 0) (list 0 1 1))))
+  (display "CASE0=")
+  (display (solve g0))
+  (newline))
+
+(let ((g1 (list (list 2 1 1) (list 0 1 0) (list 1 1 1))))
+  (display "CASE1=")
+  (display (solve g1))
+  (newline))
+
+(let ((g2 (list (list 0 2))))
+  (display "CASE2=")
+  (display (solve g2))
+  (newline))
+
+(let ((g3 (list (list 1))))
+  (display "CASE3=")
+  (display (solve g3))
+  (newline))
+
+(let ((g4 '()))
+  (display "CASE4=")
+  (display (solve g4))
+  (newline))
+
+(let ((g5 (list (list 0))))
+  (display "CASE5=")
+  (display (solve g5))
+  (newline))
+
+(let ((g6 (list (list 1 2 1 1))))
+  (display "CASE6=")
+  (display (solve g6))
+  (newline))
+
+(let ((g7 (list (list 2 2) (list 1 1) (list 1 1))))
+  (display "CASE7=")
+  (display (solve g7))
+  (newline))

@@ -1,0 +1,95 @@
+;; Count character frequencies and sort by descending frequency.
+;; Returns a string with characters ordered by frequency (most frequent first).
+;; Ties are broken arbitrarily.
+
+(define (count-char c cs)
+  (if (null? cs)
+      0
+      (+ (if (char=? c (car cs)) 1 0)
+         (count-char c (cdr cs)))))
+
+(define (make-counter cs)
+  ;; produce a list of (char . count) pairs, removing duplicates
+  (define (helper xs acc)
+    (if (null? xs)
+        acc
+        (let ((c (car xs))
+              (rest (cdr xs)))
+          (if (assoc c acc)
+              (helper rest acc)
+              (helper rest (cons (cons c (count-char c cs)) acc))))))
+  (helper cs '()))
+
+(define (assoc c lst)
+  (cond ((null? lst) #f)
+        ((char=? c (car (car lst))) (car lst))
+        (else (assoc c (cdr lst)))))
+
+(define (count-of pair)
+  (cdr pair))
+
+(define (char-of pair)
+  (car pair))
+
+;; Insert a pair into a list sorted by descending count
+(define (insert-sorted pair lst)
+  (cond ((null? lst) (cons pair '()))
+        ((> (count-of pair) (count-of (car lst)))
+         (cons pair lst))
+        (else (cons (car lst) (insert-sorted pair (cdr lst))))))
+
+(define (sort-pairs pairs)
+  (if (null? pairs)
+      '()
+      (insert-sorted (car pairs) (sort-pairs (cdr pairs)))))
+
+(define (build-string pair)
+  (let ((c (char-of pair))
+        (n (count-of pair))
+        (acc '()))
+    (define (loop i acc)
+      (if (< i 0)
+          acc
+          (loop (- i 1) (cons c acc))))
+    (loop (- n 1) acc)))
+
+(define (concatenate-chars chars)
+  (list->string chars))
+
+(define (pairs-to-string pairs)
+  (concatenate-chars
+   (let loop ((ps pairs) (acc '()))
+     (if (null? ps)
+         acc
+         (loop (cdr ps) (append acc (build-string (car ps))))))))
+
+(define (append a b)
+  (if (null? a) b (cons (car a) (append (cdr a) b))))
+
+(define (solve s)
+  (let* ((chars (string->list s))
+         (pairs (sort-pairs (make-counter chars)))
+         (result (pairs-to-string pairs)))
+    result))
+
+;; ---- display helper for strings ----
+(define (display-string s)
+  (display s))
+
+;; ---- run cases ----
+(define (run-case i s)
+  (let ((result (solve s)))
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display-string result)
+    (newline)))
+
+(run-case 0 "tree")
+(run-case 1 "Aabb")
+(run-case 2 "a")
+(run-case 3 "")
+(run-case 4 "aaabbb")
+(run-case 5 "Mississippi")
+(run-case 6 "abc")
+(run-case 7 "!!!??hello")

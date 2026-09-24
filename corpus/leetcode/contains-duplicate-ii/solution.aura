@@ -1,0 +1,39 @@
+(define (make-hash) (cons 'hash '()))
+
+(define (hash-get h key)
+  (let ((p (assq key (cdr h))))
+    (if p (cdr p) #f)))
+
+(define (hash-set! h key val)
+  (let ((p (assq key (cdr h))))
+    (if p
+        (set-cdr! p val)
+        (set-cdr! h (cons (cons key val) (cdr h))))))
+
+(define (contains-nearby-duplicate nums k)
+  (let ((seen (make-hash)))
+    (let loop ((i 0) (xs nums))
+      (cond
+        ((null? xs) #f)
+        (else
+         (let ((v (car xs)))
+           (let ((prev (hash-get seen v)))
+             (if (and prev (<= (- i prev) k))
+                 #t
+                 (begin
+                   (hash-set! seen v i)
+                   (loop (+ i 1) (cdr xs)))))))))))
+
+(define (solve nums k)
+  (contains-nearby-duplicate nums k))
+
+(define (bool->str b) (if b "True" "False"))
+
+(display "CASE0=") (display (bool->str (solve '(1 2 3 1) 3))) (newline)
+(display "CASE1=") (display (bool->str (solve '(1 0 1 1) 1))) (newline)
+(display "CASE2=") (display (bool->str (solve '(1 2 3 1 2 3) 2))) (newline)
+(display "CASE3=") (display (bool->str (solve '() 0))) (newline)
+(display "CASE4=") (display (bool->str (solve '(1) 1))) (newline)
+(display "CASE5=") (display (bool->str (solve '(1 1) 0))) (newline)
+(display "CASE6=") (display (bool->str (solve '(1 2 3 4 5 1) 5))) (newline)
+(display "CASE7=") (display (bool->str (solve '(1 2 3 4 5 1) 4))) (newline)

@@ -1,0 +1,35 @@
+{
+  "variants": [],
+  "slug": "delete-node-in-a-linked-list",
+  "title": "Delete Node in a Linked List",
+  "category": "linked_list",
+  "ref": {
+    "llm": {
+      "ok": true,
+      "error": "",
+      "usage": {
+        "total_tokens": 1630,
+        "total_characters": 0,
+        "prompt_tokens": 868,
+        "completion_tokens": 762,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "model": "MiniMax-M3"
+    },
+    "run": {
+      "ref_ok": false,
+      "exit_code": 1,
+      "stderr": "Traceback (most recent call last):\n  File \"/workspace/aura-build/corpus/leetcode/delete-node-in-a-linked-list/ref.py\", line 75, in <module>\n    result = run_case(c[\"values\"], c[\"idx\"])\n  File \"/workspace/aura-build/corpus/leetcode/delete-node-in-a-linked-list/ref.py\", line 56, in run_case\n    solve(cur)\n    ~~~~~^^^^^\n  File \"/workspace/aura-build/corpus/leetcode/delete-node-in-a-linked-list/ref.py\", line 46, in solve\n    node.val = nxt.val\n               ^^^^^^^\nAttributeError: 'NoneType' objec",
+      "duration_s": 0.032,
+      "timeout": false,
+      "n_tests": 0
+    },
+    "ts": "2026-09-24T14:33:10Z"
+  },
+  "updated_at": "2026-09-24T14:33:10Z"
+}

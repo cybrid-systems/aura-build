@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:26:40Z",
+      "ts_local": "2026-09-24 22:26:40 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2273,
+        "total_characters": 0,
+        "prompt_tokens": 1057,
+        "completion_tokens": 1216,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 1.793,
+      "tests_passed": 7,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=3\nCASE1=99\nCASE2=2147483648\nCASE3=1\nCASE4=9\nCASE5=42\nCASE6=2\nCASE7=100\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:26:46Z",
+      "ts_local": "2026-09-24 22:26:46 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1823,
+        "total_characters": 0,
+        "prompt_tokens": 1057,
+        "completion_tokens": 766,
+        "prompt_tokens_details": {
+          "cached_tokens": 1056
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.029,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 6:27: unbound variable: ash\n  did you mean 'rest'?\nerror: 6:27: unbound variable: ash\n  did you mean 'rest'?\nerror: 6:27: unbound variable: ash\n  did you mean 'rest'?\nerror: 6:27: unbound variable: ash\n  did you mean 'rest'?\nerror: 6:27: unbound variable: ash\n  did you mean 'rest'?\nerror: 6:27: unbound variable: ash\n  did you mean 'rest'?\nerror: 6:27: unbound variable: ash\n  did you mean 'rest'?\nerror: 6:27: unbound variable: ash\n  did you mean 'rest'?\n",
+      "stdout_snippet": "CASE0=CASE0=CASE1=CASE2=CASE3=CASE4=CASE5=CASE6=CASE7="
+    }
+  ],
+  "slug": "single-number-ii",
+  "title": "Single Number II",
+  "category": "hashing",
+  "updated_at": "2026-09-24T14:26:46Z",
+  "updated_at_local": "2026-09-24 22:26:46 CST"
+}

@@ -1,0 +1,38 @@
+(define (next-term s)
+  (let ((len (string-length s)))
+    (let loop ((i 0) (acc ""))
+      (if (>= i len)
+          acc
+          (let ((c (string-ref s i)))
+            (let count-run ((j i) (cnt 0))
+              (if (and (< j len) (char=? (string-ref s j) c))
+                  (count-run (+ j 1) (+ cnt 1))
+                  (loop j
+                        (string-append acc
+                                       (number->string cnt)
+                                       (string c))))))))))
+
+(define (count-and-say n)
+  (let loop ((i 1) (s "1"))
+    (if (= i n)
+        s
+        (loop (+ i 1) (next-term s)))))
+
+(define (solve n)
+  (count-and-say n))
+
+(display "CASE0=") (display (solve 1)) (newline)
+(display "CASE1=") (display (solve 2)) (newline)
+(display "CASE2=") (display (solve 3)) (newline)
+(display "CASE3=") (display (solve 4)) (newline)
+(display "CASE4=") (display (solve 5)) (newline)
+(display "CASE5=") (display (solve 6)) (newline)
+(display "CASE6=") (display (solve 7)) (newline)
+(display "CASE7=") (display (solve 10)) (newline)
+(display "CASE8=") (display (solve 15)) (newline)
+(display "CASE9=") (display (solve 20)) (newline)
+(display "CASE10=") (display (solve 25)) (newline)
+(display "CASE11=") (display (solve 30)) (newline)
+(display "CASE12=") (display (solve 8)) (newline)
+(display "CASE13=") (display (solve 9)) (newline)
+(display "CASE14=") (display (solve 11)) (newline)

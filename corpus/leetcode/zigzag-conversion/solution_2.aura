@@ -1,0 +1,52 @@
+(define (length-of-string s)
+  (let loop ((i 0))
+    (if (string=? (substring s i (+ i 1)) "")
+        i
+        (loop (+ i 1)))))
+
+(define (char-at s i)
+  (substring s i (+ i 1)))
+
+(define (solve s numRows)
+  (let* ((n (length-of-string s)))
+    (if (or (= numRows 1) (>= numRows n))
+        s
+        (let* ((cycle (- (* 2 numRows) 2))
+               (rows (make-list numRows "")))
+          (let loop ((i 0))
+            (if (= i n)
+                (let ((parts (list "")))
+                  (let collect ((r 0))
+                    (if (= r numRows)
+                        (apply string-append (reverse parts))
+                        (begin
+                          (set! parts (cons (list-ref rows r) parts))
+                          (collect (+ r 1))))))
+                (let* ((row (modulo i cycle))
+                       (actual-row (if (< row numRows) row (- cycle row))))
+                  (begin
+                    (let update ((r 0))
+                      (if (= r numRows)
+                          'done
+                          (begin
+                            (if (= r actual-row)
+                                (list-set! rows r (string-append (list-ref rows r) (char-at s i)))
+                                'skipped)
+                            (update (+ r 1)))))
+                    (loop (+ i 1)))))))))
+
+(define (display-case i result)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display result)
+  (newline))
+
+(display-case 0 (solve "PAYPALISHIRING" 3))
+(display-case 1 (solve "PAYPALISHIRING" 4))
+(display-case 2 (solve "PAYPALISHIRING" 1))
+(display-case 3 (solve "PAYPALISHIRING" 2))
+(display-case 4 (solve "A" 3))
+(display-case 5 (solve "AB" 4))
+(display-case 6 (solve "ABCDEFGHIJKLMN" 5))
+(display-case 7 (solve "ABCDEFGHIJKLMNOPQRSTUVWXYZ" 6))

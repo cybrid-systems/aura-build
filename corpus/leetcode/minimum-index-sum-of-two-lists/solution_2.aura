@@ -1,0 +1,77 @@
+;; Build index map from list: returns assoc list of (string . index)
+(define (build-index-map lst)
+  (let loop ((l lst) (i 0) (acc '()))
+    (if (null? l)
+        acc
+        (loop (cdr l) (+ i 1) (cons (cons (car l) i) acc)))))
+
+;; Lookup index of key in assoc list; return #f if not present
+(define (lookup key alist)
+  (cond ((null? alist) #f)
+        ((equal? (car (car alist)) key) (cdr (car alist)))
+        (else (lookup key (cdr alist)))))
+
+;; Main solve: find common strings with minimum index sum
+(define (solve list1 list2)
+  (let ((idx-map (build-index-map list1)))
+    (let loop ((l list2) (j 0) (best-sum 999999) (result '()))
+      (if (null? l)
+          result
+          (let* ((s (car l))
+                 (i (lookup s idx-map)))
+            (if i  ; if not #f
+                (let ((sum (+ i j)))
+                  (cond ((< sum best-sum)
+                         (loop (cdr l) (+ j 1) sum (list s)))
+                        ((= sum best-sum)
+                         (loop (cdr l) (+ j 1) best-sum (cons s result)))
+                        (else
+                         (loop (cdr l) (+ j 1) best-sum result))))
+                (loop (cdr l) (+ j 1) best-sum result)))))))
+
+;; Helper to display a list of strings in readable form
+(define (display-list lst)
+  (display "[")
+  (let loop ((l lst) (first #t))
+    (cond ((null? l) (display "]"))
+          (else
+           (if first (set! first #f) (display ","))
+           (display "\"")
+           (display (car l))
+           (display "\"")
+           (loop (cdr l) #t)))))
+
+;; ---- Test cases ----
+(define CASE0-list1 '("Shogun" "Tapioca Express" "Burger King" "KFC"))
+(define CASE0-list2 '("Piatti" "The Grill at Torrey Pines" "Hungry Hunter Steakhouse" "Shogun"))
+
+(define CASE1-list1 '("Shogun" "Tapioca Express" "Burger King" "KFC"))
+(define CASE1-list2 '("KFC" "Shogun" "Burger King"))
+
+(define CASE2-list1 '("Shogun" "Tapioca Express" "Burger King" "KFC"))
+(define CASE2-list2 '("Tapioca Express" "Shogun" "Burger King" "KFC"))
+
+(define CASE3-list1 '("a" "b" "c"))
+(define CASE3-list2 '("d" "e" "f"))
+
+(define CASE4-list1 '("a" "b" "c"))
+(define CASE4-list2 '("c" "b" "a"))
+
+(define CASE5-list1 '("a"))
+(define CASE5-list2 '("a"))
+
+(define CASE6-list1 '("x" "y" "z"))
+(define CASE6-list2 '("z" "y" "x"))
+
+(define CASE7-list1 '("alpha" "beta" "gamma" "delta"))
+(define CASE7-list2 '("delta" "epsilon" "zeta" "beta" "alpha"))
+
+;; Output results
+(display "CASE0=") (display-list (solve CASE0-list1 CASE0-list2)) (newline)
+(display "CASE1=") (display-list (solve CASE1-list1 CASE1-list2)) (newline)
+(display "CASE2=") (display-list (solve CASE2-list1 CASE2-list2)) (newline)
+(display "CASE3=") (display-list (solve CASE3-list1 CASE3-list2)) (newline)
+(display "CASE4=") (display-list (solve CASE4-list1 CASE4-list2)) (newline)
+(display "CASE5=") (display-list (solve CASE5-list1 CASE5-list2)) (newline)
+(display "CASE6=") (display-list (solve CASE6-list1 CASE6-list2)) (newline)
+(display "CASE7=") (display-list (solve CASE7-list1 CASE7-list2)) (newline)

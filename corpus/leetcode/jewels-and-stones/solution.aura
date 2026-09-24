@@ -1,0 +1,34 @@
+(define (string-length s)
+  (let loop ((i 0) (s s))
+    (if (string? s)
+        (let ((rest (substring s 1 (string-length s))))
+          (if (= (string-length rest) (string-length s))
+              i
+              (loop (+ i 1) rest)))
+        i)))
+
+(define (nth-char s i)
+  (substring s i (+ i 1)))
+
+(define (in-jewels? c j jlen)
+  (let loop ((k 0))
+    (cond ((>= k jlen) #f)
+          ((string=? (nth-char j k) c) #t)
+          (else (loop (+ k 1))))))
+
+(define (count-jewels-in-stones j s)
+  (let ((jlen (string-length j))
+        (slen (string-length s)))
+    (let loop ((i 0) (acc 0))
+      (cond ((>= i slen) acc)
+            ((in-jewels? (nth-char s i) j jlen)
+             (loop (+ i 1) (+ acc 1)))
+            (else (loop (+ i 1) acc))))))
+
+(define (solve)
+  (let ((case (list-ref CASE0 0))
+        (jewels (list-ref CASE0 0))
+        (stones (list-ref CASE0 1)))
+    (count-jewels-in-stones jewels stones)))
+
+(solve)

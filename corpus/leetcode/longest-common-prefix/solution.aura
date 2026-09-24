@@ -1,0 +1,102 @@
+(define (solve strs)
+  ;; strs is a list of strings
+  (cond
+    ((null? strs) "")
+    ((null? (cdr strs)) (car strs))
+    (else
+      (let ((first (car strs)))
+        (let ((len (string-length first)))
+          (letrec
+            ((check-pos
+              (lambda (i)
+                (cond
+                  ((>= i len) len)
+                  ((all-match? strs i (string-ref first i))
+                   (check-pos (+ i 1)))
+                  (else i))))))
+            (substring first 0 (check-pos 0))))))))
+
+(define (all-match? strs i ch)
+  (cond
+    ((null? strs) #t)
+    ((>= i (string-length (car strs))) #f)
+    ((not (char=? (string-ref (car strs)) i ch)) #f)
+    (else (all-match? (cdr strs) i ch))))
+
+(define (string-length s)
+  (letrec
+    ((len-iter
+      (lambda (s n)
+        (cond
+          ((string=? s "") n)
+          (else (len-iter (substring s 1) (+ n 1)))))))
+    (len-iter s 0)))
+
+(define (substring s start end)
+  (letrec
+    ((sub-iter
+      (lambda (s i acc)
+        (cond
+          ((>= i end) (list->string (reverse acc)))
+          (else (sub-iter (substring s 1) (+ i 1)
+                          (cons (string-ref s 0) acc)))))))
+    (sub-iter s start '())))
+
+(define (parse-input s)
+  ;; s contains lines separated by \n, last is empty
+  (letrec
+    ((parse-iter
+      (lambda (s acc)
+        (cond
+          ((string=? s "") (reverse acc))
+          (else
+           (let ((idx (find-newline s)))
+             (cond
+               ((= idx -1)
+                (reverse (cons s acc)))
+               (else
+                (parse-iter
+                  (substring s (+ idx 1))
+                  (cons (substring s 0 idx) acc)))))))))))
+    (parse-iter s '())))
+
+(define (find-newline s)
+  (letrec
+    ((find-iter
+      (lambda (s i)
+        (cond
+          ((string=? s "") -1)
+          ((char=? (string-ref s 0) #\newline) i)
+          (else (find-iter (substring s 1) (+ i 1)))))))
+    (find-iter s 0)))
+
+(define (split-lines s)
+  ;; Split on newline, drop trailing empty, drop leading empties
+  (let ((lines (parse-input s)))
+    (letrec
+      ((drop-trailing
+        (lambda (lst)
+          (cond
+            ((null? lst) '())
+            ((string=? (car lst) "") '())
+            (else lst)))))
+       (drop-trailing lines))))
+
+;; Test cases
+(define case0 "flower\nflow\nflight\n")
+(define case1 "dog\nracecar\ncar\n")
+(define case2 "intersect\ninterstate\nintercom\n")
+(define case3 "\n")
+(define case4 "alone\n")
+(define case5 "abc\nabc\nabc\n")
+(define case6 "a\nb\nc\n")
+(define case7 "prefix\nprefab\npresent\npre\n")
+
+(display "CASE0=") (display (solve (split-lines case0))) (newline)
+(display "CASE1=") (display (solve (split-lines case1))) (newline)
+(display "CASE2=") (display (solve (split-lines case2))) (newline)
+(display "CASE3=") (display (solve (split-lines case3))) (newline)
+(display "CASE4=") (display (solve (split-lines case4))) (newline)
+(display "CASE5=") (display (solve (split-lines case5))) (newline)
+(display "CASE6=") (display (solve (split-lines case6))) (newline)
+(display "CASE7=") (display (solve (split-lines case7))) (newline)

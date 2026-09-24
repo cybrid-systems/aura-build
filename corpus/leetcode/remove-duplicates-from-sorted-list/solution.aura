@@ -1,0 +1,86 @@
+;; Remove Duplicates from Sorted List - Aura solution
+
+;; Node constructor: (node val next) returns a pair (val . next)
+(define (node val nxt)
+  (cons val nxt))
+
+(define (node-val n) (car n))
+(define (node-next n) (cdr n))
+(define (set-node-next! n v) (set-cdr! n v))
+
+;; Build a list of nodes from a list of numbers
+(define (build-list vals)
+  (letrec ((helper (lambda (lst acc)
+                     (if (null? lst)
+                         acc
+                         (helper (cdr lst) (cons (node (car lst) acc)))))))
+    (helper vals '())))
+
+;; Get values from node list
+(define (vals-of nodes)
+  (letrec ((helper (lambda (ns acc)
+                     (if (null? ns)
+                         (reverse acc)
+                         (helper (cdr ns) (cons (node-val (car ns)) acc))))))
+    (helper nodes '())))
+
+;; Deduplicate sorted linked list (in place)
+(define (dedup head)
+  (if (null? head)
+      head
+      (let loop ((cur head))
+        (let ((nxt (node-next cur)))
+          (cond
+            ((null? nxt) cur)
+            ((= (node-val cur) (node-val nxt))
+             (set-node-next! cur (node-next nxt))
+             (loop cur))
+            (else (loop nxt)))))))
+
+;; Solve: take a list of values, return deduplicated values
+(define (solve vals)
+  (let ((head (build-list vals)))
+    (let ((new-head (dedup head)))
+      (vals-of new-head))))
+
+;; Display a list of values as comma-separated string
+(define (display-vals lst)
+  (letrec ((helper (lambda (l first?)
+                     (cond
+                       ((null? l) #t)
+                       (else
+                        (if (not first?) (begin (display ",")))
+                        (display (number->string (car l)))
+                        (helper (cdr l) #f))))))
+    (helper lst #t)))
+
+;; Embedded test inputs
+(define cases
+  (list
+    (list 5 (list 1 1 2 3 3))
+    (list 1 (list 1))
+    (list 0 (list))
+    (list 7 (list 1 1 1 1 2 3 3))
+    (list 6 (list 1 2 3 4 5 6))
+    (list 4 (list 1 1 1 1))
+    (list 5 (list 1 2 2 2 3))
+    (list 3 (list 0 0 0))))
+
+(define (run-cases cases)
+  (letrec ((helper (lambda (cs i)
+                     (if (null? cs)
+                         'done
+                         (begin
+                           (let* ((c (car cs))
+                                  (n (car c))
+                                  (vals (cadr c))
+                                  (result (solve vals)))
+                             (display "CASE")
+                             (display (number->string i))
+                             (display "=vals=")
+                             (display-vals result)
+                             (newline))
+                           (helper (cdr cs) (+ i 1)))))))
+    (helper cases 0)))
+
+(run-cases cases 0)

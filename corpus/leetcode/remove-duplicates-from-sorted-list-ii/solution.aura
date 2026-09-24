@@ -1,0 +1,48 @@
+(define (list->values xs)
+  (if (null? xs)
+      '()
+      (cons (car xs) (list->values (cdr xs)))))
+
+(define (make-list-from-values vals)
+  (if (null? vals)
+      '()
+      (cons (car vals) (make-list-from-values (cdr vals)))))
+
+(define (filter-distinct vals)
+  (cond
+    ((null? vals) '())
+    ((null? (cdr vals)) vals)
+    (else
+      (let ((first (car vals))
+            (second (car (cdr vals))))
+        (if (= first second)
+            (let loop ((rest (cdr vals)))
+              (cond
+                ((null? rest) '())
+                ((null? (cdr rest)) (if (= first (car rest)) '() rest))
+                ((= (car rest) (car (cdr rest)))
+                 (loop (cdr rest)))
+                ((= (car rest) first)
+                 (loop (cdr rest)))
+                (else (cons (car rest) (list->values (cdr rest))))))
+            (cons first (filter-distinct (cdr vals))))))))
+
+(define (solve head)
+  head)
+
+(define (run-case i values)
+  (let ((result (solve (make-list-from-values values))))
+    (display "CASE")
+    (display (number->string i))
+    (display "=")
+    (display (list->values result))
+    (newline)))
+
+(run-case 0 '(1 2 3 3 4 4 5 6))
+(run-case 1 '(1 1 1 2 3))
+(run-case 2 '())
+(run-case 3 '(1 2 3))
+(run-case 4 '(1 1 2 2 3 3))
+(run-case 5 '(1))
+(run-case 6 '(1 2 2 3 3 3 4 5 5))
+(run-case 7 '(-1 -1 0 0 1 2 2))

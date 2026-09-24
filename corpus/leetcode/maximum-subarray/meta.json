@@ -1,35 +1,75 @@
 {
-  "variants": [],
-  "slug": "maximum-subarray",
-  "title": "Maximum Subarray",
-  "category": "arrays",
-  "ref": {
-    "llm": {
-      "ok": true,
-      "error": "",
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:21:13Z",
+      "ts_local": "2026-09-24 22:21:13 CST",
+      "llm_ok": true,
       "usage": {
-        "total_tokens": 1406,
+        "total_tokens": 1431,
         "total_characters": 0,
-        "prompt_tokens": 636,
-        "completion_tokens": 770,
-        "completion_tokens_details": {
-          "reasoning_tokens": 0
-        },
+        "prompt_tokens": 1007,
+        "completion_tokens": 424,
         "prompt_tokens_details": {
           "cached_tokens": 128
         }
       },
-      "model": "MiniMax-M3"
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.024,
+      "tests_passed": 8,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=8\nCASE1=-1\nCASE2=-1\nCASE3=5\nCASE4=15\nCASE5=6\nCASE6=0\nCASE7=5\n\"done\"\n"
     },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:21:16Z",
+      "ts_local": "2026-09-24 22:21:16 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1298,
+        "total_characters": 0,
+        "prompt_tokens": 1007,
+        "completion_tokens": 291,
+        "prompt_tokens_details": {
+          "cached_tokens": 1006
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.033,
+      "tests_passed": 8,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=8\nCASE1=-1\nCASE2=-1\nCASE3=5\nCASE4=15\nCASE5=6\nCASE6=0\nCASE7=5\n"
+    }
+  ],
+  "slug": "maximum-subarray",
+  "title": "Maximum Subarray",
+  "category": "arrays",
+  "ref": {
+    "llm": {},
     "run": {
       "ref_ok": false,
       "exit_code": 1,
       "stderr": "Traceback (most recent call last):\n  File \"/workspace/aura-build/corpus/leetcode/maximum-subarray/ref.py\", line 64, in <module>\n    assert parsed_result == out_cases[0][\"expected\"]\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError\n",
-      "duration_s": 0.026,
+      "duration_s": 0.027,
       "timeout": false,
       "n_tests": 0
     },
-    "ts": "2026-09-24T14:16:47Z"
+    "ts": "2026-09-24T14:20:50Z"
   },
-  "updated_at": "2026-09-24T14:16:47Z"
+  "updated_at": "2026-09-24T14:21:16Z",
+  "updated_at_local": "2026-09-24 22:21:16 CST"
 }

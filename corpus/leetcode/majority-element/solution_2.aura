@@ -1,0 +1,120 @@
+(define (parse-nums s)
+  ; Find '[' and ']'
+  (let ((start 0) (end 0) (i 0) (len (string-length s)))
+    (let loop ((i 0) (start #f) (end #f))
+      (cond
+        ((>= i len) (cons start end))
+        ((and (not start) (char=? (string-ref s i) #\[))
+         (loop (+ i 1) i end))
+        ((and (not end) (char=? (string-ref s i) #\]))
+         (loop (+ i 1) start i))
+        (else (loop (+ i 1) start end))))))
+
+(define (substring s start end)
+  (let ((buf '()))
+    (let loop ((i end) (acc '()))
+      (if (< i start)
+          (list->string (reverse acc))
+          (loop (- i 1) (cons (string-ref s i) acc))))))
+
+(define (split-str s delim)
+  (let ((len (string-length s)) (dl (string-length delim)))
+    (let loop ((i 0) (start 0) (acc '()))
+      (cond
+        ((>= i len) (reverse (cons (substring s start len) acc)))
+        ((and (<= (+ i dl) len)
+              (string=? (substring s i (+ i dl)) delim))
+         (loop (+ i dl) (+ i dl)
+               (cons (substring s start i) acc)))
+        (else (loop (+ i 1) start acc))))))
+
+(define (string-trim s)
+  (let ((len (string-length s)))
+    (let loop-start ((i 0))
+      (cond
+        ((>= i len) "")
+        ((or (char=? (string-ref s i) #\space) (char=? (string-ref s i) #\tab)
+             (char=? (string-ref s i) #\newline) (char=? (string-ref s i) #\return))
+         (loop-start (+ i 1)))
+        (else
+         (let loop-end ((j len) (result '()))
+           (cond
+             ((<= j i) (list->string (reverse result)))
+             ((or (char=? (string-ref s (- j 1)) #\space) (char=? (string-ref s (- j 1)) #\tab)
+                  (char=? (string-ref s (- j 1)) #\newline) (char=? (string-ref s (- j 1)) #\return))
+              (loop-end (- j 1) result))
+             (else
+              (let build ((k i) (acc '()))
+                (cond
+                  ((>= k j) (loop-end j (reverse acc)))
+                  (else (build (+ k 1) (cons (string-ref s k) acc))))))))))))))
+
+(define (string->number-safe s)
+  (let ((t (string-trim s)))
+    (if (= (string-length t) 0) 0 (string->number t))))
+
+(define (parse-array s)
+  ; s is content between [ and ]
+  (let ((parts (split-str s ",")))
+    (map (lambda (p) (string->number-safe p)) parts)))
+
+(define (parse-input line)
+  ; Find "nums":[ ... ]
+  ; Returns the list of nums
+  (let ((len (string-length line)))
+    (let loop ((i 0) (found #f))
+      (cond
+        ((>= i (- len 6)) '())
+        ((and (not found)
+              (char=? (string-ref line i) #\[))
+         (let parse-arr ((j i))
+           (cond
+             ((>= j len) '())
+             ((char=? (string-ref line j) #\])
+              (parse-array (substring line (+ i 1) j)))
+             (else (parse-arr (+ j 1))))))
+        (else (loop (+ i 1) (char=? (string-ref line i) #\[)))))))
+
+(define (majority-element nums)
+  (let ((len (length nums)))
+    (let phase1 ((i 0) (candidate 0) (count 0))
+      (cond
+        ((>= i len) (let phase2 ((k 0) (c 0))
+                      (cond
+                        ((>= k len) (if (> c (/ len 2)) candidate 0))
+                        ((= (list-ref nums k) candidate)
+                         (phase2 (+ k 1) (+ c 1)))
+                        (else (phase2 (+ k 1) c)))))
+        ((= count 0) (phase1 (+ i 1) (list-ref nums i) 1))
+        ((= (list-ref nums i) candidate)
+         (phase1 (+ i 1) candidate (+ count 1)))
+        (else (phase1 (+ i 1) candidate (- count 1)))))))
+
+(define (solve line)
+  (let ((nums (parse-input line)))
+    (majority-element nums)))
+
+(define test-inputs
+  (list
+    "CASE0={\"nums\": [2, 2, 1, 1, 1, 2, 2]}"
+    "CASE1={\"nums\": [3, 2, 3]}"
+    "CASE2={\"nums\": [1]}"
+    "CASE3={\"nums\": [1, 2, 3, 4, 5, 6, 7, 8, 9, 9]}"
+    "CASE4={\"nums\": [6, 5, 5]}"
+    "CASE5={\"nums\": [1, 1, 1, 1, 2, 3, 4]}"
+    "CASE6={\"nums\": [-1, -1, -1, 2, 3]}"
+    "CASE7={\"nums\": [0, 0, 0, 0, 0, 1, 2]}"))
+
+(define (run-tests inputs)
+  (let loop ((i 0) (xs inputs))
+    (cond
+      ((null? xs) (display "done"))
+      (else
+       (display "CASE")
+       (display (number->string i))
+       (display "=")
+       (display (number->string (solve (car xs))))
+       (newline)
+       (loop (+ i 1) (cdr xs))))))
+
+(run-tests test-inputs)

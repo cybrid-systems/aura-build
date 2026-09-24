@@ -1,0 +1,82 @@
+;; Subarray Sum Equals K
+;; Prefix-sum + hashmap approach
+
+(define (make-hash)
+  (let ((h '()))
+    (lambda (key)
+      (let loop ((pairs h))
+        (cond ((null? pairs) #f)
+              ((equal? (car (car pairs)) key) (car (cdr (car pairs))))
+              (else (loop (cdr pairs))))))))
+
+(define (hash-set! h key val)
+  (set! h-val-hash-ref
+        (let ((found? #f) (new-pairs '()))
+          (define (helper pairs)
+            (cond ((null? pairs) (set! found? #t) new-pairs)
+                  ((equal? (car (car pairs)) key)
+                   (set! found? #t)
+                   (cons (cons key val) (append new-pairs (cdr pairs))))
+                  (else
+                   (set! new-pairs (cons (car pairs) new-pairs))
+                   (helper (cdr pairs)))))
+          (helper h)
+          (if found? h-val-hash-ref (cons (cons key val) h-val-hash-ref)))))
+
+;; Actually, let me use a simpler approach with association lists
+;; since Aura doesn't have mutable hash maps natively.
+
+(define (alist-ref alist key)
+  (let loop ((xs alist))
+    (cond ((null? xs) #f)
+          ((equal? (car (car xs)) key) (car (cdr (car xs))))
+          (else (loop (cdr xs))))))
+
+(define (alist-set alist key val)
+  (cons (cons key val) alist))
+
+(define (solve nums k)
+  ;; Build prefix-sum counts using association list.
+  ;; We iterate through nums, maintaining:
+  ;;   prefix -> count of times this prefix sum has been seen
+  ;; For each new cumulative sum S, the number of subarrays ending here
+  ;; with sum k is (count of prefix = S - k in map).
+  (let ((n (length nums)))
+    (let loop ((i 0) (sum 0) (counts (alist-set '() 0 1)) (result 0))
+      (cond ((= i n) result)
+            (else
+             (let ((new-sum (+ sum (list-ref nums i))))
+               (let ((need (- new-sum k)))
+                 (let ((c (alist-ref counts need)))
+                   (let ((new-result (if c (+ result c) result)))
+                     (let ((prev (alist-ref counts new-sum)))
+                       (let ((new-counts
+                              (alist-set counts new-sum (if prev (+ prev 1) 1))))
+                         (loop (+ i 1) new-sum new-counts new-result))))))))))))
+
+;; Test cases
+(define CASE0_NUMS (list 1 1 1))
+(define CASE0_K 2)
+(define CASE1_NUMS (list 1 2 3))
+(define CASE1_K 3)
+(define CASE2_NUMS (list 1 -1 1 -1 1 -1))
+(define CASE2_K 0)
+(define CASE3_NUMS (list 1))
+(define CASE3_K 1)
+(define CASE4_NUMS (list 1))
+(define CASE4_K 0)
+(define CASE5_NUMS (list 0 0 0 0 0))
+(define CASE5_K 0)
+(define CASE6_NUMS (list 3 4 7 2 -3 1 4 2))
+(define CASE6_K 7)
+(define CASE7_NUMS (list -1 -1 1 1 -1))
+(define CASE7_K 0)
+
+(display "CASE0=") (display (solve CASE0_NUMS CASE0_K)) (newline)
+(display "CASE1=") (display (solve CASE1_NUMS CASE1_K)) (newline)
+(display "CASE2=") (display (solve CASE2_NUMS CASE2_K)) (newline)
+(display "CASE3=") (display (solve CASE3_NUMS CASE3_K)) (newline)
+(display "CASE4=") (display (solve CASE4_NUMS CASE4_K)) (newline)
+(display "CASE5=") (display (solve CASE5_NUMS CASE5_K)) (newline)
+(display "CASE6=") (display (solve CASE6_NUMS CASE6_K)) (newline)
+(display "CASE7=") (display (solve CASE7_NUMS CASE7_K)) (newline)

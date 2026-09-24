@@ -1,0 +1,40 @@
+(define (node-val n) (cdr (assq ':val n)))
+(define (node-left n) (cdr (assq ':left n)))
+(define (node-right n) (cdr (assq ':right n)))
+
+(define G 0)
+
+(define (max a b) (if (> a b) a b))
+(define (max3 a b c) (max a (max b c)))
+
+(define (solve node)
+  (set! G (node-val node))
+  (define (helper n)
+    (if (null? n)
+        0
+        (let ((lv (helper (node-left n)))
+              (rv (helper (node-right n)))
+              (v  (node-val n)))
+          (set! G (max3 G (+ v lv rv) v))
+          (max v (+ v (max lv rv))))))
+  (helper node)
+  G)
+
+(define (display-case i result)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display result)
+  (newline))
+
+(define (run)
+  (display-case 0 (solve '(:val 1 :left (:val 2) :right (:val 3))))
+  (display-case 1 (solve '(:val -10 :left (:val 9) :right (:val 20 :left (:val 15) :right (:val 7)))))
+  (display-case 2 (solve '(:val -3)))
+  (display-case 3 (solve '(:val 2 :left (:val -1))))
+  (display-case 4 (solve '(:val 5 :left (:val 4 :left (:val 11 :left (:val 7) :right (:val 2))) :right (:val 8 :left (:val 13) :right (:val 4 :right (:val 1))))))
+  (display-case 5 (solve '(:val -1 :left (:val -2) :right (:val -3))))
+  (display-case 6 (solve '(:val 1 :left (:val -2) :right (:val 3))))
+  (display-case 7 (solve '(:val 0))))
+
+(run)

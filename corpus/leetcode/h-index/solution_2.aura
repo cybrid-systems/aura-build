@@ -1,0 +1,60 @@
+;; Helper: reverse a list
+(define (rev xs)
+  (define (rev-acc xs acc)
+    (if (null? xs)
+        acc
+        (rev-acc (cdr xs) (cons (car xs) acc))))
+  (rev-acc xs '()))
+
+;; Helper: sort descending using insertion sort
+(define (sort-desc xs)
+  (define (insert x sorted)
+    (cond
+      ((null? sorted) (list x))
+      ((>= x (car sorted)) (cons x sorted))
+      (else (cons (car sorted) (insert x (cdr sorted))))))
+  (define (loop xs acc)
+    (if (null? xs)
+        acc
+        (loop (cdr xs) (insert (car xs) acc))))
+  (loop xs '()))
+
+;; Compute h-index
+(define (h-index citations)
+  (let ((sorted (sort-desc citations)))
+    (define (find-h xs i best)
+      (cond
+        ((null? xs) best)
+        ((>= (car xs) (+ i 1)) (find-h (cdr xs) (+ i 1) (+ i 1)))
+        (else best)))
+    (find-h sorted 0 0)))
+
+;; Display a list of numbers space-separated
+(define (display-list xs)
+  (cond
+    ((null? xs) (display ""))
+    ((null? (cdr xs)) (display (car xs)))
+    (else (display (car xs)) (display " ") (display-list (cdr xs)))))
+
+;; Parse the CASE0 line to get n, and read the citations list
+;; Since we have embedded test cases, we hardcode them as data
+(define case0 '(3 0 6 1 5))
+(define case1 '(0))
+(define case2 '(1))
+(define case3 '(0 0 0))
+(define case4 '(100))
+(define case5 '(1 2 3 4 5))
+(define case6 '(5 5 5 5 5))
+(define case7 '(0 1 2 3 4 5 6 7 8 9 10))
+
+(define (solve citations)
+  (h-index citations))
+
+(display "CASE0=") (display (solve case0)) (newline)
+(display "CASE1=") (display (solve case1)) (newline)
+(display "CASE2=") (display (solve case2)) (newline)
+(display "CASE3=") (display (solve case3)) (newline)
+(display "CASE4=") (display (solve case4)) (newline)
+(display "CASE5=") (display (solve case5)) (newline)
+(display "CASE6=") (display (solve case6)) (newline)
+(display "CASE7=") (display (solve case7)) (newline)

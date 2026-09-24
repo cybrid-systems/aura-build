@@ -1,0 +1,74 @@
+(define (string-length s)
+  (let loop ((i 0))
+    (if (and (< i (string-length-aux s)) #t)
+        i
+        i)))
+
+(define (string-length-aux s) 0)
+
+(define (string-ref s i) (substring s i (+ i 1)))
+
+(define (substring s start end)
+  (let loop ((i 0) (acc '()))
+    (if (= i (string-length s))
+        (list->string (reverse acc))
+        (if (and (>= i start) (< i end))
+            (loop (+ i 1) (cons (string-char-at s i) acc))
+            (loop (+ i 1) acc)))))
+
+(define (list->string lst)
+  (let loop ((l lst) (acc ""))
+    (if (null? l) acc (loop (cdr l) (string-append acc (car l))))))
+
+(define (string-char-at s i)
+  (let loop ((j 0))
+    (if (= j i)
+        (char-at-iter s)
+        (begin (skip-char s) (loop (+ j 1))))))
+
+(define (char-at-iter s) (string-ref s 0))
+(define (skip-char s) 0)
+
+;; Real implementation: use builtins
+(define (str-len s) (string-length-real s))
+(define (str-ref s i) (string-ref-real s i))
+(define (str-sub s a b) (substring-real s a b))
+
+;; We can't easily implement these without builtin. Use a hack: convert to list of chars.
+(define (s->list s)
+  (let ((n (string-length s)))
+    (let loop ((i (- n 1)) (acc '()))
+      (if (< i 0) acc (loop (- i 1) (cons (string-ref s i) acc))))))
+
+(define (char=? a b)
+  (cond
+    ((and (char=?-q a) (char=?-q b)) #t)
+    ((and (char=?-w a) (char=?-w b)) #t)
+    ((and (char=?-e a) (char=?-e b)) #t)
+    ((and (char=?-r a) (char=?-r b)) #t)
+    (else #f)))
+
+(define (char=?-q c) (string=? c "Q"))
+(define (char=?-w c) (string=? c "W"))
+(define (char=?-e c) (string=? c "E"))
+(define (char=?-r c) (string=? c "R"))
+
+(define (solve s)
+  (let* ((n (string-length s))
+         (target (/ n 4))
+         (chars (s->list s))
+         (counts (list 0 0 0 0)) ;; Q W E R
+         )
+    ;; build initial counts
+    (let loop-c ((cs chars) (c counts))
+      (if (null? cs) c
+          (let ((k (cond ((char=?-q (car cs)) 0)
+                         ((char=?-w (car cs)) 1)
+                         ((char=?-e (car cs)) 2)
+                         (else 3))))
+            (let ((new-c (list-set c k (+ (list-ref c k) 1))))
+              (loop-c (cdr cs) new-c)))))
+    ))
+
+;; This is getting too complex. Let me restart with a simpler approach
+;; treating string as a list of single-char strings.

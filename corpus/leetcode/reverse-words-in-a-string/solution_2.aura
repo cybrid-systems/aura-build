@@ -1,0 +1,70 @@
+(define (string-split-words s)
+  ;; Returns list of words (each word is a list of chars) in order
+  (let ((chars (string->list s))
+        (result '())
+        (current '()))
+    (define (flush)
+      (if (null? current)
+          result
+          (begin
+            (set! result (cons (reverse current) result))
+            (set! current '())
+            result)))
+    (define (loop cs)
+      (cond ((null? cs) (flush))
+            ((char-whitespace? (car cs))
+             (let ((r (flush)))
+               (loop (cdr cs))))
+            (else
+             (set! current (cons (car cs) current))
+             (loop (cdr cs)))))
+    (loop chars)
+    result))
+
+(define (reverse-list lst)
+  (let ((acc '()))
+    (define (loop l)
+      (if (null? l) acc
+          (begin
+            (set! acc (cons (car l) acc))
+            (loop (cdr l)))))
+    (loop lst)))
+
+(define (list->string-aux lst)
+  (list->string lst))
+
+(define (join-words words)
+  (cond ((null? words) "")
+        ((null? (cdr words)) (list->string (car words)))
+        (else
+         (string-append (list->string (car words))
+                        " "
+                        (join-words (cdr words))))))
+
+(define (solve s)
+  (let ((words (string-split-words s)))
+    (join-words (reverse-list words))))
+
+;; Display helper for CASE output
+(define (display-list-of-chars lst)
+  (cond ((null? lst) (display ""))
+        (else
+         (display (string (car lst)))
+         (display-list-of-chars (cdr lst)))))
+
+;; Main: run all test cases
+(define (run-case i s)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve s))
+  (newline))
+
+(run-case 0 "the sky is blue")
+(run-case 1 "  hello world  ")
+(run-case 2 "a   b   c")
+(run-case 3 "   ")
+(run-case 4 "")
+(run-case 5 "single")
+(run-case 6 "  leading and trailing  ")
+(run-case 7 "one  two\tthree")

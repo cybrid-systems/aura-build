@@ -1,0 +1,59 @@
+;; Jump Game II - greedy O(n) solution
+;; Returns minimum number of jumps to reach last index.
+
+(define (solve nums)
+  ;; Greedy BFS-like approach: track current reach and farthest reach.
+  ;; jumps: number of jumps made so far
+  ;; current_end: the farthest index reachable with 'jumps' jumps
+  ;; farthest: the farthest index reachable with jumps+1 jumps
+  (let ((n (length-of nums))
+        (jumps 0)
+        (current-end 0)
+        (farthest 0))
+    (let loop ((i 0))
+      (if (< i (- n 1))
+          (begin
+            (set! farthest (max-int farthest (+ i (list-ref nums i))))
+            (if (= i current-end)
+                (begin
+                  (set! jumps (+ jumps 1))
+                  (set! current-end farthest))
+                '())
+            (loop (+ i 1)))
+          jumps))))
+
+(define (length-of lst)
+  (let loop ((l lst) (acc 0))
+    (if (null? l) acc (loop (cdr l) (+ acc 1)))))
+
+(define (max-int a b) (if (> a b) a b))
+
+(define (list-ref lst i)
+  (let loop ((l lst) (idx 0))
+    (if (= idx i) (car l) (loop (cdr l) (+ idx 1)))))
+
+;; Test cases
+(define cases
+  (list
+    (list 2 3 1 1 4)
+    (list 2 3 0 1 4)
+    (list 1 2 3)
+    (list 1 1 1 1)
+    (list 5 4 3 2 1 1 1 1)
+    (list 1 2 0 1)
+    (list 2 0)
+    (list 1 0 0 0 0 0 0 0 0 0 1)))
+
+(define (run-cases cases)
+  (let loop ((cs cases) (i 0))
+    (if (null? cs)
+        '()
+        (begin
+          (display "CASE")
+          (display i)
+          (display "=")
+          (display (solve (car cs)))
+          (newline)
+          (loop (cdr cs) (+ i 1))))))
+
+(run-cases cases)

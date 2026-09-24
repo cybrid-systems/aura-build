@@ -1,0 +1,168 @@
+import os, json
+
+def parse(tokens):
+    stack = []
+    root = None
+    for t in tokens:
+        if t == '(' or t == '(nil':
+            stack.append(t)
+        elif t == 'nil' or t == 'nil)':
+            if t == 'nil)':
+                # Close current node group
+                if len(stack) >= 4:
+                    left = stack.pop()
+                    stack[-1] = ('node', stack[-1], left)
+                elif len(stack) >= 2:
+                    val = stack.pop()
+                    stack[-1] = ('node', val, None)
+            else:
+                # 'nil' as value for missing subtree
+                stack.append(None)
+        elif t == ')':
+            # close a node
+            if len(stack) >= 4:
+                right = stack.pop()
+                left = stack.pop()
+                val = stack.pop()
+                node = ('node', val, left, right)
+                stack[-1] = node
+            elif len(stack) >= 2:
+                val = stack.pop()
+                node = ('node', val, None, None)
+                stack[-1] = node
+        else:
+            # value token (could be "(3" meaning opening paren then value, or just a number)
+            if t.startswith('('):
+                val_str = t[1:]
+                if val_str == 'nil':
+                    stack.append(None)
+                else:
+                    try:
+                        stack.append(int(val_str))
+                    except:
+                        stack.append(val_str)
+                stack.append('(')
+            else:
+                try:
+                    stack.append(int(t))
+                except:
+                    stack.append(t)
+    return stack[-1] if stack else None
+
+def solve(root):
+    if root is None or root == 'nil':
+        return 0
+    # root is ('node', value, left, right)
+    _, val, left, right = root
+    total = 0
+    # Check if left child is a leaf
+    if left is not None and left != 'nil':
+        if is_leaf(left):
+            total += left_value(left)
+        else:
+            total += solve(left)
+    if right is not None and right != 'nil':
+        total += solve(right)
+    return total
+
+def is_leaf(node):
+    if node is None or node == 'nil':
+        return False
+    if not isinstance(node, tuple):
+        return False
+    _, _, l, r = node
+    return (l is None or l == 'nil') and (r is None or r == 'nil')
+
+def left_value(node):
+    return node[1]
+
+
+def build_tree(tokens):
+    """Properly parse S-expression tokens into nested tuples."""
+    stack = []
+    pos = 0
+    tokens = list(tokens)
+    i = 0
+    root_holder = []
+    
+    def parse_node():
+        nonlocal i
+        # Expect '('
+        if i >= len(tokens) or tokens[i] != '(':
+            return None
+        i += 1
+        # Parse value
+        if i >= len(tokens):
+            return None
+        val_tok = tokens[i]; i += 1
+        if val_tok == 'nil':
+            val = None
+        elif val_tok == ')':
+            # Shouldn't happen
+            return None
+        else:
+            try:
+                val = int(val_tok)
+            except:
+                val = val_tok
+        # Parse left
+        left = parse_node()
+        # Parse right
+        right = parse_node()
+        # Expect ')'
+        if i < len(tokens) and tokens[i] == ')':
+            i += 1
+        return ('node', val, left, right)
+    
+    tree = parse_node()
+    return tree
+
+
+def solve_proper(root):
+    if root is None:
+        return 0
+    _, val, left, right = root
+    total = 0
+    if left is not None:
+        if is_leaf(left):
+            total += left[1]
+        else:
+            total += solve_proper(left)
+    if right is not None:
+        total += solve_proper(right)
+    return total
+
+
+CASES = [
+    {
+        "tokens": ["(3", "(2", "(nil", "nil)", "(nil", "nil))", "(2", "(4", "(nil", "nil)", "(nil", "nil))", "(5", "(nil", "nil)", "(6", "(nil", "nil)", "(nil", "nil)))", "(nil", "nil))"]
+    },
+    {
+        "tokens": ["(1", "(2", "(nil", "nil)", "(nil", "nil))", "(3", "(nil", "nil)", "(nil", "nil)))"]
+    },
+    {
+        "tokens": ["(nil", "nil)"]
+    },
+    {
+        "tokens": ["(1", "(nil", "nil)", "(2", "(3", "(nil", "nil)", "(nil", "nil))", "(nil", "nil)))"]
+    },
+    {
+        "tokens": ["(5", "(3", "(1", "(nil", "nil)", "(nil", "nil))", "(nil", "nil))", "(nil", "nil)))"]
+    },
+    {
+        "tokens": ["(10", "(nil", "nil)", "(20", "(30", "(nil", "nil)", "(nil", "nil))", "(nil", "nil)))"]
+    },
+]
+
+
+if __name__ == '__main__':
+    results = []
+    for idx, case in enumerate(CASES):
+        tree = build_tree(case["tokens"])
+        if tree is None:
+            result = 0
+        else:
+            result = solve_proper(tree)
+        # Output format per problem: integer + "nil"
+        canonical = f"{result}nil"
+        print(canonical)

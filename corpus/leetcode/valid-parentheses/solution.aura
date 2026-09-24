@@ -1,0 +1,47 @@
+(define (closing-of c)
+  (cond ((equal? c '(') #\))
+        ((equal? c '[') #\])
+        ((equal? c '{') #\})
+        (else #f)))
+
+(define (matches? top c)
+  (let ((p (closing-of top)))
+    (and (char? p) (equal? p c))))
+
+(define (valid? s)
+  (let loop ((i 0) (stack '()))
+    (cond ((>= i (string-length s))
+           (null? stack))
+          (else
+           (let ((c (string-ref s i)))
+             (cond ((or (equal? c #\() (equal? c #\[) (equal? c #\{))
+                    (loop (+ i 1) (cons c stack)))
+                   (else
+                    (if (null? stack)
+                        #f
+                        (let ((top (car stack)))
+                          (if (matches? top c)
+                              (loop (+ i 1) (cdr stack))
+                              #f))))))))))
+
+(define (solve s)
+  (if (valid? s) #t #f))
+
+(define (run-case i s)
+  (display (string-append "CASE" (number->string i)))
+  (display "=")
+  (display (solve s))
+  (newline))
+
+(run-case 0 "()")
+(run-case 1 "()[]{}")
+(run-case 2 "(]")
+(run-case 3 "([)]")
+(run-case 4 "{[]}")
+(run-case 5 "")
+(run-case 6 "[")
+(run-case 7 "(())")
+(run-case 8 "(((())))")
+(run-case 9 "({[)]}")
+(run-case 10 "([{}])")
+(run-case 11 "}()")

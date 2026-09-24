@@ -1,0 +1,95 @@
+;; Solution for Flatten a Multilevel Doubly Linked List
+;; Reads a single embedded test case, builds the data structures,
+;; then performs DFS preorder flattening starting at the head node.
+
+(define (assoc key lst)
+  (cond ((null? lst) #f)
+        ((equal? (car (car lst)) key) (car lst))
+        (else (assoc key (cdr lst)))))
+
+(define (find-head nodes)
+  ;; head is the node whose prev is None
+  (cond ((null? nodes) #f)
+        ((equal? (cdr (assoc 'prev (cdar nodes))) #f) (caar nodes))
+        (else (find-head (cdr nodes)))))
+
+(define (flatten node-id nodes child acc)
+  ;; iterative DFS using accumulator
+  (let loop ((stack (cons node-id '()))
+             (result '()))
+    (cond ((null? stack) (reverse result))
+          (else
+           (let ((nid (car stack))
+                 (rest (cdr stack)))
+             (let ((ch (assoc nid child)))
+               (let ((child-id (if ch (cdr ch) #f)))
+                 (if (and child-id (not (equal? child-id #f)))
+                     (loop (cons child-id
+                                 (cons (let ((nxt (assoc 'next (assoc nid nodes))))
+                                         (if nxt (cdr nxt) #f))
+                                       rest))
+                           (cons nid result))
+                     (let ((nxt (assoc 'next (assoc nid nodes))))
+                       (loop (cons (if nxt (cdr nxt) #f) rest)
+                             (cons nid result))))))))))
+
+(define (solve case-data)
+  (let ((nodes-jt (cdr (assoc 'nodes case-data)))
+        (child-jt (cdr (assoc 'child case-data))))
+    ;; Convert jt-alists to a-list of (id . props) and child a-list of (id . child-id)
+    (let ((nodes-lst (jt->alist nodes-jt))
+          (child-lst (jt->alist child-jt)))
+      (let ((head (find-head nodes-lst)))
+        (if (equal? head #f)
+            '()
+            (flatten head nodes-lst child-lst '())))))
+
+;; --- helpers for embedded jt-style data (we'll just embed alists directly) ---
+
+;; The embedded case data is given as a dict literal in the problem.
+;; We embed it as Aura alists below.
+
+(define case0
+  (list
+    (cons 'nodes
+      (list
+        (cons 1 (list (cons 'next 2) (cons 'prev #f)))
+        (cons 2 (list (cons 'next 3) (cons 'prev 1)))
+        (cons 3 (list (cons 'next 4) (cons 'prev 2)))
+        (cons 4 (list (cons 'next 5) (cons 'prev 3)))
+        (cons 5 (list (cons 'next 6) (cons 'prev 4)))
+        (cons 6 (list (cons 'next #f) (cons 'prev 5)))
+        (cons 7 (list (cons 'next 8) (cons 'prev #f)))
+        (cons 8 (list (cons 'next 9) (cons 'prev 7)))
+        (cons 9 (list (cons 'next 10) (cons 'prev 8)))
+        (cons 10 (list (cons 'next #f) (cons 'prev 9)))
+        (cons 11 (list (cons 'next 12) (cons 'prev #f)))
+        (cons 12 (list (cons 'next #f) (cons 'prev 11)))))
+    (cons 'child
+      (list
+        (cons 1 #f) (cons 2 #f) (cons 3 7) (cons 4 #f) (cons 5 #f) (cons 6 #f)
+        (cons 7 #f) (cons 8 11) (cons 9 #f) (cons 10 #f) (cons 11 #f) (cons 12 #f)))))
+
+(define (jt->alist jt)
+  ;; jt is a list of (id . props-alist) pairs already (we built it above)
+  jt)
+
+;; --- display helpers ---
+
+(define (display-list lst)
+  ;; print numbers separated by spaces, no trailing space
+  (cond ((null? lst) (display ""))
+        (else
+         (display (number->string (car lst)))
+         (let loop ((rest (cdr lst)))
+           (cond ((null? rest) (display ""))
+                 (else
+                  (display " ")
+                  (display (number->string (car rest)))
+                  (loop (cdr rest))))))))
+
+;; --- run ---
+(define result0 (solve case0))
+(display "CASE0=")
+(display-list result0)
+(newline)

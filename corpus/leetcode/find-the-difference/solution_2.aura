@@ -1,0 +1,40 @@
+(define (char-code c)
+  (char->integer c))
+
+(define (code->char n)
+  (integer->char n))
+
+(define (solve s t)
+  (let ((result 0))
+    (begin
+      (let loop ((i 0) (slen (string-length s)))
+        (if (< i slen)
+            (begin
+              (set! result (bitwise-xor result (char-code (string-ref s i))))
+              (loop (+ i 1) slen))
+            'done))
+      (let loop ((j 0) (tlen (string-length t)))
+        (if (< j tlen)
+            (begin
+              (set! result (bitwise-xor result (char-code (string-ref t j))))
+              (loop (+ j 1) tlen))
+            'done)))
+    (code->char result)))
+
+(define (display-case i result)
+  (begin
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display result)
+    (newline)))
+
+(begin
+  (display-case 0 (solve "abcde" "abecdfe"))
+  (display-case 1 (solve "" "a"))
+  (display-case 2 (solve "a" "aa"))
+  (display-case 3 (solve "abcd" "abcde"))
+  (display-case 4 (solve "hello" "helollo"))
+  (display-case 5 (solve "thequickbrownfoxjumpsoverthelazydog" "thequickbrownfoxjumpsoverthelazydogx"))
+  (display-case 6 (solve "abcdefghijklmnopqrstuvwxyz" "abcdefghijklmnopqrstuvwxyz!"))
+  (display-case 7 (solve "z" "zz")))

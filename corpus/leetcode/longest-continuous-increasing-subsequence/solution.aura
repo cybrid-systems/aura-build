@@ -1,0 +1,34 @@
+(define (length-of-lcis nums)
+  (let loop ((xs nums) (current 0) (best 0))
+    (cond
+      ((null? xs) best)
+      (else
+       (let ((n (+ current 1)))
+         (if (and (not (null? (cdr xs)))
+                  (< (car xs) (cadr xs)))
+             (loop (cdr xs) n (max best n))
+             (loop (cdr xs) 1 (max best 1))))))))
+
+(define (solve nums)
+  (if (null? nums) 0 (length-of-lcis nums)))
+
+;; Display helper for lists
+(define (display-list xs)
+  (display "[")
+  (let loop ((rest xs) (first? #t))
+    (cond
+      ((null? rest) (display "]"))
+      (else
+       (if first? (set! first? #f) (begin (display ",") (display " ")))
+       (display (car rest))
+       (loop (cdr rest) #f)))))
+
+;; Test cases
+(display "CASE0=") (display (solve '(1 2 3 2 4 5))) (newline)
+(display "CASE1=") (display (solve '(5 4 3 2 1))) (newline)
+(display "CASE2=") (display (solve '(7))) (newline)
+(display "CASE3=") (display (solve '())) (newline)
+(display "CASE4=") (display (solve '(1 2 3 4 5))) (newline)
+(display "CASE5=") (display (solve '(1 1 1 1))) (newline)
+(display "CASE6=") (display (solve '(1 2 2 3 4 5))) (newline)
+(display "CASE7=") (display (solve '(-3 -2 -1 0 1 2))) (newline)

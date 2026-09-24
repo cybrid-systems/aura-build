@@ -1,0 +1,71 @@
+(define (string-length s)
+  (let loop ((i 0))
+    (if (string=? (substring s i (+ i 1)) "")
+        i
+        (loop (+ i 1)))))
+
+(define (substring s start end)
+  (let loop ((i 0) (acc ""))
+    (cond
+      ((= i (string-length s)) acc)
+      ((and (>= i start) (< i end))
+       (loop (+ i 1) (string-append acc (substring s i (+ i 1)))))
+      (else (loop (+ i 1) acc)))))
+
+;; Simplified substring using list-of-chars representation
+;; Use char-list representation internally
+(define (chars-of s)
+  (let loop ((i (string-length s)) (acc '()))
+    (if (= i 0)
+        acc
+        (loop (- i 1) (cons (string-ref s (- i 1)) acc)))))
+
+(define (chars->string cl)
+  (let loop ((cl cl) (acc ""))
+    (if (null? cl)
+        acc
+        (loop (cdr cl) (string-append acc (string (car cl)))))))
+
+(define (cl-length cl)
+  (if (null? cl) 0 (+ 1 (cl-length (cdr cl)))))
+
+(define (strstr haystack needle)
+  (let* ((hl (string-length haystack))
+         (nl (string-length needle)))
+    (cond
+      ((= nl 0) 0)
+      ((> nl hl) -1)
+      (else
+       (let loop ((i 0))
+         (cond
+           ((> (+ i nl) hl) -1)
+           ((string=? (substring haystack i (+ i nl)) needle) i)
+           (else (loop (+ i 1)))))))))
+
+(define (solve haystack needle)
+  (strstr haystack needle))
+
+;; Embedded test cases
+(define cases
+  (list
+    (cons "hello" "ll")
+    (cons "aaaaa" "bba")
+    (cons "abc" "a")
+    (cons "" "")
+    (cons "abc" "")
+    (cons "abc" "abcd")
+    (cons "mississippi" "issip")
+    (cons "a" "a")))
+
+(define (run-cases cases i)
+  (if (null? cases)
+      '()
+      (begin
+        (display "CASE")
+        (display i)
+        (display "=")
+        (display (solve (car (car cases)) (cdr (car cases))))
+        (newline)
+        (run-cases (cdr cases) (+ i 1)))))
+
+(run-cases cases 0)

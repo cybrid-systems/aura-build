@@ -1,0 +1,43 @@
+(define (vowel? c)
+  (or (equal? c #\a) (equal? c #\e) (equal? c #\i)
+      (equal? c #\o) (equal? c #\u)
+      (equal? c #\A) (equal? c #\E) (equal? c #\I)
+      (equal? c #\O) (equal? c #\U)))
+
+(define (string-ref-safe s i)
+  (if (>= i (string-length s))
+      #\0
+      (string-ref s i)))
+
+(define (solve s)
+  (let ((n (string-length s)) (count 0) (left 0))
+    (let loop ((right 0))
+      (cond
+        ((>= right n)
+         (begin
+           (set! count (+ count (max 0 (- right left 1))))
+           count))
+        ((vowel? (string-ref-safe s right))
+         (begin
+           (set! count (+ count (max 0 (- right left))))
+           (loop (+ right 1))))
+        (else
+         (begin
+           (set! count (+ count (max 0 (- right left 1))))
+           (set! left (+ right 1))
+           (loop (+ right 1))))))))
+
+(define (run-case label s)
+  (display label)
+  (display "=")
+  (display (solve s))
+  (newline))
+
+(run-case "CASE0" s_0)
+(run-case "CASE1" s_1)
+(run-case "CASE2" s_2)
+(run-case "CASE3" s_3)
+(run-case "CASE4" s_4)
+(run-case "CASE5" s_5)
+(run-case "CASE6" s_6)
+(run-case "CASE7" s_7)

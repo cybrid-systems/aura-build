@@ -1,0 +1,32 @@
+{
+  "variants": [],
+  "slug": "next-permutation",
+  "title": "Next Permutation",
+  "category": "arrays",
+  "ref": {
+    "llm": {
+      "ok": true,
+      "error": "",
+      "usage": {
+        "total_tokens": 1382,
+        "total_characters": 0,
+        "prompt_tokens": 873,
+        "completion_tokens": 509,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "model": "MiniMax-M3"
+    },
+    "run": {
+      "ref_ok": false,
+      "exit_code": 1,
+      "stderr": "Traceback (most recent call last):\n  File \"/workspace/aura-build/corpus/leetcode/next-permutation/ref.py\", line 47, in <module>\n    result = solve(c[\"n\"], list(c[\"arr\"]))\n  File \"/workspace/aura-build/corpus/leetcode/next-permutation/ref.py\", line 3, in solve\n    while i >= 0 and arr[i] >= arr[i + 1]:\n                               ~~~^^^^^^^\nIndexError: list index out of range\n",
+      "duration_s": 0.028,
+      "timeout": false,
+      "n_tests": 0
+    },
+    "ts": "2026-09-24T14:22:05Z"
+  },
+  "updated_at": "2026-09-24T14:22:05Z"
+}

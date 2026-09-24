@@ -1,0 +1,57 @@
+(define (make-stack) (cons '() '()))
+
+(define (stack-push stack item)
+  (set-car! stack (cons item (car stack))))
+
+(define (stack-pop stack)
+  (let ((top (car (car stack))))
+    (set-car! stack (cdr (car stack)))
+    top))
+
+(define (stack-top stack) (car (car stack)))
+
+(define (stack-empty? stack) (null? (car stack)))
+
+(define (string-append-many s n)
+  (if (= n 0)
+      ""
+      (string-append s (string-append-many s (- n 1)))))
+
+(define (solve s)
+  (let ((count-stack (make-stack))
+        (result-stack (make-stack))
+        (current-num 0)
+        (current-str ""))
+    (let loop ((i 0))
+      (cond
+        ((>= i (string-length s))
+         (begin
+           (stack-push result-stack current-str)
+           (let ((final (apply-string-append (car result-stack))))
+             final)))
+        (else
+         (let ((c (string-ref s i)))
+           (cond
+             ((char-numeric? c)
+              (set! current-num (+ (* current-num 10) (- (char->integer c) (char->integer #\0))))
+              (loop (+ i 1)))
+             ((char=? c #\[)
+              (stack-push count-stack current-num)
+              (stack-push result-stack current-str)
+              (set! current-num 0)
+              (set! current-str "")
+              (loop (+ i 1)))
+             ((char=? c #\])
+              (let ((k (stack-pop count-stack))
+                    (decoded (string-append-many current-str k))
+                    (prev (stack-pop result-stack)))
+                (set! current-str (string-append prev decoded))
+                (loop (+ i 1)))
+             (else
+              (set! current-str (string-append current-str (string (char->integer c))))
+              (loop (+ i 1))))))))))
+
+(define (apply-string-append lst)
+  (if (null? lst)
+      ""
+      (string-append (car lst) (apply-string-append (cdr lst)))))

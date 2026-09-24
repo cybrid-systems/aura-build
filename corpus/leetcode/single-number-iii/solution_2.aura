@@ -1,0 +1,65 @@
+;; Single Number III solver
+;; Uses XOR: x = XOR of all, then isolate lowest set bit, partition, XOR each group.
+
+(define (lowest-bit x)
+  (let ((v (bit-and x (- x))))
+    v))
+
+(define (solve nums)
+  (let* ((n (vector-length nums))
+         (x0 0)
+         (x1 0))
+    ;; First pass: XOR all values
+    (let loop ((i 0) (acc 0))
+      (if (= i n)
+          (set! x0 acc)
+          (loop (+ i 1) (bit-xor acc (vector-ref nums i)))))
+    ;; Isolate lowest set bit
+    (let ((lb (lowest-bit x0)))
+      ;; Second pass: partition by bit
+      (let loop2 ((i 0) (a 0) (b 0))
+        (if (= i n)
+            (begin
+              (set! x1 (cons b (cons a '())))
+              x1)
+            (let ((v (vector-ref nums i)))
+              (if (= 0 (bit-and v lb))
+                  (loop2 (+ i 1) (bit-xor a v) b)
+                  (loop2 (+ i 1) a (bit-xor b v)))))))))
+
+;; Display helper for a list of integers
+(define (display-list xs)
+  (cond ((null? xs) (display ""))
+        (else
+         (display (car xs))
+         (let loop ((rest (cdr xs)))
+           (cond ((null? rest) #t)
+                 (else
+                  (display " ")
+                  (display (car rest))
+                  (loop (cdr rest))))))))
+
+(define (display-result r)
+  (display-list r))
+
+;; Test cases
+(define cases
+  (list
+    (vector 1 2 1 3 2 5)
+    (vector -1 0)
+    (vector 0 1)
+    (vector 1 2 3 4 5 5 3 4)
+    (vector 7 7 8 9 10 9)
+    (vector 1000000000 -1000000000 5 5 6 6)
+    (vector 42 42 0 0 1 2)
+    (vector 3 3 4 5)))
+
+(define (run-cases cs i)
+  (cond ((null? cs) #t)
+        (else
+         (let* ((nums (car cs))
+                (r (solve nums)))
+           (display "ANS") (display i) (display "=") (display-result r) (newline)
+           (run-cases (cdr cs) (+ i 1))))))
+
+(run-cases cases 0)

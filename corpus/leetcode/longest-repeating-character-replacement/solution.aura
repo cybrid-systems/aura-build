@@ -1,0 +1,33 @@
+(define (max a b) (if (> a b) a b))
+
+(define (char->index c)
+  (- (char->integer c) (char->integer #\A)))
+
+(define (solve s k)
+  (let* ((n (string-length s))
+         (counts (make-vector 26 0)))
+    (let ((left 0)
+          (max-freq 0)
+          (best 0))
+      (let loop ((right 0))
+        (if (>= right n)
+            best
+            (begin
+              (let ((ci (char->index (string-ref s right))))
+                (set! (vector-ref counts ci)
+                      (+ (vector-ref counts ci) 1))
+                (set! max-freq (max max-freq (vector-ref counts ci))))
+              (let ((window-len (+ (- right left) 1)))
+                (if (> (- window-len max-freq) k)
+                    (begin
+                      (let ((cli (char->index (string-ref s left))))
+                        (set! (vector-ref counts cli)
+                              (- (vector-ref counts cli) 1)))
+                      (set! left (+ left 1)))
+                    (begin
+                      (set! best (max best window-lreq_len)))
+                ))
+              (loop (+ right 1))))))))
+
+(define (string-ref s i) (string-ref s i))
+(define (string-length s) (string-length s))

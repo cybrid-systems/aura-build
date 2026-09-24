@@ -1,0 +1,55 @@
+(define (solve n)
+  (let ((dp (list 1)))
+    (define (cat-helper i target)
+      (if (= i target)
+          (car (reverse dp))
+          (let ((next-sum
+                  (let loop ((j 0) (acc 0))
+                    (if (= j i)
+                        acc
+                        (loop (+ j 1)
+                              (+ acc
+                                 (* (list-ref dp j)
+                                    (list-ref dp (- (- i j) 1)))))))))
+            (cat-helper (+ i 1) target (append dp (list next-sum))))))
+    (cat-helper 1 (+ n 1))))
+
+(define (list-ref lst i)
+  (car (list-tail lst i)))
+
+(define (list-tail lst i)
+  (if (= i 0)
+      lst
+      (list-tail (cdr lst) (- i 1))))
+
+(define (reverse lst)
+  (define (rev-iter lst acc)
+    (if (null? lst)
+        acc
+        (rev-iter (cdr lst) (cons (car lst) acc))))
+  (rev-iter lst '()))
+
+(define (append a b)
+  (if (null? a)
+      b
+      (cons (car a) (append (cdr a) b))))
+
+;; Main: process embedded test inputs and print CASEi=<result>
+(define (run-tests)
+  (let ((cases (list 0 1 2 3 4 5 6 10))
+        (idx 0))
+    (define (print-case i n)
+      (display "CASE")
+      (display i)
+      (display "=")
+      (display (solve n))
+      (newline))
+    (define (loop cases i)
+      (if (null? cases)
+          'done
+          (begin
+            (print-case i (car cases))
+            (loop (cdr cases) (+ i 1))))))
+    (loop cases 0)))
+
+(run-tests)

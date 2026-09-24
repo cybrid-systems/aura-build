@@ -1,0 +1,128 @@
+;; Linked list node as a pair: (cons val next)
+;; nil represents null/empty list
+
+(define (list-length xs)
+  (if (null? xs) 0 (+ 1 (list-length (cdr xs)))))
+
+(define (list-ref xs i)
+  (if (= i 0) (car xs) (list-ref (cdr xs) (- i 1))))
+
+(define (build-list arr)
+  ;; arr is a list of numbers; build linked list, return head
+  (define (helper arr)
+    (if (null? arr) '()
+        (cons (car arr) (helper (cdr arr)))))
+  (helper arr))
+
+(define (to-list-val lst)
+  ;; Convert linked list (cons cells) to Aura list for printing
+  (define (walk node)
+    (if (null? node) '() (cons (car node) (walk (cdr node)))))
+  (walk lst))
+
+(define (display-list xs)
+  ;; Display a list in [a, b, c] form
+  (display "[")
+  (define (walk xs)
+    (cond ((null? xs) (display ""))
+          (else
+           (display (car xs))
+           (if (not (null? (cdr xs))) (display ", "))
+           (walk (cdr xs)))))
+  (walk xs)
+  (display "]"))
+
+(define (solve head-arr k)
+  ;; head-arr is a list of numbers (Aura list); k is an integer
+  ;; Return Aura list of Aura lists (each representing a part)
+  (define head (build-list head-arr))
+  (define n (list-length head-arr))
+
+  (define base-size (quotient n k))
+  (define extra (modulo n k))
+
+  (define result '())
+  (define cur head)
+  (define i 0)
+
+  (define (take-and-cut size)
+    ;; Take `size` nodes from cur, return (values new-head next-cur)
+    ;; new-head is the head of the taken part; next-cur is the node after
+    (if (= size 0)
+        (begin
+          (define values-empty (cons '() cur))
+          values-empty)
+        (let ((part-head cur))
+          (define temp cur)
+          (define count 0)
+          (define (advance c node)
+            (if (= c (- size 1))
+                (begin
+                  (set! temp node)
+                  node)
+                (begin
+                  (set! temp (cdr node))
+                  (advance (+ c 1) (cdr node)))))
+          (define last-node (advance 0 cur))
+          (define next-cur (cdr last-node))
+          (set-cdr! last-node '())
+          (cons part-head next-cur))))
+
+  (define (loop i cur)
+    (if (= i k)
+        result
+        (let ((this-size (+ base-size (if (< i extra) 1 0))))
+          (let ((pair (take-and-cut this-size cur)))
+            (define part-head (car pair))
+            (define next-cur (cdr pair))
+            (set! result (append result (list (to-list-val part-head))))
+            (loop (+ i 1) next-cur)))))
+
+  (set! result (loop 0 cur))
+  result)
+
+;; ---- harness ----
+
+(define (run-case idx head-arr k)
+  (display "CASE")
+  (display idx)
+  (display "=")
+  (let ((res (solve head-arr k)))
+    (define (show parts)
+      (cond ((null? parts) (display "[]"))
+            (else
+             (display "[")
+             (define (walk p)
+               (cond ((null? p) (display "[]"))
+                     (else
+                      (display "[")
+                      (define (inner xs)
+                        (cond ((null? xs) (display ""))
+                              (else
+                               (display (car xs))
+                               (if (not (null? (cdr xs))) (display ", "))
+                               (inner (cdr xs)))))
+                      (inner p)
+                      (display "]")))
+               (if (not (null? (cdr parts)))
+                   (begin (display ", ") (walk (cdr parts)))))
+             (define first-part (car parts))
+             (walk first-part)
+             (define (walk-rest p)
+               (if (null? p) '()
+                   (begin
+                     (walk p)
+                     (walk-rest (cdr p)))))
+             (walk-rest (cdr parts))
+             (display "]"))))
+    (show res))
+  (newline))
+
+(run-case 0 (list 1 2 3 4 5 6 7 8 9 10) 3)
+(run-case 1 (list 1 2 3 4 5) 5)
+(run-case 2 '() 3)
+(run-case 3 (list 1 2 3) 5)
+(run-case 4 (list 1 2 3 4 5 6 7 8) 4)
+(run-case 5 (list 1) 1)
+(run-case 6 (list 1 2 3 4 5 6 7) 3)
+(run-case 7 (list 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20) 4)

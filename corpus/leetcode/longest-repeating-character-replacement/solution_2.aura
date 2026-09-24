@@ -1,0 +1,58 @@
+(define (string-length s)
+  (let loop ((i 0))
+    (if (string=? (substring s i (+ i 1)) "")
+        i
+        (loop (+ i 1)))))
+
+(define (string-ref s i)
+  (substring s i (+ i 1)))
+
+(define (max a b)
+  (if (> a b) a b))
+
+(define (solve s k)
+  ;; Use sliding window with character counts
+  (let* ((n (string-length s))
+         (counts (make-vector 26 0))
+         (max-freq 0)
+         (left 0)
+         (best 0))
+    (let loop ((right 0))
+      (if (= right n)
+          best
+          (let* ((c (string-ref s right))
+                 (ci (- (char->integer (string-ref c 0)) (char->integer #\A)))
+                 (cur (vector-ref counts ci)))
+            (begin
+              (vector-set! counts ci (+ cur 1))
+              (set! max-freq (max max-freq (+ cur 1)))
+              ;; If window invalid, shrink from left
+              (let shrink ((l left))
+                (if (> (- right l 1) (+ k max-freq))
+                    (begin
+                      (let* ((lc (string-ref s l))
+                             (li (- (char->integer (string-ref lc 0)) (char->integer #\A)))
+                             (lcv (vector-ref counts li)))
+                        (vector-set! counts li (- lcv 1))
+                        (shrink (+ l 1))))
+                    (begin
+                      (set! left l)
+                      (set! best (max best (- right left 1)))
+                      (loop (+ right 1))))))))))
+
+;; Display results for each test case
+(define (display-case i result)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display result)
+  (newline))
+
+(display-case 0 (solve "AABABBA" 1))
+(display-case 1 (solve "" 0))
+(display-case 2 (solve "AAAA" 0))
+(display-case 3 (solve "ABCDE" 0))
+(display-case 4 (solve "ABCDE" 4))
+(display-case 5 (solve "AABABBA" 2))
+(display-case 6 (solve "ABAA" 0))
+(display-case 7 (solve "ABBB" 2))

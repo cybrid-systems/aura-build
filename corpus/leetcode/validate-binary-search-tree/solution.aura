@@ -1,0 +1,67 @@
+;; Validate Binary Search Tree
+;; Reads tree as a flat level-order list and checks BST validity.
+
+(define (display-bool b)
+  (if b (display "true") (display "false")))
+
+;; Check if value is "null" marker in our representation.
+(define (is-null? x)
+  (or (null? x) (eq? x 'null)))
+
+;; Build a tree node from index i in the array; return '() for null/out-of-bounds.
+(define (build-tree arr i)
+  (if (>= i (length arr))
+      '()
+      (let ((v (list-ref arr i)))
+        (if (is-null? v)
+            '()
+            (cons v (cons (build-tree arr (+ (* 2 i) 1))
+                          (cons (build-tree arr (+ (* 2 i) 2))
+                                '())))))))
+
+;; In-order traversal returning an in-order list.
+(define (inorder t)
+  (if (null? t)
+      '()
+      (append (inorder (car (cdr t)))
+              (cons (car t) (inorder (car (cdr (cdr t))))))))
+
+;; Check that in-order list is strictly increasing.
+(define (strictly-increasing? lst)
+  (if (or (null? lst) (null? (cdr lst)))
+      #t
+      (if (>= (car lst) (car (cdr lst)))
+          #f
+          (strictly-increasing? (cdr lst)))))
+
+(define (solve case0)
+  (if (null? case0)
+      #t
+      (let ((tree (build-tree case0 0))
+            (io (inorder (build-tree case0 0))))
+        (strictly-increasing? io))))
+
+;; ---- Display results for each embedded test case ----
+(define (print-case i val)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display-bool (solve val))
+  (newline))
+
+;; CASE0: []
+(print-case 0 '())
+;; CASE1: [2,1,3]
+(print-case 1 (list 2 1 3))
+;; CASE2: [5,1,4,null,null,3,6]
+(print-case 2 (list 5 1 4 'null 'null 3 6))
+;; CASE3: [1]
+(print-case 3 (list 1))
+;; CASE4: [1,1]
+(print-case 4 (list 1 1))
+;; CASE5: [2,2,2]
+(print-case 5 (list 2 2 2))
+;; CASE6: [5,3,7,1,4,6,8]
+(print-case 6 (list 5 3 7 1 4 6 8))
+;; CASE7: [3,2,4,1,null,null,null]
+(print-case 7 (list 3 2 4 1 'null 'null 'null))

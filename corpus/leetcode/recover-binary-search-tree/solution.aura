@@ -1,0 +1,176 @@
+;; --- BST node as flat record: each node is (val left right), null = #f
+;; We'll build an arena: vector of nodes, root index, #f = empty subtree.
+
+(define (make-tree vals)
+  ;; vals: flat list including 'null placeholders
+  (define n (length vals))
+  (define arena (make-vector n #f))
+  (define (build i)
+    (if (>= i n) #f
+        (let ((v (list-ref vals i)))
+          (if (eq? v 'null) #f
+              (let ((node (vector (list v 'null 'null))))
+                (vector-set! arena i node)
+                (let ((l (build (+ (* 2 i) 1)))
+                      (r (build (+ (* 2 i) 2))))
+                  (vector-set! node 0 (list v l r))
+                  i))))))
+  (define root (build 0))
+  (cons root arena))
+
+(define (node-val n arena) (car (vector-ref arena n)))
+(define (node-l  n arena) (cadr (vector-ref arena n)))
+(define (node-r  n arena) (caddr (vector-ref arena n)))
+(define (set-val! n arena v)
+  (let ((nd (vector-ref arena n)))
+    (vector-set! nd 0 (list v (cadr nd) (caddr nd)))))
+(define (set-l! n arena l) (let ((nd (vector-ref arena n))) (vector-set! nd 0 (list (car nd) l (caddr nd)))))
+(define (set-r! n arena r) (let ((nd (vector-ref arena n))) (vector-set! nd 0 (list (car nd) (cadr nd) r))))
+
+(define (find-inversions root arena)
+  ;; Returns (first-bad . second-bad) indices
+  (define first #f)
+  (define second #f)
+  (define prev #f)
+  (define (walk i)
+    (when i
+      (walk (node-l i arena))
+      (when prev
+        (when (> (node-val prev arena) (node-val i arena))
+          (when (not first) (set! first prev))
+          (set! second i)))
+      (set! prev i)
+      (walk (node-r i arena))))
+  (walk root)
+  (cons first second))
+
+(define (solve root-list)
+  (let* ((t (make-tree root-list))
+         (root (car t))
+         (arena (cdr t))
+         (bad (find-inversions root arena))
+         (a (car bad))
+         (b (cdr bad)))
+    (when (and a b)
+      (let ((va (node-val a arena))
+            (vb (node-val b arena)))
+        (set-val! a arena vb)
+        (set-val! b arena va)))
+    ;; rebuild level-order list, trimming trailing 'null
+    (let loop ((i 0) (acc '()) (cap 0))
+      (cond
+        ((>= i cap)
+         (let ((trimmed (let rev ((xs acc) (k 0))
+                          (cond
+                            ((null? xs) '())
+                            ((and (eq? (car xs) 'null) (= k 0))
+                             (rev (cdr xs) 0))
+                            (else (cons (car xs) (rev (cdr xs) (+ k 1))))))))
+           ;; simpler: trim trailing nulls
+           (let trim ((xs trimmed))
+             (cond
+               ((null? xs) '())
+               ((and (eq? (car xs) 'null) (null? (cdr xs))) '())
+               (else (cons (car xs) (trim (cdr xs))))))))
+        ((>= i (vector-length arena))
+         (let ((trimmed (let trim2 ((xs acc) (rest acc))
+                          (if (null? xs) '()
+                              (if (eq? (car xs) 'null)
+                                  (trim2 (cdr xs) '())
+                                  (cons (car xs) (trim2 (cdr xs) (cons (car xs) rest))))))))
+           ;; rebuild trimmed
+           (let rev2 ((xs '()) (ys trimmed))
+             (if (null? ys) xs
+                 (rev2 (cons (car ys) xs) (cdr ys))))))
+        (else
+         (let ((v (vector-ref arena i)))
+           (if (not v)
+               (loop (+ i 1) (append acc (list 'null)) (max cap (+ i 2)))
+               (let ((next-cap (+ i 2)))
+                 (let ((left (node-l i arena))
+                       (right (node-r i arena)))
+                   (define new-acc (append acc (list (node-val i arena))))
+                   (define acc2 (if left (append new-acc (list 'null)) new-acc))
+                   (define acc3 (if (and left right) (append acc2 (list 'null)) acc2))
+                   (loop (+ i 1)
+                         acc3
+                         (max cap (+ next-cap 1))))))))))))
+
+;; Display helper for a list of mixed numbers/nulls
+(define (display-list xs)
+  (display "[")
+  (let loop ((xs xs) (first? #t))
+    (cond
+      ((null? xs) (display "]") (newline))
+      (else
+       (unless first? (display ","))
+       (let ((v (car xs)))
+         (cond
+           ((eq? v 'null) (display "null"))
+           ((number? v) (display v))
+           (else (display v))))
+       (loop (cdr xs) #f)))))
+
+;; Cleaner approach: rebuild output as fresh list, then trim trailing nulls.
+(define (solve-clean root-list)
+  (let* ((t (make-tree root-list))
+         (root (car t))
+         (arena (cdr t))
+         (bad (find-inversions root arena))
+         (a (car bad))
+         (b (cdr bad)))
+    (when (and a b)
+      (let ((va (node-val a arena))
+            (vb (node-val b arena)))
+        (set-val! a arena vb)
+        (set-val! b arena va)))
+    ;; build level order, stopping when no real nodes remain in remaining slots
+    (let loop ((i 0) (acc '()))
+      (if (>= i (vector-length arena))
+          (let trim ((xs (reverse acc)))
+            (cond
+              ((null? xs) '())
+              ((and (eq? (car xs) 'null) (null? (cdr xs))) '())
+              (else (cons (car xs) (trim (cdr xs))))))
+          (let ((v (vector-ref arena i)))
+            (if (not v)
+                (loop (+ i 1) (cons 'null acc))
+                (let ((left (node-l i arena))
+                      (right (node-r i arena)))
+                  (define acc1 (cons (node-val i arena) acc))
+                  (define acc2 (if left (cons 'null acc1) acc1))
+                  (define acc3 (if (and left right) (cons 'null acc2) acc2))
+                  (define acc4 (if (and left (not right)) acc3 acc3))
+                  (loop (+ i 1) acc3))))))))
+
+(define (display-tree-result xs)
+  (display "[")
+  (let loop ((xs xs) (first? #t))
+    (cond
+      ((null? xs) (display "]"))
+      (else
+       (unless first? (display ","))
+       (let ((v (car xs)))
+         (cond
+           ((eq? v 'null) (display "null"))
+           (else (display v))))
+       (loop (cdr xs) #f)))))
+
+;; Test inputs
+(define case0 '(4 3 7 null null 2 6))
+(define case1 '(1 3 null null 2))
+(define case2 '(3 null 2 null 1))
+(define case3 '(2 1 3))
+(define case4 '(10 5 15 2 7 12 20))
+
+(define (run-case label input)
+  (display label)
+  (display "=")
+  (display-tree-result (solve-clean input))
+  (newline))
+
+(run-case "CASE0=" (solve-clean case0))
+(run-case "CASE1=" (solve-clean case1))
+(run-case "CASE2=" (solve-clean case2))
+(run-case "CASE3=" (solve-clean case3))
+(run-case "CASE4=" (solve-clean case4))

@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:23:06Z",
+      "ts_local": "2026-09-24 22:23:06 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2063,
+        "total_characters": 0,
+        "prompt_tokens": 1489,
+        "completion_tokens": 574,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.038,
+      "tests_passed": 0,
+      "tests_total": 11,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=<error>\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:23:18Z",
+      "ts_local": "2026-09-24 22:23:18 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2100,
+        "total_characters": 0,
+        "prompt_tokens": 1489,
+        "completion_tokens": 611,
+        "prompt_tokens_details": {
+          "cached_tokens": 1280
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.046,
+      "tests_passed": 0,
+      "tests_total": 11,
+      "stderr_snippet": "error: 31:49: unbound variable: nb\n  did you mean 'b'?\n",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "minimum-size-subarray-sum",
+  "title": "Minimum Size Subarray Sum",
+  "category": "arrays",
+  "updated_at": "2026-09-24T14:23:18Z",
+  "updated_at_local": "2026-09-24 22:23:18 CST"
+}

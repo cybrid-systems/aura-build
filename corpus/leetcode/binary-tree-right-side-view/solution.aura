@@ -1,0 +1,87 @@
+;; Helper: check if value is the "null" marker
+(define (is-null? x)
+  (if (null? x) #t
+      (if (string? x) (string=? x "null") #f)))
+
+;; Build tree from level-order list using index-based approach
+;; Returns '() for null, or a cons cell (val left right) representing the node
+(define (build-tree lst)
+  (define (node-at idx)
+    (if (>= idx (length lst))
+        '()
+        (let ((v (list-ref lst idx)))
+          (if (is-null? v)
+              '()
+              (let ((left  (node-at (+ (* idx 2) 1)))
+                    (right (node-at (+ (* idx 2) 2))))
+                (cons v (cons left (cons right '()))))))))
+  (node-at 0))
+
+;; BFS right side view
+;; Tree node shape: (val left right) or '()
+(define (right-side-view root)
+  (if (null? root)
+      '()
+      (let ((result '())
+            (queue (list root)))
+        (define (process-level q)
+          (if (null? q)
+              (reverse result)
+              (let ((level-last (car (reverse q))))
+                (set! result (cons (car level-last) result))
+                (let ((next-q '()))
+                  (define (collect-children qs)
+                    (if (null? qs)
+                        '()
+                        (let ((node (car qs)))
+                          (if (null? node)
+                              (collect-children (cdr qs))
+                              (let ((rest (collect-children (cdr qs))))
+                                (if (not (null? (cadr node)))
+                                    (set! rest (cons (cadr node) rest)))
+                                (if (not (null? (caddr node)))
+                                    (set! rest (cons (caddr node) rest)))
+                                rest)))))
+                  (set! next-q (collect-children q))
+                  (process-level next-q)))))
+        (process-level queue))))
+
+;; Display a list of numbers as [a, b, c]
+(define (display-list lst)
+  (display "[")
+  (define (loop l first?)
+    (if (null? l)
+        '()
+        (begin
+          (if (not first?) (display ", "))
+          (display (car l))
+          (loop (cdr l) #f))))
+  (loop lst #t)
+  (display "]"))
+
+;; Wrapper: parse input list (Aura literals using '() for null) and solve
+(define (solve-from-list lst)
+  (let ((root (build-tree lst)))
+    (right-side-view root)))
+
+;; solve: accepts a tree node directly (per problem signature)
+(define (solve root)
+  (right-side-view root))
+
+;; --- Test harness: build trees from literal lists and run solve ---
+(define (run-case i lst)
+  (let ((root (build-tree lst)))
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display-list (solve root))
+    (newline)))
+
+(run-case 0 (list 1 2 3 '() 5 '() 4))
+(run-case 1 (list 1 2 3 4 '() '() '() 5))
+(run-case 2 (list 1 '() 3))
+(run-case 3 '())
+(run-case 4 (list 1))
+(run-case 5 (list 1 2 3 4 5 6 7))
+(run-case 6 (list 1 2 '() 3 '() 4))
+(run-case 7 (list 1 2 3 '() '() 5 6))

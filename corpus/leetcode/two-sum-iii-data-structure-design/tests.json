@@ -1,0 +1,178 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "ops": [
+        [
+          "add",
+          1
+        ],
+        [
+          "add",
+          3
+        ],
+        [
+          "add",
+          5
+        ],
+        [
+          "find",
+          4
+        ],
+        [
+          "find",
+          7
+        ]
+      ]
+    },
+    "expected": "true\nfalse"
+  },
+  {
+    "id": 1,
+    "input": {
+      "ops": [
+        [
+          "add",
+          0
+        ],
+        [
+          "add",
+          0
+        ],
+        [
+          "find",
+          0
+        ]
+      ]
+    },
+    "expected": "true"
+  },
+  {
+    "id": 2,
+    "input": {
+      "ops": [
+        [
+          "add",
+          1
+        ],
+        [
+          "add",
+          2
+        ],
+        [
+          "add",
+          3
+        ]
+      ]
+    },
+    "expected": ""
+  },
+  {
+    "id": 3,
+    "input": {
+      "ops": [
+        [
+          "add",
+          5
+        ],
+        [
+          "find",
+          10
+        ]
+      ]
+    },
+    "expected": "false"
+  },
+  {
+    "id": 4,
+    "input": {
+      "ops": [
+        [
+          "add",
+          -1
+        ],
+        [
+          "add",
+          -3
+        ],
+        [
+          "add",
+          5
+        ],
+        [
+          "find",
+          -4
+        ],
+        [
+          "find",
+          4
+        ]
+      ]
+    },
+    "expected": "true\ntrue"
+  },
+  {
+    "id": 5,
+    "input": {
+      "ops": [
+        [
+          "add",
+          2
+        ],
+        [
+          "add",
+          2
+        ],
+        [
+          "add",
+          3
+        ],
+        [
+          "find",
+          4
+        ],
+        [
+          "find",
+          6
+        ]
+      ]
+    },
+    "expected": "true\nfalse"
+  },
+  {
+    "id": 6,
+    "input": {
+      "ops": [
+        [
+          "find",
+          0
+        ]
+      ]
+    },
+    "expected": "false"
+  },
+  {
+    "id": 7,
+    "input": {
+      "ops": [
+        [
+          "add",
+          1
+        ],
+        [
+          "find",
+          2
+        ],
+        [
+          "add",
+          1
+        ],
+        [
+          "find",
+          2
+        ]
+      ]
+    },
+    "expected": "false\ntrue"
+  }
+]

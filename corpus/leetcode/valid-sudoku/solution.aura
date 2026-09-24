@@ -1,0 +1,193 @@
+;; Check if x is in list using equal?
+(define (member? x lst)
+  (if (null? lst) #f
+      (if (equal? x (car lst)) #t
+          (member? x (cdr lst)))))
+
+;; Build a list of digits seen so far; return updated list on success, or '() on duplicate.
+(define (try-add val seen)
+  (if (member? val seen) '()
+      (cons val seen)))
+
+;; Process the whole board. Returns #t if valid, #f otherwise.
+;; Uses recursion with accumulator indices (r, c) and the three seen lists.
+(define (solve board)
+  ;; Pre-build column-state and box-state as lists of 9 sublists each (#f => unused list is empty).
+  (let ((initial-cols (make-init-cols))
+        (initial-boxes (make-init-boxes)))
+    (process board 0 0 board initial-cols initial-boxes)))
+
+(define (make-init-cols)
+  (cons '() (cons '() (cons '() (cons '() (cons '() (cons '() (cons '() (cons '() '())))))))))
+
+(define (make-init-boxes)
+  (cons (cons '() (cons '() (cons '() '())))
+        (cons (cons '() (cons '() (cons '() '())))
+              (cons (cons '() (cons '() (cons '() '())))
+                    '()))))
+
+;; Walk through rows r=0..8, columns c=0..8, accumulating seen values.
+;; row-seen is a list of 9 lists (one per row), updated as we cross row boundaries.
+(define (process board r c row-seen cols boxes)
+  (cond
+    ((= r 9) #t)   ;; finished all rows
+    ((= c 9) (process board (+ r 1) 0 row-seen cols boxes))  ;; next row
+    (else
+      (let ((val (get-cell board r c)))
+        (if (equal? val ".")
+            (process board r (+ c 1) row-seen cols boxes)
+            ;; For '.' (string), we skip... but other values are digits.
+            ;; Treat anything non-"." as a digit to validate.
+            (let ((digit (string->digit val))
+                  (box-idx (box-index-of r c)))
+              ;; Build update: try to add digit to row r, column c, box idx.
+              (let ((cur-row (list-ref-n row-seen r)))
+                (if (or (eq? digit 'fail) (null? cur-row))
+                    ;; Either non-digit string or row-list got corrupted
+                    #f
+                    (let ((new-row-list (try-add digit cur-row)))
+                      (if (null? new-row-list) #f
+                          (let ((cur-col (list-ref-n cols c)))
+                            (if (null? cur-col) #f
+                                (let ((new-col-list (try-add digit cur-col)))
+                                  (if (null? new-col-list) #f
+                                      (let ((cur-box (list-ref-n boxes box-idx)))
+                                        (if (null? cur-box) #f
+                                            (let ((new-box-list (try-add digit cur-box)))
+                                              (if (null? new-box-list) #f
+                                                  (process board r (+ c 1)
+                                                           (list-set-n row-seen r new-row-list)
+                                                           (list-set-n cols c new-col-list)
+                                                           (list-set-n boxes box-idx new-box-list))))))))))))))))))))
+
+;; Get cell (board r c): board is list of 9 rows.
+(define (get-cell board r c)
+  (list-ref-n (list-ref-n board r) c))
+
+;; Get n-th element (0-indexed) of list. Returns '() if out of bounds or not a cons.
+(define (list-ref-n lst n)
+  (if (= n 0) (car lst)
+      (list-ref-n (cdr lst) (- n 1))))
+
+;; Set the n-th element of lst to v. Returns a new list.
+(define (list-set-n lst n v)
+  (if (= n 0) (cons v (cdr lst))
+      (cons (car lst) (list-set-n (cdr lst) (- n 1) v))))
+
+;; Map a (row,col) pair to its 3x3 box index: 0..8 in row-major order.
+(define (box-index-of r c)
+  (+ (* 3 (quotient r 3)) (quotient c 3)))
+
+;; Convert a digit character like "5" to integer 5. Returns 'fail if not a digit.
+(define (string->digit s)
+  (cond
+    ((equal? s "1") 1)
+    ((equal? s "2") 2)
+    ((equal? s "3") 3)
+    ((equal? s "4") 4)
+    ((equal? s "5") 5)
+    ((equal? s "6") 6)
+    ((equal? s "7") 7)
+    ((equal? s "8") 8)
+    ((equal? s "9") 9)
+    (else 'fail)))
+
+;; ---------- Test cases ----------
+
+(define (run-cases)
+  (let ((cases (list
+    (list (list
+      (list "5" "3" "." "." "7" "." "." "." ".")
+      (list "6" "." "." "1" "9" "5" "." "." ".")
+      (list "." "9" "8" "." "." "." "." "6" ".")
+      (list "8" "." "." "." "6" "." "." "." "3")
+      (list "4" "." "." "8" "." "3" "." "." "1")
+      (list "7" "." "." "." "2" "." "." "." "6")
+      (list "." "6" "." "." "." "." "2" "8" ".")
+      (list "." "." "." "4" "1" "9" "." "." "5")
+      (list "." "." "." "." "8" "." "." "7" "9")))
+    (list (list
+      (list "8" "3" "." "." "7" "." "." "." ".")
+      (list "6" "." "." "1" "9" "5" "." "." ".")
+      (list "." "9" "8" "." "." "." "." "6" ".")
+      (list "8" "." "." "." "6" "." "." "." "3")
+      (list "4" "." "." "8" "." "3" "." "." "1")
+      (list "7" "." "." "." "2" "." "." "." "6")
+      (list "." "6" "." "." "." "." "2" "8" ".")
+      (list "." "." "." "4" "1" "9" "." "." "5")
+      (list "." "." "." "." "8" "." "." "7" "9")))
+    (list (list
+      (list "." "." "." "." "." "." "." "." ".")
+      (list "." "." "." "." "." "." "." "." ".")
+      (list "." "." "." "." "." "." "." "." ".")
+      (list "." "." "." "." "." "." "." "." ".")
+      (list "." "." "." "." "." "." "." "." ".")
+      (list "." "." "." "." "." "." "." "." ".")
+      (list "." "." "." "." "." "." "." "." ".")
+      (list "." "." "." "." "." "." "." "." ".")
+      (list "." "." "." "." "." "." "." "." ".")))
+    (list (list
+      (list "1" "1" "." "." "." "." "." "." ".")
+      (list "." "." "." "." "." "." "." "." ".")
+      (list "." "." "." "." "." "." "." "." ".")
+      (list "." "." "." "." "." "." "." "." ".")
+      (list "." "." "." "." "." "." "." "." ".")
+      (list "." "." "." "." "." "." "." "." ".")
+      (list "." "." "." "." "." "." "." "." ".")
+      (list "." "." "." "." "." "." "." "." ".")
+      (list "." "." "." "." "." "." "." "." ".")))
+    (list (list
+      (list "." "." "." "." "." "." "." "." "1")
+      (list "." "." "." "." "." "." "." "1" ".")
+      (list "." "." "." "." "." "." "1" "." ".")
+      (list "." "." "." "." "." "1" "." "." ".")
+      (list "." "." "." "." "1" "." "." "." ".")
+      (list "." "." "." "1" "." "." "." "." ".")
+      (list "." "." "1" "." "." "." "." "." ".")
+      (list "." "1" "." "." "." "." "." "." ".")
+      (list "1" "." "." "." "." "." "." "." ".")))
+    (list (list
+      (list "1" "2" "3" "4" "5" "6" "7" "8" "9")
+      (list "." "." "." "." "." "." "." "." ".")
+      (list "." "." "." "." "." "." "." "." ".")
+      (list "." "." "." "." "." "." "." "." ".")
+      (list "." "." "." "." "." "." "." "." ".")
+      (list "." "." "." "." "." "." "." "." ".")
+      (list "." "." "." "." "." "." "." "." ".")
+      (list "." "." "." "." "." "." "." "." ".")
+      (list "." "." "." "." "." "." "." "." ".")))
+    (list (list
+      (list "5" "3" "4" "6" "7" "8" "9" "1" "2")
+      (list "6" "7" "2" "1" "9" "5" "3" "4" "8")
+      (list "1" "9" "8" "3" "4" "2" "5" "6" "7")
+      (list "8" "5" "9" "7" "6" "1" "4" "2" "3")
+      (list "4" "2" "6" "8" "5" "3" "7" "9" "1")
+      (list "7" "1" "3" "9" "2" "4" "8" "5" "6")
+      (list "9" "6" "1" "5" "3" "7" "2" "8" "4")
+      (list "2" "8" "7" "4" "1" "9" "6" "3" "5")
+      (list "3" "4" "5" "2" "8" "6" "1" "7" "9")))
+    (list (list
+      (list "5" "3" "." "." "7" "." "." "." "2")
+      (list "6" "." "." "1" "9" "5" "." "." ".")
+      (list "." "9" "8" "." "." "." "." "6" ".")
+      (list "8" "." "." "." "6" "." "." "." "3")
+      (list "4" "." "." "8" "." "3" "." "." "1")
+      (list "7" "." "." "." "2" "." "." "." "6")
+      (list "." "6" "." "." "." "." "2" "8" ".")
+      (list "." "." "." "4" "1" "9" "." "." "5")
+      (list "." "." "." "." "8" "." "." "7" "9")))))
+    (print-cases cases 0)))
+
+(define (print-cases cases i)
+  (if (null? cases) '()
+      (begin
+        (display "CASE")
+        (display (number->string i))
+        (display "=")
+        (display (bool->str (solve (car (car cases)))))
+        (newline)
+        (print-cases (cdr cases) (+ i 1)))))
+
+(define (bool->str b) (if b "#t" "#f"))
+
+(run-cases)

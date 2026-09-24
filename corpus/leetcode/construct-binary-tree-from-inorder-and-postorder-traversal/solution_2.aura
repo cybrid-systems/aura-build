@@ -1,0 +1,225 @@
+(define (caar p) (car (car p)))
+(define (cdar p) (cdr (car p)))
+(define (cadr p) (car (cdr p)))
+(define (cddr p) (cdr (cdr p)))
+(define (caddr p) (car (cdr (cdr p))))
+(define (cdddr p) (cdr (cdr (cdr p))))
+
+(define null-val 'null)
+
+(define (is-null x)
+  (if (equal? x null-val) #t #f))
+
+(define (strip-prefix s prefix)
+  (let ((n (string-length prefix)))
+    (substring s n (string-length s))))
+
+(define (parse-list str)
+  (let ((len (string-length str)))
+    (let ((content
+           (substring str 1 (- len 1))))
+      (parse-tokens content '()))))
+
+(define (parse-tokens s acc)
+  (let ((n (string-length s)))
+    (if (= n 0)
+        (reverse acc)
+        (let ((comma-pos (find-comma s 0)))
+          (if (= comma-pos -1)
+              (reverse (cons (trim s) acc))
+              (let ((tok (trim (substring s 0 comma-pos))))
+                (parse-tokens
+                  (substring s (+ comma-pos 1) n)
+                  (cons tok acc))))))))
+
+(define (find-comma s i)
+  (let ((n (string-length s)))
+    (if (= i n)
+        -1
+        (if (char=? (string-ref s i) #\,)
+            i
+            (find-comma s (+ i 1))))))
+
+(define (trim s)
+  (let ((n (string-length s)))
+    (let ((start (skip-spaces s 0)))
+      (let ((end (skip-spaces-end s (- n 1))))
+        (if (> end start)
+            (substring s start (+ end 1))
+            "")))))
+
+(define (skip-spaces s i)
+  (let ((n (string-length s)))
+    (if (>= i n)
+        i
+        (if (char=? (string-ref s i) #\space)
+            (skip-spaces s (+ i 1))
+            i))))
+
+(define (skip-spaces-end s i)
+  (if (< i 0)
+        0
+        (if (char=? (string-ref s i) #\space)
+            (skip-spaces-end s (- i 1))
+            i)))
+
+(define (token->val tok)
+  (if (equal? tok "null")
+      null-val
+      (let ((n (string-length tok)))
+        (string->number (substring tok 0 n))))))
+
+(define (parse-input line)
+  (let ((eq-pos (find-char line 0 #\=)))
+    (let ((val-str (substring line (+ eq-pos 1) (string-length line))))
+      (parse-list val-str))))
+
+(define (find-char s i c)
+  (let ((n (string-length s)))
+    (if (>= i n)
+        -1
+        (if (char=? (string-ref s i) c)
+            i
+            (find-char s (+ i 1) c)))))
+
+;; Node representation: (value left right) or 'null
+(define (make-node v l r) (list v l r))
+
+(define (node-val n) (car n))
+(define (node-left n) (cadr n))
+(define (node-right n) (caddr n))
+
+;; Build tree from inorder and postorder lists of values (null or numbers)
+;; Strategy:
+;;  postorder last element is root
+;;  find root in inorder; left part = left subtree inorder, right part = right subtree inorder
+;;  Number of left subtree nodes = size of left inorder = left size
+;;  Recurse on subarrays
+
+(define (build-tree inorder postorder)
+  (build-helper inorder postorder))
+
+(define (build-helper inorder postorder)
+  (if (null? inorder)
+      'null
+      (let ((root-val (car (last-elem postorder))))
+        (let ((root-pos (find-val inorder root-val)))
+          (let ((left-in (take-n inorder root-pos))
+                (right-in (drop-n inorder (+ root-pos 1))))
+            (let ((left-size (length-list left-in))
+                  (right-size (length-list right-in)))
+              (let ((left-post (take-n postorder left-size))
+                    (right-post (let ((p postorder)
+                                      (cnt left-size))
+                                  (take-n (drop-n p cnt) right-size))))
+                (make-node root-val
+                           (build-helper left-in left-post)
+                           (build-helper right-in right-post)))))))))
+
+(define (last-elem lst)
+  (if (null? (cdr lst))
+      lst
+      (last-elem (cdr lst))))
+
+(define (find-val lst v)
+  (find-val-h lst v 0))
+
+(define (find-val-h lst v i)
+  (cond ((null? lst) -1)
+        ((equal? (car lst) v) i)
+        (else (find-val-h (cdr lst) v (+ i 1)))))
+
+(define (length-list lst)
+  (if (null? lst) 0 (+ 1 (length-list (cdr lst)))))
+
+(define (take-n lst n)
+  (if (= n 0)
+      '()
+      (cons (car lst) (take-n (cdr lst) (- n 1)))))
+
+(define (drop-n lst n)
+  (if (= n 0)
+      lst
+      (drop-n (cdr lst) (- n 1))))
+
+;; BFS level-order traversal
+(define (bfs root)
+  (let ((result (bfs-collect (list root) '())))
+    (result-list result)))
+
+(define (bfs-collect queue acc)
+  (if (null? queue)
+      acc
+      (let ((n (car queue)))
+        (if (is-null n)
+            (bfs-collect (cdr queue) (cons null-val acc))
+            (let ((v (node-val n))
+                  (l (node-left n))
+                  (r (node-right n)))
+              (bfs-collect (append-queue (cdr queue) (list l r))
+                           (cons v acc)))))))
+
+(define (append-queue q new-items)
+  (if (null? new-items)
+      q
+      (cons (car new-items) (append-queue q (cdr new-items)))))
+
+(define (result-list lst)
+  (reverse lst))
+
+;; Trim trailing nulls from BFS result for compact output
+(define (trim-trailing-nulls lst)
+  (cond ((null? lst) lst)
+        ((null? (cdr lst))
+         (if (is-null (car lst)) '() lst))
+        ((is-null (car (last-pair lst)))
+         (trim-trailing-nulls (reverse (cdr (reverse lst)))))
+        (else lst)))
+
+(define (last-pair lst)
+  (if (null? (cdr lst))
+      lst
+      (last-pair (cdr lst))))
+
+;; Print result as "RESULT=[v1, v2, ...]"
+(define (print-result lst)
+  (display "RESULT=[")
+  (print-list lst)
+  (display "]")
+  (newline))
+
+(define (print-list lst)
+  (cond ((null? lst) (void))
+        ((null? (cdr lst))
+         (print-val (car lst)))
+        (else
+         (print-val (car lst))
+         (display ", ")
+         (print-list (cdr lst)))))
+
+(define (print-val v)
+  (if (is-null v)
+      (display "null")
+      (display (number->string v))))
+
+;; SOLVE: reads two lines from "input" (via embedded case data)
+(define (solve-case inorder-raw postorder-raw)
+  (let ((inorder (map token->val (parse-input inorder-raw)))
+        (postorder (map token->val (parse-input postorder-raw))))
+    (let ((tree (build-tree inorder postorder))
+          (bfs-result (bfs (build-tree inorder postorder))))
+      (print-result (trim-trailing-nulls bfs-result)))))
+
+;; Embedded test cases - call solve for each
+(define (run-cases)
+  (begin
+    (display "CASE0=") (solve-case "CASE0_INORDER=[1, 2, 3, null, 5]" "CASE0_POSTORDER=[1, 3, null, 5, 2]")
+    (display "CASE1=") (solve-case "CASE0_INORDER=[1]" "CASE0_POSTORDER=[1]")
+    (display "CASE2=") (solve-case "CASE0_INORDER=[]" "CASE0_POSTORDER=[]")
+    (display "CASE3=") (solve-case "CASE0_INORDER=[2, 1, 3]" "CASE0_POSTORDER=[2, 3, 1]")
+    (display "CASE4=") (solve-case "CASE0_INORDER=[4, 2, 5, 1, 6, 3, 7]" "CASE0_POSTORDER=[4, 5, 2, 6, 7, 3, 1]")
+    (display "CASE5=") (solve-case "CASE0_INORDER=[null, 1, 2, 3]" "CASE0_POSTORDER=[1, 3, 2, null]")
+    (display "CASE6=") (solve-case "CASE0_INORDER=[9, 3, 15, 20, 7]" "CASE0_POSTORDER=[9, 15, 7, 20, 3]")
+    ))
+
+(run-cases)

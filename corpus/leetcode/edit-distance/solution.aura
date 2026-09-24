@@ -1,0 +1,78 @@
+(define (string-length s)
+  (let loop ((i 0) (s s))
+    (if (string=? s "") i (loop (+ i 1) (substring s 1 (string-length s))))))
+
+(define (string-ref-fast s i)
+  (let loop ((j 0) (s s))
+    (if (= j i) (string-ref s 0)
+        (loop (+ j 1) (substring s 1 (string-length s))))))
+
+(define (list-ref-safe lst i n)
+  (let loop ((k 0) (lst lst))
+    (if (= k i) (car lst)
+        (loop (+ k 1) (cdr lst)))))
+
+(define (make-list-of-zeros n)
+  (let loop ((k 0) (acc '()))
+    (if (= k n) acc (loop (+ k 1) (cons 0 acc)))))
+
+(define (set-list lst i v)
+  (let loop ((k 0) (lst lst))
+    (cond ((null? lst) '())
+          ((= k i) (cons v (cdr lst)))
+          (else (cons (car lst) (loop (+ k 1) (cdr lst)))))))
+
+(define (min3 a b c)
+  (if (<= a b) (if (<= a c) a c) (if (<= b c) b c)))
+
+(define (edit-distance-row-wise a b)
+  ;; Compute Levenshtein distance using O(min(|a|,|b|)) space.
+  ;; Make b the shorter string if possible.
+  (let* ((m (string-length a))
+         (n (string-length b))
+         (a-short (< m n)))
+  (let* ((s1 (if a-short a b))
+         (s2 (if a-short b a))
+         (len1 (+ (string-length s1) 0))
+         (len2 (+ (string-length s2) 0))
+         (prev (make-list-of-zeros (+ len2 1)))
+         (cur (make-list-of-zeros (+ len2 1))))
+  (let loop-i ((i 0))
+    (if (> i len1) (list-ref-safe prev len2 (+ len2 1))
+    (begin
+      (set! cur (set-list cur 0 i))
+      (let loop-j ((j 1))
+        (if (> j len2) 'done
+                (begin
+                  (let* ((ch1 (string-ref-fast s1 i))
+                         (ch2 (string-ref-fast s2 (- j 1)))
+                         (cost (if (= ch1 ch2) 0 1))
+                         (del-cost (+ (list-ref-safe prev j (+ len2 1)) 1))
+                         (ins-cost (+ (list-ref-safe cur (- j 1) (+ len2 1)) 1))
+                         (sub-cost (+ (list-ref-safe prev (- j 1) (+ len2 1)) cost)))
+                    (set! cur (set-list cur j (min3 del-cost ins-cost sub-cost))))
+                  (loop-j (+ j 1)))))
+      (let ((tmp prev))
+        (set! prev cur)
+        (set! cur tmp))
+      (loop-i (+ i 1))))))))
+
+(define (solve a b)
+  (edit-distance-row-wise a b))
+
+;; Test cases - call solve on each
+(define (run-case i a b)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve a b))
+  (newline))
+
+(run-case 0 "kitten" "sitting")
+(run-case 1 "abc" "abc")
+(run-case 2 "" "a")
+(run-case 3 "a" "")
+(run-case 4 "" "")
+(run-case 5 "sunday" "saturday")
+(run-case 6 "horse" "ros")
+(run-case 7 "intention" "execution")

@@ -1,0 +1,74 @@
+;; Build a list node from a list of values
+(define (build-list vals)
+  (letrec ((aux (lambda (v rest)
+                  (if (null? v)
+                      rest
+                      (cons (cons (car v) '()) (aux (cdr v) rest))))))
+    (reverse (aux vals '()))))
+
+;; Count nodes in linked list
+(define (list-length head)
+  (letrec ((aux (lambda (h acc)
+                  (if (null? h) acc (aux (cdr h) (+ acc 1))))))
+    (aux head 0)))
+
+;; Solve: convert sorted list to balanced BST.
+;; We use the "middle as root" recursive approach.
+;; We build the BST from a list of values directly (since linked list semantics
+;; in Aura are equivalent to accessing a list).
+(define (sorted-list-to-bst head)
+  ;; head is a list of (val . next) pairs; extract values
+  (letrec ((vals (letrec ((aux (lambda (h acc)
+                                 (if (null? h)
+                                     (reverse acc)
+                                     (aux (cdr h) (cons (car (car h)) acc))))))
+                   (aux head '())))
+           (build (lambda (lo hi)
+                    (if (>= lo hi)
+                        '()
+                        (let* ((mid (quotient (+ lo hi) 2))
+                               (left (build lo mid))
+                               (right (build (+ mid 1) hi)))
+                          (cons (list (list-ref vals mid) left right) '()))))))
+    (if (null? vals)
+        '()
+        (car (build 0 (length vals))))))
+
+(define (solve head)
+  (sorted-list-to-bst head))
+
+;; Output helper: display a tree as an in-order traversal list
+(define (inorder t)
+  (if (null? t)
+      '()
+      (append (inorder (cadr t))
+              (cons (car (car t)) (inorder (caddr t))))))
+
+(define (display-list xs)
+  (display "[")
+  (letrec ((aux (lambda (rest first?)
+                  (cond ((null? rest) (display ""))
+                         (first? (display (car rest)) (aux (cdr rest) #f))
+                         (else (display ",") (display (car rest))
+                               (aux (cdr rest) #f))))))
+    (aux xs #t))
+  (display "]"))
+
+;; Run all test cases
+(define (run-case i length vals)
+  (let ((head (build-list vals))
+        (result (solve (build-list vals))))
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display-list (inorder result))
+    (newline)))
+
+(run-case 0 0 '())
+(run-case 1 1 '(0))
+(run-case 2 3 '(1 2 3))
+(run-case 3 5 '(-10 -3 0 5 9))
+(run-case 4 8 '(1 2 3 4 5 6 7 8))
+(run-case 5 11 '(0 1 2 3 4 5 6 7 8 9 10))
+(run-case 6 11 '(-5 -4 -3 -2 -1 0 1 2 3 4 5))
+(run-case 7 1 '(42))

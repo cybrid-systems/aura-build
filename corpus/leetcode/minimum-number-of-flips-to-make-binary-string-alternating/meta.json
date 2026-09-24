@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:29:27Z",
+      "ts_local": "2026-09-24 22:29:27 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 4633,
+        "total_characters": 0,
+        "prompt_tokens": 1143,
+        "completion_tokens": 3490,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": -1,
+      "timeout": true,
+      "duration_s": 20.013,
+      "tests_passed": 0,
+      "tests_total": 12,
+      "stderr_snippet": "timeout",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:29:40Z",
+      "ts_local": "2026-09-24 22:29:40 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 3710,
+        "total_characters": 0,
+        "prompt_tokens": 1143,
+        "completion_tokens": 2567,
+        "prompt_tokens_details": {
+          "cached_tokens": 1142
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.017,
+      "tests_passed": 0,
+      "tests_total": 12,
+      "stderr_snippet": "warning: unbalanced parentheses in input\nerror: no complete S-expression in program source\nusage: /workspace/aura-grok/build_soft4055/aura [options] [file.aura …]\n       /workspace/aura-grok/build_soft4055/aura -e '(+ 1 2)'\n       echo '(+ 1 2)' | /workspace/aura-grok/build_soft4055/aura\n       /workspace/aura-grok/build_soft4055/aura < file.aura\n\nPrograms are read from stdin when no file/-e is given.\nDenseness / span host env (soft multi-module probes):\n  export AURA_BIN=…/build/aura   absolute",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "minimum-number-of-flips-to-make-binary-string-alternating",
+  "title": "Minimum Number of Flips to Make Binary String Alternating",
+  "category": "sliding_window",
+  "updated_at": "2026-09-24T14:29:40Z",
+  "updated_at_local": "2026-09-24 22:29:40 CST"
+}

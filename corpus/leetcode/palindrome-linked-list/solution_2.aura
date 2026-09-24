@@ -1,0 +1,99 @@
+;; Build a list node as a cons pair: (value . next) where next is #f or another node
+(define (make-node val nxt) (cons val nxt))
+(define (node-val n) (car n))
+(define (node-next n) (cdr n))
+(define (set-node-next! n nxt) (set-cdr! n nxt))
+
+;; Build linked list from aura list of values; returns head node
+(define (build-list vals)
+  (if (null? vals)
+      #f
+      (let ((head (make-node (car vals) #f))
+            (tail head))
+        (define (loop vs t)
+          (if (null? vs)
+              #f
+              (let ((new-node (make-node (car vs) #f)))
+                (set-node-next! t new-node)
+                (loop (cdr vs) new-node))))
+        (loop (cdr vals) tail)
+        head)))
+
+;; Reverse linked list in place; returns new head
+(define (reverse-list head)
+  (define (rev prev curr)
+    (if (null? curr)
+        prev
+        (let ((nxt (node-next curr)))
+          (set-node-next! curr prev)
+          (rev curr nxt))))
+  (rev #f head))
+
+;; Check if linked list is palindrome using O(1) space
+(define (is-palindrome head)
+  (if (or (null? head) (null? (node-next head)))
+      #t
+      (let ((slow head)
+            (fast head))
+        ;; Advance slow by 1, fast by 2
+        (define (advance)
+          (set! fast (node-next (node-next fast)))
+          (set! slow (node-next slow)))
+        (let loop ()
+          (if (and (not (null? fast))
+                   (not (null? (node-next fast))))
+              (begin
+                (advance)
+                (loop)))))
+        ;; Now slow is at middle (for even) or middle node (for odd)
+        ;; Reverse second half starting at slow (which gives middle+rest)
+        (let* ((second (reverse-list slow))
+               (first head)
+               (result #t))
+          ;; Compare
+          (let lp ((a first) (b second))
+            (cond
+              ((null? b) #f)  ; done comparing
+              (else
+               (if (not (= (node-val a) (node-val b)))
+                   (set! result #f))
+               (lp (node-next a) (node-next b)))))
+          ;; Restore: re-reverse second half
+          (reverse-list second)
+          result))))
+
+;; Solve: take aura list of values, return #t or #f
+(define (solve vals)
+  (let ((head (build-list vals)))
+    (is-palindrome head)))
+
+;; Display helper for aura list (space-separated)
+(define (display-list xs)
+  (cond
+    ((null? xs) (display ""))
+    (else
+     (display (car xs))
+     (if (not (null? (cdr xs)))
+         (display " "))
+     (display-list (cdr xs)))))
+
+;; Helper: convert aura list -> aura list of numbers (already numbers)
+(define (alist vals) vals)
+
+;; Run test cases
+(define (run-case n vals)
+  (begin
+    (display "CASE")
+    (display n)
+    (display "=")
+    (display (if (solve vals) "True" "False"))
+    (newline)))
+
+(run-case 0 (alist '(1 2 3 2 1)))
+(run-case 1 (alist '(1 2 3)))
+(run-case 2 (alist '(7)))
+(run-case 3 (alist '(1 1)))
+(run-case 4 (alist '(1 2)))
+(run-case 5 (alist '(1 2 2 1)))
+(run-case 6 (alist '(1 2 3 4 3 2 1)))
+(run-case 7 (alist '(1 2 3 4 5 2 1)))

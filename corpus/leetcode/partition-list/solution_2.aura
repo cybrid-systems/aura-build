@@ -1,0 +1,108 @@
+;; Partition List in Aura
+
+;; Node structure: (node val next)
+(define (make-node val next) (cons val next))
+(define (node-val n) (car n))
+(define (node-next n) (cdr n))
+(define (set-node-next! n nx) (set-cdr! n nx))
+
+;; Build linked list from list of values; returns head (or '())
+(define (build-list vals)
+  (if (null? vals)
+      '()
+      (let ((head (make-node (car vals) '())))
+        (define (loop remaining tail)
+          (if (null? remaining)
+              head
+              (let ((n (make-node (car remaining) '())))
+                (set-node-next! tail n)
+                (loop (cdr remaining) n))))
+        (loop (cdr vals) head))))
+
+;; Convert linked list back to Aura list of vals for comparison/printing
+(define (list-to-aura-list head)
+  (define (loop n acc)
+    (if (null? n)
+        (reverse acc)
+        (loop (node-next n) (cons (node-val n) acc))))
+  (loop head '()))
+
+;; Solve: partition list around x
+(define (solve head x)
+  ;; less-head, less-tail, ge-head, ge-tail
+  (let ((less-head '()) (less-tail '()) (ge-head '()) (ge-tail '()))
+    (define (lp cur)
+      (if (null? cur)
+          (begin
+            ;; terminate ge tail
+            (if (null? ge-tail)
+                '()
+                (set-node-next! ge-tail '()))
+            ;; connect less tail to ge head
+            (if (null? less-tail)
+                ge-head
+                (begin
+                  (set-node-next! less-tail ge-head)
+                  less-head)))
+          (let ((nxt (node-next cur)))
+            (set-node-next! cur '())
+            (if (< (node-val cur) x)
+                (begin
+                  (if (null? less-head)
+                      (begin
+                        (set! less-head cur)
+                        (set! less-tail cur))
+                      (begin
+                        (set-node-next! less-tail cur)
+                        (set! less-tail cur))))
+                (begin
+                  (if (null? ge-head)
+                      (begin
+                        (set! ge-head cur)
+                        (set! ge-tail cur))
+                      (begin
+                        (set-node-next! ge-tail cur)
+                        (set! ge-tail cur)))))
+            (lp nxt))))
+    (lp head)))
+
+;; Helper to display an Aura list
+(define (display-list lst)
+  (display "[")
+  (define (loop l)
+    (cond ((null? l) '())
+          (else
+           (display (car l))
+           (if (not (null? (cdr l)))
+               (display ", "))
+           (loop (cdr l)))))
+  (loop lst)
+  (display "]"))
+
+;; Run cases
+(define (run-case vals x)
+  (let ((h (build-list vals)))
+    (list-to-aura-list (solve h x))))
+
+(let ((cases
+       (list
+        (list (list 1 4 3 2 5 2) 3)
+        (list (list 2 1) 2)
+        (list (list) 1)
+        (list (list 1) 1)
+        (list (list 5 4 3 2 1) 3)
+        (list (list 1 2 3 4 5) 10)
+        (list (list 5 4 3 2 1) 0)
+        (list (list 3 1 2 4 1) 3))))
+  (define (run-all cs i)
+    (if (null? cs)
+        '()
+        (let* ((c (car cs))
+               (vals (car c))
+               (x (car (cdr c)))
+               (result (run-case vals x)))
+          (display (string-append "CASE" (number->string i) "="))
+          (display-list result)
+          (newline)
+          (run-all (cdr cs) (+ i 1)))))
+  (run-all cases 0))

@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:29:59Z",
+      "ts_local": "2026-09-24 22:29:59 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2211,
+        "total_characters": 0,
+        "prompt_tokens": 1342,
+        "completion_tokens": 869,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.016,
+      "tests_passed": 0,
+      "tests_total": 7,
+      "stderr_snippet": "warning: unbalanced parentheses in input\nerror: no complete S-expression in program source\nusage: /workspace/aura-grok/build_soft4055/aura [options] [file.aura …]\n       /workspace/aura-grok/build_soft4055/aura -e '(+ 1 2)'\n       echo '(+ 1 2)' | /workspace/aura-grok/build_soft4055/aura\n       /workspace/aura-grok/build_soft4055/aura < file.aura\n\nPrograms are read from stdin when no file/-e is given.\nDenseness / span host env (soft multi-module probes):\n  export AURA_BIN=…/build/aura   absolute",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:30:02Z",
+      "ts_local": "2026-09-24 22:30:02 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1938,
+        "total_characters": 0,
+        "prompt_tokens": 1342,
+        "completion_tokens": 596,
+        "prompt_tokens_details": {
+          "cached_tokens": 1341
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.031,
+      "tests_passed": 7,
+      "tests_total": 7,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=[2, 3]\nCASE1=[1]\nCASE2=[-5, -5, -5]\nCASE3=[10, 5, 10]\nCASE4=[3]\nCASE5=[1, 2]\nCASE6=[-100, -100, -100]\n"
+    }
+  ],
+  "slug": "min-stack",
+  "title": "Min Stack",
+  "category": "stack_queue",
+  "updated_at": "2026-09-24T14:30:02Z",
+  "updated_at_local": "2026-09-24 22:30:02 CST"
+}

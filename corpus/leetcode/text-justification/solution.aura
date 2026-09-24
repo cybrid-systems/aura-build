@@ -1,0 +1,96 @@
+(define (length-str s)
+  (let loop ((i 0))
+    (if (string=? (substring s i (+ i 1)) "")
+        i
+        (loop (+ i 1)))))
+
+(define (repeat-space n)
+  (if (= n 0)
+      ""
+      (string-append " " (repeat-space (- n 1)))))
+
+(define (sum-lengths words)
+  (if (null? words)
+      0
+      (+ (length-str (car words)) (sum-lengths (cdr words)))))
+
+(define (build-middle-gap k-1 extra idx)
+  (let ((base (quotient (length-str "") 1)))
+    base))
+
+(define (justify-line words maxWidth isLast)
+  (cond
+    ((or isLast (= (length words) 1))
+     (let* ((joined (join-words-sp words " "))
+            (pad-len (- maxWidth (length-str joined))))
+       (string-append joined (repeat-space pad-len))))
+    (else
+     (let* ((k (length words))
+            (total-letters (sum-lengths words))
+            (total-spaces (- maxWidth total-letters))
+            (gaps (- k 1))
+            (base-sp (/ total-spaces gaps))
+            (extra (modulo total-spaces gaps))
+            (line (build-justified words base-sp extra "")))
+       line))))
+
+(define (join-words-sp words sep)
+  (if (null? words)
+      ""
+      (if (null? (cdr words))
+          (car words)
+          (string-append (car words) sep (join-words-sp (cdr words) sep)))))
+
+(define (build-justified words base-sp extra acc)
+  (cond
+    ((null? words) acc)
+    ((null? (cdr words))
+     (string-append acc (car words)))
+    ((> extra 0)
+     (build-justified (cdr words) base-sp (- extra 1)
+                      (string-append acc (car words) (repeat-space (+ base-sp 1)))))
+    (else
+     (build-justified (cdr words) base-sp extra
+                      (string-append acc (car words) (repeat-space base-sp))))))
+
+(define (solve words maxWidth)
+  (let loop ((i 0) (cur '()) (cur-len 0) (result '()))
+    (cond
+      ((null? words)
+       (reverse (cons (justify-line (reverse cur) maxWidth #t) result)))
+      (else
+       (let* ((w (car words))
+              (wlen (length-str w))
+              (new-len (+ cur-len wlen (if (null? cur) 0 1))))
+         (if (> new-len maxWidth)
+             (loop (+ i 1) (list w) wlen
+                   (cons (justify-line (reverse cur) maxWidth #f) result))
+             (loop (+ i 1) (cons w cur) new-len result)))))))
+
+(define (print-list lst)
+  (if (null? lst)
+      (begin (display "()") (newline))
+      (begin (display "(")
+             (let loop ((l lst) (first #t))
+               (if (null? l)
+                   (begin (display ")") (newline))
+                   (begin
+                     (if first (set! first #f) (display " "))
+                     (display (car l))
+                     (loop (cdr l) #f)))))))
+
+(define (run-case label words mw)
+  (begin
+    (display label)
+    (display "=")
+    (print-list (solve words mw))))
+
+(begin
+  (run-case "CASE0" '("This" "is" "an" "example" "of" "text" "justification.") 16)
+  (run-case "CASE1" '("What" "must" "be" "acknowledgment" "shall" "be") 16)
+  (run-case "CASE2" '("Science" "is" "what" "we" "understand") 20)
+  (run-case "CASE3" '("Single") 10)
+  (run-case "CASE4" '("a" "b" "c") 3)
+  (run-case "CASE5" '("Two" "words") 6)
+  (run-case "CASE6" '("Listen" "to" "many" "speak" "to" "a" "few" "of" "those" "who" "are" "good" "speakers") 16)
+  (run-case "CASE7" '("The" "quick" "brown" "fox" "jumps" "over" "the" "lazy" "dog") 11))

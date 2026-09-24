@@ -1,0 +1,46 @@
+;; Remove duplicates from a sorted list (represented as Aura lists of numbers).
+
+(define (solve lst)
+  (cond
+    ((null? lst) '())
+    (else
+      (let loop ((rest (cdr lst)) (acc (list (car lst))))
+        (cond
+          ((null? rest) (reverse acc))
+          ((equal? (car rest) (car acc))
+           (loop (cdr rest) acc))
+          (else
+           (loop (cdr rest) (cons (car rest) acc))))))))
+
+(define (display-list lst)
+  (define (loop xs first?)
+    (cond
+      ((null? xs)
+       (display ""))
+      (first?
+       (begin
+         (display (car xs))
+         (loop (cdr xs) #f)))
+      (else
+       (begin
+         (display ",")
+         (display (car xs))
+         (loop (cdr xs) #f)))))
+  (loop lst #t))
+
+(define (run-case i n vals)
+  (let ((result (solve vals)))
+    (display "CASE")
+    (display i)
+    (display "=vals=")
+    (display-list result)
+    (newline)))
+
+(run-case 0 5 '(1 1 2 3 3))
+(run-case 1 1 '(1))
+(run-case 2 0 '())
+(run-case 3 7 '(1 1 1 1 2 3 3))
+(run-case 4 6 '(1 2 3 4 5 6))
+(run-case 5 4 '(1 1 1 1))
+(run-case 6 5 '(1 2 2 2 3))
+(run-case 7 3 '(0 0 0))

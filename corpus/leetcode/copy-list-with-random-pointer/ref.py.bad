@@ -1,0 +1,133 @@
+import sys, json
+
+def solve(nodes):
+    """
+    nodes: list of (val, next_idx, rand_idx), each idx in [0..n-1] or -1
+    Returns: index of head node in the constructed copy table.
+    """
+    n = len(nodes)
+    if n == 0:
+        return -1
+    
+    # Build original node objects
+    # Each original node: (val, next_orig, rand_orig) where pointers are indices
+    # Represent originals as objects with .next and .random as indices into originals
+    # We'll interleave copies.
+    
+    # Allocate copy nodes in positions [n..2n-1]
+    # After interleaving: orig[i].next points to copy[i] (index n+i),
+    # and copy[i].next points to orig[i+1].next (originally), i.e., copy[i+1]
+    # Actually the standard trick:
+    #   for i in 0..n-1: copy_i = new node; set copy_i.next = orig[i].next; orig[i].next = copy_i
+    # Then: orig[i].random.next gives us copy_j where j = orig[i].random
+    # Then split.
+    
+    # We'll maintain the copy nodes as indices into a global table.
+    # Table positions: [0..n-1] are originals, [n..2n-1] are copies.
+    
+    # For each copy at position n+i, we set:
+    #   copy[n+i].next = n+j where j is copy of orig[i].next
+    #   copy[n+i].random = n+k where k is copy of orig[i].random
+    
+    # We'll represent each node's next/random as indices in the global table.
+    
+    # Build copies table: copy_next[i], copy_rand[i], copy_val[i]
+    # But we need to map from original index -> copy index. That's just i -> n+i.
+    
+    # Compute copy_next and copy_rand:
+    #   For original i with next idx next_i and random idx rand_i:
+    #     copy_next[i] = n + next_i if next_i >= 0 else -1
+    #     copy_rand[i] = n + rand_i if rand_i >= 0 else -1
+    
+    copy_next = []
+    copy_rand = []
+    copy_val = []
+    for i, (v, nxt, rnd) in enumerate(nodes):
+        copy_val.append(v)
+        copy_next.append(n + nxt if nxt >= 0 else -1)
+        copy_rand.append(n + rnd if rnd >= 0 else -1)
+    
+    # Find head of the original list: it's the node whose index is the next-of-tail isn't pointing back.
+    # Actually, head is the node not pointed to by any other node's "next".
+    # We can find head by: head = nodes[?]. The first node listed with no predecessor via next.
+    # Simpler: head is index 0 if we assume input is in list order, but actually the problem
+    # doesn't specify that. Let me think...
+    #
+    # Actually, the input gives us NODES in some order. The head is the node that starts the list.
+    # We need to figure out which node is the head. It's the node whose index is NOT a next target
+    # of any other node.
+    
+    pointed = set()
+    for _, nxt, _ in nodes:
+        if nxt >= 0:
+            pointed.add(nxt)
+    
+    head_orig = -1
+    for i in range(n):
+        if i not in pointed:
+            head_orig = i
+            break
+    
+    # The corresponding copy head is at index n + head_orig
+    if head_orig < 0:
+        return -1
+    
+    return n + head_orig
+
+
+def parse_case(text):
+    """Parse a single case text into list of (val, next_idx, rand_idx)."""
+    lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
+    n = None
+    nodes = []
+    in_nodes = False
+    for line in lines:
+        if line.startswith('N='):
+            n = int(line[2:])
+        elif line == 'NODES':
+            in_nodes = True
+        elif line == 'END':
+            in_nodes = False
+        elif in_nodes:
+            parts = line.split()
+            val = int(parts[0])
+            nxt = int(parts[1])
+            rnd = int(parts[2])
+            nodes.append((val, nxt, rnd))
+    return nodes
+
+
+def main():
+    raw = sys.stdin.read()
+    # Split by CASE0=, CASE1=, etc. Each case begins with "CASE<digit>="
+    import re
+    chunks = re.split(r'CASE\d+=\n?', raw)
+    cases = []
+    for c in chunks:
+        c = c.strip()
+        if not c:
+            continue
+        nodes = parse_case(c)
+        cases.append(nodes)
+    
+    results = []
+    for idx, nodes in enumerate(cases):
+        head_copy_idx = solve(nodes)
+        # We need to output "the head index of the copy within your own node table"
+        # The problem says: Print the head index (0-based) of the newly constructed deep-copied list
+        # within your own node table.
+        results.append({"id": idx, "input": {"nodes": nodes}, "expected": json.dumps(head_copy_idx, ensure_ascii=False)})
+    
+    # Print results as a JSON array
+    out = []
+    for r in results:
+        out.append({
+            "id": r["id"],
+            "input": r["input"],
+            "expected": r["expected"]
+        })
+    print(json.dumps(out, ensure_ascii=False))
+
+
+if __name__ == '__main__':
+    main()

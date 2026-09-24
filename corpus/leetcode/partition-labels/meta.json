@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:28:20Z",
+      "ts_local": "2026-09-24 22:28:20 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 5016,
+        "total_characters": 0,
+        "prompt_tokens": 1016,
+        "completion_tokens": 4000,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.029,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 15:20: unbound variable: old\n  did you mean 'solve'?\n   |\n 15 |             (if (= old -1)\n   |                    ^^^\n",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:28:38Z",
+      "ts_local": "2026-09-24 22:28:38 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2954,
+        "total_characters": 0,
+        "prompt_tokens": 1016,
+        "completion_tokens": 1938,
+        "prompt_tokens_details": {
+          "cached_tokens": 1015
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.049,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=\nCASE1=\nCASE2=\nCASE3=\nCASE4=\nCASE5=\nCASE6=\nCASE7=\n"
+    }
+  ],
+  "slug": "partition-labels",
+  "title": "Partition Labels",
+  "category": "two_pointers",
+  "updated_at": "2026-09-24T14:28:38Z",
+  "updated_at_local": "2026-09-24 22:28:38 CST"
+}

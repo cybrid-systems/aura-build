@@ -1,0 +1,161 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "operations": [
+        [
+          "push",
+          1
+        ],
+        [
+          "push",
+          2
+        ],
+        [
+          "top"
+        ],
+        [
+          "pop"
+        ]
+      ]
+    },
+    "expected": "[2,2]"
+  },
+  {
+    "id": 1,
+    "input": {
+      "operations": []
+    },
+    "expected": "[]"
+  },
+  {
+    "id": 2,
+    "input": {
+      "operations": [
+        [
+          "push",
+          1
+        ],
+        [
+          "pop"
+        ],
+        [
+          "empty"
+        ]
+      ]
+    },
+    "expected": "[1,true]"
+  },
+  {
+    "id": 3,
+    "input": {
+      "operations": [
+        [
+          "push",
+          1
+        ],
+        [
+          "push",
+          2
+        ],
+        [
+          "push",
+          3
+        ],
+        [
+          "pop"
+        ],
+        [
+          "pop"
+        ],
+        [
+          "pop"
+        ],
+        [
+          "empty"
+        ]
+      ]
+    },
+    "expected": "[3,2,1,true]"
+  },
+  {
+    "id": 4,
+    "input": {
+      "operations": [
+        [
+          "empty"
+        ]
+      ]
+    },
+    "expected": "[true]"
+  },
+  {
+    "id": 5,
+    "input": {
+      "operations": [
+        [
+          "push",
+          42
+        ],
+        [
+          "top"
+        ],
+        [
+          "top"
+        ],
+        [
+          "pop"
+        ],
+        [
+          "empty"
+        ],
+        [
+          "push",
+          7
+        ],
+        [
+          "top"
+        ],
+        [
+          "pop"
+        ]
+      ]
+    },
+    "expected": "[42,42,42,true,7,7]"
+  },
+  {
+    "id": 6,
+    "input": {
+      "operations": [
+        [
+          "push",
+          5
+        ],
+        [
+          "push",
+          10
+        ],
+        [
+          "pop"
+        ],
+        [
+          "push",
+          15
+        ],
+        [
+          "top"
+        ],
+        [
+          "pop"
+        ],
+        [
+          "pop"
+        ],
+        [
+          "empty"
+        ]
+      ]
+    },
+    "expected": "[10,15,15,5,true]"
+  }
+]

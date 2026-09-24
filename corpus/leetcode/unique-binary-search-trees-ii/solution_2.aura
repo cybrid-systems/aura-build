@@ -1,0 +1,91 @@
+(define (nil? t) (null? t))
+(define empty '())
+
+;; Tree node represented as (val left right) or '()
+;; Generate all BSTs with values lo..hi
+(define (gen lo hi)
+  (if (> lo hi)
+      (list empty)
+      (let ((result '()))
+        (let loop-i ((i lo))
+          (if (> i hi)
+              result
+              (begin
+                (let ((lefts (gen lo (- i 1)))
+                      (rights (gen (+ i 1) hi)))
+                  (let loop-l ((ls lefts))
+                    (if (null? ls)
+                        '()
+                        (let loop-r ((rs rights))
+                          (if (null? rs)
+                              (loop-l (cdr ls))
+                              (begin
+                                (set! result (cons (list i (car ls) (car rs)) result))
+                                (loop-r (cdr rs)))))))
+                  (loop-i (+ i 1)))))))))
+
+;; Serialize tree to level-order list
+(define (height t)
+  (if (null? t) 0
+      (+ 1 (max (height (cadr t)) (height (caddr t))))))
+
+(define (collect-level t lv)
+  (if (= lv 0)
+      (list (car t))
+      (append (collect-level (cadr t) (- lv 1))
+              (collect-level (caddr t) (- lv 1)))))
+
+(define (serialize t)
+  (let ((h (height t)))
+    (let loop ((lv 0) (acc '()))
+      (if (= lv h)
+          (let pad-loop ((lst acc) (limit (expt 2 h)))
+            (if (= (length lst) limit)
+                lst
+                (pad-loop (append lst (list '#)) limit)))
+          (loop (+ lv 1) (append acc (collect-level t lv)))))))
+
+;; Solve: returns a list of serialization-lists
+(define (solve n)
+  (if (= n 0)
+      '()
+      (let ((trees (gen 1 n)))
+        (let loop ((ts trees) (acc '()))
+          (if (null? ts)
+              (reverse acc)
+              (loop (cdr ts) (cons (serialize (car ts)) acc)))))))
+
+;; Output helper
+(define (display-list lst)
+  (let loop ((l lst) (first #t))
+    (cond ((null? l) #t)
+          (else
+           (if first (display (car l)) (begin (display " ") (display (car l))))
+           (loop (cdr l) #f)))))
+
+(define (display-case i trees)
+  (let loop ((ts trees) (first #t))
+    (cond ((null? ts) #t)
+          (else
+           (if first '() (display " "))
+           (display-list (car ts))
+           (loop (cdr ts) #f)))))
+
+(define (run-case i n)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display-case i (solve n))
+  (newline))
+
+(define (max a b) (if (> a b) a b))
+(define (expt base exp)
+  (let loop ((e exp) (acc 1))
+    (if (= e 0) acc (loop (- e 1) (* acc base)))))
+
+(run-case 0 0)
+(run-case 1 1)
+(run-case 2 2)
+(run-case 3 3)
+(run-case 4 4)
+(run-case 5 5)

@@ -1,0 +1,58 @@
+(define (sum-range nums lo hi)
+  (let loop ((i lo) (s 0))
+    (if (= i hi)
+        s
+        (loop (+ i 1) (+ s (list-ref nums i))))))
+
+(define (sum-len nums start len)
+  (sum-range nums start (+ start len)))
+
+(define (max-sum-order nums firstLen secondLen)
+  ;; firstLen subarray comes BEFORE secondLen subarray
+  (let* ((n (length nums))
+         (max-a 0)
+         (best 0))
+    (let loop ((i 0))
+      (if (> (+ i firstLen secondLen) n)
+          best
+          (begin
+            (set! max-a (if (= i 0)
+                            (sum-len nums 0 firstLen)
+                            (max max-a (sum-len nums i firstLen))))
+            (set! best (max best
+                            (+ max-a
+                               (sum-len nums (+ i firstLen) secondLen))))
+            (loop (+ i 1)))))))
+
+(define (solve nums firstLen secondLen)
+  (let ((a (max-sum-order nums firstLen secondLen))
+        (b (max-sum-order nums secondLen firstLen)))
+    (max a b)))
+
+;; Helper to display a list
+(define (display-list lst)
+  (display "[")
+  (let loop ((l lst) (first #t))
+    (cond
+      ((null? l) (display "]"))
+      (else
+        (if first
+            (begin (display (car l)) (loop (cdr l) #f))
+            (begin (display ",") (display (car l)) (loop (cdr l) #f)))))))
+
+(define (run-case i nums firstLen secondLen)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve nums firstLen secondLen))
+  (newline))
+
+;; Test cases
+(run-case 0 '(0 6 5 2 2 5 1 9 4) 1 2)
+(run-case 1 '(3 8 1 3 2 1 4 4) 2 3)
+(run-case 2 '(2 1 5 6 0 9 5 0 3 8) 1 1)
+(run-case 3 '(1 2 3 4 5) 2 3)
+(run-case 4 '(5 5 5 5 5) 2 2)
+(run-case 5 '(1) 1 1)
+(run-case 6 '(0 6 5 2 2 5 1 9 4) 2 3)
+(run-case 7 '(3 8 1 3 2 1 4 4) 3 2)

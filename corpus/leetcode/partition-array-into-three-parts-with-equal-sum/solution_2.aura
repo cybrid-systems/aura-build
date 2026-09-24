@@ -1,0 +1,55 @@
+(define (list-sum lst)
+  (if (null? lst) 0 (+ (car lst) (list-sum (cdr lst)))))
+
+(define (len lst)
+  (if (null? lst) 0 (+ 1 (len (cdr lst)))))
+
+(define (take lst n)
+  (if (= n 0) '()
+      (cons (car lst) (take (cdr lst) (- n 1)))))
+
+(define (drop lst n)
+  (if (= n 0) lst (drop (cdr lst) (- n 1))))
+
+(define (sum-of arr start end)
+  ; sum of arr[start..end-1] inclusive indices
+  (list-sum (take (drop arr start) (- end start))))
+
+(define (can-three arr)
+  (let ((n (len arr)))
+    (if (< n 3) #f
+        (let ((tot (list-sum arr)))
+          (if (not (= (modulo tot 3) 0)) #f
+              (let ((target (/ tot 3)))
+                (let ((i-min 1)
+                      (i-max (- n 2)))
+                  (find-i arr target n i-min i-max))))))))
+
+(define (find-i arr target n i-min i-max)
+  (if (> i-min i-max) #f
+      (let ((s1 (sum-of arr 0 i-min)))
+        (if (not (= s1 target)) (find-i arr target n (+ i-min 1) i-max)
+            (let ((j-min (+ i-min 1)))
+              (let ((j-max (- n 1)))
+                (find-j arr target n j-min j-max i-min)))))))
+
+(define (find-j arr target n j-min j-max i)
+  (if (> j-min j-max) #f
+      (let ((s2 (sum-of arr (+ i 1) j-min)))
+        (if (not (= s2 target)) (find-j arr target n (+ j-min 1) j-max i)
+            (let ((s3 (list-sum (drop arr (+ j-min 1)))))
+              (if (= s3 target) #t
+                  (find-j arr target n (+ j-min 1) j-max i)))))))
+
+(define (solve arr)
+  (if (can-three arr) "YES" "NO"))
+
+; Embedded test cases - call solve and display
+(display "CASE0=") (display (solve (list 0 2 1 -6 6 -7 9 1 2 0 1))) (newline)
+(display "CASE1=") (display (solve (list 1 -1 1 -1 1 -1 1 -1))) (newline)
+(display "CASE2=") (display (solve (list 1 2 3 4 5))) (newline)
+(display "CASE3=") (display (solve (list 0 0 0 0))) (newline)
+(display "CASE4=") (display (solve (list 1 2 3))) (newline)
+(display "CASE5=") (display (solve (list -1 -1 -1 -1 -1 -1))) (newline)
+(display "CASE6=") (display (solve (list 3 3 3 3))) (newline)
+(display "CASE7=") (display (solve (list 5 5 5 5 5))) (newline)

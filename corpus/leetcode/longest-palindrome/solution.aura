@@ -1,0 +1,67 @@
+;; Count occurrences of each character using a list as a tiny char->count map.
+;; Since characters are case-sensitive, treat each as its own symbol.
+
+(define (make-table n)
+  ;; Return a list of n #f slots. We don't know the alphabet size upfront,
+  ;; so we'll just cons associations as a flat list.
+  '())
+
+(define (assoc-key key alist)
+  (cond ((null? alist) #f)
+        ((equal? (car (car alist)) key) (car alist))
+        (else (assoc-key key (cdr alist)))))
+
+(define (table-get t key)
+  (let ((p (assoc-key key t)))
+    (if p (cdr p) 0)))
+
+(define (table-set t key val)
+  (cons (cons key val)
+        (let loop ((rest t))
+          (cond ((null? rest) '())
+                ((equal? (car (car rest)) key) (cdr rest))
+                (else (cons (car rest) (loop (cdr rest))))))))
+
+(define (string->list-of-chars s)
+  ;; Aura strings support string-ref, but to keep it simple, use char-by-char.
+  (let ((len (string-length s)))
+    (let loop ((i 0) (acc '()))
+      (if (= i len)
+          (reverse acc)
+          (loop (+ i 1) (cons (string-ref s i) acc))))))
+
+(define (count-chars chars)
+  (let loop ((cs chars) (t '()))
+    (if (null? cs)
+        t
+        (let ((c (car cs)))
+          (loop (cdr cs)
+                (table-set t c (+ (table-get t c) 1)))))))
+
+(define (solve s)
+  (let ((counts (count-chars (string->list-of-chars s))))
+    (let loop ((rest counts) (even-sum 0) (has-odd 0))
+      (cond ((null? rest) (+ even-sum has-odd))
+            (else
+             (let ((c (cdr (car rest))))
+               (if (odd? c)
+                   (loop (cdr rest) (+ even-sum (- c 1)) 1)
+                   (loop (cdr rest) (+ even-sum c) has-odd))))))))
+
+(define odd? (lambda (n) (= 1 (modulo n 2))))
+
+(define (run-case i s)
+  (display "CASE")
+  (display (number->string i))
+  (display "=")
+  (display (number->string (solve s)))
+  (newline))
+
+(run-case 0 "abccccdd")
+(run-case 1 "a")
+(run-case 2 "")
+(run-case 3 "aa")
+(run-case 4 "abc")
+(run-case 5 "AaBb")
+(run-case 6 "aabbcc")
+(run-case 7 "aAaaA")

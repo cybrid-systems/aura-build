@@ -1,0 +1,111 @@
+;; Jump Game - greedy O(n) solution
+
+(define (parse-nums s)
+  ;; Parse a JSON array of numbers like "[2,3,1,1,4]"
+  (let ((len (string-length s)))
+    (let loop ((i 0) (acc '()))
+      (cond
+        ((>= i len) (reverse acc))
+        (else
+         (let ((c (string-ref s i)))
+           (cond
+             ((char-numeric? c)
+              (let collect ((j i) (val 0))
+                (if (and (< j len) (char-numeric? (string-ref s j)))
+                    (collect (+ j 1)
+                             (+ (* val 10)
+                                (- (char->integer (string-ref s j)) 48)))
+                    (loop (+ j 1) (cons val acc)))))
+             (else (loop (+ i 1) acc)))))))))
+
+(define (char-numeric? c)
+  (and (>= (char->integer c) 48) (<= (char->integer c) 57)))
+
+(define (solve nums)
+  (let ((n (length nums)))
+    (if (<= n 1)
+        #t
+        (let ((last (- n 1)))
+          (let loop ((i 0) (farthest 0))
+            (cond
+              ((> i farthest) #f)
+              ((>= farthest last) #t)
+              (else
+               (loop (+ i 1)
+                     (if (> (+ i (car nums) (list-ref-helper nums i 0))
+                            farthest)
+                         (+ i (car nums) (list-ref-helper nums i 0))
+                         farthest)))))))))
+
+(define (list-ref-helper lst idx default)
+  (let loop ((l lst) (i 0) (result default))
+    (cond
+      ((null? l) result)
+      ((= i idx) (car l))
+      (else (loop (cdr l) (+ i 1) result)))))
+
+;; Helper: get element at index
+(define (get-elem nums i)
+  (let loop ((l nums) (idx 0))
+    (cond
+      ((null? l) 0)
+      ((= idx i) (car l))
+      (else (loop (cdr l) (+ idx 1))))))
+
+(define (solve nums)
+  (let ((n (length nums)))
+    (if (<= n 1)
+        #t
+        (let ((last-idx (- n 1)))
+          (let loop ((i 0) (farthest 0))
+            (cond
+              ((> i farthest) #f)
+              ((>= farthest last-idx) #t)
+              (else
+               (let ((reach (+ i (get-elem nums i))))
+                 (loop (+ i 1)
+                       (if (> reach farthest) reach farthest))))))))))
+
+(define (run-case input-str case-num)
+  (let* ((arr-str (substring input-str 9 (- (string-length input-str) 1)))
+         (nums (parse-nums arr-str))
+         (result (solve nums)))
+    (display "CASE")
+    (display case-num)
+    (display "=")
+    (display (if result "True" "False"))
+    (newline)))
+
+(define (substring s start end)
+  (let loop ((i start) (acc ""))
+    (if (>= i end)
+        acc
+        (loop (+ i 1) (string-append acc (string (string-ref s i)))))))
+
+(define (string c) (string-append "" (make-string 1 c)))
+
+;; Simplified char->string - use list of chars
+(define (substring s start end)
+  (let loop ((i start) (acc '()))
+    (if (>= i end)
+        (list->string (reverse acc))
+        (loop (+ i 1) (cons (string-ref s i) acc)))))
+
+(define (list->string chars)
+  (let loop ((cs chars) (acc ""))
+    (if (null? cs)
+        acc
+        (loop (cdr cs) (string-append acc (char->string (car cs)))))))
+
+(define (char->string c) (make-string 1 c))
+
+(run-case "{\"nums\":[2,3,1,1,4]}" 0)
+(run-case "{\"nums\":[3,2,1,0,4]}" 1)
+(run-case "{\"nums\":[0]}" 2)
+(run-case "{\"nums\":[1,0,1,0]}" 3)
+(run-case "{\"nums\":[0,1,0]}" 4)
+(run-case "{\"nums\":[2,0,0]}" 5)
+(run-case "{\"nums\":[1,1,1,1,0]}" 6)
+(run-case "{\"nums\":[5,0,0,0,0,0]}" 7)
+(run-case "{\"nums\":[0,0,0,0,1]}" 8)
+(run-case "{\"nums\":[3,0,0,0,0,0]}" 9)

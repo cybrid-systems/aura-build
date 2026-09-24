@@ -1,0 +1,69 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:29:06Z",
+      "ts_local": "2026-09-24 22:29:06 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1633,
+        "total_characters": 0,
+        "prompt_tokens": 1077,
+        "completion_tokens": 556,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 512
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": -1,
+      "timeout": true,
+      "duration_s": 20.004,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "timeout",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:29:16Z",
+      "ts_local": "2026-09-24 22:29:16 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1585,
+        "total_characters": 0,
+        "prompt_tokens": 1077,
+        "completion_tokens": 508,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 1024
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.018,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 41:36: parse error: unexpected ')'\n",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "number-of-substrings-containing-all-three-characters",
+  "title": "Number of Substrings Containing All Three Characters",
+  "category": "sliding_window",
+  "updated_at": "2026-09-24T14:29:16Z",
+  "updated_at_local": "2026-09-24 22:29:16 CST"
+}

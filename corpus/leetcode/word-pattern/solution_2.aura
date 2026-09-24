@@ -1,0 +1,71 @@
+(define (split-words s)
+  (let ((len (string-length s)))
+    (let loop ((i 0) (start 0) (acc '()))
+      (cond
+        ((= i len)
+         (if (= start i)
+             acc
+             (append acc (list (substring s start i)))))
+        ((char=? (string-ref s i) #\space)
+         (loop (+ i 1) (+ i 1) (append acc (list (substring s start i)))))
+        (else
+         (loop (+ i 1) start acc))))))
+
+(define (char-list s)
+  (let ((len (string-length s)))
+    (let loop ((i (- len 1)) (acc '()))
+      (if (< i 0)
+          acc
+          (loop (- i 1) (cons (string-ref s i) acc))))))
+
+(define (list-length lst)
+  (let loop ((l lst) (n 0))
+    (if (null? l) n (loop (cdr l) (+ n 1)))))
+
+(define (list-ref lst n)
+  (if (= n 0) (car lst) (list-ref (cdr lst) (- n 1))))
+
+(define (assoc-get key alist)
+  (cond ((null? alist) #f)
+        ((equal? (car (car alist)) key) (cdr (car alist)))
+        (else (assoc-get key (cdr alist)))))
+
+(define (assoc-set key val alist)
+  (cons (cons key val) alist))
+
+(define (match? cs ws c2w w2c)
+  (cond
+    ((and (null? cs) (null? ws)) #t)
+    ((or (null? cs) (null? ws)) #f)
+    ((equal? (assoc-get (car cs) c2w) (car ws))
+     (let ((c2w2 (if (assoc-get (car cs) c2w)
+                     c2w
+                     (assoc-set (car cs) (car ws) c2w))))
+       (match? (cdr cs) (cdr ws)
+               c2w2
+               (assoc-set (car ws) (car cs) w2c))))
+    ((assoc-get (car cs) c2w) #f)
+    ((assoc-get (car ws) w2c) #f)
+    (else
+     (match? (cdr cs) (cdr ws)
+             (assoc-set (car cs) (car ws) c2w)
+             (assoc-set (car ws) (car cs) w2c)))))
+
+(define (solve pattern sentence)
+  (let ((cs (char-list pattern))
+        (ws (split-words sentence)))
+    (if (= (list-length cs) (list-length ws))
+        (if (match? cs ws '() '())
+            "YES"
+            "NO")
+        "NO")))
+
+;; Test harness
+(display "CASE0=") (display (solve "abba" "dog cat cat dog")) (newline)
+(display "CASE1=") (display (solve "abba" "dog cat cat fish")) (newline)
+(display "CASE2=") (display (solve "aaaa" "dog cat cat dog")) (newline)
+(display "CASE3=") (display (solve "abc" "one two three")) (newline)
+(display "CASE4=") (display (solve "abc" "one one one")) (newline)
+(display "CASE5=") (display (solve "a" "cat")) (newline)
+(display "CASE6=") (display (solve "ab" "cat")) (newline)
+(display "CASE7=") (display (solve "" "")) (newline)

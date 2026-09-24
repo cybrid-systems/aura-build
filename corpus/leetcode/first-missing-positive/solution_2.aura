@@ -1,0 +1,65 @@
+(define (len xs)
+  (if (null? xs) 0 (+ 1 (len (cdr xs)))))
+
+(define (list-ref xs i)
+  (if (= i 0) (car xs) (list-ref (cdr xs) (- i 1))))
+
+(define (list-set! xs i v)
+  (if (= i 0)
+      (set-car! xs v)
+      (list-set! (cdr xs) (- i 1) v)))
+
+;; First missing positive: in-place swap algorithm.
+;; arr is a mutable list (built via cons). Length n known.
+(define (first-missing-pos arr)
+  (define n (len arr))
+  (define i 0)
+  (define done #f)
+  (define keep-going (lambda () (set! done #f)))
+  ;; Place each value v with 1 <= v <= n at index v-1 via swaps.
+  (let loop ((i 0))
+    (if (< i n)
+        (let ((v (list-ref arr i)))
+          (if (and (>= v 1) (<= v n)
+                   (not (= (list-ref arr (- v 1)) v)))
+              (begin
+                (list-set! arr (- v 1) v)
+                (list-set! arr i 0)
+                (loop i))
+              (loop (+ i 1))))
+        #f)))
+  ;; After placement, scan for first index i where arr[i] != i+1.
+  (let loop ((i 0))
+    (cond
+      ((>= i n) (+ n 1))
+      ((not (= (list-ref arr i) (+ i 1))) (+ i 1))
+      (else (loop (+ i 1))))))
+
+(define (solve arr)
+  (first-missing-pos arr))
+
+(define (build-list vals)
+  (if (null? vals)
+      '()
+      (cons (car vals) (build-list (cdr vals)))))
+
+(define (run-case idx vals)
+  (let ((arr (build-list vals)))
+    (let ((r (solve arr)))
+      (display "CASE")
+      (display (number->string idx))
+      (display "=")
+      (display (number->string r))
+      (newline))))
+
+(define (main)
+  (run-case 0 (list 3 4 -1 1))
+  (run-case 1 (list 1 2 0))
+  (run-case 2 (list -5 -1 0))
+  (run-case 3 (list 1 2 3 4))
+  (run-case 4 (list 2 2 2 2))
+  (run-case 5 (list 7 8 9 11 12))
+  (run-case 6 (list 1))
+  (run-case 7 (list 2)))
+
+(main)

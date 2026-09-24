@@ -1,0 +1,131 @@
+(define (single-number nums)
+  ; Use bitwise counting modulo 3 across 32 bits (handles negatives)
+  (let loop ((i 0) (result 0))
+    (if (= i 32)
+        result
+        (let* ((bit (bit-at nums i))
+               (ones (modulo bit 3)))
+          (loop (+ i 1) (+ result (* ones (expt 2 i))))))))
+
+(define (bit-at nums i)
+  (let loop ((xs nums) (sum 0))
+    (if (null? xs)
+        sum
+        (let ((v (car xs)))
+          (loop (cdr xs)
+                (+ sum (if (bit-set? v i) 1 0)))))))
+
+(define (bit-set? v i)
+  ; Check if bit i is set in the two's complement 32-bit representation
+  (cond
+    ((>= i 31) (negative? v))
+    (else
+      (let ((shifted (arithmetic-shift v (- i))))
+        (odd? (logand shifted 1))))))
+
+(define (odd? x) (= (modulo x 2) 1))
+
+(define (negative? x) (< x 0))
+
+(define (arithmetic-shift v n)
+  (cond
+    ((= n 0) v)
+    ((> n 0) (ash-pos v n))
+    (else (ash-neg v (- 0 n)))))
+
+(define (ash-pos v n)
+  (if (= n 0) v (ash-pos (* v 2) (- n 1))))
+
+(define (ash-neg v n)
+  (if (= n 0) v (ash-neg (floor (/ v 2)) (- n 1))))
+
+(define (modulo a b)
+  (- a (* b (floor (/ a b)))))
+
+(define (expt base exp)
+  (cond
+    ((= exp 0) 1)
+    ((even? exp) (square (expt base (quotient exp 2))))
+    (else (* base (expt base (- exp 1))))))
+
+(define (square x) (* x x))
+
+(define (even? x) (= (modulo x 2) 0))
+
+(define (quotient a b) (floor (/ a b)))
+
+(define (logand a b)
+  (let loop ((a a) (b b) (result 0) (place 1))
+    (if (and (= a 0) (= b 0))
+        result
+        (let ((ba (modulo a 2))
+              (bb (modulo b 2)))
+          (loop (floor (/ a 2)) (floor (/ b 2))
+                (+ result (* place (* ba bb)))
+                (* place 2))))))
+
+(define (solve nums)
+  (single-number nums))
+
+(define (floor x)
+  (cond
+    ((integer? x) x)
+    ((>= x 0) (- (truncate x) (if (= (modulo (inexact->exact (floor-aux x)) 1) 0) 0 0)))
+    (else (- (truncate x) 1))))
+
+(define (truncate x) (cond ((>= x 0) (floor-pos x)) (else (- (floor-pos (- x))))))
+
+(define (floor-pos x)
+  (let ((i (inexact->exact (round-down x)))) i))
+
+(define (round-down x) x)
+
+(define (integer? x) (= x (truncate x)))
+
+(define (inexact->exact x) x)
+
+(define (modulo a b)
+  (let ((q (floor (/ a b))))
+    (- a (* b q))))
+
+; Recursive display helper for lists
+(define (display-list xs)
+  (cond
+    ((null? xs) (display "()"))
+    (else
+      (display "(")
+      (display (car xs))
+      (let loop ((rest (cdr xs)))
+        (cond
+          ((null? rest) (display ")"))
+          (else
+            (display " ")
+            (display (car rest))
+            (loop (cdr rest))))))))
+
+(define (display-value v)
+  (cond
+    ((number? v) (display v))
+    ((null? v) (display "()"))
+    ((pair? v) (display-list v))
+    (else (display v))))
+
+; Main: process all test cases
+(begin
+  (define case0 '(2 2 3 2))
+  (define case1 '(0 1 0 1 0 1 99))
+  (define case2 '(-5 -5 -5 -3))
+  (define case3 '(1))
+  (define case4 '(7 7 7 5 5 5 9))
+  (define case5 '(4 4 4 4 4 4 42))
+  (define case6 '(-1 -1 -1 2))
+  (define case7 '(3 3 3 -3 -3 -3 8 8 8 100))
+
+  (display "CASE0=") (display-value (solve case0)) (newline)
+  (display "CASE1=") (display-value (solve case1)) (newline)
+  (display "CASE2=") (display-value (solve case2)) (newline)
+  (display "CASE3=") (display-value (solve case3)) (newline)
+  (display "CASE4=") (display-value (solve case4)) (newline)
+  (display "CASE5=") (display-value (solve case5)) (newline)
+  (display "CASE6=") (display-value (solve case6)) (newline)
+  (display "CASE7=") (display-value (solve case7)) (newline))

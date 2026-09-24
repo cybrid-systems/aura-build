@@ -1,0 +1,46 @@
+(define (count-occurrences xs)
+  (let loop ((xs xs) (acc '()))
+    (if (null? xs)
+        acc
+        (let* ((k (car xs))
+               (pair (assq '?? k acc)))  ; Can't use assq with numbers easily
+          ...))))
+
+(define (assq-int key alist)
+  (cond ((null? alist) #f)
+        ((= (car (car alist)) key) (car alist))
+        (else (assq-int key (cdr alist)))))
+
+(define (count-occurrences xs)
+  (let loop ((xs xs) (acc '()))
+    (if (null? xs)
+        acc
+        (let* ((k (car xs))
+               (existing (assq-int k acc)))
+          (if existing
+              (loop (cdr xs)
+                    (cons (list k (+ (cadr existing) 1))
+                          (remove-int k acc)))
+              (loop (cdr xs) (cons (list k 1) acc)))))))
+
+(define (remove-int key alist)
+  (cond ((null? alist) '())
+        ((= (car (car alist)) key) (cdr alist))
+        (else (cons (car alist) (remove-int key (cdr alist))))))
+
+(define (solve values)
+  (let* ((counts (count-occurrences values))
+         (unique-keys (map car counts)))
+    (if (null? counts)
+        0
+        (let loop ((keys unique-keys) (best 0))
+          (if (null? keys)
+              best
+              (let* ((k (car keys))
+                     (kc (cadr (assq-int k counts)))
+                     (kp (assq-int (+ k 1) counts)))
+                (loop (cdr keys)
+                      (if kp
+                          (let ((total (+ kc (cadr kp))))
+                            (if (> total best) total best))
+                          best)))))))

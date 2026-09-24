@@ -1,0 +1,145 @@
+;; Basic Calculator in Aura
+;; Evaluates expressions containing non-negative integers, +, -, (, ), and spaces.
+
+;; Helper: convert a character to its numeric value if digit, else #f.
+(define (char->digit c)
+  (let ((code (char->integer c)))
+    (if (and (>= code 48) (<= code 57))
+        (- code 48)
+        #f)))
+
+;; Convert a list of digits into a single integer.
+(define (digits->number lst)
+  (define (helper l acc)
+    (if (null? l)
+        acc
+        (helper (cdr l) (+ (* acc 10) (car l)))))
+  (helper lst 0))
+
+;; Convert string to list of characters.
+(define (string->char-list s)
+  (define (helper i acc)
+    (if (< i 0)
+        acc
+        (helper (- i 1) (cons (string-ref s i) acc))))
+  (helper (- (string-length s) 1) '()))
+
+;; Evaluate expression given as list of characters. Returns the integer result.
+(define (eval-expr chars)
+  ;; Returns (values result rest-chars)
+  ;; We use a single pass with a stack represented as a list.
+  ;; Element of stack: (sign so-far) where sign is +1 or -1.
+  (let ((stack '((1 . 0)))   ;; initial stack: sign +1, total 0
+        (sign 1)              ;; current sign for next number
+        (total 0)
+        (num 0)
+        (have-num #f))
+    (define (push-frame)
+      (set! stack (cons (cons sign total) stack))
+      (set! sign 1)
+      (set! total 0)
+      (set! num 0)
+      (set! have-num #f))
+    (define (pop-frame)
+      (let* ((frame (car stack))
+             (prev-sign (car frame))
+             (prev-total (cdr frame))
+             (completed total))
+        (set! stack (cdr stack))
+        ;; After finishing subexpression (ending at ')'), the subexpression's
+        ;; value is 'total'. The outer context treats it as a number with
+        ;; current sign applied. But we already applied sign within total
+        ;; when building, so the completed subexpression value is total.
+        ;; The outer expression's accumulated total so far is prev-total.
+        ;; The new number to add is: prev-sign * completed.
+        (set! total (+ prev-total (* prev-sign completed)))
+        (set! sign 1)
+        (set! num 0)
+        (set! have-num #f)))
+    ;; Iterate through chars using recursion.
+    (define (loop lst)
+      (if (null? lst)
+          (begin
+            ;; Finish any pending number
+            (if have-num
+                (set! total (+ total (* sign num)))
+                '())
+            total)
+          (let ((c (car lst)))
+            (cond
+              ((char=? c #\space) (loop (cdr lst)))
+              ((char=? c #\() (begin
+                                 (push-frame)
+                                 (loop (cdr lst))))
+              ((char=? c #\)) (begin
+                                 (if have-num
+                                     (begin
+                                       (set! total (+ total (* sign num)))
+                                       (set! have-num #f)
+                                       (set! num 0))
+                                     '())
+                                 (pop-frame)
+                                 (loop (cdr lst))))
+              ((char=? c #\+) (begin
+                                 (if have-num
+                                     (begin
+                                       (set! total (+ total (* sign num)))
+                                       (set! have-num #f)
+                                       (set! num 0))
+                                     '())
+                                 (set! sign 1)
+                                 (loop (cdr lst))))
+              ((char=? c #\-) (begin
+                                 (if have-num
+                                     (begin
+                                       (set! total (+ total (* sign num)))
+                                       (set! have-num #f)
+                                       (set! num 0))
+                                     '())
+                                 (set! sign -1)
+                                 (loop (cdr lst))))
+              (else
+                ;; digit
+                (let ((d (char->digit c)))
+                  (set! num (+ (* num 10) d))
+                  (set! have-num #t)
+                  (loop (cdr lst)))))))
+    (loop chars)))
+
+;; Main solve function: takes a string and returns the integer result.
+(define (solve s)
+  (eval-expr (string->char-list s)))
+
+;; Display helper for a number.
+(define (display-number n)
+  (display n))
+
+;; Helper: char=?
+(define (char=? a b)
+  (equal? a b))
+
+;; We need char->integer; Aura provides it.
+;; Test cases:
+(define test0 "1 + 1")
+(define test1 "(1+(4+5+2)-3)+(6+8)")
+(define test2 " 2-1 + 2")
+(define test3 "1")
+(define test4 "0")
+(define test5 "(1)")
+(define test6 "1-2-3")
+(define test7 "((1+2)+(3+4))")
+(define test8 "100 + 200 - 50")
+(define test9 "10 - (2 + 3) - (5 - 1)")
+(define test10 "-(3 + 4)")
+
+(display "CASE0=") (display-number (solve test0)) (newline)
+(display "CASE1=") (display-number (solve test1)) (newline)
+(display "CASE2=") (display-number (solve test2)) (newline)
+(display "CASE3=") (display-number (solve test3)) (newline)
+(display "CASE4=") (display-number (solve test4)) (newline)
+(display "CASE5=") (display-number (solve test5)) (newline)
+(display "CASE6=") (display-number (solve test6)) (newline)
+(display "CASE7=") (display-number (solve test7)) (newline)
+(display "CASE8=") (display-number (solve test8)) (newline)
+(display "CASE9=") (display-number (solve test9)) (newline)
+(display "CASE10=") (display-number (solve test10)) (newline)

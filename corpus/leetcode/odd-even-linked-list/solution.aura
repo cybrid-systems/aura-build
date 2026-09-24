@@ -1,0 +1,142 @@
+;; Odd-Even Linked List reorder in Aura
+;; We represent a linked list node as a cons pair: (cons val next)
+;; where 'next' is either '() (empty list) or another cons pair.
+;; This is a standard singly linked list representation in Lisp-like languages.
+
+(define (length lst)
+  (if (null? lst)
+      0
+      (+ 1 (length (cdr lst)))))
+
+(define (list->values lst)
+  (if (null? lst)
+      '()
+      (cons (car lst) (list->values (cdr lst)))))
+
+;; Build a linked list from a scheme list of values.
+(define (build-list values)
+  (if (null? values)
+      '()
+      (cons (car values) (build-list (cdr values)))))
+
+;; Convert linked list -> scheme list of values (for display).
+(define (to-scheme lst)
+  (if (null? lst)
+      '()
+      (cons (car lst) (to-scheme (cdr lst)))))
+
+;; Reorder list in place: odds first, then evens, preserving relative order.
+;; We do this by traversing the list once with indices and collecting nodes
+;; into two scheme lists (odds, evens), then re-linking them.
+(define (reorder lst)
+  ;; Helper returns (cons odds-scheme evens-scheme) after fully traversing.
+  (letrec ((split
+            (lambda (node idx)
+              (if (null? node)
+                  (cons '() '())
+                  (let ((rest (split (cdr node) (+ idx 1))))
+                    (if (= (modulo idx 2) 1)
+                        ;; odd index (1-based): node goes to odds
+                        (cons (cons (car node) (car rest))
+                              (cdr rest))
+                        ;; even index: node goes to evens
+                        (cons (car rest)
+                              (cons (car node) (cdr rest))))))))
+           (build
+            (lambda (odds evens)
+              ;; Reconstruct linked list from scheme lists of nodes.
+              ;; We rebuild by taking nodes' val and next; but since we want
+              ;; in-place reordering conceptually, we re-thread the same nodes.
+              ;; First, link all odd nodes together, then all even nodes,
+              ;; then connect the last odd to the first even.
+              (let ((len-o (length odds))
+                    (len-e (length evens)))
+                (cond
+                  ((= len-o 0) (car evens))   ; shouldn't happen, defensive
+                  ((= len-e 0) (car odds))    ; only odd nodes exist
+                  (else
+                   ;; Thread odds.
+                   (begin
+                     (link-chain! odds)
+                     (link-chain! evens)
+                     ;; Connect end of odds to head of evens.
+                     (set-cdr! (last-pair odds) (car evens))
+                     (car odds)))))))
+           (link-chain!
+            (lambda (node-scheme)
+              ;; node-scheme is a scheme list of node pairs.
+              ;; Set the cdr of each node to the next node, except for the
+              ;; last which gets '().
+              (if (null? (cdr node-scheme))
+                  (set-cdr! (car node-scheme) '())
+                  (begin
+                    (set-cdr! (car node-scheme) (car (cdr node-scheme)))
+                    (link-chain! (cdr node-scheme))))))
+           (last-pair
+            (lambda (node-scheme)
+              (if (null? (cdr node-scheme))
+                  (car node-scheme)
+                  (last-pair (cdr node-scheme))))))
+    (let ((parts (split lst 1)))
+      (build (car parts) (cdr parts)))))
+
+;; The solve function: input is a linked list (cons-cells or '()).
+;; Output: reordered linked list.
+(define (solve head)
+  (reorder head))
+
+;; Helper to display a linked list (cons cells) as "v1 v2 v3".
+(define (display-list lst)
+  (letrec ((d (lambda (node)
+                (if (null? node)
+                    '()
+                    (begin
+                      (display (number->string (car node)))
+                      (if (not (null? (cdr node)))
+                          (begin (display " ") (d (cdr node)))
+                          '())))))
+           )
+    (d lst)
+    (display "]")))
+
+;; ---- Test harness ----
+;; Embedded test inputs: each is a scheme list of values.
+;; CASE0: [1, 2, 3, 4, 5]
+;; CASE1: [2, 1, 3, 5, 6, 4, 7]
+;; CASE2: [1]
+;; CASE3: [1, 2]
+;; CASE4: [1, 2, 3]
+;; CASE5: [10, 20, 30, 40, 50, 60]
+;; CASE6: [7, 7, 7, 7]
+;; CASE7: [-1, -2, -3, -4, -5, -6, -7, -8]
+
+(define cases
+  (list
+    (list 1 2 3 4 5)
+    (list 2 1 3 5 6 4 7)
+    (list 1)
+    (list 1 2)
+    (list 1 2 3)
+    (list 10 20 30 40 50 60)
+    (list 7 7 7 7)
+    (list -1 -2 -3 -4 -5 -6 -7 -8)))
+
+(define (run-case i case-values)
+  (let ((head (build-list case-values)))
+    (let ((result (solve head)))
+      (display "CASE")
+      (display (number->string i))
+      (display "=[")
+      (display-list result)
+      (newline))))
+
+(define (run-all cases)
+  (letrec ((loop (lambda (lst idx)
+                   (if (null? lst)
+                       '()
+                       (begin
+                         (run-case idx (car lst))
+                         (loop (cdr lst) (+ idx 1)))))))
+    (loop cases 0)))
+
+(run-all cases)

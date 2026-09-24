@@ -1,0 +1,66 @@
+(define (make-node v n) (cons v n))
+
+(define (node-val n) (car n))
+(define (node-next n) (cdr n))
+
+(define (list-to-ll lst)
+  (if (null? lst)
+      '()
+      (make-node (car lst) (list-to-ll (cdr lst)))))
+
+(define (ll-to-list ll)
+  (if (null? ll)
+      '()
+      (cons (node-val ll) (ll-to-list (node-next ll)))))
+
+(define (solve l1 l2)
+  (let ((carry 0) (result '()) (tail '()))
+    (let loop ((a l1) (b l2))
+      (cond
+        ((and (null? a) (null? b) (= carry 0))
+         result)
+        (else
+         (let ((av (if (null? a) 0 (node-val a)))
+               (bv (if (null? b) 0 (node-val b))))
+           (let ((s (+ av bv carry)))
+             (let ((digit (modulo s 10)) (new-carry (quotient s 10)))
+               (let ((new-node (make-node digit '())))
+                 (if (null? result)
+                     (begin
+                       (set! result new-node)
+                       (set! tail new-node))
+                     (begin
+                       (set-cdr! tail new-node)
+                       (set! tail new-node)))
+                 (loop (if (null? a) '() (node-next a))
+                       (if (null? b) '() (node-next b)))
+                 )))))))))
+
+(define (display-ll ll)
+  (display "(")
+  (let loop ((n ll) (first #t))
+    (cond
+        ((null? n)
+         (display ")"))
+        (else
+         (if first (set! first #f) (display ","))
+         (display (node-val n))
+         (loop (node-next n) first)))))
+
+(define (run-case i l1 l2)
+  (let ((ll1 (list-to-ll l1)) (ll2 (list-to-ll l2)))
+    (let ((result (solve ll1 ll2)))
+      (display "CASE")
+      (display i)
+      (display "=")
+      (display-ll result)
+      (newline))))
+
+(run-case 0 '(2 4 3) '(5 6 4))
+(run-case 1 '(0) '(0))
+(run-case 2 '(9 9 9 9) '(9 9 9 9 9 9))
+(run-case 3 '(1) '(9 9))
+(run-case 4 '(5) '(5))
+(run-case 5 '(1 2 3) '(4 5 6))
+(run-case 6 '(9) '(1 9 9))
+(run-case 7 '(2 4 3 9 9) '(5 6 4))

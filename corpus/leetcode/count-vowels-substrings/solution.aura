@@ -1,0 +1,36 @@
+(define (vowel? c)
+  (or (char=? c #\a) (char=? c #\e) (char=? c #\i) (char=? c #\o) (char=? c #\u)
+      (char=? c #\A) (char=? c #\E) (char=? c #\I) (char=? c #\O) (char=? c #\U)))
+
+(define (string-length s)
+  (let loop ((i 0))
+    (if (char=? (string-ref s i) #\null) i
+        (loop (+ i 1)))))
+
+(define (solve s)
+  (let* ((n (string-length s))
+         (result 0))
+    (let loop ((left 0))
+      (if (>= left n)
+          result
+          (let expand ((right left))
+            (if (>= right n)
+                result
+                (let ((c (string-ref s right)))
+                  (if (vowel? c)
+                      (begin
+                        (set! result (+ result (- right left)))
+                        (expand (+ right 1)))
+                      result))))))))
+
+(define (run-cases)
+  (display "CASE0=") (display (solve "aeiou")) (newline)
+  (display "CASE1=") (display (solve "abc")) (newline)
+  (display "CASE2=") (display (solve "aab")) (newline)
+  (display "CASE3=") (display (solve "a")) (newline)
+  (display "CASE4=") (display (solve "aa")) (newline)
+  (display "CASE5=") (display (solve "AaAa")) (newline)
+  (display "CASE6=") (display (solve "bcd")) (newline)
+  (display "CASE7=") (display (solve "aeiaaiooau")) (newline))
+
+(run-cases)

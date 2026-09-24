@@ -1,0 +1,33 @@
+(define (reverse-words s)
+  ;; Convert string to mutable bytevector
+  (define bv (string->utf8-bytes s))
+  (define n (bytevector-length bv))
+  (define i 0)
+  
+  (define (swap a b)
+    (let ((tmp (bytevector-u8-ref bv a)))
+      (bytevector-u8-set! bv a (bytevector-u8-ref bv b))
+      (bytevector-u8-set! bv b tmp)))
+  
+  (set! i 0)
+  (while (< i n)
+    (let ((left i)
+          (right i))
+      ;; Find end of current word
+      (while (and (< right n)
+                  (not (= (bytevector-u8-ref bv right) 32)))
+        (set! right (+ right 1)))
+      ;; right is now at space or at n; word is [left, right)
+      (let ((l left)
+            (r (- right 1)))
+          (while (< l r)
+            (swap l r)
+            (set! l (+ l 1))
+            (set! r (- r 1))))
+      ;; Move past the space (or to end)
+      (set! i right)))
+  bv)
+
+(define (solve s)
+  (let ((bv (reverse-words s)))
+    (utf8-bytes->string bv)))

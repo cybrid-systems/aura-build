@@ -1,0 +1,134 @@
+(define (make-grid rows cols)
+  (let ((g '()))
+    (let loop ((r 0))
+      (if (= r rows)
+        g
+        (let ((row '()))
+          (let loop2 ((c 0))
+            (if (= c cols)
+              (begin
+                (set! g (cons row g))
+                (loop (+ r 1)))
+              (begin
+                (set! row (cons 0 row))
+                (loop2 (+ c 1))))))))))
+
+(define (grid-set! g r c v)
+  (let ((rows (length g)))
+    (let loop ((i 0) (acc g))
+      (if (= i rows)
+        g
+        (let ((row (car acc)))
+          (let loop2 ((j 0) (racc row))
+            (if (= j c)
+              (let ((new-row (cons v (cdr racc))))
+                (loop (+ i 1) (cons new-row (cdr acc))))
+              (loop2 (+ j 1) (cons (car racc) racc)))))))))
+
+(define (grid-ref g r c)
+  (let loop ((i 0) (acc g))
+    (if (= i r)
+      (let loop2 ((j 0) (racc (car acc)))
+        (if (= j c)
+          (car racc)
+          (loop2 (+ j 1) (cdr racc))))
+      (loop (+ i 1) (cdr acc)))))
+
+(define (queue-make) (cons '() '()))
+
+(define (queue-empty? q) (null? (car q)))
+
+(define (queue-push q item) (cons (cons item (car q)) (cdr q)))
+
+(define (queue-pop q)
+  (if (null? (car q))
+      (let loop ((acc (cdr q)) (rest (cdr q)))
+        (if (null? acc)
+            (cons '() '())
+            (if (null? (cdr acc))
+                (begin
+                  (set-cdr! rest '())
+                  (cons (car acc) (cons '() (cdr q))))
+                (loop (cdr acc) (cdr rest)))))
+      (let ((item (caar q)) (new-front (cdar q)))
+        (cons new-front (cons (cdr q) '())))))
+
+; Actually, let me simplify. Use simple list as queue with two pointers via cons trick.
+; Simpler: use list and append for queue, or use mutable pair structure.
+; Let me redo with cleaner approach.
+
+(define (q-make) (cons '() '()))
+
+; push back: add item after rear
+(define (q-push-back q item)
+  (let ((new (cons item '())))
+    (if (null? (car q))
+        (begin
+          (set-car! q new)
+          (set-cdr! q new))
+        (begin
+          (set-cdr! (cdr q) new)
+          (set-cdr! q new)))))
+
+; pop front: returns (item . new-q)
+(define (q-pop-front q)
+  (if (null? (car q))
+      (cons '() q)
+      (let ((item (car (car q))) (next (cdr (car q))))
+        (set-car! q next)
+        (if (null? next)
+            (set-cdr! q '()))
+        (cons item q))))
+
+(define (q-empty? q) (null? (car q)))
+
+(define (solve grid)
+  (let ((n (length grid)))
+    (if (= n 0)
+        0
+        (let ((m (length (car grid))))
+          (if (= m 0)
+              0
+              (let ((q (q-make))
+                    (fresh 0)
+                    (time 0))
+                ; scan grid
+                (let loop-r ((r 0))
+                  (if (= r n)
+                    '()
+                    (begin
+                      (let loop-c ((c 0))
+                        (if (= c m)
+                          '()
+                          (let ((v (grid-ref grid r c)))
+                            (cond
+                              ((= v 1) (set! fresh (+ fresh 1)))
+                              ((= v 2) (q-push-back q (cons r (cons c '()))))
+                              (else '()))
+                            (loop-c (+ c 1)))))
+                      (loop-r (+ r 1)))))
+                (if (= fresh 0)
+                    0
+                    (let loop ()
+                      (if (q-empty? q)
+                        (if (= fresh 0) time -1)
+                        (let ((sz 0))
+                          (let count-loop ()
+                            (if (q-empty? q)
+                              '()
+                              (let ((p (q-pop-front q)))
+                                (set! sz (+ sz 1))
+                                (count-loop))))
+                          (let ((rotted-this-round 0))
+                            (let bfs-loop ((k 0))
+                              (if (= k sz)
+                                '()
+                                (begin
+                                  ; Hmm, we need to pop sz items.
+                                  ; This approach won't work because pop mutates.
+                                  ; Let me restructure.
+                                  (bfs-loop (+ k 1))))))
+                          ; Actually let me redo
+                          (loop)))))))))))
+
+; Let me restart with cleaner queue.

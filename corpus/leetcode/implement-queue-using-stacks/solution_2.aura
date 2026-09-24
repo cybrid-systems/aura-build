@@ -1,0 +1,84 @@
+(define (string-split s)
+  (let loop ((i 0) (cur "") (acc '()))
+    (cond ((= i (string-length s))
+           (reverse (cons cur acc)))
+          ((char=? (string-ref s i) #\newline)
+           (loop (+ i 1) "" (cons cur acc)))
+          (else
+           (loop (+ i 1) (string-append cur (string (string-ref s i))) acc)))))
+
+(define (string . args) args)
+
+(define (trim-leading-spaces s)
+  (let loop ((i 0))
+    (cond ((= i (string-length s)) "")
+          ((char=? (string-ref s i) #\space) (loop (+ i 1)))
+          (else (substring s i)))))
+
+(define (substring s start)
+  (let ((len (- (string-length s) start)))
+  (let loop ((i 0) (acc ""))
+    (if (= i len) acc
+        (loop (+ i 1) (string-append acc (string (string-ref s (+ start i)))))))))
+
+(define (solve input-str)
+  (let ((in-stack '())
+        (out-stack '())
+        (lines (string-split input-str)))
+    (let loop ((ls lines))
+      (if (null? ls)
+          'done
+          (let* ((line (trim-leading-spaces (car ls)))
+                 (len (string-length line)))
+            (cond
+                ;; ENQUEUE <int>
+                ((and (>= len 8)
+                      (string=? (substring line 0 7) "ENQUEUE"))
+                 (let ((rest (trim-leading-spaces (substring line 7)))
+                       (n (string->number (trim-leading-spaces (substring line 7)))))
+                   (set! in-stack (cons n in-stack))
+                   (loop (cdr ls))))
+                ;; DEQUEUE
+                ((string=? line "DEQUEUE")
+                 (if (and (null? out-stack) (null? in-stack))
+                     (begin (display "ERROR") (newline))
+                     (begin
+                       (if (null? out-stack)
+                           (let transfer ()
+                             (if (null? in-stack) 'done
+                                 (begin
+                                   (set! out-stack (cons (car in-stack) out-stack))
+                                   (set! in-stack (cdr in-stack))
+                                   (transfer)))))
+                       (let ((v (car out-stack)))
+                         (set! out-stack (cdr out-stack))
+                         (display (number->string v))
+                         (newline))))
+                 (loop (cdr ls)))
+                ;; PEEK
+                ((string=? line "PEEK")
+                 (if (and (null? out-stack) (null? in-stack))
+                     (begin (display "ERROR") (newline))
+                     (begin
+                       (if (null? out-stack)
+                           (let transfer ()
+                             (if (null? in-stack) 'done
+                                 (begin
+                                   (set! out-stack (cons (car in-stack) out-stack))
+                                   (set! in-stack (cdr in-stack))
+                                   (transfer)))))
+                       (display (number->string (car out-stack)))
+                       (newline))))
+                 (loop (cdr ls)))
+                ;; EMPTY
+                ((string=? line "EMPTY")
+                 (if (and (null? in-stack) (null? out-stack))
+                     (begin (display "TRUE") (newline))
+                     (begin (display "FALSE") (newline))))
+                 (loop (cdr ls)))
+                (else (loop (cdr ls))))))))))
+
+(define c2 (string #\E n \space))
+
+;; Hack: my `string` above is a variable-arg concat; but I used (string ...) where I meant (list->string ...)
+;; Let me redo this properly using list->string

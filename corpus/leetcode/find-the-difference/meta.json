@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:26:28Z",
+      "ts_local": "2026-09-24 22:26:28 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1578,
+        "total_characters": 0,
+        "prompt_tokens": 1062,
+        "completion_tokens": 516,
+        "prompt_tokens_details": {
+          "cached_tokens": 528
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.055,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=3\nCASE1=97\nCASE2=97\nCASE3=101\nCASE4=3\nCASE5=120\nCASE6=33\nCASE7=122\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:26:31Z",
+      "ts_local": "2026-09-24 22:26:31 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1447,
+        "total_characters": 0,
+        "prompt_tokens": 1062,
+        "completion_tokens": 385,
+        "prompt_tokens_details": {
+          "cached_tokens": 1061
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.032,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 7:29: unbound variable: bitwise-xor\n   |\n  7 |   (display-case 5 (solve \"thequickbrownfoxjumpsoverthelazydog\" \"thequickbrownfoxjumpsoverthelazydogx\"))\n   |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "find-the-difference",
+  "title": "Find the Difference",
+  "category": "hashing",
+  "updated_at": "2026-09-24T14:26:31Z",
+  "updated_at_local": "2026-09-24 22:26:31 CST"
+}

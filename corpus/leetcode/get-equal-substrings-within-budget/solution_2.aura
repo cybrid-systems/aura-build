@@ -1,0 +1,54 @@
+(define (abs x) (if (< x 0) (- 0 x) x))
+
+(define (char->int c)
+  (char->integer c))
+
+(define (string-ref-int s i) (char->int (string-ref s i)))
+
+(define (solve s t maxCost)
+  (let* ((n (string-length s))
+         (left 0)
+         (right 0)
+         (cost 0)
+         (best 0))
+    (define (expand-loop)
+      (if (>= right n)
+          'done
+          (begin
+            (set! cost (+ cost (abs (- (string-ref-int s right) (string-ref-int t right)))))
+            (set! right (+ right 1))
+            (shrink-loop)
+            (expand-loop))))
+    (define (shrink-loop)
+      (if (> cost maxCost)
+          (begin
+            (set! cost (- cost (abs (- (string-ref-int s left) (string-ref-int t left)))))
+            (set! left (+ left 1))
+            (shrink-loop))
+          (begin
+            (when (> (- right left) best) (set! best (- right left)))
+            'ok)))
+    (expand-loop)
+    best))
+
+;; Embedded test cases
+(define cases
+  '(("abcd" "bcdf" 3)
+    ("abcd" "cdef" 3)
+    ("abcd" "dcba" 0)
+    ("aaaa" "bbbb" 10)
+    ("a" "z" 25)
+    ("a" "z" 24)
+    ("xyz" "abc" 100)
+    ("abcd" "abdc" 1)))
+
+(define (run-cases cs i)
+  (if (null? cs)
+      'done
+      (begin
+        (display (string-append "CASE" (number->string i) "="))
+        (display (solve (car (car cs)) (car (cdr (car cs))) (car (cdr (cdr (car cs))))))
+        (newline)
+        (run-cases (cdr cs) (+ i 1)))))
+
+(run-cases cases 0)

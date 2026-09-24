@@ -1,0 +1,144 @@
+;; Node represented as mutable vector-like structure using list + setters
+;; Node = (val left right next)
+
+(define (make-node val)
+  (list val '() '() '()))
+
+(define (node-val n) (car n))
+(define (node-left n) (cadr n))
+(define (node-right n) (caddr n))
+(define (node-next n) (cadddr n))
+
+(define (set-left! n c) (set-car! (cdr n) c))
+(define (set-right! n c) (set-car! (cddr n) c))
+(define (set-next! n c) (set-car! (cdddr n) c))
+
+;; Build perfect binary tree from level-order list of values
+(define (build-perfect vals)
+  (if (null? vals) '()
+      (let ((root (make-node (car vals))))
+        (let ((queue (list root))
+              (rest (cdr vals)))
+          (let loop ((q queue) (r rest))
+            (if (or (null? q) (null? r))
+                root
+                (let ((parent (car q))
+                      (qq (cdr q)))
+                  (let ((lv (car r))
+                        (r2 (cdr r))
+                        (rv (car (cdr r)))
+                        (r3 (cdr (cdr r))))
+                    (let ((lc (make-node lv))
+                          (rc (make-node rv)))
+                      (set-left! parent lc)
+                      (set-right! parent rc)
+                      (loop (append qq (list lc rc)) r3))))))))))
+
+;; Populate next pointers using the next-pointer trick (O(1) extra space)
+(define (connect root)
+  (if (or (null? root) (null? (node-left root)))
+      root
+      (let ((leftmost root))
+        (let loop ((cur leftmost))
+          (let ((l (node-left cur))
+                (r (node-right cur))
+                (n (node-next cur)))
+            ;; Connect left child -> right child
+            (set-next! l r)
+            ;; Connect right child -> left child of next's left subtree (if next exists)
+            (if (not (null? n))
+                (set-next! r (node-left n))
+                '())
+            (if (null? n)
+                (begin)
+                (begin))))))
+      (let loop2 ((cur leftmost))
+        (if (null? (node-left cur))
+            root
+            (let loop-inner ((c cur))
+              (if (null? c)
+                  '()
+                  (begin
+                    (let ((l (node-left c))
+                          (r (node-right c))
+                          (n (node-next c)))
+                      (set-next! l r)
+                      (if (not (null? n))
+                          (set-next! r (node-left n))
+                          '()))
+                    (loop-inner (node-next c)))))
+            (loop2 (node-left cur)))))))
+
+(define (connect root)
+  (if (or (null? root) (null? (node-left root)))
+      root
+      (let loop ((leftmost root))
+        (if (null? (node-left leftmost))
+            root
+            (let ((cur leftmost))
+              (let inner ((c cur))
+                (if (null? c)
+                    '()
+                    (let ((l (node-left c))
+                          (r (node-right c))
+                          (n (node-next c)))
+                      (set-next! l r)
+                      (if (not (null? n))
+                          (set-next! r (node-left n))
+                          '())
+                      (inner (node-next c)))))
+              (loop (node-left leftmost)))))))
+
+;; Collect level-order traversal of values following next pointers per level
+(define (collect-by-next root)
+  (let ((out '()))
+    (let walk ((node root))
+      (if (null? node)
+          '()
+          (let ((cur node))
+            (let lvl ((c cur))
+              (if (null? c)
+                  '()
+                  (begin
+                    (set! out (append out (list (node-val c))))
+                    (lvl (node-next c))))))))
+    out))
+
+;; Helper to print a list
+(define (print-list lst)
+  (display "[")
+  (let loop ((l lst) (first #t))
+    (cond ((null? l) (display "]"))
+          (else
+           (if first (set! first #f) (display " "))
+           (display (car l))
+           (loop (cdr l) first)))))
+
+(define (solve root)
+  (connect root)
+  root)
+
+;; Test cases
+(define cases
+  (list
+    (list 1 '("1"))
+    (list 3 '("1" "2" "3"))
+    (list 7 '("1" "2" "3" "4" "5" "6" "7"))
+    (list 15 '("1" "2" "3" "4" "5" "6" "7" "8" "9" "10" "11" "12" "13" "14" "15"))
+    (list 2 '("1" "2"))))
+
+(define (run-cases cs i)
+  (cond ((null? cs) (display ""))
+        (else
+         (let* ((c (car cs))
+                (size (car c))
+                (vals (map (lambda (s) (string->number s)) (cadr c)))
+                (root (build-perfect vals))
+                (result (solve root))
+                (traversal (collect-by-next result)))
+           (display (string-append "CASE" (number->string i) "="))
+           (print-list traversal)
+           (newline)
+           (run-cases (cdr cs) (+ i 1))))))
+
+(run-cases cases 0)

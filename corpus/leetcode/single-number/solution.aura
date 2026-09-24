@@ -1,0 +1,30 @@
+(define (xor-all nums)
+  (let loop ((xs nums) (acc 0))
+    (if (null? xs)
+        acc
+        (loop (cdr xs) (logxor acc (car xs))))))
+
+(define (solve nums)
+  (xor-all nums))
+
+(define (display-case i result)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display result)
+  (newline))
+
+(let ((cases
+       (list
+        (list 0 '(2 2 1))
+        (list 1 '(4 1 2 1 2))
+        (list 2 '(-1 -1 0 0 7))
+        (list 3 '(1))
+        (list 4 '(0 0 1))
+        (list 5 '(-3))
+        (list 6 '(5 5 9 9 11 11 -42))
+        (list 7 '(1000000 1000000 -1000000 -1000000 1234567)))))
+  (for-each
+   (lambda (c)
+     (display-case (car c) (solve (cadr c))))
+   cases))

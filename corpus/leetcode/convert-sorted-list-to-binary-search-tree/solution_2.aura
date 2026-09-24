@@ -1,0 +1,98 @@
+;; Convert Sorted List to Binary Search Tree
+;; We don't have list nodes, just the values. Build a balanced BST from sorted list values.
+
+(define (make-tree val left right)
+  (cons val (cons left right)))
+
+(define (tree-val t) (car t))
+(define (tree-left t) (car (cdr t)))
+(define (tree-right t) (cdr (cdr t)))
+
+;; Build balanced BST from sorted list using middle-element approach.
+(define (sorted-list-to-bst lst)
+  (if (null? lst)
+      '()
+      (let* ((n (length lst))
+             (mid (quotient n 2))
+             (left-part (take lst mid))
+             (right-part (drop lst (+ mid 1))))
+        (make-tree (list-ref lst mid)
+                   (sorted-list-to-bst left-part)
+                   (sorted-list-to-bst right-part)))))
+
+(define (take lst n)
+  (if (= n 0)
+      '()
+      (cons (car lst) (take (cdr lst) (- n 1)))))
+
+(define (drop lst n)
+  (if (= n 0)
+      lst
+      (drop (cdr lst) (- n 1))))
+
+(define (list-ref lst i)
+  (if (= i 0)
+      (car lst)
+      (list-ref (cdr lst) (- i 1))))
+
+;; For verification, do in-order traversal of the tree.
+(define (inorder t)
+  (if (null? t)
+      '()
+      (append (inorder (tree-left t))
+              (cons (tree-val t) (inorder (tree-right t))))))
+
+;; solve takes a "head" which we represent as a list of values (Aura harness).
+(define (solve head)
+  (sorted-list-to-bst head))
+
+;; Display a list of numbers in a readable form.
+(define (display-list xs)
+  (display "[")
+  (let loop ((rest xs) (first? #t))
+    (cond ((null? rest)
+           (display "]"))
+          (else
+           (if first? (set! first? #f) (begin (display " ")))
+           (display (car rest))
+           (loop (cdr rest) #f)))))
+
+;; Print inorder traversal of the tree (verifies BST correctness and sorted order).
+(define (print-tree-result t)
+  (if (null? t)
+      (display "NONE")
+      (display-list (inorder t))))
+
+;; ===== Test cases =====
+
+;; CASE0: empty list
+(define case0 '())
+(display "CASE0=") (print-tree-result (solve case0)) (newline)
+
+;; CASE1: single node
+(define case1 (list 0))
+(display "CASE1=") (print-tree-result (solve case1)) (newline)
+
+;; CASE2: 3 nodes
+(define case2 (list 1 2 3))
+(display "CASE2=") (print-tree-result (solve case2)) (newline)
+
+;; CASE3: 5 nodes
+(define case3 (list -10 -3 0 5 9))
+(display "CASE3=") (print-tree-result (solve case3)) (newline)
+
+;; CASE4: 8 nodes
+(define case4 (list 1 2 3 4 5 6 7 8))
+(display "CASE4=") (print-tree-result (solve case4)) (newline)
+
+;; CASE5: 11 nodes
+(define case5 (list 0 1 2 3 4 5 6 7 8 9 10))
+(display "CASE5=") (print-tree-result (solve case5)) (newline)
+
+;; CASE6: 11 nodes (negative to positive)
+(define case6 (list -5 -4 -3 -2 -1 0 1 2 3 4 5))
+(display "CASE6=") (print-tree-result (solve case6)) (newline)
+
+;; CASE7: single node 42
+(define case7 (list 42))
+(display "CASE7=") (print-tree-result (solve case7)) (newline)

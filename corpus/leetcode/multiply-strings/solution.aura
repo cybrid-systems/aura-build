@@ -1,0 +1,148 @@
+;; Multiply Strings - long multiplication on reversed digit arrays
+
+(define (string-length s)
+  (let loop ((i 0))
+    (if (and (< i (string-length-helper s)) #t)
+        i
+        i)))
+
+;; Actually, we need to convert string to list of digits
+(define (string->digits s)
+  (let loop ((i 0) (acc '()))
+    (if (>= i (string-length s))
+        acc
+        (loop (+ i 1) (cons (- (char->digit (string-ref s i)) 0) acc)))))
+
+;; But we need char->digit. Let me use a different approach.
+;; Since Aura has limited string ops, let me think about what we have.
+;; We have string-ref, string-length, string-append, number->string.
+;; Let me build a helper that converts a string to a list of digits (as numbers).
+
+;; Actually, I'll use a simpler approach: convert each character to its digit value
+;; using char->integer arithmetic.
+;; char '0' = 48, so digit = (char->integer c) - 48
+
+(define (char->int c)
+  (- (char->integer c) 48))
+
+(define (string->digits-rev s)
+  ;; Returns list of digits reversed (so least significant first)
+  (let ((n (string-length s)))
+    (let loop ((i (- n 1)) (acc '()))
+      (if (< i 0)
+          acc
+          (loop (- i 1) (cons (char->int (string-ref s i)) acc))))))
+
+(define (multiply a b)
+  ;; Both are lists of digits, least significant first
+  (cond
+    ((or (null? a) (null? b)) '())
+    (else
+      (let ((la (length a)) (lb (length b)))
+        (let ((result (make-list (+ la lb) 0)))
+            (let loop ((i 0))
+              (if (>= i la)
+                  (normalize result)
+                  (let loop2 ((j 0))
+                    (if (>= j lb)
+                        (loop (+ i 1))
+                        (let* ((mul (* (list-ref a i) (list-ref b j)))
+                               (sum (+ (list-ref result (+ i j)) mul))
+                               (low (modulo sum 10))
+                               (carry (quotient sum 10)))
+                          (list-set! result (+ i j) low)
+                          (list-set! result (+ i j 1) (+ (list-ref result (+ i j 1)) carry))
+                          (loop2 (+ j 1))))))))))))
+
+;; Hmm, Aura doesn't have make-list, list-set!, list-ref with mutation in this form.
+;; Let me use pure recursive list operations.
+
+(define (list-len xs)
+  (cond ((null? xs) 0) (else (+ 1 (list-len (cdr xs))))))
+
+(define (list-get xs i)
+  (cond ((null? xs) 0) ((= i 0) (car xs)) (else (list-get (cdr xs) (- i 1)))))
+
+(define (make-zero-list n)
+  (if (<= n 0) '() (cons 0 (make-zero-list (- n 1)))))
+
+(define (list-set-helper xs i v)
+  (cond ((null? xs) '())
+        ((= i 0) (cons v (cdr xs)))
+        (else (cons (car xs) (list-set-helper (cdr xs) (- i 1) v)))))
+
+;; Pure multiplication using result accumulation
+(define (multiply-strings a b)
+  (let ((da (string->digits-rev a))
+        (db (string->digits-rev b)))
+    (cond
+        ((or (= (string-length a) 0) (= (string-length b) 0)) "0")
+        ((and (= (string-length a) 1) (char=? (string-ref a 0) #\0)) "0")
+        ((and (= (string-length b) 1) (char=? (string-ref b 0) #\0)) "0")
+        (else
+          (let ((la (list-len da)) (lb (list-len db)))
+            (let loop-i ((i 0) (res (make-zero-list (+ la lb))))
+              (if (>= i la)
+                  (digits->string (reverse (drop-trailing-zero res)))
+                  (let loop-j ((j 0) (res res))
+                    (if (>= j lb)
+                        (loop-i (+ i 1) res)
+                        (let* ((mul (* (list-get da i) (list-get db j)))
+                               (sum (+ (list-get res (+ i j)) mul))
+                               (low (sum mod 10))
+                               (carry (sum / 10)))
+                          (let ((res (list-set-helper res (+ i j) low)))
+                            (let ((res (list-set-helper res (+ i j 1) 
+                                       (+ (list-get res (+ i j 1)) carry))))
+                              (loop-j (+ j 1) res))))))))))))))
+
+;; Reverse list
+(define (rev xs)
+  (let loop ((xs xs) (acc '()))
+    (if (null? xs) acc (loop (cdr xs) (cons (car xs) acc)))))
+
+(define (drop-trailing-zero xs)
+  ;; xs is list of digits, least significant first (or could be most).
+  ;; Actually our res is stored least-significant first too.
+  ;; We want to drop leading zeros in the reversed representation.
+  (let ((r (rev xs)))
+    (let drop ((r r))
+      (cond ((null? r) '(0))
+            ((and (null? (cdr r)) (= (car r) 0)) '(0))
+            ((= (car r) 0) (drop (cdr r)))
+            (else r)))))
+
+(define (digits->string ds)
+  ;; ds is list of digits most-significant first
+  (let loop ((ds ds) (acc ""))
+    (if (null? ds)
+        acc
+        (loop (cdr ds) (string-append acc (number->string (car ds)))))))
+
+(define (char=? a b)
+  (= (char->integer a) (char->integer b)))
+
+(define (solve a b)
+  (multiply-strings a b))
+
+;; Display helper for string
+(define (display-case i result)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display result)
+  (newline))
+
+(begin
+  (display-case 0 (solve "2" "3"))
+  (display-case 1 (solve "123" "456"))
+  (display-case 2 (solve "0" "99"))
+  (display-case 3 (solve "999" "999"))
+  (display-case 4 (solve "" "5"))
+  (display-case 5 (solve "0" "0"))
+  (display-case 6 (solve "1" "1"))
+  (display-case 7 (solve "9" "9"))
+  (display-case 8 (solve "100" "100"))
+  (display-case 9 (solve "12345" "67890"))
+  (display-case 10 (solve "99999999999999999999" "99999999999999999999"))
+  (display-case 11 (solve "123456789012345678901234567890" "987654321098765432109876543210")))

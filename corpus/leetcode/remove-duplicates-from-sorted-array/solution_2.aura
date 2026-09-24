@@ -1,0 +1,54 @@
+(define (solver nums)
+  (let ((n (length nums)) (k 0) (i 0))
+    (define (loop i k)
+      (if (null? nums)
+          k
+          (if (= i n)
+              k
+              (begin
+                (if (= k 0)
+                    (begin
+                      (set! i (+ i 1))
+                      (set! k (+ k 1))
+                      (loop i k))
+                    (let ((prev (list-ref nums (- k 1)))
+                          (curr (list-ref nums i)))
+                      (if (= prev curr)
+                          (begin
+                            (set! i (+ i 1))
+                            (loop i k))
+                          (begin
+                            (set! i (+ i 1))
+                            (set! k (+ k 1))
+                            (loop i k)))))))))
+    (set! k (loop 0 0))
+    k))
+
+(define (solve nums)
+  (solver nums))
+
+(define (display-list lst)
+  (display "[")
+  (define (helper l)
+    (cond ((null? l) (display ""))
+          (else
+           (display (car l))
+           (if (not (null? (cdr l)))
+               (begin (display ", ") (helper (cdr l)))
+               (display "")))))
+  (helper lst)
+  (display "]"))
+
+(define (run-case i nums)
+  (display (string-append "CASE" (number->string i) "="))
+  (display (solve nums))
+  (newline))
+
+(run-case 0 (list 1 1 2 2 3 4 4))
+(run-case 1 (list))
+(run-case 2 (list 1 1 1 1 1))
+(run-case 3 (list 0))
+(run-case 4 (list -3 -3 -2 -1 -1 0 0 0 1 2 2))
+(run-case 5 (list 1 2 3 4 5))
+(run-case 6 (list 1 2 2 3 3 3 4 5 5))
+(run-case 7 (list 0 0 0 0 0 0))

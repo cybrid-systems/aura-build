@@ -1,0 +1,55 @@
+(define (length lst)
+  (if (null? lst) 0 (+ 1 (length (cdr lst)))))
+
+(define (nth lst n)
+  (if (= n 0) (car lst) (nth (cdr lst) (- n 1))))
+
+(define (numvec-ref v i)
+  (nth v i))
+
+(define (numvec-take v n)
+  (define (loop i acc)
+    (if (>= i n) (reverse acc) (loop (+ i 1) (cons (numvec-ref v i) acc))))
+  (loop 0 '()))
+
+(define (numvec-take-last v n)
+  (let ((total (length v)))
+    (numvec-take v (- total n))))
+
+(define (subarray-product-less-than-k nums k)
+  (let ((n (length nums)))
+    (if (<= k 1)
+        0
+        (let loop ((left 0) (right 0) (prod 1) (count 0))
+          (cond
+            ((>= right n) count)
+            (else
+              (let ((x (numvec-ref nums right)))
+                (let shrink ((l left) (p (* prod x)))
+                  (if (and (>= p k) (< l right))
+                      (shrink (+ l 1) (quotient p (numvec-ref nums l)))
+                      (let ((new-left l)
+                            (new-prod p))
+                        (loop new-left (+ right 1) new-prod
+                              (+ count (- (+ right 1) new-left))))))))))))
+
+(define (solve nums k)
+  (subarray-product-less-than-k nums k))
+
+(define (run-tests)
+  (define (run-case i nums k)
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display (solve nums k))
+    (newline))
+  (run-case 0 '(10 5 2 6) 100)
+  (run-case 1 '(1 2 3) 0)
+  (run-case 2 '(2 1 1) 6)
+  (run-case 3 '(1 1 1) 2)
+  (run-case 4 '(10 5 2 6) 1)
+  (run-case 5 '(1) 2)
+  (run-case 6 '(100 100) 10000)
+  (run-case 7 '(10 10 10 10) 1001))
+
+(run-tests)

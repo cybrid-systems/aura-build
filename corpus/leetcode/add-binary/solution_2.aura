@@ -1,0 +1,83 @@
+(define (char->int c)
+  (- (char->integer c) (char->integer #\0)))
+
+(define (int->char n)
+  (integer->char (+ n (char->integer #\0))))
+
+(define (list-length xs)
+  (if (null? xs) 0 (+ 1 (list-length (cdr xs)))))
+
+(define (list-ref xs i)
+  (if (= i 0) (car xs) (list-ref (cdr xs) (- i 1))))
+
+(define (list-set xs i v)
+  (if (= i 0) (cons v (cdr xs))
+      (cons (car xs) (list-set (cdr xs) (- i 1) v))))
+
+(define (reverse-helper xs acc)
+  (if (null? xs) acc
+      (reverse-helper (cdr xs) (cons (car xs) acc))))
+
+(define (reverse-list xs) (reverse-helper xs '()))
+
+(define (add-binary a b)
+  (let* ((len-a (string-length a))
+         (len-b (string-length b))
+         (max-len (if (> len-a len-b) len-a len-b))
+         (result (make-list (+ max-len 1) 0)))
+    (let loop ((i (- max-len 1)) (carry 0) (res result))
+      (cond
+        ((and (< i 0) (= carry 0)) (reverse-list res))
+        (else
+         (let* ((bit-a (if (and (>= i (- len-a 1)) (>= (- len-a 1) 0))
+                          (char->int (string-ref a (+ i (- (- len-a max-len)))))
+                          0))
+                ;; compute adjusted index for a: if len-a < max-len, offset
+                )
+           ;; simpler approach: compute indices directly
+           (let* ((idx-a (- len-a 1 i))  ; index in a for position i (from end)
+                  (idx-b (- len-b 1 i))
+                  (da (if (and (>= idx-a 0) (< idx-a len-a))
+                          (char->int (string-ref a idx-a)) 0))
+                  (db (if (and (>= idx-b 0) (< idx-b len-b))
+                          (char->int (string-ref b idx-b)) 0))
+                  (total (+ da db carry))
+                  (bit (modulo total 2))
+                  (new-carry (quotient total 2))
+                  (new-res (list-set res (- max-len i) bit)))
+             ;; recurse with i-1, but we also need position in result
+             ;; Let's restructure: build from left
+             (void))))))))
+
+(define (add-binary2 a b)
+  (let* ((len-a (string-length a))
+         (len-b (string-length b))
+         (max-len (if (> len-a len-b) len-a len-b)))
+    ;; Build digits left-to-right in result
+    (let loop ((i 0) (carry 0) (res '()))
+      (cond
+        ((and (>= i max-len) (= carry 0))
+         (let ((digits (reverse-list res)))
+           (if (null? digits) "0"
+               (let ((strs (map (lambda (n) (string (int->char (+ n (char->integer #\0))))) digits)))
+                 (apply string-append strs)))))
+        (else
+         (let* ((da (if (>= i len-a) 0 (char->int (string-ref a i))))
+                (db (if (>= i len-b) 0 (char->int (string-ref b i))))
+                (total (+ da db carry))
+                (bit (modulo total 2))
+                (new-carry (quotient total 2)))
+           (loop (+ i 1) new-carry (cons bit res))))))))
+
+(define (solve a b) (add-binary2 a b))
+
+(display "CASE0=") (display (solve "11" "1")) (newline)
+(display "CASE1=") (display (solve "1010" "1011")) (newline)
+(display "CASE2=") (display (solve "0" "0")) (newline)
+(display "CASE3=") (display (solve "0" "1")) (newline)
+(display "CASE4=") (display (solve "1" "0")) (newline)
+(display "CASE5=") (display (solve "" "")) (newline)
+(display "CASE6=") (display (solve "" "1")) (newline)
+(display "CASE7=") (display (solve "1" "")) (newline)
+(display "CASE8=") (display (solve "1111" "1111")) (newline)
+(display "CASE9=") (display (solve "101010101010" "010101010101")) (newline)

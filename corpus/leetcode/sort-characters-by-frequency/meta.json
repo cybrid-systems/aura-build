@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:26:44Z",
+      "ts_local": "2026-09-24 22:26:44 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1971,
+        "total_characters": 0,
+        "prompt_tokens": 1277,
+        "completion_tokens": 694,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.036,
+      "tests_passed": 8,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=eetr\nCASE1=bbAa\nCASE2=a\nCASE3=\nCASE4=aaabbb\nCASE5=iiiissssppM\nCASE6=abc\nCASE7=!!!??llheo\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:26:50Z",
+      "ts_local": "2026-09-24 22:26:50 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2159,
+        "total_characters": 0,
+        "prompt_tokens": 1277,
+        "completion_tokens": 882,
+        "prompt_tokens_details": {
+          "cached_tokens": 1276
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.129,
+      "tests_passed": 1,
+      "tests_total": 8,
+      "stderr_snippet": "error: 7:16: unbound variable: assoc\n  did you mean 'acc'?\nerror: 7:16: unbound variable: assoc\n  did you mean 'acc'?\nerror: 7:16: unbound variable: assoc\n  did you mean 'acc'?\nerror: 7:16: unbound variable: assoc\n  did you mean 'acc'?\nerror: 7:16: unbound variable: assoc\n  did you mean 'acc'?\nerror: 7:16: unbound variable: assoc\n  did you mean 'acc'?\nerror: 7:16: unbound variable: assoc\n  did you mean 'acc'?\n",
+      "stdout_snippet": "CASE0=CASE0=\nCASE1=\nCASE2=\nCASE3=\nCASE4=\nCASE5=\nCASE6=\nCASE7=\n"
+    }
+  ],
+  "slug": "sort-characters-by-frequency",
+  "title": "Sort Characters By Frequency",
+  "category": "hashing",
+  "updated_at": "2026-09-24T14:26:50Z",
+  "updated_at_local": "2026-09-24 22:26:50 CST"
+}

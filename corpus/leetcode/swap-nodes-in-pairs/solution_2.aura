@@ -1,0 +1,108 @@
+;; Helper to build a linked list from a list of values
+(define (build-list vals)
+  (if (null? vals)
+      nil
+      (let ((node (cons (car vals) nil)))
+        (set-cdr! node (build-list (cdr vals)))
+        node)))
+
+;; Helper to collect values from a linked list into a scheme list
+(define (collect-vals node)
+  (if (null? node)
+      '()
+      (cons (car node) (collect-vals (cdr node)))))
+
+;; Helper to display a scheme list as "v1->v2->..."
+(define (display-list lst)
+  (if (null? lst)
+      (begin)
+      (begin
+        (display (car lst))
+        (let loop ((rest (cdr lst)))
+          (if (null? rest)
+              (begin)
+              (begin
+                (display "->")
+                (display (car rest))
+                (loop (cdr rest))))))))
+
+;; Convert a linked list of nodes to a string representation
+(define (list->string node)
+  (let ((vals (collect-vals node)))
+    (let ((out (open-output-string)))
+      (let ((port out))
+        (if (null? vals)
+            (begin)
+            (begin
+              (display (car vals) out)
+              (let loop ((rest (cdr vals)))
+                (if (null? rest)
+                    (begin)
+                    (begin
+                      (display "->" out)
+                      (display (car rest) out)
+                      (loop (cdr rest))))))))
+      (get-output-string out))))
+
+;; Iterative in-place swap of every adjacent pair of nodes.
+;; Each node is represented as a cons cell: (car . cdr) = (val . next)
+(define (swap-pairs head)
+  (if (or (null? head) (null? (cdr head)))
+      head
+      (let ((new-head (cdr head)))
+        (let ((prev nil)
+              (cur head))
+          (let loop ((c cur)
+                     (p prev)
+                     (nxt (cdr head)))
+            (if (or (null? c) (null? nxt))
+                new-head
+                (let ((nn (cdr nxt)))
+                  (set-cdr! c nn)
+                  (set-cdr! nxt c)
+                  (if (not (null? p))
+                      (set-cdr! p nxt)
+                      (begin))
+                  (loop nn c nn))))))))
+
+;; Parse a string like "1->2->3" into a linked list of nodes
+(define (parse-input s)
+  (if (= (string-length s) 0)
+      nil
+      (let ((parts (string-split s "->")))
+        (let ((vals (map (lambda (x) (string->number x)) parts)))
+          (build-list vals)))))
+
+;; Helper: split string by delimiter (simple implementation)
+(define (string-split s delim)
+  (let ((len (string-length s))
+        (dlen (string-length delim)))
+    (let loop ((i 0)
+               (acc '())
+               (current ""))
+      (cond ((= i len)
+             (reverse (cons current acc)))
+            ((and (<= (+ i dlen) len)
+                  (string=? (substring s i (+ i dlen)) delim))
+             (loop (+ i dlen) (cons current acc) ""))
+            (else
+             (loop (+ i 1) acc (string-append current (substring s i (+ i 1)))))))))
+
+(define (solve input-string)
+  (let ((head (parse-input input-string)))
+    (let ((swapped (swap-pairs head)))
+      (list->string swapped))))
+
+;; Test cases
+(define (run-tests)
+  (begin
+    (display "CASE0=") (display (solve "1->2->3->4")) (newline)
+    (display "CASE1=") (display (solve "")) (newline)
+    (display "CASE2=") (display (solve "1")) (newline)
+    (display "CASE3=") (display (solve "1->2->3")) (newline)
+    (display "CASE4=") (display (solve "1->2")) (newline)
+    (display "CASE5=") (display (solve "1->2->3->4->5")) (newline)
+    (display "CASE6=") (display (solve "0->0->0->0")) (newline)
+    (display "CASE7=") (display (solve "7")) (newline)))
+
+(run-tests)

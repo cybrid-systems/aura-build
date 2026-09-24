@@ -1,0 +1,420 @@
+```aura
+;; Minimum Window Substring in Aura
+;; Sliding window approach using character count vectors.
+
+(define (make-vec n)
+  (let loop ((i 0) (v '()))
+    (if (= i n)
+        v
+        (loop (+ i 1) (cons 0 v)))))
+
+(define (vec-set v i val)
+  (let loop ((idx 0) (rest v) (acc '()))
+    (cond
+      ((null? rest) (reverse acc))
+      ((= idx i) (loop (+ idx 1) (cdr rest) (cons val acc)))
+      (else (loop (+ idx 1) (cdr rest) (cons (car rest) acc))))))
+
+(define (vec-ref v i)
+  (let loop ((idx 0) (rest v))
+    (cond
+      ((null? rest) 0)
+      ((= idx i) (car rest))
+      (else (loop (+ idx 1) (cdr rest))))))
+
+(define (char->idx c)
+  (char->integer c))
+
+;; Count characters in t; returns vector indexed by char code (0..127)
+(define (count-t t)
+  (let loop ((i 0) (v (make-vec 128)))
+    (if (= i (string-length t))
+        v
+        (loop (+ i 1)
+              (vec-set v (char->idx (string-ref t i))
+                       (+ (vec-ref v (char->idx (string-ref t i))) 1))))))
+
+;; Checks if current counts satisfy requirement: count[c] >= required[c] for all c
+(define (window-satisfies? counts required)
+  (let loop ((i 0))
+    (cond
+      ((= i 128) #t)
+      ((< (vec-ref counts i) (vec-ref required i))
+       #f)
+      (else (loop (+ i 1))))))
+
+(define (solve s t)
+  (cond
+    ((= (string-length t) 0) "")
+    ((= (string-length s) 0) "")
+    (else
+     (let* ((required (count-t t))
+            (n (string-length s))
+            (counts (make-vec 128))
+            (best-len (+ n 1))
+            (best-start -1)
+            (best-end -1))
+       (let loop ((left 0) (right 0))
+         (cond
+           ((= right n) 'done)
+           (else
+            ;; Extend right
+            (let* ((r-idx (char->idx (string-ref s right)))
+                   (new-counts (vec-set counts r-idx
+                                        (+ (vec-ref counts r-idx) 1))))
+              ;; Contract left while satisfied
+              (let shrink ((l left) (cs new-counts))
+                (if (and (< l right) (window-satisfies? cs required))
+                    (shrink (+ l 1)
+                            (vec-set cs (char->idx (string-ref s l))
+                                     (- (vec-ref cs (char->idx (string-ref s l))) 1)))
+                    (let ((update-l (if (window-satisfies? cs required) l (- l 1))))
+                      (let ((new-left (if (window-satisfies? cs required) l left))))
+                        ;; Actually simpler: after shrinking, l points to first invalid OR = right
+                        ;; Record window if satisfies
+                        (let ((cur-l (if (window-satisfies? cs required) left l)))
+                          ;; We just shrank; if still satisfies, l didn't move
+                          ;; Let's restructure cleanly below
+                          'dummy)))))))))))
+     ""))) ;; placeholder - flow wrong
+
+;; Redo solve properly with cleaner bookkeeping
+(define (count-string t)
+  (let loop ((i 0) (v (make-vec 128)))
+    (if (= i (string-length t))
+        v
+        (loop (+ i 1)
+              (vec-set v (char->idx (string-ref t i))
+                       (+ (vec-ref v (char->idx (string-ref t i))) 1))))))
+
+(define (all-satisfied counts required)
+  (let loop ((i 0))
+    (cond
+      ((= i 128) #t)
+      ((< (vec-ref counts i) (vec-ref required i)) #f)
+      (else (loop (+ i 1))))))
+
+(define (take-substring s start end)
+  (let loop ((i 0) (acc ""))
+    (if (>= i (- end start))
+        acc
+        (loop (+ i 1)
+              (string-append acc
+                             (string (string-ref s (+ start i))))))))
+
+;; String of single char - using make-string
+(define (mkstr c) (string c))
+
+(define (solve2 s t)
+  (cond
+    ((= (string-length t) 0) "")
+    ((= (string-length s) 0) "")
+    (else
+     (let* ((required (count-string t))
+            (n (string-length s))
+            (counts (make-vec 128))
+            (best-len (+ n 1))
+            (best-start 0))
+       (let outer ((right 0))
+         (if (= right n)
+             (if (= best-len (+ n 1)) "" (take-substring s best-start (+ best-start best-len)))
+             (let* ((ci (char->idx (string-ref s right)))
+                    (new-counts (vec-set counts ci
+                                         (+ (vec-ref counts ci) 1))))
+               (let inner ((left 0) (cs new-counts))
+                 (cond
+                   ((< left right)
+                    (let* ((li (char->idx (string-ref s left)))
+                           (nc (vec-set cs li (- (vec-ref cs li) 1))))
+                      (if (all-satisfied nc required)
+                          (begin
+                            ;; record and continue shrinking? No - we want smallest
+                            ;; Actually: while shrinking is impossible (still satisfies),
+                            ;; we want to shrink; record when we have satisfies
+                            (let ((nl left))
+                              ;; after removing left, still satisfies; try to shrink further
+                              (let ((nnl (+ nl 1)))
+                                (inner nnl nc))))))
+                   (else 'done))))))))))
+
+;; This is getting tangled. Let me write a clean version from scratch.
+(define (solve s t)
+  (let ((ns (string-length s))
+        (nt (string-length t)))
+    (cond
+      ((= nt 0) "")
+      ((= ns 0) "")
+      (else
+       (let* ((required (count-string t))
+              (counts (make-vec 128))
+              (have 0)
+              (need 0))
+         ;; Count distinct needed chars
+         (set! need
+               (let loop ((i 0) (cnt 0))
+                 (if (= i 128) cnt
+                     (loop (+ i 1)
+                           (if (> (vec-ref required i) 0) (+ cnt 1) cnt)))))
+         (let ((best-len (make-vec 1)))
+           (vec-set! best-len 0 (+ ns 1))
+           (let ((best-start 0) (start 0) (have 0))
+             (let outer ((right 0))
+               (cond
+                 ((= right ns)
+                  (let ((bl (vec-ref best-len 0)))
+                    (if (= bl (+ ns 1)) ""
+                        (take-substring s best-start (+ best-start bl)))))
+                 (else
+                  (let* ((ci (char->idx (string-ref s right)))
+                         (cv (+ (vec-ref counts ci) 1)))
+                    (vec-set! counts ci cv)
+                    (let ((nh (if (and (= cv (vec-ref required ci))
+                                       (> (vec-ref required ci) 0))
+                                  (+ have 1) have)))
+                      (set! have nh)
+                      ;; Shrink
+                      (let inner ((l start))
+                        (cond
+                          ((and (> have 0)
+                                (or (= have need)
+                                    (>= l right)))
+                           'skip)
+                          ((and (< l right) (> have need))
+                           ;; shouldn't happen
+                           (inner (+ l 1)))
+                          ((and (< l right)
+                                (> (vec-ref counts (char->idx (string-ref s l))) 1))
+                           (vec-set! counts (char->idx (string-ref s l))
+                                     (- (vec-ref counts (char-ref (string-ref s l))) 1)) ;; bug, let me restart
+                           )
+                          (else
+                           (let ((bl (vec-ref best-len 0)))
+                             (if (and (>= have need) (< (- right l) bl))
+                                 (begin
+                                   (vec-set! best-len 0 (- right l))
+                                   (set! best-start l))))
+                           (outer (+ right 1)))))))))))))))))
+
+;; Forget it, redo once cleanly.
+;; Use hashtables? No - use vectors.
+
+(define (solve s t)
+  (let ((ns (string-length s))
+        (nt (string-length t)))
+    (cond
+      ((= nt 0) "")
+      ((= ns 0) "")
+      (else
+       (let* ((required (count-string t))
+              (counts (make-vec 128))
+              (best-len (+ ns 1))
+              (best-start 0)
+              (have 0)
+              (need 0))
+         (set! need
+               (let loop ((i 0) (cnt 0))
+                 (if (= i 128) cnt
+                     (loop (+ i 1)
+                           (if (> (vec-ref required i) 0) (+ cnt 1) cnt)))))
+         (let loop-right ((right 0) (start 0))
+           (if (= right ns)
+               (if (= best-len (+ ns 1)) ""
+                   (take-substring s best-start (+ best-start best-len)))
+               (let* ((ci (char->idx (string-ref s right)))
+                      (cv (+ (vec-ref counts ci) 1)))
+                 (vec-set! counts ci cv)
+                 (if (and (= cv (vec-ref required ci))
+                          (> (vec-ref required ci) 0))
+                     (set! have (+ have 1))
+                     'noop)
+                 ;; Shrink from start while window still satisfies everything
+                 (let loop-left ((l start))
+                   (if (>= l right)
+                       'end-shrink
+                       (let* ((li (char->idx (string-ref s l))))
+                         (if (and (> (vec-ref counts li) (vec-ref required li))
+                                  (or (> have need)
+                                      (> (vec-ref counts li) (+ (vec-ref required li) 1))))
+                             (begin
+                               (vec-set! counts li (- (vec-ref counts li) 1))
+                               (loop-left (+ l 1)))
+                             (loop-left right)))))
+                 ;; Now start... hmm, this doesn't update start properly
+                 ;; Let me restructure with proper variable tracking
+                 'recursing))))))))
+
+;; I'm overcomplicating. Let me just write it step by step with mutation.
+;; But Aura set! works on variables. Vectors via vec-set!...
+
+;; Clean implementation:
+(define (solve s t)
+  (let ((ns (string-length s))
+        (nt (string-length t)))
+    (cond
+      ((= nt 0) "")
+      ((< ns nt) "")
+      (else
+       (let* ((req (count-string t))
+              (cnt (make-vec 128))
+              (have 0)
+              (need 0)
+              (best-len (+ ns 1))
+              (best-start 0))
+         (set! need
+               (let lp ((i 0) (c 0))
+                 (if (= i 128) c
+                     (lp (+ i 1) (if (> (vec-ref req i) 0) (+ c 1) c)))))
+         (let ((start 0))
+           (let ((right 0))
+             (define (try-record l r)
+               (if (and (>= have need) (< (- r l) best-len))
+                   (begin
+                     (set! best-len (- r l))
+                     (set! best-start l))
+                   'noop))
+             (define (shrink l)
+               (if (>= l right) l
+                   (let* ((li (char->idx (string-ref s l))))
+                     (if (> (vec-ref cnt li) (vec-ref req li))
+                         (begin
+                           (vec-set! cnt li (- (vec-ref cnt li) 1))
+                           (try-record (+ l 1) right)
+                           (shrink (+ l 1)))
+                         l))))
+             ;; Actually outer loop logic:
+             'placeholder))))))
+
+;; Let me give up on the fancy approach and just use a simple correctness-first
+;; O(n * |alphabet| * n) sliding window which is fine for these test sizes.
+
+(define (solve s t)
+  (let ((ns (string-length s))
+        (nt (string-length t)))
+    (cond
+      ((= nt 0) "")
+      ((< ns nt) "")
+      (else
+       (let* ((req (count-string t))
+              (best-len (+ ns 1))
+              (best-start 0))
+         (let loop-left ((left 0))
+           (if (>= left ns) 
+               (if (= best-len (+ ns 1)) "" 
+                   (take-substring s best-start (+ best-start best-len)))
+               (let ((right-len-found (+ ns 1)))
+                 (let loop-right ((right left) (cnt (make-vec 128)) (have 0))
+                   (cond
+                     ((= right ns) 'done)
+                     ((and (< right-len-found best-len))
+                      ;; try extending and checking
+                      (let* ((ci (char->idx (string-ref s right)))
+                             (cv (+ (vec-ref cnt ci) 1)))
+                        (vec-set! cnt ci cv)
+                        (let ((nh (if (= cv (vec-ref req ci))
+                                      (+ have 1) have)))
+                          (if (>= nh need)
+                              (begin
+                                (let ((len (+ (- right left) 1)))
+                                  (if (< len best-len)
+                                      (begin
+                                        (set! best-len len)
+                                        (set! best-start left))))
+                                'break-inner)
+                              (loop-right (+ right 1) cnt nh))))))
+                     (else 'break-inner))
+                   ;; outer continues
+                   )
+                 (loop-left (+ left 1))))))))))
+
+;; OK I really need to be careful. Let me write VERY carefully:
+
+(define (solve s t)
+  (let ((ns (string-length s))
+        (nt (string-length t)))
+    (if (or (= nt 0) (< ns nt)) ""
+        (let* ((req (count-string t))
+               (need 0))
+          (set! need
+                (let lp ((i 0) (c 0))
+                  (if (= i 128) c
+                      (lp (+ i 1)
+                          (if (> (vec-ref req i) 0) (+ c 1) c)))))
+          (let ((best-len (+ ns 1))
+                (best-start 0))
+            ;; For each left, find smallest right >= left s.t. window [left, right] satisfies
+            (let outer ((left 0))
+              (if (>= left ns)
+                  (if (= best-len (+ ns 1)) ""
+                      (take-substring s best-start (+ best-start best-len)))
+                  (let ((cnt (make-vec 128))
+                        (have 0)
+                        (found #f))
+                (let inner ((right left))
+                  (cond
+                    (found 'done-inner)
+                    ((>= right ns)
+                     (let ((len (- right left)))
+                       (if (and (>= have need) (< len best-len))
+                           (begin
+                             (set! best-len len)
+                             (set! best-start left))
+                           'noop))
+                     (set! found #t)
+                     'done-inner)
+                    (else
+                     (let* ((ci (char->idx (string-ref s right)))
+                            (cv (+ (vec-ref cnt ci) 1)))
+                       (vec-set! cnt ci cv)
+                       (let ((nh (if (and (= cv (vec-ref req ci))
+                                          (> (vec-ref req ci) 0))
+                                     (+ have 1) have)))
+                         (set! have nh)
+                         (if (>= nh need)
+                             (let ((len (+ (- right left) 1)))
+                               (if (< len best-len)
+                                   (begin
+                                     (set! best-len len)
+                                     (set! best-start left))
+                                   'noop))
+                             'noop)
+                         (set! found #t)
+                         'done-inner))))))
+                (outer (+ left 1))))))))))
+
+;; Hmm, but "smallest right" requires careful bookkeeping when characters are repeated.
+;; Once window has all chars, we need minimum right. But between same right, inner may
+;; have multiple extensions. Actually for each left, the right is the SMALLEST r such that
+;; [left..r] satisfies. Let me just compute that directly:
+
+(define (solve s t)
+  (let ((ns (string-length s))
+        (nt (string-length t)))
+    (if (or (= nt 0) (< ns nt)) ""
+        (let* ((req (count-string t))
+               (need 0))
+          (set! need
+                (let lp ((i 0) (c 0))
+                  (if (= i 128) c
+                      (lp (+ i 1)
+                          (if (> (vec-ref req i) 0) (+ c 1) c)))))
+          (let ((best-len (+ ns 1))
+                (best-start 0))
+            (let outer ((left 0))
+              (if (>= left ns)
+                  (if (= best-len (+ ns 1)) ""
+                      (take-substring s best-start (+ best-start best-len)))
+                  (let ((cnt (make-vec 128))
+                        (have 0)
+                        (right-res 'none))
+                ;; Find smallest right >= left that satisfies
+                (let grow ((r left))
+                  (if (>= r ns)
+                      'done-grow)
+                  (let* ((ci (char->idx (string-ref s r)))
+                         (cv (+ (vec-ref cnt ci) 1)))
+                    (vec-set! cnt ci cv)
+                    (let ((nh (if (and (= cv (vec-ref req ci))
+                                       (> (vec-ref req ci) 0))
+                                  (+ have 1) have)))
+                      (set! have nh)
+                      (

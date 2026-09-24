@@ -1,0 +1,118 @@
+;; Tree node constructor
+(define (make-node v l r) (list 'node v l r))
+(define (node? x) (and (pair? x) (eq? (car x) 'node)))
+(define (node-val n) (car (cdr n)))
+(define (node-left n) (car (cdr (cdr n))))
+(define (node-right n) (car (cdr (cdr (cdr n)))))
+
+;; Tokenizer for s-expressions
+(define (tokenize s)
+  (let loop (chars (string->list s) acc)
+    (cond ((null? chars) (reverse acc))
+          ((char-whitespace? (car chars)) (loop (cdr chars) acc))
+          ((char=? (car chars) #\() (loop (cdr chars) (cons 'open-paren acc)))
+          ((char=? (car chars) #\)) (loop (cdr chars) (cons 'close-paren acc)))
+          (else
+           (let loop2 (cs (cdr chars) buf)
+             (cond ((null? cs) (loop '() (cons (list->string (reverse (cons (car chars) buf))) acc)))
+                   ((or (char-whitespace? (car cs)) (char=? (car cs) #\() (char=? (car cs) #\)))
+                    (loop cs (cons (list->string (reverse buf)) acc)))
+                   (else (loop2 (cdr cs) (cons (car cs) buf)))))))))
+
+;; Parse s-expr tokens into nested list
+(define (parse-tokens tokens)
+  (let ((state (cons #f tokens)))
+    (define (next) (let ((s (cdr state))) (set-cdr! state (cdr s)) (car s)))
+    (define (peek) (car (cdr state)))
+    (let loop ()
+      (cond ((null? (peek)) #f)
+            ((eq? (peek) 'close-paren) (set! state (cdr state)) #f)
+            ((eq? (peek) 'open-paren)
+             (set! state (cdr state))
+             (let build ()
+               (let ((tok (peek)))
+                 (cond ((null? tok) '())
+                       ((eq? tok 'close-paren) (set! state (cdr state)) '())
+                       (else (let ((elem (loop))) (if (null? (peek)) '() (cons elem (build)))))))))
+            (else (next)))))
+
+(define (parse-sexpr s)
+  (let ((toks (tokenize s)))
+    (if (null? toks) '() (parse-tokens toks))))
+
+;; Parse flat list "[1,2,3]" -> '(1 2 3)
+(define (parse-flat s)
+  (let ((stripped
+         (list->string
+          (filter (lambda (c) (not (or (char=? c #\[) (char=? c #\])
+                                          (char=? c #\,) (char-whitespace? c))))
+                  (string->list s)))))
+    (if (string=? stripped "") '()
+        (let loop (i 0)
+          (let ((len (string-length stripped)))
+            (if (>= i len) '()
+                (let find-end ((j i))
+                  (if (or (>= j len) (char=? (string-ref stripped j) #\space))
+                      (let ((tok (substring stripped i j)))
+                        (let ((rest (if (>= j len) '() (loop (+ j 1)))))
+                          (cons (string->number tok) rest)))
+                      (find-end (+ j 1)))))))))
+
+;; Build tree from s-expr
+(define (build-from-sexpr e)
+  (cond ((null? e) #f)
+        ((not (pair? e)) #f)
+        ((eq? (car e) 'root) (build-from-sexpr (cdr e)))
+        ((pair? (car e))
+         (let ((root-val (car (car e)))
+               (rest (cdr e)))
+           (build-helper root-val rest)))
+        (else #f)))
+
+(define (build-helper v args)
+  (cond ((null? args) (make-node v #f #f))
+        ((null? (cdr args))
+         (let ((left (build-from-sexpr (car args))))
+           (make-node v left #f)))
+        (else
+         (let ((left (build-from-sexpr (car args)))
+               (right (build-from-sexpr (car (cdr args)))))
+           (make-node v left right)))))
+
+;; Build tree from flat level-order list
+(define (build-from-flat lst)
+  (if (null? lst) #f
+      (let ((nodes (list #f)))  ;; placeholder at index 0
+        ;; Pre-allocate placeholders
+        (let ((n (length lst)))
+          (let loop ((i 0))
+            (cond ((>= i n) #f)
+                  (else (set! nodes (append nodes (list #f))) (loop (+ i 1))))))
+        (let ((nodes-with-data
+               (map (lambda (v) (make-node v #f #f)) lst)))
+          ;; Actually build with indices
+          (let ((arr (cons #f nodes-with-data)))
+            (define (parent-idx i) (quotient (- i 1) 2))
+            (define (val-at i)
+              (if (or (= i 0) (> i (length lst))) #f
+                  (list-ref lst (- i 1))))
+            ;; Build nodes properly
+            (let build ((i 1))
+              (cond ((> i (length lst)) #f)
+                    (else
+                     (let ((v (val-at i)))
+                       (if (eq? v #f)
+                           (set! (list-ref arr i) #f)
+                           (let ((ln (if (<= (* 2 i) (length lst))
+                                         (val-at (* 2 i)) #f))
+                                 (rn (if (<= (+ (* 2 i) 1) (length lst))
+                                         (val-at (+ (* 2 i) 1)) #f)))
+                             (let ((lnode (if (eq? ln #f) #f
+                                              (make-node ln #f #f)))
+                                   (rnode (if (eq? rn #f) #f
+                                              (make-node rn #f #f))))
+                               (set! (list-ref arr i) (make-node v lnode rnode))))))
+                     (build (+ i 1))))))
+          (list-ref arr 1))))
+
+;; This is getting too complex. Let me simplify by using a different approach.

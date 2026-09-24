@@ -1,0 +1,158 @@
+(define (abs-val x) (if (< x 0) (- 0 x) x))
+
+;; Mark duplicates using in-place negation
+;; Returns the list of duplicates
+(define (find-dupes arr)
+  (define (iter arr result)
+    (if (null? arr)
+        result
+        (let* ((x (car arr))
+               (idx (- (abs-val x) 1))
+               (rest-arr (cdr arr)))
+          (if (< idx 0)
+              ;; safety: index out of bounds
+              (iter rest-arr result)
+              (let ((cur (list-ref arr idx)))
+                (cond
+                  ((< cur 0)
+                   ;; already negative => x is a duplicate
+                   ;; but we need to update the array at idx to keep it negative
+                   ;; and add x to result
+                   (let ((new-rest
+                          (list-set-helper rest-arr (- (length rest-arr) 1) rest-arr)))
+                     (iter rest-arr (append result (list x)))))
+                  (else
+                   ;; negate the element at index idx in arr
+                   (iter (list-set arr idx (- 0 cur)) result))))))))
+  (iter arr '()))
+
+;; Helper: set element at index in list
+(define (list-set lst i val)
+  (if (null? lst)
+      '()
+      (if (= i 0)
+          (cons val (cdr lst))
+          (cons (car lst) (list-set (cdr lst) (- i 1) val)))))
+
+;; Simpler approach using set! on a vector would be ideal,
+;; but Aura uses lists. Let's use a different approach:
+;; Convert list to mutable vector-like structure.
+
+;; Actually, let me redesign: use association list or
+;; use a helper that takes array and returns modified array.
+
+;; New approach: take array as list, build result by iterating
+;; and maintaining a "seen" list of negated indicators.
+
+;; Cleanest: use a recursive helper that tracks modifications.
+(define (negate-at arr n target-idx current-idx)
+  (cond
+    ((null? arr) '())
+    ((= current-idx target-idx)
+     (cons (- 0 (car arr)) (cdr arr)))
+    (else
+     (cons (car arr) (negate-at (cdr arr) (- n 1) target-idx (+ current-idx 1))))))
+
+(define (find-duplicates nums)
+  ;; Use in-place negation via mutable state via global mutation
+  (define arr (list->vector nums))
+  (define result '())
+  (define n (vector-length arr))
+  (define i 0)
+  (let loop ((i 0) (result '()))
+    (if (>= i n)
+        result
+        (let* ((x (vector-ref arr i))
+               (ai (abs-val x))
+               (idx (- ai 1)))
+          (if (< idx 0)
+              (loop (+ i 1) result)
+              (let ((cur (vector-ref arr idx)))
+                (if (< cur 0)
+                    (begin
+                      (vector-set! arr idx (- 0 (abs-val cur)))
+                      (loop (+ i 1) (append result (list ai))))
+                    (begin
+                      (vector-set! arr idx (- 0 cur))
+                      (loop (+ i 1) result))))))))))
+
+;; Wait, vectors might not exist. Let me use a list-based approach
+;; with explicit index tracking.
+
+(define (abs-val x) (if (< x 0) (- 0 x) x))
+
+;; Use a mutable single-list stored in a global cell via mutation trick.
+;; Since Aura supports set!, use a box pattern.
+
+(define (make-box v) (cons v '()))
+(define (box-get b) (car b))
+(define (box-set! b v) (set! (car b) v))
+
+(define (find-duplicates nums)
+  (let ((arr-box (make-box nums))
+        (n (length nums))
+        (result '()))
+    (let loop ((i 0))
+      (if (>= i n)
+          result
+          (let* ((arr (box-get arr-box))
+                 (x (list-ref arr i))
+                 (ai (abs-val x))
+                 (idx (- ai 1)))
+            (if (< idx 0)
+                (loop (+ i 1))
+                (let ((cur (list-ref arr idx)))
+                  (if (< cur 0)
+                      (begin
+                        (set! result (append result (list ai)))
+                        (loop (+ i 1)))
+                      (begin
+                        (box-set! arr-box (list-set arr idx (- 0 cur)))
+                        (loop (+ i 1))))))))))) 
+
+;; Helper: list-ref and list-set
+(define (list-ref lst i)
+  (if (= i 0)
+      (car lst)
+      (list-ref (cdr lst) (- i 1))))
+
+(define (list-set lst i val)
+  (if (= i 0)
+      (cons val (cdr lst))
+      (cons (car lst) (list-set (cdr lst) (- i 1) val))))
+
+;; Helper to print a list
+(define (print-list lst)
+  (display "[")
+  (let loop ((first? #t) (l lst))
+    (cond
+      ((null? l) (display "]"))
+      (else
+       (if first? (display "") (display ","))
+       (display (car l))
+       (loop #f (cdr l))))))
+
+;; solve function
+(define (solve nums)
+  (find-duplicates nums))
+
+;; Test cases
+(define (run-tests)
+  (let ((case0 '(4 3 2 7 8 2 3 1))
+        (case1 '(1 1 2))
+        (case2 '(1))
+        (case3 '(2 2))
+        (case4 '(3 1 3 4 2 5))
+        (case5 '(5 4 3 2 1 5 4 3 2 1))
+        (case6 '(10 2 5 10 9 1 1 4 3 7))
+        (case7 '(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95 96 97 98 99 100 50 75)))
+    (display "CASE0=") (print-list (solve case0)) (newline)
+    (display "CASE1=") (print-list (solve case1)) (newline)
+    (display "CASE2=") (print-list (solve case2)) (newline)
+    (display "CASE3=") (print-list (solve case3)) (newline)
+    (display "CASE4=") (print-list (solve case4)) (newline)
+    (display "CASE5=") (print-list (solve case5)) (newline)
+    (display "CASE6=") (print-list (solve case6)) (newline)
+    (display "CASE7=") (print-list (solve case7)) (newline)))
+
+(run-tests)

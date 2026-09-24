@@ -1,0 +1,288 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "n": 7,
+      "ops": [
+        [
+          "MyLinkedList"
+        ],
+        [
+          "addAtHead",
+          1
+        ],
+        [
+          "addAtTail",
+          3
+        ],
+        [
+          "addAtIndex",
+          1,
+          2
+        ],
+        [
+          "get",
+          1
+        ],
+        [
+          "deleteAtIndex",
+          1
+        ],
+        [
+          "get",
+          1
+        ]
+      ]
+    },
+    "expected": "[2,3]"
+  },
+  {
+    "id": 1,
+    "input": {
+      "n": 4,
+      "ops": [
+        [
+          "MyLinkedList"
+        ],
+        [
+          "addAtHead",
+          1
+        ],
+        [
+          "addAtTail",
+          2
+        ],
+        [
+          "get",
+          0
+        ]
+      ]
+    },
+    "expected": "[1]"
+  },
+  {
+    "id": 2,
+    "input": {
+      "n": 6,
+      "ops": [
+        [
+          "MyLinkedList"
+        ],
+        [
+          "addAtHead",
+          2
+        ],
+        [
+          "deleteAtIndex",
+          1
+        ],
+        [
+          "get",
+          0
+        ],
+        [
+          "addAtHead",
+          3
+        ],
+        [
+          "get",
+          0
+        ]
+      ]
+    },
+    "expected": "[2,3]"
+  },
+  {
+    "id": 3,
+    "input": {
+      "n": 8,
+      "ops": [
+        [
+          "MyLinkedList"
+        ],
+        [
+          "addAtIndex",
+          0,
+          1
+        ],
+        [
+          "addAtIndex",
+          1,
+          2
+        ],
+        [
+          "addAtIndex",
+          2,
+          3
+        ],
+        [
+          "get",
+          0
+        ],
+        [
+          "get",
+          1
+        ],
+        [
+          "get",
+          2
+        ],
+        [
+          "get",
+          3
+        ]
+      ]
+    },
+    "expected": "[1,2,3,-1]"
+  },
+  {
+    "id": 4,
+    "input": {
+      "n": 7,
+      "ops": [
+        [
+          "MyLinkedList"
+        ],
+        [
+          "addAtHead",
+          1
+        ],
+        [
+          "addAtHead",
+          2
+        ],
+        [
+          "addAtHead",
+          3
+        ],
+        [
+          "get",
+          0
+        ],
+        [
+          "get",
+          1
+        ],
+        [
+          "get",
+          2
+        ]
+      ]
+    },
+    "expected": "[3,2,1]"
+  },
+  {
+    "id": 5,
+    "input": {
+      "n": 6,
+      "ops": [
+        [
+          "MyLinkedList"
+        ],
+        [
+          "addAtTail",
+          1
+        ],
+        [
+          "addAtTail",
+          2
+        ],
+        [
+          "addAtTail",
+          3
+        ],
+        [
+          "deleteAtIndex",
+          1
+        ],
+        [
+          "get",
+          0
+        ],
+        [
+          "get",
+          1
+        ]
+      ]
+    },
+    "expected": "[1,3]"
+  },
+  {
+    "id": 6,
+    "input": {
+      "n": 5,
+      "ops": [
+        [
+          "MyLinkedList"
+        ],
+        [
+          "get",
+          0
+        ],
+        [
+          "deleteAtIndex",
+          0
+        ],
+        [
+          "addAtHead",
+          5
+        ],
+        [
+          "get",
+          0
+        ]
+      ]
+    },
+    "expected": "[-1,5]"
+  },
+  {
+    "id": 7,
+    "input": {
+      "n": 10,
+      "ops": [
+        [
+          "MyLinkedList"
+        ],
+        [
+          "addAtHead",
+          4
+        ],
+        [
+          "addAtHead",
+          1
+        ],
+        [
+          "addAtTail",
+          5
+        ],
+        [
+          "addAtIndex",
+          1,
+          2
+        ],
+        [
+          "addAtIndex",
+          4,
+          3
+        ],
+        [
+          "get",
+          0
+        ],
+        [
+          "get",
+          1
+        ],
+        [
+          "get",
+          2
+        ],
+        [
+          "get",
+          3
+        ]
+      ]
+    },
+    "expected": "[1,2,4,5]"
+  }
+]

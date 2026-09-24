@@ -1,0 +1,44 @@
+(define (solve s)
+  ;; convert string to list of char codes
+  (define n (string-length s))
+  (define (char-at i) (string-ref s i))
+  ;; compute last-occurrence for each position: list of length n
+  ;; last[i] = largest j where char-at j = char-at i
+  ;; build by scanning right-to-left, tracking max index seen for each letter
+  (define last-list
+    (let loop ((i (- n 1)) (acc '()) (seen (make-vector 26 -1)))
+      (if (< i 0)
+          acc
+          (let* ((c (char-at i))
+                 (ci (- (char->integer c) (char->integer #\a)))
+                 (old (vector-ref seen ci)))
+            (if (= old -1)
+                (begin
+                  (vector-set! seen ci i)
+                  (loop (- i 1) (cons i acc) seen))
+                (begin
+                  (vector-set! seen ci i)
+                  (loop (- i 1) (cons old acc) seen)))))))
+  ;; now scan with two pointers; target is max(last at each i)
+  (let loop ((i 0) (start 0) (target 0) (acc '()))
+    (cond
+      ((= i n)
+       (reverse acc))
+      (else
+       (let ((t (max target (list-ref last-list i))))
+         (if (= i t)
+             (loop (+ i 1) (+ i 1) 0 (cons (- t start -1) acc))
+             (loop (+ i 1) start t acc)))))))
+
+(define (list->string-len out)
+  (let loop ((xs out) (first? #t))
+    (cond ((null? xs) (begin (display " ") '()))
+          (else
+           (unless first? (display " "))
+           (display (car xs))
+           (loop (cdr xs) #f)))))
+
+(define (main)
+  (let ((s (read-line)))
+    (display (solve s))
+    (newline)))

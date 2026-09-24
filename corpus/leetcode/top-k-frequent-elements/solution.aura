@@ -1,0 +1,229 @@
+(define (length lst)
+  (if (null? lst) 0 (+ 1 (length (cdr lst)))))
+
+(define (append lst1 lst2)
+  (if (null? lst1)
+      lst2
+      (cons (car lst1) (append (cdr lst1) lst2))))
+
+(define (reverse-helper lst acc)
+  (if (null? lst)
+      acc
+      (reverse-helper (cdr lst) (cons (car lst) acc))))
+
+(define (reverse lst) (reverse-helper lst '()))
+
+(define (map f lst)
+  (if (null? lst)
+      '()
+      (cons (f (car lst)) (map f (cdr lst)))))
+
+;; Build an association list from input by incrementing counts
+(define (count-helper lst acc)
+  (if (null? lst)
+      acc
+      (let ((x (car lst)))
+        (count-helper (cdr lst) (cons (cons x (+ 1 (or (assv x acc) 0))) (remove-assv x acc))))))
+
+(define (remove-assv x lst)
+  (if (null? lst)
+      '()
+      (if (equal? (car (car lst)) x)
+          (cdr lst)
+          (cons (car lst) (remove-assv x (cdr lst))))))
+
+(define (assv x lst)
+  (cond ((null? lst) #f)
+        ((equal? (car (car lst)) x) (cdr (car lst)))
+        (else (assv x (cdr lst)))))
+
+(define (count-freq lst)
+  (count-helper lst '()))
+
+;; Bucket sort approach: create list of buckets indexed by frequency
+;; Bucket is a list of elements with that frequency
+(define (make-buckets freq-list n)
+  (make-buckets-helper freq-list n 0 '()))
+
+(define (make-buckets-helper freq-list n i buckets)
+  (if (= i n)
+      buckets
+      (make-buckets-helper freq-list n (+ i 1) (append buckets (list '())))))
+
+;; Find max frequency
+(define (max-freq freq-list)
+  (if (null? freq-list)
+      0
+      (let ((first-freq (cdr (car freq-list)))
+            (rest-max (max-freq (cdr freq-list))))
+        (if (> first-freq rest-max) first-freq rest-max))))
+
+;; Collect top k from buckets starting from highest frequency
+(define (collect-top k buckets i acc)
+  (cond ((= k 0) acc)
+        ((null? buckets) acc)
+        ((< i 0) acc)
+        (else
+         (let ((bucket (list-ref buckets i)))
+           (collect-bucket-elements k buckets i (- i 1) acc bucket)))))
+
+(define (list-ref lst n)
+  (if (= n 0)
+      (car lst)
+      (list-ref (cdr lst) (- n 1))))
+
+(define (collect-bucket-elements k buckets i j acc bucket)
+  (cond ((= k 0) acc)
+        ((null? bucket) (collect-top k buckets j acc))
+        (else
+         (collect-bucket-elements (- k 1) buckets i j (cons (car bucket) acc) (cdr bucket)))))
+
+;; Insert element into bucket at index freq
+(define (insert-into-buckets buckets freq elem)
+  (insert-into-buckets-helper buckets freq elem 0 '()))
+
+(define (insert-into-buckets-helper buckets freq elem i acc)
+  (if (null? buckets)
+      (reverse acc)
+      (if (= i freq)
+          (insert-into-buckets-helper (cdr buckets) freq elem (+ i 1) (append (reverse acc) (cons (cons elem '() (list-ref (reverse acc) 0)) (list)) ... )) ;; this is getting complex, simpler approach below
+          (insert-into-buckets-helper (cdr buckets) freq elem (+ i 1) (cons (car buckets) acc)))))
+
+;; Simpler implementation: build buckets as list of lists
+(define (build-buckets freq-list)
+  (let ((max-f (max-freq freq-list))
+        (buckets (make-list (+ (max-freq freq-list) 1) '())))
+    (fill-buckets freq-list buckets 1)
+    buckets))
+
+(define (make-list n elem)
+  (if (= n 0)
+      '()
+      (cons elem (make-list (- n 1) elem))))
+
+(define (fill-buckets freq-list buckets)
+  (if (null? freq-list)
+      buckets
+      (let ((entry (car freq-list))
+            (rest-buckets (fill-buckets (cdr freq-list) buckets)))
+        (let ((elem (car entry))
+              (freq (cdr entry)))
+          (insert-bucket rest-buckets freq elem 0)))))
+
+(define (insert-bucket buckets freq elem i)
+  (cond ((null? buckets) buckets)
+        ((= i freq) (cons (cons elem (car buckets)) (cdr buckets)))
+        (else (cons (car buckets) (insert-bucket (cdr buckets) freq elem (+ i 1))))))
+
+(define (take-top-k buckets k)
+  (take-top-k-helper (reverse buckets) k '()))
+
+(define (reverse-list lst)
+  (if (null? lst)
+      '()
+      (cons (car (reverse-list-helper lst '())) ... ))  ;; simpler
+  )
+
+;; Simpler reverse
+(define (rev lst)
+  (if (null? lst)
+      '()
+      (append (rev (cdr lst)) (list (car lst)))))
+
+(define (take-top-k-helper buckets k acc)
+  (cond ((= k 0) (rev acc))
+        ((null? buckets) (rev acc))
+        (else
+         (let ((bucket (car buckets)))
+           (take-from-bucket (cdr buckets) bucket k acc)))))
+
+(define (take-from-bucket buckets bucket k acc)
+  (cond ((= k 0) (take-top-k-helper buckets 0 (rev acc)))
+        ((null? bucket) (take-top-k-helper buckets k acc))
+        (else
+         (take-from-bucket buckets (cdr bucket) (- k 1) (cons (car bucket) acc)))))
+
+(define (solve nums k)
+  (let ((freq-list (count-freq nums)))
+    (let ((max-f (max-freq freq-list)))
+      (let ((buckets (build-buckets freq-list)))
+        (let ((n-buckets (+ max-f 1)))
+          (collect-from-end buckets (- n-buckets 1) k '()))))))
+
+(define (collect-from-end buckets i k acc)
+  (cond ((= k 0) (rev acc))
+        ((< i 0) (rev acc))
+        (else
+         (let ((bucket (list-ref buckets i)))
+           (collect-bucket-end buckets (- i 1) k acc bucket)))))
+
+(define (collect-bucket-end buckets i k acc bucket)
+  (cond ((= k 0) (collect-from-end buckets i 0 (rev acc)))
+        ((null? bucket) (collect-from-end buckets i k acc))
+        (else
+         (collect-bucket-end buckets i (- k 1) (cons (car bucket) acc) (cdr bucket)))))
+
+;; Final solve - clean version
+(define (solve-final nums k)
+  (let ((freq-list (count-freq nums)))
+    (let ((max-f (max-freq freq-list)))
+      (let ((buckets (build-buckets-final freq-list max-f)))
+        (collect-from-end-final buckets (- max-f 1) k '())))))
+
+(define (build-buckets-final freq-list max-f)
+  (fill-buckets-final freq-list (make-list (+ max-f 1) '())))
+
+(define (fill-buckets-final freq-list buckets)
+  (if (null? freq-list)
+      buckets
+      (let ((entry (car freq-list)))
+        (let ((elem (car entry))
+              (freq (cdr entry))
+              (rest (fill-buckets-final (cdr freq-list) buckets)))
+          (insert-bucket rest freq elem 0)))))
+
+(define (insert-bucket buckets freq elem i)
+  (cond ((null? buckets) buckets)
+        ((= i freq) (cons (cons elem (car buckets)) (cdr buckets)))
+        (else (cons (car buckets) (insert-bucket (cdr buckets) freq elem (+ i 1))))))
+
+(define (collect-from-end-final buckets i k acc)
+  (cond ((= k 0) (rev acc))
+        ((< i 0) (rev acc))
+        (else
+         (collect-bucket-end-final buckets (- i 1) k acc (list-ref buckets i)))))
+
+(define (collect-bucket-end-final buckets i k acc bucket)
+  (cond ((= k 0) (collect-from-end-final buckets i 0 (rev acc)))
+        ((null? bucket) (collect-from-end-final buckets i k acc))
+        (else
+         (collect-bucket-end-final buckets i (- k 1) (cons (car bucket) acc) (cdr bucket)))))
+
+(define (solve nums k)
+  (solve-final nums k))
+
+;; Test cases
+(display "CASE0=")
+(display (solve (list 1 1 1 2 2 3) 2))
+(newline)
+(display "CASE1=")
+(display (solve (list 1) 1))
+(newline)
+(display "CASE2=")
+(display (solve (list 4 4 4 5 5 6 7 7 7 7 8) 3))
+(newline)
+(display "CASE3=")
+(display (solve (list -1 -1 -2 -2 -2 3) 2))
+(newline)
+(display "CASE4=")
+(display (solve (list 1 2 3 4 5) 5))
+(newline)
+(display "CASE5=")
+(display (solve (list 2 2 3 3 4 4 5 5 6 6 7) 4))
+(newline)
+(display "CASE6=")
+(display (solve (list 10 10 10 10 20) 1))
+(newline)
+(display "CASE7=")
+(display (solve (list 0 0 0 0 0) 1))
+(newline)

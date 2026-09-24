@@ -1,0 +1,25 @@
+(define (solve nums)
+  ;; Convert vector to list, but since we need O(n) efficiency,
+  ;; we'll work with vector indices directly
+  (let* ((n (vector-length nums))
+         (xor-all 0)
+         (part1 0)
+         (part2 0))
+    (let loop ((i 0))
+      (when (< i n)
+        (set! xor-all (bitwise-xor xor-all (vector-ref nums i)))
+        (loop (+ i 1))))
+    ;; Find lowest set bit
+    (let loop ((x xor-all))
+      (when (= (bitwise-and x 1) 0)
+        (set! x (bitwise-arithmetic-shift-right x 1)))
+      (set! bit x))
+    ;; Partition and XOR
+    (let loop ((i 0))
+      (when (< i n)
+        (let ((v (vector-ref nums i)))
+          (if (= (bitwise-and v bit) 0)
+              (set! part1 (bitwise-xor part1 v))
+              (set! part2 (bitwise-xor part2 v)))
+          (loop (+ i 1))))
+    (list part1 part2)))

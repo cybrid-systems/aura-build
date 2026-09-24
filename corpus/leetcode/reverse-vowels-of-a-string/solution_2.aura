@@ -1,0 +1,74 @@
+(define (vowel? c)
+  (cond
+    ((equal? c #\a) #t)
+    ((equal? c #\e) #t)
+    ((equal? c #\i) #t)
+    ((equal? c #\o) #t)
+    ((equal? c #\u) #t)
+    (else #f)))
+
+(define (string->list-of-chars s)
+  (define (iter i acc)
+    (if (< i 0)
+        acc
+        (iter (- i 1) (cons (string-ref s i) acc))))
+  (iter (- (string-length s) 1) '()))
+
+(define (list-of-chars->string lst)
+  (define (iter lst i)
+    (if (null? lst)
+        ""
+        (let ((c (car lst)))
+          (let ((s (string c)))
+            (string-append
+              (if (= i 0) "" "")
+              s
+              (iter (cdr lst) (+ i 1)))))))
+  (iter lst 0))
+
+;; Better char list -> string using mutation
+(define (chars->string lst)
+  (let ((len (length lst)))
+    (let ((result (make-string len #\space)))
+      (let ((i 0))
+        (define (fill l)
+          (if (null? l)
+              'done
+              (begin
+                (string-set! result i (car l))
+                (fill (cdr l) (+ i 1)))))
+        (fill lst)
+        result))))
+
+(define (solve s)
+  (let ((chars (string->list-of-chars s)))
+    (let ((n (length chars)))
+      ;; collect indices of vowels and vowels themselves
+      (define (collect-vowels lst idx acc-idx acc-vow)
+        (if (null? lst)
+            (cons acc-idx acc-vow)
+            (let ((c (car lst)))
+              (if (vowel? c)
+                  (collect-vowels (cdr lst) (+ idx 1) (cons idx acc-idx) (cons c acc-vow))
+                  (collect-vowels (cdr lst) (+ idx 1) acc-idx acc-vow)))))
+      (let ((pair (collect-vowels chars 0 '() '())))
+        (let ((vowel-positions (car pair))
+              (vowels (cdr pair)))
+          ;; reverse vowels to get them in original order
+          (define (rev lst acc)
+            (if (null? lst) acc (rev (cdr lst) (cons (car lst) acc))))
+          (let ((reversed-vowels (rev vowels '())))
+            ;; zip positions with reversed vowels, replace in chars
+            (define (place p-list v-list cl)
+              (if (null? p-list)
+                  cl
+                  (begin
+                    (let ((arr (list->vector cl)))
+                      (vector-set! arr (car p-list) (car v-list))
+                      (let ((result '()))
+                        (define (to-list i)
+                          (if (< i 0)
+                              result
+                              (to-list (- i 1) (cons (vector-ref arr i) result))))
+                        (to-list (- (vector-length arr) 1)))))))
+            (chars->string (place vowel-positions reversed-vowels chars))))))))

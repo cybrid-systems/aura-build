@@ -1,0 +1,69 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:34:21Z",
+      "ts_local": "2026-09-24 22:34:21 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 5076,
+        "total_characters": 0,
+        "prompt_tokens": 1076,
+        "completion_tokens": 4000,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 149
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.08,
+      "tests_passed": 0,
+      "tests_total": 7,
+      "stderr_snippet": "warning: unbalanced parentheses in input\nerror: 2:21: parse error: expected expression, got identifier 'string->list'\n   |\n  2 |   (let loop (chars (string->list s) acc)\n   |                     ^^^^^^^^^^^^\n",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:34:50Z",
+      "ts_local": "2026-09-24 22:34:50 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 3923,
+        "total_characters": 0,
+        "prompt_tokens": 1076,
+        "completion_tokens": 2847,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 1075
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.328,
+      "tests_passed": 0,
+      "tests_total": 7,
+      "stderr_snippet": "type: 6:13: type error: argument 0: expected (__t179 -> __t183), got Pair\n  blamed: caller (compile)\ntype: 8:13: type error: argument 0: expected (__t188 -> __t192), got Pair\n  blamed: caller (compile)\nerror: 10:25: parse error: expected expression, got '('\n   |\n 10 |                 (equal? (last-char chars) #\\]))\n   |                         ^\nerror: 9:19: unbound variable: s\n  did you mean 'show'?\n   |\n  9 |     ((starts-with s #\\()\n   |                   ^\nerror: 7:7: unbound variable: let\n ",
+      "stdout_snippet": "CASE0=\nCASE1=\nCASE2=\nCASE3=\nCASE4=\nCASE5=\nCASE6=\n"
+    }
+  ],
+  "slug": "invert-binary-tree",
+  "title": "Invert Binary Tree",
+  "category": "trees",
+  "updated_at": "2026-09-24T14:34:50Z",
+  "updated_at_local": "2026-09-24 22:34:50 CST"
+}

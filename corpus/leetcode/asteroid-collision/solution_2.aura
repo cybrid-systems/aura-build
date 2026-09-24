@@ -1,0 +1,44 @@
+(define (solve asteroids)
+  (letrec ((helper (lambda (ast stack)
+                     (if (null? ast)
+                         stack
+                         (let ((a (car ast)))
+                           (cond
+                             ((> a 0)
+                              (helper (cdr ast) (cons a stack)))
+                             (else
+                              (letrec ((resolve (lambda (stack)
+                                                  (cond
+                                                    ((null? stack) (cons a stack))
+                                                    ((<= (car stack) 0) (cons a stack))
+                                                    ((< (car stack) (- a))
+                                                     (resolve (cdr stack)))
+                                                    ((= (car stack) (- a))
+                                                     (cdr stack))
+                                                    (else stack)))))
+                                (helper (cdr ast) (resolve stack))))))))))
+    (helper asteroids '())))
+
+(define (display-list lst)
+  (cond
+    ((null? lst) (display ""))
+    (else
+      (display (car lst))
+      (cond
+        ((null? (cdr lst)) (display ""))
+        (else
+          (display " ")
+          (display-list (cdr lst)))))))
+
+(let ((c0 (solve '(5 10 -5)))
+      (c1 (solve '(8 -8)))
+      (c2 (solve '(10 2 -5))))
+  (display "CASE0=")
+  (display-list c0)
+  (newline)
+  (display "CASE1=")
+  (display-list c1)
+  (newline)
+  (display "CASE2=")
+  (display-list c2)
+  (newline))

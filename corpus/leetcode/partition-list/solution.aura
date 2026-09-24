@@ -1,0 +1,54 @@
+(define (list->vals xs)
+  (if (null? xs) '() (cons (car xs) (list->vals (cdr xs)))))
+
+(define (vals-helper vals)
+  (if (null? vals) '()
+      (cons (car vals) (vals-helper (cdr vals)))))
+
+(define (partition-vals vals x)
+  (if (null? vals) '()
+      (let ((rest (partition-vals (cdr vals) x)))
+        (if (< (car vals) x)
+            (cons (car vals) rest)
+            (append-aux (cdr vals) x (cons (car vals) '()) '()))))
+
+(define (append-aux remaining x big-acc small-acc)
+  (if (null? remaining)
+      (append-lists small-acc big-acc)
+      (if (< (car remaining) x)
+          (append-aux (cdr remaining) x big-acc (cons (car remaining) small-acc))
+          (append-aux (cdr remaining) x (cons (car remaining) big-acc) small-acc))))
+
+(define (append-lists a b)
+  (if (null? a) b (cons (car a) (append-lists (cdr a) b))))
+
+(define (solve vals x)
+  (partition-vals vals x))
+
+(define (run-case args)
+  (let ((vals (car args))
+        (x (car (cdr args))))
+    (solve vals x)))
+
+(define (display-list lst)
+  (display "(")
+  (display-list-aux lst)
+  (display ")"))
+
+(define (display-list-aux lst)
+  (cond ((null? lst) #t)
+        ((null? (cdr lst))
+         (display (car lst)))
+        (else
+         (display (car lst))
+         (display " ")
+         (display-list-aux (cdr lst)))))
+
+(display "CASE0=") (display-list (run-case '((1 4 3 2 5 2) 3))) (newline)
+(display "CASE1=") (display-list (run-case '((2 1) 2))) (newline)
+(display "CASE2=") (display-list (run-case '(() 1))) (newline)
+(display "CASE3=") (display-list (run-case '((1) 1))) (newline)
+(display "CASE4=") (display-list (run-case '((5 4 3 2 1) 3))) (newline)
+(display "CASE5=") (display-list (run-case '((1 2 3 4 5) 10))) (newline)
+(display "CASE6=") (display-list (run-case '((5 4 3 2 1) 0))) (newline)
+(display "CASE7=") (display-list (run-case '((3 1 2 4 1) 3))) (newline)

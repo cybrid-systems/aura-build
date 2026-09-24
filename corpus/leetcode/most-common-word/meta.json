@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:27:05Z",
+      "ts_local": "2026-09-24 22:27:05 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 5219,
+        "total_characters": 0,
+        "prompt_tokens": 1219,
+        "completion_tokens": 4000,
+        "prompt_tokens_details": {
+          "cached_tokens": 528
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.622,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "warning: unbalanced parentheses in input\n⚠ program returned an uncalled function\n",
+      "stdout_snippet": "#<procedure>\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:27:14Z",
+      "ts_local": "2026-09-24 22:27:14 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2231,
+        "total_characters": 0,
+        "prompt_tokens": 1219,
+        "completion_tokens": 1012,
+        "prompt_tokens_details": {
+          "cached_tokens": 1218
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.02,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 59:71: parse error: unexpected ')'\n",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "most-common-word",
+  "title": "Most Common Word",
+  "category": "hashing",
+  "updated_at": "2026-09-24T14:27:14Z",
+  "updated_at_local": "2026-09-24 22:27:14 CST"
+}

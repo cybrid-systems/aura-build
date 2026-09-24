@@ -1,0 +1,100 @@
+;; Helper: build a tree from a list using level-order, where each node is
+;; represented as a cell (value left right). The input list may contain 'null
+;; (or any non-number) for missing children.
+(define (make-tree lst)
+  (if (or (null? lst) (not (number? (car lst))))
+      'null
+      (let ((nodes '())
+            (i 0))
+        ;; Initialize nodes with all 'null first so we can reference parents.
+        (set! nodes (build-node-list lst))
+        (set! i 0)
+        ;; Link children. For each parent at index i (0-based), its left child is
+        ;; at index 2*i+1 and right child at 2*i+2.
+        (link-children nodes 0 (length lst))
+        (car nodes))))
+
+(define (build-node-list lst)
+  ;; Returns a list of nodes in the same order as lst; 'null stays 'null,
+  ;; numbers become a single-element list (val left right) where left/right
+  ;; are placeholders to be filled later.
+  (define (helper l)
+    (if (null? l)
+        '()
+        (let ((v (car l)))
+          (if (number? v)
+              (cons (list v 'null 'null) (helper (cdr l)))
+              (cons 'null (helper (cdr l)))))))
+  (helper lst))
+
+(define (link-children nodes idx total)
+  ;; Recursively assign left/right children for node at idx.
+  (if (or (null? nodes) (>= idx total))
+      'done
+      (let ((node (car nodes)))
+        (if (eq? node 'null)
+            'done
+            (let ((left-idx (+ (* 2 idx) 1))
+                  (right-idx (+ (* 2 idx) 2)))
+              ;; Set left
+              (if (< left-idx total)
+                  (let ((left-node (list-ref nodes left-idx)))
+                    (set-car! (cdr node) left-node))
+                  'noop)
+              ;; Set right
+              (if (< right-idx total)
+                  (let ((right-node (list-ref nodes right-idx)))
+                    (set-car! (cddr node) right-node))
+                  'noop)
+              ;; Recurse
+              (link-children (cdr nodes) (+ idx 1) total))))))
+
+(define (list-ref lst n)
+  (if (= n 0)
+      (car lst)
+      (list-ref (cdr lst) (- n 1))))
+
+;; Core same-tree comparison.
+(define (same? p q)
+  (cond
+    ((and (eq? p 'null) (eq? q 'null)) #t)
+    ((or (eq? p 'null) (eq? q 'null)) #f)
+    (else
+      (let ((pv (car p)) (qv (car q)))
+        (if (= pv qv)
+            (and (same? (cadr p) (cadr q))
+                 (same? (caddr p) (caddr q)))
+            #f)))))
+
+;; solve: build trees from input lists and compare them.
+(define (solve p q)
+  (same? (make-tree p) (make-tree q)))
+
+;; Display a boolean as True/False for the harness.
+(define (display-bool b)
+  (if b (display "True") (display "False")))
+
+;; ---- Test cases ----
+(let ((p0 '(1 2 3)) (q0 '(1 2 3)))
+  (display "CASE0=") (display-bool (solve p0 q0)) (newline))
+
+(let ((p1 '(1 2)) (q1 '(1 null 2)))
+  (display "CASE1=") (display-bool (solve p1 q1)) (newline))
+
+(let ((p2 '(1 2 1)) (q2 '(1 1 2)))
+  (display "CASE2=") (display-bool (solve p2 q2)) (newline))
+
+(let ((p3 '()) (q3 '()))
+  (display "CASE3=") (display-bool (solve p3 q3)) (newline))
+
+(let ((p4 '()) (q4 '(1)))
+  (display "CASE4=") (display-bool (solve p4 q4)) (newline))
+
+(let ((p5 '(1 null 2 null 3)) (q5 '(1 null 2 null 3)))
+  (display "CASE5=") (display-bool (solve p5 q5)) (newline))
+
+(let ((p6 '(1 2 null null 3)) (q6 '(1 2 null null 3)))
+  (display "CASE6=") (display-bool (solve p6 q6)) (newline))
+
+(let ((p7 '(1 2 3 null null null 4)) (q7 '(1 2 3 null null null 4)))
+  (display "CASE7=") (display-bool (solve p7 q7)) (newline))

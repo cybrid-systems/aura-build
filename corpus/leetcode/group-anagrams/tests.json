@@ -1,0 +1,91 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "strings": [
+        "eat",
+        "tea",
+        "tan",
+        "ate",
+        "nat",
+        "bat"
+      ]
+    },
+    "expected": "[[\"ate\",\"eat\",\"tea\"],[\"bat\"],[\"nat\",\"tan\"]]"
+  },
+  {
+    "id": 1,
+    "input": {
+      "strings": []
+    },
+    "expected": "[]"
+  },
+  {
+    "id": 2,
+    "input": {
+      "strings": [
+        ""
+      ]
+    },
+    "expected": "[[\"\"]]"
+  },
+  {
+    "id": 3,
+    "input": {
+      "strings": [
+        "",
+        ""
+      ]
+    },
+    "expected": "[[\"\",\"\"]]"
+  },
+  {
+    "id": 4,
+    "input": {
+      "strings": [
+        "abc",
+        "bca",
+        "cab",
+        "xyz",
+        "zyx",
+        "yxz"
+      ]
+    },
+    "expected": "[[\"abc\",\"bca\",\"cab\"],[\"xyz\",\"yxz\",\"zyx\"]]"
+  },
+  {
+    "id": 5,
+    "input": {
+      "strings": [
+        "a"
+      ]
+    },
+    "expected": "[[\"a\"]]"
+  },
+  {
+    "id": 6,
+    "input": {
+      "strings": [
+        "listen",
+        "silent",
+        "enlist",
+        "hello",
+        "olleh"
+      ]
+    },
+    "expected": "[[\"enlist\",\"listen\",\"silent\"],[\"hello\",\"olleh\"]]"
+  },
+  {
+    "id": 7,
+    "input": {
+      "strings": [
+        "ab",
+        "ba",
+        "cd",
+        "dc",
+        "ef"
+      ]
+    },
+    "expected": "[[\"ab\",\"ba\"],[\"cd\",\"dc\"],[\"ef\"]]"
+  }
+]

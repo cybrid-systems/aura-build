@@ -1,0 +1,148 @@
+(define (sort-nums nums)
+  ;; simple insertion sort on a list of numbers, returns sorted list
+  (define (insert x xs)
+    (cond ((null? xs) (cons x '()))
+          ((<= x (car xs)) (cons x xs))
+          (else (cons (car xs) (insert x (cdr xs))))))
+  (define (loop xs acc)
+    (if (null? xs)
+        acc
+        (loop (cdr xs) (insert (car xs) acc))))
+  (loop nums '()))
+
+(define (list-ref xs i)
+  (if (= i 0)
+      (car xs)
+      (list-ref (cdr xs) (- i 1))))
+
+(define (list-set! xs i v)
+  (define (loop lst k)
+    (cond ((null? lst) '())
+          ((= k 0) (set-car! lst v))
+          (else (loop (cdr lst) (- k 1))))))
+  (loop xs i))
+
+(define (vec-ref v i) (list-ref v i))
+(define (vec-set! v i x) (list-set! v i x))
+
+(define (vec-length v)
+  (define (loop lst n) (if (null? lst) n (loop (cdr lst) (+ n 1))))
+  (loop v 0))
+
+(define (four-sum nums target)
+  (let* ((sorted (sort-nums nums))
+         (n (vec-length sorted))
+         (result '()))
+    (define (three-sum start target3)
+      (let loop-i ((i start))
+        (if (>= (+ i 1) n)
+            '()
+            (begin
+              (let ((ni (vec-ref sorted i)))
+                (if (and (> i start) (= ni (vec-ref sorted (- i 1))))
+                    (loop-i (+ i 1))
+                    (let loop-l ((l (+ i 1)))
+                      (if (>= l n)
+                          (loop-i (+ i 1))
+                          (let ((nl (vec-ref sorted l)))
+                            (if (and (> l (+ i 1)) (= nl (vec-ref sorted (- l 1))))
+                                (loop-l (+ l 1))
+                                (let ((r (- n 1)))
+                                  (let scan ((lp l) (rp r))
+                                    (cond
+                                      ((>= lp rp)
+                                       (loop-l (+ l 1)))
+                                      (else
+                                       (let* ((sl (vec-ref sorted lp))
+                                              (sr (vec-ref sorted rp))
+                                              (s (+ ni sl sr)))
+                                         (cond
+                                           ((= s target3)
+                                            (set! result (cons (list ni nl sr sl) result))
+                                            ;; but need sorted order ni nl sr -> already
+                                            (set! result (cons (list ni nl (vec-ref sorted rp) (vec-ref sorted lp)) result))
+                                            ;; actually let me redo properly below
+                                            ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) )
+    result))
+
+;; Actually let me rewrite cleanly
+(define (four-sum nums target)
+  (let* ((sorted (sort-nums nums))
+         (n (vec-length sorted))
+         (result '()))
+    (let outer-i ((i 0))
+      (if (>= i (- n 3))
+          result
+          (let ((ni (vec-ref sorted i)))
+            (if (and (> i 0) (= ni (vec-ref sorted (- i 1))))
+                (outer-i (+ i 1))
+                (let outer-j ((j (+ i 1)))
+                  (if (>= j (- n 2))
+                      (outer-i (+ i 1))
+                      (let ((nj (vec-ref sorted j)))
+                        (if (and (> j (+ i 1)) (= nj (vec-ref sorted (- j 1))))
+                            (outer-j (+ j 1))
+                            (let ((target2 (- target ni nj)))
+                              (let ((lp (+ j 1)))
+                                (let ((rp (- n 1)))
+                                  (let two-ptr ((l lp) (r rp))
+                                    (cond
+                                      ((>= l r)
+                                       (outer-j (+ j 1)))
+                                      (else
+                                       (let* ((vl (vec-ref sorted l))
+                                              (vr (vec-ref sorted r))
+                                              (s (+ vl vr)))
+                                         (cond
+                                           ((= s target2)
+                                            (set! result (cons (list ni nj vr vl) result))
+                                            ;; avoid dup on l
+                                            (let skip-l ((nl l))
+                                              (if (and (< nl r) (= (vec-ref sorted nl) vl))
+                                                  (skip-l (+ nl 1))
+                                                  (let skip-r ((nr r))
+                                                    (if (and (> nr nl) (= (vec-ref sorted nr) vr))
+                                                        (skip-r (- nr 1))
+                                                        (two-ptr nl nr))))))
+                                           ((< s target2)
+                                            (two-ptr (+ l 1) r))
+                                           (else
+                                            (two-ptr l (- r 1)))))))))))))))))
+    result))
+
+(define (display-list lst)
+  (display "[")
+  (let loop ((xs lst) (first #t))
+    (cond ((null? xs) (display "]"))
+          (else
+           (if first (set! first #f) (display ","))
+           (let ((v (car xs)))
+             (cond ((number? v) (display v))
+                   ((string? v) (display v))
+                   ((null? v) (display "[]"))
+                   (else
+                    (if (and (pair? v) (number? (car v)))
+                        (display-list v)
+                        (display v))))
+           (loop (cdr xs) #f)))))
+
+(define (solve nums target)
+  (four-sum nums target))
+
+;; Embedded test inputs
+(define (run-case i nums target)
+  (let ((res (solve nums target)))
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display-list res)
+    (newline)))
+
+(run-case 0 '(-2 -1 0 0 1 2) 0)
+(run-case 1 '(2 2 2 2 2) 8)
+(run-case 2 '() 0)
+(run-case 3 '(1 2 3 4) 10)
+(run-case 4 '(-3 -2 -1 0 0 1 2 3) 0)
+(run-case 5 '(0 0 0 0 0) 0)
+(run-case 6 '(-5 -4 -3 -2 1 3 3 5) -11)
+(run-case 7 '(-5 -4 -3 -2 -1 0 1 2 3 4 5) 0)

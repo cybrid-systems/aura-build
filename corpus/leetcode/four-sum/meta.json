@@ -1,0 +1,69 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:22:20Z",
+      "ts_local": "2026-09-24 22:22:20 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 3135,
+        "total_characters": 0,
+        "prompt_tokens": 1334,
+        "completion_tokens": 1801,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.108,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "warning: unbalanced parentheses in input\n⚠ program returned an uncalled function\n",
+      "stdout_snippet": "#<procedure>\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:22:36Z",
+      "ts_local": "2026-09-24 22:22:36 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2766,
+        "total_characters": 0,
+        "prompt_tokens": 1334,
+        "completion_tokens": 1432,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 1280
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.016,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 23:14: parse error: unexpected ')'\n",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "four-sum",
+  "title": "4Sum",
+  "category": "arrays",
+  "updated_at": "2026-09-24T14:22:36Z",
+  "updated_at_local": "2026-09-24 22:22:36 CST"
+}

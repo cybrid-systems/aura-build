@@ -1,0 +1,95 @@
+;; Valid Palindrome - normalize alphanumeric (ASCII a-zA-Z0-9), ignore case
+;; Two-pointer approach using char-code arithmetic on a list of chars.
+
+(define (char->int c)
+  ;; char->integer in Aura? Use built-in if available, else compute via char-downcase distance.
+  ;; We'll use the standard built-in.
+  (char->integer c))
+
+(define (is-upper-alpha? c)
+  (let ((code (char->int c)))
+    (and (>= code 65) (<= code 90))))
+
+(define (is-lower-alpha? c)
+  (let ((code (char->int c)))
+    (and (>= code 97) (<= code 122))))
+
+(define (is-digit? c)
+  (let ((code (char->int c)))
+    (and (>= code 48) (<= code 57))))
+
+(define (is-alnum? c)
+  (or (is-upper-alpha? c) (is-lower-alpha? c) (is-digit? c)))
+
+(define (to-lower c)
+  (if (is-upper-alpha? c)
+      (integer->char (+ (char->int c) 32))
+      c))
+
+;; Two-pointer palindrome check on list of chars
+(define (pal-helper cs left right)
+  ;; left, right are 0-based indices; cs is a list of chars (1..n)
+  ;; We need list length and random-ish access. Simpler: build a vector-like via list-ref? 
+  ;; Instead, do a recursive approach: compare first and last, recurse on middle.
+  (if (or (null? cs) (null? (cdr cs)))
+      #t
+      (let ((first-c (car cs))
+            (rest    (cdr cs)))
+        ;; get last element
+        (let loop ((r rest) (prev '()))
+          (if (null? r)
+              (let ((last-c (car prev))
+                    (middle (cdr prev)))
+                (if (not (equal? first-c last-c))
+                    #f
+                    (pal-helper middle (- (length-list middle) 1) 0)))
+              (loop (cdr r) (cons (car r) prev)))))))
+
+(define (length-list xs)
+  (if (null? xs) 0 (+ 1 (length-list (cdr xs)))))
+
+;; Simpler approach: build filtered normalized list, then compare to its reverse.
+(define (normalize s)
+  ;; s is a string (list of chars)
+  (if (null? s)
+      '()
+      (let ((c (car s)))
+        (if (is-alnum? c)
+            (cons (to-lower c) (normalize (cdr s)))
+            (normalize (cdr s))))))
+
+(define (reverse-list xs)
+  (let loop ((xs xs) (acc '()))
+    (if (null? xs)
+        acc
+        (loop (cdr xs) (cons (car xs) acc)))))
+
+(define (list-equal? a b)
+  (cond ((and (null? a) (null? b)) #t)
+        ((or (null? a) (null? b)) #f)
+        ((not (equal? (car a) (car b))) #f)
+        (else (list-equal? (cdr a) (cdr b)))))
+
+(define (is-palindrome? s)
+  (let ((norm (normalize s)))
+    (list-equal? norm (reverse-list norm))))
+
+(define (solve s)
+  (if (is-palindrome? s) #t #f))
+
+;; For each test case, print result
+(define (display-case i result)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (if result "True" "False"))
+  (newline))
+
+(display-case 0 (solve "A man, a plan, a canal: Panama"))
+(display-case 1 (solve "race a car"))
+(display-case 2 (solve " "))
+(display-case 3 (solve "0P"))
+(display-case 4 (solve ""))
+(display-case 5 (solve "abba"))
+(display-case 6 (solve "abc"))
+(display-case 7 (solve "Was it a car or a cat I saw?"))

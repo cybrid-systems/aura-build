@@ -1,0 +1,142 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "root": null
+    },
+    "expected": "{\"type\":\"NIL\"}"
+  },
+  {
+    "id": 1,
+    "input": {
+      "root": [
+        "ROOT",
+        [
+          "VAL",
+          1
+        ]
+      ]
+    },
+    "expected": "{\"type\":\"LEVEL\",\"levels\":[[null],[1]]}"
+  },
+  {
+    "id": 2,
+    "input": {
+      "root": [
+        "ROOT",
+        [
+          "VAL",
+          3
+        ],
+        [
+          "VAL",
+          9
+        ],
+        [
+          "VAL",
+          20
+        ],
+        [
+          "NODE",
+          [
+            "VAL",
+            15
+          ]
+        ],
+        [
+          "NODE",
+          [
+            "VAL",
+            7
+          ]
+        ]
+      ]
+    },
+    "expected": "{\"type\":\"LEVEL\",\"levels\":[[null],[9,3]]}"
+  },
+  {
+    "id": 3,
+    "input": {
+      "root": [
+        "ROOT",
+        [
+          "VAL",
+          1
+        ],
+        [
+          "NODE",
+          [
+            "VAL",
+            2
+          ],
+          [
+            "NODE",
+            [
+              "VAL",
+              4
+            ]
+          ],
+          [
+            "NODE",
+            [
+              "VAL",
+              5
+            ]
+          ]
+        ],
+        [
+          "NODE",
+          [
+            "VAL",
+            3
+          ],
+          [
+            "NODE",
+            [
+              "VAL",
+              6
+            ]
+          ],
+          [
+            "NODE",
+            [
+              "VAL",
+              7
+            ]
+          ]
+        ]
+      ]
+    },
+    "expected": "{\"type\":\"LEVEL\",\"levels\":[[null],[2,1]]}"
+  },
+  {
+    "id": 4,
+    "input": {
+      "root": [
+        "ROOT",
+        [
+          "VAL",
+          1
+        ],
+        [
+          "VAL",
+          2
+        ]
+      ]
+    },
+    "expected": "{\"type\":\"LEVEL\",\"levels\":[[null],[2,1]]}"
+  },
+  {
+    "id": 5,
+    "input": {
+      "root": [
+        "ROOT",
+        [
+          "VAL",
+          1
+        ]
+      ]
+    },
+    "expected": "{\"type\":\"LEVEL\",\"levels\":[[null],[1]]}"
+  }
+]

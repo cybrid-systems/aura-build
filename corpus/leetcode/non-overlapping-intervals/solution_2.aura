@@ -1,0 +1,66 @@
+(define (caar p) (car (car p)))
+(define (cadr p) (car (cdr p)))
+(define (cdar p) (cdr (car p)))
+(define (cddr p) (cdr (cdr p)))
+
+(define (make-interval s e) (cons s (cons e '())))
+
+(define (interval-start iv) (car iv))
+(define (interval-end iv) (car (cdr iv)))
+
+(define (insert-sorted iv ivs)
+  (cond
+    ((null? ivs) (cons iv '()))
+    ((<= (interval-end iv) (interval-end (car ivs)))
+     (cons iv ivs))
+    (else (cons (car ivs) (insert-sorted iv (cdr ivs))))))
+
+(define (sort-by-end ivs)
+  (if (null? ivs)
+      '()
+      (insert-sorted (car ivs) (sort-by-end (cdr ivs)))))
+
+(define (overlaps? a b)
+  (let ((as (interval-start a)) (ae (interval-end a))
+        (bs (interval-start b)) (be (interval-end b)))
+    (and (< as bs) (< bs ae))))
+
+(define (solve-aux ivs kept-end count)
+  (cond
+    ((null? ivs) count)
+    ((and (not (null? kept-end)) (overlaps? (car ivs) kept-end))
+     (solve-aux (cdr ivs) kept-end (+ count 1)))
+    (else
+     (solve-aux (cdr ivs) (car ivs) count))))
+
+(define (solve intervals)
+  (let ((sorted (sort-by-end intervals)))
+    (solve-aux sorted '() 0)))
+
+(define (display-list items)
+  (display "(")
+  (define (loop xs)
+    (cond
+      ((null? xs) (display ")"))
+      (else
+        (display (car xs))
+        (if (not (null? (cdr xs))) (display " "))
+        (loop (cdr xs)))))
+  (loop items)
+  (newline))
+
+(define (run-case i intervals)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve intervals))
+  (newline))
+
+(run-case 0 '((1 . (2 . ())) (2 . (3 . ())) (3 . (4 . ()))))
+(run-case 1 '((1 . (2 . ())) (1 . (3 . ())) (2 . (3 . ())) (3 . (4 . ()))))
+(run-case 2 '())
+(run-case 3 '((5 . (10 . ()))))
+(run-case 4 '((1 . (5 . ())) (2 . (6 . ())) (3 . (7 . ()))))
+(run-case 5 '((1 . (2 . ())) (3 . (4 . ())) (2 . (3 . ()))))
+(run-case 6 '((1 . (100 . ())) (2 . (3 . ())) (4 . (5 . ())) (6 . (7 . ()))))
+(run-case 7 '((1 . (3 . ())) (2 . (3 . ())) (3 . (3 . ())) (4 . (6 . ()))))

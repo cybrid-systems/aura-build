@@ -1,0 +1,72 @@
+(define (list-ref lst n)
+  (if (= n 0)
+      (car lst)
+      (list-ref (cdr lst) (- n 1))))
+
+(define (list-length lst)
+  (if (null? lst)
+      0
+      (+ 1 (list-length (cdr lst)))))
+
+(define (append a b)
+  (if (null? a)
+      b
+      (cons (car a) (append (cdr a) b))))
+
+(define (map f lst)
+  (if (null? lst)
+      '()
+      (cons (f (car lst)) (map f (cdr lst)))))
+
+(define (next-row row)
+  (let ((len (list-length row)))
+    (let loop ((i 0) (acc '()))
+      (if (= i len)
+          (append (reverse acc) (list 1))
+          (loop (+ i 1)
+                (cons (+ (list-ref row i) (list-ref row (+ i 1))) acc))))))
+
+(define (reverse lst)
+  (let loop ((l lst) (acc '()))
+    (if (null? l)
+        acc
+        (loop (cdr l) (cons (car l) acc)))))
+
+(define (solve numrows)
+  (let loop ((i 0) (rows (list (list 1))))
+    (if (= i (- numrows 1))
+        rows
+        (loop (+ i 1) (append rows (list (next-row (car (reverse rows)))))))))
+
+(define (display-row row)
+  (let loop ((r row))
+    (cond ((null? r) (newline))
+          (else
+           (display (car r))
+           (if (null? (cdr r))
+               (newline)
+               (begin (display " ") (loop (cdr r))))))))
+
+(define (display-triangle rows)
+  (for-each display-row rows))
+
+(define (for-each f lst)
+  (if (null? lst)
+      '()
+      (begin (f (car lst)) (for-each f (cdr lst)))))
+
+(define (run-case n)
+  (let ((result (solve n)))
+    (display "CASE")
+    (display n)
+    (display "=")
+    (display-triangle result)))
+
+(run-case 0)
+(run-case 1)
+(run-case 2)
+(run-case 3)
+(run-case 5)
+(run-case 6)
+(run-case 10)
+(run-case 15)

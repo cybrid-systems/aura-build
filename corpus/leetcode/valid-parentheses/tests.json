@@ -1,0 +1,86 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "s": "()"
+    },
+    "expected": "true"
+  },
+  {
+    "id": 1,
+    "input": {
+      "s": "()[]{}"
+    },
+    "expected": "true"
+  },
+  {
+    "id": 2,
+    "input": {
+      "s": "(]"
+    },
+    "expected": "false"
+  },
+  {
+    "id": 3,
+    "input": {
+      "s": "([)]"
+    },
+    "expected": "false"
+  },
+  {
+    "id": 4,
+    "input": {
+      "s": "{[]}"
+    },
+    "expected": "true"
+  },
+  {
+    "id": 5,
+    "input": {
+      "s": ""
+    },
+    "expected": "true"
+  },
+  {
+    "id": 6,
+    "input": {
+      "s": "["
+    },
+    "expected": "false"
+  },
+  {
+    "id": 7,
+    "input": {
+      "s": "(())"
+    },
+    "expected": "true"
+  },
+  {
+    "id": 8,
+    "input": {
+      "s": "(((())))"
+    },
+    "expected": "true"
+  },
+  {
+    "id": 9,
+    "input": {
+      "s": "({[)]}"
+    },
+    "expected": "false"
+  },
+  {
+    "id": 10,
+    "input": {
+      "s": "([{}])"
+    },
+    "expected": "true"
+  },
+  {
+    "id": 11,
+    "input": {
+      "s": "}()"
+    },
+    "expected": "false"
+  }
+]

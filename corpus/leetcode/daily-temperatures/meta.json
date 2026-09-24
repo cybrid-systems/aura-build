@@ -1,0 +1,32 @@
+{
+  "variants": [],
+  "slug": "daily-temperatures",
+  "title": "Daily Temperatures",
+  "category": "stack_queue",
+  "ref": {
+    "llm": {
+      "ok": true,
+      "error": "",
+      "usage": {
+        "total_tokens": 2786,
+        "total_characters": 0,
+        "prompt_tokens": 754,
+        "completion_tokens": 2032,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "model": "MiniMax-M3"
+    },
+    "run": {
+      "ref_ok": false,
+      "exit_code": 1,
+      "stderr": "Traceback (most recent call last):\n  File \"/workspace/aura-build/corpus/leetcode/daily-temperatures/ref.py\", line 32, in <module>\n    temps = json.loads(line.split('=', 1)[1])\n                       ~~~~~~~~~~~~~~~~~~^^^\nIndexError: list index out of range\n",
+      "duration_s": 0.031,
+      "timeout": false,
+      "n_tests": 0
+    },
+    "ts": "2026-09-24T14:30:21Z"
+  },
+  "updated_at": "2026-09-24T14:30:21Z"
+}

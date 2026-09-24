@@ -1,0 +1,60 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:21:36Z",
+      "ts_local": "2026-09-24 22:21:36 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2177,
+        "total_characters": 0,
+        "prompt_tokens": 1260,
+        "completion_tokens": 917
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.016,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 57:20: parse error: unexpected ')'\n",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:21:53Z",
+      "ts_local": "2026-09-24 22:21:53 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2152,
+        "total_characters": 0,
+        "prompt_tokens": 1260,
+        "completion_tokens": 892,
+        "prompt_tokens_details": {
+          "cached_tokens": 1024
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.057,
+      "tests_passed": 8,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=[[7, 4, 1], [8, 5, 2], [9, 6, 3]]\nCASE1=[[3, 1], [4, 2]]\nCASE2=[[1]]\nCASE3=[]\nCASE4=[[13, 9, 5, 1], [14, 10, 6, 2], [15, 11, 7, 3], [16, 12, 8, 4]]\nCASE5=[[21, 16, 11, 6, 1], [22, 17, 12, 7, 2], [23, 18, 13, 8, 3], [24, 19, 14, 9, 4], [25, 20, 15, 10, 5]]\nCASE6=[[-3, -1], [-4, -2]]\nCASE7=[[0, 0], [0, 0]]\n"
+    }
+  ],
+  "slug": "rotate-image",
+  "title": "Rotate Image",
+  "category": "arrays",
+  "updated_at": "2026-09-24T14:21:53Z",
+  "updated_at_local": "2026-09-24 22:21:53 CST"
+}

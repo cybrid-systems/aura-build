@@ -1,0 +1,53 @@
+(define (display-list xs)
+  (display "[")
+  (let loop ((rest xs) (first? #t))
+    (cond
+      ((null? rest) (display "]"))
+      (else
+        (if first? (set! first? #f) (begin (display ",") (display " ")))
+        (display (car rest))
+        (loop (cdr rest) #f)))))
+
+(define (solve nums)
+  (let ((n (length nums)))
+    (let loop ((lo 0)
+               (hi (- n 1))
+               (i 0))
+      (cond
+        ((> i hi) nums)
+        (else
+          (let ((v (list-ref nums i)))
+            (cond
+              ((= v 0)
+               (let ((tmp (list-ref nums lo)))
+                 (set! (list-ref nums lo) v)
+                 (set! (list-ref nums i) tmp))
+               (loop (+ lo 1) hi (+ i 1)))
+              ((= v 2)
+               (let ((tmp (list-ref nums hi)))
+                 (set! (list-ref nums hi) v)
+                 (set! (list-ref nums i) tmp))
+               (loop lo (- hi 1) i))
+              (else
+               (loop lo hi (+ i 1))))))))))
+
+(let ((cases (list
+               (list 2 0 2 1 1 0)
+               (list 2 0 1)
+               (list 0)
+               (list 1 1 1 0 0 2 2)
+               (list 2 2 2 2)
+               (list 0 0 0 0)
+               (list 1)
+               (list))))
+  (let loop ((cs cases) (i 0))
+    (cond
+      ((null? cs) (display "DONE"))
+      (else
+        (let ((nums (car cs)))
+          (solve nums)
+          (display (string-append "CASE" (number->string i)))
+          (display "=")
+          (display-list nums)
+          (newline)
+          (loop (cdr cs) (+ i 1)))))))

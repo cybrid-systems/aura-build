@@ -1,0 +1,109 @@
+;; Helper: get length of a list
+(define (len xs)
+  (if (null? xs) 0 (+ 1 (len (cdr xs)))))
+
+;; Helper: nth element of list (0-indexed)
+(define (nth xs i)
+  (if (= i 0) (car xs) (nth (cdr xs) (- i 1))))
+
+;; Helper: reverse a list
+(define (rev xs)
+  (define (rev-acc xs acc)
+    (if (null? xs) acc (rev-acc (cdr xs) (cons (car xs) acc))))
+  (rev-acc xs '()))
+
+;; Helper: list-ref using nth
+(define (list-ref xs i) (nth xs i))
+
+;; Helper: build a list of length n with all 1s
+(define (ones n)
+  (define (ones-acc n acc)
+    (if (= n 0) acc (ones-acc (- n 1) (cons 1 acc))))
+  (ones-acc n '()))
+
+;; Helper: map over two lists pairwise (both same length)
+(define (map2 f xs ys)
+  (if (null? xs)
+      '()
+      (cons (f (car xs) (car ys)) (map2 f (cdr xs) (cdr ys)))))
+
+;; Helper: map over list
+(define (my-map f xs)
+  (if (null? xs)
+      '()
+      (cons (f (car xs)) (my-map f (cdr xs)))))
+
+;; Helper: zip two lists into pairs
+(define (zip xs ys)
+  (if (null? xs)
+      '()
+      (cons (cons (car xs) (car ys)) (zip (cdr xs) (cdr ys)))))
+
+;; Compute product of all elements in list
+(define (prod-list xs)
+  (define (prod-acc xs acc)
+    (if (null? xs) acc (prod-acc (cdr xs) (* acc (car xs)))))
+  (prod-acc xs 1))
+
+;; Core algorithm: product of array except self
+;; Returns a list (Aura "vector") of products
+(define (solve nums)
+  (let ((n (len nums)))
+    (if (= n 0)
+        '()
+        (begin
+          (define prefix (ones n))
+          (define (fill-prefix i)
+            (if (= i n)
+                '()
+                (begin
+                  (if (= i 0)
+                      (set! (car prefix) 1)
+                      (set! (nth prefix i) (* (nth prefix (- i 1)) (nth nums (- i 1)))))
+                  (fill-prefix (+ i 1)))))
+          (fill-prefix 0)
+          (define suffix-prod 1)
+          (define result (ones n))
+          (define (fill-result i)
+            (if (< i 0)
+                '()
+                (begin
+                  (set! (nth result i) (* (nth prefix i) suffix-prod))
+                  (set! suffix-prod (* suffix-prod (nth nums i)))
+                  (fill-result (- i 1)))))
+          (fill-result (- n 1))
+          result))))
+
+;; Display a list as [a,b,c,...]
+(define (display-list xs)
+  (display "[")
+  (define (loop xs)
+    (if (null? xs)
+        (display "]")
+        (begin
+          (display (number->string (car xs)))
+          (if (null? (cdr xs))
+              (display "]")
+              (begin
+                (display ",")
+                (loop (cdr xs)))))))
+  (loop xs)
+  (newline))
+
+;; Display result for a case
+(define (show-case i nums)
+  (display "CASE")
+  (display (number->string i))
+  (display "=")
+  (let ((r (solve nums)))
+    (display-list r)))
+
+;; Test cases
+(show-case 0 '())
+(show-case 1 '(1))
+(show-case 2 '(1 2 3 4))
+(show-case 3 '(-1 1 0 -3 3))
+(show-case 4 '(0 0 1 2))
+(show-case 5 '(2 3 0 5))
+(show-case 6 '(-2 -3 4 -5))
+(show-case 7 '(1 1 1 1 1))

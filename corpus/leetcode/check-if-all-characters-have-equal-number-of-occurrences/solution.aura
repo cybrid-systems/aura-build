@@ -1,0 +1,62 @@
+(define (count-char-in-list c lst)
+  (cond
+    ((null? lst) 0)
+    ((equal? (car lst) c) (+ 1 (count-char-in-list c (cdr lst))))
+    (else (count-char-in-list c (cdr lst)))))
+
+(define (freq-list s)
+  (define (helper chars seen)
+    (cond
+      ((null? chars) seen)
+      ((member? (car chars) seen) (helper (cdr chars) seen))
+      (else (helper (cdr chars)
+                    (cons (cons (car chars)
+                                (count-char-in-list (car chars) chars))
+                          seen)))))
+  (helper (string->list s) '()))
+
+(define (member? x lst)
+  (cond
+    ((null? lst) #f)
+    ((equal? (car lst) x) #t)
+    (else (member? x (cdr lst)))))
+
+(define (freqs fl)
+  (cond
+    ((null? fl) '())
+    (else (cons (cdr (car fl)) (freqs (cdr fl))))))
+
+(define (all-equal? lst)
+  (cond
+    ((null? lst) #t)
+    ((null? (cdr lst)) #t)
+    ((not (equal? (car lst) (car (cdr lst)))) #f)
+    (else (all-equal? (cdr lst)))))
+
+(define (solve s)
+  (all-equal? (freqs (freq-list s))))
+
+(define (display-list lst)
+  (cond
+    ((null? lst) (display "()"))
+    (else
+      (display "(")
+      (display (car lst))
+      (display-list (cdr lst))
+      (display ")"))))
+
+(define (run-case i s)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (if (solve s) "True" "False"))
+  (newline))
+
+(run-case 0 "ababab")
+(run-case 1 "aaaaabbbbb")
+(run-case 2 "abc")
+(run-case 3 "aabbcc")
+(run-case 4 "aabbccc")
+(run-case 5 "aaaa")
+(run-case 6 "")
+(run-case 7 "a b c a b c")

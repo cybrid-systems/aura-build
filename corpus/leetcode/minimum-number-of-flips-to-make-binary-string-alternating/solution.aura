@@ -1,0 +1,71 @@
+(define (string-length s)
+  (if (string=? s "") 0 (+ 1 (string-length (substring s 1)))))
+
+(define (string-ref-idx s i)
+  (string-ref (substring s i (+ i 1)) 0))
+
+(define (s-ref s n i)
+  (string-ref-idx s (modulo i n)))
+
+(define (num-flips-window s n start len)
+  (define (loop i p1cnt p2cnt)
+    (if (= i len)
+        (min p1cnt p2cnt)
+        (let ((c (s-ref s n (+ start i)))
+              (exp1 (if (= (modulo i 2) 0) #\0 #\1))
+              (exp2 (if (= (modulo i 2) 0) #\1 #\0)))
+          (loop (+ i 1)
+                (+ p1cnt (if (char=? c exp1) 0 1))
+                (+ p2cnt (if (char=? c exp2) 0 1))))))
+  (loop 0 0 0))
+
+(define (solve s)
+  (let ((n (string-length s)))
+    (cond
+      ((= n 0) 0)
+      ((= n 1) 0)
+      (else
+       (let ((first-cost (num-flips-window s n 0 n))
+             (loop-result
+              (let loop ((i 1) (best first-cost))
+                (if (= i n)
+                    best
+                    (let* ((c-new (s-ref s n (+ i (- n 1))))
+                           (c-out (s-ref s n (- i 1)))
+                           (exp1-new (if (= (modulo (- n 1) 2) 0)
+                                         (if (= (modulo i 2) 0) #\0 #\1)
+                                         (if (= (modulo i 2) 0) #\1 #\0)))
+                           (delta1-out (if (char=? c-out
+                                                 (if (= (modulo (- i 1) 2) 0) #\0 #\1))
+                                           1 -1))
+                           (delta2-out (if (char=? c-out
+                                                 (if (= (modulo (- i 1) 2) 0) #\1 #\0))
+                                           1 -1))
+                           (delta1-in (if (char=? c-new exp1-new) 0 1))
+                           (delta2-in (if (char=? c-new
+                                                (if (= (modulo i 2) 0) #\1 #\0))
+                                         0 1))
+                           (new-best (min best
+                                          (+ first-cost
+                                             (* i delta1-out)
+                                             delta1-in)))
+                           (new-best2 (min best
+                                           (+ first-cost
+                                              (* i delta2-out)
+                                              delta2-in))))
+                      (loop (+ i 1) (min new-best new-best2))))))))
+         (min loop-result first-cost)))))
+
+;; Test cases
+(display "CASE0=") (display (solve "1111")) (newline)
+(display "CASE1=") (display (solve "010")) (newline)
+(display "CASE2=") (display (solve "1110")) (newline)
+(display "CASE3=") (display (solve "010101")) (newline)
+(display "CASE4=") (display (solve "101010")) (newline)
+(display "CASE5=") (display (solve "0")) (newline)
+(display "CASE6=") (display (solve "1")) (newline)
+(display "CASE7=") (display (solve "00")) (newline)
+(display "CASE8=") (display (solve "01")) (newline)
+(display "CASE9=") (display (solve "10")) (newline)
+(display "CASE10=") (display (solve "0001")) (newline)
+(display "CASE11=") (display (solve "110100")) (newline)

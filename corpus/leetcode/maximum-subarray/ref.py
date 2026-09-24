@@ -1,66 +1,35 @@
-import sys
 import json
+import sys
 
-def solve(nums: list[int]) -> int:
-    if not nums:
-        return 0
-    current = max_sum = nums[0]
+def solve(nums):
+    """Find the maximum subarray sum using Kadane's algorithm."""
+    current_max = global_max = nums[0]
     for x in nums[1:]:
-        current = max(x, current + x)
-        if current > max_sum:
-            max_sum = current
-    return max_sum
+        current_max = max(x, current_max + x)
+        global_max = max(global_max, current_max)
+    return global_max
 
 
 CASES = [
-    {"id": 0, "input": {"nums": [1, -2, 3, -1, 2, -1, 5, -4]}},
-    {"id": 1, "input": {"nums": [-2, 1, -3, 4, -1, 2, 1, -5, 4]}},
-    {"id": 2, "input": {"nums": [-1, -2, -3, -4]}},
-    {"id": 3, "input": {"nums": [5]}},
-    {"id": 4, "input": {"nums": [1, 2, 3, 4, 5]}},
-    {"id": 5, "input": {"nums": [-1, 2, -1, 3, -2, 4]}},
-    {"id": 6, "input": {"nums": [0, -1, 0, -1, 0]}},
-    {"id": 7, "input": {"nums": [1, -1, 1, -1, 1, -1, 1]}},
+    {"nums": [1, -2, 3, -1, 2, -1, 5, -4]},
+    {"nums": [-1]},
+    {"nums": [-2, -3, -1, -5]},
+    {"nums": [5]},
+    {"nums": [1, 2, 3, 4, 5]},
+    {"nums": [-1, 2, -3, 4, -1, 2, 1, -5, 4]},
+    {"nums": [0, 0, 0, 0]},
+    {"nums": [2, -1, 2, -1, 2, -1, 2]},
 ]
 
 
-def parse_input(raw: str):
-    lines = raw.splitlines()
-    cases = []
-    current = None
-    for line in lines:
-        if line.startswith("CASE") and "=" in line:
-            if current is not None:
-                cases.append(current)
-            case_id = line.split("=", 1)[0].replace("CASE", "").strip()
-            current = {"id": int(case_id), "nums": []}
-        elif line.strip() and current is not None:
-            current["nums"] = [int(x) for x in line.split()]
-    if current is not None:
-        cases.append(current)
-    return cases
-
-
-if __name__ == "__main__":
-    # Run solve on each case (both via the harness input format and direct CASES dicts)
-    # Build output JSON of all cases including expected computed values
-    out_cases = []
-    for case in CASES:
-        nums = case["input"]["nums"]
-        result = solve(nums)
-        out_cases.append({
-            "id": case["id"],
+if __name__ == '__main__':
+    results = []
+    for i, case in enumerate(CASES):
+        nums = case["nums"]
+        out = solve(nums)
+        results.append({
+            "id": i,
             "input": {"nums": nums},
-            "expected": json.dumps(result, separators=(',', ':'), ensure_ascii=False),
+            "expected": json.dumps(out, separators=(',', ':'), ensure_ascii=False)
         })
-
-    # Also demonstrate parsing the harness-style input (informational)
-    raw = "CASE0=\n1 -2 3 -1 2 -1 5 -4\n"
-    parsed = parse_input(raw)
-    # assert parsed matches first case logic (sanity)
-    if parsed:
-        parsed_result = solve(parsed[0]["nums"])
-        # ensure consistency
-        assert parsed_result == out_cases[0]["expected"]
-
-    print(json.dumps(out_cases, separators=(',', ':'), ensure_ascii=False))
+    print(json.dumps(results, separators=(',', ':'), ensure_ascii=False))

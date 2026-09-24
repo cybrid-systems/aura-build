@@ -1,0 +1,97 @@
+(define (length xs)
+  (if (null? xs) 0 (+ 1 (length (cdr xs)))))
+
+(define (list-ref xs i)
+  (if (= i 0) (car xs) (list-ref (cdr xs) (- i 1))))
+
+(define (list-set! xs i v)
+  (set-car! (list-tail xs i) v))
+
+(define (list-tail xs i)
+  (if (= i 0) xs (list-tail (cdr xs) (- i 1))))
+
+(define (reverse-list xs)
+  (define (rev acc rest)
+    (if (null? rest) acc (rev (cons (car rest) acc) (cdr rest))))
+  (rev '() xs))
+
+(define (get-row m r)
+  (list-ref m r))
+
+(define (set-row! m r new-row)
+  (list-set! m r new-row))
+
+(define (rotate m)
+  (let ((n (length m)))
+    (cond
+      ((= n 0) m)
+      (else
+       (let ((first-row (get-row m 0)))
+         (cond
+           ((= (length first-row) 0) m)
+           (else
+            ;; Transpose: m[j][i] = m[i][j]
+            (let ((new-rows (make-vector n '())))
+              (let loop ((i 0))
+                (cond
+                  ((= i n) #t)
+                  (else
+                   (let ((new-row (make-list n 0)))
+                     (let loop2 ((j 0))
+                       (cond
+                         ((= j n) #t)
+                         (else
+                          (list-set! new-row j (list-ref (get-row m j) i))
+                          (loop2 (+ j 1))))))
+                     (vector-set! new-rows i new-row)
+                     (loop (+ i 1)))))))
+            ;; Reverse each row
+            (let loop ((i 0))
+              (cond
+                ((= i n) #t)
+                (else
+                 (let ((row (vector-ref new-rows i)))
+                   (let ((rev (reverse-list row)))
+                     (set-row! m i rev)
+                     (loop (+ i 1)))))))
+            m)))))))
+
+(define (display-matrix m)
+  (display "[")
+  (let loop ((i 0) (n (length m)))
+    (cond
+      ((= i n) (display "]"))
+      (else
+       (cond
+         ((> i 0) (display ", ")))
+       (display "[")
+       (let ((row (get-row m i)))
+         (let loop2 ((j 0) (rn (length row)))
+           (cond
+             ((= j rn) (display "]"))
+             (else
+              (cond
+                ((> j 0) (display ", ")))
+              (display (list-ref row j))
+              (loop2 (+ j 1) rn))))))
+       (loop (+ i 1) n)))))
+
+(define (solve matrix)
+  (rotate matrix))
+
+(define (run-case i m)
+  (let ((result (solve m)))
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display-matrix result)
+    (newline)))
+
+(run-case 0 (list (list 1 2 3) (list 4 5 6) (list 7 8 9)))
+(run-case 1 (list (list 1 2) (list 3 4)))
+(run-case 2 (list (list 1)))
+(run-case 3 (list))
+(run-case 4 (list (list 1 2 3 4) (list 5 6 7 8) (list 9 10 11 12) (list 13 14 15 16)))
+(run-case 5 (list (list 1 2 3 4 5) (list 6 7 8 9 10) (list 11 12 13 14 15) (list 16 17 18 19 20) (list 21 22 23 24 25)))
+(run-case 6 (list (list -1 -2) (list -3 -4)))
+(run-case 7 (list (list 0 0) (list 0 0)))

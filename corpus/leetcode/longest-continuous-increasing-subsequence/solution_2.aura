@@ -1,0 +1,61 @@
+(define (length-of-lcis nums)
+  (let ((n (length nums)))
+    (if (= n 0)
+        0
+        (let loop ((rest (cdr nums))
+                   (curr 1)
+                   (best 1)
+                   (prev (car nums)))
+          (cond
+            ((null? rest) best)
+            ((< prev (car rest))
+             (let ((new-curr (+ curr 1)))
+               (loop (cdr rest)
+                     new-curr
+                     (if (> new-curr best) new-curr best)
+                     (car rest))))
+            (else
+             (loop (cdr rest)
+                   1
+                   (if (> 1 best) 1 best)
+                   (car rest))))))))
+
+(define (solve nums)
+  (length-of-lcis nums))
+
+;; Test harness
+(define (display-list xs)
+  (display "[")
+  (let loop ((xs xs) (first? #t))
+    (cond
+      ((null? xs) (display "]"))
+      (else
+        (if first? (set! first? #f) (begin (display " ") (display ",") (display " ")))
+        (display (car xs))
+        (loop (cdr xs) #f)))))
+
+(define (display-case i result)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display result)
+  (newline))
+
+;; Embedded test inputs
+(define tests
+  (list
+    (list 1 2 3 2 4 5)
+    (list 5 4 3 2 1)
+    (list 7)
+    (list)
+    (list 1 2 3 4 5)
+    (list 1 1 1 1)
+    (list 1 2 2 3 4 5)
+    (list -3 -2 -1 0 1 2)))
+
+(let loop ((tests tests) (i 0))
+  (if (null? tests)
+      (display "Done.")
+      (begin
+        (display-case i (solve (car tests)))
+        (loop (cdr tests) (+ i 1)))))

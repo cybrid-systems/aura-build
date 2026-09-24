@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:23:34Z",
+      "ts_local": "2026-09-24 22:23:34 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1629,
+        "total_characters": 0,
+        "prompt_tokens": 1074,
+        "completion_tokens": 555,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.034,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 2:41: unbound variable: a\n  did you mean 'c'?\n   |\n  2 |                (cons \"listen\" \"silent\")\n   |                                         ^\n",
+      "stdout_snippet": "CASE0="
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:23:38Z",
+      "ts_local": "2026-09-24 22:23:38 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1697,
+        "total_characters": 0,
+        "prompt_tokens": 1074,
+        "completion_tokens": 623,
+        "prompt_tokens_details": {
+          "cached_tokens": 1073
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.028,
+      "tests_passed": 4,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=#f\nCASE1=#f\nCASE2=#f\nCASE3=#f\nCASE4=#f\nCASE5=#f\nCASE6=#f\nCASE7=#f\n"
+    }
+  ],
+  "slug": "valid-anagram",
+  "title": "Valid Anagram",
+  "category": "strings",
+  "updated_at": "2026-09-24T14:23:38Z",
+  "updated_at_local": "2026-09-24 22:23:38 CST"
+}

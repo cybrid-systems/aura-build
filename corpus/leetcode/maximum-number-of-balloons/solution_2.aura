@@ -1,0 +1,40 @@
+;; Maximum Number of Balloons - Aura solution
+;; Counts frequency of each letter in text, then returns
+;; the minimum of {b, a, l/2, o/2, n}.
+
+(define (count-letter text ch)
+  ;; Recursively count occurrences of character ch in string text.
+  (if (= (string-length text) 0)
+      0
+      (let ((rest (substring text 1 (string-length text))))
+        (if (equal? (string-ref text 0) ch)
+            (+ 1 (count-letter rest ch))
+            (count-letter rest ch)))))
+
+(define (min4 a b c d)
+  (min (min a b) (min c d)))
+
+(define (min5 a b c d e)
+  (min (min4 a b c d) e))
+
+(define (solve text)
+  (let ((b (count-letter text "b"))
+        (a (count-letter text "a"))
+        (l (count-letter text "l"))
+        (o (count-letter text "o"))
+        (n (count-letter text "n")))
+    (min5 b a (quotient l 2) (quotient o 2) n)))
+
+(define (display-result n)
+  (display n)
+  (newline))
+
+;; ---- Test cases ----
+(display "CASE0=") (display-result (solve "balloonballoon"))
+(display "CASE1=") (display-result (solve "bababnlnonlno"))
+(display "CASE2=") (display-result (solve "zzz"))
+(display "CASE3=") (display-result (solve "balon"))
+(display "CASE4=") (display-result (solve "balloon"))
+(display "CASE5=") (display-result (solve "bbaallllooonn"))
+(display "CASE6=") (display-result (solve "loonbalxballoon"))
+(display "CASE7=") (display-result (solve ""))

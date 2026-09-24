@@ -1,0 +1,71 @@
+;; Helper to build a map from value to index in inorder
+(define (build-index-map inorder n)
+  (let ((m (make-hash)))
+    (let loop ((i 0))
+      (if (>= i n)
+          m
+          (begin
+            (hash-set! m (list-ref inorder i) i)
+            (loop (+ i 1)))))))
+
+;; Recursive build + postorder collection
+;; pre-start, pre-end are indices in preorder; in-start, in-end in inorder
+(define (build-post pre in m pre-start pre-end in-start in-end post-list)
+  (if (>= pre-start pre-end)
+      post-list
+      (let* ((root-val (list-ref pre pre-start))
+             (in-root (hash-ref m root-val))
+             (left-size (- in-root in-start))
+             (right-size (- (- pre-end pre-start) 1 left-size))
+             (post-list (build-post pre in m
+                                    (+ pre-start 1)
+                                    (+ pre-start 1 left-size)
+                                    in-start in-root
+                                    post-list))
+             (post-list (build-post pre in m
+                                    (+ pre-start 1 left-size)
+                                    pre-end
+                                    (+ in-root 1)
+                                    (+ in-root 1 right-size)
+                                    post-list)))
+        (append post-list (list root-val)))))
+
+(define (solve preorder inorder)
+  (let* ((n (length preorder))
+         (m (build-index-map inorder n)))
+    (build-post preorder inorder m 0 n 0 n '())))
+
+(define (display-list lst)
+  (display "(")
+  (let loop ((xs lst) (first #t))
+    (cond ((null? xs) (display ")"))
+          (else
+           (if first
+               (begin (display (car xs)) (loop (cdr xs) #f))
+               (begin (display ",") (display (car xs)) (loop (cdr xs) #f)))))))
+
+;; Test cases
+(define cases
+  (list
+   (list (list 4 2 1 3 6 5 7) (list 1 2 3 4 5 6 7))
+   (list '() '())
+   (list (list 1) (list 1))
+   (list (list 1 2 3 4 5) (list 5 4 3 2 1))
+   (list (list 1 2 3 4 5) (list 1 2 3 4 5))
+   (list (list 3 9 20 15 7) (list 9 3 15 20 7))
+   (list (list 5 4 3 2 1) (list 1 2 3 4 5))
+   (list (list 1 2 3) (list 2 1 3))))
+
+(define (run-cases cs i)
+  (cond ((null? cs) (display "done"))
+        (else
+         (let* ((c (car cs))
+                (pre (car c))
+                (ino (cadr c))
+                (result (solve pre ino)))
+           (display (string-append "CASE" (number->string i) "="))
+           (display-list result)
+           (newline)
+           (run-cases (cdr cs) (+ i 1))))))
+
+(run-cases cases 0)

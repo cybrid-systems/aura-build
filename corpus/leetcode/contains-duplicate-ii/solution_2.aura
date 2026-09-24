@@ -1,0 +1,58 @@
+(define (last-index xs i val)
+  (cond ((null? xs) -1)
+        ((equal? (car xs) val) i)
+        (else (last-index (cdr xs) (+ i 1) val))))
+
+(define (list-contains? xs val)
+  (cond ((null? xs) #f)
+        ((equal? (car xs) val) #t)
+        (else (list-contains? (cdr xs) val))))
+
+(define (member? xs val)
+  (list-contains? xs val))
+
+(define (alist-set alist key val)
+  (cond ((null? alist) (cons (cons key val) '()))
+        ((equal? (car (car alist)) key) (cons (cons key val) (cdr alist)))
+        (else (cons (car alist) (alist-set (cdr alist) key val)))))
+
+(define (alist-get alist key)
+  (cond ((null? alist) #f)
+        ((equal? (car (car alist)) key) (cdr (car alist)))
+        (else (alist-get (cdr alist) key))))
+
+(define (helper nums i k ht)
+  (cond ((null? nums) #f)
+        (else
+         (let ((v (car nums)))
+           (let ((prev (alist-get ht v)))
+             (if prev
+                 (if (<= (- i prev) k) #t
+                     (helper (cdr nums) (+ i 1) k (alist-set ht v i)))
+                 (helper (cdr nums) (+ i 1) k (alist-set ht v i))))))))
+
+(define (solve nums k)
+  (if (< (length nums) 2) #f
+      (helper nums 0 k '())))
+
+(define (print-case i result)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (if result "True" "False"))
+  (newline))
+
+(let ((cases '(((1 2 3 1) 3)
+               ((1 0 1 1) 1)
+               ((1 2 3 1 2 3) 2)
+               (() 0)
+               ((1) 1)
+               ((1 1) 0)
+               ((1 2 3 4 5 1) 5)
+               ((1 2 3 4 5 1) 4))))
+  (define (run-case cases i)
+    (if (null? cases) '()
+        (begin
+          (print-case i (solve (car (car cases)) (car (cdr (car cases)))))
+          (run-case (cdr cases) (+ i 1)))))
+  (run-case cases 0))

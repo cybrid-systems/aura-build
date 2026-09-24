@@ -1,0 +1,49 @@
+;; Convert sorted array to height-balanced BST, then serialize as JSON.
+
+(define (make-node val left right)
+  (cons val (cons left right)))
+
+(define (node-val n) (car n))
+(define (node-left n) (car (cdr n)))
+(define (node-right n) (cdr (cdr n)))
+
+(define (build nums lo hi)
+  (if (>= lo hi)
+      '()
+      (let ((mid (quotient (+ lo hi) 2)))
+        (make-node (list-ref nums mid)
+                   (build nums lo mid)
+                   (build nums (+ mid 1) hi)))))
+
+(define (solve nums)
+  (build nums 0 (length nums)))
+
+;; JSON serialization helpers
+(define (escape-string s) s) ;; numbers only, no strings needed
+
+(define (serialize node)
+  (if (null? node)
+      "null"
+      (string-append
+        "{\"val\":"
+        (number->string (node-val node))
+        ",\"left\":"
+        (serialize (node-left node))
+        ",\"right\":"
+        (serialize (node-right node))
+        "}")))
+
+(define (run-case label nums)
+  (display label)
+  (display "=")
+  (display (serialize (solve nums)))
+  (newline))
+
+(run-case "CASE0" (list -10 -3 0 5 9))
+(run-case "CASE1" (list 1))
+(run-case "CASE2" (list))
+(run-case "CASE3" (list 1 2 3 4))
+(run-case "CASE4" (list 1 2 3 4 5 6))
+(run-case "CASE5" (list -5 -3 -1 0 2 4))
+(run-case "CASE6" (list 0 1 2 3 4 5 6 7 8))
+(run-case "CASE7" (list 42))

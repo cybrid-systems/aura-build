@@ -1,0 +1,83 @@
+;; Sort List - bottom-up merge sort on linked list (represented as Aura list)
+;; Time: O(n log n), Space: O(1) extra (not counting recursion)
+
+;; Merge two sorted Aura lists, return merged sorted list
+(define (merge a b)
+  (cond ((null? a) b)
+        ((null? b) a)
+        (else
+         (if (<= (car a) (car b))
+             (cons (car a) (merge (cdr a) b))
+             (cons (car b) (merge a (cdr b)))))))
+
+;; Split list at middle: returns (left . right)
+;; Using slow/fast pointer technique
+(define (split-list lst)
+  (if (or (null? lst) (null? (cdr lst)))
+      (cons lst '())
+      (let ((slow lst)
+            (fast (cdr lst)))
+        ;; Walk fast forward until end, advance slow too
+        (define (walk s f)
+          (cond ((null? f) s)
+                ((null? (cdr f)) s)
+                (else (walk (cdr s) (cdr (cdr f))))))
+        (let ((mid (walk slow fast)))
+          (cons (lst-take lst (mid-len lst mid))
+                (lst-drop lst (mid-len lst mid)))))))
+
+;; Length of list (helper - only used for split, can do without)
+;; Actually, let's just do split manually without length
+
+;; Better split: return (left right) where left = first half, right = second half
+(define (split-helper lst)
+  (define (go s f acc)
+    (cond ((null? f) (cons (reverse acc) (cons s '())))
+          ((null? (cdr f)) (cons (reverse (cons s acc)) (cons (cdr f) '())))
+          (else (go (cdr s) (cdr (cdr f)) (cons s acc)))))
+  (if (or (null? lst) (null? (cdr lst)))
+      (cons lst '())
+      (go lst (cdr lst) '())))
+
+;; top-down merge sort
+(define (mergesort lst)
+  (if (or (null? lst) (null? (cdr lst)))
+      lst
+      (let ((split (split-helper lst)))
+        (let ((left (car split))
+              (right (cdr split)))
+          (merge (mergesort left) (mergesort right))))))
+
+(define (solve head)
+  (mergesort head))
+
+;; Helper to display a list
+(define (display-list lst)
+  (display "[")
+  (let ((loop (lambda (l first?)
+                (if (null? l)
+                    (display "]")
+                    (begin
+                      (if (not first?) (display " "))
+                      (display (car l))
+                      (loop (cdr l) #f))))))
+    (loop lst #t)))
+
+;; Run test cases
+(define (run-test case-n input)
+  (let ((head input))
+    (let ((result (solve head)))
+      (display "CASE")
+      (display case-n)
+      (display "=")
+      (display-list result)
+      (newline))))
+
+(run-test 0 '(4 2 1 3))
+(run-test 1 '(-1 5 3 4 0))
+(run-test 2 '())
+(run-test 3 '(1))
+(run-test 4 '(2 1))
+(run-test 5 '(1 2 3 4 5))
+(run-test 6 '(5 4 3 2 1))
+(run-test 7 '(3 3 1 2 3 1))

@@ -1,0 +1,56 @@
+;; Convert character to 0-25 index (a=0, b=1, ..., z=25)
+(define (char->idx c)
+  (- (char->integer c) (char->integer #\a)))
+
+;; Integer to character
+(define (int->char c)
+  (integer->char c))
+
+(define (make-freq s)
+  (let ((freq (make-vector 26 0)))
+    (begin
+      (vector-set! freq 0 0)
+      (let loop ((i 0) (n (string-length s)))
+        (if (>= i n)
+            freq
+            (begin
+              (vector-set! freq (char->idx (string-ref s i))
+                          (+ (vector-ref freq (char->idx (string-ref s i))) 1))
+              (loop (+ i 1) n)))))))
+
+(define (freqs-equal? a b)
+  (let loop ((i 0))
+    (if (>= i 26)
+        #t
+        (if (= (vector-ref a i) (vector-ref b i))
+            (loop (+ i 1))
+            #f))))
+
+(define (solve s t)
+  (if (not (= (string-length s) (string-length t)))
+      #f
+      (freqs-equal? (make-freq s) (make-freq t))))
+
+(define (display-bool b)
+  (if b (display "True") (display "False")))
+
+;; Test cases
+(let ((cases (list
+               (cons "listen" "silent")
+               (cons "hello" "world")
+               (cons "anagram" "nagaram")
+               (cons "rat" "car")
+               (cons "a" "b")
+               (cons "a" "a")
+               (cons "abc" "abcd")
+               (cons "abcdefghijklmnopqrstuvwxyz" "zyxwvutsrqponmlkjihgfedcba"))))
+  (let loop ((cs cases) (i 0))
+    (if (null? cs)
+        '()
+        (begin
+          (display "CASE")
+          (display i)
+          (display "=")
+          (display-bool (solve (car (car cs)) (cdr (car cs))))
+          (newline)
+          (loop (cdr cs) (+ i 1))))))

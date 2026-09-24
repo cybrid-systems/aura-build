@@ -1,0 +1,100 @@
+;; Build a linked list from values (using cons cells)
+(define (build-list vals)
+  (if (null? vals)
+      '()
+      (cons (car vals) (build-list (cdr vals)))))
+
+;; Convert linked list (cons cells) back to a regular list for printing
+(define (to-list lst)
+  (if (null? lst)
+      '()
+      (cons (car lst) (to-list (cdr lst)))))
+
+;; Print a list as [a, b, c]
+(define (print-list lst)
+  (display "[")
+  (define (loop l first?)
+    (if (null? l)
+        '()
+        (begin
+          (if (not first?) (display ", ") '())
+          (display (car l))
+          (loop (cdr l) #f))))
+  (loop lst #t)
+  (display "]"))
+
+;; Reverse a linked list in place (returns new head)
+(define (rev lst)
+  (define (iter curr acc)
+    (if (null? curr)
+        acc
+        (iter (cdr curr) (cons (car curr) acc))))
+  (iter lst '()))
+
+;; Get the cdr (next) of a node; for the last node, cdr is '()
+(define (node-next n) (cdr n))
+(define (node-val n) (car n))
+
+;; Length of a list
+(define (len lst)
+  (if (null? lst) 0 (+ 1 (len (cdr lst)))))
+
+;; Main solve: takes a Python-list of ints, returns a Python-list of ints
+(define (solve head)
+  ;; Build the linked list
+  (define ll (build-list head))
+  ;; Find middle: slow/fast pointers
+  ;; slow advances by 1, fast by 2. When fast is null, slow is at middle.
+  (define (find-middle lst)
+    (if (null? lst)
+        (cons '() '())   ; empty
+        (let ((slow lst)
+              (fast lst)
+              (prev '()))
+          (define (loop slow fast prev)
+            (if (or (null? fast) (null? (node-next fast)))
+                (cons prev slow)
+                (loop (node-next slow) (node-next (node-next fast)) slow)))
+          (loop slow fast prev))))
+  ;; Interleave two lists: take from first, then second, recursively
+  (define (interleave a b)
+    (cond
+      ((null? a) b)
+      ((null? b) a)
+      (else
+       (let ((a-next (node-next a))
+             (b-next (node-next b)))
+         (set-cdr! a b)
+         (if (null? a-next)
+             a
+             (begin
+               (set-cdr! b a-next)
+               (interleave a-next b-next)))))))
+  ;; Main logic
+  (let ((n (len ll)))
+    (cond
+      ((<= n 2) (to-list ll))
+      (else
+       (let ((mid-result (find-middle ll)))
+         (define first-half (car mid-result))
+         (define second-half (cdr mid-result))
+         (set! second-half (rev second-half))
+         (define merged (interleave first-half second-half))
+         (to-list merged))))))
+
+;; Embedded test inputs
+(define (run-case i head)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (print-list (solve head))
+  (newline))
+
+(run-case 0 '())
+(run-case 1 '(1))
+(run-case 2 '(1 2))
+(run-case 3 '(1 2 3 4))
+(run-case 4 '(1 2 3 4 5))
+(run-case 5 '(1 2 3 4 5 6))
+(run-case 6 '(1 2 3 4 5 6 7))
+(run-case 7 '(1 2 3 4 5 6 7 8 9))

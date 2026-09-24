@@ -1,0 +1,75 @@
+;; remove-duplicates-from-sorted-list-ii
+
+(define (make-list xs)
+  (if (null? xs)
+      '()
+      (let ((rest (make-list (cdr xs))))
+        (cons (cons (car xs) rest) '()))))
+
+;; Build linked list as nested pairs: (val . next) or '()
+(define (build-list vals)
+  (build-list-helper vals '()))
+
+(define (build-list-helper vals tail)
+  (if (null? vals)
+      tail
+      (cons (cons (car vals) (build-list-helper (cdr vals) tail)) '())))
+
+;; solve: takes a list represented as nested pairs (val . next)
+;; Returns new list with all duplicates removed.
+(define (solve head)
+  ;; sentinel dummy node: (cons #f head)
+  (let ((dummy (cons #f head)))
+    (let ((result (solve-helper dummy)))
+      (cdr result))))
+
+(define (solve-helper dummy)
+  ;; prev points to last node in result-so-far (or dummy)
+  ;; Use recursion: pass prev, then traverse from (cdr prev)
+  (let loop ((prev dummy))
+    (let ((cur (cdr prev)))
+      (cond
+        ((null? cur) dummy)
+        (else
+         (let ((cur-val (car cur)))
+           ;; Check if cur is start of a duplicate run
+           (let ((next-node (cdr cur)))
+             (if (and (not (null? next-node))
+                      (= (car next-node) cur-val))
+                 ;; duplicate run: skip all nodes with this value
+                 (let skip-loop ((p prev)
+                                 (v cur-val))
+                   (let ((c (cdr p)))
+                     (if (and (not (null? c))
+                              (= (car c) v))
+                         (skip-loop c v)
+                         (loop p))))
+                 ;; not duplicate, keep cur
+                 (loop cur)))))))))
+
+;; Convert nested pair list to plain list of values for printing
+(define (values-of node)
+  (if (null? node)
+      '()
+      (cons (car node) (values-of (cdr node)))))
+
+(define (print-list node)
+  (display (values-of node)))
+
+(define (run-case i vals)
+  (let ((head (build-list vals)))
+    (let ((result (solve head)))
+      (display "CASE")
+      (display i)
+      (display "=")
+      (print-list result)
+      (newline))))
+
+(run-case 0 '(1 2 3 3 4 4 5 6))
+(run-case 1 '(1 1 1 2 3))
+(run-case 2 '())
+(run-case 3 '(1 2 3))
+(run-case 4 '(1 1 2 2 3 3))
+(run-case 5 '(1))
+(run-case 6 '(1 2 2 3 3 3 4 5 5))
+(run-case 7 '(-1 -1 0 0 1 2 2))

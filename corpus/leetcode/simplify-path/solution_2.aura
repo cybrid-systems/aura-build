@@ -1,0 +1,58 @@
+(define (split-by-slash s)
+  ; Return list of strings split by /
+  (let loop ((rest s) (acc '()))
+    (if (= (string-length rest) 0)
+        (reverse acc)
+        (let ((idx (string-find-slash rest 0)))
+          (if (= idx (string-length rest))
+              (reverse (cons rest acc))
+              (loop (substring rest (+ idx 1) (string-length rest))
+                    (cons (substring rest 0 idx) acc)))))))
+
+(define (string-find-slash s start)
+  ; Find index of first / starting from start, or return length if not found
+  (let loop ((i start))
+    (cond
+      ((= i (string-length s)) i)
+      ((char=? (string-ref s i) #\/) i)
+      (else (loop (+ i 1))))))
+
+(define (simplify path)
+  ; Split path by /, accumulate directory parts
+  (let* ((parts (split-by-slash path))
+         (simplified (process-parts parts '())))
+    (string-append "/" (join-with-slash simplified))))
+
+(define (process-parts parts stack)
+  (cond
+    ((null? parts) stack)
+    ((or (string=? (car parts) "") (string=? (car parts) "."))
+     (process-parts (cdr parts) stack))
+    ((string=? (car parts) "..")
+     (if (null? stack)
+         (process-parts (cdr parts) stack)
+         (process-parts (cdr parts) (cdr stack))))
+    (else
+     (process-parts (cdr parts) (cons (car parts) stack)))))
+
+(define (join-with-slash lst)
+  (if (null? lst)
+      ""
+      (if (null? (cdr lst))
+          (car lst)
+          (string-append (car lst) "/" (join-with-slash (cdr lst))))))
+
+(define (solve path)
+  (simplify path))
+
+; Print results for each test case
+(display "CASE0=") (display (solve "/a/./b/../../c/")) (newline)
+(display "CASE1=") (display (solve "/home//foo/")) (newline)
+(display "CASE2=") (display (solve "/../")) (newline)
+(display "CASE3=") (display (solve "/a/b/c/d/./e/../f")) (newline)
+(display "CASE4=") (display (solve "/")) (newline)
+(display "CASE5=") (display (solve "/a/b/c")) (newline)
+(display "CASE6=") (display (solve "/a/..")) (newline)
+(display "CASE7=") (display (solve "/a/b/../../../")) (newline)
+(display "CASE8=") (display (solve "/.../")) (newline)
+(display "CASE9=") (display (solve "/foo/./bar/../baz//qux/")) (newline)

@@ -1,0 +1,87 @@
+;; Build a binary tree from preorder and inorder traversals,
+;; then return its postorder traversal.
+;; Tree nodes are represented as pairs: (value . (left . right)) or '() for empty.
+
+(define (make-node val left right) (cons val (cons left right)))
+(define (node-val n) (car n))
+(define (node-left n) (car (cdr n)))
+(define (node-right n) (cdr (cdr n)))
+(define (empty? t) (null? t))
+
+;; Build a map from inorder value -> index for O(1) lookups.
+;; Implemented as an association list (fine for small inputs).
+(define (alist-set alist key val)
+  (cons (cons key val) alist))
+
+(define (alist-get alist key)
+  (let ((p (assq key alist)))
+    (if p (cdr p) #f)))
+
+(define (build-index-map inorder)
+  (let loop ((xs inorder) (i 0) (acc '()))
+    (if (null? xs)
+        acc
+        (loop (cdr xs) (+ i 1) (alist-set acc (car xs) i)))))
+
+;; Reconstruct the tree given preorder and inorder subarrays
+;; using index ranges. pre-l and pre-h are inclusive indices.
+(define (build preorder inorder pmap pstart pend istart iend)
+  (if (> pstart pend)
+      '()
+      (let* ((root-val (list-ref preorder pstart))
+             (root-idx-in (alist-get pmap root-val))
+             (left-size (- root-idx-in istart))
+             (right-size (- iend root-idx-in))
+             (left-tree (build preorder inorder pmap
+                               (+ pstart 1)
+                               (+ pstart left-size)
+                               istart
+                               (- root-idx-in 1)))
+             (right-tree (build preorder inorder pmap
+                                (+ pstart left-size 1)
+                                pend
+                                (+ root-idx-in 1)
+                                iend)))
+        (make-node root-val left-tree right-tree))))
+
+;; Compute postorder traversal of the tree.
+(define (postorder t)
+  (if (empty? t)
+      '()
+      (append (postorder (node-left t))
+              (append (postorder (node-right t))
+                      (list (node-val t))))))
+
+(define (solve preorder inorder)
+  (if (null? preorder)
+      '()
+      (let* ((pmap (build-index-map inorder))
+             (n (- (length preorder) 1))
+             (tree (build preorder inorder pmap 0 n 0 n)))
+        (postorder tree))))
+
+;; Display a list of numbers as "a,b,c" to match expected format.
+(define (display-list xs)
+  (let loop ((xs xs) (first? #t))
+    (cond ((null? xs) #t)
+          (else
+           (if first? (display (car xs))
+               (begin (display ",") (display (car xs))))
+           (loop (cdr xs) #f)))))
+
+(define (run-case i pre in)
+  (let ((result (solve pre in)))
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display-list result)
+    (newline)))
+
+(run-case 0 '(4 2 1 3 6 5 7) '(1 2 3 4 5 6 7))
+(run-case 1 '() '())
+(run-case 2 '(1) '(1))
+(run-case 3 '(1 2 3 4 5) '(5 4 3 2 1))
+(run-case 4 '(1 2 3 4 5) '(1 2 3 4 5))
+(run-case 5 '(3 9 20 15 7) '(9 3 15 20 7))
+(run-case 6 '(5 4 3 2 1) '(1 2 3 4 5))
+(run-case 7 '(1 2 3) '(2 1 3))

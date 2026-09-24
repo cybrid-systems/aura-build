@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:22:51Z",
+      "ts_local": "2026-09-24 22:22:51 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2901,
+        "total_characters": 0,
+        "prompt_tokens": 1074,
+        "completion_tokens": 1827,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.047,
+      "tests_passed": 2,
+      "tests_total": 8,
+      "stderr_snippet": "error: 18:19: unbound variable: list-set!\nerror: 18:19: unbound variable: list-set!\nerror: 18:19: unbound variable: list-set!\nerror: 18:19: unbound variable: list-set!\nerror: 18:19: unbound variable: list-set!\nerror: 18:19: unbound variable: list-set!\n",
+      "stdout_snippet": "CASE0=[]\nCASE1=[1]\nCASE2=CASE0=[0]\nCASE1=[1]\nCASE2=[0][0][0][1][1][1]CASE3=[0][0][0][-1][-1][-1]CASE4=[0][0][0][0][0][0]CASE5=[0][0][0][2][2][2]CASE6=[0][0][0][-2][-2][-2]CASE7=[0][0][0][1][1][1]"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:22:59Z",
+      "ts_local": "2026-09-24 22:22:59 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2034,
+        "total_characters": 0,
+        "prompt_tokens": 1074,
+        "completion_tokens": 960,
+        "prompt_tokens_details": {
+          "cached_tokens": 1073
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.074,
+      "tests_passed": 1,
+      "tests_total": 8,
+      "stderr_snippet": "error: 15:12: unbound variable: fill-prefix\n   |\n 15 |           (fill-prefix 0)\n   |            ^^^^^^^^^^^\n",
+      "stdout_snippet": "CASE0=[]\nCASE1=[]\nCASE2=[]\nCASE3=[]\nCASE4=[]\nCASE5=[]\nCASE6=[]\nCASE7=[]\n"
+    }
+  ],
+  "slug": "product-of-array-except-self-ii",
+  "title": "Product of Array Except Self (variant)",
+  "category": "arrays",
+  "updated_at": "2026-09-24T14:22:59Z",
+  "updated_at_local": "2026-09-24 22:22:59 CST"
+}

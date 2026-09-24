@@ -1,0 +1,95 @@
+;; Split a string by a given character, returning a list of substrings
+(define (split-by str ch)
+  (let ((len (string-length str)))
+    (let loop ((i 0) (acc '()) (curr ""))
+      (if (= i len)
+          (reverse (cons curr acc))
+          (let ((c (string-ref str i)))
+            (if (char=? c ch)
+                (loop (+ i 1) (cons curr acc) "")
+                (loop (+ i 1) acc (string-append curr (string c)))))))))
+
+(define (char=? a b)
+  (char-equal? a b))
+
+;; Simplify path
+(define (solve path)
+  (let* ((parts (split-by path #\/))
+         (stack '()))
+    (let loop ((rest parts))
+      (if (null? rest)
+          (let ((result (reverse stack))
+                (sbuilder ""))
+            (define (builder lst)
+              (if (null? lst)
+                  sbuilder
+                  (builder (cdr lst))))
+            (let build ((r result) (acc ""))
+              (if (null? r)
+                  (let ((final (if (= (string-length acc) 0) "/" acc)))
+                    final)
+                  (let ((first (car r)))
+                    (if (= (string-length acc) 0)
+                        (build (cdr r) (string-append "/" first))
+                        (build (cdr r) (string-append acc "/" first)))))))
+          (let ((p (car rest)))
+            (cond
+              ((or (= (string-length p) 0) (string=? p "."))
+               (loop (cdr rest)))
+              ((string=? p "..")
+               (if (null? stack)
+                   (loop (cdr rest))
+                   (loop (cdr rest) (cdr stack))))
+              (else
+               (loop (cdr rest) (cons p stack)))))))))
+
+(define (solve-print path)
+  (solve path))
+
+;; Test harness
+(define (display-case n result)
+  (display (string-append "CASE" (number->string n) "="))
+  (display result)
+  (newline))
+
+(define (char-equal? a b)
+  (if (and (char? a) (char? b))
+      (char=? a b)
+      #f))
+
+(define (string=? a b)
+  (cond
+    ((not (and (string? a) (string? b))) #f)
+    ((not (= (string-length a) (string-length b))) #f)
+    (else (let loop ((i 0))
+            (cond
+              ((= i (string-length a)) #t)
+              ((char=? (string-ref a i) (string-ref b i)) (loop (+ i 1)))
+              (else #f))))))
+
+(define (char? x) #f)
+(define (string? x) #f)
+
+;; Re-define with proper predicates
+(define (string=? a b)
+  (let ((la (string-length a)) (lb (string-length b)))
+    (if (= la lb)
+        (let loop ((i 0))
+          (if (= i la)
+              #t
+              (if (char-equal? (string-ref a i) (string-ref b i))
+                  (loop (+ i 1))
+                  #f)))
+        #f)))
+
+;; Display cases
+(display-case 0 (solve "/a/./b/../../c/"))
+(display-case 1 (solve "/home//foo/"))
+(display-case 2 (solve "/../"))
+(display-case 3 (solve "/a/b/c/d/./e/../f"))
+(display-case 4 (solve "/"))
+(display-case 5 (solve "/a/b/c"))
+(display-case 6 (solve "/a/.."))
+(display-case 7 (solve "/a/b/../../../"))
+(display-case 8 (solve "/.../"))
+(display-case 9 (solve "/foo/./bar/../baz//qux/"))

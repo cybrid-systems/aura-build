@@ -1,0 +1,97 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "nums": [
+        -10,
+        -3,
+        0,
+        5,
+        9
+      ]
+    },
+    "expected": "{\"val\":0,\"left\":{\"val\":-10,\"right\":{\"val\":-3}},\"right\":{\"val\":5,\"right\":{\"val\":9}}}"
+  },
+  {
+    "id": 1,
+    "input": {
+      "nums": [
+        1
+      ]
+    },
+    "expected": "{\"val\":1}"
+  },
+  {
+    "id": 2,
+    "input": {
+      "nums": []
+    },
+    "expected": "null"
+  },
+  {
+    "id": 3,
+    "input": {
+      "nums": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    "expected": "{\"val\":2,\"left\":{\"val\":1},\"right\":{\"val\":3,\"right\":{\"val\":4}}}"
+  },
+  {
+    "id": 4,
+    "input": {
+      "nums": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ]
+    },
+    "expected": "{\"val\":3,\"left\":{\"val\":1,\"right\":{\"val\":2}},\"right\":{\"val\":5,\"left\":{\"val\":4},\"right\":{\"val\":6}}}"
+  },
+  {
+    "id": 5,
+    "input": {
+      "nums": [
+        -5,
+        -3,
+        -1,
+        0,
+        2,
+        4
+      ]
+    },
+    "expected": "{\"val\":-1,\"left\":{\"val\":-5,\"right\":{\"val\":-3}},\"right\":{\"val\":2,\"left\":{\"val\":0},\"right\":{\"val\":4}}}"
+  },
+  {
+    "id": 6,
+    "input": {
+      "nums": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ]
+    },
+    "expected": "{\"val\":4,\"left\":{\"val\":1,\"left\":{\"val\":0},\"right\":{\"val\":2,\"right\":{\"val\":3}}},\"right\":{\"val\":6,\"left\":{\"val\":5},\"right\":{\"val\":7,\"right\":{\"val\":8}}}}"
+  },
+  {
+    "id": 7,
+    "input": {
+      "nums": [
+        42
+      ]
+    },
+    "expected": "{\"val\":42}"
+  }
+]

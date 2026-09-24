@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:29:36Z",
+      "ts_local": "2026-09-24 22:29:36 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2986,
+        "total_characters": 0,
+        "prompt_tokens": 1203,
+        "completion_tokens": 1783,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.229,
+      "tests_passed": 3,
+      "tests_total": 8,
+      "stderr_snippet": "error: 1:19: unbound variable: dummy\n   |\n  1 | (define i-helper (dummy))\n   |                   ^^^^^\n",
+      "stdout_snippet": "CASE0=-1\nCASE1=-1\nCASE2=-1\nCASE3=-1\nCASE4=-1\nCASE5=-1\nCASE6=-1\nCASE7=-1\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:29:43Z",
+      "ts_local": "2026-09-24 22:29:43 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2278,
+        "total_characters": 0,
+        "prompt_tokens": 1203,
+        "completion_tokens": 1075,
+        "prompt_tokens_details": {
+          "cached_tokens": 1202
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.079,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 2:17: unbound variable: string-split\n",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "shortest-subarray-with-sum-at-least-k",
+  "title": "Shortest Subarray with Sum at Least K",
+  "category": "sliding_window",
+  "updated_at": "2026-09-24T14:29:43Z",
+  "updated_at_local": "2026-09-24 22:29:43 CST"
+}

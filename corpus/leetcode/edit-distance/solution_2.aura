@@ -1,0 +1,88 @@
+(define (string-length s)
+  (let loop ((i 0) (s s))
+    (if (null? s)
+        i
+        (loop (+ i 1) (cdr s)))))
+
+(define (string-ref s i)
+  (if (= i 0)
+      (car s)
+      (string-ref (cdr s) (- i 1))))
+
+(define (min2 a b) (if (< a b) a b))
+(define (min3 a b c)
+  (min2 a (min2 b c)))
+
+(define (solve a b)
+  (let ((la (string-length a))
+        (lb (string-length b)))
+    ;; Ensure b is the shorter string for space efficiency (optional)
+    (let ((row (make-list (+ lb 1) 0)))
+      (let loop-i ((i 0) (row row))
+        (if (> i la)
+            (car (last-pair row))
+            (let loop-j ((j 0) (prev-diag 0) (row row))
+              (if (> j lb)
+                  (loop-i (+ i 1) row)
+                  (let ((curr (car row)))
+                    (if (= i 0)
+                        (begin
+                          (set-car! row j)
+                          (loop-j (+ j 1) curr (cdr row)))
+                        (if (= j 0)
+                            (begin
+                              (set-car! row i)
+                              (loop-j (+ j 1) curr (cdr row)))
+                            (let ((ai (string-ref a (- i 1)))
+                                  (bj (string-ref b (- j 1))))
+                              (let ((cost (if (equal? ai bj) 0 1)))
+                                (let ((new-val (min3
+                                                 (+ prev-diag cost)
+                                                 (+ (car (cdr row)) 1)
+                                                 (+ curr 1))))
+                                  (set-car! row new-val)
+                                  (loop-j (+ j 1) curr (cdr row)))))))))))))))
+
+(define (last-pair lst)
+  (if (null? (cdr lst))
+      lst
+      (last-pair (cdr lst))))
+
+;; Display a list of numbers (for debugging only; not needed here)
+
+(define (display-list xs)
+  (display "(")
+  (let loop ((xs xs) (first #t))
+    (cond ((null? xs) (display ")"))
+          (else
+           (if first
+               (set! first #f)
+               (display " "))
+           (display (car xs))
+           (loop (cdr xs) #f))))
+  (newline))
+
+;; Run all test cases
+(define (run-cases)
+  (let ((cases (list
+                 (cons "kitten" "sitting")
+                 (cons "abc" "abc")
+                 (cons "" "a")
+                 (cons "a" "")
+                 (cons "" "")
+                 (cons "sunday" "saturday")
+                 (cons "horse" "ros")
+                 (cons "intention" "execution"))))
+    (let loop ((i 0) (cases cases))
+      (cond ((null? cases) (display "Done") (newline))
+            (else
+             (let ((a (car (car cases)))
+                   (b (cdr (car cases))))
+               (let ((res (solve a b)))
+                 (display (string-append "CASE" (number->string i)))
+                 (display "=")
+                 (display res)
+                 (newline)))
+             (loop (+ i 1) (cdr cases)))))))
+
+(run-cases)

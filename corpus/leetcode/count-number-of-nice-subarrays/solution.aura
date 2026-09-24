@@ -1,0 +1,52 @@
+(define (odd? x) (= (modulo x 2) 1))
+
+;; count of subarrays with at most k odd numbers
+(define (at-most-k nums k)
+  (define (helper lst left count res)
+    (if (null? lst)
+        res
+        (let ((val (car lst)))
+          (let ((new-count (if (odd? val) (+ count 1) count)))
+            (let loop ((l left) (c new-count) (r res))
+              (if (and (<= c k) (not (null? (cdr lst))))
+                  ;; keep expanding - just continue with next element normally below
+                  (helper (cdr lst) (+ l 1) new-count (+ r (- l 0)))
+                  ;; shrink from left if too many odds
+                  (if (> c k)
+                      (let ((lv (list-ref nums l)))
+                        (let ((new-c (if (odd? lv) (- c 1) c)))
+                          (loop (+ l 1) new-c r)))
+                      (helper (cdr lst) (+ l 1) new-count (+ r (- l 0))))))))))
+  (helper nums 0 0 0))
+
+(define (solve nums k)
+  (- (at-most-k nums k)
+     (at-most-k nums (- k 1))))
+
+(define (display-list lst)
+  (display "[")
+  (define (loop l first?)
+    (cond ((null? l) (display ""))
+          (else
+           (if (not first?) (display ", "))
+           (display (car l))
+           (loop (cdr l) #f))))
+  (loop lst #t)
+  (display "]"))
+
+(define (run-case i nums k)
+  (let ((r (solve nums k)))
+    (display "CASE")
+    (display (number->string i))
+    (display "=")
+    (display (number->string r))
+    (newline)))
+
+(run-case 0 '(1 1 2 1 2) 3)
+(run-case 1 '(2 2 2 1 2 2 1 2 2 2) 1)
+(run-case 2 '(2 2 2 2) 1)
+(run-case 3 '(1 1 1 1 1) 2)
+(run-case 4 '(1) 1)
+(run-case 5 '(1) 2)
+(run-case 6 '(1 2 3 4 5 6 7) 2)
+(run-case 7 '(2 4 6 8 10 12) 1)

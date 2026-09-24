@@ -1,0 +1,14 @@
+def solve(root):
+    # Morris-like in-place flattening
+    node = root
+    while node:
+        if node.left:
+            # Find rightmost node in left subtree
+            rightmost = node.left
+            while rightmost.right:
+                rightmost = rightmost.right
+            # Rewire
+            rightmost.right = node.right
+            node.right = node.left
+            node.left = None
+        node = node.right

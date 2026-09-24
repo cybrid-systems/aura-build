@@ -1,0 +1,46 @@
+(define (solve intervals)
+  ;; Greedy interval scheduling: sort by end coordinate, keep earliest-ending
+  ;; non-overlapping intervals. Return count of removed intervals.
+  (let* ((sorted (sort-by-end intervals))
+         (n (length intervals))
+         (kept (count-keep sorted)))
+    (- n kept)))
+
+(define (sort-by-end ivs)
+  ;; Insertion sort by end coordinate (second element of pair)
+  (define (ins x lst)
+    (cond ((null? lst) (cons x '()))
+          ((<= (cadr x) (cadr (car lst))) (cons x lst))
+          (else (cons (car lst) (ins x (cdr lst))))))
+  (define (loop lst acc)
+    (if (null? lst)
+        acc
+        (loop (cdr lst) (ins (car lst) acc))))
+  (loop ivs '()))
+
+(define (count-keep sorted)
+  ;; Walk sorted list, keep an interval if its start >= last end
+  (define (walk lst last-end acc)
+    (cond ((null? lst) acc)
+          ((>= (car (car lst)) last-end)
+           (walk (cdr lst) (cadr (car lst)) (+ acc 1)))
+          (else (walk (cdr lst) last-end acc))))
+  (walk sorted 0 0))
+
+;; ---- Run embedded test cases ----
+
+(define (run-case i ivs)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve ivs))
+  (newline))
+
+(run-case 0 '((1 2) (2 3) (3 4)))
+(run-case 1 '((1 2) (1 3) (2 3) (3 4)))
+(run-case 2 '())
+(run-case 3 '((5 10)))
+(run-case 4 '((1 5) (2 6) (3 7)))
+(run-case 5 '((1 2) (3 4) (2 3)))
+(run-case 6 '((1 100) (2 3) (4 5) (6 7)))
+(run-case 7 '((1 3) (2 3) (3 3) (4 6)))

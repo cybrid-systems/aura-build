@@ -1,0 +1,50 @@
+(define (len xs)
+  (if (null? xs) 0 (+ 1 (len (cdr xs)))))
+
+(define (char-at s i)
+  (string-ref s i))
+
+(define (closing? c)
+  (cond ((equal? c ")") #t)
+        ((equal? c "]") #t)
+        ((equal? c "}") #t)
+        (else #f)))
+
+(define (match? open close)
+  (cond ((equal? open "(") (equal? close ")"))
+        ((equal? open "[") (equal? close "]"))
+        ((equal? open "{") (equal? close "}"))
+        (else #f)))
+
+(define (valid-helper s i n stack)
+  (cond ((>= i n) (null? stack))
+        (else
+         (let ((c (char-at s i)))
+           (cond ((closing? c)
+                  (if (null? stack)
+                      #f
+                      (let ((top (car stack)))
+                        (if (match? top c)
+                            (valid-helper s (+ i 1) n (cdr stack))
+                            #f))))
+                 (else
+                  (valid-helper s (+ i 1) n (cons c stack))))))))
+
+(define (solve s)
+  (valid-helper s 0 (len s) '()))
+
+(define (bool->str b)
+  (if b "true" "false"))
+
+(display "CASE0=") (display (bool->str (solve "()"))) (newline)
+(display "CASE1=") (display (bool->str (solve "()[]{}"))) (newline)
+(display "CASE2=") (display (bool->str (solve "(]"))) (newline)
+(display "CASE3=") (display (bool->str (solve "([)]"))) (newline)
+(display "CASE4=") (display (bool->str (solve "{[]}"))) (newline)
+(display "CASE5=") (display (bool->str (solve ""))) (newline)
+(display "CASE6=") (display (bool->str (solve "["))) (newline)
+(display "CASE7=") (display (bool->str (solve "(())"))) (newline)
+(display "CASE8=") (display (bool->str (solve "(((())))"))) (newline)
+(display "CASE9=") (display (bool->str (solve "({[)]}"))) (newline)
+(display "CASE10=") (display (bool->str (solve "([{}])"))) (newline)
+(display "CASE11=") (display (bool->str (solve "}()"))) (newline)

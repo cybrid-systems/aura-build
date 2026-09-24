@@ -1,0 +1,73 @@
+(define (sum-list lst)
+  (if (null? lst)
+      0
+      (+ (car lst) (sum-list (cdr lst)))))
+
+(define (list-length lst)
+  (if (null? lst)
+      0
+      (+ 1 (list-length (cdr lst)))))
+
+(define (list-ref lst i)
+  (if (= i 0)
+      (car lst)
+      (list-ref (cdr lst) (- i 1))))
+
+(define (solve nums x)
+  (let* ((n (list-length nums))
+         (total (sum-list nums)))
+    (cond
+      ((= x 0) 0)
+      ((> x total) -1)
+      ((= x total) n)
+      (else
+       (let ((target (- total x)))
+         (cond
+           ((< target 0) -1)
+           (else
+            (let loop ((left 0) (right 0) (curr 0) (best -1))
+              (cond
+                ((= right n)
+                 (if (= best -1) -1 (- n best)))
+                (else
+                 (let* ((rval (list-ref nums right))
+                        (new-curr (+ curr rval)))
+                   (cond
+                     ((< new-curr target)
+                      (loop left (+ right 1) new-curr best))
+                     ((= new-curr target)
+                      (let ((len (- (+ right 1) left)))
+                        (if (> len best)
+                            (loop left (+ right 1) new-curr len)
+                            (loop left (+ right 1) new-curr best))))
+                     (else
+                      (let shrink ((l left) (c new-curr))
+                        (cond
+                          ((> c target)
+                           (let ((lval (list-ref nums l)))
+                             (shrink (+ l 1) (- c lval))))
+                          ((= c target)
+                           (let ((len (- (+ right 1) l)))
+                             (let ((new-best (if (> len best) len best)))
+                               (loop (+ right 1) (+ right 1) 0 new-best))))
+                          (else
+                           (loop (+ right 1) (+ right 1) 0 best))))))))))))))))
+
+(define (display-num n)
+  (display (number->string n)))
+
+(define (run-cases)
+  (begin
+    (display "CASE0=") (display-num (solve (list 1 1 3 2 4) 5)) (newline)
+    (display "CASE1=") (display-num (solve (list 5 6 7 8 9) 4)) (newline)
+    (display "CASE2=") (display-num (solve (list 3 2 20 1 1 3) 10)) (newline)
+    (display "CASE3=") (display-num (solve '() 0)) (newline)
+    (display "CASE4=") (display-num (solve '() 5)) (newline)
+    (display "CASE5=") (display-num (solve (list 1 2 3) 0)) (newline)
+    (display "CASE6=") (display-num (solve (list 1 2 3) 6)) (newline)
+    (display "CASE7=") (display-num (solve (list 0 0 0 0) 0)) (newline)
+    (display "CASE8=") (display-num (solve (list 1) 1)) (newline)
+    (display "CASE9=") (display-num (solve (list 1) 2)) (newline)
+    (display "CASE10=") (display-num (solve (list 1 2 3 4 5) 15)) (newline)))
+
+(run-cases)

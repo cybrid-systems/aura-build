@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:26:31Z",
+      "ts_local": "2026-09-24 22:26:31 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 3462,
+        "total_characters": 0,
+        "prompt_tokens": 1088,
+        "completion_tokens": 2374,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.019,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 36:67: parse error: unexpected ')'\n",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:26:35Z",
+      "ts_local": "2026-09-24 22:26:35 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1937,
+        "total_characters": 0,
+        "prompt_tokens": 1088,
+        "completion_tokens": 849,
+        "prompt_tokens_details": {
+          "cached_tokens": 1087
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.055,
+      "tests_passed": 5,
+      "tests_total": 8,
+      "stderr_snippet": "error: 3:4: unbound variable: set-counts\n   |\n  3 |   (set-counts counts idx 1))\n   |    ^^^^^^^^^^\nerror: 3:11: unbound variable: get-count\n  did you mean 'set-counts'?\n   |\n  3 |   (if (< (get-count counts idx) 1)\n   |           ^^^^^^^^^\n",
+      "stdout_snippet": "CASE0=true\nCASE1=true\nCASE2=true\nCASE3=true\nCASE4=true\nCASE5=true\nCASE6=true\nCASE7=true\n"
+    }
+  ],
+  "slug": "ransom-note",
+  "title": "Ransom Note",
+  "category": "hashing",
+  "updated_at": "2026-09-24T14:26:35Z",
+  "updated_at_local": "2026-09-24 22:26:35 CST"
+}

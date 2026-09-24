@@ -1,0 +1,73 @@
+;; Helper: get length of list
+(define (len lst)
+  (if (null? lst) 0 (+ 1 (len (cdr lst)))))
+
+;; Helper: get nth element (0-indexed)
+(define (nth lst n)
+  (if (= n 0) (car lst) (nth (cdr lst) (- n 1))))
+
+;; Helper: check if list is empty
+(define (empty? lst) (null? lst))
+
+;; Helper: filter elements less than pivot, preserving order
+(define (filter-less lst pivot)
+  (if (null? lst)
+      '()
+      (if (< (car lst) pivot)
+          (cons (car lst) (filter-less (cdr lst) pivot))
+          (filter-less (cdr lst) pivot))))
+
+;; Helper: filter elements equal to pivot
+(define (filter-equal lst pivot)
+  (if (null? lst)
+      '()
+      (if (= (car lst) pivot)
+          (cons (car lst) (filter-equal (cdr lst) pivot))
+          (filter-equal (cdr lst) pivot))))
+
+;; Helper: filter elements greater than pivot
+(define (filter-greater lst pivot)
+  (if (null? lst)
+      '()
+      (if (> (car lst) pivot)
+          (cons (car lst) (filter-greater (cdr lst) pivot))
+          (filter-greater (cdr lst) pivot))))
+
+;; Quickselect: find k-th largest (1-indexed from largest)
+;; We track: less than pivot, equal to pivot, greater than pivot
+;; The k-th largest is the (length - k + 1)-th smallest, or we can think directly:
+;; If k <= count-greater, the answer is in greater
+;; If k > count-greater + count-equal, the answer is in less, with k' = k - count-greater - count-equal
+;; Otherwise, the answer is pivot
+
+(define (quickselect-kth lst k)
+  (if (null? lst)
+      (error "empty list")
+      (let ((pivot (car lst))
+            (rest (cdr lst)))
+        (let ((less (filter-less rest pivot))
+              (equal-lst (filter-equal rest pivot))
+              (greater (filter-greater rest pivot)))
+          (let ((count-greater (len greater))
+                (count-equal (len equal-lst)))
+            (cond
+              ((<= k count-greater)
+               (quickselect-kth greater k))
+              ((<= k (+ count-greater count-equal 1))
+               pivot)
+              (else
+               (quickselect-kth less (- k count-greater count-equal 1)))))))))
+
+(define (solve nums k)
+  (quickselect-kth nums k))
+
+;; Run test cases
+(display "CASE0=") (display (solve '(3 2 1 5 6 4) 2)) (newline)
+(display "CASE1=") (display (solve '(3 2 3 1 2 4 5 5 6) 4)) (newline)
+(display "CASE2=") (display (solve '(1) 1)) (newline)
+(display "CASE3=") (display (solve '(-1 -2 -3 -4 -5) 1)) (newline)
+(display "CASE4=") (display (solve '(7 7 7 7) 4)) (newline)
+(display "CASE5=") (display (solve '(2 1) 2)) (newline)
+(display "CASE6=") (display (solve '(5 4 3 2 1) 5)) (newline)
+(display "CASE7=") (display (solve '(10 -10 0 100 -100 50 50) 3)) (newline)
+(display "CASE8=") (display (solve '(63 -72 -94 89 -30 -38 -43 -65 88 -74 73 89 39 -78 51 8 -92 -93 -77 -45) 7)) (newline)

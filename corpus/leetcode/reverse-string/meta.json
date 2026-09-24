@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:23:39Z",
+      "ts_local": "2026-09-24 22:23:39 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1350,
+        "total_characters": 0,
+        "prompt_tokens": 1113,
+        "completion_tokens": 237,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.017,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "warning: unbalanced parentheses in input\nerror: no complete S-expression in program source\nusage: /workspace/aura-grok/build_soft4055/aura [options] [file.aura …]\n       /workspace/aura-grok/build_soft4055/aura -e '(+ 1 2)'\n       echo '(+ 1 2)' | /workspace/aura-grok/build_soft4055/aura\n       /workspace/aura-grok/build_soft4055/aura < file.aura\n\nPrograms are read from stdin when no file/-e is given.\nDenseness / span host env (soft multi-module probes):\n  export AURA_BIN=…/build/aura   absolute",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:23:54Z",
+      "ts_local": "2026-09-24 22:23:54 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 3971,
+        "total_characters": 0,
+        "prompt_tokens": 1113,
+        "completion_tokens": 2858,
+        "prompt_tokens_details": {
+          "cached_tokens": 1112
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.058,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 8:52: unbound variable: loop\n   |\n  8 |       ((and (= phase 0) (char=? (car chars) #\\A)) (loop (cdr chars) digits 0))\n   |                                                    ^^^^\nerror: 5:76: unbound variable: C\n",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "reverse-string",
+  "title": "Reverse String",
+  "category": "strings",
+  "updated_at": "2026-09-24T14:23:54Z",
+  "updated_at_local": "2026-09-24 22:23:54 CST"
+}

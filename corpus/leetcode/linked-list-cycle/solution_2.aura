@@ -1,0 +1,95 @@
+;; Linked List Cycle - Floyd's algorithm in Aura
+;; Nodes are represented as pairs (cons val next) where 'next' is either a node or '().
+;; Identity (eq?) is used for pointer comparison.
+
+(define (make-node val nxt) (cons val nxt))
+(define (node-val n) (car n))
+(define (node-next n) (cdr n))
+(define (set-node-next! n nxt) (set-cdr! n nxt))
+
+;; Build list from tokens up to "END", and optional cycle index k.
+;; tokens is a list of strings. Returns the head node (or '()) and discards extra.
+(define (build-list tokens)
+  ;; Collect values (as numbers) until "END"
+  (define (take-vals ts)
+    (cond ((null? ts) '())
+          ((equal? (car ts) "END") '())
+          (else (cons (string->number (car ts)) (take-vals (cdr ts))))))
+  (define vals (take-vals tokens))
+  ;; Build nodes from vals (in reverse), threading cdr pointers.
+  (define (build vs)
+    (cond ((null? vs) '())
+          (else
+            (let ((rest (build (cdr vs))))
+              (cons (make-node (car vs) rest) rest)))))
+  (let ((nodes (build vals))
+        (n (length vals)))
+    ;; Determine cycle index k from tokens after "END"
+    (define (find-k ts found-end)
+      (cond ((null? ts) -1)
+            (found-end
+              (let ((tok (car ts)))
+                (cond ((equal? tok "END") -1)
+                      (else (string->number tok)))))
+            ((equal? (car ts) "END") (find-k (cdr ts) #t))
+            (else (find-k (cdr ts) #f))))
+    (define k (find-k tokens #f))
+    ;; Wire cycle if k is a valid index (0 <= k < n)
+    (cond ((or (< k 0) (>= k n))
+            ;; no cycle; nothing to do
+            nodes)
+          ((null? nodes) nodes)
+          (else
+            ;; tail is the last node; find it
+            (define (last-node ns)
+              (cond ((null? (node-next ns)) ns)
+                  (else (last-node (node-next ns)))))
+            (define tail (last-node nodes))
+            (define (nth ns i)
+              (cond ((= i 0) ns)
+                    (else (nth (node-next ns) (- i 1)))))
+            (set-node-next! tail (nth nodes k))
+            nodes))))
+
+;; Floyd's cycle detection
+(define (has-cycle? head)
+  (cond ((null? head) #f)
+        ((null? (node-next head)) #f)
+        (else
+          (let ((slow head) (fast (node-next head)))
+            (define (step)
+              (cond ((null? fast) #f)
+                    ((null? (node-next fast)) #f)
+                    ((eq? slow fast) #t)
+                    (else
+                      (set! slow (node-next slow))
+                      (set! fast (node-next (node-next fast)))
+                      (step))))
+            (step)))))
+
+(define (solve tokens)
+  (let ((head (build-list tokens)))
+    (has-cycle? head)))
+
+;; Display helper for a single boolean as "true"/"false"
+(define (display-bool b)
+  (display (if b "true" "false")))
+
+;; Embedded test cases
+(define CASE0_TOKENS '("3" "2" "0" "-4" "END" "1"))
+(define CASE1_TOKENS '("1" "2" "END"))
+(define CASE2_TOKENS '("1" "END"))
+(define CASE3_TOKENS '("END"))
+(define CASE4_TOKENS '("1" "2" "3" "4" "5" "END" "0"))
+(define CASE5_TOKENS '("1" "2" "3" "END" "2"))
+(define CASE6_TOKENS '("1" "2" "3" "4" "END" "-1"))
+(define CASE7_TOKENS '("0" "END"))
+
+(display "CASE0=") (display-bool (solve CASE0_TOKENS)) (newline)
+(display "CASE1=") (display-bool (solve CASE1_TOKENS)) (newline)
+(display "CASE2=") (display-bool (solve CASE2_TOKENS)) (newline)
+(display "CASE3=") (display-bool (solve CASE3_TOKENS)) (newline)
+(display "CASE4=") (display-bool (solve CASE4_TOKENS)) (newline)
+(display "CASE5=") (display-bool (solve CASE5_TOKENS)) (newline)
+(display "CASE6=") (display-bool (solve CASE6_TOKENS)) (newline)
+(display "CASE7=") (display-bool (solve CASE7_TOKENS)) (newline)

@@ -1,0 +1,123 @@
+import json
+import sys
+from collections import deque
+
+class Node:
+    __slots__ = ('val', 'left', 'right')
+    def __init__(self, val, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def parse_tree(s):
+    # Parse s-expression with `null` for missing children, terminated by `#`.
+    s = s.strip()
+    if s.endswith('#'):
+        s = s[:-1].strip()
+    if not s:
+        return None
+    # Tokenize: '(', ')', 'null', integers
+    tokens = []
+    i = 0
+    n = len(s)
+    while i < n:
+        ch = s[i]
+        if ch.isspace():
+            i += 1
+            continue
+        if ch == '(' or ch == ')':
+            tokens.append(ch)
+            i += 1
+            continue
+        # read atom
+        j = i
+        while j < n and not s[j].isspace() and s[j] not in '()':
+            j += 1
+        tokens.append(s[i:j])
+        i = j
+    # Recursive parser
+    idx = [0]
+    def parse():
+        if idx[0] >= len(tokens):
+            return None
+        t = tokens[idx[0]]
+        if t == '(':
+            idx[0] += 1
+            val_tok = tokens[idx[0]]; idx[0] += 1
+            if val_tok == 'null':
+                # (null # #) => null node? Actually format is (val left right)
+                # Per examples, it seems nodes are (val left right) where left/right are either sub-expr or `null`.
+                # But sometimes null can appear alone. The problem spec says level-order with null.
+                # We'll treat a (null ...) as a null node.
+                # consume children if any
+                # Skip remaining until matching ')'
+                depth = 1
+                while idx[0] < len(tokens) and depth > 0:
+                    if tokens[idx[0]] == '(':
+                        depth += 1
+                    elif tokens[idx[0]] == ')':
+                        depth -= 1
+                    idx[0] += 1
+                return None
+            val = int(val_tok)
+            left = parse()
+            right = parse()
+            idx[0] += 1  # consume ')'
+            return Node(val, left, right)
+        else:
+            # atom = null or number alone (shouldn't happen at top-level for valid tree)
+            if t == 'null':
+                idx[0] += 1
+                return None
+            # treat as value-only node
+            idx[0] += 1
+            return Node(int(t))
+    return parse()
+
+def is_mirror(a, b):
+    if a is None and b is None:
+        return True
+    if a is None or b is None:
+        return False
+    if a.val != b.val:
+        return False
+    return is_mirror(a.left, b.right) and is_mirror(a.right, b.left)
+
+def is_symmetric(root):
+    if root is None:
+        return True
+    return is_mirror(root.left, root.right)
+
+def solve(root):
+    return is_symmetric(root)
+
+CASES = [
+    # Empty tree
+    {"root": "null"},
+    # Single node
+    {"root": "(1 # #)"},
+    # Classic symmetric
+    {"root": "(1 (2 (3 # #) (4 # #)) (2 (4 # #) (3 # #)))"},
+    # Not symmetric (different leaves)
+    {"root": "(1 (2 # (3 # #)) (2 # (3 # #)))"},
+    # Asymmetric values
+    {"root": "(1 (2 # #) (3 # #))"},
+    # Deeper symmetric
+    {"root": "(1 (2 (3 (4 # #) #) #) (2 (3 # (4 # #)) #))"},
+    # Not symmetric (structure diff)
+    {"root": "(1 (2 (3 # #) #) (2 # (3 # #)))"},
+    # Two-node symmetric
+    {"root": "(1 (2 # #) (2 # #))"},
+]
+
+if __name__ == '__main__':
+    results = []
+    for i, c in enumerate(CASES):
+        root = parse_tree(c['root'])
+        res = solve(root)
+        results.append({
+            "id": i,
+            "input": c,
+            "expected": json.dumps(res, separators=(',', ':'), ensure_ascii=False)
+        })
+    print(json.dumps(results, separators=(',', ':'), ensure_ascii=False))

@@ -1,0 +1,25 @@
+(define (catalan n)
+  (define (helper i acc)
+    (if (> i n)
+        acc
+        (helper (+ i 1) (* acc 2 (/ (+ (* 2 (- i 1) )1)(+ i 1) )))))
+  (helper 0 1))
+
+(define (solve n)
+  (catalan n))
+
+(define (run-case i n)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve n))
+  (newline))
+
+(run-case 0 0)
+(run-case 1 1)
+(run-case 2 2)
+(run-case 3 3)
+(run-case 4 4)
+(run-case 5 5)
+(run-case 6 6)
+(run-case 7 10)

@@ -1,0 +1,63 @@
+(define (count-pairs-less-than A K)
+  ;; A is sorted non-decreasing. Count pairs (i,j) with i<j and A[i]+A[j] < K.
+  ;; Use two pointers: i=0 (left), j=len-1 (right).
+  ;; For each i, find largest j' >= i such that A[i]+A[j'] < K,
+  ;; then (j' - i) pairs are valid for this i.
+  (let loop ((i 0) (j (- (length A) 1)) (acc 0))
+    (cond
+      ((or (>= i j) (< j 0)) acc)
+      ((>= i (length A)) acc)
+      (else
+       (let ((sum (+ (list-ref A i) (list-ref A j))))
+         (if (< sum K)
+             (let ((n (+ acc (- j i) 1)))
+               (loop (+ i 1) j n))
+             (loop i (- j 1) acc)))))))
+
+(define (solve A K)
+  (count-pairs-less-than A K))
+
+;; Helper to display a list as "[a, b, c]"
+(define (display-list lst)
+  (display "[")
+  (let loop ((xs lst) (first #t))
+    (cond
+      ((null? xs) (display "]"))
+      (else
+       (if first
+           (begin (display (car xs)) (loop (cdr xs) #f))
+           (begin (display ", ") (display (car xs)) (loop (cdr xs) #f)))))))
+
+;; Embedded test inputs
+(define CASE0 '(1 2 3 4 5))
+(define CASE0-K 7)
+(define CASE1 '(-3 -1 0 2 4))
+(define CASE1-K 2)
+(define CASE2 '(1 1 1 1))
+(define CASE2-K 3)
+(define CASE3 '())
+(define CASE3-K 10)
+(define CASE4 '(5))
+(define CASE4-K 10)
+(define CASE5 '(1 2 3 4 5 6 7 8 9 10))
+(define CASE5-K 1)
+(define CASE6 '(-10 -5 -1 0 3 7))
+(define CASE6-K 0)
+(define CASE7 '(0 0 0 0 0))
+(define CASE7-K 1)
+
+(define (display-case i A K)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve A K))
+  (newline))
+
+(display-case 0 CASE0 CASE0-K)
+(display-case 1 CASE1 CASE1-K)
+(display-case 2 CASE2 CASE2-K)
+(display-case 3 CASE3 CASE3-K)
+(display-case 4 CASE4 CASE4-K)
+(display-case 5 CASE5 CASE5-K)
+(display-case 6 CASE6 CASE6-K)
+(display-case 7 CASE7 CASE7-K)

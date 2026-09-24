@@ -1,0 +1,184 @@
+(define empty-list '())
+
+(define (make-node val next) (cons val (cons next '())))
+
+(define (node-val n) (car n))
+(define (node-next n) (car (cdr n)))
+(define (set-node-next! n next) (set-car! (cdr n) next))
+
+;; Represent linked list as a mutable cell holding the head pointer
+(define (make-linked-list)
+  (let ((head (cons '() '())))  ;; head is mutable: (car head) = current head node or '()
+    head))
+
+(define (ll-get head idx)
+  (let loop ((node (car head)) (i 0))
+    (if (null? node)
+        -1
+        (if (= i idx)
+            (node-val node)
+            (loop (node-next node) (+ i 1))))))
+
+(define (ll-add-at-head head val)
+  (let ((new-node (make-node val (car head))))
+    (set-car! head new-node)))
+
+(define (ll-add-at-tail head val)
+  (let loop ((node (car head)))
+      (if (null? node)
+          (set-car! head (make-node val '()))
+          (if (null? (node-next node))
+              (set-node-next! node (make-node val '()))
+              (loop (node-next node))))))
+
+(define (ll-add-at-index head idx val)
+  (cond ((< idx 0) (ll-add-at-head head val))
+        ((= idx 0) (ll-add-at-head head val))
+        (else
+         (let loop ((node (car head)) (i 0))
+           (cond ((null? node) 'noop)
+                 ((= (+ i 1) idx)
+                  (let ((new-node (make-node val (node-next node))))
+                    (set-node-next! node new-node)))
+                 (else (loop (node-next node) (+ i 1))))))))
+
+(define (ll-delete-at-index head idx)
+  (cond ((null? (car head)) 'noop)
+        ((= idx 0) (set-car! head (node-next (car head))))
+        (else
+         (let loop ((node (car head)) (i 0))
+           (cond ((null? node) 'noop)
+                 ((null? (node-next node)) 'noop)
+                 ((= (+ i 1) idx)
+                  (set-node-next! node (node-next (node-next node))))
+                 (else (loop (node-next node) (+ i 1))))))))
+
+(define (op-get args head) (ll-get head (car args)))
+(define (op-addAtHead args head) (ll-add-at-head head (car args)))
+(define (op-addAtTail args head) (ll-add-at-tail head (car args)))
+(define (op-addAtIndex args head) (ll-add-at-index head (car args) (car (cdr args))))
+(define (op-deleteAtIndex args head) (ll-delete-at-index head (car args)))
+
+(define (process-ops ops head results)
+  (if (null? ops)
+      results
+      (let ((op (car ops)))
+        (cond
+          ((equal? (car op) "MyLinkedList") (process-ops (cdr ops) head results))
+          ((equal? (car op) "get")
+           (let ((r (op-get (cdr op) head)))
+             (process-ops (cdr ops) head (append results (list r)))))
+          ((equal? (car op) "addAtHead")
+           (op-addAtHead (cdr op) head)
+           (process-ops (cdr ops) head results))
+          ((equal? (car op) "addAtTail")
+           (op-addAtTail (cdr op) head)
+           (process-ops (cdr ops) head results))
+          ((equal? (car op) "addAtIndex")
+           (op-addAtIndex (cdr op) head)
+           (process-ops (cdr ops) head results))
+          ((equal? (car op) "deleteAtIndex")
+           (op-deleteAtIndex (cdr op) head)
+           (process-ops (cdr ops) head results))
+          (else (process-ops (cdr ops) head results))))))
+
+(define (solve n ops)
+  (let ((head (make-linked-list)))
+    (process-ops ops head '())))
+
+(define (display-list lst)
+  (cond ((null? lst) (display ""))
+        (else
+         (let loop ((l lst) (first? #t))
+           (cond ((null? l) 'done)
+                 (else
+                  (if first? (display (car l)) (begin (display " ") (display (car l))))
+                  (loop (cdr l) #f))))))))
+
+;; Test cases
+(define CASE0_OPS (list
+  (list "MyLinkedList")
+  (list "addAtHead" 1)
+  (list "addAtTail" 3)
+  (list "addAtIndex" 1 2)
+  (list "get" 1)
+  (list "deleteAtIndex" 1)
+  (list "get" 1)))
+
+(define CASE1_OPS (list
+  (list "MyLinkedList")
+  (list "addAtHead" 1)
+  (list "addAtTail" 2)
+  (list "get" 0)))
+
+(define CASE2_OPS (list
+  (list "MyLinkedList")
+  (list "addAtHead" 2)
+  (list "deleteAtIndex" 1)
+  (list "get" 0)
+  (list "addAtHead" 3)
+  (list "get" 0)))
+
+(define CASE3_OPS (list
+  (list "MyLinkedList")
+  (list "addAtIndex" 0 1)
+  (list "addAtIndex" 1 2)
+  (list "addAtIndex" 2 3)
+  (list "get" 0)
+  (list "get" 1)
+  (list "get" 2)
+  (list "get" 3)))
+
+(define CASE4_OPS (list
+  (list "MyLinkedList")
+  (list "addAtHead" 1)
+  (list "addAtHead" 2)
+  (list "addAtHead" 3)
+  (list "get" 0)
+  (list "get" 1)
+  (list "get" 2)))
+
+(define CASE5_OPS (list
+  (list "MyLinkedList")
+  (list "addAtTail" 1)
+  (list "addAtTail" 2)
+  (list "addAtTail" 3)
+  (list "deleteAtIndex" 1)
+  (list "get" 0)
+  (list "get" 1)))
+
+(define CASE6_OPS (list
+  (list "MyLinkedList")
+  (list "get" 0)
+  (list "deleteAtIndex" 0)
+  (list "addAtHead" 5)
+  (list "get" 0)))
+
+(define CASE7_OPS (list
+  (list "MyLinkedList")
+  (list "addAtHead" 4)
+  (list "addAtHead" 1)
+  (list "addAtTail" 5)
+  (list "addAtIndex" 1 2)
+  (list "addAtIndex" 4 3)
+  (list "get" 0)
+  (list "get" 1)
+  (list "get" 2)
+  (list "get" 3)))
+
+(define (run-case n ops tag)
+  (let ((r (solve n ops)))
+    (display "CASE")
+    (display tag)
+    (display "=")
+    (display-list r)
+    (newline)))
+
+(run-case 7 CASE0_OPS "0")
+(run-case 4 CASE1_OPS "1")
+(run-case 6 CASE2_OPS "2")
+(run-case 8 CASE3_OPS "3")
+(run-case 7 CASE4_OPS "4")
+(run-case 6 CASE5_OPS "5")
+(run-case 5 CASE6_OPS "6")
+(run-case 10 CASE7_OPS "7")

@@ -1,0 +1,31 @@
+(define (value-of c)
+  (cond ((equal? c "I") 1)
+        ((equal? c "V") 5)
+        ((equal? c "X") 10)
+        ((equal? c "L") 50)
+        ((equal? c "C") 100)
+        ((equal? c "D") 500)
+        ((equal? c "M") 1000)
+        (else 0)))
+
+(define (solve s)
+  (let ((len (string-length s)))
+    (let loop ((i 0) (total 0))
+      (if (= i len)
+          total
+          (let ((curr (value-of (string-ref s i))))
+            (if (and (< i (- len 1)) (< curr (value-of (string-ref s (+ i 1)))))
+                (loop (+ i 2) (+ total (- (value-of (string-ref s (+ i 1)))) curr))
+                (loop (+ i 1) (+ total curr))))))))
+
+(define (string-length s)
+  (let loop ((i 0))
+    (if (and (< i (string-length-helper s 0)) #t)
+        i
+        i)))
+
+(define (string-length-helper s i)
+  (if (>= i 10000) i (+ i 1)))
+
+(define (string-ref s i)
+  (substring s i (+ i 1)))

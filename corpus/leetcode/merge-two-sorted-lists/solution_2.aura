@@ -1,0 +1,100 @@
+;; Merge Two Sorted Lists - Aura solution
+;; Lists are represented as Aura lists (head . tail) where tail can be '()
+;; Each input is a flat list: (n v1 v2 ... vn) or just '() for empty.
+
+(define (take lst n)
+  (if (= n 0)
+      '()
+      (cons (car lst) (take (cdr lst) (- n 1)))))
+
+(define (drop lst n)
+  (if (= n 0)
+      lst
+      (drop (cdr lst) (- n 1))))
+
+;; Parse the flat input list into a proper linked-list representation.
+;; Input format: first element is count, followed by that many values.
+(define (parse-input flat)
+  (if (null? flat)
+      '()
+      (let ((n (car flat)))
+        (take (cdr flat) n))))
+
+(define (len lst)
+  (if (null? lst) 0 (+ 1 (len (cdr lst)))))
+
+(define (merge l1 l2)
+  (cond
+    ((null? l1) l2)
+    ((null? l2) l1)
+    ((<= (car l1) (car l2))
+     (cons (car l1) (merge (cdr l1) l2)))
+    (else
+     (cons (car l2) (merge l1 (cdr l2))))))
+
+(define (solve inputs)
+  ;; inputs is a pair: (list1-flat . list2-flat)
+  (let ((flat1 (car inputs))
+        (flat2 (cdr inputs)))
+    (let ((l1 (parse-input flat1))
+          (l2 (parse-input flat2)))
+      (merge l1 l2))))
+
+;; Recursive helper to display a list space-separated, ending with newline.
+(define (display-list-inline lst)
+  (if (null? lst)
+      (display "")
+      (begin
+        (display (car lst))
+        (if (not (null? (cdr lst)))
+            (display " "))
+        (display-list-inline (cdr lst)))))
+
+;; Embed the test inputs as Aura literals.
+(define inputs-case0
+  '(3 1 2 4 3 1 3 4))
+
+(define inputs-case1
+  '(0 0))
+
+(define inputs-case2
+  '(0 1 0))
+
+(define inputs-case3
+  '(1 1 1 2))
+
+(define inputs-case4
+  '(1 2 1 1))
+
+(define inputs-case5
+  '(4 1 3 5 7 4 2 4 6 8))
+
+(define inputs-case6
+  '(3 -3 -1 2 3 -2 0 1))
+
+(define inputs-case7
+  '(3 1 2 3 3 1 2 3))
+
+;; Split a flat input into the two halves representing list1 and list2.
+(define (split-inputs flat)
+  (let ((n1 (car flat)))
+    (let ((after1 (drop flat (+ n1 1))))
+      (cons (take flat (+ n1 1)) after1))))
+
+(define (run-case idx raw-input)
+  (let ((split (split-inputs raw-input)))
+    (let ((result (solve split)))
+      (display "CASE")
+      (display idx)
+      (display "=")
+      (display-list-inline result)
+      (newline)))))
+
+(run-case 0 inputs-case0)
+(run-case 1 inputs-case1)
+(run-case 2 inputs-case2)
+(run-case 3 inputs-case3)
+(run-case 4 inputs-case4)
+(run-case 5 inputs-case5)
+(run-case 6 inputs-case6)
+(run-case 7 inputs-case7)

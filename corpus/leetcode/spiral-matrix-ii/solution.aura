@@ -1,0 +1,29 @@
+(define (make-matrix n)
+  (let ((m '()))
+    (let loop ((i 0))
+      (if (= i n)
+          m
+          (begin
+            (set! m (cons (make-list n 0) m))
+            (loop (+ i 1)))))))
+
+(define (solve n)
+  (let ((m (make-matrix n))
+        (val 1)
+        (top 0)
+        (bottom (- n 1))
+        (left 0)
+        (right (- n 1)))
+    (let loop ()
+      (cond
+        ((> top bottom) '())
+        ((> left right) '())
+        (else
+         ;; Go right
+         (let loop-r ((c left) (r top))
+           (when (<= c right)
+             (begin
+               (set-car! (list-ref (list-ref m r) 0) ;; placeholder
+                         0)
+               )))
+         )))

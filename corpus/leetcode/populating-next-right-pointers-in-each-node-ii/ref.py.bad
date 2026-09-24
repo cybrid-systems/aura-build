@@ -1,0 +1,162 @@
+Looking at this problem, I need to:
+1. Parse a tree from level-order encoding where `-1` means null
+2. Populate each node's `next` pointer to point to the next right node at the same level
+3. Output the tree in the same level-order format with each node's `next` pointer value (or `0` for null)
+
+The key algorithm: use the `next` pointers of the previous level to traverse the current level (O(1) extra space, O(n) time).
+
+Algorithm:
+- Use a dummy head approach: for each level, create a `dummy` node, then use a `current` pointer to traverse the previous level via existing `next` pointers, attaching children of each node to `current.next`.
+- After processing a level, advance `level_start` to `dummy.next` (the leftmost node of next level).
+- Track the rightmost node seen at each level and set its `next` to `None`.
+- Continue until no more levels.
+
+Output: Perform a BFS from root using `left`/`right` (NOT `next`) to get nodes in level-order, then for each node output its `val` followed by its `next` value (or `0`).
+
+Let me trace through the example:
+- Input: `1 2 3 4 5 -1 7`
+- Tree:
+  ```
+        1
+       / \
+      2   3
+     / \   \
+    4   5   7
+  ```
+- After connecting:
+  - Level 0: 1 → None
+  - Level 1: 2 → 3 → None
+  - Level 2: 4 → 5 → 7 → None
+- Output values followed by next-pointer values:
+  - 1, 0; 2, 3; 3, 0; 4, 5; 5, 7; 7, 0
+  - `1 0 2 3 3 0 4 5 5 7 7 0`
+
+Let me verify the expected output: `1 0 2 3 4 5 7 0 0 0 0 0 0 0 0`
+
+Hmm, that has 15 values but my tree only has 6 nodes. Wait — the expected output has nodes at positions where index `i` has children at positions `2i+1` and `2i+2`, regardless of whether those children exist. Let me re-read...
+
+Yes! The output format uses the same index-based scheme as the input: a node at position `i` has its next-pointer value output, AND positions are kept based on the BFS index. Missing nodes are filled in as... what? Let me look again at the expected:
+
+`1 0 2 3 4 5 7 0 0 0 0 0 0 0 0`
+
+That's 15 values = indices 0 through 14. Index 6 = 7, then indices 7,8,9,10,11,12,13,14 — these would be children of indices 3,4,5 (which are 4,5,7) and grandchildren. But 4,5,7 have no children!
+
+So positions corresponding to null children output `0`. That matches perfectly. The output is simply: for each index `i` from 0 onwards, if there's a real node there output `(val, next_val)`, if it's a null child output `0`. But we need to know where to stop...
+
+Looking at expected: 6 real nodes (1,2,3,4,5,7), then the rest are 0s. After populating, we need to figure out which positions had real nodes vs not. The cleanest way: traverse using BFS-order via left/right (not next), since this matches the input encoding format. For each node visited, output `val next_val`. If left child exists, traverse left; if not, output `0` for that position. Same for right.
+
+Wait, let me recount. My tree:
+```
+        1       (index 0)
+       / \
+      2   3     (indices 1, 2)
+     / \   \
+    4   5   7   (indices 3, 4, 5)
+```
+
+Indices 6,7,...,14: these are children of nodes at indices 3,4,5. Node at 3 is 4 (no children), node at 4 is 5 (no children), node at 5 is 7 (no children). So all those positions are null → output 0.
+
+For each position `i`, the output is:
+- If a real node exists at `i`: output its `val` and its `next` val (or 0).
+- If null: output `0`.
+
+Length = determined by the encoding. We just need to figure out the encoding length. The simplest way: BFS using left/right (not next), tracking indices. Start at index 0, for each visited node at index `i`, output `val next_val`. Then try children at `2i+1` and `2i+2` — if they exist in our built tree, recurse; otherwise output `0` for that slot.
+
+But what's the termination condition? Looking at expected: once we hit all 0s after the last node, we stop. Actually, the problem says "any further values are ignored" for the input sentinel `-1`. For output, looking at example: 6 real slots (0-5), then 9 zero slots (6-14). 
+
+Let me think — actually the cleanest way is to do BFS building the full level-order list including nulls, up to the length where all trailing entries are null. Or we can just continue adding 0s as long as there are non-trailing nulls.
+
+Actually, a simpler approach: since `next` pointers are set, we already know the structure. Use a BFS with the index-based approach during the BFS itself. Let me do it like this:
+
+During `solve`, when I have the tree built, do a BFS to collect the level-order representation including nulls. The simplest: BFS using left/right pointers, but I'll use an index-based approach: 
+- Maintain a list `nodes` mapping index → node (or None).
+- Start with root at index 0.
+- For each visited real node at index i, set nodes[i] = node. If left child exists, visit index 2i+1; if right child exists, visit index 2i+2.
+
+But what's the stopping condition? Since nodes stored with `next` give us the tree structure via left/right, we just need to determine the length.
+
+Hmm, the easiest way: do a BFS to fill level-order using index, including None placeholders. The length is the smallest length such that the trailing entries (from end) are all None. Wait, but once we have all real nodes at their index positions, we need to add None until... when?
+
+Looking at example again: the 6 real nodes occupy indices 0-5. Their parent indices are 0,1,2. None of indices 3,4,5 have children that we know of in the input, so we add `0` for indices 6,7 (children of 3=4), index 8,9 (children of 4=5), index 10,11 (children of 5=7). That's 6 entries: 6,7,8,9,10,11. Then indices 12,13,14 — these are children of indices 6,7,8,9,10,11, all of which are null. Hmm, but expected has 9 zeros after index 5. Let me count: 0 0 0 0 0 0 0 0 0 = 9 zeros, indices 6 through 14.
+
+OK so the algorithm seems to be: BFS using index, then add None for any null child, but stop once we've added enough trailing zeros... Actually wait. Maybe the output doesn't strictly need to include those extra trailing zeros, but the example does.
+
+Let me re-read: "The output length depends on the number of nodes reachable through `left`/`right` pointers from the root after the traversal."
+
+Hmm, that's ambiguous. Let me look at the expected output once more: `1 0 2 3 4 5 7 0 0 0 0 0 0 0 0`. 15 entries. The 6 real nodes give 12 entries (val + next each). 15 - 12 = 3... no wait, 9 zeros are after `7 0`. So 6 nodes × 2 = 12 entries for nodes + 3 zeros = 15. Hmm.
+
+Wait, let me count again. `1 0 2 3 4 5 7 0 0 0 0 0 0 0 0`:
+- `1 0` — node 1, next=0
+- `2 3` — node 2, next=3
+- `3 0` — node 3, next=0? But node 2's next is 3, so node 3's next should be 0 (rightmost of level)
+- `4 5` — node 4, next=5
+- `5 7` — node 5, next=7
+- `7 0` — node 7, next=0
+
+That's 12 entries for 6 nodes. Then `0 0 0` = 3 more zeros. Total 15.
+
+But indices 6,7,8,9,10,11 are children of nodes 3,4,5. Index 6,7 = children of node 3 (value 4); index 8,9 = children of node 4 (value 5); index 10,11 = children of node 5 (value 7). That's 6 null positions... but only 3 zeros.
+
+Hmm wait, maybe I'm miscounting. Let me carefully recount: `1 0 2 3 4 5 7 0 0 0 0 0 0 0 0`. Splitting: `1`, `0`, `2`, `3`, `4`, `5`, `7`, `0`, `0`, `0`, `0`, `0`, `0`, `0`, `0`. That's 15 elements. Real nodes contribute (val, next): `1,0`, `2,3`, `3,0`, `4,5`, `5,7`, `7,0`. That's positions 0-5, contributing 12 values: indices 0,1,2,3,4,5,6,7,8,9,10,11.
+
+Then `0,0,0,0,0,0,0,0,0` = 9 zeros at indices 12-20. Wait that's not right either. Let me count indices: 
+- Node 0 (val 1): outputs at idx 0,1
+- Node 1 (val 2): outputs at idx 2,3
+- Node 2 (val 3): outputs at idx 4,5
+- Node 3 (val 4): outputs at idx 6,7
+- Node 4 (val 5): outputs at idx 8,9
+- Node 5 (val 7): outputs at idx 10,11
+- Then 9 zeros at idx 12,13,14,15,16,17,18,19,20
+
+But node 5 has no children at idx 10,11 in input encoding (input is `1 2 3 4 5 -1 7`, len 7, so only indices 0-6 in input; index 6 is 7). Hmm.
+
+I think the output format is simpler than I'm making it. Let me think again.
+
+Re-reading: "Print the resulting tree in the same level-order encoding, with each node's val followed by its next pointer (or 0 to indicate null)"
+
+So for each level-order position that has a node, output val and next. For null positions, output `0`.
+
+The question is what positions are included in output. Looking at example: 15 entries. With 6 real nodes producing 12 entries (val+next each), we have 3 trailing zeros. 
+
+Let me check if indices 6,7,8,9,10,11 are null children positions of indices 3,4,5:
+- idx 3 (val 4): no children → output 0 for idx 6, idx 7
+- idx 4 (val 5): no children → output 0 for idx 8, idx 9
+- idx 5 (val 7): no children → output 0 for idx 10, idx 11
+
+That's 6 zeros at positions 6-11. But expected has values at positions 6-11 (4 5 7 0). And then 9 zeros at positions 12-20. Hmm doesn't match.
+
+Wait, let me recount the expected output character by character: `1 0 2 3 4 5 7 0 0 0 0 0 0 0 0`
+
+`1` `0` `2` `3` `4` `5` `7` `0` `0` `0` `0` `0` `0` `0` `0`
+
+Splitting by space: ["1","0","2","3","4","5","7","0","0","0","0","0","0","0","0"] = 15 elements.
+
+If this uses BFS with val+next for each node:
+- (val=1, next=0) → "1 0"
+- (val=2, next=3) → "2 3"
+- (val=3, next=0) → "3 0" — wait, node 2's next is 3, so node 3's next is 0 (it's the rightmost in level 1). Yes.
+- (val=4, next=5) → "4 5"
+- (val=5, next=7) → "5 7"
+- (val=7, next=0) → "7 0"
+
+Concatenated: "1 0 2 3 3 0 4 5 5 7 7 0" = 12 elements.
+
+Then the remaining `0 0 0 0 0 0 0` = 7 more elements, for total 15+2 elements? Let me recount. 12 elements from nodes + 7 zeros = 19 total. But expected has 15.
+
+OK I think I'm overcomplicating. Let me count "1 0 2 3 4 5 7 0 0 0 0 0 0 0 0" — that's literally 15 numbers. Maybe the encoding is: each real node outputs just its `next` value (no val), and null positions output 0. Then:
+- Position 0 (root val=1): output next=0
+- Position 1 (val=2): output next=3
+- Position 2 (val=3): output next=0
+- ...
+
+That gives `0 3 0 5 7 0 ...` which doesn't match either.
+
+Or maybe: positions of nodes use val only, and the next is implicitly the position of the next real node at same level.
+
+Hmm. Let me re-read the problem statement one more time...
+
+"Print the resulting tree in the same level-order encoding, with each node's val followed by its next pointer (or 0 to indicate null), again space-separated on one line, prefixed by CASE0=."
+
+OK so each node outputs `val next`. And null positions output `0`. The format matches input format with `-1` replaced by `0` for nulls, and additional `next` info appended to each existing node.
+
+Hmm but then the example output `1 0 2 3 4 5 7 0 0 0 0 0 0 0 0` should be

@@ -1,0 +1,60 @@
+(define (string-length s)
+  (let loop ((i 0) (s s))
+    (if (null? s) i (loop (+ i 1) (cdr s)))))
+
+(define (string-ref-idx s i)
+  (let loop ((i i) (s s))
+    (if (= i 0) (car s) (loop (- i 1) (cdr s)))))
+
+(define (char->idx c)
+  (- (char->integer c) (char->integer #\a)))
+
+(define (make-freq)
+  (let loop ((i 0) (lst '()))
+    (if (= i 26) lst (loop (+ i 1) (cons 0 lst)))))
+
+(define (freq-inc freq c)
+  (let loop ((i 0) (f freq))
+    (cond
+      ((= i (char->idx c)) (cons (+ (car f) 1) (cdr f)))
+      (else (cons (car f) (loop (+ i 1) (cdr f)))))))
+
+(define (freq-decsame? s t freq)
+  (cond
+    ((null? s) freq)
+    ((null? t) freq)
+    (else
+     (let ((c1 (car s)) (c2 (car t)))
+       (freq-decsame? (cdr s) (cdr t)
+         (let loop ((i 0) (f freq))
+           (cond
+             ((= i (char->idx c1)) (cons (- (car f) 1) (cdr f)))
+             (else (cons (car f) (loop (+ i 1) (cdr f)))))))))))
+
+(define (all-zero? freq)
+  (cond
+    ((null? freq) #t)
+    ((= (car freq) 0) (all-zero? (cdr freq)))
+    (else #f)))
+
+(define (solve s t)
+  (if (not (= (string-length s) (string-length t)))
+      #f
+      (all-zero? (freq-decsame? (string->list s) (string->list t) (make-freq)))))
+
+;; Helper: convert list of chars to Aura list (already is via string->list)
+;; Test cases
+
+(define (display-result name s t)
+  (display name)
+  (display (solve s t))
+  (newline))
+
+(display-result "CASE0=" "listen" "silent")
+(display-result "CASE1=" "hello" "world")
+(display-result "CASE2=" "anagram" "nagaram")
+(display-result "CASE3=" "rat" "car")
+(display-result "CASE4=" "a" "b")
+(display-result "CASE5=" "a" "a")
+(display-result "CASE6=" "abc" "abcd")
+(display-result "CASE7=" "abcdefghijklmnopqrstuvwxyz" "zyxwvutsrqponmlkjihgfedcba")

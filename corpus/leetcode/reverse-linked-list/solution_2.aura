@@ -1,0 +1,30 @@
+(define (reverse-list lst)
+  (letrec ((rev-iter (lambda (acc rest)
+    (if (null? rest)
+        acc
+        (rev-iter (cons (car rest) acc) (cdr rest))))))
+    (rev-iter '() lst)))
+
+(define (solve head)
+  (reverse-list head))
+
+(define (display-list xs)
+  (cond ((null? xs) (display "()"))
+        (else
+         (display "(")
+         (display (car xs))
+         (let loop ((rest (cdr xs)))
+           (cond ((null? rest) (display ")"))
+                 (else
+                  (display " ")
+                  (display (car rest))
+                  (loop (cdr rest))))))))
+
+(display "CASE0=") (display-list (solve '())) (newline)
+(display "CASE1=") (display-list (solve '(1))) (newline)
+(display "CASE2=") (display-list (solve '(1))) (newline)
+(display "CASE3=") (display-list (solve '(1))) (newline)
+(display "CASE4=") (display-list (solve '(7))) (newline)
+(display "CASE5=") (display-list (solve '(-3))) (newline)
+(display "CASE6=") (display-list (solve '(100))) (newline)
+(display "CASE7=") (display-list (solve '(1))) (newline)

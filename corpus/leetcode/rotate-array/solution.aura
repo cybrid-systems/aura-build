@@ -1,0 +1,91 @@
+;; Aura solution for Rotate Array
+;; Uses the three-reverse trick for O(n) time, O(1) extra space.
+
+(define (len xs)
+  (if (null? xs) 0 (+ 1 (len (cdr xs)))))
+
+(define (take n xs)
+  (if (= n 0)
+      '()
+      (cons (car xs) (take (- n 1) (cdr xs)))))
+
+(define (drop n xs)
+  (if (= n 0)
+      xs
+      (drop (- n 1) (cdr xs))))
+
+(define (append a b)
+  (if (null? a)
+      b
+      (cons (car a) (append (cdr a) b))))
+
+(define (reverse xs)
+  (define (rev acc rest)
+    (if (null? rest)
+        acc
+        (rev (cons (car rest) acc) (cdr rest))))
+  (rev '() xs))
+
+(define (display-list xs)
+  (display "[")
+  (define (loop rest)
+    (cond ((null? rest) (display ""))
+          ((null? (cdr rest))
+           (display (car rest)))
+          (else
+           (display (car rest))
+           (display ", ")
+           (loop (cdr rest)))))
+  (loop xs)
+  (display "]"))
+
+;; In-place rotation using the three-reverse trick.
+;; We split the list conceptually at position n-k, reverse each half,
+;; then reverse the whole thing.
+(define (rotate-array nums k)
+  (let ((n (len nums)))
+    (if (<= n 1)
+        nums
+        (let ((m (modulo k n)))
+          (if (= m 0)
+              nums
+              (let* ((first-part (take (- n m) nums))
+                     (second-part (drop (- n m) nums))
+                     (rev-first (reverse first-part))
+                     (rev-second (reverse second-part))
+                     (combined (append rev-first rev-second)))
+                (reverse combined)))))))
+
+(define (solve nums k)
+  (rotate-array nums k))
+
+;; --- Test harness ---
+(define cases
+  (list
+    (list (list 1 2 3 4 5 6 7) 3)
+    (list (list -1 -100 3 99) 2)
+    (list (list 1 2 3) 0)
+    (list (list 1 2 3) 3)
+    (list '() 5)
+    (list (list 42) 7)
+    (list (list 1 2 3 4 5) 7)
+    (list (list 0 0 0 1) 2)))
+
+(define (run-tests cases)
+  (define (loop i rest)
+    (if (null? rest)
+        '()
+        (begin
+          (let* ((c (car rest))
+                 (nums (car c))
+                 (k (car (cdr c)))
+                 (result (solve nums k)))
+            (display "CASE")
+            (display i)
+            (display "=")
+            (display-list result)
+            (newline)
+            (loop (+ i 1) (cdr rest))))))
+  (loop 0 cases))
+
+(run-tests cases)

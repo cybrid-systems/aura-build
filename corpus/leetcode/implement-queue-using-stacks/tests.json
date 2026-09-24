@@ -1,0 +1,42 @@
+[
+  {
+    "id": 0,
+    "input": "ENQUEUE 1\nENQUEUE 2\nENQUEUE 3\nDEQUEUE\nPEEK\nEMPTY\n",
+    "expected": "[\"1\",\"2\",\"FALSE\"]"
+  },
+  {
+    "id": 1,
+    "input": "DEQUEUE\nPEEK\nEMPTY\n",
+    "expected": "[\"ERROR\",\"ERROR\",\"TRUE\"]"
+  },
+  {
+    "id": 2,
+    "input": "ENQUEUE 10\nENQUEUE 20\nENQUEUE 30\nENQUEUE 40\nDEQUEUE\nDEQUEUE\nDEQUEUE\nDEQUEUE\nDEQUEUE\n",
+    "expected": "[\"10\",\"20\",\"30\",\"40\",\"ERROR\"]"
+  },
+  {
+    "id": 3,
+    "input": "ENQUEUE 5\nENQUEUE 6\nPEEK\nDEQUEUE\nENQUEUE 7\nPEEK\nDEQUEUE\nDEQUEUE\nEMPTY\n",
+    "expected": "[\"5\",\"5\",\"6\",\"6\",\"7\",\"TRUE\"]"
+  },
+  {
+    "id": 4,
+    "input": "ENQUEUE 1\nDEQUEUE\nENQUEUE 2\nENQUEUE 3\nPEEK\nEMPTY\nDEQUEUE\nDEQUEUE\nDEQUEUE\n",
+    "expected": "[\"1\",\"2\",\"FALSE\",\"2\",\"3\",\"ERROR\"]"
+  },
+  {
+    "id": 5,
+    "input": "ENQUEUE 100\nENQUEUE 200\nDEQUEUE\nENQUEUE 300\nPEEK\nDEQUEUE\nPEEK\nDEQUEUE\nDEQUEUE\nEMPTY\n",
+    "expected": "[\"100\",\"200\",\"200\",\"300\",\"300\",\"ERROR\",\"TRUE\"]"
+  },
+  {
+    "id": 6,
+    "input": "",
+    "expected": "[]"
+  },
+  {
+    "id": 7,
+    "input": "ENQUEUE -1\nENQUEUE -2\nENQUEUE -3\nDEQUEUE\nDEQUEUE\nDEQUEUE\nDEQUEUE\nEMPTY\n",
+    "expected": "[\"-1\",\"-2\",\"-3\",\"ERROR\",\"TRUE\"]"
+  }
+]

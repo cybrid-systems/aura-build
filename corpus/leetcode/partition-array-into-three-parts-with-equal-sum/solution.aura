@@ -1,0 +1,43 @@
+(define (sum-list lst)
+  (cond ((null? lst) 0)
+        (else (+ (car lst) (sum-list (cdr lst))))))
+
+(define (solve arr)
+  (let* ((n (length arr))
+         (total (sum-list arr))
+         (ans (cond ((< n 3) "NO")
+                    ((not (= (modulo total 3) 0)) "NO")
+                    (else
+                     (let ((target (/ total 3)))
+                       (let loop ((i 0) (s 0) (found 0))
+                         (cond ((>= i n) "NO")
+                               ((= found 2) "YES")
+                               (else
+                                (let ((ns (+ s (list-ref arr i))))
+                                  (if (= ns (* target (+ found 1)))
+                                      (loop (+ i 1) 0 (+ found 1))
+                                      (loop (+ i 1) ns found))))))))))))
+    ans))
+
+(define (display-case i result)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display result)
+  (newline))
+
+(let ((cases (list
+              (list 0 (list 0 2 1 -6 6 -7 9 1 2 0 1))
+              (list 1 (list 1 -1 1 -1 1 -1 1 -1))
+              (list 2 (list 1 2 3 4 5))
+              (list 3 (list 0 0 0 0))
+              (list 4 (list 1 2 3))
+              (list 5 (list -1 -1 -1 -1 -1 -1))
+              (list 6 (list 3 3 3 3))
+              (list 7 (list 5 5 5 5 5)))))
+  (for-each
+   (lambda (c)
+     (let ((i (car c))
+           (arr (cadr c)))
+       (display-case i (solve arr))))
+   cases))

@@ -1,0 +1,165 @@
+;; Helpers to build and access a flat grid (list of lists of 0/1)
+(define (make-grid n)
+  (let loop ((i 0) (acc '()))
+    (if (= i n)
+        (reverse acc)
+        (loop (+ i 1) (cons (make-list n 0) acc)))))
+
+(define (grid-set! g r c v)
+  ;; mutate row r's c-th element to v
+  (let* ((rows g)
+         (row (list-ref rows r))
+         (new-row (list-set row c v))
+         (new-rows (list-set rows r new-row)))
+    (set! g new-rows)))
+
+(define (list-set lst idx v)
+  ;; return a new list with element at idx set to v (0-indexed)
+  (let loop ((l lst) (i 0) (acc '()))
+    (cond
+      ((null? l) (reverse acc))
+      ((= i idx) (loop (cdr l) (+ i 1) (cons v acc)))
+      (else (loop (cdr l) (+ i 1) (cons (car l) acc))))))
+
+(define (grid-ref g r c)
+  (list-ref (list-ref g r) c))
+
+(define (neighbors r c n)
+  (let ((acc '()))
+    (let ((acc (if (> r 0)     (cons (list (- r 1) c)     acc) acc)))
+    (let ((acc (if (< (+ r 1) n) (cons (list (+ r 1) c)     acc) acc)))
+    (let ((acc (if (> c 0)     (cons (list r (- c 1))     acc) acc)))
+    (let ((acc (if (< (+ c 1) n) (cons (list r (+ c 1))     acc) acc)))
+      acc)))))
+
+;; BFS to collect all cells of the first island found, marking them as 2
+(define (collect-island g n sr sc)
+  (let* ((queue (list (list sr sc)))
+         (visited (make-grid n))
+         (cells '()))
+    (grid-set! visited sr sc 1)
+    ;; Iteratively BFS
+    (let loop ((q queue) (vs visited) (cs cells))
+      (if (null? q)
+          (begin
+            (set! visited vs)
+            (set! cells cs)
+            cs)
+          (let* ((cell (car q))
+                 (r (car cell))
+                 (c (car (cdr cell)))
+                 (rest-q (cdr q)))
+            (let loop2 ((ns (neighbors r c n)) (q2 rest-q) (vs2 vs) (cs2 (cons cell cs)))
+              (if (null? ns)
+                  (loop q2 vs2 cs2)
+                  (let* ((nb (car ns))
+                         (rr (car nb))
+                         (cc (car (cdr nb)))
+                         (rest-ns (cdr ns)))
+                    (if (and (= (grid-ref vs2 rr cc) 0)
+                             (= (grid-ref g rr cc) 1))
+                        (begin
+                          (grid-set! vs2 rr cc 1)
+                          (loop2 rest-ns (cons nb q2) vs2 cs2))
+                        (loop2 rest-ns q2 vs2 cs2))))))))))
+
+(define (solve grid-input)
+  (let* ((g (make-grid (length grid-input)))
+         (n (length grid-input)))
+    ;; Copy input into grid
+    (let loop-rows ((r 0))
+      (if (= r n)
+          'done
+          (begin
+            (let loop-cols ((c 0))
+              (if (= c n)
+                  'done
+                  (begin
+                    (grid-set! g r c (list-ref (list-ref grid-input r) c))
+                    (loop-cols (+ c 1)))))
+            (loop-rows (+ r 1)))))
+    ;; Find first 1 cell (belonging to first island)
+    (let find-first ((r 0) (c 0) (done #f) (result '()))
+      (cond
+        (done result)
+        ((= r n) result)
+        ((= c n) (find-first (+ r 1) 0 #f result))
+        ((= (grid-ref g r c) 1) (find-first r (+ c 1) #t (list r c)))
+        (else (find-first r (+ c 1) #f result))))
+    (let* ((start-cell (find-first 0 0 #f '()))
+           (sr (car start-cell))
+           (sc (car (cdr start-cell))))
+      ;; Collect first island cells
+      (let* ((island-cells (collect-island g n sr sc))
+             (queue '())
+             (dist (make-grid n)))
+        ;; Initialize queue with all island cells, dist = 0
+        (let init ((cs island-cells) (q '()) (d '()))
+            (if (null? cs)
+                    (begin
+                        (set! queue q)
+                        (set! dist d)
+                        'done)
+                    (let* ((cell (car cs))
+                           (r (car cell))
+                           (c (car (cdr cell))))
+                      (grid-set! d r c 0)
+                      (init (cdr cs) (cons cell q) d))))
+        ;; Multi-source BFS; but skip starting cells of island1 by checking if it's still island1 (value 1 in g)
+        ;; We'll only count flips when crossing water (grid == 0)
+        (let bfs ((q queue) (d dist) (answer -1))
+          (if (or (= answer 0) (null? q))
+              answer
+              (let* ((size (length q))
+                     (step-result
+                       (let layer ((i 0) (q q) (d d) (found #f))
+                         (if (= i size)
+                             (if found 0 -1)
+                             (let* ((cell (car q))
+                                    (r (car cell))
+                                    (cc (car (cdr cell)))
+                                    (rest-q (cdr q))
+                                    (cur-dist (grid-ref d r cc)))
+                               (let ln ((ns (neighbors r cc n)) (q2 rest-q) (d2 d) (f found))
+                                 (if (null? ns)
+                                     (layer (+ i 1) q2 d2 f)
+                                     (let* ((nb (car ns))
+                                            (rr (car nb))
+                                            (ccc (car (cdr nb)))
+                                            (rest-ns (cdr ns)))
+                                       (cond
+                                         ((= (grid-ref d2 rr ccc) -1)
+                                          ;; unvisited
+                                          (grid-set! d2 rr ccc (+ cur-dist 1))
+                                          (cond
+                                            ((= (grid-ref g rr ccc) 1)
+                                             ;; reached second island!
+                                             (ln rest-ns q2 d2 0))
+                                            (else
+                                              (ln rest-ns (cons nb q2) d2 f))))
+                                         (else
+                                          (ln rest-ns q2 d2 f)))))))))))
+                (if (= step-result 0)
+                    (+ (grid-ref d (car (car q)) (car (cdr (car q)))) 1)
+                    (bfs (list-tail q size) d -1))))))))
+
+(define (list-tail lst k)
+  (let loop ((l lst) (i 0))
+    (if (= i k) l (loop (cdr l) (+ i 1)))))
+
+;; Main: embedded test cases
+(define (run-case i grid-input)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve grid-input))
+  (newline))
+
+(run-case 0 '((0 1 0 0) (0 0 0 0) (0 0 1 0) (0 0 0 0)))
+(run-case 1 '((1 1 1 1 1) (1 0 0 0 1) (1 0 1 0 1) (1 0 0 0 1) (1 1 1 1 1)))
+(run-case 2 '((1 0 0) (0 0 0) (0 0 1)))
+(run-case 3 '((1 0) (0 1)))
+(run-case 4 '((1 1 0 0 0) (1 1 0 0 0) (0 0 0 1 1) (0 0 0 1 1)))
+(run-case 5 '((1)))
+(run-case 6 '((1 1 0 1 0) (0 1 0 0 1) (1 0 0 0 0) (0 0 0 1 0) (1 0 1 0 1)))
+(run-case 7 '((1 0 1) (1 0 0) (0 0 1)))

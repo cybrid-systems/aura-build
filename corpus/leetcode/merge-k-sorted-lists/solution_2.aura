@@ -1,0 +1,92 @@
+(define (display-list lst)
+  (display "[")
+  (let loop ((l lst) (first #t))
+    (cond
+      ((null? l)
+       (display "]")
+       #t)
+      (else
+       (if first (set! first #f) (begin (display ",") (display " ")))
+       (display (car l))
+       (loop (cdr l) first)))))
+
+(define (display-value v)
+  (cond
+    ((null? v) (display "[]"))
+    ((list? v) (display-list v))
+    (else (display v))))
+
+(define (solve lists)
+  ;; k = length of lists
+  ;; Collect (value . index) pairs for heads into a heap
+  ;; We'll use a sorted list as a min-heap (simple, but O(k) insert). That's fine for small k.
+  ;; Better: use a list-based min-heap where the minimum is at the front.
+  ;; We'll represent heap entries as pairs: (value index)
+  ;; We need to keep track of position in each list.
+  (define n (length lists))
+  (if (= n 0)
+      '()
+      (let* ((positions (make-list n 0))   ; index into each list
+             (heads (map (lambda (l) (if (null? l) #f (car l))) lists))
+             ;; Build initial heap from non-#f heads
+             (initial-heap
+              (let loop ((i 0) (acc '()))
+                (if (>= i n)
+                    acc
+                    (let ((h (list-ref heads i)))
+                      (if h
+                          (loop (+ i 1) (insert-heap (cons h i) acc))
+                          (loop (+ i 1) acc)))))))
+        (let loop ((heap initial-heap) (positions positions) (result '()))
+          (if (null? heap)
+              (reverse result)
+              (let* ((top (car heap))
+                     (val (car top))
+                     (idx (cdr top))
+                     (rest-heap (cdr heap))
+                     (new-pos (list-set positions idx (+ (list-ref positions idx) 1)))
+                     (lst (list-ref lists idx))
+                     (advanced
+                      (if (>= (+ (list-ref new-pos idx) 0) (length lst))
+                          #f
+                          (list-ref lst (list-ref new-pos idx)))))
+                (loop
+                 (if advanced
+                     (insert-heap (cons advanced idx) rest-heap)
+                     rest-heap)
+                 new-pos
+                 (cons val result))))))))
+
+(define (list-set lst i v)
+  (let loop ((l lst) (idx 0))
+    (cond
+      ((null? l) '())
+      ((= idx i) (cons v (cdr l)))
+      (else (cons (car l) (loop (cdr l) (+ idx 1)))))))
+
+;; Insert (val . idx) into min-heap (sorted list by val)
+(define (insert-heap entry heap)
+  (cond
+    ((null? heap) (list entry))
+    ((< (car entry) (car (car heap)))
+     (cons entry heap))
+    (else
+     (cons (car heap) (insert-heap entry (cdr heap))))))
+
+;; ----- Test driver -----
+(define (run-test case-id lists)
+  (let ((result (solve lists)))
+    (display "CASE")
+    (display case-id)
+    (display "=")
+    (display-value result)
+    (newline)))
+
+(run-test 0 '((1 4 5) (1 3 4) (2 6)))
+(run-test 1 '())
+(run-test 2 '(() () ()))
+(run-test 3 '((1 2 3)))
+(run-test 4 '((1) (2) (3) (4) (5)))
+(run-test 5 '((5 10 15) (1 2 3) (7 8 9)))
+(run-test 6 '((-5 -2) (-3 0 4) (-1 1 6)))
+(run-test 7 '((1 1 1) (2 2 2) (3 3 3)))

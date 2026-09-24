@@ -1,0 +1,57 @@
+(define (string->list s)
+  (let ((len (string-length s)))
+    (let loop ((i 0) (acc '()))
+      (if (>= i len)
+          acc
+          (loop (+ i 1) (cons (string-ref s i) acc))))))
+
+(define (count-char c lst)
+  (let loop ((lst lst) (n 0))
+    (if (null? lst)
+        n
+        (loop (cdr lst) (if (char=? c (car lst)) (+ n 1) n)))))
+
+(define (distinct-chars lst)
+  (let loop ((lst lst) (acc '()))
+    (if (null? lst)
+        acc
+        (if (member (car lst) acc)
+            (loop (cdr lst) acc)
+            (loop (cdr lst) (cons (car lst) acc))))))
+
+(define (longest-palindrome s)
+  (let ((chars (string->list s)))
+    (let ((ds (distinct-chars chars)))
+      (let loop ((lst ds) (even-sum 0) (has-odd #f))
+        (if (null? lst)
+            (if has-odd (+ even-sum 1) even-sum)
+            (let ((cnt (count-char (car lst) chars)))
+              (if (= (modulo cnt 2) 0)
+                  (loop (cdr lst) (+ even-sum cnt) has-odd)
+                  (loop (cdr lst) (+ even-sum (- cnt 1)) #t))))))))
+
+(define (solve s)
+  (longest-palindrome s))
+
+(define (display-result n)
+  (display n))
+
+(let ((cases (list
+               "abccccdd"
+               "a"
+               ""
+               "aa"
+               "abc"
+               "AaBb"
+               "aabbcc"
+               "aAaaA")))
+  (let loop ((i 0) (cs cases))
+    (if (null? cs)
+        '()
+        (begin
+          (display "CASE")
+          (display i)
+          (display "=")
+          (display-result (solve (car cs)))
+          (newline)
+          (loop (+ i 1) (cdr cs))))))

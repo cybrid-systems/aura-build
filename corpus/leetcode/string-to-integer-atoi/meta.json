@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:23:55Z",
+      "ts_local": "2026-09-24 22:23:55 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2276,
+        "total_characters": 0,
+        "prompt_tokens": 1354,
+        "completion_tokens": 922,
+        "prompt_tokens_details": {
+          "cached_tokens": 134
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.155,
+      "tests_passed": 0,
+      "tests_total": 18,
+      "stderr_snippet": "error: 3:25: unbound variable: char<=?\n   |\n  3 |        (char>=? c #\\0) (char<=? c #\\9)))\n   |                         ^^^^^^^\nerror: 12:14: unbound variable: skip-ws\n   |\n 12 |     (set! i (skip-ws i))\n   |              ^^^^^^^\nerror: 2:4: unbound variable: str-len\nerror: 2:4: unbound variable: str-len\nerror: 2:4: unbound variable: str-len\nerror: 2:4: unbound variable: str-len\nerror: 2:4: unbound variable: str-len\nerror: 2:4: unbound variable: str-len\nerror: 2:4: unbound variable: str-len\nerro",
+      "stdout_snippet": "CASE0=\nCASE1=\nCASE2=\nCASE3=\nCASE4=\nCASE5=\nCASE6=\nCASE7=\nCASE8=\nCASE9=\nCASE10=\nCASE11=\nCASE12=\nCASE13=\nCASE14=\nCASE15=\nCASE16=\nCASE17=\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:24:22Z",
+      "ts_local": "2026-09-24 22:24:22 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1854,
+        "total_characters": 0,
+        "prompt_tokens": 1354,
+        "completion_tokens": 500,
+        "prompt_tokens_details": {
+          "cached_tokens": 1339
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": -1,
+      "timeout": true,
+      "duration_s": 20.023,
+      "tests_passed": 0,
+      "tests_total": 18,
+      "stderr_snippet": "timeout",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "string-to-integer-atoi",
+  "title": "String to Integer (atoi)",
+  "category": "strings",
+  "updated_at": "2026-09-24T14:24:22Z",
+  "updated_at_local": "2026-09-24 22:24:22 CST"
+}

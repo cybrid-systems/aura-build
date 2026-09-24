@@ -1,0 +1,53 @@
+;; Subarray Sum Equals K - prefix sum + hashmap approach
+
+;; Update or insert count for key k in association list alist
+(define (map-update alist key delta)
+  (let ((cell (assq key alist)))
+    (if cell
+        (set-cdr! cell (+ (cdr cell) delta))
+        (set! alist (cons (cons key delta) alist)))
+    alist))
+
+;; Look up count for key, default 0
+(define (map-get alist key)
+  (let ((cell (assq key alist)))
+    (if cell (cdr cell) 0)))
+
+(define (solve nums k)
+  (let ((n (length nums))
+        (idx 0)
+        (prefix 0)
+        (count 0)
+        (map (list (cons 0 1))))
+    (define (loop)
+      (if (< idx n)
+          (begin
+            (set! prefix (+ prefix (list-ref nums idx)))
+            (set! count (+ count (map-get map (- prefix k))))
+            (set! map (map-update map prefix 1))
+            (set! idx (+ idx 1))
+            (loop))
+          count))
+    (loop)))
+
+;; --- Test harness ---
+
+(define (display-list lst)
+  (display "[")
+  (define (loop rest first?)
+    (cond
+      ((null? rest) (display "]"))
+      (else
+       (if first? (display "") (display ", "))
+       (display (car rest))
+       (loop (cdr rest) #f))))
+  (loop lst #t))
+
+(display "CASE0=") (display (solve '(1 1 1) 2)) (newline)
+(display "CASE1=") (display (solve '(1 2 3) 3)) (newline)
+(display "CASE2=") (display (solve '(1 -1 1 -1 1 -1) 0)) (newline)
+(display "CASE3=") (display (solve '(1) 1)) (newline)
+(display "CASE4=") (display (solve '(1) 0)) (newline)
+(display "CASE5=") (display (solve '(0 0 0 0 0) 0)) (newline)
+(display "CASE6=") (display (solve '(3 4 7 2 -3 1 4 2) 7)) (newline)
+(display "CASE7=") (display (solve '(-1 -1 1 1 -1) 0)) (newline)

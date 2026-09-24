@@ -1,0 +1,38 @@
+(define (solve nums)
+  ;; Two-pointer in-place: write-pointer collects non-zeros, then fill zeros.
+  (let ((write 0)
+        (n (length nums)))
+    (let loop ((read 0))
+      (if (< read n)
+          (begin
+            (if (not (= 0 (list-ref nums read)))
+                (begin
+                  (list-set! nums write (list-ref nums read))
+                  (set! write (+ write 1))))
+            (loop (+ read 1)))))
+    ;; Fill the rest with zeros
+    (let loop2 ((i write))
+      (if (< i n)
+          (begin
+            (list-set! nums i 0)
+            (loop2 (+ i 1)))))))
+
+(define (display-list lst)
+  (display "[")
+  (let loop ((rest lst) (first #t))
+    (if (null? rest)
+        (display "]")
+        (begin
+          (if first (set! first #f) (display ", "))
+          (display (car rest))
+          (loop (cdr rest) first)))))
+
+(display "CASE0=") (display-list (solve (list 0 1 0 3 12))) (newline)
+(display "CASE1=") (display-list (solve (list 1 2 3 4))) (newline)
+(display "CASE2=") (display-list (solve (list 0 0 0 1))) (newline)
+(display "CASE3=") (display-list (solve (list))) (newline)
+(display "CASE4=") (display-list (solve (list 1 0 0 0 2 0 3 0 4))) (newline)
+(display "CASE5=") (display-list (solve (list 0))) (newline)
+(display "CASE6=") (display-list (solve (list 0 0 0 0))) (newline)
+(display "CASE7=") (display-list (solve (list 5 0 5 0 5))) (newline)
+(display "CASE8=") (display-list (solve (list 1 2 0 0 0 3 4 0 5))) (newline)

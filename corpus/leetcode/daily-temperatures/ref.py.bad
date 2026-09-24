@@ -1,0 +1,33 @@
+import sys, json
+
+def solve(temps):
+    n = len(temps)
+    res = [0] * n
+    stack = []  # stores (temperature, index) for future days
+    for i in range(n - 1, -1, -1):
+        t = temps[i]
+        # Pop days that are not warmer than t
+        while stack and stack[-1][0] <= t:
+            stack.pop()
+        if stack:
+            res[i] = stack[-1][1] - i
+        else:
+            res[i] = 0
+        stack.append((t, i))
+    return res
+
+CASES = [
+    {"temps": [73, 74, 75, 71, 69, 72, 76, 73]},
+    {"temps": [30, 40, 50, 60]},
+    {"temps": [30, 60, 90]},
+    {"temps": [90, 60, 30]},
+    {"temps": [70]},
+    {"temps": []},
+    {"temps": [1, 1, 1, 2, 1, 1, 1]},
+    {"temps": [-5, -3, -10, -2, -1, -4, 0]},
+]
+
+if __name__ == '__main__':
+    line = sys.stdin.readline().strip()
+    temps = json.loads(line.split('=', 1)[1])
+    print(json.dumps(solve(temps), separators=(',', ':'), ensure_ascii=False))

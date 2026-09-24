@@ -1,0 +1,107 @@
+;; Split Linked List in Parts - Aura solution
+;; Represent a linked list node as a list '(val . next) where next is a node or '().
+;; A list is represented as a list of values; we convert to nodes internally.
+
+(define (make-node val next) (cons val next))
+(define (node-val n) (car n))
+(define (node-next n) (cdr n))
+(define (set-node-next! n nx) (set-cdr! n nx))
+
+(define (length lst)
+  (let loop ((l lst) (acc 0))
+    (if (null? l) acc (loop (cdr l) (+ acc 1)))))
+
+(define (list->nodes lst)
+  ;; build linked list from values, return head
+  (if (null? lst) '()
+      (let loop ((rest lst) (acc '()))
+        (if (null? rest)
+            (reverse-list acc)
+            (let ((next (make-node (car rest) '())))
+              (if (null? acc)
+                  (loop (cdr rest) (cons next acc))
+                  (begin
+                    (set-node-next! (car acc) next)
+                    (loop (cdr rest) (cons next acc)))))))))
+
+(define (reverse-list l)
+  (let loop ((l l) (acc '()))
+    (if (null? l) acc (loop (cdr l) (cons (car l) acc)))))
+
+(define (nodes->list-values head)
+  ;; collect values from linked list until null
+  (let loop ((n head) (acc '()))
+    (if (null? n) (reverse-list acc)
+        (loop (node-next n) (cons (node-val n) acc)))))
+
+(define (split-list head k)
+  ;; compute total length
+  (let ((vals (nodes->list-values head)))
+    (let ((n (length vals)))
+      (let ((base (quotient n k))
+            (extra (modulo n k)))
+        (let loop ((i 0) (cur head) (parts '()))
+          (if (= i k)
+              (reverse-list parts)
+              (let ((part-size (+ base (if (< i extra) 1 0))))
+                (if (= part-size 0)
+                    (loop (+ i 1) cur (cons '() parts))
+                    (if (null? cur)
+                        (loop (+ i 1) cur (cons '() parts))
+                        (let ((part-head cur))
+                          (let advance ((j 1) (node cur))
+                            (if (or (= j part-size) (null? (node-next node)))
+                                (begin
+                                  (set-node-next! node '())
+                                  (loop (+ i 1) (if (null? (node-next node)) '() (node-next node))
+                                        (cons part-head parts)))
+                                (advance (+ j 1) (node-next node))))))))))))))
+
+(define (solve head-vals k)
+  (let ((head (list->nodes head-vals)))
+    (split-list head k)))
+
+(define (display-parts parts)
+  ;; print parts as a list of lists
+  (display "[")
+  (let loop ((p parts) (first #t))
+    (cond ((null? p) (display "]"))
+          (else
+           (if first (set! first #f) (display ","))
+           (let ((vals (nodes->list-values (car p))))
+             (display "[")
+             (let inner ((vs vals) (ff #t))
+               (cond ((null? vs) (display "]"))
+                     (else
+                      (if ff (set! ff #f) (display ","))
+                      (display (car vs))
+                      (inner (cdr vs) ff)))))
+           (loop (cdr p) first)))))
+
+(define (display-result r)
+  ;; r is a list of node pointers (or '() for null parts)
+  (display-parts r))
+
+;; Test cases
+(define cases
+  (list
+   (list (list 1 2 3 4 5 6 7 8 9 10) 3)
+   (list (list 1 2 3 4 5) 5)
+   (list '() 3)
+   (list (list 1 2 3) 5)
+   (list (list 1 2 3 4 5 6 7 8) 4)
+   (list (list 1) 1)
+   (list (list 1 2 3 4 5 6 7) 3)
+   (list (list 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20) 4)))
+
+(define (run-cases cases i)
+  (if (null? cases) '()
+      (begin
+        (display "CASE")
+        (display i)
+        (display "=")
+        (display-result (solve (car (car cases)) (car (cdr (car cases)))))
+        (newline)
+        (run-cases (cdr cases) (+ i 1)))))
+
+(run-cases cases 0)

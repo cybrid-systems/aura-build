@@ -1,0 +1,115 @@
+(define (parse-list s)
+  ;; s is a string like "1->-2->3"; returns list of numbers
+  (let* ((parts (split s "->"))
+         (nums (map string->number parts)))
+    nums))
+
+(define (split s sep)
+  ;; split string s by separator sep (single char)
+  (let loop ((chars (string->list s))
+             (acc '())
+             (cur '()))
+    (cond
+      ((null? chars)
+       (reverse (cons (list->string (reverse cur)) acc)))
+      (else
+       (let ((c (car chars)))
+         (if (and (not (null? (string->list sep)))
+                  (char=? c (car (string->list sep))))
+             (loop (cdr chars)
+                   (cons (list->string (reverse cur)) acc)
+                   '())
+             (loop (cdr chars)
+                   acc
+                   (cons c cur))))))))
+
+(define (list->string chars)
+  (list->string chars))
+
+(define (string->number s)
+  (let loop ((i 0) (sign 1) (result 0) (chars (string->list s)))
+    (cond
+      ((null? chars) (* sign result))
+      ((char=? (car chars) #\-)
+       (loop (+ i 1) -1 result (cdr chars)))
+      ((char=? (car chars) #\+)
+       (loop (+ i 1) sign result (cdr chars)))
+      ((char>=? (car chars) #\0) (char<=? (car chars) #\9)
+       (loop (+ i 1) sign
+             (+ (* result 10) (- (char->integer (car chars)) (char->integer #\0)))
+             (cdr chars)))
+      (else result))))
+
+(define (char=? a b) (equal? a b))
+(define (char>=? a b) (>= (char->integer a) (char->integer b)))
+(define (char<=? a b) (<= (char->integer a) (char->integer b)))
+
+;; Reverse k group using list representation (simpler than linked nodes)
+(define (reverse-k-group lst k)
+  ;; lst is a list of numbers; reverse in chunks of k
+  ;; If k <= 1, just return lst
+  (if (<= k 1)
+      lst
+      ;; Split into chunks
+      (let loop ((rest lst)
+                 (result '()))
+        (let ((chunk (take rest k)))
+          (cond
+            ((= (length chunk) k)
+             (loop (drop rest k)
+                   (append result (reverse chunk))))
+            (else
+             (append result chunk)))))))
+
+(define (take lst n)
+  (if (= n 0)
+      '()
+      (cons (car lst) (take (cdr lst) (- n 1)))))
+
+(define (drop lst n)
+  (if (= n 0)
+      lst
+      (drop (cdr lst) (- n 1))))
+
+(define (append a b)
+  (if (null? a)
+      b
+      (cons (car a) (append (cdr a) b))))
+
+(define (length lst)
+  (if (null? lst)
+      0
+      (+ 1 (length (cdr lst)))))
+
+;; Display list as "v1->v2->...->vN"
+(define (display-list lst)
+  (cond
+    ((null? lst) (display ""))
+    ((null? (cdr lst))
+     (display (number->string (car lst))))
+    (else
+     (display (number->string (car lst)))
+     (display "->")
+     (display-list (cdr lst)))))
+
+(define (solve lst-str k)
+  (let* ((lst (parse-list lst-str))
+         (rev (reverse-k-group lst k)))
+    rev))
+
+;; Main: process each test case
+(define (run-case i lst-str k)
+  (display "CASE")
+  (display (number->string i))
+  (display "=")
+  (display-list (solve lst-str k))
+  (newline))
+
+(run-case 0 "1->2->3->4->5" 1)
+(run-case 1 "1" 2)
+(run-case 2 "1->2->3" 3)
+(run-case 3 "1->2" 5)
+(run-case 4 "1->2->3->4->5" 2)
+(run-case 5 "1->2->3->4->5" 3)
+(run-case 6 "1->2->3->4->5->6->7->8" 4)
+(run-case 7 "-3->-1->2->-5->4" 2)

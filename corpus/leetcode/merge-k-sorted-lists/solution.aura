@@ -1,0 +1,77 @@
+;; Helper to display a vector as JSON-like list of integers
+(define (display-list lst)
+  (display "[")
+  (let loop ((i 0))
+    (cond
+      ((= i (vector-length lst))
+       (display "]"))
+      (else
+       (if (> i 0) (display ",") #f)
+       (display (number->string (vector-ref lst i)))
+       (loop (+ i 1))))))
+
+;; Min-heap based merge of k sorted lists
+;; Each list is a vector of integers; empty means nil
+;; Returns a vector of merged integers
+(define (merge-lists lists)
+  (let* ((k (vector-length lists))
+         (n (vector-length lists)))
+    ;; Find first non-empty list indices and their current values
+    ;; Use a simple approach: gather all elements, sort
+    ;; For proper O(N log k), we use a heap, but here N <= 10^4 so we can use sort
+    (define total-len 0)
+    ;; Count total
+    (let count-loop ((i 0))
+      (if (< i n)
+          (begin
+            (set! total-len (+ total-len (vector-length (vector-ref lists i))))
+            (count-loop (+ i 1)))
+          #f))
+    ;; Collect all values
+    (define all '())
+    (let collect-loop ((i 0))
+      (if (< i n)
+          (let collect-inner ((j 0) (lst (vector-ref lists i)))
+            (if (< j (vector-length lst))
+                (collect-inner (+ j 1) (cons (vector-ref lst j) all))
+                (collect-loop (+ i 1))))
+          #f))
+    ;; Sort using merge sort (insertion sort for simplicity since small)
+    (define sorted-list
+      (let sort-iter ((xs all) (acc '()))
+        (if (null? xs)
+            acc
+            (let insert ((ys acc) (x (car xs)) (result '()))
+              (cond
+                ((null? ys) (append result (list x)))
+                ((<= x (car ys)) (append result (cons x ys)))
+                (else (insert (cdr ys) x (append result (list (car ys))))))))))
+    ;; Convert to vector
+    (define result (make-vector total-len))
+    (let fill-loop ((i (- total-len 1)) (xs sorted-list))
+      (if (< i 0)
+          #f
+          (begin
+            (vector-set! result i (car xs))
+            (fill-loop (- i 1) (cdr xs)))))
+    result))
+
+(define (solve lists)
+  (merge-lists lists))
+
+;; Test cases
+(define (run-case i lists)
+  (display "CASE")
+  (display (number->string i))
+  (display "=")
+  (display-list (solve lists))
+  (newline))
+
+(run-case 0 (vector (vector 1 4 5) (vector 1 3 4) (vector 2 6)))
+(run-case 1 (vector))
+(run-case 2 (vector (vector) (vector) (vector)))
+(run-case 3 (vector (vector 1 2 3)))
+(run-case 4 (vector (vector 1) (vector 2) (vector 3) (vector 4) (vector 5)))
+(run-case 5 (vector (vector 5 10 15) (vector 1 2 3) (vector 7 8 9)))
+(run-case 6 (vector (vector -5 -2) (vector -3 0 4) (vector -1 1 6)))
+(run-case 7 (vector (vector 1 1 1) (vector 2 2 2) (vector 3 3 3)))

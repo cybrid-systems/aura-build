@@ -1,0 +1,106 @@
+;; Sliding window anagram finder for printable ASCII.
+;; Prints CASEi= followed by space-separated indices (ascending).
+
+(define ascii-size 128)
+
+(define (make-counts size)
+  (make-vector size 0))
+
+(define (vec-set! v i x)
+  (vector-set! v i x))
+
+(define (vec-ref v i)
+  (vector-ref v i))
+
+(define (char->ascii c)
+  (char->integer c))
+
+(define (string-length s)
+  (string-length s))
+
+(define (string-ref s i)
+  (string-ref s i))
+
+;; Compare two count vectors
+(define (counts-equal? a b size)
+  (let loop ((i 0))
+    (if (>= i size)
+        #t
+        (if (= (vec-ref a i) (vec-ref b i))
+            (loop (+ i 1))
+            #f))))
+
+;; Build the result as a list, then print
+(define (find-anagrams s p)
+  (let* ((sl (string-length s))
+         (pl (string-length p)))
+    (if (or (= sl 0) (= pl 0) (< sl pl))
+        '()
+        (let* ((need (make-counts ascii-size))
+               (window (make-counts ascii-size))
+               (result '())
+               (pl-minus-1 (- pl 1)))
+          ;; initialize need with p's char counts
+          (let init-need ((i 0))
+            (if (< i pl)
+                (begin
+                  (vec-set! need (char->ascii (string-ref p i))
+                            (+ (vec-ref need (char->ascii (string-ref p i))) 1))
+                  (init-need (+ i 1)))))
+          ;; build first window
+          (let init-window ((i 0))
+            (if (< i pl)
+                (begin
+                  (vec-set! window (char->ascii (string-ref s i))
+                            (+ (vec-ref window (char->ascii (string-ref s i))) 1))
+                  (init-window (+ i 1)))))
+          ;; slide
+          (let slide ((i 0) (acc '()))
+            (cond
+              ((>= i sl) (reverse acc))
+              (else
+                (let ((new-acc (if (counts-equal? window need ascii-size)
+                                   (cons i acc)
+                                   acc)))
+                  (if (< (+ i + (- pl 1)) (- sl 1))
+                      (begin
+                        (vec-set! window
+                                  (char->ascii (string-ref s i))
+                                  (- (vec-ref window (char->ascii (string-ref s i))) 1))
+                        (vec-set! window
+                                  (char->ascii (string-ref s (+ i pl)))
+                                  (+ (vec-ref window (char->ascii (string-ref s (+ i pl)))) 1))
+                        (slide (+ i 1) new-acc))
+                      (slide (+ i 1) new-acc))))))))))
+
+;; Display helpers
+(define (display-list xs)
+  (cond ((null? xs) (display ""))
+        (else
+         (display (car xs))
+         (let loop ((rest (cdr xs)))
+           (if (null? rest)
+               '()
+               (begin
+                 (display " ")
+                 (display (car rest))
+                 (loop (cdr rest))))))))
+
+(define (run-case i s p)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display-list (find-anagrams s p))
+  (newline))
+
+(define (solve)
+  (run-case 0 "cbaebabacd" "abc")
+  (run-case 1 "abab" "ab")
+  (run-case 2 "a" "a")
+  (run-case 3 "a" "b")
+  (run-case 4 "af" "be")
+  (run-case 5 "abcdef" "f")
+  (run-case 6 "bacdgabcda" "abcd")
+  (run-case 7 "" "a"))
+
+(solve)

@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:27:25Z",
+      "ts_local": "2026-09-24 22:27:25 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2126,
+        "total_characters": 0,
+        "prompt_tokens": 1197,
+        "completion_tokens": 929,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.039,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=4 | first k: [1, 2, 3, 4]\nCASE1=0 | first k: []\nCASE2=1 | first k: [1]\nCASE3=1 | first k: [0]\nCASE4=6 | first k: [-3, -2, -1, 0, 1, 2]\nCASE5=5 | first k: [1, 2, 3, 4, 5]\nCASE6=5 | first k: [1, 2, 3, 4, 5]\nCASE7=1 | first k: [0]\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:27:53Z",
+      "ts_local": "2026-09-24 22:27:53 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1670,
+        "total_characters": 0,
+        "prompt_tokens": 1197,
+        "completion_tokens": 473,
+        "prompt_tokens_details": {
+          "cached_tokens": 1196
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": -1,
+      "timeout": true,
+      "duration_s": 20.004,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "timeout",
+      "stdout_snippet": "CASE0="
+    }
+  ],
+  "slug": "remove-duplicates-from-sorted-array",
+  "title": "Remove Duplicates from Sorted Array",
+  "category": "two_pointers",
+  "updated_at": "2026-09-24T14:27:53Z",
+  "updated_at_local": "2026-09-24 22:27:53 CST"
+}

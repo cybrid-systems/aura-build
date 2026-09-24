@@ -1,0 +1,80 @@
+(define (car-pair p) (car p))
+(define (cdr-pair p) (cdr p))
+
+(define (map f lst)
+  (if (null? lst)
+      '()
+      (cons (f (car lst)) (map f (cdr lst)))))
+
+(define (filter pred lst)
+  (if (null? lst)
+      '()
+      (if (pred (car lst))
+          (cons (car lst) (filter pred (cdr lst)))
+          (filter pred (cdr lst)))))
+
+(define (length lst)
+  (if (null? lst) 0 (+ 1 (length (cdr lst)))))
+
+(define (append a b)
+  (if (null? a) b (cons (car a) (append (cdr a) b))))
+
+(define (insert x lst)
+  (cond ((null? lst) (cons x '()))
+        ((<= x (car lst)) (cons x lst))
+        (else (cons (car lst) (insert x (cdr lst))))))
+
+(define (sort-list lst)
+  (if (null? lst) '()
+      (insert (car lst) (sort-list (cdr lst)))))
+
+(define (starts lst) (map car-pair lst))
+(define (ends lst) (map cdr-pair lst))
+
+(define (max a b) (if (> a b) a b))
+
+(define (min-rooms starts ends)
+  (letrec ((helper (lambda (s e sptr eptr cur peak)
+                     (cond ((null? s) peak)
+                           ((and (not (null? e)) (>= (car s) (car e)))
+                            (helper s (cdr e) sptr (+ eptr 1) (- cur 1) peak))
+                           (else
+                            (let ((new-cur (+ cur 1)))
+                              (helper (cdr s) e (+ sptr 1) eptr new-cur (max peak new-cur))))))))
+    (helper starts ends 0 0 0 0)))
+
+(define (solve intervals)
+  (let ((n (length intervals)))
+    (if (= n 0)
+        0
+        (let ((ss (starts intervals))
+              (ee (ends intervals)))
+          (min-rooms (sort-list ss) (sort-list ee))))))
+
+(define (display-list lst)
+  (display "(")
+  (letrec ((go (lambda (l)
+                 (cond ((null? l) (display ")"))
+                       (else
+                        (display (car l))
+                        (if (not (null? (cdr l))) (display " "))
+                        (go (cdr l)))))))
+    (go lst)))
+
+(define (display-case i result)
+  (begin
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display result)
+    (newline)))
+
+;; Test cases
+(display-case 0 (solve (list (list 0 30) (list 5 10) (list 15 20))))
+(display-case 1 (solve (list (list 7 10) (list 2 4))))
+(display-case 2 (solve (list (list 1 4) (list 4 6) (list 4 7))))
+(display-case 3 (solve '()))
+(display-case 4 (solve (list (list 1 5))))
+(display-case 5 (solve (list (list 1 5) (list 2 6) (list 3 7) (list 4 8))))
+(display-case 6 (solve (list (list 1 4) (list 2 3))))
+(display-case 7 (solve (list (list 0 1) (list 1 2) (list 2 3) (list 3 4))))

@@ -1,0 +1,43 @@
+(define (rle s)
+  (let loop ((chars (string->list s)) (acc '()) (count 0) (prev #f))
+    (cond
+      ((null? chars)
+       (if (= count 0)
+           (apply string-append (reverse acc))
+           (apply string-append (reverse (cons (string-append (number->string count) (string prev)) acc)))))
+      ((or (equal? prev #f) (char=? (car chars) prev))
+       (loop (cdr chars) acc (+ count 1) (car chars)))
+      (else
+       (loop (cdr chars)
+             (cons (string-append (number->string count) (string prev)) acc)
+             1
+             (car chars))))))
+
+(define (solve n)
+  (let loop ((i 1) (s "1"))
+    (if (= i n)
+        s
+        (loop (+ i 1) (rle s)))))
+
+(define (run-case i n)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve n))
+  (newline))
+
+(run-case 0 1)
+(run-case 1 2)
+(run-case 2 3)
+(run-case 3 4)
+(run-case 4 5)
+(run-case 5 6)
+(run-case 6 7)
+(run-case 7 10)
+(run-case 8 15)
+(run-case 9 20)
+(run-case 10 25)
+(run-case 11 30)
+(run-case 12 8)
+(run-case 13 9)
+(run-case 14 11)

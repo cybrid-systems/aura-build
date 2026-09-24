@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:32:03Z",
+      "ts_local": "2026-09-24 22:32:03 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2012,
+        "total_characters": 0,
+        "prompt_tokens": 1248,
+        "completion_tokens": 764,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.043,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: type error: cannot call: acc\n  did you forget to define 'acc'?\nerror: 1:12: unbound variable: cases\n   |\n  1 | (run-cases cases 0)\n   |            ^^^^^\n",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:32:29Z",
+      "ts_local": "2026-09-24 22:32:29 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1962,
+        "total_characters": 0,
+        "prompt_tokens": 1248,
+        "completion_tokens": 714,
+        "prompt_tokens_details": {
+          "cached_tokens": 1247
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": -1,
+      "timeout": true,
+      "duration_s": 20.434,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "timeout",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "add-two-numbers",
+  "title": "Add Two Numbers",
+  "category": "linked_list",
+  "updated_at": "2026-09-24T14:32:29Z",
+  "updated_at_local": "2026-09-24 22:32:29 CST"
+}

@@ -1,0 +1,77 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "paragraph": "Bob hit a ball, the hit BALL flew far after it was hit.",
+      "banned": [
+        "hit"
+      ]
+    },
+    "expected": "\"ball\""
+  },
+  {
+    "id": 1,
+    "input": {
+      "paragraph": "a.",
+      "banned": []
+    },
+    "expected": "\"a\""
+  },
+  {
+    "id": 2,
+    "input": {
+      "paragraph": "a, a, a, b, b, c!",
+      "banned": [
+        "b"
+      ]
+    },
+    "expected": "\"a\""
+  },
+  {
+    "id": 3,
+    "input": {
+      "paragraph": "Hello! Hello!! HELLO...",
+      "banned": []
+    },
+    "expected": "\"hello\""
+  },
+  {
+    "id": 4,
+    "input": {
+      "paragraph": "Only banned words here.",
+      "banned": [
+        "only",
+        "banned",
+        "words",
+        "here"
+      ]
+    },
+    "expected": "\"\""
+  },
+  {
+    "id": 5,
+    "input": {
+      "paragraph": "",
+      "banned": [
+        "x"
+      ]
+    },
+    "expected": "\"\""
+  },
+  {
+    "id": 6,
+    "input": {
+      "paragraph": "Apple, apple, APPLE, banana; BANANA? banana!",
+      "banned": []
+    },
+    "expected": "\"apple\""
+  },
+  {
+    "id": 7,
+    "input": {
+      "paragraph": "one two three four five six seven eight nine ten",
+      "banned": []
+    },
+    "expected": "\"one\""
+  }
+]

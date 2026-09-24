@@ -1,0 +1,67 @@
+(define (square x) (* x x))
+
+(define (len xs)
+  (if (null? xs) 0 (+ 1 (len (cdr xs)))))
+
+(define (list-ref xs i)
+  (if (= i 0) (car xs) (list-ref (cdr xs) (- i 1))))
+
+(define (list-set! xs i v)
+  (if (= i 0)
+      (set-car! xs v)
+      (list-set! (cdr xs) (- i 1) v)))
+
+(define (abs-val x)
+  (if (< x 0) (- 0 x) x))
+
+(define (squares-sorted nums)
+  (let ((n (len nums)))
+    (let ((result (make-list n 0)))
+      (let ((lo 0) (hi (- n 1)) (idx (- n 1)))
+        (let loop ()
+          (if (< lo hi)
+              (begin
+                (let ((al (abs-val (list-ref nums lo)))
+                      (ar (abs-val (list-ref nums hi))))
+                  (if (> al ar)
+                      (begin
+                        (list-set! result idx (square al))
+                        (set! lo (+ lo 1)))
+                      (begin
+                        (list-set! result idx (square ar))
+                        (set! hi (- hi 1)))))
+                (set! idx (- idx 1))
+                (loop))
+              (if (= lo hi)
+                  (list-set! result 0 (square (list-ref nums lo)))
+                  (begin)))))
+      result)))
+
+(define (display-list xs)
+  (display "(")
+  (let loop ((rest xs) (first? #t))
+    (if (null? rest)
+        (display ")")
+        (begin
+          (if first? (set! first? #f) (display " "))
+          (display (car rest))
+          (loop (cdr rest) #f)))))
+
+(define (solve nums)
+  (squares-sorted nums))
+
+(define (run-case i nums)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display-list (solve nums))
+  (newline))
+
+(run-case 0 '(1 2 3 4))
+(run-case 1 '(-4 -1 0 3 10))
+(run-case 2 '(-5 -3 -2 -1))
+(run-case 3 '())
+(run-case 4 '(-7 -3 2 3 11))
+(run-case 5 '(-1))
+(run-case 6 '(-3 -3 -2 -2))
+(run-case 7 '(0 0 0 1 2))

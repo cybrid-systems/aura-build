@@ -1,0 +1,32 @@
+{
+  "variants": [],
+  "slug": "path-sum",
+  "title": "Path Sum",
+  "category": "trees",
+  "ref": {
+    "llm": {
+      "ok": true,
+      "error": "",
+      "usage": {
+        "total_tokens": 1586,
+        "total_characters": 0,
+        "prompt_tokens": 852,
+        "completion_tokens": 734,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "model": "MiniMax-M3"
+    },
+    "run": {
+      "ref_ok": false,
+      "exit_code": 1,
+      "stderr": "Traceback (most recent call last):\n  File \"/workspace/aura-build/corpus/leetcode/path-sum/ref.py\", line 80, in <module>\n    main()\n    ~~~~^^\n  File \"/workspace/aura-build/corpus/leetcode/path-sum/ref.py\", line 70, in main\n    root, target = parse_case(c[\"case\"])\n                   ~~~~~~~~~~^^^^^^^^^^^\n  File \"/workspace/aura-build/corpus/leetcode/path-sum/ref.py\", line 52, in parse_case\n    level_order.append(int(t))\n                       ~~~^^^\nValueError: invalid literal for int() with base",
+      "duration_s": 0.029,
+      "timeout": false,
+      "n_tests": 0
+    },
+    "ts": "2026-09-24T14:33:54Z"
+  },
+  "updated_at": "2026-09-24T14:33:54Z"
+}

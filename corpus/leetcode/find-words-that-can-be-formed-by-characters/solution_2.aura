@@ -1,0 +1,77 @@
+;; Aura solution for Find Words That Can Be Formed by Characters
+
+(define (string->list-of-chars s)
+  ;; Convert a string into a list of single-char strings.
+  (let loop ((i 0) (acc '()))
+    (if (>= i (string-length s))
+        (reverse acc)
+        (loop (+ i 1)
+              (cons (substring s i (+ i 1)) acc)))))
+
+(define (build-freq lst)
+  ;; Build a frequency association list from a list of single-char strings.
+  (let loop ((xs lst) (acc '()))
+    (cond
+      ((null? xs) acc)
+      (else
+       (let* ((c (car xs))
+              (entry (assoc c acc)))
+         (if entry
+             (loop (cdr xs)
+                   (cons (cons c (+ (cdr entry) 1))
+                         (remove-assoc c acc)))
+             (loop (cdr xs) (cons (cons c 1) acc))))))))
+
+(define (remove-assoc key lst)
+  (cond
+    ((null? lst) '())
+    ((equal? (car (car lst)) key) (remove-assoc key (cdr lst)))
+    (else (cons (car lst) (remove-assoc key (cdr lst))))))
+
+(define (word-formable? word freq)
+  ;; Check if word can be formed using chars from freq association list.
+  (let loop ((cs (string->list-of-chars word)))
+    (cond
+      ((null? cs) #t)
+      (else
+       (let* ((c (car cs))
+              (entry (assoc c freq)))
+         (if (and entry (>= (cdr entry) 1))
+             (loop (cdr cs))
+             #f))))))
+
+(define (count-letter freq c)
+  (let ((entry (assoc c freq)))
+    (if entry (cdr entry) 0)))
+
+(define (can-form? word freq)
+  (let loop ((i 0))
+    (cond
+      ((>= i (string-length word)) #t)
+      (else
+       (let* ((c (substring word i (+ i 1)))
+              (cnt (count-letter freq c)))
+         (if (>= cnt 1)
+             (loop (+ i 1))
+             #f))))))
+
+(define (solve characters words)
+  (let ((freq (build-freq (string->list-of-chars characters))))
+    (let loop ((ws words) (sum 0))
+      (cond
+        ((null? ws) sum)
+        ((can-form? (car ws) freq)
+         (loop (cdr ws) (+ sum (string-length (car ws)))))
+        (else
+         (loop (cdr ws) sum))))))
+
+;; Test cases
+
+(display "CASE0=") (display (solve "welcometocoding" '("welcome" "to" "coding" "leet" "code"))) (newline)
+(display "CASE1=") (display (solve "abc" '("a" "b" "c" "ab" "ac" "bc" "abc" "aab" "abcd"))) (newline)
+(display "CASE2=") (display (solve "aaaa" '("a" "aa" "aaa" "aaaa" "aaaaa"))) (newline)
+(display "CASE3=") (display (solve "abcdefghijklmnopqrstuvwxyz" '("abc" "xyz" "zyx" "abcd"))) (newline)
+(display "CASE4=") (display (solve "a" '())) (newline)
+(display "CASE5=") (display (solve "abcabc" '("aabbcc" "abc" "abca" "aabb" "abcabc"))) (newline)
+(display "CASE6=") (display (solve "zzz" '("z" "zz" "zzz" "zzzz" "zzx"))) (newline)
+(display "CASE7=") (display (solve "ilovepython" '("i" "love" "python" "pyth" "py" "loves"))) (newline)

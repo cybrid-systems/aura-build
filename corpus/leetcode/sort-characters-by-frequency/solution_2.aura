@@ -1,0 +1,97 @@
+(define (make-counter chars)
+  (if (null? chars)
+      '()
+      (let ((c (car chars))
+            (rest (cdr chars)))
+        (let loop ((lst '())
+                   (remaining chars)
+                   (count 0))
+          (if (null? remaining)
+              (cons (cons c count) lst)
+              (if (equal? (car remaining) c)
+                  (loop lst (cdr remaining) (+ count 1))
+                  (loop (cons (cons (car remaining) 0) lst) (cdr remaining) 0)))))))
+
+(define (count-occurrences s)
+  (let loop ((chars (string->list s))
+             (acc '()))
+    (if (null? chars)
+        acc
+        (let ((c (car chars)))
+          (if (assoc c acc)
+              (loop (cdr chars) acc)
+              (loop (cdr chars) (cons c acc)))))))
+
+(define (count-char c s)
+  (if (null? s)
+      0
+      (if (equal? (car s) c)
+          (+ 1 (count-char c (cdr s)))
+          (count-char c (cdr s)))))
+
+(define (make-frequency s)
+  (let ((uniq (count-occurrences s)))
+    (if (null? uniq)
+        '()
+        (cons (cons (car uniq) (count-char (car uniq) (string->list s)))
+              (make-frequency-list (cdr uniq) (string->list s))))))
+
+(define (make-frequency-list uniq chars)
+  (if (null? uniq)
+      '()
+      (cons (cons (car uniq) (count-char (car uniq) chars))
+            (make-frequency-list (cdr uniq) chars))))
+
+(define (max-freq freq-list)
+  (if (null? freq-list)
+      0
+      (let ((current (cdr (car freq-list)))
+            (rest-max (max-freq (cdr freq-list))))
+        (if (> current rest-max) current rest-max))))
+
+(define (filter-by-freq freq-list f)
+  (if (null? freq-list)
+      '()
+      (if (= (cdr (car freq-list)) f)
+          (cons (car freq-list) (filter-by-freq (cdr freq-list) f))
+          (filter-by-freq (cdr freq-list) f))))
+
+(define (repeat-char c n)
+  (if (<= n 0)
+      ""
+      (string-append (string c) (repeat-char c (- n 1)))))
+
+(define (build-string-from-pair pair)
+  (repeat-char (car pair) (cdr pair)))
+
+(define (build-string-from-list lst)
+  (if (null? lst)
+      ""
+      (string-append (build-string-from-pair (car lst))
+                     (build-string-from-list (cdr lst)))))
+
+(define (sort-by-freq-helper freq-list f)
+  (if (< f 0)
+      ""
+      (let ((matches (filter-by-freq freq-list f)))
+        (if (null? matches)
+            (sort-by-freq-helper freq-list (- f 1))
+            (string-append (build-string-from-list matches)
+                           (sort-by-freq-helper freq-list (- f 1)))))))
+
+(define (solve s)
+  (if (= (string-length s) 0)
+      ""
+      (let ((freq-list (make-frequency s))
+            (max-f (max-freq freq-list)))
+        (sort-by-freq-helper freq-list max-f))))
+
+;; Test harness
+(display "CASE0=") (display (solve "tree")) (newline)
+(display "CASE1=") (display (solve "Aabb")) (newline)
+(display "CASE2=") (display (solve "a")) (newline)
+(display "CASE3=") (display (solve "")) (newline)
+(display "CASE4=") (display (solve "aaabbb")) (newline)
+(display "CASE5=") (display (solve "Mississippi")) (newline)
+(display "CASE6=") (display (solve "abc")) (newline)
+(display "CASE7=") (display (solve "!!!??hello")) (newline)

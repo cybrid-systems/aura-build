@@ -1,0 +1,102 @@
+;; Boyer-Moore majority vote, with verification pass.
+;; Reads "CASE0=<json>" lines from stdin and prints "CASEi=<result>" lines.
+
+(define (read-line)
+  (let ((c (read-char)))
+    (if (eof-object? c)
+        #f
+        (let loop ((acc '()) (cc c))
+          (if (or (eof-object? cc) (char=? cc #\newline))
+              (list->string (reverse acc))
+              (loop (cons cc acc) (read-char)))))))
+
+(define (skip-ws)
+  (let ((c (peek-char)))
+    (if (or (eof-object? c) (char=? c #\space) (char=? c #\tab) (char=? c #\newline))
+        (begin (read-char) (skip-ws))
+        c)))
+
+;; Parse a JSON-ish vector of integers: [n,n,n]
+(define (parse-vec)
+  (skip-ws)
+  (let ((c (read-char)))
+    (if (char=? c #\[)
+        (let loop ((acc '()))
+          (skip-ws)
+          (let ((c2 (peek-char)))
+            (cond
+              ((char=? c2 #\])
+               (read-char)
+               (reverse acc))
+              (else
+               ;; read number (possibly negative)
+               (let ((sign 1)
+                         (first (read-char)))
+                 (when (char=? first #\-)
+                   (begin (set! sign -1) (set! first (read-char))))
+                 (let numloop ((n (- (char->integer first) (char->integer #\0))))
+                   (let ((p (peek-char)))
+                     (if (and (char>=? p #\0) (char<=? p #\9))
+                         (begin (read-char)
+                                (numloop (+ (* n 10) (- (char->integer p) (char->integer #\0)))))
+                         (begin
+                           (let ((v (* sign n)))
+                             (skip-ws)
+                             (let ((sep (peek-char)))
+                               (if (char=? sep #\,)
+                                   (begin (read-char) (skip-ws) (loop (cons v acc)))
+                                   (loop (cons v acc)))))))))))))))))
+
+;; Boyer-Moore: find candidate
+(define (boyer nums)
+  (let loop ((rest nums) (candidate 0) (count 0))
+    (if (null? rest)
+        candidate
+        (let ((x (car rest)) (r (cdr rest)))
+          (if (= count 0)
+              (loop r x 1)
+              (if (= x candidate)
+                  (loop r candidate (+ count 1))
+                  (loop r candidate (- count 1))))))))
+
+(define (solve nums)
+  (let ((cand (boyer nums)))
+    (let verify ((rest nums) (c 0))
+      (if (null? rest)
+          cand
+          (verify (cdr rest) (+ c (if (= (car rest) cand) 1 0)))))))
+
+(define (string-starts-with s prefix)
+  (let ((pl (string-length prefix)) (sl (string-length s)))
+    (and (>= sl pl)
+         (let loop ((i 0))
+           (if (= i pl)
+               #t
+               (if (char=? (string-ref s i) (string-ref prefix i))
+                   (loop (+ i 1))
+                   #f))))))
+
+(define (process-line line i)
+  (when (and (string? line) (> (string-length line) 0)
+             (string-starts-with line "CASE"))
+    (let ((eq-pos (string-contains line "=")))
+      (when eq-pos
+        (let ((val-str (substring line (+ eq-pos 1) (string-length line))))
+          (let ((port (open-input-string val-str)))
+            (let ((old-in current-input-port))
+              (set! current-input-port port)
+              (let ((nums (parse-vec)))
+                (set! current-input-port old-in)
+                (let ((res (solve nums)))
+                  (display "CASE")
+                  (display (number->string i))
+                  (display "=")
+                  (display (number->string res))
+                  (newline))))))))))
+
+;; main: read lines and process
+(let loop ((i 0))
+  (let ((line (read-line)))
+    (when line
+      (process-line line i)
+      (loop (+ i 1)))))

@@ -1,0 +1,119 @@
+(define (make-vec n fill)
+  (define (loop i acc)
+    (if (= i n) acc (loop (+ i 1) (cons fill acc))))
+  (loop 0 '()))
+
+(define (vec-set v i val)
+  (define (loop j acc)
+    (if (null? acc) '()
+        (if (= j i)
+            (cons val (cdr acc))
+            (cons (car acc) (loop (+ j 1) (cdr acc))))))
+  (loop 0 v))
+
+(define (vec-ref v i)
+  (define (loop j acc)
+    (if (= j i) (car acc) (loop (+ j 1) (cdr acc))))
+  (loop 0 v))
+
+(define (set-zeroes matrix m n)
+  (define first-col-zero? #f)
+
+  (define (pass1 i)
+    (if (= i m) 'done
+        (let ((row-start (* i n)))
+          (let ((row-loop (lambda (j)
+                            (if (= j n) 'row-done
+                                (begin
+                                  (if (= (vec-ref matrix (+ row-start j)) 0)
+                                      (begin
+                                        (set! matrix (vec-set matrix (+ row-start j) 0))
+                                        (set! matrix (vec-set matrix j 0))))
+                                  (row-loop (+ j 1)))))))
+            (if (= (vec-ref matrix (+ row-start 0)) 0)
+                (set! first-col-zero? #t))
+            (row-loop 1)
+            (if (= (vec-ref matrix (+ row-start 0)) 0)
+                (set! first-col-zero? #t))
+            (pass1 (+ i 1))))))
+
+  (define (pass2-row i j)
+    (if (>= j n) 'r-done
+        (if (= (vec-ref matrix j) 0)
+            (let ((row-start (* i n)))
+              (set! matrix (vec-set matrix (+ row-start j) 0))))
+        (pass2-row i (+ j 1))))
+
+  (define (pass2 i)
+    (if (= i m) 'done
+        (begin
+          (pass2-row i 1)
+          (pass2 (+ i 1)))))
+
+  (define (zero-row i)
+    (let ((row-start (* i n)))
+      (let ((loop (lambda (j)
+                    (if (= j n) 'done
+                        (begin
+                          (set! matrix (vec-set matrix (+ row-start j) 0))
+                          (loop (+ j 1)))))))
+        (loop 0))))
+
+  (define (zero-col j)
+    (let ((loop (lambda (i)
+                  (if (= i m) 'done
+                      (begin
+                        (set! matrix (vec-set matrix (+ (* i n) j) 0))
+                        (loop (+ i 1)))))))
+      (loop 0)))
+
+  (pass1 0)
+  (pass2 1)
+  (if first-col-zero? (zero-col 0))
+  (if (= (vec-ref matrix 0) 0) (zero-row 0)))
+
+(define (solve matrix m n)
+  (set-zeroes matrix m n)
+  matrix)
+
+(define (display-list xs)
+  (display "[")
+  (let ((loop (lambda (rest first?)
+                (if (null? rest) (display "]")
+                    (begin
+                      (if (not first?) (display ","))
+                      (display (number->string (car rest)))
+                      (loop (cdr rest) #f))))))
+    (loop xs #t)))
+
+(define case0-matrix (list 1 2 3 4 0 6 7 8 9 10 11 12))
+(define case0-result (solve case0-matrix 3 4))
+(display "CASE0=") (display-list case0-result) (newline)
+
+(define case1-matrix (list 0 1 2 3))
+(define case1-result (solve case1-matrix 1 4))
+(display "CASE1=") (display-list case1-result) (newline)
+
+(define case2-matrix (list 1 2 3 4))
+(define case2-result (solve case2-matrix 4 1))
+(display "CASE2=") (display-list case2-result) (newline)
+
+(define case3-matrix (list 1 2 3 4 5 6 7 8 9))
+(define case3-result (solve case3-matrix 3 3))
+(display "CASE3=") (display-list case3-result) (newline)
+
+(define case4-matrix (list 0 0 0 0))
+(define case4-result (solve case4-matrix 2 2))
+(display "CASE4=") (display-list case4-result) (newline)
+
+(define case5-matrix (list 1 0))
+(define case5-result (solve case5-matrix 1 2))
+(display "CASE5=") (display-list case5-result) (newline)
+
+(define case6-matrix (list 1 0 3 4 5 6))
+(define case6-result (solve case6-matrix 2 3))
+(display "CASE6=") (display-list case6-result) (newline)
+
+(define case7-matrix (list 1))
+(define case7-result (solve case7-matrix 1 1))
+(display "CASE7=") (display-list case7-result) (newline)

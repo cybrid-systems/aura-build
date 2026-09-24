@@ -1,0 +1,134 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "list1": [
+        "Shogun",
+        "Tapioca Express",
+        "Burger King",
+        "KFC"
+      ],
+      "list2": [
+        "Piatti",
+        "The Grill at Torrey Pines",
+        "Hungry Hunter Steakhouse",
+        "Shogun"
+      ]
+    },
+    "expected": "[\"Shogun\"]"
+  },
+  {
+    "id": 1,
+    "input": {
+      "list1": [
+        "Shogun",
+        "Tapioca Express",
+        "Burger King",
+        "KFC"
+      ],
+      "list2": [
+        "KFC",
+        "Shogun",
+        "Burger King"
+      ]
+    },
+    "expected": "[\"Shogun\"]"
+  },
+  {
+    "id": 2,
+    "input": {
+      "list1": [
+        "Shogun",
+        "Tapioca Express",
+        "Burger King",
+        "KFC"
+      ],
+      "list2": [
+        "Tapioca Express",
+        "Shogun",
+        "Burger King",
+        "KFC"
+      ]
+    },
+    "expected": "[\"Shogun\",\"Tapioca Express\"]"
+  },
+  {
+    "id": 3,
+    "input": {
+      "list1": [
+        "a",
+        "b",
+        "c"
+      ],
+      "list2": [
+        "d",
+        "e",
+        "f"
+      ]
+    },
+    "expected": "[]"
+  },
+  {
+    "id": 4,
+    "input": {
+      "list1": [
+        "a",
+        "b",
+        "c"
+      ],
+      "list2": [
+        "c",
+        "b",
+        "a"
+      ]
+    },
+    "expected": "[\"a\",\"b\",\"c\"]"
+  },
+  {
+    "id": 5,
+    "input": {
+      "list1": [
+        "a"
+      ],
+      "list2": [
+        "a"
+      ]
+    },
+    "expected": "[\"a\"]"
+  },
+  {
+    "id": 6,
+    "input": {
+      "list1": [
+        "x",
+        "y",
+        "z"
+      ],
+      "list2": [
+        "z",
+        "y",
+        "x"
+      ]
+    },
+    "expected": "[\"x\",\"y\",\"z\"]"
+  },
+  {
+    "id": 7,
+    "input": {
+      "list1": [
+        "alpha",
+        "beta",
+        "gamma",
+        "delta"
+      ],
+      "list2": [
+        "delta",
+        "epsilon",
+        "zeta",
+        "beta",
+        "alpha"
+      ]
+    },
+    "expected": "[\"delta\"]"
+  }
+]

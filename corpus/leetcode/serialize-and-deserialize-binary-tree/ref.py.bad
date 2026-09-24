@@ -1,0 +1,129 @@
+import json
+from collections import deque
+
+
+class Node:
+    def __init__(self, val=0, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+
+def build_tree(level_order):
+    if not level_order:
+        return None
+    nodes = [None if v is None else Node(int(v)) for v in level_order]
+    kids = deque([(0, True)])
+    n = len(nodes)
+    while kids:
+        i, is_left = kids.popleft()
+        if i >= n or nodes[i] is None:
+            continue
+        left_idx = 2 * i + 1
+        right_idx = 2 * i + 2
+        if left_idx < n:
+            nodes[i].left = nodes[left_idx]
+            kids.append((left_idx, False))
+        if right_idx < n:
+            nodes[i].right = nodes[right_idx]
+            kids.append((right_idx, False))
+    return nodes[0]
+
+
+def tree_to_level_order(root):
+    if root is None:
+        return []
+    out = []
+    q = deque([root])
+    while q:
+        node = q.popleft()
+        if node is None:
+            out.append(None)
+            continue
+        out.append(node.val)
+        q.append(node.left)
+        q.append(node.right)
+    while out and out[-1] is None:
+        out.pop()
+    return out
+
+
+class Codec:
+    def serialize(self, root):
+        if root is None:
+            return ""
+        out = []
+        q = deque([root])
+        while q:
+            node = q.popleft()
+            if node is None:
+                out.append("#")
+            else:
+                out.append(str(node.val))
+                q.append(node.left)
+                q.append(node.right)
+        while out and out[-1] == "#":
+            out.pop()
+        return ",".join(out)
+
+    def deserialize(self, data):
+        if not data:
+            return None
+        tokens = data.split(",")
+        root = Node(int(tokens[0]))
+        q = deque([root])
+        i = 1
+        n = len(tokens)
+        while q and i < n:
+            parent = q.popleft()
+            if i < n:
+                t = tokens[i]
+                i += 1
+                if t != "#":
+                    parent.left = Node(int(t))
+                    q.append(parent.left)
+            if i < n:
+                t = tokens[i]
+                i += 1
+                if t != "#":
+                    parent.right = Node(int(t))
+                    q.append(parent.right)
+        return root
+
+
+def solve(root_level):
+    codec = Codec()
+    root = build_tree(root_level)
+    serialized = codec.serialize(root)
+    rebuilt = codec.deserialize(serialized)
+    serialized_again = codec.serialize(rebuilt)
+    identical_level = tree_to_level_order(rebuilt) == tree_to_level_order(root)
+    return {
+        "serialize": serialized,
+        "deserialize_roundtrip_equals": identical_level,
+        "serialize_after_roundtrip": serialized_again,
+    }
+
+
+CASES = [
+    {"root": [1, 2, 3, None, None, 4, 5]},
+    {"root": []},
+    {"root": [7]},
+    {"root": [1, 2, 3, 4, 5, None, 6, None, None, 7, 8]},
+    {"root": [1, None, 2, None, 3, None, 4]},
+    {"root": [5, 1, 4, None, 2, 3, 6]},
+    {"root": [0, 0, None, None, 0]},
+    {"root": [10]},
+]
+
+
+if __name__ == "__main__":
+    results = []
+    for i, case in enumerate(CASES):
+        out = solve(**case)
+        results.append({
+            "id": i,
+            "input": case,
+            "expected": json.dumps(out, separators=(",", ":"), ensure_ascii=False),
+        })
+    print(json.dumps(results, separators=(",", ":"), ensure_ascii=False))

@@ -1,0 +1,8 @@
+(define (string-length s)
+  (let ((count 0))
+    (let loop ((rest s))
+      (if (= (string-length-helper rest) 0)
+          count
+          (begin
+            (set! count (+ count 1))
+            (loop (substring rest 1)))))))

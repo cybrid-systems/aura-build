@@ -1,0 +1,66 @@
+(define (find-head successors)
+  ;; Returns index of node whose value is -1 (head marker), or -1 if none.
+  (let loop ((i 0) (n (length successors)))
+    (cond
+      ((= i n) -1)
+      ((= (list-ref successors i) -1) i)
+      (else (loop (+ i 1) n)))))
+
+(define (step successors x)
+  ;; One step from node x. Returns -2 if next is -2 (end), else the next index.
+  (let ((nxt (list-ref successors x)))
+    nxt))
+
+(define (next-step successors x)
+  ;; Advance x by following successors once. If -2, returns -2 sentinel.
+  (let ((nxt (list-ref successors x)))
+    (if (= nxt -2) -2 nxt)))
+
+(define (has-cycle? successors head)
+  ;; Returns the meeting node inside cycle, or -1 if no cycle.
+  (let ((slow head) (fast head))
+    (let loop ()
+      (let ((s1 (next-step successors slow)))
+        (if (= s1 -2) -1
+            (let ((f1 (next-step successors fast)))
+              (if (= f1 -2) -1
+                  (let ((f2 (next-step successors f1)))
+                    (if (= f2 -2) -1
+                        (begin
+                          (set! slow s1)
+                          (set! fast f2)
+                          (if (= slow fast) slow (loop))))))))))))
+
+(define (solve successors)
+  (let ((head (find-head successors)))
+    (if (= head -1) -1
+        (let ((meet (has-cycle? successors head)))
+          (if (= meet -1) -1
+              (begin
+                (set! head head)  ; reset one pointer to head
+                (let loop ((a head) (b meet))
+                  (if (= a b) a
+                      (loop (next-step successors a)
+                            (next-step successors b))))))))))
+
+(define (display-case i result)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display result)
+  (newline))
+
+;; Embedded test cases
+(define (run-all)
+  (display-case 0 (solve '(1 2 3 0 -2)))
+  (display-case 1 (solve '(-2 0)))
+  (display-case 2 (solve '(1 0)))
+  (display-case 3 (solve '(-2)))
+  (display-case 4 (solve '(0)))
+  (display-case 5 (solve '(1 2 0 -2)))
+  (display-case 6 (solve '(2 0 1 -2)))
+  (display-case 7 (solve '(-2 1 2 3 4)))
+  (display-case 8 (solve '(1 2 3 4 5 0 -2)))
+  (display-case 9 (solve '(1 0 2 3 -2))))
+
+(run-all)

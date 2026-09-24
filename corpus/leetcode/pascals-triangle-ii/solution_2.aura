@@ -1,0 +1,139 @@
+;; Pascal's Triangle II - row indexed by k (0-indexed)
+;; Approach: compute binomial coefficients C(k, i) iteratively.
+;; We can also build the row by updating a list from right to left,
+;; which mirrors the classic O(k) space solution.
+
+(define (solve k)
+  (let ((row '(1)))
+    (let loop ((i 1))
+      (if (> i k)
+          row
+          (begin
+            ;; Update from right to left: new[j] = old[j-1] + old[j]
+            (let ((len (length row)))
+              (let up ((j (- len 1)))
+                (if (< j 1)
+                    (begin
+                      (set! row (cons 1 row))
+                      (loop (+ i 1)))
+                    (begin
+                      ;; Set row[j] = row[j-1] + row[j]
+                      ;; We need a mutable structure; use a list-of-values with set! via helper.
+                      ;; Simpler: just compute binomial directly.
+                      (loop (+ i 1)))))))
+            ))))
+
+;; Simpler and correct: compute using binomial coefficients C(k, i).
+(define (binomial n r)
+  (cond ((= r 0) 1)
+        ((= r n) 1)
+        (else (+ (binomial (- n 1) (- r 1))
+                 (binomial (- n 1) r)))))
+
+(define (row-of k)
+  (let loop ((i 0) (acc '()))
+    (if (> i k)
+        (reverse acc)
+        (loop (+ i 1) (cons (binomial k i) acc)))))
+
+(define (solve k)
+  (row-of k))
+
+;; Iterative binomial for efficiency (still O(k^2) but no list rebuild overhead).
+(define (solve k)
+  (let ((vals (make-list (+ k 1) 0)))
+    ;; Use list mutation carefully: build fresh list element by element.
+    (let build ((i 0) (row '()))
+      (if (> i k)
+          row
+          (let ((c (binomial-iter k i)))
+            (build (+ i 1) (append row (list c))))))))
+
+(define (binomial-iter n r)
+  ;; Compute C(n, r) iteratively to avoid recursion blow-up on large n.
+  (let ((r (if (> r (- n r)) (- n r) r)))
+    (let ((num 1) (den 1))
+      (let loop ((i 1))
+        (if (> i r)
+            num
+            (loop (+ i 1)))))))
+
+;; Above got cut off. Redo cleanly with a single iterative binomial using integer arithmetic.
+(define (binomial n r)
+  (let ((r (if (> r (- n r)) (- n r) r)))
+    (let ((num 1) (den 1))
+      (let loop ((i 1) (num 1) (den 1))
+        (if (> i r)
+            num
+            (loop (+ i 1)
+                  (* num (- n (- i 1)))   ;; multiply numerator by (n - i + 1)
+                  (* den i))))))   ;; multiply denominator by i
+      ;; Divide at the end to keep numbers small... but Aura has only /.
+      ;; We'll divide step by step by dividing when divisible.
+  ))
+
+;; Cleaner: compute using iterative multiplication with / at each step.
+(define (binomial n r)
+  (let ((r (if (> r (- n r)) (- n r) r)))
+    (let ((result 1))
+      (let loop ((i 0))
+        (if (= i r)
+            result
+            (let ((mult (- n i)))
+              (let ((d (+ i 1)))
+                ;; result = result * mult / d, where division is exact.
+                (loop (+ i 1)))))))))
+
+;; The above is incomplete. Let me write a complete, correct iterative C(n,r):
+
+(define (binomial n r)
+  (let ((r (if (> r (- n r)) (- n r) r)))
+    (let ((result 1))
+      (let loop ((i 0))
+        (if (= i r)
+            result
+            (begin
+              (set! result (/ (* result (- n i)) (+ i 1)))
+              (loop (+ i 1))))))))
+
+(define (row-of k)
+  (let loop ((i 0) (acc '()))
+    (if (> i k)
+        (reverse acc)
+        (loop (+ i 1) (cons (binomial k i) acc)))))
+
+(define (solve k)
+  (row-of k))
+
+;; Display helpers
+(define (display-list xs)
+  (let loop ((first? #t) (xs xs))
+    (if (null? xs)
+        (newline)
+        (begin
+          (if first?
+              (display (car xs))
+              (begin
+                (display " ")
+                (display (car xs))))
+          (loop #f (cdr xs))))))
+
+;; Run cases
+(define K 0)  ;; placeholder; replaced per case below
+
+;; Case 0
+(set! K 0) (display "CASE0=") (display-list (solve K))
+;; Case 1
+(set! K 1) (display "CASE1=") (display-list (solve K))
+;; Case 2
+(set! K 2) (display "CASE2=") (display-list (solve K))
+;; Case 3
+(set! K 3) (display "CASE3=") (display-list (solve K))
+;; Case 4
+(set! K 4) (display "CASE4=") (display-list (solve K))
+;; Case 5
+(set! K 5) (display "CASE5=") (display-list (solve K))
+;; Case 6
+(set! K 10) (display "CASE6=") (display-list (solve K))
+;; Case 7
+(set! K 30) (display "CASE7=") (display-list (solve K))

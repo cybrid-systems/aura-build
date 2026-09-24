@@ -1,0 +1,31 @@
+(define (xor-list xs)
+  (let ((acc 0))
+    (let loop ((l xs))
+      (if (null? l)
+          acc
+          (begin
+            (set! acc (bitwise-xor acc (car l)))
+            (loop (cdr l)))))))
+
+(define (solve nums)
+  (xor-list nums))
+
+;; helper to print a number result
+(define (display-result n) (display n))
+
+;; CASE0
+(display "CASE0=") (display (solve '(2 2 1))) (newline)
+;; CASE1
+(display "CASE1=") (display (solve '(4 1 2 1 2))) (newline)
+;; CASE2
+(display "CASE2=") (display (solve '(-1 -1 0 0 7))) (newline)
+;; CASE3
+(display "CASE3=") (display (solve '(1))) (newline)
+;; CASE4
+(display "CASE4=") (display (solve '(0 0 1))) (newline)
+;; CASE5
+(display "CASE5=") (display (solve '(-3))) (newline)
+;; CASE6
+(display "CASE6=") (display (solve '(5 5 9 9 11 11 -42))) (newline)
+;; CASE7
+(display "CASE7=") (display (solve '(1000000 1000000 -1000000 -1000000 1234567))) (newline)

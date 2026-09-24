@@ -1,0 +1,68 @@
+(define (list-from-values vals)
+  ;; Build a linked list from an Aura list of values using cons cells.
+  ;; Each node is represented as (cons val next) where next is '() or another pair.
+  (define (helper lst)
+    (if (null? lst)
+        '()
+        (cons (car lst) (helper (cdr lst)))))
+  (helper vals))
+
+(define (list-length lst)
+  (if (null? lst)
+      0
+      (+ 1 (list-length (cdr lst)))))
+
+(define (list-ref lst i)
+  (if (= i 0)
+      (car lst)
+      (list-ref (cdr lst) (- i 1))))
+
+(define (build-list n)
+  ;; Build linked list from first n values stored globally as 'inputs'
+  (define (helper i)
+    (if (= i n)
+        '()
+        (cons (list-ref inputs i) (helper (+ i 1)))))
+  (helper 0))
+
+(define (solve head)
+  ;; Traverse the linked list once, accumulating decimal value.
+  (define (helper node result)
+    (if (null? node)
+        result
+        (helper (cdr node) (+ (* result 2) (car node)))))
+  (helper head 0))
+
+(define inputs '())
+
+(define (run-case i)
+  (begin
+    ;; Each case's data is identified by index i; values are taken from predefined case lists.
+    (set! inputs (case-values i))
+    (let ((head (build-list (list-length (case-values i)))))
+      (begin
+        (display "CASE")
+        (display i)
+        (display "=")
+        (display (solve head))
+        (newline)))))
+
+(define (case-values i)
+  (cond ((= i 0) (list 1))
+        ((= i 1) (list 0))
+        ((= i 2) (list 1 0 1))
+        ((= i 3) (list 1 1 1 1 1))
+        ((= i 4) (list 0 0 0 0 0))
+        ((= i 5) (list 1 0 0 1 0 1 0))
+        ((= i 6) (list 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1))
+        ((= i 7) (list 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1))
+        (else '())))
+
+(run-case 0)
+(run-case 1)
+(run-case 2)
+(run-case 3)
+(run-case 4)
+(run-case 5)
+(run-case 6)
+(run-case 7)

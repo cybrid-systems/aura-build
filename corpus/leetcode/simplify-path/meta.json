@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:25:31Z",
+      "ts_local": "2026-09-24 22:25:31 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1908,
+        "total_characters": 0,
+        "prompt_tokens": 1068,
+        "completion_tokens": 840,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.071,
+      "tests_passed": 0,
+      "tests_total": 10,
+      "stderr_snippet": "error: 2:35: parse error: expected expression, got ')'\n   |\n  2 |   (let* ((parts (split-by path #\\/))\n   |                                   ^\nerror: 1:18: unbound variable: solve\n   |\n  1 | (display-case 0 (solve \"/a/./b/../../c/\"))\n   |                  ^^^^^\nerror: 1:18: unbound variable: solve\n   |\n  1 | (display-case 1 (solve \"/home//foo/\"))\n   |                  ^^^^^\nerror: 1:18: unbound variable: solve\n   |\n  1 | (display-case 2 (solve \"/../\"))\n   |                  ^^^^^\nerror: 1:18: u",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:25:39Z",
+      "ts_local": "2026-09-24 22:25:39 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1967,
+        "total_characters": 0,
+        "prompt_tokens": 1068,
+        "completion_tokens": 899,
+        "prompt_tokens_details": {
+          "cached_tokens": 1067
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.079,
+      "tests_passed": 0,
+      "tests_total": 10,
+      "stderr_snippet": "error: 7:8: unbound variable: else\n  did you mean 'solve'?\nerror: 7:8: unbound variable: else\n  did you mean 'solve'?\nerror: 7:8: unbound variable: else\n  did you mean 'solve'?\nerror: 7:8: unbound variable: else\n  did you mean 'solve'?\nerror: 7:8: unbound variable: else\n  did you mean 'solve'?\nerror: 7:8: unbound variable: else\n  did you mean 'solve'?\nerror: 7:8: unbound variable: else\n  did you mean 'solve'?\nerror: 7:8: unbound variable: else\n  did you mean 'solve'?\nerror: 7:8: unbound variable",
+      "stdout_snippet": "CASE0=CASE0=\nCASE1=\nCASE2=\nCASE3=\nCASE4=\nCASE5=\nCASE6=\nCASE7=\nCASE8=\nCASE9=\n"
+    }
+  ],
+  "slug": "simplify-path",
+  "title": "Simplify Path",
+  "category": "strings",
+  "updated_at": "2026-09-24T14:25:39Z",
+  "updated_at_local": "2026-09-24 22:25:39 CST"
+}

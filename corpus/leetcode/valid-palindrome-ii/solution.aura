@@ -1,0 +1,37 @@
+(define (substring-eq? s i j)
+  ;; Check if s[i..j] (inclusive on both ends) is a palindrome.
+  (let loop ((l i) (r j))
+    (if (>= l r)
+        #t
+        (if (equal? (string-ref s l) (string-ref s r))
+            (loop (+ l 1) (- r 1))
+            #f))))
+
+(define (valid? s)
+  (let ((n (string-length s)))
+    (if (<= n 1)
+        #t
+        (let loop ((l 0) (r (- n 1)))
+          (cond
+            ((>= l r) #t)
+            ((equal? (string-ref s l) (string-ref s r))
+             (loop (+ l 1) (- r 1)))
+            (else
+             (or (substring-eq? s (+ l 1) r)
+                 (substring-eq? s l (- r 1)))))))))
+
+(define (solve s)
+  (valid? s))
+
+;; Test harness
+(display "CASE0=") (display (solve "aba")) (newline)
+(display "CASE1=") (display (solve "abca")) (newline)
+(display "CASE2=") (display (solve "abc")) (newline)
+(display "CASE3=") (display (solve "")) (newline)
+(display "CASE4=") (display (solve "a")) (newline)
+(display "CASE5=") (display (solve "ab")) (newline)
+(display "CASE6=") (display (solve "abbaa")) (newline)
+(display "CASE7=") (display (solve "racecar")) (newline)
+(display "CASE8=") (display (solve "deeee")) (newline)
+(display "CASE9=") (display (solve "abcdcba")) (newline)
+(display "CASE10=") (display (solve "abcdba")) (newline)

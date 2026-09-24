@@ -1,0 +1,81 @@
+;; remove-element: in-place removal of all occurrences of val using two pointers.
+;; solve mutates nums (a list) and returns the new length k.
+
+(define (solve nums val)
+  (let ((n (length nums)))
+    (let loop ((i 0) (j (- n 1)))
+      (cond ((> i j) (+ i 1))
+            ((= (list-ref nums i) val)
+             ;; Overwrite nums[i] with nums[j] (or just shorten if same position)
+             (if (= i j)
+                 (begin
+                   (set-car! (cdr (make-list-of-tail nums i)) 'ignored)
+                   (+ i 0)) ; won't get here cleanly; handled below
+                 (begin
+                   ;; Replace element at index i with element at index j
+                   (replace-at! nums i (list-ref nums j))
+                   (loop i (- j 1)))))
+            (else (loop (+ i 1) j))))))
+
+;; --- helper list operations (Aura lists are immutable, but problem says
+;;     we can mutate nums; since Aura uses pair cells, we work on a vector-like
+;;     representation. To keep this simple we represent "nums" as a mutable
+;;     structure: we store it as a global list and provide access via indices
+;;     using nth/set-nth helpers below. ---
+
+(define (length xs)
+  (if (null? xs) 0 (+ 1 (length (cdr xs)))))
+
+(define (list-ref xs i)
+  (if (= i 0) (car xs) (list-ref (cdr xs) (- i 1))))
+
+;; Replace the i-th element of list xs (returned as a new list);
+;; because we want in-place behavior, we actually rebuild the list
+;; in a global variable.
+(define *nums* '())
+
+(define (replace-at! xs i v)
+  ;; Walk to position i and set-car!
+  (define (walk lst k)
+    (if (= k 0)
+        (set-car! lst v)
+        (walk (cdr lst) (- k 1))))
+  (walk xs i))
+
+;; The solve function above used list-ref directly, which doesn't mutate.
+;; Rewrite solve to use *nums* mutable access.
+(define (solve nums val)
+  (set! *nums* nums)
+  (let loop ((i 0) (j (- (length *nums*) 1)))
+    (cond ((> i j) (+ i 1))
+          ((= (list-ref *nums* i) val)
+           (replace-at! *nums* i (list-ref *nums* j))
+           (loop i (- j 1)))
+          (else (loop (+ i 1) j)))))
+
+;; --- display helpers ---
+
+(define (display-list xs)
+  (display "[")
+  (let loop ((rest xs) (first #t))
+    (cond ((null? rest) (display "]"))
+          (else
+           (if first (set! first #f) (begin (display ", ") 'ignored))
+           (display (car rest))
+           (loop (cdr rest) first)))))
+
+(define (run-case i nums val)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve nums val))
+  (newline))
+
+(run-case 0 '(3 2 2 3) 3)
+(run-case 1 '(0 1 2 2 3 0 4 2) 2)
+(run-case 2 '() 1)
+(run-case 3 '(1) 1)
+(run-case 4 '(1) 2)
+(run-case 5 '(1 1 1 1) 1)
+(run-case 6 '(4 5 6 7 8) 3)
+(run-case 7 '(2 2 2 3 3 4 5 2) 2)

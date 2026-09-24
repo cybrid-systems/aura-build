@@ -1,0 +1,74 @@
+;; Minimum Operations to Reduce X to Zero
+;; Sliding window approach: find longest subarray with sum = total - x
+
+(define (sum-list lst)
+  (if (null? lst)
+      0
+      (+ (car lst) (sum-list (cdr lst)))))
+
+(define (length-list lst)
+  (if (null? lst)
+      0
+      (+ 1 (length-list (cdr lst)))))
+
+(define (min a b)
+  (if (< a b) a b))
+
+(define (solve nums x)
+  (let ((n (length-list nums))
+        (total (sum-list nums))
+        (target (- total x)))
+    (cond
+      ((= x 0) 0)
+      ((> x total) -1)
+      ((< target 0) -1)
+      ((= target 0) n)
+      (else
+       ;; sliding window to find longest subarray with sum = target
+       (let loop ((i 0) (j 0) (curr-sum 0) (max-len -1) (arr nums))
+         (cond
+           ;; expand window while j < n
+           ((< j n)
+            (let ((new-sum (+ curr-sum (list-ref arr j))))
+              (loop i (+ j 1) new-sum max-len arr)))
+           ;; shrink window if curr-sum > target and i < j
+           ((and (< i j) (> curr-sum target))
+            (let ((new-sum (- curr-sum (list-ref arr i))))
+              (loop (+ i 1) j new-sum max-len arr)))
+           ;; check if curr-sum == target
+           ((= curr-sum target)
+            (let ((new-max (max max-len (- j i))))
+              (cond
+                ((< i j)
+                 (let ((new-sum (- curr-sum (list-ref arr i))))
+                   (loop (+ i 1) j new-sum new-max arr)))
+                (else (loop i j curr-sum new-max arr)))))
+           (else
+            (cond
+              ((< i j)
+               (let ((new-sum (- curr-sum (list-ref arr i))))
+                 (loop (+ i 1) j new-sum max-len arr)))
+              (else max-len))))))))))
+
+;; Helper: list-ref using zero-based index
+(define (list-ref lst i)
+  (if (= i 0)
+      (car lst)
+      (list-ref (cdr lst) (- i 1))))
+
+;; Helper: max
+(define (max a b)
+  (if (> a b) a b))
+
+;; Test cases
+(display "CASE0=") (display (solve (list 1 1 3 2 4) 5)) (newline)
+(display "CASE1=") (display (solve (list 5 6 7 8 9) 4)) (newline)
+(display "CASE2=") (display (solve (list 3 2 20 1 1 3) 10)) (newline)
+(display "CASE3=") (display (solve '() 0)) (newline)
+(display "CASE4=") (display (solve '() 5)) (newline)
+(display "CASE5=") (display (solve (list 1 2 3) 0)) (newline)
+(display "CASE6=") (display (solve (list 1 2 3) 6)) (newline)
+(display "CASE7=") (display (solve (list 0 0 0 0) 0)) (newline)
+(display "CASE8=") (display (solve (list 1) 1)) (newline)
+(display "CASE9=") (display (solve (list 1) 2)) (newline)
+(display "CASE10=") (display (solve (list 1 2 3 4 5) 15)) (newline)

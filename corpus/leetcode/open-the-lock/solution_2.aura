@@ -1,0 +1,119 @@
+(define (s->n s)
+  (let ((len (string-length s)))
+    (let loop ((i 0) (acc 0))
+      (if (= i len)
+          acc
+          (loop (+ i 1)
+                (+ (* acc 10)
+                   (- (char->integer (string-ref s i)) 48)))))))
+
+(define (digit d pos n)
+  (let ((divisor (expt 10 (- 3 pos))))
+    (quotient (modulo n divisor) (expt 10 (- 3 pos 1)))))
+
+(define (set-digit n pos d)
+  (let ((pow3 (expt 10 (- 3 pos)))
+        (pow4 (expt 10 (- 3 pos 1))))
+    (+ (- n (* (digit 3 pos n) pow4)) (* d pow4))))
+
+(define (neighbors n)
+  (let loop ((pos 0) (acc '()))
+    (if (= pos 4)
+        acc
+        (let* ((d (digit 3 pos n))
+               (pow4 (expt 10 (- 3 pos 1)))
+               (up (set-digit n pos (modulo (+ d 1) 10)))
+               (down (set-digit n pos (modulo (- d 1) 10))))
+          (loop (+ pos 1) (cons up (cons down acc)))))))
+
+(define (free-neighbors n)
+  (let loop ((pos 0) (d 0) (acc '()))
+    (if (= pos 4)
+        acc
+        (if (= d 10)
+            (loop (+ pos 1) 0 acc)
+            (if (= d (digit 3 pos n))
+                (loop pos (+ d 1) acc)
+                (loop pos (+ d 1) (cons (set-digit n pos d) acc)))))))
+
+(define (bfs target-n forbidden-list)
+  (let ((target-str (number->string target-n)))
+    (when (= target-n 0) 0)
+    (let* ((visited (make-vector 10000 #f))
+           (queue-head '())
+           (queue-tail '())
+           (enqueue (lambda (item)
+                      (set-cdr! (cdr item) '())
+                      ...))
+           )
+      ;; Initialize visited with forbidden and 0000
+      (vector-set! visited 0 #t)
+      (for-each (lambda (s) (vector-set! visited (s->n s) #t)) forbidden-list)
+      (if (vector-ref visited target-n) -1
+          (begin
+            ;; Simple BFS using vectors for distance and a queue via list
+            (let ((dist (make-vector 10000 -1)))
+              (vector-set! dist 0 0)
+              ;; Use mutable cons cells as queue
+              (let ((queue '()))
+                (set! queue (cons (cons 0 '()) queue))
+                ;; Actually let's use a different approach: pairs of (state . distance)
+                ;; Implement proper queue
+                (letrec ((q-front '())
+                         (q-rear '())
+                         (enq (lambda (state d)
+                                (let ((cell (cons state d)))
+                                  (if (null? q-front)
+                                      (begin (set! q-front cell) (set! q-rear cell))
+                                      (begin (set-cdr! q-rear cell) (set! q-rear cell))))))
+                         (deq (lambda ()
+                                (let ((cell q-front))
+                                  (set! q-front (cdr q-front))
+                                  (if (null? q-front) (set! q-rear '()))
+                                  cell)))
+                  (enq 0 0)
+                  (let loop ()
+                    (if (null? q-front) -1
+                        (let* ((cell (deq))
+                               (state (car cell))
+                               (d (cdr cell)))
+                          (if (= state target-n) d
+                              (begin
+                                (for-each (lambda (nb)
+                                            (if (and (not (vector-ref visited nb))
+                                                     (= (vector-ref dist nb) -1))
+                                                (begin
+                                                  (vector-set! visited nb #t)
+                                                  (vector-set! dist nb (+ d 1))
+                                                  (enq nb (+ d 1)))))
+                                          (neighbors state))
+                                (for-each (lambda (nb)
+                                            (if (and (not (vector-ref visited nb))
+                                                     (= (vector-ref dist nb) -1))
+                                                (begin
+                                                  (vector-set! visited nb #t)
+                                                  (vector-set! dist nb (+ d 1))
+                                                  (enq nb (+ d 1)))))
+                                          (free-neighbors state))
+                                (loop))))))))))))))
+
+(define (solve N target deadends)
+  (let ((target-n (s->n target)))
+    (bfs target-n deadends)))
+
+;; --- Test harness ---
+(define (run-case i N target deadends)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve N target deadends))
+  (newline))
+
+(run-case 0 5 "0202" '("0201" "0101" "0102" "1212" "2002"))
+(run-case 1 0 "0001" '())
+(run-case 2 0 "1111" '())
+(run-case 3 1 "0001" '("0000"))
+(run-case 4 4 "0123" '("0001" "0010" "0100" "1000"))
+(run-case 5 2 "0009" '("0008" "0007"))
+(run-case 6 3 "9999" '("0009" "0099" "0999"))
+(run-case 7 1 "1234" '("1234"))

@@ -1,0 +1,127 @@
+;; Design Circular Deque in Aura
+
+(define (make-vector n)
+  (let loop ((i 0) (v '()))
+    (if (= i n) v (loop (+ i 1) (cons 0 v)))))
+
+(define (vec-set! v i val)
+  (set-car! (list-ref-cdr v i) val))
+
+(define (list-ref-cdr lst i)
+  (if (= i 0) lst (list-ref-cdr (cdr lst) (- i 1))))
+
+(define (vec-get v i)
+  (car (list-ref-cdr v i)))
+
+(define (make-deque k)
+  ;; circular buffer of size k+1 (one slot unused) to distinguish full/empty
+  (let ((buf (make-vector (+ k 1))))
+    (let ((head 0) (tail 0))
+      (define (size)
+        (modulo (- tail head) (+ k 1)))
+      (define (empty?)
+        (= head tail))
+      (define (full?)
+        (= size (- k 1)))
+      (define (insert-front val)
+        (if (full?)
+            #f
+            (begin
+              (set! head (modulo (- head 1) (+ k 1)))
+              (vec-set! buf head val)
+              #t)))
+      (define (insert-last val)
+        (if (full?)
+            #f
+            (begin
+              (vec-set! buf tail val)
+              (set! tail (modulo (+ tail 1) (+ k 1)))
+              #t)))
+      (define (delete-front)
+        (if (empty?)
+            -1
+            (let ((v (vec-get buf head)))
+              (set! head (modulo (+ head 1) (+ k 1)))
+              v)))
+      (define (delete-last)
+        (if (empty?)
+            -1
+            (let ((v (vec-get buf (modulo (- tail 1) (+ k 1)))))
+              (set! tail (modulo (- tail 1) (+ k 1)))
+              v)))
+      (define (get-front)
+        (if (empty?) -1 (vec-get buf head)))
+      (define (get-rear)
+        (if (empty?) -1 (vec-get buf (modulo (- tail 1) (+ k 1)))))
+      (define (full?)
+        (= size (- k 1)))
+      (list 'deque
+            (cons 'insert-front insert-front)
+            (cons 'insert-last insert-last)
+            (cons 'delete-front delete-front)
+            (cons 'delete-last delete-last)
+            (cons 'get-front get-front)
+            (cons 'get-rear get-rear)
+            (cons 'is-empty empty?)
+            (cons 'is-full full?)))))
+
+(define (deque-method dq name)
+  (cond
+    ((equal? name 'insertFront) (cdr (assq 'insert-front (cdr dq))))
+    ((equal? name 'insertLast) (cdr (assq 'insert-last (cdr dq))))
+    ((equal? name 'deleteFront) (cdr (assq 'delete-front (cdr dq))))
+    ((equal? name 'deleteLast) (cdr (assq 'delete-last (cdr dq))))
+    ((equal? name 'getFront) (cdr (assq 'get-front (cdr dq))))
+    ((equal? name 'getRear) (cdr (assq 'get-rear (cdr dq))))
+    ((equal? name 'isEmpty) (cdr (assq 'is-empty (cdr dq))))
+    ((equal? name 'isFull) (cdr (assq 'is-full (cdr dq))))
+    (else (lambda () -1))))
+
+(define (solve k ops)
+  (let ((dq (make-deque k)))
+    (let loop ((rest ops) (acc '()))
+      (if (null? rest)
+          (reverse acc)
+          (let ((op (car rest)))
+            (cond
+              ((or (equal? op 'insertFront) (equal? op 'insertLast))
+               (let ((val (string->number (cadr rest))))
+                 (loop (cddr rest)
+                       (cons ((deque-method dq op) val) acc))))
+              (else
+               (loop (cdr rest)
+                     (cons ((deque-method dq op)) acc)))))))))
+
+(define (display-list lst)
+  (display "[")
+  (let loop ((l lst) (first #t))
+    (cond
+      ((null? l) (display "]"))
+      (else
+       (if first (set! first #f) (display ","))
+       (display (car l))
+       (loop (cdr l) first)))))
+
+;; Test cases
+(define (run-case i k ops)
+  (let ((res (solve k ops)))
+    (begin
+      (display "CASE")
+      (display i)
+      (display "=")
+      (display-list res)
+      (newline))))
+
+(define ops0 '("insertLast" "1" "insertLast" "2" "insertFront" "3" "insertFront" "4" "getRear" "isFull" "deleteLast" "insertFront" "4" "getFront"))
+(define ops1 '("insertLast" "10" "getFront" "getRear" "isFull" "deleteLast" "isEmpty" "insertFront" "20" "getFront" "insertLast" "30"))
+(define ops2 '("isEmpty" "insertFront" "1" "insertLast" "2" "getFront" "getRear" "deleteFront" "deleteLast" "isEmpty" "isFull"))
+(define ops3 '("insertFront" "1" "insertLast" "2" "insertFront" "3" "getFront" "getRear" "isFull" "deleteFront" "deleteLast" "deleteFront" "isEmpty"))
+(define ops4 '("insertLast" "1" "insertLast" "2" "insertLast" "3" "insertLast" "4" "deleteFront" "deleteLast" "getFront" "getRear" "insertFront" "0" "insertLast" "5" "isFull" "getRear" "deleteFront" "deleteLast"))
+(define ops5 '("getFront" "getRear" "deleteFront" "deleteLast" "isEmpty" "isFull"))
+
+(run-case 0 3 ops0)
+(run-case 1 1 ops1)
+(run-case 2 4 ops2)
+(run-case 3 2 ops3)
+(run-case 4 5 ops4)
+(run-case 5 3 ops5)

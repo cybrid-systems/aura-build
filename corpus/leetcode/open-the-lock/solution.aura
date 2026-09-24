@@ -1,0 +1,67 @@
+;; Helper: convert digit char to integer
+(define (digit->int c)
+  (- (char->integer c) (char->integer #\0)))
+
+;; Helper: convert integer (0-9) to digit char
+(define (int->digit n)
+  (integer->char (+ n (char->integer #\0))))
+
+;; Convert string "0123" to list of digits (0 1 2 3)
+(define (string->digits s)
+  (let ((len (string-length s)))
+    (let loop ((i 0) (acc '()))
+      (if (= i len)
+          (reverse acc)
+          (loop (+ i 1) (cons (digit->int (string-ref s i)) acc))))))
+
+;; Convert list of digits back to string
+(define (digits->string ds)
+  (list->string (map int->digit ds)))
+
+;; Convert list of digits to integer (0000..9999)
+(define (digits->int ds)
+  (let loop ((rest ds) (acc 0))
+    (if (null? rest)
+        acc
+        (loop (cdr rest) (+ (* acc 10) (car rest))))))
+
+;; Convert integer 0..9999 to list of digits
+(define (int->digits n)
+  (let ((d3 (modulo n 10))
+        (n3 (quotient n 10))
+        (d2 (modulo n3 10))
+        (n2 (quotient n3 10))
+        (d1 (modulo n2 10))
+        (d0 (quotient n2 10)))
+    (list d0 d1 d2 d3)))
+
+;; BFS using list as queue with associated depths
+;; queue is list of (state-int . depth) pairs
+;; We use a visited vector (list of 10000 booleans) - implement as list
+(define (make-visited)
+  (let loop ((i 0) (v '()))
+    (if (= i 10000)
+        (reverse v)
+        (loop (+ i 1) (cons #f v)))))
+
+(define (visited-get v idx)
+  (list-ref v idx))
+
+(define (visited-set! v idx)
+  (set! (list-ref v idx) #t))
+
+;; Generate ±1 neighbors
+(define (rot-neighbors state-int)
+  (let ((ds (int->digits state-int)))
+    (let ((d0 (car ds)) (d1 (cadr ds)) (d2 (caddr ds)) (d3 (cadddr ds)))
+      (let ((n0p (modulo (+ d0 1) 10))
+            (n0m (modulo (+ d0 9) 10))
+            (n1p (modulo (+ d1 1) 10))
+            (n1m (modulo (+ d1 9) 10))
+            (n2p (modulo (+ d2 1) 10))
+            (n2m (modulo (+ d2 9) 10))
+            (n3p (modulo (+ d3 1) 10))
+            (n3m (modulo (+ d3 9) 10)))
+        (list
+          (+ (* (+ (* (* d0 0) 0) 0) 0) 0)  ;; placeholder, real values below
+          ))))

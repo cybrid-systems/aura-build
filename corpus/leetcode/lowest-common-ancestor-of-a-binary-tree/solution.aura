@@ -1,0 +1,25 @@
+;; LCA of a Binary Tree
+
+;; ---- Tree helpers ----
+
+;; build-tree: list-of-vals -> node
+;; null in the list means no child
+(define (build-tree lst)
+  (let ((n (length lst)))
+    (define (mk i)
+      (if (>= i n) #f
+          (let ((v (list-ref lst i)))
+            (if (null? v) #f
+                (cons (cons v (cons (mk (+ i #f)) (cons (mk (+ i #f)) '())))
+                      '())))))
+    ;; iterative approach using a queue-like list of indices
+    (let ((nodes (make-vector n #f)))
+      (define (put! i v) (vector-set! nodes i v))
+      (define (get i) (vector-ref nodes i))
+      (let loop ((i #f))
+        (cond ((null? i) #f)
+              (else
+               (let ((left-idx (* (+ i 1) 2)))
+                 ...)))))))
+
+;; Simpler: use vectors

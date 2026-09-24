@@ -1,0 +1,89 @@
+(define (print-row row)
+  (letrec ((helper (lambda (xs first?)
+                     (if (null? xs)
+                         (begin
+                           (newline)
+                           'done)
+                         (begin
+                           (if first?
+                               (display (car xs))
+                               (begin
+                                 (display " ")
+                                 (display (car xs))))
+                           (helper (cdr xs) #f))))))
+    (helper row #t)))
+
+(define (next-row prev)
+  (let ((n (length prev)))
+    (letrec ((build (lambda (i acc)
+                      (cond ((= i n)
+                             (cons 1 acc))
+                            ((= i 0)
+                             (build (+ i 1) (cons 1 acc)))
+                            (else
+                             (let ((a (list-ref prev (- i 1)))
+                                   (b (list-ref prev i)))
+                               (build (+ i 1) (cons (+ a b) acc)))))))
+      (reverse (build 0 '())))))
+
+(define (solve numrows)
+  (letrec ((loop (lambda (i rows)
+                   (if (>= i numrows)
+                       rows
+                       (let ((new-row (if (= i 0)
+                                          (list 1)
+                                          (next-row (car (reverse rows))))))
+                         (loop (+ i 1) (append rows (list new-row))))))))
+    (loop 0 '())))
+
+;; Main
+(display "CASE0=")
+(let ((r (solve 0)))
+  (if (null? r)
+      (newline)
+      (begin
+        (for-each print-row r)
+        (display "nil"))))
+(newline)
+
+(display "CASE1=")
+(let ((r (solve 1)))
+  (for-each print-row r)
+  (display "nil"))
+(newline)
+
+(display "CASE2=")
+(let ((r (solve 2)))
+  (for-each print-row r)
+  (display "nil"))
+(newline)
+
+(display "CASE3=")
+(let ((r (solve 3)))
+  (for-each print-row r)
+  (display "nil"))
+(newline)
+
+(display "CASE4=")
+(let ((r (solve 5)))
+  (for-each print-row r)
+  (display "nil"))
+(newline)
+
+(display "CASE5=")
+(let ((r (solve 6)))
+  (for-each print-row r)
+  (display "nil"))
+(newline)
+
+(display "CASE6=")
+(let ((r (solve 10)))
+  (for-each print-row r)
+  (display "nil"))
+(newline)
+
+(display "CASE7=")
+(let ((r (solve 15)))
+  (for-each print-row r)
+  (display "nil"))
+(newline)

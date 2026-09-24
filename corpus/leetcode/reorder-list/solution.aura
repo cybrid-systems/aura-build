@@ -1,0 +1,132 @@
+;; ListNode as a cons-like pair: (val next) where next is either a node or '()
+;; We'll represent: a node is a list (val next), where next is either another node or '()
+
+(define (make-node val next) (list val next))
+(define (node-val n) (car n))
+(define (node-next n) (car (cdr n)))
+(define (set-node-next! n nx) (set-car! (cdr n) nx))
+
+(define (build-list xs)
+  ;; Build linked list from list of integers, return head or '()
+  (if (null? xs) '()
+      (let ((head (make-node (car xs) '())))
+        (define (loop rest)
+          (if (null? rest) '()
+                  (let ((nd (make-node (car rest) '())))
+                    (set-node-next! (car (cdr (cdr (list 'dummy head)))) nd) ; trick
+                    'ok)))
+        ;; simpler iterative build
+        (let ((tail head))
+          (define (helper rest)
+            (if (null? rest) head
+                (begin
+                  (set-node-next! tail (make-node (car rest) '()))
+                  (set! tail (node-next tail))
+                  (helper (cdr rest)))))
+          (helper (cdr xs))))))
+
+(define (to-list node)
+  ;; Convert linked list back to list of values
+  (define (loop n acc)
+    (if (null? n) (reverse acc)
+        (loop (node-next n) (cons (node-val n) acc))))
+  (loop node '()))
+
+(define (list-length lst)
+  (define (loop l acc)
+    (if (null? l) acc (loop (cdr l) (+ acc 1))))
+  (loop lst 0))
+
+(define (reverse-list head)
+  ;; Reverse linked list in place, return new head
+  (let ((prev '()) (cur head))
+    (let loop ()
+      (if (null? cur) prev
+          (let ((nxt (node-next cur)))
+            (set-node-next! cur prev)
+            (set! prev cur)
+            (set! cur nxt)
+            (loop))))))
+
+(define (find-middle head)
+  ;; Return (cons first-half-head second-half-head)
+  ;; Using slow/fast pointers; for odd, first half has (n+1)/2 nodes
+  (if (null? head) (cons '() '())
+      (let ((slow head) (fast head) (prev '()))
+        (let loop ()
+          (if (or (null? fast) (null? (node-next fast)))
+              (begin
+                (set-node-next! prev '())
+                (cons head slow))
+              (begin
+                (set! prev slow)
+                (set! slow (node-next slow))
+                (set! fast (node-next (node-next fast)))
+                (loop)))))))
+
+(define (merge-alternate a b)
+  ;; Merge: a0,b0,a1,b1,...; return head
+  (if (null? a) b
+      (let ((head a)
+            (cur-a a)
+            (cur-b b))
+        (let loop ()
+          (if (or (null? cur-b) (null? cur-a)) 
+              head
+              (let ((next-a (node-next cur-a))
+                    (next-b (node-next cur-b)))
+                (set-node-next! cur-a cur-b)
+                (if (null? next-a)
+                    (begin
+                      (set-node-next! cur-b '())
+                      head)
+                    (begin
+                      (set-node-next! cur-b next-a)
+                      (set! cur-a next-a)
+                      (set! cur-b next-b)
+                      (loop)))))))))
+
+(define (solve head-list)
+  ;; head-list is either a list of integers or a node
+  (let ((head (if (and (pair? head-list) (number? (car head-list)))
+                  (build-list head-list)
+                  head-list)))
+    (cond
+      ((null? head) '())
+      ((null? (node-next head)) head)
+      (else
+       (let ((mid (find-middle head)))
+         (let ((first-half (car mid))
+               (second-half (cdr mid)))
+           (let ((reversed-second (reverse-list second-half)))
+             (merge-alternate first-half reversed-second))))))))
+
+(define (display-list lst)
+  (display "[")
+  (let loop ((l lst) (first? #t))
+    (cond
+      ((null? l) (display "]"))
+      (else
+       (if first? (display "") (display ","))
+       (display (car l))
+       (loop (cdr l) #f)))))
+
+(define (run-case i head)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (let ((result (solve head)))
+    (cond
+      ((null? result) (display "[]"))
+      ((number? result) (display result))
+      (else (display-list (to-list result)))))
+  (newline))
+
+(run-case 0 '())
+(run-case 1 '(1))
+(run-case 2 '(1 2))
+(run-case 3 '(1 2 3 4))
+(run-case 4 '(1 2 3 4 5))
+(run-case 5 '(1 2 3 4 5 6))
+(run-case 6 '(1 2 3 4 5 6 7))
+(run-case 7 '(1 2 3 4 5 6 7 8 9))

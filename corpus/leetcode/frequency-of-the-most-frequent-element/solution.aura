@@ -1,0 +1,164 @@
+;; Frequency of the Most Frequent Element - Sliding Window approach
+;; Sort nums, then find the longest window where
+;;   (nums[j] * window_size - sum_of_window) <= k
+;; Each smaller element can be raised to nums[j] using that many increments.
+
+(define (list-length xs)
+  (if (null? xs) 0 (+ 1 (list-length (cdr xs)))))
+
+(define (list-ref xs i)
+  (if (= i 0) (car xs) (list-ref (cdr xs) (- i 1))))
+
+;; Sort a list of numbers ascending (insertion sort) returning a new list
+(define (insert-sorted x xs)
+  (cond ((null? xs) (list x))
+        ((<= x (car xs)) (cons x xs))
+        (else (cons (car xs) (insert-sorted x (cdr xs))))))
+
+(define (sort-list xs)
+  (if (null? xs) '()
+      (insert-sorted (car xs) (sort-list (cdr xs)))))
+
+;; Convert vector-like list to plain list (already a list) but ensure indexed access
+(define (solve nums-list k)
+  (let* ((sorted (sort-list nums-list))
+         (n (list-length sorted)))
+    ;; Convert to a mutable scheme using indices via a list of (index . value)
+    ;; Instead, do two passes: compute prefix sums via recursion
+    ;; Use an iterative approach by walking with indices.
+
+    ;; We will keep:
+    ;;   left index (0..n-1)
+    ;;   right index (0..n-1)
+    ;;   window_sum (sum of sorted[left..right])
+    ;; We need: nums[right] * window_length - window_sum <= k
+    ;; We expand right step by step.
+
+    ;; To compute sum of sorted[a..b] efficiently, we build a prefix-sum vector.
+    (define prefix (build-prefix sorted 0 '()))
+    ;; prefix is a list of prefix sums; (list-ref prefix i) = sum of first i elements.
+    ;; So sum of sorted[a..b] = prefix[b+1] - prefix[a].
+
+    (define (window-sum a b)
+      (- (list-ref prefix (+ b 1)) (list-ref prefix a)))
+
+    (define best 0)
+    (define left 0)
+
+    ;; Iterate right from 0 to n-1
+    (define (loop right best-so-far)
+      (if (>= right n)
+          best-so-far
+          (let* ((ws (window-sum left right))
+                 (val (list-ref sorted right))
+                 (needed (- (* val (+ (- right left) 1)) ws)))
+            (if (<= needed k)
+                ;; expand window
+                (loop (+ right 1)
+                      (max best-so-far (+ (- right left) 1)))
+                ;; shrink left until valid, then expand
+                (shrink-loop right (+ right 1) best-so-far left)))))
+    ;; ...
+
+    (define (shrink-loop right next-right best-so-far cur-left)
+      (let* ((ws (window-sum cur-left right))
+             (val (list-ref sorted right))
+             (needed (- (* val (+ (- right cur-left) 1)) ws)))
+        (if (<= needed k)
+            (loop next-right
+                  (max best-so-far (+ (- right cur-left) 1)))
+            (shrink-loop right next-right best-so-far (+ cur-left 1)))))
+
+    (loop 0 best)))
+
+;; Build prefix list where (list-ref prefix i) = sum of first i elements of xs.
+;; xs is indexed list, idx is current index, acc is reversed accumulator.
+;; After loop, reverse acc and prepend 0 so prefix[0]=0.
+(define (build-prefix xs idx acc)
+  (if (null? xs)
+      (reverse acc)
+      (build-prefix (cdr xs) (+ idx 1) (cons (+ (car acc-if-first) 0) acc))))
+
+;; Helper: if acc is empty, add x, else add x to (car acc)
+;; We'll restructure: pass the running total instead.
+(define (build-prefix2 xs total acc)
+  (if (null? xs)
+      (reverse acc)
+      (build-prefix2 (cdr xs)
+                     (+ total (car xs))
+                     (cons total acc))))
+
+;; Recompute prefix using build-prefix2 (starts with acc = (list 0))
+(define (build-prefix xs idx acc)
+  ;; not used; we use build-prefix2 directly
+  acc)
+
+(define (make-prefix xs)
+  (build-prefix2 xs 0 (list 0)))
+
+;; Redefine solve to use make-prefix properly
+(define (solve nums-list k)
+  (let* ((sorted (sort-list nums-list))
+         (n (list-length sorted))
+         (prefix (make-prefix sorted))
+         (best 0)
+         (left 0))
+    ;; define helpers locally using letrec via internal define
+    (define (window-sum a b)
+      (- (list-ref prefix (+ b 1)) (list-ref prefix a)))
+    (define (max a b) (if (> a b) a b))
+    ;; Recursive iteration
+    (define (expand right best-so-far)
+      (cond ((>= right n) best-so-far)
+            (else
+             (let* ((ws (window-sum left right))
+                    (val (list-ref sorted right))
+                    (len (+ (- right left) 1))
+                    (needed (- (* val len) ws)))
+               (if (<= needed k)
+                   (expand (+ right 1) (max best-so-far len))
+                   (shrink-and-expand right best-so-far))))))
+    (define (shrink-and-expand right best-so-far)
+      ;; left is implicit; we mutate via set!
+      ;; Compute needed with current left
+      (let* ((ws (window-sum left right))
+             (val (list-ref sorted right))
+             (len (+ (- right left) 1))
+             (needed (- (* val len) ws)))
+        (cond ((<= needed k)
+               (set! best-so-far (max best-so-far len))
+               (expand (+ right 1) best-so-far))
+              (else
+               (set! left (+ left 1))
+               (shrink-and-expand right best-so-far)))))
+    (expand 0 best)))
+
+;; A small display helper for lists (we won't need it for this problem; result is int).
+(define (display-list xs)
+  (display "(")
+  (when (not (null? xs))
+    (display (car xs))
+    (when (not (null? (cdr xs)))
+      (display-list-loop (cdr xs))))
+  (display ")")
+  'done)
+
+(define (display-list-loop xs)
+  (display " ")
+  (display (car xs))
+  (when (not (null? (cdr xs)))
+    (display-list-loop (cdr xs))))
+
+;; Run cases
+(define (run)
+  (begin
+    (display "CASE0=") (display (solve (list 1 4 8 13) 5)) (newline)
+    (display "CASE1=") (display (solve (list 3 6 9) 2)) (newline)
+    (display "CASE2=") (display (solve (list 1 2 4) 5)) (newline)
+    (display "CASE3=") (display (solve (list 1) 0)) (newline)
+    (display "CASE4=") (display (solve (list 5 5 5 5) 10)) (newline)
+    (display "CASE5=") (display (solve (list 1 1 1 1 1) 0)) (newline)
+    (display "CASE6=") (display (solve (list 2 2 2 2 3) 0)) (newline)
+    (display "CASE7=") (display (solve (list 1 10 100) 0)) (newline)))
+
+(run)

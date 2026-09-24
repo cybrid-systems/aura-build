@@ -1,0 +1,62 @@
+(define (find-head succs)
+  ;; Find the node whose predecessor is -1 (the head)
+  (define n (length succs))
+  (let loop ((i 0))
+    (cond ((= i n) -1)
+          ((= (list-ref succs i) -1) i)
+          (else (loop (+ i 1))))))
+
+(define (step succs i)
+  (let ((v (list-ref succs i)))
+    (if (= v -2) -1 v)))
+
+(define (solve successors)
+  (let* ((head (find-head successors))
+         (start (if (= head -1) -1 head)))
+    (cond
+      ((= start -1) -1)
+      (else
+       (let ((slow (step successors start))
+             (fast (step successors (step successors start))))
+         ;; Floyd's cycle detection
+         (let phase1 ((s slow) (f fast))
+           (cond
+             ((or (= s -1) (= f -1)) -1)
+             ((= s f)
+              ;; Phase 2: find cycle entry
+              (let phase2 ((p1 start) (p2 s))
+                (cond
+                  ((= p1 p2) p1)
+                  (else (phase2 (step successors p1) (step successors p2))))))
+             (else
+              (phase1 (step successors s) (step successors (step successors f))))))))))))
+
+(define (run-tests)
+  (let ((cases
+         (list
+          (list 0 (list 1 2 3 0 -2))
+          (list 1 (list -2 0))
+          (list 2 (list 1 0))
+          (list 3 (list -2))
+          (list 4 (list 0))
+          (list 5 (list 1 2 0 -2))
+          (list 6 (list 2 0 1 -2))
+          (list 7 (list -2 1 2 3 4))
+          (list 8 (list 1 2 3 4 5 0 -2))
+          (list 9 (list 1 0 2 3 -2)))))
+    (let loop ((cs cases))
+      (if (null? cs)
+          'done
+          (begin
+            (let* ((c (car cs))
+                   (i (car c))
+                   (succs (cadr c))
+                   (res (solve succs)))
+              (display "CASE")
+              (display i)
+              (display "=")
+              (display res)
+              (newline))
+            (loop (cdr cs)))))))
+
+(run-tests)

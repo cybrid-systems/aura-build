@@ -1,0 +1,44 @@
+(define (nth idx lst)
+  (if (= idx 0) (car lst) (nth (- idx 1) (cdr lst))))
+
+(define (solve s)
+  (let ((counts (make-vector 26 0))
+        (best-idx 999999)
+        (best-char #\?))
+    (let loop ((i 0))
+      (if (>= i (string-length s))
+          best-char
+          (let* ((c (string-ref s i))
+                 (code (- (char->integer c) (char->integer #\a)))
+                 (cnt (vector-ref counts code)))
+            (if (= cnt 1)
+                (begin
+                  (vector-set! counts code 2)
+                  (if (< i best-idx)
+                      (begin
+                        (set! best-idx i)
+                        (set! best-char c)
+                        (loop (+ i 1)))
+                      (loop (+ i 1))))
+                (begin
+                  (vector-set! counts code (+ cnt 1))
+                  (loop (+ i 1)))))))))
+
+(define (char->string1 c)
+  (string c))
+
+(define (run-case i s)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (char->string1 (solve s)))
+  (newline))
+
+(run-case 0 "abccba")
+(run-case 1 "abcdd")
+(run-case 2 "abcdefghijklmnopqrstuvwxyzops")
+(run-case 3 "a")
+(run-case 4 "aa")
+(run-case 5 "zxyxz")
+(run-case 6 "mnbvcxzpoiuytrewqasdfghjklmnb")
+(run-case 7 "abcdefghijklmnopqrstuvwxyza")

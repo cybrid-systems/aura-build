@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:22:01Z",
+      "ts_local": "2026-09-24 22:22:01 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1503,
+        "total_characters": 0,
+        "prompt_tokens": 1037,
+        "completion_tokens": 466,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.027,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 16:19: unbound variable: v\n   |\n 16 |               ((= v 2)\n   |                   ^\nerror: 15:17: unbound variable: loop\n   |\n 15 |           (solve nums)\n   |                 ^\n",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:22:06Z",
+      "ts_local": "2026-09-24 22:22:06 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1555,
+        "total_characters": 0,
+        "prompt_tokens": 1037,
+        "completion_tokens": 518,
+        "prompt_tokens_details": {
+          "cached_tokens": 1036
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.019,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 39:7: parse error: unexpected ')'\n",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "sort-colors",
+  "title": "Sort Colors",
+  "category": "arrays",
+  "updated_at": "2026-09-24T14:22:06Z",
+  "updated_at_local": "2026-09-24 22:22:06 CST"
+}

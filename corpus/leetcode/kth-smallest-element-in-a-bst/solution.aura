@@ -1,0 +1,123 @@
+;; Tree node represented as a list '(val left right) where left/right are #f or another node.
+;; Build BST from level-order list with 'null placeholders.
+
+(define (v->x v)
+  (if (eq? v 'null) #f v))
+
+(define (build-tree lst)
+  ;; Build complete binary structure regardless of BST property using indices.
+  (letrec ((make (lambda (i)
+                   (if (or (>= i (length lst)) (eq? (list-ref lst i) 'null))
+                       #f
+                       (let ((n (list (v->x (list-ref lst i)) #f #f)))
+                         (if (make-pair n i) n #f))))))
+    (let ((root (make 0)))
+      root)))
+
+;; We'll use a different approach: build tree level-by-level with explicit children.
+
+(define (build-tree lst)
+  ;; Returns a list '(val left right) for the root, or #f for null.
+  (define (val-at i)
+    (if (>= i (length lst)) 'null (list-ref lst i)))
+  (define (build idx)
+    (let ((v (val-at idx)))
+      (if (eq? v 'null) #f
+          (let ((left-idx (+ (* 2 idx) 1))
+                (right-idx (+ (* 2 idx) 2)))
+            (list v (build left-idx) (build right-idx))))))
+  (build 0))
+
+;; kth-smallest: iterative in-order, stop when count reaches k.
+(define (kth-smallest root k)
+  (if (not root) #f
+      (let loop ((node root) (stack '()) (cnt 0))
+        (cond
+          ((and node (null? stack)) ; no node and no stack -> done, shouldn't happen if k valid
+           #f)
+          (else
+           (letrec ((push-left (lambda (n acc)
+                                 (if n
+                                     (push-left (cadr n) (cons n acc))
+                                     acc))))
+             (let ((new-stack (push-left node stack)))
+               (cond
+                 ((null? new-stack) #f)
+                 (else
+                  (let ((top (car new-stack))
+                        (rest (cdr new-stack)))
+                    (let ((new-cnt (+ cnt 1)))
+                      (if (= new-cnt k)
+                          (car top)
+                          (loop (caddr top) rest new-cnt)))))))))))))
+
+(define (solve root k)
+  (kth-smallest root k))
+
+;; For CASE3 input: root=[1], expected 1
+;; (build-tree itself does the recursion; this comment is just for clarity)
+
+;; Driver: test cases
+(define (display-list xs)
+  (display "[")
+  (let loop ((xs xs) (first #t))
+    (cond
+      ((null? xs) (display "]"))
+      (else
+       (if first (set! first #f) (begin (display ",") (set! first #f)))
+       (let ((v (car xs)))
+         (cond
+           ((number? v) (display v))
+           ((null? v) (display "null"))
+           ((list? v) (display-list v))
+           ((eq? v #f) (display "null"))
+           (else (display v))))
+       (loop (cdr xs) #f))))
+  (newline))
+
+(define (display-result r)
+  (cond
+    ((number? r) (display r))
+    ((eq? r #f) (display "null"))
+    ((null? r) (display "null"))
+    (else (display r))))
+
+;; Case 0: [2,1,3], k=1
+(let ((r0 (build-tree '(2 1 3)))
+      (k0 1))
+  (display "CASE0=") (display-result (solve r0 k0)) (newline))
+
+;; Case 1: [5,3,6,2,4,null,null,1], k=3
+(let ((r1 (build-tree '(5 3 6 2 4 null null 1)))
+      (k1 3))
+  (display "CASE1=") (display-result (solve r1 k1)) (newline))
+
+;; Case 2: [5,3,6,2,4,null,null,1], k=6
+(let ((r2 (build-tree '(5 3 6 2 4 null null 1)))
+      (k2 6))
+  (display "CASE2=") (display-result (solve r2 k2)) (newline))
+
+;; Case 3: [1], k=1
+(let ((r3 (build-tree '(1)))
+      (k3 1))
+  (display "CASE3=") (display-result (solve r3 k3)) (newline))
+
+;; Case 4: [3,1,5,null,2,null,4], k=4
+(let ((r4 (build-tree '(3 1 5 null 2 null 4)))
+      (k4 4))
+  (display "CASE4=") (display-result (solve r4 k4)) (newline))
+
+;; Case 5: [4,2,6,1,3,5,7], k=7
+(let ((r5 (build-tree '(4 2 6 1 3 5 7)))
+      (k5 7))
+  (display "CASE5=") (display-result (solve r5 k5)) (newline))
+
+;; Case 6: [4,2,6,1,3,5,7], k=1
+(let ((r6 (build-tree '(4 2 6 1 3 5 7)))
+      (k6 1))
+  (display "CASE6=") (display-result (solve r6 k6)) (newline))
+
+;; Case 7: null, k=1
+(let ((r7 (build-tree '()))
+      (k7 1))
+  (display "CASE7=") (display-result (solve r7 k7)) (newline))

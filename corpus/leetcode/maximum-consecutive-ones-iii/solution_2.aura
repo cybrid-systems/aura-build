@@ -1,0 +1,78 @@
+;; Max Consecutive Ones III - Sliding Window Solution
+
+(define (solve nums k)
+  (let loop ((left 0) (zeroes 0) (best 0) (right 0) (xs nums))
+    (if (null? xs)
+        best
+        (let* ((val (car xs))
+               (new-zeroes (if (= val 0) (+ zeroes 1) zeroes))
+               (right+1 (+ right 1)))
+          (if (> new-zeroes k)
+              ;; need to shrink from left
+              (let shrink ((l left) (z zeroes) (rxs xs))
+                (cond
+                  ((> z k)
+                   (let ((lv (list-ref nums l)))
+                     (shrink (+ l 1) (if (= lv 0) (- z 1) z) rxs)))
+                  (else (loop (+ l 1) z (max best (- r+1 l)) (+ r+1 1) (cdr xs)))))
+              ;; window valid, update best
+              (loop left new-zeroes (max best (- right+1 left)) (+ right+1 1) (cdr xs)))))))
+
+;; Helper: list-ref for Aura lists (index-based access)
+(define (list-ref lst i)
+  (if (= i 0)
+      (car lst)
+      (list-ref (cdr lst) (- i 1))))
+
+;; A cleaner recursive implementation of solve
+(define (solve nums k)
+  (let loop ((left 0) (zeroes 0) (best 0) (idx 0) (xs nums))
+    (if (null? xs)
+        best
+        (let* ((val (car xs))
+               (new-zeroes (+ zeroes (if (= val 0) 1 0)))
+               (window-len (- (+ idx 1) left)))
+          (if (> new-zeroes k)
+              ;; shrink left until zeroes <= k
+              (let shrink ((l left) (z zeroes) (zeros-removed 0))
+                (if (<= z k)
+                    ;; now continue from next position with proper state
+                    (loop (+ l 1) z (max best (- (+ idx 1) l)) (+ idx 1) (cdr xs))
+                    (let ((lv (list-ref nums l)))
+                      (shrink (+ l 1) (if (= lv 0) (- z 1) z) (+ zeros-removed 1)))))
+              (loop left new-zeroes (max best window-len) (+ idx 1) (cdr xs)))))))
+
+;; Display helper for results
+(define (display-int n)
+  (display n))
+
+;; Embedded test cases
+(define test-cases
+  (list
+    (list 0 '(1 1 1 0 0 0 1 1 1 1 0) 2)
+    (list 1 '(0 0 1 1 0 0 1 1 1 0 0 0 1 1 1 1 0) 3)
+    (list 2 '(1 1 1 1) 0)
+    (list 3 '(0 0 0 0) 0)
+    (list 4 '(0 0 0 0) 4)
+    (list 5 '(1 0 1 0 1 0 1) 1)
+    (list 6 '(0 1 1 1 0 1 1 1 0 1 1 1 0) 2)
+    (list 7 '(1) 0)))
+
+;; Run each test case
+(define (run-tests cases)
+  (if (null? cases)
+      'done
+      (let* ((tc (car cases))
+             (case-id (car tc))
+             (nums (car (cdr tc)))
+             (k (car (cdr (cdr tc))))
+             (result (solve nums k)))
+        (begin
+          (display "CASE")
+          (display case-id)
+          (display "=")
+          (display result)
+          (newline)
+          (run-tests (cdr cases))))))
+
+(run-tests test-cases)

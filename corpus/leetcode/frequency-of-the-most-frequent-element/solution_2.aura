@@ -1,0 +1,107 @@
+;; Frequency of the Most Frequent Element - sliding window solution
+;; Sort the array, then use a sliding window where the rightmost element is the target.
+;; Track total increments needed = right * window_size - sum(window).
+;; Expand right; if needed > k, shrink left and adjust sum.
+;; Return max window size.
+
+(define (list-ref lst i)
+  (if (= i 0)
+      (car lst)
+      (list-ref (cdr lst) i)))
+
+(define (list-length-h lst)
+  (let loop ((l lst) (n 0))
+    (if (null? l) n (loop (cdr l) (+ n 1)))))
+
+;; Convert a list of numbers to a vector (mutable list of fixed length using set!)
+;; We'll use vectors via list + index operations; but to keep simple, we'll
+;; represent sorted array as a list and use list-ref. For efficiency in Aura,
+;; we'll use an explicit vector built with make-vector.
+
+;; Aura vector: (make-vector n) creates a vector with n slots.
+;; (vector-ref v i), (vector-set! v i val), (vector-length v)
+
+(define (merge-sort lst)
+  (if (or (null? lst) (null? (cdr lst)))
+      lst
+      (let* ((half (quotient (list-length-h lst) 2))
+             (pair (split-at lst half))
+             (left (car pair))
+             (right (cdr pair))
+             (sl (merge-sort left))
+             (sr (merge-sort right)))
+        (merge sl sr))))
+
+(define (split-at lst n)
+  (let loop ((l lst) (n n) (acc '()))
+    (if (= n 0)
+        (cons (reverse acc) l)
+        (loop (cdr l) (- n 1) (cons (car l) acc)))))
+
+(define (merge a b)
+  (cond ((null? a) b)
+        ((null? b) a)
+        ((<= (car a) (car b))
+         (cons (car a) (merge (cdr a) b)))
+        (else
+         (cons (car b) (merge a (cdr b))))))
+
+(define (list->vector lst)
+  (let* ((n (list-length-h lst))
+         (v (make-vector n)))
+    (let loop ((l lst) (i 0))
+      (if (null? l)
+          v
+          (begin
+            (vector-set! v i (car l))
+            (loop (cdr l) (+ i 1)))))))
+
+;; main solve
+(define (solve nums k)
+  (let* ((sorted-list (merge-sort nums))
+         (v (list->vector sorted-list))
+         (n (vector-length v))
+         (max-freq 0)
+         (left 0)
+         (window-sum 0))
+    (let loop ((right 0))
+      (if (= right n)
+          max-freq
+          (let* ((rval (vector-ref v right))
+                 (new-sum (+ window-sum rval))
+                 (size (- right left 1))
+                 (needed (- (* rval (+ size 1)) new-sum)))
+            (let ((after-update
+                   (let shrink ((l left) (ws new-sum) (sz (+ size 1)) (nd needed))
+                     (if (> nd k)
+                         (begin
+                           (set! ws (- ws (vector-ref v l)))
+                           (shrink (+ l 1) ws (- sz 1)
+                                   (- (* (vector-ref v right) (- sz 1)) ws)))
+                         (cons l (cons ws (cons sz ())))))))
+              (let ((new-left (car after-update))
+                    (new-sum (car (cdr after-update)))
+                    (new-sz (car (cdr (cdr after-update)))))
+                (if (> new-sz max-freq) (set! max-freq new-sz))
+                (loop (+ right 1)))))))))
+
+;; Display helper for the result (number)
+(define (display-case i result)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display result)
+  (newline))
+
+;; Embedded test inputs as literal Aura lists
+(define (run-tests)
+  (display-case 0 (solve '(1 4 8 13) 5))
+  (display-case 1 (solve '(3 6 9) 2))
+  (display-case 2 (solve '(1 2 4) 5))
+  (display-case 3 (solve '(1) 0))
+  (display-case 4 (solve '(5 5 5 5) 10))
+  (display-case 5 (solve '(1 1 1 1 1) 0))
+  (display-case 6 (solve '(2 2 2 2 3) 0))
+  (display-case 7 (solve '(1 10 100) 0)))
+
+(run-tests)

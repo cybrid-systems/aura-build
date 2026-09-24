@@ -1,0 +1,103 @@
+(define (assoc-key key alist)
+  (cond ((null? alist) #f)
+        ((equal? key (car (car alist))) (car alist))
+        (else (assoc-key key (cdr alist)))))
+
+(define (alist-set key val alist)
+  (cons (cons key val) alist))
+
+(define (build-index-map lst)
+  (build-index-map-helper lst 0 '()))
+
+(define (build-index-map-helper lst i acc)
+  (if (null? lst)
+      acc
+      (build-index-map-helper (cdr lst) (+ i 1)
+                              (alist-set (car lst) i acc))))
+
+(define (find-min-sum lst1-map lst2 min-sum result)
+  (cond ((null? lst2)
+         (list min-sum result))
+        ((null? lst1-map)
+         (find-min-sum '() (cdr lst2) min-sum result))
+        (else
+         (let ((entry (assoc-key (car lst2) lst1-map)))
+           (if entry
+               (let ((sum (+ (cdr entry) 0))
+                     (sum-real (+ (cdr entry)
+                                  (index-of lst2 (car lst2)))))
+                 (cond ((null? result)
+                        (find-min-sum lst1-map (cdr lst2)
+                                      sum-real
+                                      (list (car lst2))))
+                       ((< sum-real min-sum)
+                        (find-min-sum lst1-map (cdr lst2)
+                                      sum-real
+                                      (list (car lst2))))
+                       ((= sum-real min-sum)
+                        (find-min-sum lst1-map (cdr lst2)
+                                      min-sum
+                                      (cons (car lst2) result)))
+                       (else
+                        (find-min-sum lst1-map (cdr lst2)
+                                      min-sum result))))
+               (find-min-sum lst1-map (cdr lst2) min-sum result))))))
+
+(define (index-of lst item)
+  (index-of-helper lst item 0))
+
+(define (index-of-helper lst item i)
+  (cond ((null? lst) -1)
+        ((equal? (car lst) item) i)
+        (else (index-of-helper (cdr lst) item (+ i 1)))))
+
+(define (solve list1 list2)
+  (let ((map1 (build-index-map list1)))
+    (let ((result (find-min-sum map1 list2 999999 '())))
+      (cdr result))))
+
+(define (display-list lst)
+  (display "[")
+  (cond ((null? lst) (display "]"))
+        (else
+         (display (car lst))
+         (let loop ((rest (cdr lst)))
+           (cond ((null? rest) (display "]"))
+                 (else
+                  (display ", ")
+                  (display (car rest))
+                  (loop (cdr rest))))))))
+
+;; Test cases
+(define case0-l1 '("Shogun" "Tapioca Express" "Burger King" "KFC"))
+(define case0-l2 '("Piatti" "The Grill at Torrey Pines" "Hungry Hunter Steakhouse" "Shogun"))
+
+(define case1-l1 '("Shogun" "Tapioca Express" "Burger King" "KFC"))
+(define case1-l2 '("KFC" "Shogun" "Burger King"))
+
+(define case2-l1 '("Shogun" "Tapioca Express" "Burger King" "KFC"))
+(define case2-l2 '("Tapioca Express" "Shogun" "Burger King" "KFC"))
+
+(define case3-l1 '("a" "b" "c"))
+(define case3-l2 '("d" "e" "f"))
+
+(define case4-l1 '("a" "b" "c"))
+(define case4-l2 '("c" "b" "a"))
+
+(define case5-l1 '("a"))
+(define case5-l2 '("a"))
+
+(define case6-l1 '("x" "y" "z"))
+(define case6-l2 '("z" "y" "x"))
+
+(define case7-l1 '("alpha" "beta" "gamma" "delta"))
+(define case7-l2 '("delta" "epsilon" "zeta" "beta" "alpha"))
+
+(display "CASE0=") (display-list (solve case0-l1 case0-l2)) (newline)
+(display "CASE1=") (display-list (solve case1-l1 case1-l2)) (newline)
+(display "CASE2=") (display-list (solve case2-l1 case2-l2)) (newline)
+(display "CASE3=") (display-list (solve case3-l1 case3-l2)) (newline)
+(display "CASE4=") (display-list (solve case4-l1 case4-l2)) (newline)
+(display "CASE5=") (display-list (solve case5-l1 case5-l2)) (newline)
+(display "CASE6=") (display-list (solve case6-l1 case6-l2)) (newline)
+(display "CASE7=") (display-list (solve case7-l1 case7-l2)) (newline)

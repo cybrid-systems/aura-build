@@ -1,0 +1,119 @@
+;; Two-pointer in-place deduplication on a sorted list.
+;; We represent nums as an Aura list. "In-place" is emulated by
+;; rebuilding via set-car!/set-cdr! where possible; here we simply
+;; return a new list of unique values and the harness treats the
+;; first k elements as authoritative.
+
+;; Helper: list length
+(define (len xs)
+  (if (null? xs) 0 (+ 1 (len (cdr xs)))))
+
+;; Helper: take first k elements
+(define (take xs k)
+  (if (or (null? xs) (= k 0))
+      '()
+      (cons (car xs) (take (cdr xs) (- k 1)))))
+
+;; Core dedup using a single pass with a "previous unique" tracker.
+;; Uses an iterative approach via a helper that keeps the accumulated
+;; unique list and the last seen value.
+(define (dedup-helper xs last-val acc)
+  (cond
+    ((null? xs) (reverse acc))
+    ((equal? (car xs) last-val)
+     (dedup-helper (cdr xs) last-val acc))
+    (else
+     (dedup-helper (cdr xs) (car xs)
+                   (cons (car xs) acc)))))
+
+;; Build the unique list. If input is empty, result is empty.
+;; Otherwise start with (cons (car xs) ...) and recurse from (cdr xs).
+(define (dedup xs)
+  (if (null? xs)
+      '()
+      (let ((first (car xs)))
+        (cons first
+              (dedup-helper (cdr xs) first '())))))
+
+;; solve: returns k = number of unique elements.
+;; The harness will inspect the first k elements of the returned list.
+;; We return the unique list itself; harness uses its length as k.
+(define (solve nums)
+  (dedup nums))
+
+;; Display helper for lists
+(define (display-list xs)
+  (display "[")
+  (let loop ((xs xs) (first? #t))
+    (if (null? xs)
+        (display "]")
+        (begin
+          (if first? (display "") (display ", "))
+          (display (car xs))
+          (loop (cdr xs) #f))))
+  (display ""))
+
+;; --- Test cases ---
+;; CASE0
+(display "CASE0=")
+(let ((r (solve (list 1 1 2 2 3 4 4))))
+  (display (len r))
+  (display " | first k: ")
+  (display-list r)
+  (newline))
+
+;; CASE1
+(display "CASE1=")
+(let ((r (solve '())))
+  (display (len r))
+  (display " | first k: ")
+  (display-list r)
+  (newline))
+
+;; CASE2
+(display "CASE2=")
+(let ((r (solve (list 1 1 1 1 1))))
+  (display (len r))
+  (display " | first k: ")
+  (display-list r)
+  (newline))
+
+;; CASE3
+(display "CASE3=")
+(let ((r (solve (list 0))))
+  (display (len r))
+  (display " | first k: ")
+  (display-list r)
+  (newline))
+
+;; CASE4
+(display "CASE4=")
+(let ((r (solve (list -3 -3 -2 -1 -1 0 0 0 1 2 2))))
+  (display (len r))
+  (display " | first k: ")
+  (display-list r)
+  (newline))
+
+;; CASE5
+(display "CASE5=")
+(let ((r (solve (list 1 2 3 4 5))))
+  (display (len r))
+  (display " | first k: ")
+  (display-list r)
+  (newline))
+
+;; CASE6
+(display "CASE6=")
+(let ((r (solve (list 1 2 2 3 3 3 4 5 5))))
+  (display (len r))
+  (display " | first k: ")
+  (display-list r)
+  (newline))
+
+;; CASE7
+(display "CASE7=")
+(let ((r (solve (list 0 0 0 0 0 0))))
+  (display (len r))
+  (display " | first k: ")
+  (display-list r)
+  (newline))

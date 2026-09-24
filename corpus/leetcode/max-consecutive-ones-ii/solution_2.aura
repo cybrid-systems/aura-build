@@ -1,0 +1,36 @@
+(define (length xs)
+  (if (null? xs) 0 (+ 1 (length (cdr xs)))))
+
+(define (carv xs) (car xs))
+(define (cdrv xs) (cdr xs))
+
+;; sliding window: keep at most one 0 inside the window
+(define (solve nums)
+  (let loop ((left '())      ; prefix before current window as list (reversed; not used)
+             (right nums)
+             (l 0)            ; left index in original list; we use a different approach
+             (r 0)            ; right index (count)
+             (zero-count 0)
+             (best 0))
+    (if (null? right)
+        best
+        (let* ((x (carv right))
+               (rest (cdrv right))
+               (new-zero (if (= x 0) (+ zero-count 1) zero-count))
+               ;; Window is indices [l, r] inclusive, length = r-l+1.
+               ;; If too many zeros, advance l.
+               (loop
+                (lambda ()
+                  (if (> new-zero 1)
+                      (let ((dropped (list-ref nums l)))
+                        (begin
+                          (set! new-zero (if (= dropped 0) (- new-zero 1) new-zero))
+                          (set! l (+ l 1))
+                          (loop)))
+                      'done))))
+          (let ((window-len (+ (- r 0) 1)))
+            (begin
+              (set! new-zero (loop))
+              'done))
+          (let ((new-best (max best (+ (- r l) 1))))
+            (loop left rest l (+ r 1) new-zero new-best))))))

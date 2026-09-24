@@ -1,0 +1,76 @@
+import json
+import os
+
+def solve(s: str) -> int:
+    s = s.strip()
+    if not s:
+        return 0
+    
+    tokens = s.split()
+    stack = []
+    current_num = 0
+    last_op = '+'
+    
+    for i, token in enumerate(tokens):
+        if token in '+-*/':
+            if last_op == '+':
+                stack.append(current_num)
+            elif last_op == '-':
+                stack.append(-current_num)
+            elif last_op == '*':
+                stack.append(stack.pop() * current_num)
+            elif last_op == '/':
+                prev = stack.pop()
+                # Truncate toward zero
+                if prev < 0 and current_num > 0:
+                    stack.append(-(-prev // current_num))
+                elif prev > 0 and current_num < 0:
+                    stack.append(-(prev // -current_num))
+                else:
+                    stack.append(prev // current_num)
+            last_op = token
+            current_num = 0
+        else:
+            current_num = int(token)
+    
+    # Process last number
+    if last_op == '+':
+        stack.append(current_num)
+    elif last_op == '-':
+        stack.append(-current_num)
+    elif last_op == '*':
+        stack.append(stack.pop() * current_num)
+    elif last_op == '/':
+        prev = stack.pop()
+        if prev < 0 and current_num > 0:
+            stack.append(-(-prev // current_num))
+        elif prev > 0 and current_num < 0:
+            stack.append(-(prev // -current_num))
+        else:
+            stack.append(prev // current_num)
+    
+    return sum(stack)
+
+
+CASES = [
+    {"s": "3+2*2"},
+    {"s": " 3/2 "},
+    {"s": " 3+5 / 2 "},
+    {"s": "0"},
+    {"s": "1+2+3+4"},
+    {"s": "1-2-3-4"},
+    {"s": "1000000000*1000000000/1000000000"},
+    {"s": "-1+2"},
+]
+
+if __name__ == '__main__':
+    results = []
+    for i, case in enumerate(CASES):
+        input_data = {k: v for k, v in case.items()}
+        expected = solve(case["s"])
+        results.append({
+            "id": i,
+            "input": input_data,
+            "expected": json.dumps(expected, separators=(',', ':'), ensure_ascii=False)
+        })
+    print(json.dumps(results, separators=(',', ':'), ensure_ascii=False))

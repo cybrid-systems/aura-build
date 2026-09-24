@@ -1,0 +1,46 @@
+;; First unique character in a string
+;; Approach: two-pass with a 26-element count array (O(n) time, O(1) space).
+
+(define (char->idx c)
+  (- (char->integer c) (char->integer #\a)))
+
+(define (solve s)
+  (let ((counts (make-vector 26 0)))
+    ;; First pass: count occurrences of each character.
+    (for i 0 (- (string-length s) 1)
+      (let ((c (string-ref s i)))
+        (let ((idx (char->idx c)))
+          (vector-set! counts idx (+ (vector-ref counts idx) 1)))))
+    ;; Second pass: find first index whose count is exactly 1.
+    (let loop ((i 0) (result -1))
+      (cond
+        ((>= i (string-length s)) result)
+        ((= (vector-ref counts (char->idx (string-ref s i))) 1)
+         (if (= result -1) i result))
+        (else (loop (+ i 1) result))))))
+
+;; Embedded test inputs
+(define inputs
+  (list
+    "loveleetcode"
+    "aabbcc"
+    "z"
+    "abc"
+    "aabbc"
+    "abacabad"
+    "aaaaa"
+    "abcdefghijklmnopqrstuvwxyz"))
+
+(define (run-cases inputs)
+  (let loop ((i 0) (xs inputs))
+    (if (null? xs)
+        '()
+        (begin
+          (display "CASE")
+          (display i)
+          (display "=")
+          (display (solve (car xs)))
+          (newline)
+          (loop (+ i 1) (cdr xs))))))
+
+(run-cases inputs)

@@ -1,0 +1,92 @@
+(define (string-length s)
+  (let loop ((i 0))
+    (if (string=? (substring s i (+ i 1)) "")
+        i
+        (loop (+ i 1)))))
+
+(define (string-ref s i)
+  (substring s i (+ i 1)))
+
+(define (solve s)
+  (let* ((n (string-length s))
+         (counts (make-vector 26 0)))
+    ;; First pass: count occurrences
+    (let loop ((i 0))
+      (if (< i n)
+          (begin
+            (vector-set! counts
+                         (- (char->integer (string-ref s i)) (char->integer #\a))
+                         (+ (vector-ref counts
+                                        (- (char->integer (string-ref s i)) (char->integer #\a)))
+                            1))
+            (loop (+ i 1)))
+            'done))
+    ;; Second pass: find first unique
+    (let loop2 ((i 0) (result -1))
+      (if (< i n)
+          (let ((c (vector-ref counts
+                               (- (char->integer (string-ref s i)) (char->integer #\a)))))
+            (if (= c 1)
+                i
+                (loop2 (+ i 1) result)))
+          result))))
+
+(define (char->integer ch)
+  ;; Map 'a'..'z' to 0..25 using char arithmetic via string comparison
+  (let loop ((i 0))
+    (cond
+      ((string=? ch "a") 0)
+      ((string=? ch "b") 1)
+      ((string=? ch "c") 2)
+      ((string=? ch "d") 3)
+      ((string=? ch "e") 4)
+      ((string=? ch "f") 5)
+      ((string=? ch "g") 6)
+      ((string=? ch "h") 7)
+      ((string=? ch "i") 8)
+      ((string=? ch "j") 9)
+      ((string=? ch "k") 10)
+      ((string=? ch "l") 11)
+      ((string=? ch "m") 12)
+      ((string=? ch "n") 13)
+      ((string=? ch "o") 14)
+      ((string=? ch "p") 15)
+      ((string=? ch "q") 16)
+      ((string=? ch "r") 17)
+      ((string=? ch "s") 18)
+      ((string=? ch "t") 19)
+      ((string=? ch "u") 20)
+      ((string=? ch "v") 21)
+      ((string=? ch "w") 22)
+      ((string=? ch "x") 23)
+      ((string=? ch "y") 24)
+      ((string=? ch "z") 25)
+      (else (loop (+ i 1))))))
+
+;; Display integer
+(define (display-int n)
+  (cond
+    ((< n 0)
+     (display "-")
+     (display-int (- 0 n)))
+    ((< n 10)
+     (display (number->string n)))
+    (else
+     (display-int (quotient n 10))
+     (display (number->string (modulo n 10))))))
+
+;; Run all test cases
+(define cases (list "loveleetcode" "aabbcc" "z" "abc" "aabbc" "abacabad" "aaaaa" "abcdefghijklmnopqrstuvwxyz"))
+
+(define (run-cases lst i)
+  (if (null? lst)
+      'done
+      (begin
+        (display "CASE")
+        (display-int i)
+        (display "=")
+        (display-int (solve (car lst)))
+        (newline)
+        (run-cases (cdr lst) (+ i 1)))))
+
+(run-cases cases 0)

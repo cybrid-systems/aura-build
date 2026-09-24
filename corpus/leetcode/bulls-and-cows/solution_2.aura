@@ -1,0 +1,86 @@
+(define (string-length s)
+  (let loop ((i 0))
+    (if (string=? (substring s i (+ i 1)) "")
+        i
+        (loop (+ i 1)))))
+
+(define (string-ref s i)
+  (substring s i (+ i 1)))
+
+(define (string=? a b)
+  (let loop ((i 0))
+    (cond
+      ((and (= i (string-length a)) (= i (string-length b))) #t)
+      ((or (= i (string-length a)) (= i (string-length b))) #f)
+      ((not (char=? (string-ref a i) (string-ref b i))) #f)
+      (else (loop (+ i 1))))))
+
+;; helper: char->digit assuming ascii digit
+(define (char->digit c)
+  (- (char->integer c) (char->integer #\0)))
+
+(define (char=? a b)
+  (= (char->integer a) (char->integer b)))
+
+(define (solve secret guess)
+  (let* ((n (string-length secret))
+         (freq-secret (make-vector 10 0))
+         (freq-guess (make-vector 10 0))
+         (bulls 0))
+    ;; First pass: count bulls, and store remaining digits in freq arrays
+    (let loop-i ((i 0))
+      (if (= i n) 'done
+          (let ((sc (string-ref secret i))
+                (gc (string-ref guess i)))
+            (if (char=? sc gc)
+                (begin
+                  (set! bulls (+ bulls 1))
+                  (loop-i (+ i 1)))
+                (begin
+                  (vector-set! freq-secret (char->digit sc)
+                                 (+ (vector-ref freq-secret (char->digit sc)) 1))
+                  (vector-set! freq-guess (char->digit gc)
+                                 (+ (vector-ref freq-guess (char->digit gc)) 1))
+                  (loop-i (+ i 1)))))))
+    ;; Second pass: cows = sum over digits of min(freqs)
+    (let loop-d ((d 0) (cows 0))
+      (if (= d 10)
+          (cons bulls cows)
+          (loop-d (+ d 1)
+                  (+ cows
+                     (min (vector-ref freq-secret d)
+                          (vector-ref freq-guess d))))))))
+
+;; Print list helper
+(define (display-list lst)
+  (display "(")
+  (let loop ((first? #t) (l lst))
+    (cond
+      ((null? l) (display ")"))
+      (else
+       (if first? (display (car l)) (begin (display " ") (display (car l))))
+       (loop #f (cdr l))))))
+
+(define (display-result pair)
+  (display "(")
+  (display (car pair))
+  (display ",")
+  (display (cdr pair))
+  (display ")"))
+
+(define (run-case i secret guess)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display-result (solve secret guess))
+  (newline))
+
+(run-case 0 "1807" "7810")
+(run-case 1 "1123" "0111")
+(run-case 2 "0123" "0123")
+(run-case 3 "0000" "1111")
+(run-case 4 "1234" "4321")
+(run-case 5 "9999" "9999")
+(run-case 6 "102030405060708090" "001122334455667788")
+(run-case 7 "111111" "111111")
+(run-case 8 "0123456789" "9876543210")

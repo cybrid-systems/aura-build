@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:23:40Z",
+      "ts_local": "2026-09-24 22:23:40 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2032,
+        "total_characters": 0,
+        "prompt_tokens": 1065,
+        "completion_tokens": 967,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.016,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 17:51: parse error: unexpected ')'\n",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:23:45Z",
+      "ts_local": "2026-09-24 22:23:45 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2153,
+        "total_characters": 0,
+        "prompt_tokens": 1065,
+        "completion_tokens": 1088,
+        "prompt_tokens_details": {
+          "cached_tokens": 1064
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.079,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "warning: unbalanced parentheses in input\nerror: 8:8: unbound variable: else\n  did you mean 'len'?\n   |\n  8 |       (else\n   |        ^^^^\n",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "longest-common-prefix",
+  "title": "Longest Common Prefix",
+  "category": "strings",
+  "updated_at": "2026-09-24T14:23:45Z",
+  "updated_at_local": "2026-09-24 22:23:45 CST"
+}

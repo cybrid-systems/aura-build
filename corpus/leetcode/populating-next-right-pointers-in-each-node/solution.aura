@@ -1,0 +1,41 @@
+(define (list-from n)
+  (let loop ((i 0) (acc '()))
+    (if (= i n)
+        (reverse acc)
+        (loop (+ i 1) (cons i acc)))))
+
+(define (make-tree vals)
+  ;; vals is list of values in level order; returns list of nodes
+  ;; node = (val left-idx right-idx)
+  (let* ((n (length vals))
+         (len-vec (make-vector n 0)))
+    (let loop ((i 0) (lst vals) (nodes '()))
+      (if (null? lst)
+          (reverse nodes)
+          (begin
+             (vector-set! len-vec i (length nodes))
+             (loop (+ i 1) (cdr lst) (cons (list (car lst) '() '()) nodes)))))))
+
+(define (build-perfect n vals)
+  ;; n nodes, perfect tree. nodes are stored in level-order in a vector.
+  (let ((nodes (make-vector n 0)))
+    (let loop ((i 0) (lst vals))
+      (if (= i n)
+          '()
+          (begin
+            (vector-set! nodes i (list (car lst) '() '()))
+            (loop (+ i 1) (cdr lst)))))
+    (let loop2 ((i 0))
+      (if (>= i n)
+          '()
+          (begin
+            (let ((left-idx (+ (* 2 i) 1))
+                  (right-idx (+ (* 2 i) 2)))
+              (when (< left-idx n)
+                (set-car! (cdr (vector-ref nodes i)) left-idx)
+                (set-car! (cddr (vector-ref nodes i)) right-idx)))
+            (loop2 (+ i 1)))))
+    nodes))
+
+(define (set-car! lst v)
+  (set-car! lst v))

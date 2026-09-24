@@ -1,0 +1,51 @@
+(define (list-length xs)
+  (if (null? xs) 0 (+ 1 (list-length (cdr xs)))))
+
+(define (list-ref xs i)
+  (if (= i 0)
+      (car xs)
+      (list-ref (cdr xs) (- i 1))))
+
+(define (two-sum numbers target)
+  (let ((len (list-length numbers))
+        (left 0)
+        (right (- len 1)))
+    (let loop ((l left) (r right))
+      (let ((lv (list-ref numbers l))
+            (rv (list-ref numbers r)))
+        (let ((s (+ lv rv)))
+          (cond
+            ((= s target) (list (+ l 1) (+ r 1)))
+            ((< s target) (loop (+ l 1) r))
+            (else (loop l (- r 1)))))))))
+
+(define (solve numbers target)
+  (two-sum numbers target))
+
+(define (display-list xs)
+  (display "[")
+  (let loop ((rest xs) (first #t))
+    (cond
+      ((null? rest) (display "]"))
+      (else
+        (if first (set! first #f) (begin (display ",")))
+        (display (car rest))
+        (loop (cdr rest) first)))))
+
+(define numbers0 (list 2 7 11 15))
+(define numbers1 (list 2 3 4))
+(define numbers2 (list -1 0))
+(define numbers3 (list 1 2 3 4 5 6 7 8 9))
+(define numbers4 (list -5 -3 -1 2 4 6))
+(define numbers5 (list 0 0 1 2 3))
+(define numbers6 (list 1 3 4 5 7 11))
+(define numbers7 (list -100 -50 -10 10 50 100))
+
+(display "CASE0=") (display-list (solve numbers0 9)) (newline)
+(display "CASE1=") (display-list (solve numbers1 6)) (newline)
+(display "CASE2=") (display-list (solve numbers2 -1)) (newline)
+(display "CASE3=") (display-list (solve numbers3 17)) (newline)
+(display "CASE4=") (display-list (solve numbers4 1)) (newline)
+(display "CASE5=") (display-list (solve numbers5 0)) (newline)
+(display "CASE6=") (display-list (solve numbers6 9)) (newline)
+(display "CASE7=") (display-list (solve numbers7 0)) (newline)

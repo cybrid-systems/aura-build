@@ -1,0 +1,36 @@
+(define (solve s)
+  (define n (string-length s))
+  (define (sref i) (string-ref s (modulo i n)))
+  ;; Build doubled string conceptually via index arithmetic
+  ;; Initial window: positions 0..n-1 of s (identity rotation)
+  (define (mismatchA i) (if (= (sref i) #\0) 0 1)) ; expects 0,0,0,...
+  ; Simpler: use parity directly
+  (define init-costA 0)
+  (define init-costB 0)
+  (let loop ((k 0))
+    (if (= k n)
+        (begin
+          (define best (min init-costA init-costB))
+          (let slide ((i 0) (costA init-costA) (costB init-costB))
+            (if (= i n)
+                best
+                (let ((outA (if (= (string-ref s i) #\0) 0 1))
+                      (outB (if (= (string-ref s i) #\1) 0 1))
+                      (in-c (string-ref s i))
+                      ;; new position i+n becomes position 0 in rotated-by-(i+1) view
+                      ;; In window starting at i+1, index 0 is old index n which is s[i]... wait
+                      ;; window [i+1..i+n], position 0 has parity (i+1)%2, expects:
+                      ;;   pattern A: (i+1)%2 == 0 ? '0' : '1'
+                      ;;   pattern B: (i+1)%2 == 0 ? '1' : '0'
+                      ;; The new character is s[(i+n)%n] = s[i] (since i+n mod n == i). Hmm circular.
+                      ;; Actually s[i+n] means the (i+n)-th char of s+s, which is s[(i+n) mod n] = s[i].
+                      ;; So incoming char is s[i]? No wait: window shifts, we drop s[i], add s[i+n] of doubled.
+                      ;; s[i+n] of doubled == s[(i+n) mod n] = s[i]. That means the "incoming" is same as outgoing?
+                      ;; No! For rotation, we shift the window by 1. Old window covers doubled[0..n-1].
+                      ;; New window covers doubled[1..n]. Drop doubled[0]=s[0], add doubled[n]=s[n mod n]=s[0].
+                      ;; So incoming IS s[0] = outgoing. But parity differs, so costs differ.
+                      )
+                  (let ((newA (+ (- costA outA)
+                                 (if (= (string-ref s i) #\0) 1 0))) ; wait this is wrong
+                        (newB ...))
+                    ...)))))))

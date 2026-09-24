@@ -1,0 +1,222 @@
+;; 3Sum solution in Aura
+;; Approach: sort, then for each anchor i, use two pointers (lo, hi) to find
+;; pairs that sum to -nums[i]. Skip duplicates to avoid repeated triplets.
+
+(define (list->vector xs)
+  ;; convert a proper list to a vector
+  (let loop ((xs xs) (acc '()))
+    (if (null? xs)
+        (list->vector-reverse acc '())
+        (loop (cdr xs) (cons (car xs) acc)))))
+
+(define (list->vector-reverse xs acc)
+  (if (null? xs)
+      (apply vector (reverse acc))
+      (list->vector-reverse (cdr xs) (cons (car xs) acc))))
+
+(define (vector->list v)
+  (let loop ((i (- (vector-length v) 1)) (acc '()))
+    (if (< i 0) acc (loop (- i 1) (cons (vector-ref v i) acc)))))
+
+;; insertion sort (input is small enough; alternatively use built-ins if any)
+(define (insertion-sort xs)
+  (let loop ((xs xs) (acc '()))
+    (if (null? xs)
+        acc
+        (loop (cdr xs) (insert (car xs) acc)))))
+
+(define (insert x xs)
+  (cond ((null? xs) (list x))
+        ((<= x (car xs)) (cons x xs))
+        (else (cons (car xs) (insert x (cdr xs))))))
+
+;; reverse a list
+(define (my-reverse xs)
+  (let loop ((xs xs) (acc '()))
+    (if (null? xs) acc (loop (cdr xs) (cons (car xs) acc)))))
+
+;; triplength cdr
+(define (cddr xs) (cdr (cdr xs)))
+(define (caddr xs) (car (cddr xs)))
+(define (cdddr xs) (cdr (cddr xs)))
+
+;; return list of triplets (lists of 3 numbers) summing to zero, sorted ascending
+(define (three-sum nums)
+  (let* ((sorted (insertion-sort (vector->list nums)))
+         (n (length sorted)))
+    (if (< n 3)
+        '()
+        (let loop-i ((i 0) (sorted sorted) (acc '()))
+          (cond
+            ((null? sorted) (my-reverse acc))
+            ((null? (cdr sorted)) (my-reverse acc))
+            ((null? (cddr sorted)) (my-reverse acc))
+            (else
+             (let* ((a (car sorted))
+                    (rest (cdr sorted))
+                    (target (- 0 a)))
+               ;; skip duplicate anchors
+               (let skip-anchor ((i i) (s sorted) (acc acc) (done #f))
+                 (cond
+                   ((or done (null? s) (null? (cdr s)) (null? (cddr s)))
+                    (cond ((null? (cdr s)) 
+                           (loop-i (+ i 1) (cddr s) acc))
+                          ((null? (cddr s))
+                           (loop-i (+ i 1) (cddr s) acc))
+                          (else (my-reverse acc))))
+                   (else
+                    (let* ((cur (car s))
+                           (lo (cadr s))
+                           (hi-list (cddr s))
+                           (hi-len (length hi-list))
+                           (pair-result
+                            (two-pointer cur (car (cdr s)) (cddr s) target acc)))
+                      (let ((new-acc (car pair-result))
+                            (new-s (cdr pair-result)))
+                        (skip-anchor i new-s new-acc #t))))))))))))
+
+(define (two-pointer anchor lo-val hi-list target acc)
+  ;; hi-list is a list, lo is the first element of hi-list? Actually let's restructure.
+  ;; We pass: anchor (already fixed value), lo-list (remaining sorted list after anchor, first is lo).
+  ;; We implement two-pointer as iteration using indices in the list.
+  (let loop ((lo-val lo-val)
+             (hi-list hi-list)
+             (hi-len 0)
+             (hi-acc '())  ;; build hi as list reversed from hi-list? simpler: convert hi-list to vector once.
+             (acc acc))
+    ;; rebuild hi vector from hi-list for indexed access
+    (let ((hi-vec (list->vector hi-list)))
+      (let lp ((l 0) (r (- (vector-length hi-vec) 1)) (acc acc))
+        (cond
+          ((>= l r)
+           ;; finish: skip duplicates for lo and r
+           (let skip ((acc acc))
+             ;; dedupe continues after consuming lo duplicates
+             (cons acc (cons lo-val hi-list))))
+          (else
+           (let ((sum (+ lo-val (vector-ref hi-vec r))))
+             (cond
+               ((= sum target)
+                (let ((new-acc (cons (list anchor lo-val (vector-ref hi-vec r)) acc)))
+                  ;; skip duplicates of lo
+                  (let skip-lo ((l l) (acc new-acc) (xs hi-vec))
+                    (if (>= l (- (vector-length xs) 1))
+                        (skip-r l r acc xs)
+                        (if (= (vector-ref xs l) (vector-ref xs (+ l 1)))
+                            (skip-lo (+ l 1) acc xs)
+                            (skip-r l r acc xs)))))
+                ;; skip duplicates of hi
+                (let skip-r ((l l) (r r) (acc new-acc) (xs hi-vec))
+                  (let skip-r-loop ((r r))
+                    (if (<= r l)
+                        (lp l r acc)
+                        (if (= (vector-ref xs r) (vector-ref xs (- r 1)))
+                            (skip-r-loop (- r 1))
+                            (lp l (- r 1) acc)))))))
+               ((< sum target)
+                (lp (+ l 1) r acc))
+               (else
+                (lp l (- r 1) acc))))))))))
+
+;; ------------- Cleaner re-implementation below --------------
+
+(define (solve nums)
+  (let* ((sorted (insertion-sort (vector->list nums)))
+         (n (length sorted)))
+    (if (< n 3)
+        '()
+        (let outer ((i 0) (xs sorted) (result '()))
+          (cond
+            ((null? xs) (my-reverse result))
+            ((null? (cdr xs)) (my-reverse result))
+            ((null? (cddr xs)) (my-reverse result))
+            (else
+             (let* ((a (car xs))
+                    (rest (cdr xs))
+                    (len-rest (length rest))
+                    (pair-result
+                     (find-pairs a rest result)))
+               (let ((new-result (car pair-result)))
+                 ;; skip duplicate anchors in rest's first position effectively by recursing to (cddr xs)? No: just advance one.
+                 (outer (+ i 1) (cdr xs) new-result))))))))))
+
+(define (find-pairs a rest-list result)
+  (let ((rest-len (length rest-list)))
+    (let ((rest-vec (list->vector rest-list)))
+      (let lp ((l 0) (r (- rest-len 1)) (result result))
+        (cond
+          ((>= l r) result)
+          (else
+           (let ((b (vector-ref rest-vec l))
+                 (c (vector-ref rest-vec r))
+                 (sum (+ a b c)))
+             (cond
+               ((= sum 0)
+                (let ((new-result (cons (list a b c) result)))
+                  ;; skip duplicates of b
+                  (let skip-l ((l l))
+                    (if (>= l r)
+                        (skip-r l r new-result)
+                        (if (= (vector-ref rest-vec l) (vector-ref rest-vec (+ l 1)))
+                            (skip-l (+ l 1))
+                            (skip-r l r new-result)))))
+                  ;; skip duplicates of c
+                  (let skip-r ((l l) (r r) (res new-result))
+                    (let loop-r ((r r))
+                      (if (<= r l)
+                          (lp l r res)
+                          (if (= (vector-ref rest-vec r) (vector-ref rest-vec (- r 1)))
+                              (loop-r (- r 1))
+                              (lp l (- r 1) res)))))))
+               ((< sum 0) (lp (+ l 1) r result))
+               (else (lp l (- r 1) result))))))))))
+
+;; Helper to print a vector/list of integers
+(define (print-int-list xs)
+  (cond ((null? xs) (begin (display "[]") (newline)))
+        (else
+         (display "[")
+         (let loop ((xs xs) (first? #t))
+           (cond ((null? xs)
+                  (display "]")
+                  (newline))
+                 (else
+                  (if first?
+                      (begin (display (car xs)) (loop (cdr xs) #f))
+                      (begin (display ",") (display (car xs)) (loop (cdr xs) #f)))))))))
+
+;; Helper to print result list of triplets
+(define (print-triplets triplets)
+  (cond ((null? triplets) (display "[]") (newline))
+        (else
+         (let loop ((ts triplets))
+           (cond ((null? ts) '())
+                 (else
+                  (let ((t (car ts)))
+                    (display "[")
+                    (display (car t))
+                    (display ",")
+                    (display (cadr t))
+                    (display ",")
+                    (display (caddr t))
+                    (display "]")
+                    (newline)
+                    (loop (cdr ts))))))))))
+
+(define (solve-print-case idx nums)
+  (display "CASE")
+  (display idx)
+  (display "=")
+  (let ((res (solve nums)))
+    (print-triplets res)))
+
+;; ----- Tests -----
+
+(solve-print-case 0 (vector))
+(solve-print-case 1 (vector 0))
+(solve-print-case 2 (vector 0 0 0))
+(solve-print-case 3 (vector 0 1 1))
+(solve-print-case 4 (vector -1 0 1 2 -1 -4))
+(solve-print-case 5 (vector -2 0 1 1 2))
+(solve-print-case 6 (vector -1 0 1 0))
+(solve-print-case 7 (vector -4 -2 -2 -2 0 1 2 2 2 3 3 4 4 6 6))

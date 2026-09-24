@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:23:31Z",
+      "ts_local": "2026-09-24 22:23:31 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1541,
+        "total_characters": 0,
+        "prompt_tokens": 1169,
+        "completion_tokens": 372,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.017,
+      "tests_passed": 0,
+      "tests_total": 12,
+      "stderr_snippet": "warning: unbalanced parentheses in input\nerror: 3:10: parse error: expected expression, got '('\n   |\n  3 |         ((equal? c '[') #\\])\n   |          ^\n",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:23:34Z",
+      "ts_local": "2026-09-24 22:23:34 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1728,
+        "total_characters": 0,
+        "prompt_tokens": 1169,
+        "completion_tokens": 559,
+        "prompt_tokens_details": {
+          "cached_tokens": 1168
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.028,
+      "tests_passed": 0,
+      "tests_total": 12,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=<error>\n"
+    }
+  ],
+  "slug": "valid-parentheses",
+  "title": "Valid Parentheses",
+  "category": "strings",
+  "updated_at": "2026-09-24T14:23:34Z",
+  "updated_at_local": "2026-09-24 22:23:34 CST"
+}

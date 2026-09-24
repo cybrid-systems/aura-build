@@ -1,0 +1,81 @@
+import sys
+import json
+
+
+class Atom:
+    def __init__(self, value=None):
+        self.value = value
+
+
+def solve(root):
+    if root is None:
+        return 0
+    if isinstance(root, Atom):
+        node = root.value
+        if node is None:
+            return 0
+    else:
+        node = root
+    left = node.get(':left') if isinstance(node, dict) else None
+    right = node.get(':right') if isinstance(node, dict) else None
+    return 1 + max(solve(left), solve(right))
+
+
+def tokenize(s):
+    s = s.replace('(', ' ( ').replace(')', ' ) ')
+    return s.split()
+
+
+def parse_atom(tokens, idx, atoms):
+    # Expects tokens[idx] == '('
+    assert tokens[idx] == '('
+    idx += 1
+    # Create atom entry for current node
+    current = {':left': None, ':right': None}
+    while idx < len(tokens) and tokens[idx] != ')':
+        if tokens[idx] == '(':
+            # Child node
+            key = tokens[idx + 1]
+            assert key in (':left', ':right')
+            child, idx = parse_atom(tokens, idx, atoms)
+            current[key] = child
+        else:
+            idx += 1
+    idx += 1  # skip ')'
+    a = Atom(current)
+    return a, idx
+
+
+CASES = [
+    {},
+    {'stdin': 'CASE0=nil\n'},
+]
+
+
+if __name__ == '__main__':
+    import json
+    lines = sys.stdin.read().strip().split('\n')
+    # First line is CASE0=ROOT_NAME
+    first = lines[0]
+    root_name = first.split('=', 1)[1].strip()
+    
+    atoms = {}
+    
+    # Parse all ATOM definitions from remaining lines
+    # Format: ATOM<id> = ( :left ATOM<id2> :right nil )
+    for ln in lines[1:]:
+        if '=' not in ln:
+            continue
+        name, rest = ln.split('=', 1)
+        name = name.strip()
+        rest = rest.strip()
+        if rest == 'nil':
+            atoms[name] = None
+        elif rest.startswith('('):
+            tokens = tokenize(rest)
+            a, _ = parse_atom(tokens, 0, atoms)
+            atoms[name] = a
+    
+    root = atoms.get(root_name)
+    result = solve(root)
+    print(json.dumps(result, separators=(',', ':'), ensure_ascii=False))

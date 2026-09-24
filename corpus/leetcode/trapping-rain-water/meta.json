@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:27:26Z",
+      "ts_local": "2026-09-24 22:27:26 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1710,
+        "total_characters": 0,
+        "prompt_tokens": 1163,
+        "completion_tokens": 547,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.043,
+      "tests_passed": 8,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=0\nCASE1=0\nCASE2=5\nCASE3=6\nCASE4=9\nCASE5=0\nCASE6=0\nCASE7=0\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:27:30Z",
+      "ts_local": "2026-09-24 22:27:30 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1806,
+        "total_characters": 0,
+        "prompt_tokens": 1163,
+        "completion_tokens": 643,
+        "prompt_tokens_details": {
+          "cached_tokens": 1162
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.057,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 1:2: unbound variable: for-each\n   |\n  1 | (for-each\n   |  ^^^^^^^^\n",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "trapping-rain-water",
+  "title": "Trapping Rain Water",
+  "category": "two_pointers",
+  "updated_at": "2026-09-24T14:27:30Z",
+  "updated_at_local": "2026-09-24 22:27:30 CST"
+}

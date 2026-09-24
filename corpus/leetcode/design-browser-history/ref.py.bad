@@ -1,0 +1,153 @@
+class Node:
+    __slots__ = ("url", "prev", "next")
+    def __init__(self, url):
+        self.url = url
+        self.prev = None
+        self.next = None
+
+
+class BrowserHistory:
+    def __init__(self, homepage: str):
+        self.cur = Node(homepage)
+
+    def visit(self, url: str) -> None:
+        node = Node(url)
+        node.prev = self.cur
+        self.cur.next = node
+        self.cur = node
+
+    def back(self, steps: int) -> str:
+        while steps > 0 and self.cur.prev is not None:
+            self.cur = self.cur.prev
+            steps -= 1
+        return self.cur.url
+
+    def forward(self, steps: int) -> str:
+        while steps > 0 and self.cur.next is not None:
+            self.cur = self.cur.next
+            steps -= 1
+        return self.cur.url
+
+
+def solve(*lines):
+    it = iter(lines)
+    results = []
+    history = None
+    homepage = None
+    first_visit = True
+    for line in it:
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith("Visit "):
+            url = line[len("Visit "):].strip()
+            if first_visit:
+                history = BrowserHistory(url)
+                homepage = url
+                first_visit = False
+            else:
+                history.visit(url)
+        elif line.startswith("Back "):
+            k = int(line[len("Back "):].strip())
+            results.append(history.back(k))
+        elif line.startswith("Forward "):
+            k = int(line[len("Forward "):].strip())
+            results.append(history.forward(k))
+    return results
+
+
+CASES = [
+    {
+        "id": 0,
+        "input": {
+            "lines": [
+                "Visit leetcode.com",
+                "Visit google.com",
+                "Visit facebook.com",
+                "Visit youtube.com",
+                "Back 1",
+                "Back 1",
+                "Forward 1",
+                "Visit linkedin.com",
+                "Forward 2",
+                "Back 2",
+                "Back 7",
+            ]
+        },
+        "expected": [
+            "facebook.com",
+            "google.com",
+            "facebook.com",
+            "linkedin.com",
+            "google.com",
+            "leetcode.com",
+        ],
+    },
+    {
+        "id": 1,
+        "input": {
+            "lines": [
+                "Visit a.com",
+                "Visit b.com",
+                "Visit c.com",
+                "Back 10",
+                "Forward 10",
+            ]
+        },
+        "expected": ["a.com", "c.com"],
+    },
+    {
+        "id": 2,
+        "input": {
+            "lines": [
+                "Visit x",
+                "Visit y",
+                "Back 1",
+                "Visit z",
+                "Forward 5",
+            ]
+        },
+        "expected": ["z"],
+    },
+    {
+        "id": 3,
+        "input": {
+            "lines": [
+                "Visit only.page",
+                "Back 1",
+                "Forward 1",
+            ]
+        },
+        "expected": ["only.page", "only.page"],
+    },
+    {
+        "id": 4,
+        "input": {
+            "lines": [
+                "Visit h1",
+                "Visit h2",
+                "Visit h3",
+                "Visit h4",
+                "Visit h5",
+                "Back 2",
+                "Back 2",
+                "Forward 1",
+                "Forward 1",
+            ]
+        },
+        "expected": ["h3", "h1", "h2", "h3"],
+    },
+]
+
+
+if __name__ == "__main__":
+    import json
+    out = []
+    for case in CASES:
+        result = solve(case["input"]["lines"])
+        out.append({
+            "id": case["id"],
+            "input": case["input"],
+            "expected": json.dumps(result, separators=(",", ":"), ensure_ascii=False),
+        })
+    print(json.dumps(out, ensure_ascii=False))

@@ -1,0 +1,72 @@
+;; Merge Two Sorted Lists
+;; Linked list solution using sentinel head node
+
+(define (cons-list lst)
+  ;; build a linked list (val . next) from a scheme list of numbers
+  (if (null? lst)
+      '()
+      (cons (car lst) (cons-list (cdr lst)))))
+
+(define (list-val lst)
+  (if (null? lst) #f (car lst)))
+
+(define (list-next lst)
+  (if (null? lst) '() (cdr lst)))
+
+(define (merge l1 l2)
+  ;; returns head of merged list (linked list of (val . next))
+  ;; using a dummy sentinel
+  (let ((dummy (cons 0 '()))
+        (tail dummy))
+    (let loop ((a l1) (b l2))
+      (cond
+        ((and (null? a) (null? b))
+         (cdr dummy))
+        ((null? a)
+         (set-cdr! tail (cons (list-val b) '()))
+         (set! tail (cdr tail))
+         (loop a (list-next b)))
+        ((null? b)
+         (set-cdr! tail (cons (list-val a) '()))
+         (set! tail (cdr tail))
+         (loop (list-next a) b))
+        ((<= (list-val a) (list-val b))
+         (set-cdr! tail (cons (list-val a) '()))
+         (set! tail (cdr tail))
+         (loop (list-next a) b))
+        (else
+         (set-cdr! tail (cons (list-val b) '()))
+         (set! tail (cdr tail))
+         (loop a (list-next b)))))))
+
+(define (solve list1 list2)
+  (merge (cons-list list1) (cons-list list2)))
+
+(define (print-list lst)
+  ;; print linked list (val . next) values space-separated
+  (let loop ((node lst) (first? #t))
+    (if (null? node)
+        (begin)
+        (begin
+          (if first?
+              (display (car node))
+              (begin (display " ") (display (car node))))
+          (loop (cdr node) #f)))))
+
+(define (run-case i list1 list2)
+  (let ((result (solve list1 list2)))
+    (display "CASE")
+    (display i)
+    (display "=")
+    (print-list result)
+    (newline)))
+
+;; Test cases
+(run-case 0 '(1 2 4) '(1 3 4))
+(run-case 1 '() '())
+(run-case 2 '() '(0))
+(run-case 3 '(1) '(2))
+(run-case 4 '(2) '(1))
+(run-case 5 '(1 3 5 7) '(2 4 6 8))
+(run-case 6 '(-3 -1 2) '(-2 0 1))
+(run-case 7 '(1 2 3) '(1 2 3))

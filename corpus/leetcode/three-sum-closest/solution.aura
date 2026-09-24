@@ -1,0 +1,65 @@
+;; Aura solution for 3Sum Closest
+
+;; Vector helpers using pairs as immutable vectors (cons-based)
+;; We'll use list operations directly since length is small enough,
+;; but for two-pointer sweep we need O(1) access. We'll convert to a list
+;; and use a list-ref via index recursion.
+
+(define (list-ref lst i)
+  (if (= i 0)
+      (car lst)
+      (list-ref (cdr lst) (- i 1))))
+
+(define (length lst)
+  (if (null? lst) 0 (+ 1 (length (cdr lst)))))
+
+;; Convert list to a sorted vector representation (still a list)
+(define (sort-list lst)
+  ;; insertion sort
+  (define (insert x sorted)
+    (cond ((null? sorted) (cons x '()))
+          ((<= x (car sorted)) (cons x sorted))
+          (else (cons (car sorted) (insert x (cdr sorted))))))
+  (define (loop unsorted sorted)
+    (if (null? unsorted)
+        sorted
+        (loop (cdr unsorted) (insert (car unsorted) sorted))))
+  (loop lst '()))
+
+;; abs for integers
+(define (abs x) (if (< x 0) (- 0 x) x))
+
+;; Three sum closest using two-pointer after sorting
+(define (three-sum-closest nums target)
+  (let* ((sorted (sort-list nums))
+         (n (length sorted))
+         (best (let ((s0 (+ (list-ref sorted 0)
+                           (+ (list-ref sorted 1) (list-ref sorted 2)))))
+                 s0)))
+    ;; iterate first pointer i from 0 to n-3
+    (define (outer i)
+      (if (> i (- n 3))
+          best
+          (let* ((a (list-ref sorted i))
+                 (lo (+ i 1))
+                 (hi (- n 1))
+                 (new-best
+                  (let loop ((l lo) (r hi) (b best))
+                    (if (>= l r)
+                        b
+                        (let* ((c (list-ref sorted l))
+                               (d (list-ref sorted r))
+                               (s (+ a (+ c d))))
+                          (cond
+                            ((= s target) s)
+                            (else
+                             (let ((nb (if (< (abs (- s target))
+                                             (abs (- b target)))
+                                          s
+                                          b)))
+                               (cond
+                                 ((< s target) (loop (+ l 1) r nb))
+                                 (else (loop l (- r 1) nb)))))))))))
+            (outer (+ i 1) ...))))
+
+    ...))

@@ -1,0 +1,169 @@
+;; Minimum Window Substring — sliding window solution in Aura.
+;; Treats strings as lists of characters.
+
+(define (string->list s)
+  ;; Convert an Aura string to a list of single-char strings.
+  (if (= (string-length s) 0)
+      '()
+      (cons (substring s 0 1)
+            (string->list (substring s 1 (string-length s))))))
+
+(define (list->string lst)
+  ;; Convert a list of single-char strings back into one string.
+  (if (null? lst)
+      ""
+      (let ((rest (list->string (cdr lst))))
+        (string-append (car lst) rest))))
+
+(define (list-length-aux lst acc)
+  (if (null? lst) acc (list-length-aux (cdr lst) (+ acc 1))))
+
+(define (mylength lst) (list-length-aux lst 0))
+
+;; List index operations on string-as-list-of-chars.
+(define (string-ref-list lst i)
+  (if (= i 0)
+      (car lst)
+      (string-ref-list (cdr lst) (- i 1))))
+
+(define (subseq-list lst start end)
+  ;; slice [start, end)
+  (if (= start end)
+      '()
+      (cons (string-ref-list lst start)
+            (subseq-list lst (+ start 1) end))))
+
+;; String slice using direct Aura substring for speed.
+(define (subseq s start end)
+  (substring s start end))
+
+;; Build a frequency list: ((char . count) ...)
+(define (inc-key lst key)
+  (cond ((null? lst) (list (cons key 1)))
+        ((equal? (car (car lst)) key)
+         (cons (cons key (+ (cdr (car lst)) 1)) (cdr lst)))
+        (else
+         (cons (car lst) (inc-key (cdr lst) key))))
+
+(define (freq-from-list lst)
+  (if (null? lst) '() (freq-from-list-aux lst '())))
+
+(define (freq-from-list-aux lst acc)
+  (if (null? lst)
+      acc
+      (freq-from-list-aux (cdr lst) (inc-key acc (car lst)))))
+
+(define (freq-of s) (freq-from-list (string->list s)))
+
+;; Check if window covers the need.
+;; A window's char counts are all >= need's char counts.
+(define (covers need win-counts)
+  (cond ((null? need) #t)
+        ((null? win-counts) #f)
+        (else
+         (let ((key (car (car need))))
+           (let ((req (cdr (car need))))
+             (let ((get-count
+                     (lambda (cntlst)
+                       (cond ((null? cntlst) 0)
+                             ((equal? (car (car cntlst)) key)
+                              (cdr (car cntlst)))
+                             (else (get-count (cdr cntlst)))))))
+               (let ((have (get-count win-counts)))
+                 (if (< have req)
+                     #f
+                     (covers (cdr need) win-counts)))))))))
+
+(define (covers-via-walk need win-counts)
+  ;; For each key in need, verify count in win-counts.
+  (covers-aux need win-counts))
+
+(define (covers-aux need win-counts)
+  (if (null? need)
+      #t
+      (let ((key (car (car need))))
+        (let ((req (cdr (car need))))
+          (let loop ((cntlst win-counts) (found 0))
+            (cond ((null? cntlst) (< found req))
+                  ((equal? (car (car cntlst)) key)
+                   (>= found req))
+                  (else (loop (cdr cntlst) found))))))))
+
+;; The heavy build-each-window approach is O(n^2) — acceptable for these inputs.
+
+(define (get-count win-counts key)
+  (cond ((null? win-counts) 0)
+        ((equal? (car (car win-counts)) key) (cdr (car win-counts)))
+        (else (get-count (cdr win-counts) key))))
+
+(define (covers-window need win-counts)
+  ;; Check every key in need has enough in win-counts.
+  (if (null? need)
+      #t
+      (let ((key (car (car need)))
+            (req (cdr (car need))))
+        (if (< (get-count win-counts key) req)
+            #f
+            (covers-window (cdr need) win-counts)))))
+
+(define (find-best s n need)
+  ;; Try every [i, j) window in s (as substring) and keep the minimum covering window.
+  (find-best-aux s 0 n need "" (string-length s) ""))
+
+(define (find-best-aux s i n need best best-len)
+  (if (>= i n)
+      best
+      (let loop-j ((j i) (acc (find-best-aux s (+ i 1) n need best best-len)))
+        (if (> j n)
+            acc
+            (let ((window (substring s i j)))
+              (let ((wlen (- j i)))
+                (if (< wlen best-len)
+                    (let ((wcount (freq-of window)))
+                      (if (covers-window need wcount)
+                          (find-best-aux s i n need window wlen)
+                          (loop-j (+ j 1) acc)))
+                    (loop-j (+ j 1) acc))))))))
+
+(define (solve s t)
+  ;; If t is empty, return "".
+  (if (= (string-length t) 0)
+      ""
+      (let ((n (string-length s)))
+        (if (= n 0)
+            ""
+            (let ((need (freq-of t)))
+              (find-best s n need))))))
+
+(define (run-case i s t)
+  (display "CASE")
+  (display (number->string i))
+  (display "=")
+  (display (solve s t))
+  (newline))
+
+(define s0 "ADOBECODEBANC") (define t0 "ABC")
+(define s1 "a")             (define t1 "a")
+(define s2 "a")             (define t2 "aa")
+(define s3 "aa")            (define t3 "aa")
+(define s4 "ab")            (define t4 "b")
+(define s5 "bba")           (define t5 "ab")
+(define s6 "cabwefgewcwaefklwjefw") (define t6 "vjj")
+(define s7 "")              (define t7 "a")
+(define s8 "abc")           (define t8 "")
+(define s9 "ADOBECODEBANC") (define t9 "ABBC")
+(define s10 "aaflslflsldkaflslf") (define t10 "afsl")
+(define s11 "aaaaaaaa")     (define t11 "aaa")
+
+(run-case 0 s0  t0)
+(run-case 1 s1  t1)
+(run-case 2 s2  t2)
+(run-case 3 s3  t3)
+(run-case 4 s4  t4)
+(run-case 5 s5  t5)
+(run-case 6 s6  t6)
+(run-case 7 s7  t7)
+(run-case 8 s8  t8)
+(run-case 9 s9  t9)
+(run-case 10 s10 t10)
+(run-case 11 s11 t11)

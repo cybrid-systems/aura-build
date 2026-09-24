@@ -1,0 +1,60 @@
+;; Helper: convert integer to string (handles negatives)
+(define (int->string n)
+  (if (< n 0)
+      (string-append "-" (number->string (- 0 n)))
+      (number->string n)))
+
+;; Helper: format a range [a, b] as "a" or "a->b"
+(define (format-range a b)
+  (if (= a b)
+      (int->string a)
+      (string-append (int->string a) "->" (int->string b))))
+
+;; Helper: if a <= b, format and add to result list
+(define (maybe-add acc a b)
+  (if (<= a b)
+      (cons (format-range a b) acc)
+      acc))
+
+;; Main solve: find missing ranges
+(define (solve nums lower upper)
+  (let ((n (length nums)))
+    (if (= n 0)
+        (list (format-range lower upper))
+        (let loop ((i 0)
+                   (prev lower)
+                   (acc '()))
+          (if (= i n)
+              ;; After all elements: handle trailing gap to upper
+              (reverse (maybe-add acc prev upper))
+              (let ((curr (car (list-ref nums i))))
+                ;; Gap is (prev, curr-1)
+                (let ((next-prev (+ curr 1)))
+                  (loop (+ i 1)
+                        next-prev
+                        (maybe-add acc prev (- curr 1))))))))))
+
+;; Display helper for lists of strings
+(define (display-list lst)
+  (display "[")
+  (let loop ((l lst) (first #t))
+    (if (null? l)
+        (display "]")
+        (begin
+          (if first (display "") (display ", "))
+          (display "\"")
+          (display (car l))
+          (display "\"")
+          (loop (cdr l) #f))))
+  (newline))
+
+;; Run cases
+(begin
+  (display "CASE0=") (display-list (solve '(0 1 3 50 75) 0 99))
+  (display "CASE1=") (display-list (solve '() -10 -1))
+  (display "CASE2=") (display-list (solve '(-1) -1 -1))
+  (display "CASE3=") (display-list (solve '(5) 1 10))
+  (display "CASE4=") (display-list (solve '() 1 1))
+  (display "CASE5=") (display-list (solve '(1 2 3 4 5) 1 5))
+  (display "CASE6=") (display-list (solve '(10 20 30) 5 35))
+  (display "CASE7=") (display-list (solve '(0 5 10) -3 12)))

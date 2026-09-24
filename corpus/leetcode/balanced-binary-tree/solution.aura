@@ -1,0 +1,46 @@
+;; Check if a binary tree is height-balanced.
+;; Node format: {:val v :left l :right r} or nil
+
+(define (height-balanced? node)
+  (let ((result (check node)))
+    (if (eq? result -1) #f #t)))
+
+(define (check node)
+  (if (null? node)
+      0
+      (let ((lh (check (cdr (assq 'left node))))
+            (rh (check (cdr (assq 'right node)))))
+        (if (eq? lh -1) -1
+            (if (eq? rh -1) -1
+                (if (> (abs (- lh rh)) 1) -1
+                    (+ 1 (if (> lh rh) lh rh))))))))
+
+(define (abs x)
+  (if (< x 0) (- 0 x) x))
+
+(define (solve root)
+  (height-balanced? root))
+
+;; Display helper for boolean
+(define (display-bool b)
+  (if b (display "true") (display "false")))
+
+;; Test cases
+(define case0 '())
+(define case1 '(:val 1 . (:left () . (:right ())))
+(define case2 '(:val 1 . (:left (:val 2 . (:left () . (:right ()))) . (:right (:val 3 . (:left () . (:right ())))))))
+(define case3 '(:val 1 . (:left () . (:right (:val 2 . (:left () . (:right (:val 3 . (:left () . (:right ()))))))))))
+(define case4 '(:val 1 . (:left (:val 2 . (:left (:val 4 . (:left () . (:right (:val 5 . (:left () . (:right ())))))) . (:right ()))) . (:right (:val 3 . (:left () . (:right ()))))))
+(define case5 '(:val 1 . (:left (:val 2 . (:left (:val 4 . (:left () . (:right ()))) . (:right (:val 5 . (:left () . (:right ())))))) . (:right (:val 3 . (:left (:val 6 . (:left () . (:right ()))) . (:right (:val 7 . (:left () . (:right ())))))))))
+(define case6 '(:val 1 . (:left (:val 2 . (:left (:val 3 . (:left (:val 4 . (:left () . (:right ()))) . (:right ()))) . (:right ()))) . (:right ())))
+(define case7 '(:val 1 . (:left (:val 2 . (:left (:val 3 . (:left (:val 4 . (:left () . (:right ()))) . (:right ()))) . (:right ()))) . (:right (:val 2 . (:left () . (:right (:val 3 . (:left () . (:right (:val 4 . (:left () . (:right ())))))))))))
+
+;; Print results
+(display "CASE0=") (display-bool (solve case0)) (newline)
+(display "CASE1=") (display-bool (solve case1)) (newline)
+(display "CASE2=") (display-bool (solve case2)) (newline)
+(display "CASE3=") (display-bool (solve case3)) (newline)
+(display "CASE4=") (display-bool (solve case4)) (newline)
+(display "CASE5=") (display-bool (solve case5)) (newline)
+(display "CASE6=") (display-bool (solve case6)) (newline)
+(display "CASE7=") (display-bool (solve case7)) (newline)

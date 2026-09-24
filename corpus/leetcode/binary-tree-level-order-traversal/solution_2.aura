@@ -1,0 +1,117 @@
+;; Helper: display a list of integers separated by spaces
+(define (display-list xs)
+  (cond
+    ((null? xs) (display ""))
+    (else
+      (display (number->string (car xs)))
+      (let loop ((rest (cdr xs)))
+        (cond
+          ((null? rest) (display ""))
+          (else
+            (display " ")
+            (display (number->string (car rest)))
+            (loop (cdr rest))))))))
+
+;; Helper: display a list of lists (each level on its own line)
+(define (display-levels levels)
+  (cond
+    ((null? levels) (display ""))
+    (else
+      (display-list (car levels))
+      (newline)
+      (display-levels (cdr levels)))))
+
+;; Check if a token represents null
+(define (is-null? tok)
+  (equal? tok "#"))
+
+;; Check if token is a number string
+(define (is-number? tok)
+  (and (not (is-null? tok))
+       (not (null? (string->list tok)))))
+
+;; Convert a token to a number if it's not "#", else return #f
+(define (token->num tok)
+  (if (is-null? tok) #f (string->number tok)))
+
+;; Main solve function: BFS level order traversal
+(define (solve tokens)
+  (let* ((n (length tokens))
+         ;; Build the tree as a list where index i has left at 2i+1, right at 2i+2
+         (result '())
+         ;; Process BFS using a queue (list as queue)
+         (queue '())
+         )
+    ;; If tree is empty (just "#"), return list with one empty list
+    (if (and (= n 1) (is-null? (car tokens)))
+        (list '())
+        ;; Otherwise build tree array and do BFS
+        (let* ((tree-array
+                (let build ((i 0) (toks tokens) (acc '()))
+                  (if (null? toks)
+                      (reverse acc)
+                      (build (+ i 1) (cdr toks) (cons (token->num (car toks)) acc)))))
+               (root-val (car tree-array))
+               )
+          ;; BFS using a queue represented as a list (FIFO)
+          ;; Queue contains indices into tree-array
+          (set! queue (list 0))
+          (set! result '())
+          (let loop ()
+            (if (null? queue)
+                (reverse result)
+                (let* ((level-size (length queue))
+                       (level-vals '())
+                       (next-queue '())
+                       )
+                  ;; Process one level
+                  (let process-level ((count 0) (q queue))
+                    (cond
+                      ((= count level-size)
+                       (set! queue (reverse next-queue))
+                       (set! result (cons (reverse level-vals) result))
+                       (loop))
+                      (else
+                        (let* ((idx (car q))
+                               (rest-q (cdr q))
+                               (val (list-ref tree-array idx)))
+                          (cond
+                            ((null? val)
+                             (process-level (+ count 1) rest-q))
+                            (else
+                              (set! level-vals (cons val level-vals))
+                              ;; Add left child if exists
+                              (let ((left-idx (+ (* 2 idx) 1)))
+                                (if (< left-idx n)
+                                    (set! next-queue (cons left-idx next-queue))))
+                              ;; Add right child if exists
+                              (let ((right-idx (+ (* 2 idx) 2)))
+                                (if (< right-idx n)
+                                    (set! next-queue (cons right-idx next-queue))))
+                              (process-level (+ count 1) rest-q))))))))))))))
+
+;; Display result for a case
+(define (run-case case-num tokens)
+  (display "CASE")
+  (display (number->string case-num))
+  (display "=")
+  (let ((res (solve tokens)))
+    (display-levels res)))
+
+;; Run all test cases
+(run-case 0 (list "3" "9" "20" "#" "#" "15" "7"))
+(newline)
+(run-case 1 (list "#"))
+(newline)
+(run-case 2 (list "1"))
+(newline)
+(run-case 3 (list "1" "2" "3" "4" "5" "#" "6"))
+(newline)
+(run-case 4 (list "1" "2" "#" "3" "#" "4" "#" "5"))
+(newline)
+(run-case 5 (list "5" "4" "7" "3" "#" "2" "#" "#" "#" "#" "1"))
+(newline)
+(run-case 6 (list "1" "#" "2" "#" "3" "#" "4"))
+(newline)
+(run-case 7 (list "1" "2" "3" "#" "#" "4" "5" "#" "6" "#" "7"))
+(newline)

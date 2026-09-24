@@ -1,0 +1,61 @@
+(define (solve root p q)
+  (let ((pn (find-node root p))
+        (qn (find-node root q)))
+    (lca-helper root pn qn)))
+
+(define (find-node root target)
+  (if (null? root)
+      '()
+      (if (equal? (car (cdr (cdr root))) target)
+          root
+          (let ((l (find-node (car (cdr root)) target)))
+            (if (not (null? l))
+                l
+                (find-node (car (cdr (cdr root))) target))))))
+
+(define (lca-helper node p q)
+  (if (null? node)
+      '()
+      (if (same? node p)
+          node
+          (if (same? node q)
+              node
+              (let ((left (lca-helper (car (cdr node)) p q))
+                    (right (lca-helper (car (cdr (cdr node))) p q)))
+                (if (not (null? left))
+                    (if (not (null? right))
+                        node
+                        left)
+                    right))))))
+
+(define (same? a b)
+  (and (not (null? a)) (not (null? b)) (equal? (car (cdr (cdr a))) (car (cdr (cdr b))))))
+
+(define (build-tree arr)
+  (if (null? arr)
+      '()
+      (let ((root (list 'val (car arr) 'left 'right)))
+        (build-children root (cdr arr) '())
+        root)))
+
+(define (build-children node rest queue)
+  (let ((left (car rest))
+        (rest2 (cdr rest))
+        (right (car rest2))
+        (rest3 (cdr rest2)))
+    (set-car! (cdr (cdr node)) (if (null? left) '() (list 'val left 'left 'right)))
+    (set-car! (cdr (cdr (cdr node))) (if (null? right) '() (list 'val right 'left 'right)))
+    (let ((new-queue (append queue (filter-non-null (list (car (cdr (cdr node))) (car (cdr (cdr (cdr node)))))))))
+      (if (null? rest3)
+          '()
+          (build-children (car new-queue) rest3 (cdr new-queue))))))
+
+(define (filter-non-null lst)
+  (cond ((null? lst) '())
+        ((null? (car lst)) (filter-non-null (cdr lst)))
+        (else (cons (car lst) (filter-non-null (cdr lst))))))
+
+(define (append a b)
+  (if (null? a) b (cons (car a) (append (cdr a) b))))
+
+(display (solve (build-tree '(3 9 20 () () 15 7)) 9 20)) (newline)

@@ -1,0 +1,59 @@
+;; helper: build a range string "a" or "a->b" for integers a..b
+(define (make-range a b)
+  (if (= a b)
+      (number->string a)
+      (string-append (number->string a) "->" (number->string b))))
+
+;; helper: add a range a..b to the result list if a <= b
+(define (maybe-add acc a b)
+  (if (<= a b)
+      (append acc (list (make-range a b)))
+      acc))
+
+;; iterate over nums (a list), tracking the previous value (prev).
+;; When we see n, the gap is (prev+1)..(n-1).
+;; After the loop, the final gap is (last+1)..upper.
+(define (process nums lower upper)
+  (letrec ((helper (lambda (lst prev acc)
+                     (if (null? lst)
+                         (maybe-add acc (+ prev 1) upper)
+                         (let ((n (car lst)))
+                         (let ((new-acc
+                                (if (<= (+ prev 1) (- n 1))
+                                    (append acc (list (make-range (+ prev 1) (- n 1))))
+                                    acc)))
+                         (helper (cdr lst) n new-acc)))))))
+    (helper nums (- lower 1) '())))
+
+(define (solve nums lower upper)
+  (process nums lower upper))
+
+;; -------- display helpers for printing list of strings --------
+(define (display-list-of-strings lst)
+  (display "[")
+  (letrec ((loop (lambda (l first?)
+                   (if (null? l)
+                       (display "]")
+                       (begin
+                         (if (not first?) (display ", ") (display ""))
+                         (display "\"")
+                         (display (car l))
+                         (display "\"")
+                         (loop (cdr l) #f))))))
+    (loop lst #t)))
+
+(define (run-case i nums lower upper)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display-list-of-strings (solve nums lower upper))
+  (newline))
+
+(run-case 0 (list 0 1 3 50 75) 0 99)
+(run-case 1 '() -10 -1)
+(run-case 2 (list -1) -1 -1)
+(run-case 3 (list 5) 1 10)
+(run-case 4 '() 1 1)
+(run-case 5 (list 1 2 3 4 5) 1 5)
+(run-case 6 (list 10 20 30) 5 35)
+(run-case 7 (list 0 5 10) -3 12)

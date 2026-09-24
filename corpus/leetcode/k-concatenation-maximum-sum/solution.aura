@@ -1,0 +1,95 @@
+(define MOD 1000000007)
+
+(define (modulo x m)
+  (let ((r (modulo x m)))
+    (if (negative? r) (+ r m) r)))
+
+(define (max a b) (if (> a b) a b))
+
+(define (kadane a)
+  ;; Returns the maximum subarray sum of a single copy (a)
+  (let ((len (length a)))
+    (define (iter xs curr best)
+      (cond
+        ((null? xs) best)
+        (else
+          (let ((x (car xs)))
+            (let ((new-curr (max x (+ curr x))))
+              (iter (cdr xs) new-curr (max best new-curr)))))))
+    (iter (cdr a) (car a) (car a))))
+
+(define (max-prefix-suffix a)
+  ;; Returns (max-prefix-sum . max-suffix-sum) of array a
+  (let ((len (length a)))
+    (define (fwd xs curr best)
+      (cond
+        ((null? xs) best)
+        (else
+          (let ((x (car xs)))
+            (let ((new-curr (+ curr x)))
+              (fwd (cdr xs) new-curr (max best new-curr)))))))
+    (define (bwd xs curr best)
+      (cond
+        ((null? xs) best)
+        (else
+          (let ((x (car xs)))
+            (let ((new-curr (+ curr x)))
+              (bwd (cdr xs) new-curr (max best new-curr)))))))
+    (let ((pref (fwd a 0 (- 0 1000000000000000)))
+          (suf  (bwd (reverse-list a) 0 (- 0 1000000000000000))))
+      (cons pref suf)))
+
+(define (reverse-list xs)
+  (define (iter xs acc)
+    (cond
+      ((null? xs) acc)
+      (else (iter (cdr xs) (cons (car xs) acc)))))
+  (iter xs '()))
+
+(define (solve a k)
+  (let ((n (length a)))
+    (cond
+      ((= k 1)
+       (let ((best (kadane a)))
+         (if (negative? best) 0 best)))
+      (else
+       (let* ((kad1 (kadane a))
+              (ps (max-prefix-suffix a))
+              (pref (car ps))
+              (suf (cdr ps))
+              (total-sum (let loop ((xs a) (s 0))
+                           (if (null? xs) s
+                               (loop (cdr xs) (+ s (car xs)))))))
+         (let ((ans
+                (cond
+                  ((> total-sum 0)
+                   (max kad1 (+ pref suf (* total-sum (- k 2)))))
+                  (else
+                   (max kad1 (+ pref suf))))))
+           (if (negative? ans) 0 ans))))))))
+
+(define (print-list xs)
+  (display "[")
+  (define (iter xs first?)
+    (cond
+      ((null? xs) (display "]"))
+      (else
+        (if first? (display "")
+            (display ", "))
+        (display (car xs))
+        (iter (cdr xs) #f))))
+  (iter xs #t))
+
+;; For each case, call solve and print result
+(define (run-cases)
+  (begin
+    (display "CASE0=") (display (solve (list 1 -2 1 2 -2 1 -2 1) 3)) (newline)
+    (display "CASE1=") (display (solve (list -1 -2) 5)) (newline)
+    (display "CASE2=") (display (solve (list 1 2 3) 1)) (newline)
+    (display "CASE3=") (display (solve (list 1 2 3) 3)) (newline)
+    (display "CASE4=") (display (solve (list 1 -1 1) 2)) (newline)
+    (display "CASE5=") (display (solve (list 5 -2 3) 4)) (newline)
+    (display "CASE6=") (display (solve (list 0 0 0) 10)) (newline)
+    (display "CASE7=") (display (solve (list -5 -2 -3) 2)) (newline)))
+
+(run-cases)

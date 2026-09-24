@@ -1,0 +1,67 @@
+;; Helper to display a list as space-separated values on one line
+(define (display-list xs)
+  (define (loop items)
+    (if (null? items)
+        (display " ")
+        (begin
+          (display (car items))
+          (if (null? (cdr items))
+              (display "")
+              (display " "))
+          (loop (cdr items)))))
+  (loop xs))
+
+;; Helper to get length of list
+(define (length xs)
+  (if (null? xs) 0 (+ 1 (length (cdr xs)))))
+
+;; Take first n elements
+(define (take n xs)
+  (if (= n 0)
+      '()
+      (cons (car xs) (take (- n 1) (cdr xs)))))
+
+;; Drop first n elements
+(define (drop n xs)
+  (if (= n 0)
+      xs
+      (drop (- n 1) (cdr xs))))
+
+;; Concatenate two lists
+(define (append a b)
+  (if (null? a)
+      b
+      (cons (car a) (append (cdr a) b))))
+
+;; Rotate list right by k positions
+(define (rotate-list head k)
+  (let ((n (length head)))
+    (if (= n 0)
+        '()
+        (let ((effective-k (modulo k n)))
+          (if (= effective-k 0)
+              head
+              (append (drop (- n effective-k) head)
+                      (take (- n effective-k) head)))))))
+
+;; Solve: takes a list and k, returns rotated list
+(define (solve head k)
+  (rotate-list head k))
+
+;; Display case result
+(define (show-case i head k)
+  (let ((result (solve head k)))
+    (display (string-append "CASE" (number->string i)))
+    (display "=")
+    (display-list result)
+    (newline)))
+
+;; Test cases embedded as Aura list literals
+(show-case 0 '(1 2 3 4 5) 2)
+(show-case 1 '() 10)
+(show-case 2 '(1) 100)
+(show-case 3 '(1 2 3) 0)
+(show-case 4 '(1 2 3 4 5) 5)
+(show-case 5 '(1 2 3 4 5) 7)
+(show-case 6 '(10 20 30 40) 1)
+(show-case 7 '(5 5 5 5) 2)

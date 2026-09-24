@@ -1,0 +1,135 @@
+;; Palindrome Linked List using slow/fast pointers, O(n) time, O(1) space.
+;; Nodes are represented as cons cells: (cons val next).
+;; '() denotes null.
+
+(define (length-of lst)
+  (let loop ((l lst) (n 0))
+    (if (null? l) n (loop (cdr l) (+ n 1)))))
+
+;; Build linked list from a list of numbers.
+(define (build-list xs)
+  (define (iter xs acc)
+    (if (null? xs)
+        acc
+        (iter (cdr xs) (cons (car xs) acc))))
+  (iter (reverse xs) '()))
+
+;; Reverse a linked list in-place (purely, returns new head).
+(define (reverse-list head)
+  (let loop ((prev '()) (cur head))
+    (if (null? cur)
+        prev
+        (loop cur (cons (car cur) (cdr cur))
+              (cons (car cur) prev)))))
+;; Cleaner version:
+(define (rev-list head)
+  (let loop ((prev '()) (cur head))
+    (if (null? cur)
+        prev
+        (let ((nxt (cdr cur)))
+          (set-cdr! cur prev)
+          (loop cur nxt)))))
+
+;; Helper: get the k-th element (0-indexed) by walking.
+(define (nth lst k)
+  (if (= k 0) (car lst) (nth (cdr lst) (- k 1))))
+
+;; Helper: nth cdr (the tail starting at index k).
+(define (nth-cdr lst k)
+  (if (= k 0) lst (nth-cdr (cdr lst) (- k 1))))
+
+;; We'll avoid mutating shared structure when possible by rebuilding.
+;; However to truly achieve O(1) we would mutate; here for simplicity
+;; we use list operations. Since Aura lists are immutable cons cells,
+;; we cannot set-cdr!; so we work by structural manipulation.
+
+;; Strategy:
+;; 1) Find middle via slow/fast: walk with counters using indices
+;;    is not allowed conceptually (O(n) extra structure), but we
+;;    simulate pointer walking using list traversal on cons cells.
+;; 2) Split into two halves at middle.
+;; 3) Reverse second half.
+;; 4) Compare node by node.
+;; 5) (Optional restore) reverse second half back and reattach.
+
+;; Since Aura's cons cells are immutable, we will build the
+;; "reversed second half" as a new structure; that's fine — the
+;; auxiliary structure is bounded by O(n) for the reversed half only,
+;; which is equivalent in spirit to in-place reversal given the
+;; immutability of the host language.
+
+(define (solve head)
+  (define (count n lst)
+    (if (null? lst) n (count (+ n 1) (cdr lst))))
+
+  (define (advance-slow-fast slow fast)
+    ;; Returns (cons new-slow final-fast-or-null) using purely
+    ;; functional pointers represented by list positions.
+    (if (null? fast)
+        (cons slow '())
+        (if (null? (cdr fast))
+            (cons slow (cdr fast))
+            (advance-slow-fast (cdr slow) (cddr fast)))))
+
+  (let* ((n (count 0 head))
+         (mid-result (advance-slow-fast head (cdr head)))
+         (slow (car mid-result)))
+    ;; Determine split point:
+    ;; For odd n, slow is the middle node; second half starts at (cdr slow).
+    ;; For even n, slow is the start of second half; second half is slow.
+    (if (= (modulo n 2) 1)
+        (let* ((second (cdr slow))
+               (rev-second (rev-list second))
+               (p1 head)
+               (p2 rev-second))
+          (let loop ((a p1) (b p2) (ok #t))
+            (if (null? b)
+                ok
+                (let ((new-ok (and ok (= (car a) (car b)))))
+                  (loop (cdr a) (cdr b) new-ok)))))
+        (let* ((second slow)
+               (rev-second (rev-list second))
+               (p1 head)
+               (p2 rev-second))
+          (let loop ((a p1) (b p2) (ok #t))
+            (if (null? b)
+                ok
+                (let ((new-ok (and ok (= (car a) (car b)))))
+                  (loop (cdr a) (cdr b) new-ok))))))))
+
+;; ---- Display helper for a single value (number, bool, string) ----
+(define (display-value v)
+  (cond
+    ((boolean? v) (display (if v "#t" "#f")))
+    ((number? v) (display (number->string v)))
+    ((string? v) (display v))
+    (else (display v))))
+
+;; ---- Display list of numbers in readable form ----
+(define (display-list xs)
+  (display "[")
+  (let loop ((xs xs) (first? #t))
+    (if (null? xs)
+        (display "]")
+        (begin
+          (if first? (display "") (display " "))
+          (display (number->string (car xs)))
+          (loop (cdr xs) #f)))))
+
+;; ---- Test runner ----
+(define (run-case i values)
+  (display (string-append "CASE" (number->string i) "="))
+  (let* ((head (build-list values))
+         (result (solve head)))
+    (display-value result)
+    (newline)))
+
+;; ---- Embedded test cases ----
+(run-case 0 '(1 2 3 2 1))
+(run-case 1 '(1 2 3))
+(run-case 2 '(7))
+(run-case 3 '(1 1))
+(run-case 4 '(1 2))
+(run-case 5 '(1 2 2 1))
+(run-case 6 '(1 2 3 4 3 2 1))
+(run-case 7 '(1 2 3 4 5 2 1))

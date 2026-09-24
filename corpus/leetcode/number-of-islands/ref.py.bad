@@ -1,0 +1,45 @@
+from collections import deque
+import json
+
+def solve(H, W, grid):
+    count = 0
+    for i in range(H):
+        for j in range(W):
+            if grid[i][j] == '1':
+                count += 1
+                grid[i][j] = '0'
+                queue = deque([(i, j)])
+                while queue:
+                    x, y = queue.popleft()
+                    for dx, dy in ((1,0),(-1,0),(0,1),(0,-1)):
+                        nx, ny = x+dx, y+dy
+                        if 0 <= nx < H and 0 <= ny < W and grid[nx][ny] == '1':
+                            grid[nx][ny] = '0'
+                            queue.append((nx, ny))
+    return count
+
+CASES = [
+    {"H":1,"W":1,"grid":["1"]},
+    {"H":1,"W":1,"grid":["0"]},
+    {"H":1,"W":4,"grid":["1111"]},
+    {"H":1,"W":4,"grid":["1010"]},
+    {"H":4,"W":5,"grid":["11000","11000","00100","00011"]},
+    {"H":3,"W":3,"grid":["111","010","111"]},
+    {"H":3,"W":3,"grid":["000","000","000"]},
+    {"H":5,"W":5,"grid":["10001","01010","00100","01010","10001"]},
+]
+
+if __name__ == '__main__':
+    results = []
+    for idx, case in enumerate(CASES):
+        # Deep copy grid to avoid mutation across runs
+        grid_copy = [list(row) for row in case["grid"]]
+        # solve expects list[str]
+        grid_input = [''.join(row) for row in grid_copy]
+        out = solve(case["H"], case["W"], grid_input)
+        results.append({
+            "id": idx,
+            "input": case,
+            "expected": json.dumps(out, separators=(',', ':'), ensure_ascii=False)
+        })
+    print(json.dumps(results, separators=(',', ':'), ensure_ascii=False))

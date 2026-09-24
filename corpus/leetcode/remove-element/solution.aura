@@ -1,0 +1,32 @@
+(define (solve nums val)
+  ;; Two-pointer: write pointer tracks position for kept elements
+  (let ((n (vector-length nums))
+        (write-idx 0))
+    (let loop ((read-idx 0))
+      (if (< read-idx n)
+          (begin
+            (if (not (= (vector-ref nums read-idx) val))
+                (begin
+                  (vector-set! nums write-idx (vector-ref nums read-idx))
+                  (set! write-idx (+ write-idx 1))))
+            (loop (+ read-idx 1)))))
+    write-idx))
+
+;; Helper to display a result
+(define (show-case i nums val)
+  (let ((k (solve nums val)))
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display k)
+    (newline)))
+
+;; Run all test cases
+(show-case 0 #(3 2 2 3) 3)
+(show-case 1 #(0 1 2 2 3 0 4 2) 2)
+(show-case 2 #() 1)
+(show-case 3 #(1) 1)
+(show-case 4 #(1) 2)
+(show-case 5 #(1 1 1 1) 1)
+(show-case 6 #(4 5 6 7 8) 3)
+(show-case 7 #(2 2 2 3 3 4 5 2) 2)

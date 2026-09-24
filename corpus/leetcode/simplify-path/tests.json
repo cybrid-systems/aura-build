@@ -1,0 +1,72 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "path": "/a/./b/../../c/"
+    },
+    "expected": "\"/c\""
+  },
+  {
+    "id": 1,
+    "input": {
+      "path": "/home//foo/"
+    },
+    "expected": "\"/home/foo\""
+  },
+  {
+    "id": 2,
+    "input": {
+      "path": "/../"
+    },
+    "expected": "\"/\""
+  },
+  {
+    "id": 3,
+    "input": {
+      "path": "/a/b/c/d/./e/../f"
+    },
+    "expected": "\"/a/b/c/d/f\""
+  },
+  {
+    "id": 4,
+    "input": {
+      "path": "/"
+    },
+    "expected": "\"/\""
+  },
+  {
+    "id": 5,
+    "input": {
+      "path": "/a/b/c"
+    },
+    "expected": "\"/a/b/c\""
+  },
+  {
+    "id": 6,
+    "input": {
+      "path": "/a/.."
+    },
+    "expected": "\"/\""
+  },
+  {
+    "id": 7,
+    "input": {
+      "path": "/a/b/../../../"
+    },
+    "expected": "\"/\""
+  },
+  {
+    "id": 8,
+    "input": {
+      "path": "/.../"
+    },
+    "expected": "\"/...\""
+  },
+  {
+    "id": 9,
+    "input": {
+      "path": "/foo/./bar/../baz//qux/"
+    },
+    "expected": "\"/foo/baz/qux\""
+  }
+]

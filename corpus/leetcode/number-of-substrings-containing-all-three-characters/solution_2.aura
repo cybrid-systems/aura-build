@@ -1,0 +1,54 @@
+(define (string-ref s i)
+  (string-ref s i))
+
+(define (string-length s)
+  (string-length s))
+
+(define (min a b)
+  (if (< a b) a b))
+
+(define (solve s)
+  (let ((n (string-length s))
+        (count-a 0)
+        (count-b 0)
+        (count-c 0)
+        (left 0)
+        (result 0))
+    (let loop ((right 0))
+      (cond
+        ((>= right n) result)
+        (else
+         (let ((ch (string-ref s right)))
+           (cond
+             ((char=? ch #\a) (set! count-a (+ count-a 1)))
+             ((char=? ch #\b) (set! count-b (+ count-b 1)))
+             ((char=? ch #\c) (set! count-c (+ count-c 1)))
+             (else #f)))
+           (let shrink ()
+             (cond
+               ((and (>= count-a 1) (>= count-b 1) (>= count-c 1))
+                (begin
+                  (set! result (+ result (+ (- left) n (- right) (- 1))))
+                  (loop (+ right 1))))
+               (else
+                (let ((lch (string-ref s left)))
+                  (cond
+                    ((char=? lch #\a) (set! count-a (- count-a 1)))
+                    ((char=? lch #\b) (set! count-b (- count-b 1)))
+                    ((char=? lch #\c) (set! count-c (- count-c 1)))
+                    (else #f))
+                  (set! left (+ left 1))
+                  (shrink)))))))))))
+
+(define (display-result r)
+  (display r)
+  (newline))
+
+(display "CASE0=") (display-result (solve "abc"))
+(display "CASE1=") (display-result (solve "aaab"))
+(display "CASE2=") (display-result (solve "aababc"))
+(display "CASE3=") (display-result (solve "abcabc"))
+(display "CASE4=") (display-result (solve "a"))
+(display "CASE5=") (display-result (solve "abca"))
+(display "CASE6=") (display-result (solve "abcabcabc"))
+(display "CASE7=") (display-result (solve "aaabbbccc"))

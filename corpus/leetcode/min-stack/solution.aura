@@ -1,0 +1,92 @@
+;; Min Stack implementation
+;; Operations:
+;;   [1 x] -> push x
+;;   [2]   -> pop
+;;   [3]   -> get_min (record result)
+;;   [4]   -> top (ignored)
+
+(define (solve ops)
+  ;; main stack holds values, min-stack tracks running minimum
+  (letrec ((main-stack '())
+           (min-stack '())
+           (results '())
+           (process (lambda (i)
+                      (if (>= i (vector-length ops))
+                          results
+                          (let ((op (vector-ref ops i)))
+                            (cond
+                              ((= (vector-ref op 0) 1)
+                               (let ((x (vector-ref op 1)))
+                                 (set! main-stack (cons x main-stack))
+                                 (if (null? min-stack)
+                                     (set! min-stack (cons x min-stack))
+                                     (let ((cur-min (car min-stack)))
+                                       (if (< x cur-min)
+                                           (set! min-stack (cons x min-stack))
+                                           (set! min-stack (cons cur-min min-stack))))))
+                               (process (+ i 1)))
+                              ((= (vector-ref op 0) 2)
+                               (set! main-stack (cdr main-stack))
+                               (set! min-stack (cdr min-stack))
+                               (process (+ i 1)))
+                              ((= (vector-ref op 0) 3)
+                               (set! results (cons (car min-stack) results))
+                               (process (+ i 1)))
+                              (else
+                               (process (+ i 1))))))))
+         (process 0)))
+
+(define (display-list lst)
+  (display "[")
+  (letrec ((loop (lambda (l)
+                   (if (null? l)
+                       (display "]")
+                       (begin
+                         (display (car l))
+                         (if (not (null? (cdr l)))
+                             (display ", "))
+                         (loop (cdr l)))))))
+    (loop lst)))
+
+(define (case0)
+  (let ((ops #([[1 5] [1 2] [1 8] [3] [2] [2] [1 3] [3] [2] [2]])))
+    (let ((r (solve ops)))
+      (display "CASE0=") (display r) (newline))))
+
+(define (case1)
+  (let ((ops #([[1 1] [3] [2]])))
+    (let ((r (solve ops)))
+      (display "CASE1=") (display r) (newline))))
+
+(define (case2)
+  (let ((ops #([[1 -5] [1 0] [1 7] [3] [3] [2] [3] [2] [2]])))
+    (let ((r (solve ops)))
+      (display "CASE2=") (display r) (newline))))
+
+(define (case3)
+  (let ((ops #([[1 10] [3] [1 5] [3] [2] [3] [2]])))
+    (let ((r (solve ops)))
+      (display "CASE3=") (display r) (newline))))
+
+(define (case4)
+  (let ((ops #([[1 3] [1 3] [3] [2] [2]])))
+    (let ((r (solve ops)))
+      (display "CASE4=") (display r) (newline))))
+
+(define (case5)
+  (let ((ops #([[1 2] [1 1] [3] [2] [3]])))
+    (let ((r (solve ops)))
+      (display "CASE5=") (display r) (newline))))
+
+(define (case6)
+  (let ((ops #([[1 -100] [1 100] [3] [1 -50] [3] [2] [3]])))
+    (let ((r (solve ops)))
+      (display "CASE6=") (display r) (newline))))
+
+(case0)
+(case1)
+(case2)
+(case3)
+(case4)
+(case5)
+(case6)

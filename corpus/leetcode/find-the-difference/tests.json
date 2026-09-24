@@ -1,0 +1,66 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "s": "abcde",
+      "t": "abecdfe"
+    },
+    "expected": "\"\\u0003\""
+  },
+  {
+    "id": 1,
+    "input": {
+      "s": "",
+      "t": "a"
+    },
+    "expected": "\"a\""
+  },
+  {
+    "id": 2,
+    "input": {
+      "s": "a",
+      "t": "aa"
+    },
+    "expected": "\"a\""
+  },
+  {
+    "id": 3,
+    "input": {
+      "s": "abcd",
+      "t": "abcde"
+    },
+    "expected": "\"e\""
+  },
+  {
+    "id": 4,
+    "input": {
+      "s": "hello",
+      "t": "helollo"
+    },
+    "expected": "\"\\u0003\""
+  },
+  {
+    "id": 5,
+    "input": {
+      "s": "thequickbrownfoxjumpsoverthelazydog",
+      "t": "thequickbrownfoxjumpsoverthelazydogx"
+    },
+    "expected": "\"x\""
+  },
+  {
+    "id": 6,
+    "input": {
+      "s": "abcdefghijklmnopqrstuvwxyz",
+      "t": "abcdefghijklmnopqrstuvwxyz!"
+    },
+    "expected": "\"!\""
+  },
+  {
+    "id": 7,
+    "input": {
+      "s": "z",
+      "t": "zz"
+    },
+    "expected": "\"z\""
+  }
+]

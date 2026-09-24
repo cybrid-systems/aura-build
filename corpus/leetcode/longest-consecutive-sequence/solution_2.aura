@@ -1,0 +1,104 @@
+;; Longest Consecutive Sequence - hash-set based O(n) average solution.
+;; Aura doesn't have a built-in hash-set, so we build a simple one using
+;; association lists with a "bucket" size that depends on the key. We
+;; accept collisions by chaining, and keep an explicit visited/used flag
+;; in the same record. The aim is correctness; performance is good
+;; enough for the given tests.
+
+(define BUCKET-SIZE 101)  ; prime-ish table size
+
+(define (make-record key) (list 'entry key 0))   ; 0 = unused, 1 = used
+(define (rec-key r) (car (cdr r)))
+(define (rec-flag r) (car (cdr (cdr r))))
+(define (set-flag! r) (set-car! (cdr (cdr r)) 1))
+
+(define (hash x)
+  ;; Spread negative numbers as well. Use a simple modulo.
+  (let ((v (modulo x BUCKET-SIZE)))
+    v))
+
+(define (table-find table key)
+  ;; Return the record for key, or #f.
+  (let ((bucket (vector-ref table (hash key))))
+    (cond ((null? bucket) #f)
+          (else
+           (let loop ((rest bucket))
+             (cond ((null? rest) #f)
+                   ((= (rec-key (car rest)) key) (car rest))
+                   (else (loop (cdr rest)))))))))
+
+(define (table-insert! table key)
+  ;; Insert if missing; return the record (existing or new).
+  (let ((existing (table-find table key)))
+    (if existing
+        existing
+        (let ((idx (hash key))
+              (rec (make-record key)))
+          (vector-set! table idx
+                       (cons rec (vector-ref table idx)))
+          rec))))
+
+(define (table-contains? table key)
+  (if (table-find table key) #t #f))
+
+(define (build-table nums)
+  (let ((t (make-vector BUCKET-SIZE '())))
+    (for-each (lambda (x) (table-insert! t x)) nums)
+    t))
+
+(define (solve nums)
+  (if (null? nums)
+      0
+      (let ((t (build-table nums))
+            (best 0))
+        (let loop ((rest nums))
+          (cond ((null? rest) best)
+                (else
+                 (let ((x (car rest))
+                       (rec (table-find t (car rest))))
+                   (when (= (rec-flag rec) 0)
+                     ;; Start a new run from x only if x-1 is absent.
+                     (if (not (table-contains? t (- x 1)))
+                         (begin
+                           (let grow ((cur x) (len 0))
+                             (let ((r2 (table-find t cur)))
+                               (if r2
+                                   (begin
+                                     (set-flag! r2)
+                                     (grow (+ cur 1) (+ len 1)))
+                                   (begin
+                                     (set! best (if (> len best) len best)))))))
+                         (begin
+                           (set-flag! rec))))
+                   (loop (cdr rest))))))))))
+
+(define (display-list lst)
+  (display "[")
+  (let loop ((rest lst) (first? #t))
+    (cond ((null? rest)
+           (display "]"))
+          (else
+           (if first?
+               (display (car rest))
+               (begin (display ", ") (display (car rest))))
+           (loop (cdr rest) #f)))))
+
+;; --- Test driver printing CASEi=result for each embedded input ---
+
+(define CASE0 '())
+(define CASE1 (list 100 4 200 1 3 2))
+(define CASE2 (list 0 3 7 2 5 8 4 6 0 1))
+(define CASE3 (list 1 2 0 1))
+(define CASE4 (list 5 5 5))
+(define CASE5 (list -2 -1 0 1 2 3))
+(define CASE6 (list 9 8 7 6 5 4 3 2 1 0))
+(define CASE7 (list 10 20 30 40))
+
+(display "CASE0=") (display (solve CASE0)) (newline)
+(display "CASE1=") (display (solve CASE1)) (newline)
+(display "CASE2=") (display (solve CASE2)) (newline)
+(display "CASE3=") (display (solve CASE3)) (newline)
+(display "CASE4=") (display (solve CASE4)) (newline)
+(display "CASE5=") (display (solve CASE5)) (newline)
+(display "CASE6=") (display (solve CASE6)) (newline)
+(display "CASE7=") (display (solve CASE7)) (newline)

@@ -1,0 +1,57 @@
+(define INT_MAX 2147483647)
+(define INT_MIN -2147483648)
+
+(define (abs x)
+  (if (< x 0) (- 0 x) x))
+
+(define (sign x)
+  (cond ((= x 0) 0)
+        ((< x 0) -1)
+        (else 1)))
+
+(define (reverse-int x)
+  (let ((s (sign x))
+        (n (abs x))
+        (result 0)
+        (overflow #f))
+    (let ((loop (lambda ()
+                  (define cont (lambda (n acc)
+                    (cond ((= n 0) acc)
+                          (else
+                           (let ((d (modulo n 10)))
+                             (let ((new-acc (+ (* acc 10) d)))
+                               (if (or (> new-acc INT_MAX)
+                                       (and (= acc (/ INT_MAX 10)) (> d (modulo INT_MAX 10))))
+                                   (begin (set! overflow #t) 0)
+                                   (cont (quotient n 10) new-acc))))))))
+                  (cont n 0))))
+      (loop))
+    (if overflow
+        0
+        (* s result))))
+
+(define (solve x)
+  (reverse-int x))
+
+;; Display helper for simple values (numbers, bools)
+(define (display-val v)
+  (cond ((number? v) (display v))
+        ((equal? v #t) (display "#t"))
+        ((equal? v #f) (display "#f"))
+        (else (display v))))
+
+;; Test cases
+(define cases '(-123 1534236469 -2147483412 0 120 1 -1 2147483647 -2147483648 2147483647))
+
+(define (run-cases cs i)
+  (if (null? cs)
+      'done
+      (begin
+        (display "CASE")
+        (display i)
+        (display "=")
+        (display-val (solve (car cs)))
+        (newline)
+        (run-cases (cdr cs) (+ i 1)))))
+
+(run-cases cases 0)

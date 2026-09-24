@@ -1,0 +1,82 @@
+(define (string-length s)
+  (let loop ((i 0))
+    (if (>= i (string-length-raw s))
+        i
+        (loop (+ i 1)))))
+
+(define (string-length-raw s)
+  (let loop ((i 0))
+    (if (char=? (string-ref s i) #\null)
+        i
+        (loop (+ i 1)))))
+
+(define (substring-hash s start len)
+  (let loop ((i 0) (acc 0))
+    (if (>= i len)
+        acc
+        (loop (+ i 1)
+              (+ (* acc 131)
+                 (char->integer (string-ref s (+ start i))))))))
+
+(define (solve s)
+  (let* ((n (string-length s))
+         (seen '()))
+    (let loop-center ((i 0))
+      (if (>= i n)
+          (let count-loop ((lst seen) (c 0))
+            (if (null? lst) c (count-loop (cdr lst) (+ c 1))))
+          (begin
+            (let expand-odd ((l i) (r i))
+              (if (or (< l 0) (>= r n))
+                  '()
+                  (let ((ch-l (string-ref s l))
+                        (ch-r (string-ref s r)))
+                    (if (char=? ch-l ch-r)
+                        (begin
+                          (set! seen (cons (substring-hash s l (+ (- r l) 1)) seen))
+                          (expand-odd (- l 1) (+ r 1)))
+                        '()))))
+            (let expand-even ((l i) (r (+ i 1)))
+              (if (or (< l 0) (>= r n))
+                  '()
+                  (let ((ch-l (string-ref s l))
+                        (ch-r (string-ref s r)))
+                    (if (char=? ch-l ch-r)
+                        (begin
+                          (set! seen (cons (substring-hash s l (+ (- r l) 1)) seen))
+                          (expand-even (- l 1) (+ r 1)))
+                        '()))))
+            (loop-center (+ i 1)))))))
+
+(define (display-list lst)
+  (display "(")
+  (let loop ((l lst))
+    (cond ((null? l) (display ")"))
+          (else
+           (display (car l))
+           (if (null? (cdr l))
+               (display ")")
+               (begin (display " ") (loop (cdr l))))))))
+
+(define cases (list
+  "aba"
+  "aaaa"
+  "abc"
+  "a"
+  "ababa"
+  "abbaa"
+  "zxyxz"
+  "abcdefg"))
+
+(define (run-cases lst i)
+  (if (null? lst)
+      '()
+      (begin
+        (display "CASE")
+        (display i)
+        (display "=")
+        (display (solve (car lst)))
+        (newline)
+        (run-cases (cdr lst) (+ i 1)))))
+
+(run-cases cases 0)

@@ -1,0 +1,57 @@
+(define (len xs)
+  (if (null? xs) 0 (+ 1 (len (cdr xs)))))
+
+(define (rev-helper xs acc)
+  (if (null? xs) acc (rev-helper (cdr xs) (cons (car xs) acc))))
+
+(define (reverse-list xs) (rev-helper xs '()))
+
+(define (slice xs start end)
+  (define (helper i acc)
+    (cond ((= i end) (reverse-list acc))
+          (else (helper (+ i 1) (cons (car xs) acc)))))
+  (helper start '()))
+
+; Rotate right by k using three reverses, working on list
+(define (rotate arr k)
+  (let* ((n (len arr))
+         (nk (modulo k n))
+         (rotated (if (or (= n 0) (= nk 0))
+                     arr
+                     (let* ((rev (reverse-list arr))
+                            (first-k (reverse-list (slice rev 0 nk)))
+                            (rest (reverse-list (slice rev nk n))))
+                       (append first-k rest)))))
+    rotated))
+
+; Append two lists
+(define (append a b)
+  (if (null? a) b (cons (car a) (append (cdr a) b))))
+
+; Convert list of numbers to bracket-form string like [1,2,3]
+(define (list->bracket xs)
+  (define (helper lst)
+    (if (null? lst)
+        ""
+        (let ((rest (helper (cdr lst))))
+          (if (= (string-length rest) 0)
+              (string-append (number->string (car lst)))
+              (string-append (number->string (car lst)) "," rest)))))
+  (string-append "[" (helper xs) "]"))
+
+(define (solve arr k)
+  (list->bracket (rotate arr k)))
+
+; ---- Test cases ----
+(define (run-tests)
+  (begin
+    (display "CASE0=") (display (solve '(1 2 3 4 5 6 7) 3)) (newline)
+    (display "CASE1=") (display (solve '(1 2 3 4 5) 0)) (newline)
+    (display "CASE2=") (display (solve '(1 2 3 4 5) 5)) (newline)
+    (display "CASE3=") (display (solve '(1 2 3 4 5) 7)) (newline)
+    (display "CASE4=") (display (solve '() 3)) (newline)
+    (display "CASE5=") (display (solve '(42) 100)) (newline)
+    (display "CASE6=") (display (solve '(-1 -2 -3 -4) 1)) (newline)
+    (display "CASE7=") (display (solve '(1 2 3 4 5 6) 2)) (newline)))
+
+(run-tests)

@@ -1,0 +1,71 @@
+;; Add Binary - compute sum of two binary strings
+
+(define (char->digit c)
+  (- (char->integer c) (char->integer #\0)))
+
+(define (digit->char d)
+  (integer->char (+ d (char->integer #\0))))
+
+(define (list-length xs)
+  (if (null? xs)
+      0
+      (+ 1 (list-length (cdr xs)))))
+
+(define (list-ref xs i)
+  (if (= i 0)
+      (car xs)
+      (list-ref (cdr xs) (- i 1))))
+
+(define (string->list-of-chars s)
+  (let loop ((i (- (string-length s) 1)) (acc '()))
+    (if (< i 0)
+        acc
+        (loop (- i 1) (cons (string-ref s i) acc)))))
+
+(define (reverse-list xs)
+  (let loop ((remaining xs) (acc '()))
+    (if (null? remaining)
+        acc
+        (loop (cdr remaining) (cons (car remaining) acc)))))
+
+(define (add-binary a b)
+  (let* ((la (string-length a))
+         (lb (string-length b))
+         (n (max la lb))
+         (result-chars (make-list n 0))
+         (carry 0))
+    (let loop ((i 0))
+      (cond
+        ((>= i n)
+         (set! carry 0)
+         (set! carry carry))
+        (else
+         (let* ((bit-a (if (< i la) (char->digit (string-ref a (- la 1 i))) 0))
+                (bit-b (if (< i lb) (char->digit (string-ref b (- lb 1 i))) 0))
+                (sum (+ bit-a bit-b carry)))
+           (list-set! result-chars i (modulo sum 2))
+           (set! carry (quotient sum 2))
+           (loop (+ i 1))))))
+    ;; Build result string with possible carry
+    (let ((res-list '()))
+      (let loop-build ((i (- n 1)))
+        (if (< i 0)
+            (set! res-list res-list)
+            (begin
+              (set! res-list (cons (digit->char (list-ref result-chars i)) res-list))
+              (loop-build (- i 1)))))
+      (let ((final (if (= carry 1)
+                       (string-append "1" (list->string (reverse-list res-list)))
+                       (list->string (reverse-list res-list)))))
+        ;; Strip leading zeros
+        (let loop-strip ((s final) (idx 0))
+          (cond
+            ((>= idx (- (string-length s) 1))
+             s)
+            ((char=? (string-ref s idx) #\0)
+             (loop-strip s (+ idx 1)))
+            (else
+             (substring s idx (string-length s)))))))))
+
+(define (solve a b)
+  (add-binary a b))

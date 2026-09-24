@@ -1,0 +1,71 @@
+(define (solve nums)
+  (let ((n (length nums)))
+    (cond
+      ((= n 0) '())
+      ((= n 1) (list (car nums)))
+      (else
+       (let* ((result (make-list n 1))
+              (left (make-list n 1))
+              (right (make-list n 1))
+              (i 0))
+         (begin
+           (set! left (cons-list nums))
+           (set! result (cons-list nums))
+           (set! right (cons-list nums))
+           (let ((left-prod 1) (idx 0))
+             (while (< idx n)
+               (begin
+                 (list-set! result idx left-prod)
+                 (set! left-prod (* left-prod (list-ref nums idx)))
+                 (set! idx (+ idx 1)))))
+           (let ((right-prod 1) (idx (- n 1)))
+             (while (>= idx 0)
+               (begin
+                 (list-set! result idx (* (list-ref result idx) right-prod))
+                 (set! right-prod (* right-prod (list-ref nums idx)))
+                 (set! idx (- idx 1)))))
+           result))))))
+
+(define (cons-list lst)
+  (let ((result '()) (l lst))
+    (let ((i (- (length l) 1)))
+      (while (>= i 0)
+        (begin
+          (set! result (cons (list-ref l i) result))
+          (set! i (- i 1)))))
+    result))
+
+(define (make-list n val)
+  (let ((result '()) (i 0))
+    (while (< i n)
+      (begin
+        (set! result (cons val result))
+        (set! i (+ i 1))))
+    result))
+
+(define (display-list lst)
+  (display "[")
+  (let ((l lst) (first? #t))
+    (while (not (null? l))
+      (begin
+        (if (not first?) (display ","))
+        (display (number->string (car l)))
+        (set! first? #f)
+        (set! l (cdr l)))))
+  (display "]"))
+
+(define (run-case i nums)
+  (display "CASE")
+  (display (number->string i))
+  (display "=")
+  (display-list (solve nums))
+  (newline))
+
+(run-case 0 '())
+(run-case 1 '(1))
+(run-case 2 '(1 2 3 4))
+(run-case 3 '(-1 1 0 -3 3))
+(run-case 4 '(0 0 1 2))
+(run-case 5 '(2 3 0 5))
+(run-case 6 '(-2 -3 4 -5))
+(run-case 7 '(1 1 1 1 1))

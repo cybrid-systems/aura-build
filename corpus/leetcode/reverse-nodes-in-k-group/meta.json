@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:33:05Z",
+      "ts_local": "2026-09-24 22:33:05 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 5506,
+        "total_characters": 0,
+        "prompt_tokens": 1506,
+        "completion_tokens": 4000,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.021,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "⚠ program returned an uncalled function\n",
+      "stdout_snippet": "#<procedure>\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:33:33Z",
+      "ts_local": "2026-09-24 22:33:33 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2507,
+        "total_characters": 0,
+        "prompt_tokens": 1506,
+        "completion_tokens": 1001,
+        "prompt_tokens_details": {
+          "cached_tokens": 1505
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": -1,
+      "timeout": true,
+      "duration_s": 20.726,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 7:21: unbound variable: chars\n   |\n  7 |       ((char=? (car chars) #\\+)\n   |                     ^^^^^\n",
+      "stdout_snippet": "CASE0=0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0->0"
+    }
+  ],
+  "slug": "reverse-nodes-in-k-group",
+  "title": "Reverse Nodes in k-Group",
+  "category": "linked_list",
+  "updated_at": "2026-09-24T14:33:33Z",
+  "updated_at_local": "2026-09-24 22:33:33 CST"
+}

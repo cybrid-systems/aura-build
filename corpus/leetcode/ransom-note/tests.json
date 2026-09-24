@@ -1,0 +1,66 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "ransomNote": "a",
+      "magazine": "b"
+    },
+    "expected": "false"
+  },
+  {
+    "id": 1,
+    "input": {
+      "ransomNote": "aa",
+      "magazine": "ab"
+    },
+    "expected": "false"
+  },
+  {
+    "id": 2,
+    "input": {
+      "ransomNote": "aa",
+      "magazine": "aab"
+    },
+    "expected": "true"
+  },
+  {
+    "id": 3,
+    "input": {
+      "ransomNote": "abc",
+      "magazine": "aabbcc"
+    },
+    "expected": "true"
+  },
+  {
+    "id": 4,
+    "input": {
+      "ransomNote": "abc",
+      "magazine": "abcc"
+    },
+    "expected": "true"
+  },
+  {
+    "id": 5,
+    "input": {
+      "ransomNote": "abcd",
+      "magazine": "abc"
+    },
+    "expected": "false"
+  },
+  {
+    "id": 6,
+    "input": {
+      "ransomNote": "",
+      "magazine": "abc"
+    },
+    "expected": "true"
+  },
+  {
+    "id": 7,
+    "input": {
+      "ransomNote": "aabbcc",
+      "magazine": "abcabc"
+    },
+    "expected": "true"
+  }
+]

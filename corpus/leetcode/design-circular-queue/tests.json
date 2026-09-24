@@ -1,0 +1,257 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "capacity": 5,
+      "commands": [
+        [
+          "enqueue",
+          1
+        ],
+        [
+          "enqueue",
+          2
+        ],
+        [
+          "enqueue",
+          3
+        ],
+        [
+          "enqueue",
+          4
+        ],
+        [
+          "enqueue",
+          5
+        ],
+        [
+          "is_full"
+        ],
+        [
+          "dequeue"
+        ],
+        [
+          "enqueue",
+          6
+        ],
+        [
+          "front"
+        ],
+        [
+          "rear"
+        ],
+        [
+          "dequeue"
+        ],
+        [
+          "dequeue"
+        ],
+        [
+          "dequeue"
+        ],
+        [
+          "dequeue"
+        ],
+        [
+          "dequeue"
+        ],
+        [
+          "is_empty"
+        ],
+        [
+          "front"
+        ],
+        [
+          "rear"
+        ]
+      ]
+    },
+    "expected": "[true,true,true,true,true,true,true,true,2,6,true,true,true,true,true,true,-1,-1]"
+  },
+  {
+    "id": 1,
+    "input": {
+      "capacity": 3,
+      "commands": [
+        [
+          "enqueue",
+          10
+        ],
+        [
+          "enqueue",
+          20
+        ],
+        [
+          "enqueue",
+          30
+        ],
+        [
+          "is_full"
+        ],
+        [
+          "rear"
+        ],
+        [
+          "front"
+        ],
+        [
+          "dequeue"
+        ],
+        [
+          "enqueue",
+          40
+        ],
+        [
+          "front"
+        ],
+        [
+          "rear"
+        ],
+        [
+          "is_full"
+        ]
+      ]
+    },
+    "expected": "[true,true,true,true,30,10,true,true,20,40,true]"
+  },
+  {
+    "id": 2,
+    "input": {
+      "capacity": 1,
+      "commands": [
+        [
+          "is_empty"
+        ],
+        [
+          "is_full"
+        ],
+        [
+          "front"
+        ],
+        [
+          "rear"
+        ],
+        [
+          "enqueue",
+          7
+        ],
+        [
+          "is_full"
+        ],
+        [
+          "front"
+        ],
+        [
+          "rear"
+        ],
+        [
+          "enqueue",
+          8
+        ],
+        [
+          "dequeue"
+        ],
+        [
+          "front"
+        ],
+        [
+          "is_empty"
+        ]
+      ]
+    },
+    "expected": "[true,false,-1,-1,true,true,7,7,false,true,-1,true]"
+  },
+  {
+    "id": 3,
+    "input": {
+      "capacity": 2,
+      "commands": [
+        [
+          "front"
+        ],
+        [
+          "rear"
+        ],
+        [
+          "dequeue"
+        ],
+        [
+          "is_empty"
+        ],
+        [
+          "is_full"
+        ]
+      ]
+    },
+    "expected": "[-1,-1,false,true,false]"
+  },
+  {
+    "id": 4,
+    "input": {
+      "capacity": 4,
+      "commands": [
+        [
+          "enqueue",
+          1
+        ],
+        [
+          "enqueue",
+          2
+        ],
+        [
+          "dequeue"
+        ],
+        [
+          "dequeue"
+        ],
+        [
+          "enqueue",
+          3
+        ],
+        [
+          "enqueue",
+          4
+        ],
+        [
+          "enqueue",
+          5
+        ],
+        [
+          "enqueue",
+          6
+        ],
+        [
+          "front"
+        ],
+        [
+          "rear"
+        ],
+        [
+          "is_full"
+        ]
+      ]
+    },
+    "expected": "[true,true,true,true,true,true,true,true,3,6,true]"
+  },
+  {
+    "id": 5,
+    "input": {
+      "capacity": 3,
+      "commands": [
+        [
+          "is_empty"
+        ],
+        [
+          "is_full"
+        ],
+        [
+          "front"
+        ],
+        [
+          "rear"
+        ]
+      ]
+    },
+    "expected": "[true,false,-1,-1]"
+  }
+]

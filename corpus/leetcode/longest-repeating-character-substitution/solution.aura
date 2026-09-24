@@ -1,0 +1,44 @@
+(define (char->int c)
+  (- (char->integer c) (char->integer #\A)))
+
+(define (solve s k)
+  (let ((n (string-length s))
+        (freq (make-vector 26 0))
+        (left 0)
+        (max-freq 0)
+        (best 0))
+    (let loop ((right 0))
+      (if (>= right n)
+          best
+          (begin
+            (let ((idx (char->int (string-ref s right))))
+              (vector-set! freq idx (+ (vector-ref freq idx) 1))
+              (when (> (vector-ref freq idx) max-freq)
+                (set! max-freq (vector-ref freq idx))))
+            ;; window length is right - left + 1
+            ;; replacements needed = window_len - max-freq
+            (when (> (- (- right left) -1 max-freq) k)
+              (begin
+                (let ((lidx (char->int (string-ref s left))))
+                  (vector-set! freq lidx (- (vector-ref freq lidx) 1)))
+                (set! left (+ left 1))))
+            (let ((cur-len (- (+ right 1) left)))
+              (when (> cur-len best)
+                (set! best cur-len)))
+            (loop (+ right 1)))))))
+
+(define (display-solve i s k)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve s k))
+  (newline))
+
+(display-solve 0 "ABAB" 2)
+(display-solve 1 "AABABBA" 1)
+(display-solve 2 "AAAA" 0)
+(display-solve 3 "ABCDE" 0)
+(display-solve 4 "ABCDE" 2)
+(display-solve 5 "A" 0)
+(display-solve 6 "ABBB" 0)
+(display-solve 7 "ABBB" 1)

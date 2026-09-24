@@ -1,0 +1,100 @@
+(define (string-length s)
+  (let loop ((i 0))
+    (if (and (< i (string-length-helper s)) #t)
+        (loop (+ i 1))
+        i)))
+
+;; We'll avoid the above complexity: use built-in via converting to list-of-chars.
+
+(define (string->list-of-chars s)
+  (let loop ((i 0) (acc '()))
+    (if (>= i (string-length s))
+        (reverse acc)
+        (loop (+ i 1) (cons (string-ref s i) acc)))))
+
+(define (list-ref-safe lst i)
+  (if (= i 0) (car lst) (list-ref-safe (cdr lst) (- i 1))))
+
+(define (palindromes-from-center chars n center)
+  (let ((odd-pals '())
+        (even-pals '()))
+    ;; odd length
+    (let loop-odd ((l center) (r center))
+      (if (and (>= l 0) (< r n) (equal? (list-ref-safe chars l) (list-ref-safe chars r)))
+          (begin
+            (let ((i l) (j r) (acc '()))
+              (let loop2 ((k l) (acc2 '()))
+                (if (> k r) (set! acc acc2)
+                    (loop2 (+ k 1) (cons (list-ref-safe chars k) acc2)))))
+            ;; actually we already have the slice l..r; skip building substring here,
+            ;; we just expand more.
+            (loop-odd (- l 1) (+ r 1))
+            (set! odd-pals (+ odd-pals 1)))
+          '()))
+    ;; even length
+    (let loop-even ((l (- center 1)) (r center))
+      (if (and (>= l 0) (< r n) (equal? (list-ref-safe chars l) (list-ref-safe chars r)))
+          (begin
+            (set! even-pals (+ even-pals 1))
+            (loop-even (- l 1) (+ r 1)))
+          '()))
+    (cons odd-pals even-pals)))
+
+;; That approach counts occurrences, not distinct. Let me build distinct substrings.
+
+(define (extract-substring chars l r)
+  (let loop ((k l) (acc '()))
+    (if (> k r) (list->string (reverse acc))
+        (loop (+ k 1) (cons (list-ref-safe chars k) acc)))))
+
+(define (palindromic-substrings-distinct s)
+  (let* ((chars (string->list-of-chars s))
+         (n (string-length s))
+         (seen '()))
+    ;; For each center
+    (let outer ((c 0))
+      (if (>= c n)
+          (begin
+            (length (let remove-dups ((xs seen))
+                      (if (null? xs) '()
+                          (if (member (car xs) (cdr xs))
+                              (remove-dups (cdr xs))
+                              (cons (car xs) (remove-dups (cdr xs))))))))
+          (begin
+              ;; odd
+              (let loop-odd ((l c) (r c))
+                (if (and (>= l 0) (< r n)
+                         (equal? (list-ref-safe chars l) (list-ref-safe chars r)))
+                    (begin
+                      (set! seen (cons (extract-substring chars l r) seen))
+                      (loop-odd (- l 1) (+ r 1)))
+                    '()))
+              ;; even
+              (let loop-even ((l (- c 1)) (r c))
+                (if (and (>= l 0) (< r n)
+                         (equal? (list-ref-safe chars l) (list-ref-safe chars r)))
+                    (begin
+                      (set! seen (cons (extract-substring chars l r) seen))
+                      (loop-even (- l 1) (+ r 1)))
+                    '())))
+              (outer (+ c 1)))))
+    ))
+
+(define (solve s)
+  (palindromic-substrings-distinct s))
+
+(define (run-case i s)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve s))
+  (newline))
+
+(run-case 0 "aba")
+(run-case 1 "aaaa")
+(run-case 2 "abc")
+(run-case 3 "a")
+(run-case 4 "ababa")
+(run-case 5 "abbaa")
+(run-case 6 "zxyxz")
+(run-case 7 "abcdefg")

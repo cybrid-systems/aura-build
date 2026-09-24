@@ -1,0 +1,92 @@
+;; Reverse a list using an accumulator (O(n) time, O(n) space for output, O(1) auxiliary).
+(define (reverse-list xs)
+  (let loop ((rest xs) (acc '()))
+    (if (null? rest)
+        acc
+        (loop (cdr rest) (cons (car rest) acc)))))
+
+(define (solve s)
+  (reverse-list s))
+
+;; Read the next line from a list of lines (each a list of chars).
+(define (next-line lines)
+  (if (null? lines) (list 'eof) (car lines)))
+
+;; Skip a line.
+(define (skip-line lines)
+  (if (null? lines) '() (cdr lines)))
+
+;; Parse "CASEk=" header; return the case index as a string and the remaining lines.
+(define (parse-case-header line lines)
+  ;; line looks like "C A S E 0 = ..."
+  ;; We extract the digit(s) after "CASE" up to "=".
+  (let loop ((chars line) (digits '()) (phase 0))
+    (cond
+      ((null? chars) (list (list->string (reverse digits)) lines))
+      ((and (= phase 0) (char=? (car chars) #\C)) (loop (cdr chars) digits 0))
+      ((and (= phase 0) (char=? (car chars) #\A)) (loop (cdr chars) digits 0))
+      ((and (= phase 0) (char=? (car chars) #\S)) (loop (cdr chars) digits 0))
+      ((and (= phase 0) (char=? (car chars) #\E)) (loop (cdr chars) digits 1))
+      ((= phase 1)
+       (cond
+         ((char=? (car chars) #\=)
+          (list (list->string (reverse digits)) lines))
+         ((or (and (char>=? (car chars) #\0) (char<=? (car chars) #\9)))
+          (loop (cdr chars) (cons (car chars) digits) 1))
+         (else (loop (cdr chars) digits 1))))
+      (else (loop (cdr chars) digits phase)))))
+
+;; Build a list of 1-char strings from a string.
+(define (string->chars s)
+  (let loop ((i 0) (acc '()))
+    (if (>= i (string-length s))
+        (reverse acc)
+        (loop (+ i 1) (cons (string (string-ref s i)) acc)))))
+
+;; Display a list of 1-char strings space-separated.
+(define (display-list xs)
+  (let loop ((rest xs) (first? #t))
+    (cond
+      ((null? rest) #t)
+      (first?
+       (display (car rest))
+       (loop (cdr rest) #f))
+      (else
+       (display " ")
+       (display (car rest))
+       (loop (cdr rest) #f)))))
+
+;; Process all inputs.
+(define (run-all lines)
+  (let loop ((lines lines))
+    (cond
+      ((null? lines) (display "DONE") (newline))
+      ((and (not (null? (car lines))) (char=? (string-ref (car lines) 0) #\C))
+       (let* ((parsed (parse-case-header (car lines) (cdr lines)))
+              (idx (car parsed))
+              (rest (car (cdr parsed)))
+              (data-line (car rest))
+              (rest-lines (cdr rest))
+              (s (string->chars data-line))
+              (result (solve s)))
+         (display "CASE")
+         (display idx)
+         (display "=")
+         (display-list result)
+         (newline)
+         (loop rest-lines)))
+      (else (loop (cdr lines))))))
+
+;; Embedded inputs:
+(define inputs
+  (list
+   (string-append "CASE0=" "s e t o f")
+   (string-append "CASE1=" "h e l l o")
+   (string-append "CASE2=" "a")
+   (string-append "CASE3=" "a b")
+   (string-append "CASE4=" "a b c")
+   (string-append "CASE5=" "a b c d e f")
+   (string-append "CASE6=" "z y x w")
+   (string-append "CASE7=" "m n o p q r s t")))
+
+(run-all inputs)

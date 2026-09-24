@@ -1,0 +1,80 @@
+;; Helper: check if list is null
+(define (null? x) (equal? x, '()))
+
+;; Helper: get length of string (as list of chars)
+(define (string-len s)
+  (if (null? s) 0
+    (+ 1 (string-len (cdr s)))))
+
+;; Helper: get char at index
+(define (char-at s i)
+  (if (= i 0) (car s)
+    (char-at (cdr s) (- i 1))))
+
+;; Helper: take first n chars
+(define (take n s)
+  (if (= n 0) '()
+    (cons (car s) (take (- n 1) (cdr s)))))
+
+;; Helper: drop first n chars
+(define (drop n s)
+  (if (= n 0) s
+    (drop (- n 1) (cdr s))))
+
+;; Helper: convert string to list of chars
+(define (string->list-of-chars s)
+  (string->list s))
+
+;; Helper: convert list of chars back to string
+(define (list-of-chars->string lst)
+  (list->string lst))
+
+;; Helper: get substring as list of chars from i to j (inclusive)
+(define (substring-chars s i j)
+  (take (+ (- j i) 1) (drop i s)))
+
+;; Expand around center - returns (start . end) indices
+(define (expand s left right n)
+  (if (or (< left 0) (>= right n))
+    (cons (+ left 1) (- right 1))
+    (if (equal? (char-at s left) (char-at s right))
+      (expand s (- left 1) (+ right 1) n)
+      (cons (+ left 1) (- right 1)))))
+
+;; Find longest palindrome starting at each center
+(define (find-longest s)
+  (let ((n (string-len s)))
+    (if (= n 0) ""
+      (let ((best-start 0) (best-len 1) (i 0))
+        (define (loop i best-start best-len)
+          (if (>= i n)
+            (substring-chars s best-start (+ best-start (- best-len 1)))
+            (let ((p1 (expand s i i n))
+                  (p2 (expand s i (+ i 1) n)))
+              (let ((s1 (car p1)) (e1 (cdr p1))
+                    (s2 (car p2)) (e2 (cdr p2)))
+                (let ((l1 (+ (- e1 s1) 1)) (l2 (+ (- e2 s2) 1)))
+                  (if (> l1 l2)
+                    (if (> l1 best-len)
+                      (loop (+ i 1) s1 l1)
+                      (loop (+ i 1) best-start best-len))
+                    (if (> l2 best-len)
+                      (loop (+ i 1) s2 l2)
+                      (loop (+ i 1) best-start best-len))))))))
+        (loop 0 0 1)))))
+
+(define (solve s) (find-longest s))
+
+;; Run all test cases
+(define (run-cases)
+  (begin
+    (display "CASE0=") (display (solve "babad")) (newline)
+    (display "CASE1=") (display (solve "cbbd")) (newline)
+    (display "CASE2=") (display (solve "a")) (newline)
+    (display "CASE3=") (display (solve "")) (newline)
+    (display "CASE4=") (display (solve "racecar")) (newline)
+    (display "CASE5=") (display (solve "abacdfgdcaba")) (newline)
+    (display "CASE6=") (display (solve "aaaa")) (newline)
+    (display "CASE7=") (display (solve "abcde")) (newline)))
+
+(run-cases)

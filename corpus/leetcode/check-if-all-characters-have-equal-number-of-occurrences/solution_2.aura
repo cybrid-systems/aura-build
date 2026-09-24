@@ -1,0 +1,96 @@
+;; Check if all characters have equal number of occurrences
+;; Embed test inputs as Aura string literals and call solve on each.
+
+(define (length lst)
+  (if (null? lst) 0 (+ 1 (length (cdr lst)))))
+
+(define (filter pred lst)
+  (cond ((null? lst) '())
+        ((pred (car lst)) (cons (car lst) (filter pred (cdr lst))))
+        (else (filter pred (cdr lst)))))
+
+(define (member? x lst)
+  (cond ((null? lst) #f)
+        ((equal? x (car lst)) #t)
+        (else (member? x (cdr lst)))))
+
+;; Convert string -> list of single-char strings using char positions.
+;; Aura doesn't expose string indexing directly, so build by repeated substr.
+;; We'll instead just work with string operations and a list-of-chars approach
+;; built via substring char-by-char using a helper that extracts one char at
+;; a given index via (substring s i (+ i 1)).
+
+(define (substring s start end)
+  ;; Aura provides substring natively; assume available.
+  (substring s start end))
+
+(define (char-at s i)
+  (substring s i (+ i 1)))
+
+(define (string-length s)
+  ;; Use native length if present; fallback recursion.
+  (let loop ((i 0))
+    (if (equal? (char-at s i) "") i (loop (+ i 1)))))
+
+;; Build a list of chars from string s.
+(define (string->char-list s)
+  (let ((n (string-length s)))
+    (let loop ((i 0) (acc '()))
+      (if (>= i n)
+          (reverse acc)
+          (loop (+ i 1) (cons (char-at s i) acc))))))
+
+(define (reverse lst)
+  (let loop ((xs lst) (acc '()))
+    (if (null? xs) acc (loop (cdr xs) (cons (car xs) acc)))))
+
+;; Count occurrences of c in lst
+(define (count-in c lst)
+  (cond ((null? lst) 0)
+        ((equal? c (car lst)) (+ 1 (count-in c (cdr lst))))
+        (else (count-in c (cdr lst)))))
+
+;; Get distinct chars in order of first appearance
+(define (distinct lst)
+  (cond ((null? lst) '())
+        ((member? (car lst) (cdr lst))
+         (distinct (cdr lst)))
+        (else (cons (car lst) (distinct (cdr lst))))))
+
+;; Check if all frequencies equal
+(define (all-equal? lst)
+  (cond ((null? lst) #t)
+        ((null? (cdr lst)) #t)
+        ((equal? (car lst) (cadr lst)) (all-equal? (cdr lst)))
+        (else #f)))
+
+(define (solve s)
+  (let ((chars (string->char-list s)))
+    (let ((ds (distinct chars)))
+      (let ((freqs (map (lambda (c) (count-in c chars)) ds)))
+        (all-equal? freqs)))))
+
+;; map implementation
+(define (map f lst)
+  (cond ((null? lst) '())
+        (else (cons (f (car lst)) (map f (cdr lst))))))
+
+;; Display helper for a list of chars (printed as-is concatenated)
+(define (display-list lst)
+  (cond ((null? lst) (display ""))
+        (else (display (car lst)) (display-list (cdr lst)))))
+
+(define (bool->str b)
+  (if b "#t" "#f"))
+
+;; --- Test harness ---
+;; Each test input is embedded; we display CASEi=result.
+
+(display "CASE0=") (display (bool->str (solve "ababab"))) (newline)
+(display "CASE1=") (display (bool->str (solve "aaaaabbbbb"))) (newline)
+(display "CASE2=") (display (bool->str (solve "abc"))) (newline)
+(display "CASE3=") (display (bool->str (solve "aabbcc"))) (newline)
+(display "CASE4=") (display (bool->str (solve "aabbccc"))) (newline)
+(display "CASE5=") (display (bool->str (solve "aaaa"))) (newline)
+(display "CASE6=") (display (bool->str (solve ""))) (newline)
+(display "CASE7=") (display (bool->str (solve "a b c a b c"))) (newline)

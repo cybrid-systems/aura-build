@@ -1,0 +1,36 @@
+(define (string-length s)
+  (let loop ((i 0) (s s))
+    (if (null? s) i (loop (+ i 1) (cdr s)))))
+
+(define (string->list-of-chars s)
+  (let loop ((s s) (acc '()))
+    (if (null? s) acc (loop (cdr s) (cons (car s) acc)))))
+
+(define (list-ref-safe lst i)
+  (let loop ((j i) (l lst))
+    (cond
+      ((null? l) #f)
+      ((= j 0) (car l))
+      (else (loop (- j 1) (cdr l))))))
+
+(define (solve ransomNote magazine)
+  (let ((n-len (string-length ransomNote))
+        (m-len (string-length magazine)))
+    (if (> n-len m-len) #f
+        (let ((counts (make-vector 26 0)))
+          (let loop-mag ((j 0))
+            (if (= j m-len) #t
+                (let ((c (list-ref-safe (string->list-of-chars magazine) j)))
+                  (let ((idx (- (char->integer c) (char->integer #\a))))
+                    (vector-set! counts idx (+ (vector-ref counts idx) 1)))
+                  (loop-mag (+ j 1)))))
+          (let loop-note ((j 0) (ok #t))
+            (if (not ok) #f
+                (if (= j n-len) #t
+                    (let ((c (list-ref-safe (string->list-of-chars ransomNote) j)))
+                      (let ((idx (- (char->integer c) (char->integer #\a))))
+                        (let ((cnt (vector-ref counts idx)))
+                          (if (< cnt 1) #f
+                              (begin
+                                (vector-set! counts idx (- cnt 1))
+                                (loop-note (+ j 1) #t))))))))))))))

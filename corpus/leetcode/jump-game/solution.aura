@@ -1,0 +1,57 @@
+(define (solve nums)
+  ;; nums is a list of non-negative integers
+  ;; Returns #t if last index is reachable, #f otherwise
+  (let ((n (length nums)))
+    (if (<= n 1)
+        #t
+        (let loop ((idx 0)
+                   (max-reach 0))
+          (cond
+            ((> idx max-reach) #f)
+            ((>= max-reach (- n 1)) #t)
+            (else
+              (let ((jump (list-ref nums idx))
+                    (new-reach (+ idx jump)))
+                (loop (+ idx 1)
+                      (if (> new-reach max-reach) new-reach max-reach)))))))))
+
+;; Helper: length of a list
+(define (length lst)
+  (let loop ((l lst) (acc 0))
+    (if (null? l) acc (loop (cdr l) (+ acc 1)))))
+
+;; Helper: list-ref (0-indexed)
+(define (list-ref lst i)
+  (let loop ((l lst) (idx 0))
+    (cond
+      ((null? l) (error "list-ref out of bounds"))
+      ((= idx i) (car l))
+      (else (loop (cdr l) (+ idx 1))))))
+
+;; Test cases: each as a list literal
+(define cases
+  (list
+    (list 2 3 1 1 4)
+    (list 3 2 1 0 4)
+    (list 0)
+    (list 1 0 1 0)
+    (list 0 1 0)
+    (list 2 0 0)
+    (list 1 1 1 1 0)
+    (list 5 0 0 0 0 0)
+    (list 0 0 0 0 1)
+    (list 3 0 0 0 0 0)))
+
+(define (run-cases cases)
+  (let loop ((cs cases) (i 0))
+    (if (null? cs)
+        (display "Done") (newline)
+        (begin
+          (display "CASE")
+          (display i)
+          (display "=")
+          (display (if (solve (car cs)) "True" "False"))
+          (newline)
+          (loop (cdr cs) (+ i 1))))))
+
+(run-cases cases)

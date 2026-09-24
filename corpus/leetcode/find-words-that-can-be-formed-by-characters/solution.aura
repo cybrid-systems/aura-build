@@ -1,0 +1,106 @@
+;; Solution for "Find Words That Can Be Formed by Characters"
+
+;; Convert a string to a list of characters (codes)
+(define (string->chars s)
+  (let loop ((i 0) (acc '()))
+    (if (= i (string-length s))
+        (reverse acc)
+        (loop (+ i 1) (cons (string-ref s i) acc)))))
+
+;; Check if a word is formable given the characters
+(define (formable? chars word)
+  (let loop ((w word) (ok #t))
+    (cond
+      ((not ok) #f)
+      ((null? w) #t)
+      (else
+       (let ((c (car w)))
+         (if (member c chars)
+             (loop (cdr w) #t)
+             #f))))))
+
+;; Build a list of remaining chars after consuming the chars in word
+(define (remove-chars chars word)
+  (let loop ((cs chars) (w word) (acc '()))
+    (cond
+      ((null? cs) (reverse acc))
+      ((null? w) (append (reverse acc) cs))
+      ((equal? (car cs) (car w))
+       (loop (cdr cs) (cdr w) acc))
+      (else
+       (loop (cdr cs) w (cons (car cs) acc))))))
+
+;; Real formable check using counting
+(define (formable-count chars word)
+  (let loop ((w word))
+    (cond
+      ((null? w) #t)
+      ((member (car w) chars)
+       (loop (cdr w)))
+      (else #f))))
+
+;; Actually do the consume approach
+(define (try-form chars word)
+  (let loop ((cs chars) (w word))
+    (cond
+      ((null? w) #t)
+      ((null? cs) #f)
+      ((equal? (car cs) (car w))
+       (loop (cdr cs) (cdr w)))
+      (else (loop (cdr cs) w)))))
+
+;; Count length of a string
+(define (strlen s)
+  (string-length s))
+
+;; Solve: sum of lengths of formable words
+(define (solve characters words)
+  (let loop ((ws words) (total 0))
+    (if (null? ws)
+        total
+        (let ((w (car ws)))
+          (if (try-form (string->chars characters) (string->chars w))
+              (loop (cdr ws) (+ total (strlen w)))
+              (loop (cdr ws) total))))))
+
+;; Test cases - call solve and print results
+
+;; CASE0
+(display "CASE0=")
+(display (solve "welcometocoding" '("welcome" "to" "coding" "leet" "code")))
+(newline)
+
+;; CASE1
+(display "CASE1=")
+(display (solve "abc" '("a" "b" "c" "ab" "ac" "bc" "abc" "aab" "abcd")))
+(newline)
+
+;; CASE2
+(display "CASE2=")
+(display (solve "aaaa" '("a" "aa" "aaa" "aaaa" "aaaaa")))
+(newline)
+
+;; CASE3
+(display "CASE3=")
+(display (solve "abcdefghijklmnopqrstuvwxyz" '("abc" "xyz" "zyx" "abcd")))
+(newline)
+
+;; CASE4
+(display "CASE4=")
+(display (solve "a" '()))
+(newline)
+
+;; CASE5
+(display "CASE5=")
+(display (solve "abcabc" '("aabbcc" "abc" "abca" "aabb" "abcabc")))
+(newline)
+
+;; CASE6
+(display "CASE6=")
+(display (solve "zzz" '("z" "zz" "zzz" "zzzz" "zzx")))
+(newline)
+
+;; CASE7
+(display "CASE7=")
+(display (solve "ilovepython" '("i" "love" "python" "pyth" "py" "loves")))
+(newline)

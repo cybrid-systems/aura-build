@@ -1,0 +1,54 @@
+;; Longest Harmonious Subsequence
+;; Counts occurrences of each value and finds max(count(v) + count(v+1)) over all v.
+
+(define (make-counter lst)
+  ;; Build an association list as a simple "hash map" (list of (key . count) pairs).
+  (define (inc key m)
+    (cond ((null? m) (list (cons key 1)))
+          ((equal? (car (car m)) key)
+           (cons (cons key (+ (cdr (car m)) 1)) (cdr m)))
+          (else (cons (car m) (inc key (cdr m))))))
+  (if (null? lst)
+      '()
+      (inc (car lst) (make-counter (cdr lst)))))
+
+(define (get-count key m)
+  (cond ((null? m) 0)
+        ((equal? (car (car m)) key) (cdr (car m)))
+        (else (get-count key (cdr m)))))
+
+(define (keys m)
+  (if (null? m) '() (cons (car (car m)) (keys (cdr m)))))
+
+(define (max a b) (if (> a b) a b))
+
+(define (best-pair keys-list m)
+  ;; For each key v, compute count(v) + count(v+1) and return the max.
+  (if (null? keys-list)
+      0
+      (let ((v (car keys-list))
+            (rest (best-pair (cdr keys-list) m)))
+        (max (+ (get-count v m) (get-count (+ v 1) m)) rest))))
+
+(define (solve values)
+  (let ((m (make-counter values)))
+    (if (null? values)
+        0
+        (best-pair (keys m) m))))
+
+(define (run-case i vals)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve vals))
+  (newline))
+
+(run-case 0 '(1 3 2 4 3))
+(run-case 1 '(1 1 1 1))
+(run-case 2 '())
+(run-case 3 '(5 6))
+(run-case 4 '(1 2 3 4 5 6))
+(run-case 5 '(2 2 2 3 3 4 4 4 4))
+(run-case 6 '(1 2 2 3 3 3 4))
+(run-case 7 '(1 3 5 7 9))
+(run-case 8 '(1 2 1 3 2 4 3 5))

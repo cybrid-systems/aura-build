@@ -1,0 +1,185 @@
+(define (len xs)
+  (if (null? xs) 0 (+ 1 (len (cdr xs)))))
+
+(define (list-ref xs i)
+  (if (= i 0) (car xs) (list-ref (cdr xs) (- i 1))))
+
+(define (min a b) (if (< a b) a b))
+
+(define (solve nums k)
+  (let* ((n (len nums))
+         (prefix (make-vector (+ n 1) 0)))
+    (let fill ((i 1) (acc 0))
+      (if (> i n)
+          (begin)
+          (begin
+            (vector-set! prefix i (+ acc (list-ref nums (- i 1))))
+            (fill (+ i 1) (+ acc (list-ref nums (- i 1)))))))
+    (let loop ((i 0) (deque '()) (ans (+ n)))
+      (if (= i (+ n 1))
+          (if (= ans (+ n 1)) -1 ans)
+          (let* ((pi (vector-ref prefix i))
+                 (new-deque (shrink deque pi k prefix ans n)))
+            (let* ((d2 (push-deque new-deque i pi)))
+              (loop (+ i 1) d2 ans)))))))
+
+(define (make-vector n init)
+  (let ((v '()))
+    (let fill ((i 0))
+      (if (= i n) v (begin (set! v (append v (list init))) (fill (+ i 1))))))
+  (define dummy v))
+
+(define (vector-ref v i)
+  (list-ref v i))
+
+(define (vector-set! v i val)
+  (define (helper lst idx)
+    (if (= idx 0)
+        (set-car! lst val)
+        (helper (cdr lst) (- idx 1))))
+  (helper v i))
+
+(define (shrink deque pi k prefix ans n)
+  (let loop ((d deque) (result '()))
+    (cond
+      ((null? d) (reverse result))
+      (else
+       (let* ((first (car d))
+              (p-first (car (cdr d))))
+         (if (>= (- pi p-first) k)
+             (let ((new-ans (min ans (- i-helper first))))
+               (begin
+                 (set! ans new-ans)
+                 (loop (cdr d) result))))
+         (loop (cdr d) (cons first result)))))))
+
+(define i-helper (dummy))
+
+(define (push-deque deque i pi)
+  (let loop ((d deque) (result '()))
+    (cond
+      ((null? d) (reverse (cons (list i pi) result)))
+      (else
+       (let* ((last (car d))
+              (p-last (car (cdr last))))
+         (if (>= p-last pi)
+             (loop (cdr d) result)
+             (loop '() (reverse (cons (list i pi) (reverse result))))))))))
+
+(define (set-car! pair val)
+  (define (helper p)
+    (if (pair? (car p))
+        (set-car! (car p) val)
+        (set-car! p val)))
+  (helper pair))
+
+(define (pair? x)
+  (cond ((null? x) #f)
+        ((number? x) #f)
+        ((string? x) #f)
+        (else #t)))
+
+;; Re-implement solve with corrected helper using global ans/i state
+(define ans-global 0)
+
+(define (solve nums k)
+  (let* ((n (len nums))
+         (prefix (make-vector (+ n 1) 0)))
+    (set! ans-global (+ n 1))
+    (let fill ((i 1) (acc 0))
+      (if (> i n)
+          #t
+          (let ((v (+ acc (list-ref nums (- i 1)))))
+            (begin
+              (vector-set! prefix i v)
+              (fill (+ i 1) v)))))
+    (let loop ((i 0) (deque '()))
+      (if (= i (+ n 1))
+          (if (= ans-global (+ n 1)) -1 ans-global)
+          (let* ((pi (vector-ref prefix i))
+                 (new-deque (process-deque deque i pi k prefix)))
+            (loop (+ i 1) new-deque))))))
+
+(define (process-deque deque i pi k prefix)
+  ;; shrink
+  (let shrink-loop ((d deque))
+    (if (null? d) '()
+        (let* ((front (car d))
+               (idx (car front))
+               (p-idx (car (cdr front))))
+          (if (>= (- pi p-idx) k)
+              (begin
+                (set! ans-global (min ans-global (- i idx)))
+                (shrink-loop (cdr d)))
+              (begin
+                (set! d (cons front (shrink-loop-helper d)))
+                (break-loop d)))))))
+
+(define (shrink-loop-helper d)
+  ;; not used
+  '())
+
+(define (break-loop d) d)
+
+;; Actually, let's write a clean version
+(define (solve nums k)
+  (let* ((n (len nums))
+         (prefix (make-vector (+ n 1) 0)))
+    (set! ans-global (+ n 1))
+    ;; fill prefix
+    (let fill ((i 1) (acc 0))
+      (if (> i n) #t
+          (let ((v (+ acc (list-ref nums (- i 1)))))
+            (vector-set! prefix i v)
+            (fill (+ i 1) v))))
+    ;; main loop
+    (let main ((i 0) (deque '()))
+      (if (= i (+ n 1))
+          (if (= ans-global (+ n 1)) -1 ans-global)
+          (let* ((pi (vector-ref prefix i))
+                 (shrunk (do-shrink deque i pi k))
+                 (pushed (do-push shrunk i pi)))
+            (main (+ i 1) pushed))))
+    ))
+
+(define (do-shrink deque i pi k)
+  (cond ((null? deque) '())
+        (else
+         (let* ((front (car deque))
+                (idx (car front))
+                (p-idx (car (cdr front))))
+           (if (>= (- pi p-idx) k)
+               (begin
+                 (set! ans-global (min ans-global (- i idx)))
+                 (do-shrink (cdr deque) i pi k))
+               deque)))))
+
+(define (do-push deque i pi)
+  (cond ((null? deque) (list (list i pi)))
+        (else
+         (let* ((back-val (car (cdr (car (last-pair deque))))))
+           (if (>= back-val pi)
+               (do-push (all-but-last deque) i pi)
+               (append deque (list (list i pi))))))))
+
+(define (last-pair lst)
+  (if (null? (cdr lst)) lst (last-pair (cdr lst))))
+
+(define (all-but-last lst)
+  (cond ((null? lst) '())
+        ((null? (cdr lst)) '())
+        (else (cons (car lst) (all-but-last (cdr lst))))))
+
+;; Test cases
+(define (run-tests)
+  (begin
+    (display "CASE0=") (display (solve (list 2 -1 3 -2 4) 5)) (newline)
+    (display "CASE1=") (display (solve (list -1 2) 3)) (newline)
+    (display "CASE2=") (display (solve (list 1) 1)) (newline)
+    (display "CASE3=") (display (solve (list 1 2) 4)) (newline)
+    (display "CASE4=") (display (solve (list 5 -10 3 2 1) 6)) (newline)
+    (display "CASE5=") (display (solve (list 2 2 2 2 2) 3)) (newline)
+    (display "CASE6=") (display (solve (list -2 -3 -1) 1)) (newline)
+    (display "CASE7=") (display (solve (list 1 -1 1 -1 1 -1 10) 5)) (newline)))
+
+(run-tests)

@@ -1,0 +1,92 @@
+(define (list-ref xs i)
+  (if (= i 0) (car xs) (list-ref (cdr xs) (- i 1))))
+
+(define (list-set! xs i v)
+  (set-car! (list-ref xs i) v))
+
+(define (make-list n v)
+  (if (= n 0) '() (cons v (make-list (- n 1) v))))
+
+(define (decode s)
+  (let ((count-stack '())
+        (result-stack '())
+        (current-result '())
+        (i 0)
+        (len (string-length s)))
+      ;; iterate over chars
+      (let loop ((i 0))
+        (if (= i len)
+            (begin
+              ;; combine all into final string
+              (let ((final-parts '()))
+                (let collect ((stk result-stack))
+                  (if (null? stk)
+                      '()
+                      (begin
+                        (set! final-parts (append (car stk) final-parts))
+                        (collect (cdr stk))))))
+                (let ((res '()))
+                  (let c2 ((xs (append (reverse result-stack) (list current-result))))
+                    (if (null? xs)
+                        (list->string (reverse res))
+                        (begin
+                          (let ((s2 (car xs)))
+                            (let c3 ((ss s2))
+                              (if (null? ss)
+                                  '()
+                                  (begin
+                                    (set! res (cons (car ss) res))
+                                    (c3 (cdr ss))))))
+                            (c2 (cdr xs))))))))
+            (let ((c (string-ref s i)))
+              (cond
+                ((char-numeric? c)
+                 ;; accumulate number
+                 (let ((num 0))
+                   (let nloop ((j i))
+                     (if (and (< j len) (char-numeric? (string-ref s j)))
+                         (begin
+                           (set! num (+ (* num 10) (- (char->integer (string-ref s j)) 48)))
+                           (nloop (+ j 1)))
+                         (begin
+                           ;; push current state
+                           (set! count-stack (cons num count-stack))
+                           (set! result-stack (cons current-result result-stack))
+                           (set! current-result '())
+                           (loop j))))))
+                ((char=? c #\[) (loop (+ i 1)))
+                ((char=? c #\])
+                 ;; pop and repeat
+                 (let ((k (car count-stack)))
+                   (set! count-stack (cdr count-stack))
+                   (let ((parent (car result-stack)))
+                     (set! result-stack (cdr result-stack))
+                     (let ((repeated '()))
+                       (let rloop ((m 0))
+                         (if (= m k)
+                             '()
+                             (begin
+                               (set! repeated (append repeated current-result))
+                               (rloop (+ m 1))))))
+                     (set! current-result (append parent repeated))
+                     (loop (+ i 1))))))
+                (else
+                 (set! current-result (append current-result (list c)))
+                 (loop (+ i 1))))))))
+      ))
+
+(define (solve s)
+  (decode s))
+
+;; For output, need to handle the special CASEi= format
+;; The harness calls solve and compares. We also display results.
+
+(define (run-cases)
+  (display "CASE0=") (display (solve "3[a]2[bc]")) (newline)
+  (display "CASE1=") (display (solve "3[a2[c]]")) (newline)
+  (display "CASE2=") (display (solve "2[abc]3[cd]ef")) (newline)
+  (display "CASE3=") (display (solve "10[a]")) (newline)
+  (display "CASE4=") (display (solve "abc")) (newline)
+  (display "CASE5=") (display (solve "0[abc]")) (newline)
+  (display "CASE6=") (display (solve "2[a]2[b]3[c]")) (newline)
+  (display "CASE7=") (display (solve "3[z2[y]b]")) (newline))

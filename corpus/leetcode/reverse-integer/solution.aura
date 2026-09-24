@@ -1,0 +1,51 @@
+(define INT_MIN -2147483648)
+(define INT_MAX 2147483647)
+
+(define (reverse-int x)
+  (let ((sign 1))
+    (begin
+      (if (< x 0)
+          (set! sign -1)
+          #f)
+      (reverse-helper (abs x) sign 0))))
+
+(define (reverse-helper n sign result)
+  (if (= n 0)
+      (check-overflow (* sign result))
+      (let ((digit (modulo n 10))
+            (new-result (+ (* result 10) digit)))
+        (if (overflow-while-building new-result sign)
+            0
+            (reverse-helper (quotient n 10) sign new-result)))))
+
+(define (overflow-while-building new-result sign)
+  (if (= sign 1)
+      (> new-result INT_MAX)
+      (< (- 0 new-result) INT_MIN)))
+
+(define (check-overflow value)
+  (if (or (< value INT_MIN) (> value INT_MAX))
+      0
+      value))
+
+(define (solve x)
+  (reverse-int x))
+
+(define (abs x)
+  (if (< x 0) (- 0 x) x))
+
+;; Display helper for results
+(define (display-result r)
+  (display r))
+
+;; Test cases
+(display "CASE0=") (display-result (solve -123)) (newline)
+(display "CASE1=") (display-result (solve 1534236469)) (newline)
+(display "CASE2=") (display-result (solve -2147483412)) (newline)
+(display "CASE3=") (display-result (solve 0)) (newline)
+(display "CASE4=") (display-result (solve 120)) (newline)
+(display "CASE5=") (display-result (solve 1)) (newline)
+(display "CASE6=") (display-result (solve -1)) (newline)
+(display "CASE7=") (display-result (solve 2147483647)) (newline)
+(display "CASE8=") (display-result (solve -2147483648)) (newline)
+(display "CASE9=") (display-result (solve 2147483647)) (newline)

@@ -1,0 +1,78 @@
+;; Solution for Insert Interval
+
+(define (car2 p) (car (cdr p)))
+(define (cdr2 p) (cdr (cdr p)))
+
+(define (min a b) (if (< a b) a b))
+(define (max a b) (if (> a b) a b))
+
+;; Append helper
+(define (append-all lst)
+  (if (null? lst)
+      '()
+      (cons (car lst) (append-all (cdr lst)))))
+
+;; Insert newInterval into intervals, then merge all overlapping intervals
+(define (solve intervals newInterval)
+  ;; Insert newInterval in sorted position
+  (define (insert-sorted ivs ni)
+    (cond ((null? ivs) (list ni))
+          ((< (car ni) (car (car ivs)))
+           (cons ni ivs))
+          (else
+           (cons (car ivs) (insert-sorted (cdr ivs) ni)))))
+  
+  ;; Merge all intervals in a sorted list
+  (define (merge-all ivs)
+    (if (null? ivs)
+        '()
+        (let ((first (car ivs))
+              (rest-result (merge-all (cdr ivs))))
+          (if (null? rest-result)
+              (list first)
+              (let ((next (car rest-result)))
+                (if (<= (car2 first) (car next))
+                    (cons (list (car first) (max (car2 first) (car2 next)))
+                          (cdr rest-result))
+                  (cons first rest-result)))))))
+  
+  (let ((with-new (insert-sorted intervals newInterval)))
+    (merge-all with-new)))
+
+;; Display helper for a list of intervals
+(define (display-interval iv)
+  (display "[")
+  (display (car iv))
+  (display ",")
+  (display (car2 iv))
+  (display "]"))
+
+(define (display-intervals ivs)
+  (display "[")
+  (cond ((null? ivs) (display ""))
+        ((null? (cdr ivs))
+         (display-interval (car ivs)))
+        (else
+         (display-interval (car ivs))
+         (display ",")
+         (display-intervals (cdr ivs))))
+  (display "]"))
+
+;; Test cases
+(define (run-case i intervals newInterval)
+  (let ((result (solve intervals newInterval)))
+    (begin
+      (display "CASE")
+      (display i)
+      (display "=")
+      (display-intervals result)
+      (newline))))
+
+(run-case 0 '((1 3) (6 9)) '(2 5))
+(run-case 1 '((1 2) (3 5) (6 7) (8 10) (12 16)) '(4 8))
+(run-case 2 '() '(5 7))
+(run-case 3 '() '(1 1))
+(run-case 4 '((1 5)) '(2 3))
+(run-case 5 '((1 5)) '(5 7))
+(run-case 6 '((1 5)) '(6 8))
+(run-case 7 '((1 2) (3 4) (5 6)) '(10 12))

@@ -1,0 +1,61 @@
+(define (list-length xs)
+  (if (null? xs) 0 (+ 1 (list-length (cdr xs)))))
+
+(define (list-ref xs i)
+  (if (= i 0) (car xs) (list-ref (cdr xs) (- i 1))))
+
+(define (build-tree arr idx n)
+  (if (>= idx n) '()
+      (let ((v (list-ref arr idx)))
+        (if (null? v) '()
+            (let ((node (cons v (cons '() '()))))
+              (set-car! (cdr node) (build-tree arr (+ idx 1) n))
+              (set-car! (cdr (cdr node)) (build-tree arr (+ idx 2) n))
+              node)))))
+
+(define (val-of node)
+  (car node))
+
+(define (left-of node)
+  (car (cdr node)))
+
+(define (right-of node)
+  (car (cdr (cdr node))))
+
+(define (leaf? node)
+  (and (null? (left-of node)) (null? (right-of node))))
+
+(define (min-depth node)
+  (if (null? node) 0
+      (let ((l (left-of node)) (r (right-of node)))
+        (cond
+          ((and (null? l) (null? r)) 1)
+          ((null? l) (+ 1 (min-depth r)))
+          ((null? r) (+ 1 (min-depth l)))
+          (else (+ 1 (min (min-depth l) (min-depth r))))))))
+
+(define (min a b) (if (< a b) a b))
+
+(define (solve-root arr)
+  (let ((n (list-length arr)))
+    (min-depth (build-tree arr 0 n))))
+
+(define (run-case i arr)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve-root arr))
+  (newline))
+
+(define (null? x)
+  (if (eq? x '()) #t #f))
+
+;; test cases
+(run-case 0 (list 3 9 20 '() '() 15 7))
+(run-case 1 (list))
+(run-case 2 (list 1))
+(run-case 3 (list 1 2 '()))
+(run-case 4 (list 1 '() 2))
+(run-case 5 (list 1 2 3 4 5))
+(run-case 6 (list 1 2 '() 3 '() 4 '() 5))
+(run-case 7 (list 1 '() 2 '() 3 '() 4 '() 5))

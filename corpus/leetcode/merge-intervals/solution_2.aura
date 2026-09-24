@@ -1,0 +1,105 @@
+;; Aura solution for Merge Intervals
+;; Approach: sort intervals by start, then scan and merge.
+
+(define (caar p) (car (car p)))
+(define (cdar p) (cdr (car p)))
+
+(define (make-pair a b) (cons a (cons b '())))
+
+;; comparison: returns #t if a < b for ordering by start, then end
+(define (interval-lt? a b)
+  (if (< (caar a) (caar b))
+      #t
+      (if (= (caar a) (caar b))
+          (< (cdar a) (cdar b))
+          #f)))
+
+;; Insert an interval into a sorted list of intervals (sorted by start, then end)
+(define (insert-sorted iv lst)
+  (cond ((null? lst) (cons iv '()))
+        ((interval-lt? iv (car lst))
+         (cons iv lst))
+        (else (cons (car lst) (insert-sorted iv (cdr lst))))))
+
+;; Sort intervals using insertion sort
+(define (sort-intervals lst)
+  (define (loop lst acc)
+    (if (null? lst)
+        acc
+        (loop (cdr lst) (insert-sorted (car lst) acc))))
+  (loop lst '()))
+
+;; Merge the current interval with the accumulator head if they overlap.
+;; Overlap condition (touching counts): cur.start <= head.end AND head.start <= cur.end
+(define (max-end a b) (if (> a b) a b))
+
+(define (merge-one cur acc)
+  (cond ((null? acc)
+         (cons cur '()))
+        ((<= (caar cur) (cdar (car acc)))
+         ;; Overlap (including touching): merge with head
+         (cons (make-pair (caar (car acc))
+                          (max-end (cdar (car acc)) (cdar cur)))
+                (cdr acc)))
+        (else
+         (cons (car acc) (merge-one cur (cdr acc))))))
+
+;; Merge a sorted list of intervals into non-overlapping ones
+(define (merge-sorted lst)
+  (define (loop lst acc)
+    (if (null? lst)
+        acc
+        (loop (cdr lst) (merge-one (car lst) acc))))
+  (loop lst '()))
+
+;; solve: take a list of (start . end) pairs, merge, return sorted merged list.
+(define (solve ivs)
+  (let ((sorted (sort-intervals ivs)))
+    (merge-sorted sorted)))
+
+;; ---- Output helpers ----
+
+(define (display-pair p)
+  (display "[")
+  (display (number->string (car p)))
+  (display ", ")
+  (display (number->string (cdr p)))
+  (display "]"))
+
+(define (display-list-of-pairs lst)
+  (display "[")
+  (cond ((null? lst) (display "]"))
+        (else
+         (display-pair (car lst))
+         (define (loop rest)
+           (if (null? rest)
+               (display "]")
+               (begin
+                 (display ", ")
+                 (display-pair (car rest))
+                 (loop (cdr rest)))))
+         (loop (cdr lst)))))
+
+;; ---- Embedded test inputs ----
+
+(define c0 (list (make-pair 1 3) (make-pair 2 6) (make-pair 8 10) (make-pair 15 18)))
+(define c1 (list (make-pair 1 4) (make-pair 4 5)))
+(define c2 (list (make-pair 1 4) (make-pair 0 4)))
+(define c3 '())
+(define c4 (list (make-pair 1 4) (make-pair 2 3)))
+(define c5 (list (make-pair 1 4)))
+(define c6 (list (make-pair 4 4) (make-pair 1 4) (make-pair 2 6)
+                 (make-pair 0 0) (make-pair 8 10) (make-pair 15 18)))
+(define c7 (list (make-pair 3 5) (make-pair -2 1) (make-pair 1 4)
+                 (make-pair 10 12) (make-pair 12 15)))
+
+;; ---- Run cases ----
+
+(display "CASE0=") (display-list-of-pairs (solve c0)) (newline)
+(display "CASE1=") (display-list-of-pairs (solve c1)) (newline)
+(display "CASE2=") (display-list-of-pairs (solve c2)) (newline)
+(display "CASE3=") (display-list-of-pairs (solve c3)) (newline)
+(display "CASE4=") (display-list-of-pairs (solve c4)) (newline)
+(display "CASE5=") (display-list-of-pairs (solve c5)) (newline)
+(display "CASE6=") (display-list-of-pairs (solve c6)) (newline)
+(display "CASE7=") (display-list-of-pairs (solve c7)) (newline)

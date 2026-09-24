@@ -1,0 +1,17 @@
+(define (reverse-half n)
+  (let ((rev 0))
+    (begin
+      (set! rev (reverse-iter n 0))
+      rev)))
+
+(define (reverse-iter n rev)
+  (if (= n 0)
+      rev
+      (let ((q (quotient n 10)))
+           (reverse-iter q (+ (* rev 10) (modulo n 10))))))
+
+(define (solve x)
+  (if (< x 0)
+      #f
+      (let ((reversed (reverse-half x)))
+           (= reversed x))))

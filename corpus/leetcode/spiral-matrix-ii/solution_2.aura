@@ -1,0 +1,114 @@
+;; Spiral Matrix II — Aura solution
+
+(define (make-matrix n)
+  (let loop ((i 0) (rows '()))
+    (if (= i n)
+        rows
+        (let inner ((j 0) (row '()))
+          (if (= j n)
+              (loop (+ i 1) (cons row rows))
+              (inner (+ j 1) (cons 0 row)))))))
+
+(define (matrix-ref m r c)
+  (car (list-ref (cons c r) m)))
+
+(define (matrix-set! m r c v)
+  (set-car! (list-ref (cons c r) m) v))
+
+(define (n-recur)
+  (let ((c (read-char)))
+    (if (eof-object? c)
+        '()
+        (cons c (n-recur)))))
+
+(define (skip-non-digits)
+  (let ((c (peek-char)))
+    (if (or (eof-object? c) (char-numeric? c))
+        '()
+        (begin (read-char) (skip-non-digits)))))
+
+(define (parse-int)
+  (skip-non-digits)
+  (let loop ((acc 0))
+    (let ((c (peek-char)))
+      (if (and (not (eof-object? c)) (char-numeric? c))
+          (begin (read-char)
+                 (loop (+ (* acc 10) (- (char->integer c) (char->integer #\0)))))
+          acc))))
+
+(define (solve n)
+  (let ((m (make-matrix n))
+        (top 0)
+        (bot (- n 1))
+        (left 0)
+        (right (- n 1))
+        (num 1))
+    (let loop ()
+      (cond
+        ((> top bot) '())
+        ((> left right) '())
+        (else
+          (begin
+            ;; left to right
+            (let lp ((c left))
+              (when (<= c right)
+                (matrix-set! m top c num)
+                (set! num (+ num 1))
+                (lp (+ c 1))))
+            (set! top (+ top 1))
+            ;; top to bottom
+            (let dp ((r top))
+              (when (<= r bot)
+                (matrix-set! m r right num)
+                (set! num (+ num 1))
+                (dp (+ r 1))))
+            (set! right (- right 1))
+            ;; right to left
+            (let rlp ((c right))
+              (when (>= c left)
+                (matrix-set! m bot c num)
+                (set! num (+ num 1))
+                (rlp (- c 1))))
+            (set! bot (- bot 1))
+            ;; bottom to top
+            (let ulp ((r bot))
+              (when (>= r top)
+                (matrix-set! m r left num)
+                (set! num (+ num 1))
+                (ulp (- r 1))))
+            (set! left (+ left 1))
+            (loop))))))
+    m))
+
+(define (print-row row)
+  (let loop ((first? #t) (xs row))
+    (cond
+      ((null? xs) (newline))
+      (else
+        (begin
+          (if first?
+              (begin (display (car xs)))
+              (begin (display " ") (display (car xs))))
+          (loop #f (cdr xs)))))))
+
+(define (print-matrix m)
+  (let loop ((rows m))
+    (cond
+      ((null? rows) '())
+      (else
+        (begin
+          (print-row (car rows))
+          (loop (cdr rows)))))))
+
+(let ((cases (list 1 2 3 4 5 6 7 10)))
+  (let loop ((i 0) (cs cases))
+    (cond
+      ((null? cs) '())
+      (else
+        (begin
+          (display "CASE")
+          (display i)
+          (display "=")
+          (newline)
+          (print-matrix (solve (car cs)))
+          (loop (+ i 1) (cdr cs)))))))

@@ -1,0 +1,69 @@
+(define (list-ref xs i)
+  (if (= i 0) (car xs) (list-ref (cdr xs) (- i 1))))
+
+(define (length xs)
+  (let loop ((acc 0) (xs xs))
+    (if (null? xs) acc (loop (+ acc 1) (cdr xs)))))
+
+(define (nth-rest xs i)
+  (if (= i 0) xs (nth-rest (cdr xs) (- i 1))))
+
+(define (cycle? vals cyc-idx n)
+  ; cyc-idx is the 0-indexed node the tail points to; -1 means no cycle
+  (if (= cyc-idx -1) #f
+      ; Walk n steps from head, then check if next step lands back at cyc-idx
+      ; A cycle exists if cyc-idx is reachable from head within n steps
+      (let loop ((i 0))
+        (cond ((>= i n) #f)
+              ((= i cyc-idx) #t)
+              (else (loop (+ i 1)))))))
+
+(define (run-case tokens)
+  ; Find "END" position
+  (let ((end-pos (let loop ((i 0) (ts tokens))
+                   (cond ((null? ts) i)
+                         ((equal? (car ts) "END") i)
+                         (else (loop (+ i 1) (cdr ts)))))))
+    ; vals = first end-pos tokens as numbers
+    (let ((vals (let loop ((i 0) (acc '()) (ts tokens))
+                  (if (= i end-pos)
+                      (reverse acc)
+                      (loop (+ i 1)
+                            (cons (string->number (car ts)) acc)
+                            (cdr ts))))))
+      (let ((n (length vals)))
+        ; cyc-idx token = token at end-pos+1, or "-1"/missing
+        (let ((cyc-token (list-ref tokens (+ end-pos 1))))
+          (if (null? cyc-token)
+                  #f
+                  (let ((cyc (string->number cyc-token)))
+                    (cycle? vals cyc n))))))))
+
+(define (solve tokens)
+  (run-case tokens))
+
+(define (display-result i result)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (if result "true" "false"))
+  (newline))
+
+; --- Test cases (embedded inputs) ---
+(define case0 '("3" "2" "0" "-4" "END" "1"))
+(define case1 '("1" "2" "END"))
+(define case2 '("1" "END"))
+(define case3 '("END"))
+(define case4 '("1" "2" "3" "4" "5" "END" "0"))
+(define case5 '("1" "2" "3" "END" "2"))
+(define case6 '("1" "2" "3" "4" "END" "-1"))
+(define case7 '("0" "END"))
+
+(display-result 0 (solve case0))
+(display-result 1 (solve case1))
+(display-result 2 (solve case2))
+(display-result 3 (solve case3))
+(display-result 4 (solve case4))
+(display-result 5 (solve case5))
+(display-result 6 (solve case6))
+(display-result 7 (solve case7))

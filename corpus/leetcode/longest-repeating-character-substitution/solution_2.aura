@@ -1,0 +1,53 @@
+(define (solve s k)
+  (let* ((n (string-length s))
+         (counts (make-vector 26 0)))
+    (let loop ((left 0) (right 0) (max-freq 0) (best 0))
+      (if (>= right n)
+          best
+          (let* ((c (string-ref s right))
+                 (ci (- (char->int c) (char->int #\A)))
+                 (new-count (+ (vector-ref counts ci) 1)))
+            (vector-set! counts ci new-count)
+            (let ((new-max (max max-freq new-count)))
+              (let ((window-size (+ (- right left) 1))
+                    (need (- window-size new-max)))
+                (if (<= need k)
+                    (loop left (+ right 1) new-max (max best window-size))
+                    (let* ((lc (string-ref s left))
+                           (li (- (char->int lc) (char->int #\A)))
+                           (lc-count (vector-ref counts li)))
+                      (vector-set! counts li (- lc-count 1))
+                      (loop (+ left 1) (+ right 1) new-max best))))))))))
+
+(define (string-length s)
+  (let loop ((i 0))
+    (if (>= i 65536) i
+        (if (char=? (string-ref s i) #\null) i
+            (loop (+ i 1))))))
+
+(define (char->int c)
+  (char->integer c))
+
+(define (make-vector n init)
+  (let ((v (make-vector n)))
+    (let loop ((i 0))
+      (if (< i n)
+          (begin (vector-set! v i init) (loop (+ i 1)))
+          v))))
+
+(define (max a b) (if (> a b) a b))
+(define (min a b) (if (< a b) a b))
+
+;; Test cases
+(define (run-tests)
+  (begin
+    (display "CASE0=") (display (solve "ABAB" 2)) (newline)
+    (display "CASE1=") (display (solve "AABABBA" 1)) (newline)
+    (display "CASE2=") (display (solve "AAAA" 0)) (newline)
+    (display "CASE3=") (display (solve "ABCDE" 0)) (newline)
+    (display "CASE4=") (display (solve "ABCDE" 2)) (newline)
+    (display "CASE5=") (display (solve "A" 0)) (newline)
+    (display "CASE6=") (display (solve "ABBB" 0)) (newline)
+    (display "CASE7=") (display (solve "ABBB" 1)) (newline)))
+
+(run-tests)

@@ -1,0 +1,221 @@
+;; Solution for Design Circular Deque
+;; Uses a circular buffer with head/tail indices and a count field.
+;; All operations are O(1).
+
+;; ----------------------
+;; Vector helpers
+;; ----------------------
+(define (make-vector n) (make-vector n))
+(define (vec-set! v i x) (vector-set! v i x))
+(define (vec-ref v i) (vector-ref v i))
+
+;; ----------------------
+;; Circular deque structure
+;; Fields stored in a vector of length k:
+;;   buf: vector of capacity k (one extra slot to distinguish full vs empty)
+;; head: index of front element
+;; tail: index of next insertion slot at rear
+;; size: current number of elements
+;; cap:  capacity (k)
+;; ----------------------
+
+(define (deque-make cap)
+  (let ((d (make-vector 5)))
+    (vec-set! d 0 (make-vector cap))   ; buf
+    (vec-set! d 1 0)                    ; head
+    (vec-set! d 2 0)                    ; tail
+    (vec-set! d 3 0)                    ; size
+    (vec-set! d 4 cap)                  ; cap
+    d))
+
+(define (deque-buf d) (vec-ref d 0))
+(define (deque-head d) (vec-ref d 1))
+(define (deque-tail d) (vec-ref d 2))
+(define (deque-size d) (vec-ref d 3))
+(define (deque-cap d) (vec-ref d 4))
+
+(define (set-head! d v) (vec-set! d 1 v))
+(define (set-tail! d v) (vec-set! d 2 v))
+(define (set-size! d v) (vec-set! d 3 v))
+
+(define (deque-isEmpty d) (= (deque-size d) 0))
+(define (deque-isFull d) (= (deque-size d) (deque-cap d)))
+
+(define (deque-insertFront d value)
+  (if (deque-isFull d)
+      #f
+      (begin
+        (let ((cap (deque-cap d))
+              (h (deque-head d)))
+          (set-head! d (modulo (- h 1) cap))
+          (vec-set! (deque-buf d) (deque-head d) value)
+          (set-size! d (+ (deque-size d) 1)))
+        #t)))
+
+(define (deque-insertLast d value)
+  (if (deque-isFull d)
+      #f
+      (begin
+        (vec-set! (deque-buf d) (deque-tail d) value)
+        (set-tail! d (modulo (+ (deque-tail d) 1) (deque-cap d)))
+        (set-size! d (+ (deque-size d) 1))
+        #t)))
+
+(define (deque-deleteFront d)
+  (if (deque-isEmpty d)
+      -1
+      (let ((v (vec-ref (deque-buf d) (deque-head d))))
+        (set-head! d (modulo (+ (deque-head d) 1) (deque-cap d)))
+        (set-size! d (- (deque-size d) 1))
+        v)))
+
+(define (deque-deleteLast d)
+  (if (deque-isEmpty d)
+      -1
+      (let ((cap (deque-cap d))
+            (t (deque-tail d)))
+        (set-tail! d (modulo (- t 1) cap))
+        (let ((v (vec-ref (deque-buf d) (deque-tail d))))
+          (set-size! d (- (deque-size d) 1))
+          v))))
+
+(define (deque-getFront d)
+  (if (deque-isEmpty d)
+      -1
+      (vec-ref (deque-buf d) (deque-head d))))
+
+(define (deque-getRear d)
+  (if (deque-isEmpty d)
+      -1
+      (let ((t (deque-tail d))
+            (cap (deque-cap d)))
+        (vec-ref (deque-buf d) (modulo (- t 1) cap)))))
+
+;; ----------------------
+;; Parse operations list (flat: name, arg, name, arg, ...)
+;; Each element is a string. Returns a list of (op-name . arg) pairs.
+;; ----------------------
+
+(define (parse-ops lst)
+  (parse-ops-helper lst '()))
+
+(define (parse-ops-helper lst acc)
+  (if (null? lst)
+      (reverse acc)
+      (let ((op (car lst)))
+        (cond
+          ((equal? op "isEmpty") (parse-ops-helper (cdr lst) (cons (cons op #f) acc)))
+          ((equal? op "isFull") (parse-ops-helper (cdr lst) (cons (cons op #f) acc)))
+          ((equal? op "getFront") (parse-ops-helper (cdr lst) (cons (cons op #f) acc)))
+          ((equal? op "getRear") (parse-ops-helper (cdr lst) (cons (cons op #f) acc)))
+          ((equal? op "insertFront") (parse-ops-helper (cddr lst) (cons (cons op (string->number (cadr lst))) acc)))
+          ((equal? op "insertLast") (parse-ops-helper (cddr lst) (cons (cons op (string->number (cadr lst))) acc)))
+          ((equal? op "deleteFront") (parse-ops-helper (cdr lst) (cons (cons op #f) acc)))
+          ((equal? op "deleteLast") (parse-ops-helper (cdr lst) (cons (cons op #f) acc)))
+          (else (parse-ops-helper (cdr lst) acc))))))
+
+;; ----------------------
+;; Run operations, collecting results.
+;; Returns a list of results (in order).
+;; ----------------------
+
+(define (run-ops d ops)
+  (run-ops-helper d ops '()))
+
+(define (run-ops-helper d ops acc)
+  (if (null? ops)
+      (reverse acc)
+      (let* ((p (car ops))
+             (op (car p))
+             (arg (cdr p))
+             (res
+               (cond
+                 ((equal? op "insertFront") (deque-insertFront d arg))
+                 ((equal? op "insertLast")  (deque-insertLast d arg))
+                 ((equal? op "deleteFront") (deque-deleteFront d))
+                 ((equal? op "deleteLast")  (deque-deleteLast d))
+                 ((equal? op "getFront")    (deque-getFront d))
+                 ((equal? op "getRear")     (deque-getRear d))
+                 ((equal? op "isEmpty")     (deque-isEmpty d))
+                 ((equal? op "isFull")      (deque-isFull d))
+                 (else #f))))
+        (run-ops-helper d (cdr ops) (cons res acc)))))
+
+;; ----------------------
+;; Display helpers
+;; ----------------------
+
+(define (display-list lst)
+  (display "[")
+  (display-list-helper lst)
+  (display "]"))
+
+(define (display-list-helper lst)
+  (cond
+    ((null? lst) (void))
+    ((null? (cdr lst))
+     (display (car lst)))
+    (else
+      (display (car lst))
+      (display ",")
+      (display-list-helper (cdr lst)))))
+
+;; ----------------------
+;; solve: build deque, run ops, return result list
+;; ----------------------
+
+(define (solve k ops-list)
+  (let ((d (deque-make k))
+        (parsed (parse-ops ops-list)))
+    (run-ops d parsed)))
+
+;; ----------------------
+;; Main: run all cases
+;; ----------------------
+
+(define (main)
+  ;; CASE 0
+  (let ((r0 (solve 3 (list "insertLast" "1" "insertLast" "2" "insertFront" "3"
+                           "insertFront" "4" "getRear" "isFull" "deleteLast"
+                           "insertFront" "4" "getFront"))))
+    (display "CASE0=")
+    (display-list r0)
+    (newline))
+  ;; CASE 1
+  (let ((r1 (solve 1 (list "insertLast" "10" "getFront" "getRear" "isFull"
+                           "deleteLast" "isEmpty" "insertFront" "20"
+                           "getFront" "insertLast" "30"))))
+    (display "CASE1=")
+    (display-list r1)
+    (newline))
+  ;; CASE 2
+  (let ((r2 (solve 4 (list "isEmpty" "insertFront" "1" "insertLast" "2"
+                           "getFront" "getRear" "deleteFront" "deleteLast"
+                           "isEmpty" "isFull"))))
+    (display "CASE2=")
+    (display-list r2)
+    (newline))
+  ;; CASE 3
+  (let ((r3 (solve 2 (list "insertFront" "1" "insertLast" "2" "insertFront" "3"
+                           "getFront" "getRear" "isFull" "deleteFront" "deleteLast"
+                           "deleteFront" "isEmpty"))))
+    (display "CASE3=")
+    (display-list r3)
+    (newline))
+  ;; CASE 4
+  (let ((r4 (solve 5 (list "insertLast" "1" "insertLast" "2" "insertLast" "3"
+                           "insertLast" "4" "deleteFront" "deleteLast"
+                           "getFront" "getRear" "insertFront" "0"
+                           "insertLast" "5" "isFull" "getRear"
+                           "deleteFront" "deleteLast"))))
+    (display "CASE4=")
+    (display-list r4)
+    (newline))
+  ;; CASE 5
+  (let ((r5 (solve 3 (list "getFront" "getRear" "deleteFront" "deleteLast"
+                           "isEmpty" "isFull"))))
+    (display "CASE5=")
+    (display-list r5)
+    (newline)))
+
+(main)

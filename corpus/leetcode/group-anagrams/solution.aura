@@ -1,0 +1,103 @@
+(define (sort-list xs)
+  (if (null? xs)
+      '()
+      (let ((rest-sorted (sort-list (cdr xs))))
+        (insert-sorted (car xs) rest-sorted))))
+
+(define (insert-sorted x ys)
+  (cond ((null? ys) (list x))
+        ((string<=? x (car ys)) (cons x ys))
+        (else (cons (car ys) (insert-sorted x (cdr ys))))))
+
+(define (string<=? a b)
+  (cond ((and (null? a) (null? b)) #t)
+        ((null? a) #t)
+        ((null? b) #f)
+        ((char<? (car a) (car b)) #t)
+        ((char>? (car a) (car b)) #f)
+        (else (string<=? (cdr a) (cdr b)))))
+
+(define (sorted-string s)
+  (list->string (sort-list s)))
+
+(define (group-anagrams strs)
+  (let loop ((remaining strs) (acc '()))
+    (if (null? remaining)
+        (reverse acc)
+        (loop (cdr remaining)
+              (cons (sorted-string (car remaining)) acc)))))
+
+(define (solve strings)
+  (group-anagrams strings))
+
+(define (display-list xs)
+  (display "(")
+  (let loop ((rest xs) (first #t))
+    (cond ((null? rest) (display ")"))
+          (first
+           (display (car rest))
+           (loop (cdr rest) #f))
+          (else
+           (display " ")
+           (display (car rest))
+           (loop (cdr rest) #f)))))
+
+(define (display-groups groups)
+  (display "(")
+  (let loop ((rest groups) (first #t))
+    (cond ((null? rest) (display ")"))
+          (first
+           (display-list (car rest))
+           (loop (cdr rest) #f))
+          (else
+           (display " ")
+           (display-list (car rest))
+           (loop (cdr rest) #f)))))
+
+;; CASE0
+(let ((result (solve (list (string->list "eat") (string->list "tea") (string->list "tan") (string->list "ate") (string->list "nat") (string->list "bat")))))
+  (display "CASE0=")
+  (display-groups result)
+  (newline))
+
+;; CASE1
+(let ((result (solve '())))
+  (display "CASE1=")
+  (display-groups result)
+  (newline))
+
+;; CASE2
+(let ((result (solve (list (string->list "")))))
+  (display "CASE2=")
+  (display-groups result)
+  (newline))
+
+;; CASE3
+(let ((result (solve (list (string->list "") (string->list "")))))
+  (display "CASE3=")
+  (display-groups result)
+  (newline))
+
+;; CASE4
+(let ((result (solve (list (string->list "abc") (string->list "bca") (string->list "cab") (string->list "xyz") (string->list "zyx") (string->list "yxz")))))
+  (display "CASE4=")
+  (display-groups result)
+  (newline))
+
+;; CASE5
+(let ((result (solve (list (string->list "a")))))
+  (display "CASE5=")
+  (display-groups result)
+  (newline))
+
+;; CASE6
+(let ((result (solve (list (string->list "listen") (string->list "silent") (string->list "enlist") (string->list "hello") (string->list "olleh")))))
+  (display "CASE6=")
+  (display-groups result)
+  (newline))
+
+;; CASE7
+(let ((result (solve (list (string->list "ab") (string->list "ba") (string->list "cd") (string->list "dc") (string->list "ef")))))
+  (display "CASE7=")
+  (display-groups result)
+  (newline))

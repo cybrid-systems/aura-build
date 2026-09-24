@@ -1,0 +1,65 @@
+(define (solve arr)
+  (let ((n (length arr)))
+    (cond
+      ((= n 0) 0)
+      ((= n 1) 1)
+      (else
+       (let ((inc 1) (dec 1) (max-len 1))
+         (let loop ((i 1) (inc 1) (dec 1) (max-len 1))
+           (cond
+             ((>= i n) max-len)
+             (else
+              (let ((a (list-ref arr (- i 1)))
+                    (b (list-ref arr i)))
+                (let ((new-inc 1) (new-dec 1))
+                  (cond
+                    ((< a b)
+                     (set! new-inc (+ dec 1))
+                     (set! new-dec 1))
+                    ((> a b)
+                     (set! new-dec (+ inc 1))
+                     (set! new-inc 1))
+                    (else
+                     (set! new-inc 1)
+                     (set! new-dec 1)))
+                  (let ((cur-max (max new-inc new-dec)))
+                    (loop (+ i 1) new-inc new-dec (max max-len cur-max))))))))))))
+
+(define (list-ref lst i)
+  (cond
+    ((null? lst) (error "list-ref: out of bounds"))
+    ((= i 0) (car lst))
+    (else (list-ref (cdr lst) (- i 1)))))
+
+(define (max a b)
+  (if (> a b) a b))
+
+(define (length lst)
+  (let loop ((l lst) (c 0))
+    (if (null? l) c (loop (cdr l) (+ c 1)))))
+
+;; Test cases
+(define case0 '(9 4 2 10 7 8 8 1 9))
+(define case1 '(4 8 12 16))
+(define case2 '(1 1 1 1))
+(define case3 '(1))
+(define case4 '(1 2))
+(define case5 '(2 1))
+(define case6 '(2 1 2 1 2 1))
+(define case7 '(1 2 3 2 1 2 3 4))
+
+(define (run-case i arr)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve arr))
+  (newline))
+
+(run-case 0 case0)
+(run-case 1 case1)
+(run-case 2 case2)
+(run-case 3 case3)
+(run-case 4 case4)
+(run-case 5 case5)
+(run-case 6 case6)
+(run-case 7 case7)

@@ -1,0 +1,100 @@
+(define (length xs)
+  (let loop ((xs xs) (n 0))
+    (if (null? xs) n (loop (cdr xs) (+ n 1)))))
+
+(define (solve nums)
+  ;; sliding window with at most one zero inside
+  (let loop ((left nums) (right nums) (zero-count 0) (best 0))
+    (if (null? right)
+        best
+        (let* ((r (car right))
+               (new-zc (+ zero-count (if (= r 0) 1 0))))
+          (if (> new-zc 1)
+              ;; too many zeros: shrink from left
+              (let shrink ((l left) (zc new-zc))
+                (let ((x (car l)))
+                  (if (= x 0)
+                      (loop (cdr l) (cdr right) (- zc 1) best)
+                      (shrink (cdr l) zc))))
+              (let ((win (+ (- (length nums) (- (length right) (length left))) 1))
+                    ;; compute window length properly: positions from left to right inclusive
+                    )
+                (let ((new-best (let ((nb 0))
+                                  (let cnt ((ll left) (rr right))
+                                    (if (and (not (null? ll)) (not (and (null? rr) #f)))
+                                        ;; just use a length-of-sublist approach
+                                        0
+                                        nb)))))
+                  (loop left (cdr right) new-zc (max best new-best))))))))
+
+(define (sublist-length-from left right)
+  ;; count elements from left through right inclusive
+  (let loop ((l left) (n 0) (done #f))
+    (cond ((and done) n)
+          ((null? l) n)
+          ((eq? l right) (+ n 1))
+          (else (loop (cdr l) (+ n 1) (or done (null? (cdr l))))))))
+
+;; Cleaner rewrite of solve using proper window length tracking
+(define (solve nums)
+  (let loop ((left nums) (right nums) (left-len-left 0) (zc 0) (best 0))
+    (if (null? right)
+        best
+        (let ((r (car right)))
+          (set! zc (+ zc (if (= r 0) 1 0)))
+          (if (> zc 1)
+              (let shrink ((l left) (ll left-len-left))
+                (let ((x (car l)))
+                  (if (= x 0)
+                      (loop (cdr l) (cdr right) (+ ll 1) (- zc 1)
+                            (max best (- (+ left-len-left 1) ll)))
+                      (shrink (cdr l) (+ ll 1)))))
+              (let ((right-len-left left-len-left))
+                (set! best (max best (+ (- right-len-left left-len-left) 1)))
+                (loop left (cdr right) (+ left-len-left 1) zc best)))))))
+
+;; Final clean version
+(define (solve nums)
+  ;; returns max window length with at most one zero
+  ;; we track window via left/right pointers and zero count
+  ;; length of window = (position of right) - (position of left) + 1
+  ;; use index counters
+  (let loop ((left nums) (right nums) (li 0) (ri -1) (zc 0) (best 0))
+    (if (null? right)
+        best
+        (begin
+          (set! ri (+ ri 1))
+          (set! zc (+ zc (if (= (car right) 0) 1 0)))
+          (if (> zc 1)
+              (begin
+                (if (= (car left) 0)
+                    (set! zc (- zc 1)))
+                (set! left (cdr left))
+                (set! li (+ li 1)))
+              (set! best (max best (- ri li -1))))
+          (loop left (cdr right) li ri zc best)))))
+
+;; I/O
+(define (run)
+  (let ((cases
+         (list
+           (list 1 1 0 1 1 1 0 1 1)
+           (list 1 0 1 1 0)
+           (list 0 0 0)
+           (list 1 1 1 1)
+           (list 0)
+           (list 0 1)
+           (list 1 0 0 1 1 0 1)
+           (list 1 0 1 0 1 0 1))))
+    (let loop ((cases cases) (i 0))
+      (if (null? cases)
+          '()
+          (begin
+            (display "CASE")
+            (display i)
+            (display "=")
+            (display (solve (car cases)))
+            (newline)
+            (loop (cdr cases) (+ i 1)))))))
+
+(run)

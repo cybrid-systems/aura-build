@@ -1,0 +1,83 @@
+;; Helper: build list of integers 0..n-1
+(define (iota n)
+  (let loop ((i 0) (acc '()))
+    (if (>= i n)
+        acc
+        (loop (+ i 1) (cons i acc)))))
+
+;; Sort a list of indices by the start time of each interval
+;; Uses insertion sort (stable for our purposes)
+(define (sort-by-start intervals indices)
+  (define (insert idx remaining)
+    (let ((idx-start (car (vector-ref intervals idx))))
+      (define (loop prev curr)
+        (cond
+          ((null? curr)
+           (set-cdr! prev (cons idx '()))
+           indices)
+          (else
+           (let ((curr-start (car (vector-ref intervals (car curr)))))
+             (if (< idx-start curr-start)
+                 (begin
+                   (set-cdr! prev (cons idx curr))
+                   indices)
+                 (loop curr (cdr curr)))))))
+      (if (null? remaining)
+          (cons idx '())
+          (begin
+            (if (<= idx-start (car (vector-ref intervals (car remaining))))
+                (cons idx remaining)
+                (let ((new-list (cons (car remaining) (insert idx (cdr remaining)))))
+                  new-list))))))
+  (define (loop remaining acc)
+    (if (null? remaining)
+        acc
+        (loop (cdr remaining) (insert (car remaining) acc))))
+  (if (null? indices)
+      '()
+      (loop (cdr indices) (list (car indices)))))
+
+;; Check if any consecutive intervals (in sorted order) overlap
+(define (has-overlap? intervals sorted-indices)
+  (define (loop idxs prev-end)
+    (cond
+      ((null? idxs) #f)
+      (else
+       (let ((cur-start (car (vector-ref intervals (car idxs))))
+             (cur-end (cdr (vector-ref intervals (car idxs)))))
+         (if (and (not (null? prev-end))
+                  (> prev-end cur-start))
+             #t
+             (loop (cdr idxs) cur-end))))))
+  (loop sorted-indices '()))
+
+(define (solve n intervals)
+  (if (<= n 1)
+      #t
+      (let ((indices (iota n)))
+        (not (has-overlap? intervals (sort-by-start intervals indices))))))
+
+;; Run test cases
+(define (run-tests cases)
+  (let loop ((cases cases) (i 0))
+    (if (null? cases)
+        'done
+        (let ((result (solve (car (car cases)) (cadr (car cases)))))
+          (begin
+            (display "CASE")
+            (display i)
+            (display "=")
+            (display result)
+            (newline)
+            (loop (cdr cases) (+ i 1)))))))
+
+(run-tests
+  (list
+    (list 0 (vector))
+    (list 1 (vector (cons 0 5)))
+    (list 3 (vector (cons 0 30) (cons 5 10) (cons 15 20)))
+    (list 2 (vector (cons 5 10) (cons 0 5)))
+    (list 4 (vector (cons 1 4) (cons 4 8) (cons 8 12) (cons 12 16)))
+    (list 3 (vector (cons 1 5) (cons 3 7) (cons 6 10)))
+    (list 5 (vector (cons 0 1) (cons 1 2) (cons 2 3) (cons 3 4) (cons 4 5)))
+    (list 2 (vector (cons 0 10) (cons 10 20)))))

@@ -1,0 +1,45 @@
+(define (reverse-list head)
+  ;; Reverse the list of node values in place conceptually
+  (let loop ((rest head) (acc '()))
+    (if (null? rest)
+        acc
+        (loop (cdr rest) (cons (car rest) acc)))))
+
+(define (solve head)
+  (reverse-list head))
+
+(define (display-list lst)
+  ;; Display list in readable form: a->b->c
+  (let loop ((l lst) (first #t))
+    (cond
+      ((null? l)
+       (display ""))
+      (first
+       (display (car l))
+       (loop (cdr l) #f))
+      (else
+       (display "->")
+       (display (car l))
+       (loop (cdr l) #f)))))
+
+(define (run-case i head)
+  (let ((result (solve head)))
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display-list result)
+    (newline)))
+
+;; Embedded test cases from the problem
+;; CASE0: head = []
+;; CASE1: head = [1]
+;; CASE2: head = [1] -> wait, these look odd; treat them as given
+
+(run-case 0 '())
+(run-case 1 '(1))
+(run-case 2 '(1))
+(run-case 3 '(1))
+(run-case 4 '(7))
+(run-case 5 '(-3))
+(run-case 6 '(100))
+(run-case 7 '(1))

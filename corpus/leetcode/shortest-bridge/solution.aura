@@ -1,0 +1,170 @@
+;; Shortest Bridge solver in Aura
+;; Reads grid, finds two islands via BFS, performs multi-source BFS from one island
+;; to find minimum flips needed.
+
+(define (make-grid n rows)
+  (let loop ((i 0) (acc '()))
+    (if (= i n)
+        (reverse acc)
+        (loop (+ i 1) (cons (list-ref rows i) acc)))))
+
+(define (grid-get g r c)
+  (list-ref (list-ref g r) c))
+
+(define (grid-set! g r c v)
+  (set! (list-ref (list-ref g r) c) v))
+
+(define (in-grid? n r c)
+  (and (>= r 0) (< r n) (>= c 0) (< c n)))
+
+;; Collect cells of the island containing (sr,sc) using BFS
+(define (collect-island g n sr sc)
+  (let* ((visited (make-vector (* n n) #f))
+         (queue (list (cons sr sc)))
+         (cells '()))
+    (vector-set! visited (+ (* sr n) sc) #t)
+    (set! cells (cons (cons sr sc) cells))
+    (let loop ()
+      (if (null? queue)
+          cells
+          (let* ((cell (car queue))
+                (r (car cell))
+                (c (cdr cell))
+                (queue (cdr queue))
+                (neighbors '((0 . 1) (0 . -1) (1 . 0) (-1 . 0))))
+            (let inner-loop ((ns neighbors))
+              (if (null? ns)
+                  (loop)
+                  (let* ((d (car ns))
+                         (nr (+ r (car d)))
+                         (nc (+ c (cdr d))))
+                    (if (and (in-grid? n nr nc)
+                             (= (grid-get g nr nc) 1)
+                             (not (vector-ref visited (+ (* nr n) nc))))
+                        (begin
+                          (vector-set! visited (+ (* nr n) nc) #t)
+                          (set! cells (cons (cons nr nc) cells))
+                          (set! queue (append queue (list (cons nr nc))))
+                          (inner-loop (cdr ns)))
+                        (inner-loop (cdr ns)))))))))))
+
+;; Multi-source BFS from island cells. Returns minimum distance to reach a '1' not in the source island.
+(define (bfs-bridge g n source-cells)
+  (let* ((visited (make-vector (* n n) #f))
+         (queue source-cells)
+         (dist 0))
+    ;; Mark all source cells visited
+    (let mark-loop ((cells source-cells))
+      (if (not (null? cells))
+          (let* ((c (car cells))
+                 (r (car c))
+                 (cc (cdr c)))
+            (vector-set! visited (+ (* r n) cc) #t)
+            (mark-loop (cdr cells)))
+          'done))
+    (let bfs-loop ()
+      (if (null? queue)
+          -1
+          (let* ((sz (length queue))
+                 (new-queue '())
+                 (found #f)
+                 (result 0))
+            (let inner ((k 0) (q queue) (nq '()))
+              (if (= k sz)
+                  (begin
+                    (set! queue (reverse nq))
+                    (if found
+                        result
+                        (begin
+                          (set! dist (+ dist 1))
+                          (bfs-loop))))
+                  (let* ((cell (car q))
+                         (r (car cell))
+                         (c (cdr cell))
+                         (neighbors '((0 . 1) (0 . -1) (1 . 0) (-1 . 0))))
+                    (let inner2 ((ns neighbors) (nq2 nq))
+                      (if (null? ns)
+                          (inner (+ k 1) (cdr q) nq2)
+                          (let* ((d (car ns))
+                                 (nr (+ r (car d)))
+                                 (nc (+ c (cdr d))))
+                            (if (not (in-grid? n nr nc))
+                                (inner2 (cdr ns) nq2)
+                                (let ((idx (+ (* nr n) nc)))
+                                  (if (vector-ref visited idx)
+                                      (inner2 (cdr ns) nq2)
+                                      (begin
+                                        (vector-set! visited idx #t)
+                                        (if (= (grid-get g nr nc) 1)
+                                            (begin
+                                              (set! found #t)
+                                              (set! result dist)
+                                              (inner2 (cdr ns) nq2))
+                                            (begin
+                                              (set! nq2 (cons (cons nr nc) nq2))
+                                              (inner2 (cdr ns) nq2))))))))))))))
+            ))))
+
+(define (solve grid)
+  (let* ((n (length grid))
+         (island-cells '())
+         (start-r 0)
+         (start-c 0)
+         (found-start #f))
+    ;; Find first '1'
+    (let row-loop ((r 0))
+      (if (and (< r n) (not found-start))
+          (let col-loop ((c 0))
+            (if (and (< c n) (not found-start))
+                (if (= (grid-get grid r c) 1)
+                    (begin
+                      (set! start-r r)
+                      (set! start-c c)
+                      (set! found-start #t)
+                      (col-loop (+ c 1)))
+                    (col-loop (+ c 1)))
+                (row-loop (+ r 1))))
+          'done))
+    (set! island-cells (collect-island grid n start-r start-c))
+    (bfs-bridge grid n island-cells)))
+
+;; Embed test inputs and call solve for each case
+;; CASE0
+(display "CASE0=")
+(display (solve '((0 1 0 0) (0 0 0 0) (0 0 1 0) (0 0 0 0))))
+(newline)
+
+;; CASE1
+(display "CASE1=")
+(display (solve '((1 1 1 1 1) (1 0 0 0 1) (1 0 1 0 1) (1 0 0 0 1) (1 1 1 1 1))))
+(newline)
+
+;; CASE2
+(display "CASE2=")
+(display (solve '((1 0 0) (0 0 0) (0 0 1))))
+(newline)
+
+;; CASE3
+(display "CASE3=")
+(display (solve '((1 0) (0 1))))
+(newline)
+
+;; CASE4
+(display "CASE4=")
+(display (solve '((1 1 0 0 0) (1 1 0 0 0) (0 0 0 1 1) (0 0 0 1 1))))
+(newline)
+
+;; CASE5
+(display "CASE5=")
+(display (solve '((1))))
+(newline)
+
+;; CASE6
+(display "CASE6=")
+(display (solve '((1 1 0 1 0) (0 1 0 0 1) (1 0 0 0 0) (0 0 0 1 0) (1 0 1 0 1))))
+(newline)
+
+;; CASE7
+(display "CASE7=")
+(display (solve '((1 0 1) (1 0 0) (0 0 1))))
+(newline)

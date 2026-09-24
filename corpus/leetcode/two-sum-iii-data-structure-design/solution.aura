@@ -1,0 +1,119 @@
+(define (make-list n)
+  (if (= n 0) '() (cons 0 (make-list (- n 1)))))
+
+(define (list-ref-aux lst i)
+  (if (= i 0) (car lst) (list-ref-aux (cdr lst) (- i 1))))
+
+(define (list-set-aux lst i v)
+  (if (= i 0) (cons v (cdr lst)) (cons (car lst) (list-set-aux (cdr lst) (- i 1) v))))
+
+(define (list-ref lst i) (list-ref-aux lst i))
+(define (list-set! lst i v) (list-set-aux lst i v))
+
+(define (op-arg op idx) (list-ref op idx))
+
+(define (solve ops)
+  (let ((counts '())
+        (keys '())
+        (results '()))
+    (letrec ((process (lambda (rest)
+              (if (null? rest) results
+                (let ((op (car rest)))
+                  (let ((action (op-arg op 0)))
+                    (cond
+                      ((equal? action 'add)
+                       (let ((n (op-arg op 1)))
+                         (letrec ((find-key (lambda (k rest-keys)
+                                    (cond
+                                      ((null? rest-keys) #f)
+                                      ((equal? (car rest-keys) k) #t)
+                                      (else (find-key k (cdr rest-keys)))))))
+                           (if (find-key n keys)
+                             (set! counts (update-count counts n))
+                             (begin
+                               (set! counts (cons (cons n 1) counts))
+                               (set! keys (cons n keys))))))
+                       (process (cdr rest)))
+                      ((equal? action 'find)
+                       (let ((v (op-arg op 1)))
+                         (letrec ((check-keys (lambda (ks)
+                                    (cond
+                                      ((null? ks) #f)
+                                      (else
+                                       (let ((k (car ks)))
+                                         (let ((other (- v k)))
+                                           (letrec ((find-other (lambda (k2 rest-k2)
+                                                      (cond
+                                                        ((null? rest-k2) #f)
+                                                        ((equal? (car rest-k2) k2) (get-count counts k2))
+                                                        (else (find-other k2 (cdr rest-k2)))))))
+                                             (if (= k other)
+                                               (if (and (find-other k ks) (>= (find-other k ks) 2))
+                                                 #t
+                                                 (check-keys (cdr ks)))
+                                               (if (find-other other ks)
+                                                 #t
+                                                 (check-keys (cdr ks)))))))))))
+                           (let ((ans (check-keys keys)))
+                             (set! results (append results (list ans)))
+                             (process (cdr rest)))))))
+                      (else (process (cdr rest)))))))))
+      (process ops))))
+
+(define (get-count counts k)
+  (letrec ((loop (lambda (rest)
+            (cond
+              ((null? rest) 0)
+              ((equal? (car (car rest)) k) (cdr (car rest)))
+              (else (loop (cdr rest)))))))
+    (loop counts)))
+
+(define (update-count counts k)
+  (letrec ((loop (lambda (rest)
+            (cond
+              ((null? rest) '())
+              ((equal? (car (car rest)) k) (cons (cons k (+ (cdr (car rest)) 1)) (cdr rest)))
+              (else (cons (car rest) (loop (cdr rest))))))))
+    (loop counts)))
+
+(define (append lst1 lst2)
+  (if (null? lst1) lst2 (cons (car lst1) (append (cdr lst1) lst2))))
+
+(define (display-list lst)
+  (letrec ((loop (lambda (rest)
+            (if (null? rest) (display ")")
+              (begin
+                (display " ")
+                (display (car rest))
+                (loop (cdr rest)))))))
+    (begin (display "(") (loop lst))))
+
+(define (bool->string b) (if b "true" "false"))
+
+(define (display-results lst)
+  (letrec ((loop (lambda (rest)
+            (if (null? rest) '()
+              (begin
+                (display (bool->string (car rest)))
+                (newline)
+                (loop (cdr rest)))))))
+    (loop lst)))
+
+; Test cases
+(define case0 '(("add" 1) ("add" 3) ("add" 5) ("find" 4) ("find" 7)))
+(define case1 '(("add" 0) ("add" 0) ("find" 0)))
+(define case2 '(("add" 1) ("add" 2) ("add" 3)))
+(define case3 '(("add" 5) ("find" 10)))
+(define case4 '(("add" -1) ("add" -3) ("add" 5) ("find" -4) ("find" 4)))
+(define case5 '(("add" 2) ("add" 2) ("add" 3) ("find" 4) ("find" 6)))
+(define case6 '(("find" 0)))
+(define case7 '(("add" 1) ("find" 2) ("add" 1) ("find" 2)))
+
+(display-results (solve case0))
+(display-results (solve case1))
+(display-results (solve case2))
+(display-results (solve case3))
+(display-results (solve case4))
+(display-results (solve case5))
+(display-results (solve case6))
+(display-results (solve case7))

@@ -1,0 +1,72 @@
+;; Build a list of 26 zeros using a helper.
+(define (make-counts n)
+  (if (= n 26)
+      '()
+      (cons 0 (make-counts (+ n 1)))))
+
+;; Increment count for character c (lowercase letter) in counts list.
+(define (bump c counts)
+  (define idx (- (char->integer c) (char->integer #\a)))
+  (set-counts counts idx 1))
+
+(define (set-counts counts idx delta)
+  (if (= idx 0)
+      (cons (+ (car counts) delta) (cdr counts))
+      (cons (car counts) (set-counts (cdr counts) (- idx 1) delta))))
+
+;; Decrement and check if result would go negative.
+(define (try-decrement counts c)
+  (define idx (- (char->integer c) (char->integer #\a)))
+  (if (< (get-count counts idx) 1)
+      #f
+      (begin (set-counts counts idx -1) #t)))
+
+(define (get-count counts idx)
+  (if (= idx 0)
+      (car counts)
+      (get-count (cdr counts) (- idx 1))))
+
+;; Process a string: for magazine bump; for ransom try-decrement.
+(define (process chars counts mode)
+  (cond ((null? chars) counts)
+        ((string=? mode "mag")
+         (process (cdr chars) (bump (car chars) counts) mode))
+        (else
+         (if (try-decrement counts (car chars))
+             (process (cdr chars) counts mode)
+             #f))))
+
+(define (string-length s)
+  (if (string=? s "") 0 (+ 1 (string-length (substring s 1 (string-length s))))))
+
+(define (string->list s)
+  (if (string=? s "")
+      '()
+      (cons (string-ref s 0) (string->list (substring s 1 (string-length s))))))
+
+(define (solve ransomNote magazine)
+  (if (> (string-length ransomNote) (string-length magazine))
+      #f
+      (let ((counts (make-counts 0)))
+        (let ((after-mag (process (string->list magazine) counts "mag")))
+          (if (eq? after-mag #f)
+              #f
+              (process (string->list ransomNote) after-mag "rans"))))))
+
+;; Test cases
+(let ((r0 "a") (m0 "b")
+      (r1 "aa") (m1 "ab")
+      (r2 "aa") (m2 "aab")
+      (r3 "abc") (m3 "aabbcc")
+      (r4 "abc") (m4 "abcc")
+      (r5 "abcd") (m5 "abc")
+      (r6 "") (m6 "abc")
+      (r7 "aabbcc") (m7 "abcabc"))
+  (display "CASE0=") (display (if (solve r0 m0) "true" "false")) (newline)
+  (display "CASE1=") (display (if (solve r1 m1) "true" "false")) (newline)
+  (display "CASE2=") (display (if (solve r2 m2) "true" "false")) (newline)
+  (display "CASE3=") (display (if (solve r3 m3) "true" "false")) (newline)
+  (display "CASE4=") (display (if (solve r4 m4) "true" "false")) (newline)
+  (display "CASE5=") (display (if (solve r5 m5) "true" "false")) (newline)
+  (display "CASE6=") (display (if (solve r6 m6) "true" "false")) (newline)
+  (display "CASE7=") (display (if (solve r7 m7) "true" "false")) (newline))

@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:25:07Z",
+      "ts_local": "2026-09-24 22:25:07 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1497,
+        "total_characters": 0,
+        "prompt_tokens": 1199,
+        "completion_tokens": 298,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.02,
+      "tests_passed": 0,
+      "tests_total": 10,
+      "stderr_snippet": "⚠ program returned an uncalled function\n",
+      "stdout_snippet": "#<procedure>\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:25:12Z",
+      "ts_local": "2026-09-24 22:25:12 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1888,
+        "total_characters": 0,
+        "prompt_tokens": 1199,
+        "completion_tokens": 689,
+        "prompt_tokens_details": {
+          "cached_tokens": 1198
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.09,
+      "tests_passed": 0,
+      "tests_total": 10,
+      "stderr_snippet": "error: 5:22: unbound variable: loop\nerror: 5:22: unbound variable: loop\nerror: 5:22: unbound variable: loop\nerror: 5:22: unbound variable: loop\nerror: 5:22: unbound variable: loop\nerror: 5:22: unbound variable: loop\nerror: 5:22: unbound variable: loop\nerror: 5:22: unbound variable: loop\nerror: 5:22: unbound variable: loop\nerror: 5:22: unbound variable: loop\n",
+      "stdout_snippet": "CASE0=CASE0=\nCASE1=\nCASE2=\nCASE3=\nCASE4=\nCASE5=\nCASE6=\nCASE7=\nCASE8=\nCASE9=\n"
+    }
+  ],
+  "slug": "roman-to-integer",
+  "title": "Roman to Integer",
+  "category": "strings",
+  "updated_at": "2026-09-24T14:25:12Z",
+  "updated_at_local": "2026-09-24 22:25:12 CST"
+}

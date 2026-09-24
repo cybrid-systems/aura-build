@@ -1,0 +1,43 @@
+(define (make-node v l r) (list v l r))
+
+(define (build-tree lst)
+  (define (helper lst idx)
+    (if (or (null? lst) (>= idx (length lst)))
+        '()
+        (let ((v (list-ref lst idx)))
+          (if (null? v)
+              '()
+              (let ((l (helper lst (+ (* idx 2) 1)))
+                    (r (helper lst (+ (* idx 2) 2))))
+                (make-node v l r))))))
+  (helper lst 0))
+
+(define (same? p q)
+  (cond
+    ((and (null? p) (null? q)) #t)
+    ((or (null? p) (null? q)) #f)
+    (else
+      (let ((vp (car p)) (lp (car (cdr p))) (rp (car (cdr (cdr p))))
+            (vq (car q)) (lq (car (cdr q))) (rq (car (cdr (cdr q)))))
+        (if (equal? vp vq)
+            (and (same? lp lq) (same? rp rq))
+            #f)))))
+
+(define (solve p q)
+  (same? (build-tree p) (build-tree q)))
+
+(define (display-case i result)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display result)
+  (newline))
+
+(display-case 0 (solve (list 1 2 3) (list 1 2 3)))
+(display-case 1 (solve (list 1 2) (list 1 '() 2)))
+(display-case 2 (solve (list 1 2 1) (list 1 1 2)))
+(display-case 3 (solve '() '()))
+(display-case 4 (solve '() (list 1)))
+(display-case 5 (solve (list 1 '() 2 '() 3) (list 1 '() 2 '() 3)))
+(display-case 6 (solve (list 1 2 '() '() 3) (list 1 2 '() '() 3)))
+(display-case 7 (solve (list 1 2 3 '() '() '() 4) (list 1 2 3 '() '() '() 4)))

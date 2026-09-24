@@ -1,0 +1,176 @@
+(define (solve capacity commands)
+  ;; commands is a list of (op . arg) pairs (arg may be absent)
+  (let ((arr (make-vector (+ capacity 1) 0))
+        (head 0)
+        (tail 0)
+        (cnt 0)
+        (cap (+ capacity 1))
+        (results '()))
+    (define (rec cmds res)
+      (if (null? cmds)
+          (reverse res)
+          (let* ((cmd (car cmds))
+                 (op (car cmd)))
+            (cond
+              ((equal? op "enqueue")
+               (let ((v (car (cdr cmd))))
+                 (if (= cnt cap)
+                     (rec (cdr cmds) (cons #f res))
+                     (begin
+                       (vector-set! arr tail v)
+                       (set! tail (modulo (+ tail 1) cap))
+                       (set! cnt (+ cnt 1))
+                       (rec (cdr cmds) (cons #t res))))))
+              ((equal? op "dequeue")
+               (if (= cnt 0)
+                   (rec (cdr cmds) (cons #f res))
+                   (begin
+                     (set! head (modulo (+ head 1) cap))
+                     (set! cnt (- cnt 1))
+                     (rec (cdr cmds) (cons #t res)))))
+              ((equal? op "front")
+               (if (= cnt 0)
+                   (rec (cdr cmds) (cons -1 res))
+                   (rec (cdr cmds) (cons (vector-ref arr head) res))))
+              ((equal? op "rear")
+               (if (= cnt 0)
+                   (rec (cdr cmds) (cons -1 res))
+                   (rec (cdr cmds) (cons (vector-ref arr (modulo (- tail 1) cap)) res))))
+              ((equal? op "is_empty")
+               (rec (cdr cmds) (cons (= cnt 0) res)))
+              ((equal? op "is_full")
+               (rec (cdr cmds) (cons (= cnt cap) res)))
+              (else (rec (cdr cmds) res)))))))
+    (rec commands '())))
+
+(define (display-list-or-val v)
+  (cond
+    ((null? v) (display "()"))
+    ((pair? v)
+     (begin
+       (display "(")
+       (display-list-or-val (car v))
+       (display " . ")
+       (display-list-or-val (cdr v))
+       (display ")")))
+    ((vector? v) (display "#vector"))
+    (else (display v))))
+
+(define (run-case case-id capacity cmds)
+  (let* ((result (solve capacity cmds))
+         (lst result)
+         (n (length lst)))
+    (define (loop i l)
+      (if (null? l)
+          '()
+          (begin
+            (display "CASE")
+            (display case-id)
+            (display "=")
+            (let ((v (car l)))
+              (cond
+                ((equal? v #t) (display "true"))
+                ((equal? v #f) (display "false"))
+                (else (display v))))
+            (newline)
+            (loop (+ i 1) (cdr l)))))
+    (loop 0 lst)))
+
+;; Build CASE0 commands:
+;; [["enqueue",1],["enqueue",2],["enqueue",3],["enqueue",4],["enqueue",5],
+;;  ["is_full"],["dequeue"],["enqueue",6],["front"],["rear"],
+;;  ["dequeue"],["dequeue"],["dequeue"],["dequeue"],["dequeue"],
+;;  ["is_empty"],["front"],["rear"]]
+(define case0-cmds
+  (list
+    (cons "enqueue" (list 1))
+    (cons "enqueue" (list 2))
+    (cons "enqueue" (list 3))
+    (cons "enqueue" (list 4))
+    (cons "enqueue" (list 5))
+    (cons "is_full" '())
+    (cons "dequeue" '())
+    (cons "enqueue" (list 6))
+    (cons "front" '())
+    (cons "rear" '())
+    (cons "dequeue" '())
+    (cons "dequeue" '())
+    (cons "dequeue" '())
+    (cons "dequeue" '())
+    (cons "dequeue" '())
+    (cons "is_empty" '())
+    (cons "front" '())
+    (cons "rear" '())))
+
+;; CASE1: capacity=3
+;; enqueue 10,20,30, is_full, rear, front, dequeue, enqueue 40, front, rear, is_full
+(define case1-cmds
+  (list
+    (cons "enqueue" (list 10))
+    (cons "enqueue" (list 20))
+    (cons "enqueue" (list 30))
+    (cons "is_full" '())
+    (cons "rear" '())
+    (cons "front" '())
+    (cons "dequeue" '())
+    (cons "enqueue" (list 40))
+    (cons "front" '())
+    (cons "rear" '())
+    (cons "is_full" '())))
+
+;; CASE2: capacity=1
+(define case2-cmds
+  (list
+    (cons "is_empty" '())
+    (cons "is_full" '())
+    (cons "front" '())
+    (cons "rear" '())
+    (cons "enqueue" (list 7))
+    (cons "is_full" '())
+    (cons "front" '())
+    (cons "rear" '())
+    (cons "enqueue" (list 8))
+    (cons "dequeue" '())
+    (cons "front" '())
+    (cons "is_empty" '())))
+
+;; CASE3: capacity=2
+(define case3-cmds
+  (list
+    (cons "front" '())
+    (cons "rear" '())
+    (cons "dequeue" '())
+    (cons "is_empty" '())
+    (cons "is_full" '())))
+
+;; CASE4: capacity=4
+(define case4-cmds
+  (list
+    (cons "enqueue" (list 1))
+    (cons "enqueue" (list 2))
+    (cons "dequeue" '())
+    (cons "dequeue" '())
+    (cons "enqueue" (list 3))
+    (cons "enqueue" (list 4))
+    (cons "enqueue" (list 5))
+    (cons "enqueue" (list 6))
+    (cons "front" '())
+    (cons "rear" '())
+    (cons "is_full" '())))
+
+;; CASE5: capacity=3
+(define case5-cmds
+  (list
+    (cons "is_empty" '())
+    (cons "is_full" '())
+    (cons "front" '())
+    (cons "rear" '())))
+
+;; Main: run all cases
+(begin
+  (run-case 0 5 case0-cmds)
+  (run-case 1 3 case1-cmds)
+  (run-case 2 1 case2-cmds)
+  (run-case 3 2 case3-cmds)
+  (run-case 4 4 case4-cmds)
+  (run-case 5 3 case5-cmds))

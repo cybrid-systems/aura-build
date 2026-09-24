@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:27:02Z",
+      "ts_local": "2026-09-24 22:27:02 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1450,
+        "total_characters": 0,
+        "prompt_tokens": 1029,
+        "completion_tokens": 421,
+        "prompt_tokens_details": {
+          "cached_tokens": 528
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.026,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 2:31: parse error: expected expression, got ')'\n   |\n  2 |   (let ((b-c (count-char s #\\b))\n   |                               ^\nerror: 3:8: unbound variable: count-letters\n   |\n  3 |                    \"zzz\"\n   |        ^\n",
+      "stdout_snippet": "CASE0="
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:27:05Z",
+      "ts_local": "2026-09-24 22:27:05 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1438,
+        "total_characters": 0,
+        "prompt_tokens": 1029,
+        "completion_tokens": 409,
+        "prompt_tokens_details": {
+          "cached_tokens": 1028
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.029,
+      "tests_passed": 3,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=0\nCASE1=0\nCASE2=0\nCASE3=0\nCASE4=0\nCASE5=0\nCASE6=0\nCASE7=0\n"
+    }
+  ],
+  "slug": "maximum-number-of-balloons",
+  "title": "Maximum Number of Balloons",
+  "category": "hashing",
+  "updated_at": "2026-09-24T14:27:05Z",
+  "updated_at_local": "2026-09-24 22:27:05 CST"
+}

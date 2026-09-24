@@ -1,0 +1,25 @@
+(define (reverse-half x)
+  (let ((y (if (< x 0) (- 0 x) x))
+        (rev 0))
+    (let loop ((a y) (r 0))
+      (if (= a 0)
+          r
+          (loop (quotient a 10) (+ (* r 10) (modulo a 10)))))))
+
+(define (solve x)
+  (if (< x 0)
+      #f
+      (let ((y x) (rev 0))
+        (let loop ((a y) (r 0))
+          (if (= a 0)
+              (= x r)
+              (loop (quotient a 10) (+ (* r 10) (modulo a 10)))))))
+
+(display "CASE0=") (display (solve 121)) (newline)
+(display "CASE1=") (display (solve -121)) (newline)
+(display "CASE2=") (display (solve 10)) (newline)
+(display "CASE3=") (display (solve 0)) (newline)
+(display "CASE4=") (display (solve 123)) (newline)
+(display "CASE5=") (display (solve 1221)) (newline)
+(display "CASE6=") (display (solve 12321)) (newline)
+(display "CASE7=") (display (solve -2147483648)) (newline)

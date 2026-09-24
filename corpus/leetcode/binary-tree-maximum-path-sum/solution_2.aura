@@ -1,0 +1,104 @@
+(define (solve root)
+  ;; Returns max path sum. Uses an internal recursive helper.
+  ;; Strategy: post-order traversal; at each node compute:
+  ;;   gain = max(0, left-gain, right-gain)  -- best downward extension
+  ;;   candidate = left-gain + val + right-gain  -- best path through this node
+  ;;   global-max = max(global-max, candidate)
+  ;; Return gain + val as the upward gain to parent.
+
+  (define (val-of n) (cdr (assq 'val n)))
+  (define (left-of n) (cdr (assq 'left n)))
+  (define (right-of n) (cdr (assq 'right n)))
+  (define (node? x)
+    (if (null? x) #f
+        (if (pair? x) #t #f)))
+
+  ;; We'll use a single-element mutable holder via a one-element list.
+  ;; Use a global counter via set! on a defined variable.
+  (define best (list -1000000000))
+
+  (define (max a b) (if (> a b) a b))
+  (define (max3 a b c) (max a (max b c)))
+
+  (define (dfs n)
+    (if (null? n)
+        0
+        (let ((v (val-of n))
+              (l (if (null? (left-of n)) 0 (dfs (left-of n))))
+              (r (if (null? (right-of n)) 0 (dfs (right-of n)))))
+          ;; l and r are upward gains (already non-negative since they were
+          ;; max'd with 0 during recursion -- but to be safe, clamp here).
+          (let ((lg (max 0 l))
+                (rg (max 0 r)))
+            (let ((candidate (+ v lg rg)))
+              (if (> candidate (car best))
+                  (set-car! best candidate)
+                  '()))
+            ;; Return upward gain: v + max(lg, rg), but clamp at v if both
+            ;; children contribute negatively. Actually returning the max
+            ;; upward extension, clamped so a negative total isn't propagated
+            ;; as "helpful" extension.
+            (let ((up (+ v (max lg rg))))
+              (if (> up 0) up 0))))))
+
+  (dfs root)
+  (car best))
+
+;; Build a node from an association list representation.
+;; Input is a list of (key . value) pairs using 'val, 'left, 'right.
+;; We construct nodes directly.
+
+(define c0
+  '((val . 1)
+    (left . ((val . 2) (left . ()) (right . ())))
+    (right . ((val . 3) (left . ()) (right . ())))))
+
+(define c1
+  '((val . -10)
+    (left . ((val . 9) (left . ()) (right . ())))
+    (right . ((val . 20)
+              (left . ((val . 15) (left . ()) (right . ())))
+              (right . ((val . 7) (left . ()) (right . ())))))))
+
+(define c2
+  '((val . -3) (left . ()) (right . ())))
+
+(define c3
+  '((val . 2)
+    (left . ((val . -1) (left . ()) (right . ())))
+    (right . ())))
+
+(define c4
+  '((val . 5)
+    (left . ((val . 4)
+             (left . ((val . 11)
+                      (left . ((val . 7) (left . ()) (right . ())))
+                      (right . ((val . 2) (left . ()) (right . ())))))
+             (right . ())))
+    (right . ((val . 8)
+              (left . ((val . 13) (left . ()) (right . ())))
+              (right . ((val . 4)
+                        (left . ())
+                        (right . ((val . 1) (left . ()) (right . ())))))))))
+
+(define c5
+  '((val . -1)
+    (left . ((val . -2) (left . ()) (right . ())))
+    (right . ((val . -3) (left . ()) (right . ())))))
+
+(define c6
+  '((val . 1)
+    (left . ((val . -2) (left . ()) (right . ())))
+    (right . ((val . 3) (left . ()) (right . ())))))
+
+(define c7
+  '((val . 0) (left . ()) (right . ())))
+
+(display "CASE0=") (display (solve c0)) (newline)
+(display "CASE1=") (display (solve c1)) (newline)
+(display "CASE2=") (display (solve c2)) (newline)
+(display "CASE3=") (display (solve c3)) (newline)
+(display "CASE4=") (display (solve c4)) (newline)
+(display "CASE5=") (display (solve c5)) (newline)
+(display "CASE6=") (display (solve c6)) (newline)
+(display "CASE7=") (display (solve c7)) (newline)

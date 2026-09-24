@@ -1,0 +1,38 @@
+(define (length lst)
+  (if (null? lst) 0
+      (+ 1 (length (cdr lst)))))
+
+(define (list-ref lst i)
+  (if (= i 0) (car lst)
+      (list-ref (cdr lst) (- i 1))))
+
+(define (solve nums k)
+  (if (<= k 1)
+      0
+      (let ((n (length nums)))
+        (let loop ((left 0) (right 0) (prod 1) (count 0))
+          (if (= right n)
+              count
+              (let ((rv (list-ref nums right)))
+                (let inner ((l left) (r right) (p prod) (c count))
+                          (if (>= p k)
+                              (let ((lv (list-ref nums l)))
+                                (inner (+ l 1) r (/ p lv) c))
+                              (let ((new-c (+ c (- r l 1))))
+                                (loop l (+ r 1) (* p rv) new-c))))))))))
+
+(define (display-case i result)
+  (display "ANS")
+  (display i)
+  (display "=")
+  (display result)
+  (newline))
+
+(display-case 0 (solve (list 10 5 2 6) 100))
+(display-case 1 (solve (list 1 2 3) 0))
+(display-case 2 (solve (list 2 1 1) 6))
+(display-case 3 (solve (list 1 1 1) 2))
+(display-case 4 (solve (list 10 5 2 6) 1))
+(display-case 5 (solve (list 1) 2))
+(display-case 6 (solve (list 100 100) 10000))
+(display-case 7 (solve (list 10 10 10 10) 1001))

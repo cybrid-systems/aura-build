@@ -1,0 +1,116 @@
+;; Tree node structure: (value left right) or 'null
+;; We'll represent node as a list (v l r) or 'null
+
+(define (make-tree level-arr)
+  ;; Build tree from flat list with nulls. Returns root or 'null
+  (let* ((arr level-arr)
+         (n (length arr)))
+    (if (= n 0) 'null
+        (let ((nodes (make-vector n 'null)))
+          ;; First create nodes with values
+          (let loop ((i 0))
+            (if (>= i n) 'done
+                (begin
+                  (vector-set! nodes i (list (list-ref arr i) 'null 'null))
+                  (loop (+ i 1)))))
+          ;; Link children, skip nulls
+          (let loop ((i 0))
+            (if (>= i n) 'done
+                (let ((v (list-ref arr i)))
+                  (if (eq? v 'null)
+                      (loop (+ i 1))
+                      (begin
+                        (let ((li (* 2 i 1)) (ri (+ (* 2 i 1) 1)))
+                          (if (< li n)
+                              (let ((lv (list-ref arr li)))
+                                (if (not (eq? lv 'null))
+                                    (set-car! (cdr (vector-ref nodes i)) (vector-ref nodes li)))))
+                          (if (< ri n)
+                              (let ((rv (list-ref arr ri)))
+                                (if (not (eq? rv 'null))
+                                    (set-car! (cddr (vector-ref nodes i)) (vector-ref nodes ri)))))
+                          (loop (+ i 1))))))))
+          (vector-ref nodes 0)))))
+
+(define (count-paths root target)
+  (let ((count 0))
+    ;; Use association list as hashmap: list of (sum . freq) pairs
+    (define (hash-add! key delta)
+      ;; If key exists, add delta; else add entry with delta
+      (set! hmap (hmap-update hmap key delta)))
+    ;; We'll keep hmap as a global-ish via letrec trick: use a mutable cell
+    (let ((hmap-cell (cons '((0 . 1)) '())))
+      (define (hm-get-or-add hm key delta)
+        (let loop ((rest hm) (acc '()) (new-val 0) (found #f))
+          (cond
+            ((null? rest)
+             (if found
+                 (append (reverse acc) (cons (cons key (+ delta (if found new-val 0))) (if found '() (list (cons key delta)))))
+                 (append (reverse acc) (list (cons key delta)))))
+            (else
+             (let ((p (car rest)))
+                 (if (and (not found) (= (car p) key))
+                     (let ((nv (+ (cdr p) delta)))
+                       (loop (cdr rest) (cons (cons key nv) acc) nv #t))
+                     (loop (cdr rest) (cons p acc) new-val found))))))
+      (define (hm-get hm key)
+        (let loop ((rest hm))
+          (cond ((null? rest) 0)
+                ((= (car (car rest)) key) (cdr (car rest)))
+                (else (loop (cdr rest))))))
+      (letrec ((dfs (lambda (node curr-sum)
+        (if (eq? node 'null) 0
+            (let* ((v (car node))
+                   (new-sum (+ curr-sum v))
+                   (diff (- new-sum target)))
+              (set! count (+ count (hm-get (car hmap-cell) diff)))
+              ;; update hashmap: add new-sum, then recurse
+              (set! (car hmap-cell) (hm-get-or-add (car hmap-cell) new-sum 1))
+              (dfs (cadr node) new-sum)
+              (dfs (caddr node) new-sum)
+              ;; remove new-sum
+              (set! (car hmap-cell) (hm-get-or-add (car hmap-cell) new-sum -1))
+              0)))))
+        (dfs root 0)
+        count)))))
+
+(define (solve root target)
+  (count-paths root target))
+
+;; Test harness - parse CASE lines and dispatch
+(define (parse-and-run case-num case-str)
+  (let* ((s case-str)
+         (eq-pos (let loop ((i 0))
+                   (cond ((>= i (string-length s)) -1)
+                         ((char=? (string-ref s i) #\=) i)
+                         (else (loop (+ i 1))))))
+         (rest-str (substring s (+ eq-pos 1) (string-length s)))
+         (root-start 6) ;; skip "root="
+         (arr-end (let loop ((i root-start) (depth 0))
+                    (cond ((>= i (string-length rest-str)) i)
+                          ((char=? (string-ref rest-str i) #\,) i)
+                          (else (loop (+ i 1) depth)))))
+         (arr-str (substring rest-str root-start arr-end))
+         (target-rest (substring rest-str (+ arr-end 9) (string-length rest-str))) ;; skip ", target="
+         (target-val (string->number target-str)))
+    (define target-str target-rest)
+    (let* ((root-list (parse-arr arr-str))
+           (root (make-tree root-list)))
+      (let ((result (solve root target-val)))
+        (display (string-append "CASE" (number->string case-num) "="))
+        (display result)
+        (newline)))))
+
+;; Simpler approach: parse each CASE line directly with hardcoded cases
+(define cases
+  (list
+    (list 0 "[10,5,-3,3,2,null,11,3,-2,null,1]" 8)
+    (list 1 "[]" 1)
+    (list 2 "[0]" 0)
+    (list 3 "[1,2,3,4,5,6,7]" 7)
+    (list 4 "[1,-2,-3,1,3,-2,null,-1]" 1)
+    (list 5 "[5,3,2,4,null,null,null,1]" 8)
+    (list 6 "[1,2]" 0)
+    (list 7 "[-1,-2,-3,-4,-5,-6,-7]" -7)))
+
+;; Need parse-arr defined first

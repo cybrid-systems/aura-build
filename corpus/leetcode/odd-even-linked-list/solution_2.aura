@@ -1,0 +1,69 @@
+;; Odd-Even Linked List in Aura
+;; Helper to build a list of cons cells from a flat list of values
+(define (list-from . xs) xs)
+
+;; extract values from input (we embed them as aura expressions)
+;; We'll receive the list directly via the embedded inputs.
+
+;; A node is represented as a cons: (cons val next)
+;; Build a linked list from a scheme list of values
+(define (build-list xs)
+  (if (null? xs) '()
+      (cons (car xs) (build-list (cdr xs)))))
+
+(define (list-empty? xs) (null? xs))
+
+(define (node-val n) (car n))
+(define (node-next n) (cdr n))
+(define (set-val! n v) (set-car! n v))
+(define (set-next! n nx) (set-car! n nx) ) ;; will redefine properly
+
+;; Implement a mutable singly linked list using pairs
+;; We'll represent node as (cons val (cons next '())) OR just mutate cdr
+;; Simple approach: use set-cdr! for mutation
+;; Aura supports set-car! and set-cdr! per typical Lisp.
+
+;; Solve: rearrange so odd-indexed nodes come first, then even
+;; We split into two lists, then concatenate.
+
+(define (solve head)
+  (if (or (null? head) (null? (cdr head)))
+      head
+      (let ((odd-head head)
+            (even-head (cdr head))
+            (odd-tail head)
+            (even-tail (cdr head))
+            (cur (cdr (cdr head))))
+        (begin
+          (set-cdr! odd-tail '()) ;; detach
+          ;; Wait: we need to properly walk.
+          ;; Let's do it iteratively.
+          '() ;; placeholder, replaced below
+          ))))
+
+;; The above sketch is incomplete. Let's write the full iterative version.
+
+(define (solve head)
+  (if (or (null? head) (null? (cdr head)))
+      head
+      (let ((odd-head head)
+            (even-head (cdr head))
+            (cur (cdr (cdr head))))
+        (begin
+          (set-cdr! head '())
+          (set-cdr! (cdr odd-head) '()) ;; detach even head from odd tail
+          (let loop ((o odd-head)
+                     (e even-head)
+                     (c cur))
+            (if (null? c)
+                (begin (set-cdr! o e) odd-head)
+                (let ((no (car c))
+                      (ne (cadr c))
+                      (nc (caddr c)))
+                  (begin
+                    (set-cdr! o no)
+                    (set-cdr! no '())
+                    (set-cdr! e ne)
+                    (set-cdr! ne '())
+                    (loop no ne nc)))))
+          odd-head))))

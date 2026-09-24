@@ -1,0 +1,59 @@
+;; Helper: convert char to ASCII code
+(define (char->code c)
+  (char->integer c))
+
+;; Compute cost between two characters
+(define (char-cost a b)
+  (let ((d (- (char->code a) (char->code b))))
+    (if (< d 0) (- 0 d) d)))
+
+;; Sliding window longest substring within budget
+(define (solve s t maxCost)
+  (let ((n (length s)))
+    (let loop ((left 0) (right 0) (sum 0) (best 0))
+      (cond
+        ((= right n) best)
+        (else
+         (let ((c (char-cost (list-ref s right) (list-ref t right))))
+           (let ((new-sum (+ sum c)))
+             (cond
+               ((<= new-sum maxCost)
+                (loop left (+ right 1) new-sum (max best (- (+ right 1) left))))
+               (else
+                ;; shrink from left until sum <= maxCost
+                (let shrink ((l left) (cur-sum new-sum))
+                  (cond
+                    ((<= cur-sum maxCost)
+                     (loop l (+ right 1) cur-sum (max best (- (+ right 1) l))))
+                    (else
+                     (shrink (+ l 1)
+                             (- cur-sum (char-cost (list-ref s l) (list-ref t l))))))))))))))))
+
+;; Test cases
+(define cases
+  (list
+   (list "abcd" "bcdf" 3)
+   (list "abcd" "cdef" 3)
+   (list "abcd" "dcba" 0)
+   (list "aaaa" "bbbb" 10)
+   (list "a" "z" 25)
+   (list "a" "z" 24)
+   (list "xyz" "abc" 100)
+   (list "abcd" "abdc" 1)))
+
+(define (run-cases cs i)
+  (cond
+    ((null? cs) 'done)
+    (else
+     (let ((c (car cs))
+           (s (car (car cs)))
+           (t (car (cdr (car cs))))
+           (mc (car (cdr (cdr (car cs))))))
+       (display "CASE")
+       (display i)
+       (display "=")
+       (display (solve s t mc))
+       (newline)
+       (run-cases (cdr cs) (+ i 1))))))
+
+(run-cases cases 0)

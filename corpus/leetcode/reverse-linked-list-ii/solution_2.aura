@@ -1,0 +1,142 @@
+;; Node constructor
+(define (make-node v n)
+  (cons v (cons n '())))
+
+(define (node-val n) (car n))
+(define (node-next n) (car (cdr n)))
+(define (set-node-next! n v) (set-car! (cdr n) v))
+
+;; Build linked list from Aura list
+(define (build-list lst)
+  (define (helper lst)
+    (if (null? lst)
+        '()
+        (let ((rest (helper (cdr lst))))
+          (let ((node (make-node (car lst) rest)))
+            (begin
+              (if (null? rest)
+                  (set! rest node)
+                  '())
+              node)))))
+  (if (null? lst) '() (helper lst)))
+
+;; Convert linked list back to Aura list
+(define (list-to-aura head)
+  (define (helper node)
+    (if (null? node)
+        '()
+        (cons (node-val node) (helper (node-next node)))))
+  (helper head))
+
+;; Reverse linked list between positions m and n (1-indexed)
+(define (solve head m n)
+  (if (null? head)
+      '()
+      (let ((dummy (make-node 0 head)))
+        (begin
+          ;; Find node at position m-1 (before the reversal segment)
+          (define (find-prev node k)
+            (if (= k 1)
+                node
+                (find-prev (node-next node) (- k 1))))
+          (let ((prev (find-prev dummy m)))
+            (begin
+              (let ((curr (node-next prev)))
+                (begin
+                  ;; Reverse the segment by moving curr after prev, k times (n-m times)
+                  (let ((loop (lambda (self k node1)
+                    (if (= k 0)
+                        node1
+                        (let ((next (node-next node1)))
+                          (begin
+                            (set-node-next! node1 (node-next (node-next node1)))
+                            (set-node-next! (node-next node1) node1)
+                            (self self (- k 1) next)))))))
+                  (begin
+                    (let ((result (loop loop (- n m) curr)))
+                      (begin
+                        (set-node-next! prev result)
+                        (node-next dummy))))))))))))
+
+;; Print case result
+(define (print-case i result)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (if (null? result)
+      (display "")
+      (let ((print-list (lambda (self lst)
+        (if (null? lst)
+            '()
+            (begin
+              (display (car lst))
+              (if (not (null? (cdr lst)))
+                  (display ",")
+                  '())
+              (self self (cdr lst)))))))
+        (print-list print-list result)))
+  (newline))
+
+;; Test case 0
+(print-case 0
+  (list-to-aura
+    (solve
+      (build-list '(1 2 3 4 5))
+      2
+      4)))
+
+;; Test case 1
+(print-case 1
+  (list-to-aura
+    (solve
+      (build-list '(1 2 3 4 5))
+      1
+      5)))
+
+;; Test case 2
+(print-case 2
+  (list-to-aura
+    (solve
+      (build-list '(5))
+      1
+      1)))
+
+;; Test case 3
+(print-case 3
+  (list-to-aura
+    (solve
+      (build-list '(1 2 3 4 5))
+      3
+      3)))
+
+;; Test case 4
+(print-case 4
+  (list-to-aura
+    (solve
+      (build-list '(1 2 3 4 5))
+      1
+      1)))
+
+;; Test case 5
+(print-case 5
+  (list-to-aura
+    (solve
+      (build-list '(1 2 3 4 5))
+      4
+      5)))
+
+;; Test case 6
+(print-case 6
+  (list-to-aura
+    (solve
+      (build-list '())
+      1
+      1)))
+
+;; Test case 7
+(print-case 7
+  (list-to-aura
+    (solve
+      (build-list '(10 20 30 40 50 60 70))
+      2
+      6)))

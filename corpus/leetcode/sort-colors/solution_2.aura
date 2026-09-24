@@ -1,0 +1,58 @@
+(define (display-list xs)
+  (display "[")
+  (let loop ((xs xs) (first #t))
+    (cond ((null? xs) (display "]"))
+          (else
+           (if first (set! first #f) (display ","))
+           (display (car xs))
+           (loop (cdr xs) #f)))))
+
+(define (sort-colors nums)
+  ;; Dutch National Flag: three pointers
+  (let ((n (length nums))
+        (lo 0)
+        (hi (- (length nums) 1))
+        (i 0))
+    ;; We use a helper that takes the current state
+    (letrec ((step
+              (lambda ()
+                (cond ((> i hi) 'done)
+                  ((= (list-ref nums i) 0)
+                   ;; swap nums[i] and nums[lo], advance lo and i
+                   (let ((tmp (list-ref nums lo)))
+                     (list-set! nums lo (list-ref nums i))
+                     (list-set! nums i tmp)
+                     (set! lo (+ lo 1))
+                     (set! i (+ i 1))
+                     (step)))
+                  ((= (list-ref nums i) 2)
+                   ;; swap nums[i] and nums[hi], advance hi (do NOT advance i)
+                   (let ((tmp (list-ref nums hi)))
+                     (list-set! nums hi (list-ref nums i))
+                     (list-set! nums i tmp)
+                     (set! hi (- hi 1))
+                     (step)))
+                  (else
+                   (set! i (+ i 1))
+                   (step)))))))
+      (step)))
+  nums)
+
+(define (solve nums)
+  (sort-colors nums))
+
+(define (run-case i nums)
+  (let ((result (solve nums)))
+    (display (string-append "CASE" (number->string i)))
+    (display "=")
+    (display-list result)
+    (newline)))
+
+(run-case 0 (list 2 0 2 1 1 0))
+(run-case 1 (list 2 0 1))
+(run-case 2 (list 0))
+(run-case 3 (list 1 1 1 0 0 2 2))
+(run-case 4 (list 2 2 2 2))
+(run-case 5 (list 0 0 0 0))
+(run-case 6 (list 1))
+(run-case 7 (list))

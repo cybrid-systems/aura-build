@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:24:25Z",
+      "ts_local": "2026-09-24 22:24:25 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1662,
+        "total_characters": 0,
+        "prompt_tokens": 1086,
+        "completion_tokens": 576,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.101,
+      "tests_passed": 2,
+      "tests_total": 10,
+      "stderr_snippet": "error: 3:15: unbound variable: c\n   |\n  3 |       (equal? c #\\e)\n   |               ^\nerror: 2:19: unbound variable: a\n  did you mean 'c'?\nerror: 2:19: unbound variable: a\n  did you mean 'c'?\nerror: 2:19: unbound variable: a\n  did you mean 'c'?\nerror: 2:19: unbound variable: a\n  did you mean 'c'?\nerror: 2:19: unbound variable: a\n  did you mean 'c'?\nerror: 2:19: unbound variable: a\n  did you mean 'c'?\nerror: 2:19: unbound variable: a\n  did you mean 'c'?\nerror: 2:19: unbound variable: a\n  did you ",
+      "stdout_snippet": "CASE0=\nCASE1=\nCASE2=\nCASE3=\nCASE4=a\nCASE5=\nCASE6=\nCASE7=\nCASE8=\nCASE9=\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:24:39Z",
+      "ts_local": "2026-09-24 22:24:39 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 4188,
+        "total_characters": 0,
+        "prompt_tokens": 1086,
+        "completion_tokens": 3102,
+        "prompt_tokens_details": {
+          "cached_tokens": 1085
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.03,
+      "tests_passed": 0,
+      "tests_total": 10,
+      "stderr_snippet": "error: 4:5: parse error: expected expression, got '('\n   |\n  4 |     ((equal? c #\\e) #t)\n   |     ^\nerror: 3:43: parse error: expected expression, got ')'\n   |\n  3 |     (let ((result (make-string len #\\space)))\n   |                                           ^\n",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "reverse-vowels-of-a-string",
+  "title": "Reverse Vowels of a String",
+  "category": "strings",
+  "updated_at": "2026-09-24T14:24:39Z",
+  "updated_at_local": "2026-09-24 22:24:39 CST"
+}

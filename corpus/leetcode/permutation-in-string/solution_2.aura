@@ -1,0 +1,76 @@
+(define (char-code c) (- (char->integer c) (char->integer #\a)))
+
+(define (make-counts n)
+  (let ((v (make-vector n 0)))
+    v))
+
+(define (solve s1 s2)
+  (let ((n (string-length s1))
+        (m (string-length s2)))
+    (if (> n m)
+        #f
+        (let ((target (make-counts 26))
+              (window (make-counts 26)))
+          (let loop ((i 0))
+            (if (= i n)
+                #f
+                (begin
+                  (vector-set! target (char-code (string-ref s1 i))
+                               (+ (vector-ref target (char-code (string-ref s1 i))) 1))
+                  (vector-set! window (char-code (string-ref s2 i))
+                               (+ (vector-ref window (char-code (string-ref s2 i))) 1))
+                  (loop (+ i 1)))))
+          (let ((diff 26))
+              (define (init-diff i)
+                  (if (= i 26)
+                      #f
+                      (begin
+                        (if (= (vector-ref target i) (vector-ref window i))
+                            (set! diff (- diff 0))
+                            (set! diff (- diff 1)))
+                        (init-diff (+ i 1)))))
+              (init-diff 0))
+              (if (= diff 0)
+                  #t
+                  (let loop ((start 0))
+                    (if (= (- n 1) start)
+                        (if (= diff 0) #t #f)
+                        (let ((end (+ start n)))
+                          (define new-c (- (vector-ref window (char-code (string-ref s2 (- end 1))))
+                                           1))
+                          (vector-set! window (char-code (string-ref s2 (- end 1))) new-c)
+                          (define old-out (char-code (string-ref s2 start)))
+                          (cond
+                            ((= (vector-ref target old-out)
+                                (+ (vector-ref window old-out) 1))
+                             (set! diff (+ diff 1)))
+                            ((= (vector-ref target old-out)
+                                (- (vector-ref window old-out) 1))
+                             (set! diff (- diff 1)))
+                            (else #f))
+                          (cond
+                            ((= (vector-ref target (char-code (string-ref s2 (- end 1))))
+                                (+ (vector-ref window (char-code (string-ref s2 (- end 1)))) 1))
+                             (set! diff (+ diff 1)))
+                            ((= (vector-ref target (char-code (string-ref s2 (- end 1))))
+                                (- (vector-ref window (char-code (string-ref s2 (- end 1)))) 1))
+                             (set! diff (- diff 1)))
+                            (else #f))
+                          (if (= diff 0)
+                              #t
+                              (loop (+ start 1)))))))))))
+
+(define (string-length s)
+  (let loop ((i 0))
+    (if (char=? (string-ref s i) #\null) i (loop (+ i 1)))))
+
+(define (string-ref s i)
+  (let ((c (vector-ref (string->vector s) i)))
+    c))
+
+(define (vector-set! v i val)
+  (let loop ((j 0) (vec (vector->list v)))
+    (if (= j i)
+        (begin
+          (vector-set v j val))
+        (loop (+ j 1) (cdr vec)))))

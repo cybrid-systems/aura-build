@@ -1,0 +1,64 @@
+;; Parse arrow-separated string into a list of numbers; '() if empty
+(define (parse-list s)
+  (if (= s "") '()
+    (let ((parts (string-split s "->")))
+      (map-integer-list parts))))
+
+;; Helper: split a string by delimiter, returning list of strings
+(define (string-split s delim)
+  (let ((len (string-length s))
+        (dlen (string-length delim)))
+    (string-split-helper s len delim dlen 0 0 '())))
+
+(define (string-split-helper s len delim dlen i start acc)
+  (cond ((= i len)
+          (reverse (cons (substring s start len) acc)))
+        ((and (= dlen 1) (char=? (string-ref s i) (string-ref delim 0)))
+          (string-split-helper s len delim dlen (+ i 1) (+ i 1)
+            (cons (substring s start i) acc)))
+        (else
+          (string-split-helper s len delim dlen (+ i 1) start acc))))
+
+(define (map-integer-list lst)
+  (if (null? lst) '()
+    (cons (string->number (car lst))
+          (map-integer-list (cdr lst)))))
+
+;; Swap adjacent pairs in a flat list of numbers
+(define (swap-pairs xs)
+  (cond ((null? xs) '())
+        ((null? (cdr xs)) xs)
+        (else
+          (cons (cadr xs)
+                (cons (car xs)
+                      (swap-pairs (cddr xs)))))))
+
+;; Format a list of numbers as arrow-separated string
+(define (format-list xs)
+  (if (null? xs) ""
+    (let loop ((rest (cdr xs)) (first (car xs)) (acc ""))
+      (let ((new-acc (if (= acc "")
+                       (number->string first)
+                       (string-append acc "->" (number->string first)))))
+        (if (null? rest) new-acc
+          (loop (cdr rest) (car rest) new-acc))))))
+
+;; solve receives the parsed list of numbers; returns the swapped list
+(define (solve lst)
+  (swap-pairs lst))
+
+;; Wrapper: given the raw string CASE0, parse, solve, and print
+(define (run-case s)
+  (let ((parsed (parse-list s))
+        (result (solve (parse-list s))))
+    (display "CASE") (display (format-list result)) (newline)))
+
+;; Run all embedded cases
+(run-case "1->2->3->4")
+(run-case "")
+(run-case "1")
+(run-case "1->2->3")
+(run-case "1->2")
+(run-case "1->2->3->4->5")
+(run-case "0->0->0->0")
+(run-case "7")

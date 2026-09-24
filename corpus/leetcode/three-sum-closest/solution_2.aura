@@ -1,0 +1,69 @@
+;; Helper: absolute value
+(define (abs x) (if (< x 0) (- 0 x) x))
+
+;; Helper: list length
+(define (len xs)
+  (if (null? xs) 0 (+ 1 (len (cdr xs)))))
+
+;; Convert list to vector-like for indexing (just use list with nth)
+(define (nth xs i)
+  (if (= i 0) (car xs) (nth (cdr xs) (- i 1))))
+
+;; Convert list to mutable vector (list of pairs: index . value)
+;; We'll just keep as sorted list and use index access
+(define (sort-list xs)
+  (define (insert x sorted)
+    (cond ((null? sorted) (list x))
+          ((<= x (car sorted)) (cons x sorted))
+          (else (cons (car sorted) (insert x (cdr sorted))))))
+  (define (loop unsorted sorted)
+    (if (null? unsorted) sorted
+        (loop (cdr unsorted) (insert (car unsorted) sorted))))
+  (loop xs '()))
+
+;; Core 3-sum closest: sorted-list, n, target -> best sum
+(define (three-sum-closest nums n target)
+  (define (two-sum-loop i left right best-sum)
+    (cond ((>= left right) best-sum)
+          (else
+           (let ((cur (+ (nth nums i) (nth nums left) (nth nums right))))
+             (cond ((= cur target) cur)
+                   ((< cur target)
+                    (let ((new-best (if (< (abs (- cur target)) (abs (- best-sum target)))
+                                        cur best-sum)))
+                      (two-sum-loop i (+ left 1) right new-best)))
+                   (else
+                    (let ((new-best (if (< (abs (- cur target)) (abs (- best-sum target)))
+                                        cur best-sum)))
+                      (two-sum-loop i left (- right 1) new-best))))))))
+  (define (outer-loop i best-sum)
+    (cond ((>= (+ i 2) n) best-sum)
+          (else
+           (let ((new-best (two-sum-loop i (+ i 1) (- n 1) best-sum)))
+             (outer-loop (+ i 1) new-best)))))
+  (outer-loop 0 (nth nums 0)))
+
+;; solve: take a list and target, return the closest 3-sum
+(define (solve nums target)
+  (let ((s (sort-list nums))
+        (n (len nums)))
+    (three-sum-closest s n target)))
+
+;; Display helper for cases
+(define (run-case i nums target)
+  (let ((r (solve nums target)))
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display r)
+    (newline)))
+
+;; Test cases
+(run-case 0 (list 1 2 5 6 8 11) 13)
+(run-case 1 (list -1 2 1 -4) 1)
+(run-case 2 (list 0 0 0) 1)
+(run-case 3 (list 1 1 1 0) -100)
+(run-case 4 (list 1 2 3 4 5) 10)
+(run-case 5 (list -1 0 1 2 -1 -4) 0)
+(run-case 6 (list 4 0 5 -5 3 3 0 -4 -5) -2)
+(run-case 7 (list 1 2 3) 6)

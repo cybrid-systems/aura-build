@@ -1,0 +1,51 @@
+def solve(nums1, nums2):
+    # Compute next greater for each element in nums2 using a monotonic stack
+    next_greater = {}
+    stack = []  # stores elements with strictly decreasing values
+    for x in nums2:
+        # While current x is greater than stack top, pop and record next greater
+        while stack and x > stack[-1]:
+            smaller = stack.pop()
+            next_greater[smaller] = x
+        stack.append(x)
+    # Remaining elements in stack have no greater element to the right
+    while stack:
+        next_greater[stack.pop()] = -1
+    # Build answer for nums1 (handle possible duplicates by picking the
+    # next greater of the first occurrence encountered when scanning nums2)
+    # Since nums2 has unique values, duplicate values in nums1 share the same
+    # next greater mapping.
+    pos = {v: i for i, v in enumerate(nums2)}
+    # For duplicates: we need the next greater of the *first* occurrence in nums2
+    # that is at a position to the right of nums1's occurrence. But since
+    # duplicates in nums1 map to the same value, and value is unique in nums2,
+    # the next greater of the value itself is the answer regardless of which
+    # occurrence in nums1 we're considering... Wait, no. We need next greater
+    # of nums1[i]'s *position* in nums2. Since value is unique in nums2, the
+    # position is fixed, so the answer is always the same for a given value.
+    # Duplicates in nums1 don't change anything.
+    ans = []
+    for v in nums1:
+        ans.append(next_greater[v])
+    return ans
+
+
+CASES = [
+    {"nums1": [4, 1, 2], "nums2": [1, 3, 4, 2]},
+    {"nums1": [2, 4], "nums2": [1, 2, 3, 4]},
+    {"nums1": [1, 3, 5, 2, 4], "nums2": [6, 5, 4, 3, 2, 1, 7]},
+    {"nums1": [1], "nums2": [1]},
+    {"nums1": [3, 2, 1], "nums2": [1, 2, 3]},
+    {"nums1": [], "nums2": [1, 2, 3]},
+    {"nums1": [1, 2, 3], "nums2": []},
+    {"nums1": [5, 5, 5], "nums2": [3, 5, 4, 2]},
+]
+
+
+if __name__ == '__main__':
+    import json
+    results = []
+    for i, case in enumerate(CASES):
+        out = solve(case["nums1"], case["nums2"])
+        results.append({"id": i, "input": case, "expected": json.dumps(out, separators=(',', ':'), ensure_ascii=False)})
+    print(json.dumps(results, separators=(',', ':'), ensure_ascii=False))

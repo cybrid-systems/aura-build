@@ -1,0 +1,98 @@
+(define (list-ref xs i)
+  (if (= i 0) (car xs) (list-ref (cdr xs) (- i 1))))
+
+(define (list-set xs i v)
+  (if (= i 0)
+      (cons v (cdr xs))
+      (cons (car xs) (list-set (cdr xs) (- i 1) v))))
+
+(define (make-counts n)
+  (define (loop i acc)
+    (if (= i n) acc (loop (+ i 1) (cons 0 acc))))
+  (loop 0 '()))
+
+(define (char->idx c)
+  (char->integer (string-ref c 0)))
+
+(define (string->list-of-chars s)
+  (define (loop i acc)
+    (if (< i 0) acc (loop (- i 1) (cons (string-ref s i) acc))))
+  (loop (- (string-length s) 1) '()))
+
+(define (count-chars strs n counts)
+  (if (null? strs) counts
+      (let ((c (car strs))
+            (idx (- (char->integer (string-ref c 0)) 32)))
+        (count-chars (cdr strs) n (list-set counts idx (+ (list-ref counts idx) 1))))))
+
+(define (solve s p)
+  (let ((ls (string-length s))
+        (lp (string-length p)))
+    (if (or (= ls 0) (< ls lp))
+        '()
+        (let* ((slen 95)
+               (target (count-chars (string->list-of-chars p) slen (make-counts slen)))
+               (window (count-chars (string->list-of-chars (substring s 0 lp)) slen (make-counts slen)))
+               (diff (count-diff target window)))
+          (solve-loop s p target window diff lp slen 0)))))
+
+(define (count-diff a b)
+  (if (null? a) 0
+      (+ (abs (- (car a) (car b)))
+         (count-diff (cdr a) (cdr b)))))
+
+(define (solve-loop s p target window diff lp slen i)
+  (let ((ls (string-length s)))
+    (if (> (+ i lp) ls) '()
+        (let* ((curr-diff (count-diff target window))
+               (match? (= curr-diff 0))
+               (idx-char (char->idx (string-ref s i)))
+               (new-char (if (< (+ i lp) ls) (string-ref s (+ i lp)) #\ ))
+               (next-window (if (< (+ i lp) ls)
+                                (update-window window idx-char new-char slen)
+                                window))
+               (rest (solve-loop s p target next-window 0 lp slen (+ i 1))))
+          (if match? (cons i rest) rest)))))
+
+(define (update-window w old new slen)
+  (let ((oidx (- old 32))
+        (nidx (- (char->integer new) 32)))
+    (list-set (list-set w oidx (- (list-ref w oidx) 1)) nidx (+ (list-ref w nidx) 1))))
+
+(define (parse-case line)
+  (define (find-pipe i)
+    (if (char=? (string-ref line i) #\|) i (find-pipe (+ i 1))))
+  (let ((pipe-idx (find-pipe 0)))
+    (substring line 0 pipe-idx)))
+
+(define (get-p line)
+  (let* ((ls (string-length line))
+         (i (- ls 1)))
+    (substring line (+ (find-pipe line) 1) ls)))
+
+(define (run-case n s p)
+  (display "CASE")
+  (display (number->string n))
+  (display "=")
+  (display-result (solve s p))
+  (newline))
+
+(define (display-result xs)
+  (display-list xs))
+
+(define (display-list xs)
+  (if (null? xs)
+      (display "")
+      (begin
+        (display (number->string (car xs)))
+        (if (null? (cdr xs)) (display "")
+            (begin (display " ") (display-list (cdr xs)))))))
+
+(run-case 0 "cbaebabacd" "abc")
+(run-case 1 "abab" "ab")
+(run-case 2 "a" "a")
+(run-case 3 "a" "b")
+(run-case 4 "af" "be")
+(run-case 5 "abcdef" "f")
+(run-case 6 "bacdgabcda" "abcd")
+(run-case 7 "" "a")

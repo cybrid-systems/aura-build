@@ -1,0 +1,77 @@
+;; Pascal's Triangle II - generate the k-th row (0-indexed)
+;; Approach: build iteratively in-place from right to left for O(k) space.
+
+(define (solve k)
+  (let ((row (list 1)))
+    (let loop ((i 1))
+      (if (> i k)
+          row
+          (begin
+            ;; Append a 1 at the end (acts as a sentinel)
+            (set! row (append row (list 1)))
+            ;; Update from right to left: row[j] += row[j-1]
+            (let update ((j (- (length row) 2)))
+              (if (< j 1)
+                  #t
+                  (begin
+                    (set! row
+                          (let loop2 ((idx 0)
+                                       (acc '())
+                                       (r row))
+                            (if (= idx (+ j 1))
+                                (begin
+                                  ;; Replace element at position j with sum
+                                  (reverse
+                                    (cons
+                                      (+ (car r) (car (cdr r)))
+                                      (cdr (cdr acc)))))
+                                (loop2 (+ idx 1)
+                                       (cons (car r) acc)
+                                       (cdr r)))))
+                    (update (- j 1)))))
+            (loop (+ i 1)))))))
+
+;; Alternative simpler approach using list mutation via set-car!/set-cdr!
+(define (solve k)
+  (let ((row (list 1)))
+    (let loop ((i 1))
+      (if (> i k)
+          row
+          (begin
+            (set! row (append row (list 1)))
+            ;; Update from right to left
+            (let update ((r (list-tail row (- (length row) 2))))
+              (if (null? (cdr r))
+                  'done
+                  (begin
+                    (set-car! r (+ (car r) (car (cdr r))))
+                    (update (cdr r)))))
+            (loop (+ i 1)))))))
+
+;; Display a list of integers space-separated
+(define (display-list xs)
+  (cond
+    ((null? xs) (display ""))
+    ((null? (cdr xs)) (display (car xs)))
+    (else
+      (display (car xs))
+      (display " ")
+      (display-list (cdr xs)))))
+
+;; ========== Test harness ==========
+(define (run-case i k)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (let ((result (solve k)))
+    (display-list result))
+  (newline))
+
+(run-case 0 0)
+(run-case 1 1)
+(run-case 2 2)
+(run-case 3 3)
+(run-case 4 4)
+(run-case 5 5)
+(run-case 6 10)
+(run-case 7 30)

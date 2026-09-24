@@ -1,0 +1,84 @@
+(define (length lst)
+  (if (null? lst) 0 (+ 1 (length (cdr lst)))))
+
+(define (list-ref lst i)
+  (if (= i 0) (car lst) (list-ref (cdr lst) (- i 1))))
+
+(define (nth-row mat r)
+  (list-ref mat r))
+
+(define (mat-ref mat r c)
+  (list-ref (list-ref mat r) c))
+
+(define (matrix-rows mat) (length mat))
+(define (matrix-cols mat)
+  (if (null? mat) 0
+      (length (car mat))))
+
+(define (spiral-helper top bottom left right mat result)
+  (cond
+    ((or (> top bottom) (> left right)) result)
+    (else
+      (let ((new-result '()))
+        (define (append-all lst)
+          (if (null? lst) result
+              (begin
+                (set! result (cons (car lst) result))
+                (append-all (cdr lst)))))
+        (begin
+          (set! result (append-all (top-row mat top left right)))
+          (set! result (append-all (right-col mat left (+ top 1) bottom right)))
+          (set! result (append-all (bottom-row mat bottom (+ left 1) right)))
+          (set! result (append-all (left-col mat (- right 1) (+ top 1) (- bottom 1) left)))
+          (spiral-helper (+ top 1) (- bottom 1) (+ left 1) (- right 1) mat result))))))
+
+(define (top-row mat row left right)
+  (if (> left right) '()
+      (cons (mat-ref mat row left) (top-row mat row (+ left 1) right))))
+
+(define (right-col mat col top bottom right)
+  (if (> top bottom) '()
+      (cons (mat-ref mat top right) (right-col mat col (+ top 1) bottom right))))
+
+(define (bottom-row mat row left right)
+  (if (> left right) '()
+      (cons (mat-ref mat row right) (bottom-row mat row left (+ left 1) right))))
+
+(define (left-col mat col top bottom left)
+  (if (> top bottom) '()
+      (cons (mat-ref mat bottom left) (left-col mat col top (- bottom 1) left))))
+
+(define (reverse-list lst)
+  (define (rev-aux lst acc)
+    (if (null? lst) acc (rev-aux (cdr lst) (cons (car lst) acc))))
+  (rev-aux lst '()))
+
+(define (solve matrix)
+  (let ((m (matrix-rows matrix))
+        (n (matrix-cols matrix)))
+    (reverse-list
+      (spiral-helper 0 (- m 1) 0 (- n 1) matrix '()))))
+
+(define (display-list lst)
+  (if (null? lst) '()
+      (begin
+        (display (car lst))
+        (if (not (null? (cdr lst))) (display " ") '())
+        (display-list (cdr lst)))))
+
+(define (display-case i result)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display-list result)
+  (newline))
+
+(begin
+  (display-case 0 (solve '((1 2 3) (4 5 6) (7 8 9))))
+  (display-case 1 (solve '((1 2 3 4) (5 6 7 8) (9 10 11 12))))
+  (display-case 2 (solve '((1 2 3))))
+  (display-case 3 (solve '((1) (2) (3))))
+  (display-case 4 (solve '((1))))
+  (display-case 5 (solve '((1 2) (3 4))))
+  (display-case 6 (solve '((1 2 3 4 5) (6 7 8 9 10) (11 12 13 14 15))))
+  (display-case 7 (solve '((1 2 3 4) (5 6 7 8) (9 10 11 12) (13 14 15 16)))))

@@ -1,0 +1,61 @@
+(define (string-split-words s)
+  (let ((len (string-length s)))
+    (define (skip-spaces i)
+      (if (>= i len)
+          i
+          (if (char=? (string-ref s i) #\space)
+              (skip-spaces (+ i 1))
+              i)))
+    (define (find-end i)
+      (if (>= i len)
+          i
+          (if (char=? (string-ref s i) #\space)
+              i
+              (find-end (+ i 1)))))
+    (define (loop i acc)
+      (let ((start (skip-spaces i)))
+        (if (>= start len)
+            (reverse acc)
+            (let ((end (find-end start)))
+              (loop (+ end 1)
+                    (cons (substring s start end) acc))))))
+    (loop 0 '())))
+
+(define (join-with-space words)
+  (cond
+    ((null? words) "")
+    ((null? (cdr words)) (car words))
+    (else (string-append (car words)
+                         " "
+                         (join-with-space (cdr words))))))
+
+(define (solve s)
+  (join-with-space (string-split-words s)))
+
+(define (display-list lst)
+  (display "(")
+  (let loop ((l lst) (first 1))
+      (when (pair? l)
+        (unless (= first 1) (display " "))
+        (display (car l))
+        (loop (cdr l) 0)))
+  (display ")"))
+
+(define (display-string-or-list v)
+  (display v))
+
+(define (run-case n s)
+  (display "CASE")
+  (display n)
+  (display "=")
+  (display (solve s))
+  (newline))
+
+(run-case 0 "the sky is blue")
+(run-case 1 "  hello world  ")
+(run-case 2 "a   b   c")
+(run-case 3 "   ")
+(run-case 4 "")
+(run-case 5 "single")
+(run-case 6 "  leading and trailing  ")
+(run-case 7 "one  two\tthree")

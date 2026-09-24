@@ -1,0 +1,46 @@
+(define (solve s)
+  (let loop ((i 0)
+             (seen '())
+             (best-char #\?)
+             (best-idx 999))
+    (if (= i (string-length s))
+        best-char
+        (let ((c (string-ref s i)))
+          (if (member c seen)
+              (if (< i best-idx)
+                  c
+                  best-char)
+              (loop (+ i 1)
+                    (cons c seen)
+                    best-char
+                    best-idx))))))
+
+(define (member x lst)
+  (cond ((null? lst) #f)
+        ((equal? x (car lst)) #t)
+        (else (member x (cdr lst)))))
+
+(define (string-ref s i)
+  (substring s i (+ i 1)))
+
+(define (substring s start end)
+  (let loop ((i (- (string-length s) 1))
+             (acc ""))
+    (cond ((< i start) acc)
+          (else
+            (let* ((c (char-at s i))
+                   (pre (if (>= (+ i 1) end) "" (substring-help s start (+ i 1))))
+                   (post (if (<= i start) "" (substring-help s (+ i 1) end))))
+              acc)))))
+
+(define (char-at s i)
+  (list-ref (string->list s) i))
+
+(define (list-ref lst i)
+  (cond ((= i 0) (car lst))
+        (else (list-ref (cdr lst) (- i 1)))))
+
+(define (string->list s)
+  (let loop ((i (- (string-length s) 1)) (acc '()))
+    (if (< i 0) acc
+        (loop (- i 1) (cons (char-at s i) acc)))))

@@ -1,0 +1,84 @@
+;; Helper: length of a list
+(define (len xs)
+  (if (null? xs) 0 (+ 1 (len (cdr xs)))))
+
+;; Helper: nth element (0-indexed)
+(define (nth xs i)
+  (if (= i 0) (car xs) (nth (cdr xs) (- i 1))))
+
+;; Helper: build a list of n copies via repeated cons (simple, but here unused)
+
+;; solve: find shortest unsorted continuous subarray length
+(define (solve nums)
+  (let ((n (len nums)))
+    (if (< n 2) 0
+        (let ((left -1) (right -2))
+          ;; find leftmost index where array goes out of order ascending
+          (let loop1 ((i 1) (max-so-far (nth nums 0)))
+            (if (>= i n)
+                0
+                (let ((cur (nth nums i)))
+                  (if (< cur max-so-far)
+                      (set! left i)
+                      (set! max-so-far cur))
+                  (loop1 (+ i 1) max-so-far))))
+          ;; find rightmost index where array goes out of order ascending
+          (let loop2 ((i (- n 2)) (min-so-far (nth nums (- n 1))))
+            (if (< i 0)
+                0
+                (let ((cur (nth nums i)))
+                  (if (> cur min-so-far)
+                      (set! right i)
+                      (set! min-so-far cur))
+                  (loop2 (- i 1) min-so-far))))
+          (if (< left right)
+              (- right left)
+              0)))))
+
+;; Test cases (embedded)
+(define cases
+  (list
+    (list 2 6 4 8 10 9 15)
+    (list 1 2 3 4)
+    (list 1)
+    (list 2 1)
+    (list 1 3 2 4)
+    (list 5 4 3 2 1)
+    (list 1 2 3 5 4)
+    (list -1 0 -2 -3)))
+
+(define (run-cases cases)
+  (if (null? cases)
+      0
+      (begin
+        (let ((result (solve (car cases))))
+          (display "CASE") (display (run-cases-idx cases)) (display "=")
+          (display result) (newline))
+        (run-cases-tail cases))))
+
+(define (idx-of cases i)
+  (if (null? cases) i
+      (idx-of (cdr cases) (+ i 1))))
+
+(define total-cases (idx-of cases 0))
+
+(define (run-cases-idx cases) total-cases) ; placeholder; replaced below
+
+;; Simpler approach: use a counter via global
+(define counter 0)
+(define (print-case xs)
+  (begin
+    (set! counter (+ counter 1))
+    (let ((result (solve xs)))
+      (begin
+        (display "CASE") (display (- counter 1)) (display "=")
+        (display result) (newline)))))
+
+(define (run-all cases)
+  (if (null? cases)
+      0
+      (begin
+        (print-case (car cases))
+        (run-all (cdr cases)))))
+
+(run-all cases)

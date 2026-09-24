@@ -1,0 +1,64 @@
+;; Sliding window: track max window length where #zeros <= k
+(define (max-consecutive-ones nums k)
+  ;; Convert list of 0/1 to its length and provide list access helpers
+  (let ((n (length nums)))
+    (letrec (
+      ;; Get element at index i (0-based). Uses list-ref style via helper.
+      (get-elem
+        (lambda (lst i)
+          (if (= i 0)
+              (car lst)
+              (get-elem (cdr lst) (- i 1)))))
+
+      ;; Helper to walk through array, maintaining window [left, right].
+      ;; We do this iteratively using a loop helper since Aura has no built-in
+      ;; imperative loop. We'll carry state via a "state" list:
+      ;; (left zeros max-len). We process each element by index.
+      (process
+        (lambda (i left zeros max-len)
+          (if (= i n)
+              max-len
+              (let ((v (get-elem nums i)))
+                (let ((new-zeros (if (= v 0) (+ zeros 1) zeros)))
+                  (if (> new-zeros k)
+                      ;; Need to shrink from left until zeros <= k.
+                      ;; Determine new left after shrinking and update zeros count.
+                      (let shrink ((l left) (z new-zeros))
+                        (if (<= z k)
+                                (let ((len (- (+ i 1) l)))
+                                  (process (+ i 1) l z (if (> len max-len) len max-len)))
+                                (shrink (+ l 1)
+                                        (if (= (get-elem nums l) 0) (- z 1) z))))
+                      ;; zeros still within budget; just update max-len.
+                      (let ((len (- (+ i 1) left)))
+                        (process (+ i 1) left new-zeros (if (> len max-len) len max-len))))))))))
+      (process 0 0 0 0))))
+
+(define (solve nums k)
+  (max-consecutive-ones nums k))
+
+;; --- Test harness: embedded inputs ---
+(define (display-case i result)
+  (begin
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display result)
+    (newline)))
+
+;; CASE0: [1,1,1,0,0,0,1,1,1,1,0] k=2 -> 6
+(display-case 0 (solve (list 1 1 1 0 0 0 1 1 1 1 0) 2))
+;; CASE1: [0,0,1,1,0,0,1,1,1,0,0,0,1,1,1,1,0] k=3 -> 10
+(display-case 1 (solve (list 0 0 1 1 0 0 1 1 1 0 0 0 1 1 1 1 0) 3))
+;; CASE2: [1,1,1,1] k=0 -> 4
+(display-case 2 (solve (list 1 1 1 1) 0))
+;; CASE3: [0,0,0,0] k=0 -> 0
+(display-case 3 (solve (list 0 0 0 0) 0))
+;; CASE4: [0,0,0,0] k=4 -> 4
+(display-case 4 (solve (list 0 0 0 0) 4))
+;; CASE5: [1,0,1,0,1,0,1] k=1 -> 3 (e.g., flip one zero in [1,0,1,0,1])
+(display-case 5 (solve (list 1 0 1 0 1 0 1) 1))
+;; CASE6: [0,1,1,1,0,1,1,1,0,1,1,1,0] k=2 -> 9 (best window contains at most 2 zeros)
+(display-case 6 (solve (list 0 1 1 1 0 1 1 1 0 1 1 1 0) 2))
+;; CASE7: [1] k=0 -> 1
+(display-case 7 (solve (list 1) 0))

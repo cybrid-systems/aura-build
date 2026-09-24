@@ -1,0 +1,117 @@
+(define (range-helper i n)
+  (if (>= i n)
+      '()
+      (cons i (range-helper (+ i 1) n))))
+
+(define (spiral matrix)
+  (letrec ((rows (length matrix))
+           (cols (if (null? matrix) 0 (length (car matrix))))
+           (spiral-helper (lambda (top bottom left right result)
+             (cond
+               ((or (>= top bottom) (>= left right)) result)
+               (else
+                (let ((top-row (list-ref matrix top)))
+                  (let ((top-elems (take-elements top-row left right)))
+                    (let ((right-col (take-col-elements matrix left top bottom)))
+                      (let ((bottom-row (if (> bottom (+ top 1))
+                                             (reverse (take-elements (list-ref matrix (- bottom 1)) left right))
+                                             '())))
+                        (let ((left-col (if (> right (+ left 1))
+                                            (reverse (take-col-elements-back matrix (- right 1) top bottom))
+                                            '())))
+                          (spiral-helper (+ top 1) (- bottom 1) (+ left 1) (- right 1)
+                            (append result top-elems right-col bottom-row left-col)))))))))))))
+    (if (or (= rows 0) (= cols 0))
+        '()
+        (spiral-helper 0 rows 0 cols '()))))
+
+(define (list-ref lst i)
+  (if (= i 0)
+      (car lst)
+      (list-ref (cdr lst) i)))
+
+(define (length lst)
+  (if (null? lst) 0 (+ 1 (length (cdr lst)))))
+
+(define (take-elements lst left right)
+  (take-elements-helper lst left right '()))
+
+(define (take-elements-helper lst left right acc)
+  (cond
+    ((null? lst) (reverse acc))
+    ((>= left right) (reverse acc))
+    (else
+      (if (= left 0)
+          (take-elements-helper (cdr lst) 0 (- right 1) (cons (car lst) acc))
+          (take-elements-helper (cdr lst) (- left 1) right acc)))))
+
+(define (take-col-elements matrix col top bottom)
+  (take-col-helper matrix col top bottom '()))
+
+(define (take-col-helper matrix col row bottom acc)
+  (cond
+    ((>= row bottom) (reverse acc))
+    (else
+      (take-col-helper matrix col (+ row 1) bottom
+        (cons (list-ref (list-ref matrix row) col) acc)))))
+
+(define (take-col-elements-back matrix col top bottom)
+  (take-col-back-helper matrix col top bottom '()))
+
+(define (take-col-back-helper matrix col row bottom acc)
+  (cond
+    ((>= row bottom) (reverse acc))
+    (else
+      (take-col-back-helper matrix col (+ row 1) bottom
+        (cons (list-ref (list-ref matrix row) col) acc)))))
+
+(define (take-col-back-helper2 matrix col top bottom acc)
+  (cond
+    ((>= top bottom) acc)
+    (else
+      (take-col-back-helper2 matrix col (+ top 1) bottom
+        (cons (list-ref (list-ref matrix top) col) acc)))))
+
+(define (reverse lst)
+  (reverse-helper lst '()))
+
+(define (reverse-helper lst acc)
+  (if (null? lst)
+      acc
+      (reverse-helper (cdr lst) (cons (car lst) acc))))
+
+(define (append a b)
+  (if (null? a) b (cons (car a) (append (cdr a) b))))
+
+(define (display-list lst)
+  (cond
+    ((null? lst) (display ""))
+    (else
+      (display (car lst))
+      (let loop ((rest (cdr lst)))
+        (if (null? rest)
+            '()
+            (begin
+              (display " ")
+              (display (car rest))
+              (loop (cdr rest))))))))
+
+(define (solve matrix)
+  (spiral matrix))
+
+(define (run-test i matrix)
+  (begin
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display-list (solve matrix))
+    (newline)))
+
+(run-test 0 '((1 2 3) (4 5 6) (7 8 9)))
+(run-test 1 '((1 2 3 4) (5 6 7 8) (9 10 11 12)))
+(run-test 2 '((1 2 3)))
+(run-test 3 '((1) (2) (3)))
+(run-test 4 '((1)))
+(run-test 5 '((1 2) (3 4)))
+(run-test 6 '((1 2 3 4 5) (6 7 8 9 10) (11 12 13 14 15)))
+(run-test 7 '((1 2 3 4) (5 6 7 8) (9 10 11 12) (13 14 15 16)))

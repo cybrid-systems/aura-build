@@ -1,0 +1,88 @@
+import sys
+import json
+
+def solve(head):
+    slow = head
+    fast = head
+    while fast is not None and fast.next is not None:
+        slow = slow.next
+        fast = fast.next.next
+    return slow
+
+
+class Node:
+    __slots__ = ('val', 'next')
+    def __init__(self, val, nxt=None):
+        self.val = val
+        self.next = nxt
+
+
+def build_list(values):
+    head = None
+    tail = None
+    for v in values:
+        node = Node(v)
+        if head is None:
+            head = node
+            tail = node
+        else:
+            tail.next = node
+            tail = node
+    return head
+
+
+def run_cases():
+    data = sys.stdin.read().splitlines()
+    cases = []
+    i = 0
+    n = len(data)
+    cur_vals = None
+    cur_header = None
+    case_id = 0
+
+    def finalize():
+        nonlocal cur_vals, cur_header, case_id
+        head = build_list(cur_vals) if cur_vals else None
+        mid = solve(head)
+        if mid is None:
+            result = ""
+        else:
+            result = str(mid.val)
+        cases.append({"id": case_id, "input": {"vals": list(cur_vals)}, "expected": json.dumps(result, separators=(',', ':'), ensure_ascii=False)})
+        case_id += 1
+        cur_vals = None
+
+    while i < n:
+        line = data[i].strip()
+        if line == "END":
+            if cur_vals is not None or cur_header is not None:
+                finalize()
+            break
+        if line.startswith("CASE") and "=" in line:
+            # flush previous
+            if cur_vals is not None or cur_header is not None:
+                finalize()
+            # parse header
+            _, rhs = line.split("=", 1)
+            count = int(rhs.strip())
+            cur_header = count
+            cur_vals = []
+            # read count values
+            for j in range(count):
+                i += 1
+                if i >= n:
+                    break
+                vline = data[i].strip()
+                if vline == "":
+                    continue
+                cur_vals.append(int(vline))
+        i += 1
+    if cur_vals is not None or cur_header is not None:
+        finalize()
+
+    return cases
+
+
+if __name__ == '__main__':
+    cases = run_cases()
+    print(json.dumps(cases, separators=(',', ':'), ensure_ascii=False))

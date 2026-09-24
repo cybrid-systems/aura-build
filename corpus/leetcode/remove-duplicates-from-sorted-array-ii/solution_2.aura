@@ -1,0 +1,49 @@
+(define (len xs)
+  (if (null? xs) 0 (+ 1 (len (cdr xs)))))
+
+(define (ref xs i)
+  (if (= i 0) (car xs) (ref (cdr xs) (- i 1))))
+
+(define (set-ref! xs i v)
+  (if (= i 0)
+      (set-car! xs v)
+      (set-ref! (cdr xs) (- i 1) v)))
+
+(define (solve nums)
+  (let ((n (len nums)))
+    (if (<= n 2)
+        n
+        (let loop ((slow 2))
+          (if (>= slow n)
+              slow
+              (let ((v (ref nums slow)))
+                (if (equal? v (ref nums (- slow 2)))
+                    (loop (+ slow 1))
+                    (begin
+                      (set-ref! nums slow v)
+                      (loop (+ slow 1))))))))))
+
+(define (display-list xs)
+  (display "[")
+  (let loop ((first? #t) (xs xs))
+    (cond ((null? xs) (display "]"))
+          (else
+           (if first? (set! first? #f) (begin (display ", ") #f))
+           (display (car xs))
+           (loop #f (cdr xs)))))))
+
+(define (run-case i nums)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve nums))
+  (newline))
+
+(run-case 0 (list 1 1 1 2 2 3))
+(run-case 1 (list 0 0 1 1 1 1 2 3 3))
+(run-case 2 (list))
+(run-case 3 (list 1))
+(run-case 4 (list 1 1))
+(run-case 5 (list 1 1 1))
+(run-case 6 (list 1 2 3 4 5))
+(run-case 7 (list 1 1 2 2 2 3 3 3 3 4))

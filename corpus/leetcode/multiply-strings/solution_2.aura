@@ -1,0 +1,281 @@
+(define (char->digit c)
+  (- (char->integer c) (char->integer #\0)))
+
+(define (digit->char d)
+  (integer->char (+ d (char->integer #\0))))
+
+(define (string-length s)
+  (let loop ((i 0))
+    (if (and (< i (string-length-raw s))
+             (not (char=? (string-ref s i) #\null)))
+        (loop (+ i 1))
+        i)))
+
+(define (string-length-raw s) ; wrapper for clarity
+  (string-length s))
+
+(define (str-length s)
+  (string-length s))
+
+(define (string-empty? s)
+  (= (str-length s) 0))
+
+(define (all-zeros? s)
+  (cond
+    ((string-empty? s) #t)
+    ((char=? (string-ref s 0) #\0)
+     (if (= (str-length s) 1) #t #f))
+    (else #f)))
+
+(define (multiply-strings a b)
+  (cond
+    ((or (string-empty? a) (string-empty? b)) "0")
+    ((and (char=? (string-ref a 0) #\0) (= (str-length a) 1)) "0")
+    ((and (char=? (string-ref b 0) #\0) (= (str-length b) 1)) "0")
+    (else
+     (let* ((la (str-length a))
+            (lb (str-length b))
+            (size (+ la lb))
+            (digits (make-list size 0)))
+       (let loop-i ((i 0))
+         (if (>= i la)
+             'done
+             (begin
+               (let loop-j ((j 0))
+                 (if (>= j lb)
+                     'done
+                     (begin
+                       (let* ((da (char->digit (string-ref a i)))
+                              (db (char->digit (string-ref b j)))
+                              (p (+ (* da db) (list-ref digits (+ i j)))))
+                         (let ((newval (modulo p 10))
+                               (carry (quotient p 10)))
+                           (set! digits (list-set digits (+ i j) newval))
+                           (set! digits (list-set digits (+ i j 1) (+ (list-ref digits (+ i j 1)) carry)))
+                           (let propagate ((k (+ i j 1)))
+                             (if (>= newval 0)
+                                 'ok
+                                 'ok))
+                           (loop-j (+ j 1)))))
+                     (loop-i (+ i 1))))))
+       (let* ((start (if (> (list-ref digits (- size 1)) 0) (- size 1) (- size 2)))
+              (buf '()))
+         (let build ((i (- size 1)))
+           (if (< i 0)
+               (list->string (reverse buf))
+               (begin
+                 (set! buf (cons (digit->char (list-ref digits i)) buf))
+                 (build (- i 1))))))))))
+
+(define (make-list n v)
+  (let loop ((i 0) (acc '()))
+    (if (>= i n)
+        (reverse acc)
+        (loop (+ i 1) (cons v acc)))))
+
+(define (list-ref lst i)
+  (let loop ((k 0) (l lst))
+    (if (= k i) (car l) (loop (+ k 1) (cdr l)))))
+
+(define (list-set lst i v)
+  (let loop ((k 0) (l lst) (acc '()))
+    (if (null? l) (reverse acc)
+        (if (= k i)
+            (loop (+ k 1) (cdr l) (cons v acc))
+            (loop (+ k 1) (cdr l) (cons (car l) acc))))))
+
+(define (list->string lst)
+  (let* ((n (length lst))
+         (s (make-string n #\0)))
+    (let fill ((i 0) (l lst))
+      (if (null? l) s
+          (begin
+            (string-set! s i (car l))
+            (fill (+ i 1) (cdr l)))))))
+
+(define (make-string n c)
+  (let loop ((i 0) (acc '()))
+    (if (>= i n) (list->string-helper (reverse acc))
+        (loop (+ i 1) (cons c acc)))))
+
+(define (list->string-helper lst)
+  (let* ((n (length lst))
+         (s (string-copy-helper "" n)))
+    (let fill ((i 0) (l lst))
+      (if (null? l) s
+          (begin
+            (string-set! s i (car l))
+            (fill (+ i 1) (cdr l)))))))
+
+(define (string-copy-helper orig n)
+  (if (= n 0) "" orig))
+
+; Simpler string construction: build by string-append
+(define (make-string2 n c)
+  (let loop ((i 0) (acc ""))
+    (if (>= i n) acc
+        (loop (+ i 1) (string-append acc (string c))))))
+
+(define (string c)
+  (let ((s (make-string-internal c)))
+    s))
+
+; We'll just use a cleaner approach: use make-string with char and direct list->string
+(define (string-of-chars n c)
+  (let loop ((i 0) (acc '()))
+    (if (>= i n) (chars->string (reverse acc))
+        (loop (+ i 1) (cons c acc)))))
+
+(define (chars->string lst)
+  (let* ((n (length lst))
+         (arr (make-char-list-to-string lst n)))
+    arr))
+
+; Actually, let's redefine multiply-strings with proper helpers using only standard primitives.
+
+(define (multiply-strings a b)
+  (cond
+    ((or (string-empty? a) (string-empty? b)) "0")
+    ((and (char=? (string-ref a 0) #\0) (= (str-length a) 1)) "0")
+    ((and (char=? (string-ref b 0) #\0) (= (str-length b) 1)) "0")
+    (else
+     (let* ((la (str-length a))
+            (lb (str-length b))
+            (size (+ la lb))
+            (digits (build-list size 0)))
+       (let loop-i ((i 0))
+         (if (>= i la)
+             'done
+             (begin
+               (let loop-j ((j 0))
+                 (if (>= j lb)
+                     'done
+                     (begin
+                       (let* ((da (char->digit (string-ref a (- (- la i) 1)) (err-handler))))
+                         (err-handler))))
+                       (loop-j (+ j 1)))))
+               (loop-i (+ i 1)))))
+       (let build-str ((i (- size 1)) (acc ""))
+         (cond
+           ((< i 0)
+            (let ((s acc))
+              (s)))
+           ((= (list-ref digits i) 0)
+            (build-str (- i 1) acc))
+           (else
+            (build-str (- i 1) (string-append acc (int->single-string (list-ref digits i)))))))))))
+
+; OK let me restart with a clean implementation.
+
+(define (len s)
+  (let loop ((i 0))
+    (if (and (< i 1000) (char<=? (string-ref s i) #\9) (char>=? (string-ref s i) #\0))
+        (loop (+ i 1))
+        i)))
+
+; Use a safe indexing by checking length
+
+(define (safe-str-ref s i)
+  (if (< i (len s)) (string-ref s i) #\0))
+
+(define (make-zero-list n)
+  (let loop ((i 0) (acc '()))
+    (if (>= i n) (reverse acc)
+        (loop (+ i 1) (cons 0 acc)))))
+
+(define (lref lst i)
+  (let loop ((k 0) (l lst))
+    (if (= k i) (car l) (loop (+ k 1) (cdr l)))))
+
+(define (lset lst i v)
+  (let loop ((k 0) (l lst) (acc '()))
+    (if (null? l) (reverse acc)
+        (if (= k i)
+            (loop (+ k 1) (cdr l) (cons v acc))
+            (loop (+ k 1) (cdr l) (cons (car l) acc))))))
+
+(define (is-zero-s s)
+  (cond
+    ((= (len s) 0) #t)
+    ((= (len s) 1) (char=? (string-ref s 0) #\0))
+    (else #f)))
+
+(define (multiply a b)
+  (cond
+    ((is-zero-s a) "0")
+    ((is-zero-s b) "0")
+    (else
+     (let* ((la (len a))
+            (lb (len b))
+            (n (+ la lb))
+            (d (make-zero-list n)))
+       (let i-loop ((i 0))
+         (if (>= i la) 'done
+             (let j-loop ((j 0))
+               (if (>= j lb) 'done
+                   (let* ((da (char->digit (string-ref a i)))
+                          (db (char->digit (string-ref b j)))
+                          (sum (+ (* da db) (lref d (+ i j)))))
+                     (let ((newd (modulo sum 10))
+                           (carry (quotient sum 10)))
+                       (set! d (lset d (+ i j) newd))
+                       (set! d (lset d (+ i j 1) (+ (lref d (+ i j 1)) carry)))
+                       (j-loop (+ j 1))))))
+             (i-loop (+ i 1)))))
+       (let ((start (if (> (lref d (- n 1)) 0) (- n 1) (- n 2))))
+         (let build ((i (- n 1)) (acc '()))
+           (cond
+             ((and (= i start) (= (lref d i) 0)) 
+              (reverse-list->string (cons (digit->char 0) acc)))
+             ((< i 0) (reverse-list->string acc))
+             (else
+              (build (- i 1) (cons (digit->char (lref d i)) acc))))))))))
+
+(define (reverse-list->string lst)
+  (let loop ((l lst) (acc '()))
+    (if (null? l) (list->string-final acc)
+        (loop (cdr l) (cons (car l) acc)))))
+
+(define (list->string-final lst)
+  (let* ((n (length lst))
+         (idx 0)
+         (chars lst))
+    (let fill ((i 0) (l chars))
+      (if (null? l) (build-string n lst)
+          (fill (+ i 1) (cdr l))))))
+
+; Simplest: use string-append repeatedly
+(define (chars->str lst)
+  (let loop ((l lst) (acc ""))
+    (if (null? l) acc
+        (loop (cdr l) (string-append acc (make-string1 (car l)))))))
+
+(define (make-string1 c)
+  (let ((s (make-string-impl 1 c)))
+    s))
+
+; Aura likely has make-string. Let's assume (make-string n c) exists.
+
+(define (solve a b)
+  (multiply a b))
+
+(define (display-case i result)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display result)
+  (newline))
+
+; Run all cases
+(display-case 0 (solve "2" "3"))
+(display-case 1 (solve "123" "456"))
+(display-case 2 (solve "0" "99"))
+(display-case 3 (solve "999" "999"))
+(display-case 4 (solve "" "5"))
+(display-case 5 (solve "0" "0"))
+(display-case 6 (solve "1" "1"))
+(display-case 7 (solve "9" "9"))
+(display-case 8 (solve "100" "100"))
+(display-case 9 (solve "12345" "67890"))
+(display-case 10 (solve "99999999999999999999" "99999999999999999999"))
+(display-case 11 (solve "123456789012345678901234567890" "987654321098765432109876543210"))

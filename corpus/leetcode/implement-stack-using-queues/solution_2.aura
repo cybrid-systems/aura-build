@@ -1,0 +1,117 @@
+;; Implement Stack using two Queues (Aura)
+;; Queue primitives:
+;;   q-enqueue: add to back
+;;   q-dequeue: remove from front (returns value)
+;;   q-front:   peek front
+;;   q-empty?:  is empty
+;;   q-size:    number of elements
+
+(define (make-queue) (cons 'q '()))
+
+(define (q-empty? q) (null? (cdr q)))
+(define (q-size q)   (length (cdr q)))
+(define (q-front q)  (car (cdr q)))
+
+(define (q-enqueue q x)
+  (let loop ((acc '()) (cur (cdr q)))
+    (if (null? cur)
+        (set-cdr! q (append (reverse (cons x acc)) '()))
+        (loop (cons (car cur) acc) (cdr cur)))))
+
+(define (q-dequeue q)
+  (let ((v (car (cdr q))))
+    (set-cdr! q (cdr (cdr q)))
+    v))
+
+;; Stack state: two queues, plus a flag indicating which one is "primary"
+;; State: (cons primary-q secondary-q) where both are queue objects (pairs with 'q tag)
+;; push(x): enqueue x to secondary; then move all elements from primary to secondary;
+;;          swap primary and secondary. This way, primary's front is always the top.
+;; pop():   dequeue from primary.
+;; top():   front of primary.
+;; empty?:  primary is empty.
+
+(define (make-stack)
+  (cons (make-queue) (make-queue)))
+
+(define (stack-empty? s) (q-empty? (car s)))
+
+(define (stack-push! s x)
+  (q-enqueue (cdr s) x)
+  ;; move everything from primary to secondary (preserving order)
+  (let ((primary (car s))
+        (secondary (cdr s)))
+    ;; While primary not empty: dequeue from primary, enqueue to secondary.
+    (let loop ()
+      (if (q-empty? primary)
+          'done
+          (begin
+            (q-enqueue secondary (q-dequeue primary))
+            (loop)))))
+  ;; swap: primary becomes secondary (which now has the new element at back, and old ones at front)
+  (let ((tmp (car s)))
+    (set-car! s (cdr s))
+    (set-cdr! s tmp)))
+
+(define (stack-pop! s)
+  (q-dequeue (car s)))
+
+(define (stack-top s)
+  (q-front (car s)))
+
+;; solve: process operations list, return list of results
+(define (solve operations)
+  (let ((stack (make-stack))
+        (results '()))
+    (let loop ((ops operations))
+      (if (null? ops)
+          (reverse results)
+          (let ((op (car ops)))
+            (cond
+              ((equal? (car op) 'push)
+               (stack-push! stack (car (cdr op)))
+               (loop (cdr ops)))
+              ((equal? (car op) 'pop)
+               (let ((v (stack-pop! stack)))
+                 (set! results (cons v results))
+                 (loop (cdr ops))))
+              ((equal? (car op) 'top)
+               (let ((v (stack-top stack)))
+                 (set! results (cons v results))
+                 (loop (cdr ops))))
+              ((equal? (car op) 'empty)
+               (let ((v (stack-empty? stack)))
+                 (set! results (cons v results))
+                 (loop (cdr ops))))
+              (else (loop (cdr ops)))))))))
+
+;; Helper to display a list as "[a, b, c]" for readable output
+(define (display-list lst)
+  (display "[")
+  (let loop ((l lst) (first? #t))
+    (cond
+      ((null? l) (display "]"))
+      (first?
+       (display (car l))
+       (loop (cdr l) #f))
+      (else
+       (display ", ")
+       (display (car l))
+       (loop (cdr l) #f)))))
+
+;; Run cases
+(define (run-case i ops)
+  (let ((r (solve ops)))
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display-list r)
+    (newline)))
+
+(run-case 0 '(("push" 1) ("push" 2) ("top") ("pop")))
+(run-case 1 '())
+(run-case 2 '(("push" 1) ("pop") ("empty")))
+(run-case 3 '(("push" 1) ("push" 2) ("push" 3) ("pop") ("pop") ("pop") ("empty")))
+(run-case 4 '(("empty")))
+(run-case 5 '(("push" 42) ("top") ("top") ("pop") ("empty") ("push" 7) ("top") ("pop")))
+(run-case 6 '(("push" 5) ("push" 10) ("pop") ("push" 15) ("top") ("pop") ("pop") ("empty")))

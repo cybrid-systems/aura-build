@@ -1,0 +1,43 @@
+;; Jump Game II — O(n) greedy sweep
+(define (solve nums)
+  (let ((n (length nums)))
+    (if (= n 1)
+        0
+        (let loop ((i 0) (jumps 0) (current-end 0) (farthest 0))
+          (cond
+            ((>= i (- n 1))
+             jumps)
+            (else
+             (let ((reach (+ i (list-ref nums i))))
+               (let ((new-farthest (max farthest reach)))
+                 (if (= i current-end)
+                     (loop (+ i 1)
+                           (+ jumps 1)
+                           new-farthest
+                           new-farthest)
+                     (loop (+ i 1)
+                           jumps
+                           current-end
+                           new-farthest))))))))))
+
+(define (list-ref lst k)
+  (cond ((null? lst) (error "list-ref: out of bounds"))
+        ((= k 0) (car lst))
+        (else (list-ref (cdr lst) (- k 1)))))
+
+;; Test cases
+(define (run-case idx nums)
+  (display "CASE")
+  (display idx)
+  (display "=")
+  (display (solve nums))
+  (newline))
+
+(run-case 0 '(2 3 1 1 4))
+(run-case 1 '(2 3 0 1 4))
+(run-case 2 '(1 2 3))
+(run-case 3 '(1 1 1 1))
+(run-case 4 '(5 4 3 2 1 1 1 1))
+(run-case 5 '(1 2 0 1))
+(run-case 6 '(2 0))
+(run-case 7 '(1 0 0 0 0 0 0 0 0 0 1))

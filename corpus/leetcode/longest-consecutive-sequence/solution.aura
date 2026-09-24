@@ -1,0 +1,65 @@
+;; Longest Consecutive Sequence
+;; Build a set from the list, then for each element that has no predecessor
+;; in the set, walk forward counting consecutive integers.
+
+(define (member? x lst)
+  (cond ((null? lst) #f)
+        ((equal? (car lst) x) #t)
+        (else (member? x (cdr lst)))))
+
+;; Build a set represented as a sorted list of unique elements.
+(define (insert-uniq x lst)
+  (cond ((null? lst) (list x))
+        ((equal? x (car lst)) lst)
+        ((< x (car lst)) (cons x lst))
+        (else (cons (car lst) (insert-uniq x (cdr lst))))))
+
+(define (make-set lst)
+  (let loop ((rest lst) (acc '()))
+    (if (null? rest)
+        acc
+        (loop (cdr rest) (insert-uniq (car rest) acc)))))
+
+;; Count consecutive integers starting from x (x itself counted).
+(define (count-from x s)
+  (let loop ((cur x) (cnt 0))
+    (if (member? cur s)
+        (loop (+ cur 1) (+ cnt 1))
+        cnt)))
+
+(define (solve nums)
+  (let ((s (make-set nums)))
+    (let loop ((rest s) (best 0))
+      (cond ((null? rest) best)
+            ((member? (- (car rest) 1) s)
+             (loop (cdr rest) best))
+            (else
+             (let ((c (count-from (car rest) s)))
+               (if (> c best)
+                   (loop (cdr rest) c)
+                   (loop (cdr rest) best))))))))
+
+;; ---- Embedded test harness ----
+(define (display-list xs)
+  (display "[")
+  (let loop ((rest xs) (first #t))
+    (cond ((null? rest) (display "]"))
+          (else
+           (if first (display "") (display ","))
+           (display (car rest))
+           (loop (cdr rest) #f)))))
+
+(define (run-case label nums)
+  (display label)
+  (display "=")
+  (display (solve nums))
+  (newline))
+
+(run-case "CASE0" '())
+(run-case "CASE1" '(100 4 200 1 3 2))
+(run-case "CASE2" '(0 3 7 2 5 8 4 6 0 1))
+(run-case "CASE3" '(1 2 0 1))
+(run-case "CASE4" '(5 5 5))
+(run-case "CASE5" '(-2 -1 0 1 2 3))
+(run-case "CASE6" '(9 8 7 6 5 4 3 2 1 0))
+(run-case "CASE7" '(10 20 30 40))

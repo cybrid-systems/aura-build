@@ -1,0 +1,82 @@
+;; Sort pairs by first element using insertion sort
+(define (insert-sorted item lst)
+  (cond
+    ((null? lst) (cons item '()))
+    ((<= (car item) (car (car lst)))
+     (cons item lst))
+    (else (cons (car lst) (insert-sorted item (cdr lst))))))
+
+(define (sort-pairs lst)
+  (if (null? lst)
+      '()
+      (insert-sorted (car lst) (sort-pairs (cdr lst)))))
+
+;; Check if a list of sorted intervals has any overlaps
+(define (has-overlap lst)
+  (cond
+    ((null? lst) #f)
+    ((null? (cdr lst)) #f)
+    ((> (cadr (car lst)) (car (cadr lst)))
+     ;; Overlap found
+     (if (> (cadr (car lst)) (car (cadr lst)))
+         #t
+         #f))
+    (else (has-overlap (cdr lst)))))
+
+(define (solve n intervals)
+  (let ((s (sort-pairs intervals)))
+    (if (has-overlap s) #f #t)))
+
+;; Display helper for boolean results
+(define (display-bool b)
+  (if b (display "true") (display "false")))
+
+;; ----- Test Cases -----
+
+;; CASE0: n=0, intervals=[]
+(let ((c0 '()))
+  (display "CASE0=")
+  (display-bool (solve 0 c0))
+  (newline))
+
+;; CASE1: n=1, intervals=[[0,5]]
+(let ((c1 '((0 5))))
+  (display "CASE1=")
+  (display-bool (solve 1 c1))
+  (newline))
+
+;; CASE2: n=3, intervals=[[0,30],[5,10],[15,20]]
+(let ((c2 '((0 30) (5 10) (15 20))))
+  (display "CASE2=")
+  (display-bool (solve 3 c2))
+  (newline))
+
+;; CASE3: n=2, intervals=[[5,10],[0,5]]
+(let ((c3 '((5 10) (0 5))))
+  (display "CASE3=")
+  (display-bool (solve 2 c3))
+  (newline))
+
+;; CASE4: n=4, intervals=[[1,4],[4,8],[8,12],[12,16]]
+(let ((c4 '((1 4) (4 8) (8 12) (12 16))))
+  (display "CASE4=")
+  (display-bool (solve 4 c4))
+  (newline))
+
+;; CASE5: n=3, intervals=[[1,5],[3,7],[6,10]]
+(let ((c5 '((1 5) (3 7) (6 10))))
+  (display "CASE5=")
+  (display-bool (solve 3 c5))
+  (newline))
+
+;; CASE6: n=5, intervals=[[0,1],[1,2],[2,3],[3,4],[4,5]]
+(let ((c6 '((0 1) (1 2) (2 3) (3 4) (4 5))))
+  (display "CASE6=")
+  (display-bool (solve 5 c6))
+  (newline))
+
+;; CASE7: n=2, intervals=[[0,10],[10,20]]
+(let ((c7 '((0 10) (10 20))))
+  (display "CASE7=")
+  (display-bool (solve 2 c7))
+  (newline))

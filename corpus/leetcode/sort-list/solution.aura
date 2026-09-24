@@ -1,0 +1,217 @@
+;; Aura solution for Sort List using bottom-up merge sort on linked lists.
+;; Represent nodes as pairs: (cons value next). Use O(1) extra space.
+
+(define (length lst)
+  (let loop ((l lst) (n 0))
+    (if (null? l) n (loop (cdr l) (+ n 1)))))
+
+(define (list->nodes xs)
+  ;; Build a list of nodes in order. Returns (list node1 node2 ...) or '().
+  (let loop ((xs xs) (acc '()))
+    (if (null? xs)
+        (reverse acc)
+        (loop (cdr xs) (cons (cons (car xs) '()) acc)))))
+
+(define (nodes->list nodes)
+  ;; Walk via cdr pointers starting at first node; collect values.
+  (let loop ((n nodes) (acc '()))
+    (if (null? n)
+        (reverse acc)
+        (loop (cdr n) (cons (car n) acc)))))
+
+(define (merge a b)
+  ;; Merge two sorted node-chains. Returns (cons first-node rest-chain-start).
+  ;; We return the head node and set tail's cdr to '() at the end.
+  (let ((dummy (cons 0 '())))
+    (let loop ((a a) (b b) (tail dummy))
+      (cond
+        ((null? a)
+         (set-cdr! tail b)
+         (cons (cdr dummy) '()))
+        ((null? b)
+         (set-cdr! tail a)
+         (cons (cdr dummy) '()))
+        ((<= (car a) (car b))
+         (set-cdr! tail a)
+         (loop (cdr a) b a))
+        (else
+         (set-cdr! tail b)
+         (loop a (cdr b) b))))))
+
+;; A small helper to set the cdr of a pair.
+(define (set-cdr! p v) (set-cdr! p v))
+
+;; Merge sort the node chain starting at 'head'. Pure rearrangement.
+(define (sort-nodes head)
+  (if (or (null? head) (null? (cdr head)))
+      head
+      (let ((n (length-list head)))
+        ;; Bottom-up merge sort.
+        (let loop ((step 1))
+          (if (>= step n)
+              head
+              (let* ((new-head (cons 0 '()))
+                     (cur new-head))
+                (define (advance x) (set-cdr! cur x) (set! cur x))
+                ;; Local helper inlined via begin-like lambda.
+                (let ((dummy new-head))
+                  (define (process-chunk h)
+                    ;; Split into two chunks of up to 'step' nodes starting at h.
+                    (let ((a h))
+                      (let loop1 ((k 1) (p a))
+                        (if (or (= k step) (null? (cdr p)))
+                            (let ((next (cdr p)))
+                              (set-cdr! p '())
+                              (let ((b next))
+                                (let loop2 ((k2 1) (q b))
+                                  (if (or (= k2 step) (null? (cdr q)))
+                                      (let ((next2 (cdr q)))
+                                        (set-cdr! q '())
+                                        (let ((merged (merge a b)))
+                                          (advance (car merged))
+                                          next2))
+                                      (loop2 (+ k2 1) (cdr q)))))))
+                            (loop1 (+ k 1) (cdr p)))))))
+                  (let walk ((h head))
+                    (if (null? h)
+                        (begin
+                          (set-cdr! cur '())
+                          (set! head (cdr dummy)))
+                        (let ((nx (process-chunk h)))
+                          (walk nx))))))
+                (loop (* step 2)))))))
+
+;; But Aura may not have 'begin' as a form, so we structure differently.
+;; The code above mixes too many imperative constructs that may not exist.
+;; Rewrite using pure recursive structure with mutation only via set-cdr!.
+
+;; Let me redefine cleanly using mutation only where required (set-cdr! and set!).
+
+(define (sort-list-impl head)
+  (if (or (null? head) (null? (cdr head)))
+      head
+      (let* ((n 0)
+             (ptr head))
+        (set! n (length-list ptr))
+        ;; Bottom-up merge sort.
+        (let outer ((step 1) (cur-head head))
+          (if (>= step n)
+              cur-head
+              ;; Merge pass at given step size.
+              (let* ((dummy (cons 0 '()))
+                     (cur dummy))
+                ;; Helper: attach a node-chain to result.
+                (define (attach! x)
+                  (set-cdr! cur x)
+                  (set! cur x))
+                ;; Helper: process a chunk starting at h; returns next starting node.
+                (define (process h)
+                  (let ((a h))
+                    (let kloop ((k 1) (p a))
+                      (if (or (= k step) (null? (cdr p)))
+                          (let ((nxt (cdr p)))
+                            (set-cdr! p '())
+                            (let ((b nxt))
+                              (let k2loop ((k2 1) (q b))
+                                (if (or (= k2 step) (null? (cdr q)))
+                                    (let ((nxt2 (cdr q)))
+                                      (set-cdr! q '())
+                                      (let ((mr (merge-nodes a b)))
+                                        (attach! (car mr))
+                                        nxt2))
+                                    (k2loop (+ k2 1) (cdr q)))))))
+                          (kloop (+ k 1) (cdr p))))))
+                (let walk ((h cur-head))
+                  (if (null? h)
+                      (begin-progn
+                        (set-cdr! cur '())
+                        (set! cur-head (cdr dummy)))
+                      (let ((nx (process h)))
+                        (walk nx))))
+                (outer (* step 2) cur-head)))))))
+
+;; Aura primer doesn't mention 'begin'. Replace with nested let producing the final value.
+;; However the requirement is just to sort and return. We can sidestep this complexity
+;; by using a top-down merge sort with set-cdr! — cleaner and shorter.
+
+;; Redefine using top-down merge sort:
+(define (length-list lst)
+  (let loop ((l lst) (n 0))
+    (if (null? l) n (loop (cdr l) (+ n 1)))))
+
+(define (merge-nodes a b)
+  (let ((dummy (cons 0 '())))
+    (let loop ((x a) (y b) (tail dummy))
+      (cond
+        ((null? x)
+         (set-cdr! tail y)
+         (cons (cdr dummy) '()))
+        ((null? y)
+         (set-cdr! tail x)
+         (cons (cdr dummy) '()))
+        ((<= (car x) (car y))
+         (set-cdr! tail x)
+         (loop (cdr x) y x))
+        (else
+         (set-cdr! tail y)
+         (loop x (cdr y) y))))))
+
+(define (split-nodes head)
+  ;; Find middle with slow/fast; return head of second half.
+  (if (or (null? head) (null? (cdr head)))
+      (cons head '())
+      (let ((slow head) (fast (cdr head)))
+        (let loop ()
+          (if (or (null? fast) (null? (cdr fast)))
+              (let ((mid (cdr slow)))
+                (set-cdr! slow '())
+                (cons head mid))
+              (begin
+                (set! slow (cdr slow))
+                (set! fast (cdr (cdr fast)))
+                (loop)))))))
+
+(define (msort head)
+  (if (or (null? head) (null? (cdr head)))
+      head
+      (let ((sp (split-nodes head)))
+        (let ((left (msort (car sp)))
+              (right (msort (cdr sp))))
+          (car (merge-nodes left right))))))
+
+(define (solve head)
+  (let ((nodes (list->nodes head)))
+    (nodes->list (msort (car nodes)))))
+
+;; Display helper
+(define (display-list lst)
+  (display "[")
+  (let loop ((l lst) (first #t))
+    (cond
+      ((null? l) (display "]"))
+      (first
+       (display (car l))
+       (loop (cdr l) #f))
+      (else
+       (display " ")
+       (display (car l))
+       (loop (cdr l) #f)))))
+
+;; Run cases
+(define CASE0_input  '(4 2 1 3))
+(define CASE1_input  '(-1 5 3 4 0))
+(define CASE2_input  '())
+(define CASE3_input  '(1))
+(define CASE4_input  '(2 1))
+(define CASE5_input  '(1 2 3 4 5))
+(define CASE6_input  '(5 4 3 2 1))
+(define CASE7_input  '(3 3 1 2 3 1))
+
+(display "CASE0=") (display-list (solve CASE0_input)) (newline)
+(display "CASE1=") (display-list (solve CASE1_input)) (newline)
+(display "CASE2=") (display-list (solve CASE2_input)) (newline)
+(display "CASE3=") (display-list (solve CASE3_input)) (newline)
+(display "CASE4=") (display-list (solve CASE4_input)) (newline)
+(display "CASE5=") (display-list (solve CASE5_input)) (newline)
+(display "CASE6=") (display-list (solve CASE6_input)) (newline)
+(display "CASE7=") (display-list (solve CASE7_input)) (newline)

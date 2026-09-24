@@ -1,0 +1,51 @@
+(define (member? x lst)
+  (cond ((null? lst) #f)
+        ((equal? (car lst) x) #t)
+        (else (member? x (cdr lst)))))
+
+(define (remove-dups lst)
+  (cond ((null? lst) '())
+        ((member? (car lst) (cdr lst))
+         (remove-dups (cdr lst)))
+        (else (cons (car lst) (remove-dups (cdr lst))))))
+
+(define (filter pred lst)
+  (cond ((null? lst) '())
+        ((pred (car lst))
+         (cons (car lst) (filter pred (cdr lst))))
+        (else (filter pred (cdr lst)))))
+
+(define (in-other? x b)
+  (member? x b))
+
+(define (solve a b)
+  (let ((da (remove-dups a)))
+    (filter (lambda (x) (in-other? x b)) da)))
+
+(define (print-list xs)
+  (display "[")
+  (cond ((null? xs) (display "]"))
+        (else
+          (display (car xs))
+          (let loop ((rest (cdr xs)))
+            (cond ((null? rest) (display "]"))
+                  (else
+                    (display ",")
+                    (display (car rest))
+                    (loop (cdr rest))))))))
+
+(define (run-case n a b)
+  (display "CASE")
+  (display n)
+  (display "=")
+  (print-list (solve a b))
+  (newline))
+
+(run-case 0 '(1 2 2 3) '(2 3 4))
+(run-case 1 '(1 2 3) '(4 5 6))
+(run-case 2 '() '(1 2 3))
+(run-case 3 '(1 1 1) '(1 2 3))
+(run-case 4 '(-1 -2 -3) '(-2 -3 -4))
+(run-case 5 '(1 2 3 4 5) '(3 4 5 6 7))
+(run-case 6 '(0 0 0) '(0))
+(run-case 7 '(1 2 3) '())

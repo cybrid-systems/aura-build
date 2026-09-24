@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:27:03Z",
+      "ts_local": "2026-09-24 22:27:03 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2036,
+        "total_characters": 0,
+        "prompt_tokens": 1179,
+        "completion_tokens": 857,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.058,
+      "tests_passed": 5,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=15\nCASE1=12\nCASE2=10\nCASE3=10\nCASE4=0\nCASE5=13\nCASE6=6\nCASE7=17\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:27:07Z",
+      "ts_local": "2026-09-24 22:27:07 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2052,
+        "total_characters": 0,
+        "prompt_tokens": 1179,
+        "completion_tokens": 873,
+        "prompt_tokens_details": {
+          "cached_tokens": 1178
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.094,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 8:23: unbound variable: assoc\n  did you mean 'acc'?\nerror: 8:23: unbound variable: assoc\n  did you mean 'acc'?\nerror: 8:23: unbound variable: assoc\n  did you mean 'acc'?\nerror: 8:23: unbound variable: assoc\n  did you mean 'acc'?\nerror: 8:23: unbound variable: assoc\n  did you mean 'acc'?\nerror: 8:23: unbound variable: assoc\n  did you mean 'acc'?\nerror: 8:23: unbound variable: assoc\n  did you mean 'acc'?\nerror: 8:23: unbound variable: assoc\n  did you mean 'acc'?\n",
+      "stdout_snippet": "CASE0=CASE0=\nCASE1=\nCASE2=\nCASE3=\nCASE4=\nCASE5=\nCASE6=\nCASE7=\n"
+    }
+  ],
+  "slug": "find-words-that-can-be-formed-by-characters",
+  "title": "Find Words That Can Be Formed by Characters",
+  "category": "hashing",
+  "updated_at": "2026-09-24T14:27:07Z",
+  "updated_at_local": "2026-09-24 22:27:07 CST"
+}

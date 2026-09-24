@@ -1,0 +1,71 @@
+(define (char-codes-aux s i acc)
+  (if (= i (string-length s))
+      acc
+      (char-codes-aux s (+ i 1)
+        (cons (char->integer (string-ref s i)) acc))))
+
+(define (string-to-codes s)
+  (reverse (char-codes-aux s 0 '())))
+
+(define (xor-list lst)
+  (let loop ((l lst) (acc 0))
+    (if (null? l)
+        acc
+        (loop (cdr l) (integer-xor acc (car l))))))
+
+(define (integer-xor a b)
+  (let loop ((a a) (b b) (result 0) (bit 1))
+    (cond
+      ((and (= a 0) (= b 0)) result)
+      (else
+        (let ((a-bit (modulo a 2))
+              (b-bit (modulo b 2))
+              (x-bit (modulo (+ a-bit b-bit) 2)))
+          (loop (quotient a 2) (quotient b 2)
+                (+ result (* x-bit bit))
+                (* bit 2)))))))
+
+(define (find-difference s t)
+  (integer->char
+    (xor-list
+      (append (string-to-codes s) (string-to-codes t)))))
+
+(define (solve s t)
+  (find-difference s t))
+
+(define (display-string s)
+  (display s))
+
+(display-string "CASE0=")
+(display (solve "abcde" "abecdfe"))
+(newline)
+
+(display-string "CASE1=")
+(display (solve "" "a"))
+(newline)
+
+(display-string "CASE2=")
+(display (solve "a" "aa"))
+(newline)
+
+(display-string "CASE3=")
+(display (solve "abcd" "abcde"))
+(newline)
+
+(display-string "CASE4=")
+(display (solve "hello" "helollo"))
+(newline)
+
+(display-string "CASE5=")
+(display (solve "thequickbrownfoxjumpsoverthelazydog"
+                "thequickbrownfoxjumpsoverthelazydogx"))
+(newline)
+
+(display-string "CASE6=")
+(display (solve "abcdefghijklmnopqrstuvwxyz"
+                "abcdefghijklmnopqrstuvwxyz!"))
+(newline)
+
+(display-string "CASE7=")
+(display (solve "z" "zz"))
+(newline)

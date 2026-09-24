@@ -1,0 +1,128 @@
+(define (len s)
+  (let loop ((n 0) (s s))
+    (if (null? s) n (loop (+ n 1) (cdr s)))))
+
+(define (nth-char s i)
+  (if (= i 0) (car s) (nth-char (cdr s) (- i 1))))
+
+(define (take s n)
+  (let loop ((r '()) (s s) (n n))
+    (if (= n 0) r (loop (cons (car s) r) (cdr s) (- n 1)))))
+
+(define (reverse-list xs)
+  (let loop ((r '()) (xs xs))
+    (if (null? xs) r (loop (cons (car xs) r) (cdr xs)))))
+
+(define (take-list s n)
+  (reverse-list (take s n)))
+
+(define (split-lines s)
+  (let loop ((r '()) (cur '()) (s s))
+    (cond
+      ((null? s)
+       (reverse-list (cons (reverse-list cur) r)))
+      ((char=? (car s) #\newline)
+       (loop (cons (reverse-list cur) r) '() (cdr s)))
+      (else
+       (loop r (cons (car s) cur) (cdr s))))))
+
+(define (char=? a b)
+  (and (char? a) (char? b) (eq? a b)))
+
+(define (string=? a b)
+  (let loop ((a a) (b b))
+    (cond
+      ((and (null? a) (null? b)) #t)
+      ((or (null? a) (null? b)) #f)
+      ((char=? (car a) (car b)) (loop (cdr a) (cdr b)))
+      (else #f))))
+
+(define (common-prefix-len s1 s2)
+  (let loop ((i 0) (s1 s1) (s2 s2))
+    (cond
+      ((or (null? s1) (null? s2)) i)
+      ((char=? (car s1) (car s2)) (loop (+ i 1) (cdr s1) (cdr s2)))
+      (else i))))
+
+(define (min-prefix strs ref-len)
+  (cond
+    ((null? strs) ref-len)
+    (else
+     (let ((cur-len (len (car strs))))
+       (if (< cur-len ref-len)
+           (min-prefix (cdr strs) cur-len)
+           (min-prefix (cdr strs) ref-len))))))
+
+(define (find-prefix strs i ref-len)
+  (if (= i ref-len)
+      i
+      (let ((ch (nth-char (car strs) i)))
+        (if (every-matches? (cdr strs) i ch)
+            (find-prefix strs (+ i 1) ref-len)
+            i))))
+
+(define (every-matches? strs i ch)
+  (cond
+    ((null? strs) #t)
+    ((null? (car strs)) #f)
+    ((char=? (nth-char (car strs) i) ch)
+     (every-matches? (cdr strs) i ch))
+    (else #f)))
+
+(define (solve strs)
+  (cond
+    ((null? strs) "")
+    ((null? (cdr strs)) (car strs))
+    (else
+     (let ((ref (car strs))
+           (ref-len (len (car strs))))
+       (let ((bound (min-prefix (cdr strs) ref-len)))
+         (let ((p (find-prefix strs 0 bound)))
+           (let ((chars (let loop ((r '()) (i 0))
+                          (if (= i p) r (loop (cons (nth-char ref (- (- p i) 1)) r) (+ i 1))))))
+             (list->string chars)))))))
+
+(define (chars->string cs)
+  (list->string cs))
+
+(define (display-string s)
+  (display s))
+
+(define (run-case case-n input)
+  (let ((strs (split-lines input)))
+    (let ((result (solve strs)))
+      (display "CASE")
+      (display case-n)
+      (display "=")
+      (display result)
+      (newline))))
+
+(run-case 0 "flower
+flow
+flight
+")
+(run-case 1 "dog
+racecar
+car
+")
+(run-case 2 "intersect
+interstate
+intercom
+")
+(run-case 3 "
+")
+(run-case 4 "alone
+")
+(run-case 5 "abc
+abc
+abc
+")
+(run-case 6 "a
+b
+c
+")
+(run-case 7 "prefix
+prefab
+present
+pre
+")

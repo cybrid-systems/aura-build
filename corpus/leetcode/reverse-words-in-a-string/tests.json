@@ -1,0 +1,58 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "s": "the sky is blue"
+    },
+    "expected": "\"blue is sky the\""
+  },
+  {
+    "id": 1,
+    "input": {
+      "s": "  hello world  "
+    },
+    "expected": "\"world hello\""
+  },
+  {
+    "id": 2,
+    "input": {
+      "s": "a   b   c"
+    },
+    "expected": "\"c b a\""
+  },
+  {
+    "id": 3,
+    "input": {
+      "s": "   "
+    },
+    "expected": "\"\""
+  },
+  {
+    "id": 4,
+    "input": {
+      "s": ""
+    },
+    "expected": "\"\""
+  },
+  {
+    "id": 5,
+    "input": {
+      "s": "single"
+    },
+    "expected": "\"single\""
+  },
+  {
+    "id": 6,
+    "input": {
+      "s": "  leading and trailing  "
+    },
+    "expected": "\"trailing and leading\""
+  },
+  {
+    "id": 7,
+    "input": {
+      "s": "one  two\tthree"
+    },
+    "expected": "\"three two one\""
+  }
+]

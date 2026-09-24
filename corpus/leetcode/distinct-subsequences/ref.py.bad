@@ -1,0 +1,38 @@
+MOD = 1_000_000_007
+
+def solve(s: str, t: str) -> int:
+    n, m = len(s), len(t)
+    if m > n:
+        return 0
+    # dp[j] = number of ways to form t[:j] from s processed so far
+    dp = [0] * (m + 1)
+    dp[0] = 1
+    for ch in s:
+        # iterate backwards to avoid using updated values within same iteration
+        for j in range(min(m, n), 0, -1):
+            if j <= m and dp[j - 1] and t[j - 1] == ch:
+                dp[j] = (dp[j] + dp[j - 1]) % MOD
+    return dp[m] % MOD
+
+CASES = [
+    {"s": "rabbbit", "t": "rabbit"},
+    {"s": "", ""},
+    {"s": "a", ""},
+    {"s": "", "a"},
+    {"s": "abc", "abc"},
+    {"s": "aaa", "aa"},
+    {"s": "abab", "ab"},
+    {"s": "zxycba", "abc"},
+]
+
+if __name__ == '__main__':
+    import json
+    out = []
+    for i, case in enumerate(CASES):
+        result = solve(**case)
+        out.append({
+            "id": i,
+            "input": case,
+            "expected": json.dumps(result, separators=(',', ':'), ensure_ascii=False),
+        })
+    print(json.dumps(out, separators=(',', ':'), ensure_ascii=False))

@@ -1,0 +1,30 @@
+;; Build linked list as nested cons pairs: '(1 . (2 . (3 . '())))
+(define (parse-list s)
+  ;; Split string by "->" and build list of numbers
+  (let ((parts (split s "->")))
+    (map-folder parts '() (lambda (p acc) (cons (string->number p) acc)))))
+
+(define (split s sep)
+  ;; split string by separator -> list of strings (correct order)
+  (let ((len (string-length s)))
+    (let loop ((i 0) (acc '()))
+      (cond ((>= i len)
+             (reverse (cons (substring s 0 i) acc)))
+            ((char=? (string-ref s i) (string-ref sep 0))
+             ;; find separator occurrences
+             (split-aux s 0 '() '()))
+            (else (loop (+ i 1) '()))))))
+
+;; Simpler approach: split by walking through string
+(define (split s sep)
+  (let ((slen (string-length s))
+        (plen (string-length sep)))
+    (let loop ((start 0) (i 0) (parts '()))
+      (cond ((>= i slen)
+             (reverse (cons (substring s start slen) parts)))
+            ((and (>= (- i start) (- plen 0)) ;; placeholder
+                  (string=? (substring s i (+ i plen)) sep))
+             ...)
+            ...))))
+
+;; Let me just write a direct cleaner version

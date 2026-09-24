@@ -1,0 +1,113 @@
+(define (assq key alist)
+  (cond ((null? alist) #f)
+        ((equal? (car (car alist)) key) (car alist))
+        (else (assq key (cdr alist)))))
+
+(define (count-of key alist)
+  (let ((entry (assq key alist)))
+    (if entry (cdr entry) 0)))
+
+(define (try-pair key cnt alist v found?)
+  (if found?
+      found?
+      (let ((complement (- v key)))
+        (cond ((null? alist) #f)
+              ((equal? (car (car alist)) complement)
+               (let ((need (if (equal? complement key) 2 1)))
+                 (if (>= (cdr (car alist)) need)
+                     (car (car alist))
+                     (try-pair key cnt (cdr alist) v #f))))
+              (else (try-pair key cnt (cdr alist) v #f))))))
+
+(define (exists-pair? alist v)
+  (cond ((null? alist) #f)
+        ((try-pair (car (car alist)) (cdr (car alist)) alist v #f)
+         (try-pair (car (car alist)) (cdr (car alist)) alist v #f))
+        (else (exists-pair? (cdr alist) v))))
+
+(define (find-value alist v)
+  (if (exists-pair? alist v) #t #f))
+
+(define (process-ops ops alist results)
+  (cond ((null? ops) (reverse results))
+        ((equal? (car (car ops)) 'add)
+         (let ((n (car (cdr (car ops))))
+               (cur (assq n alist)))
+           (if cur
+               (process-ops (cdr ops)
+                                         (cons (cons n (+ (cdr cur) 1))
+                                               (remove-entry n alist))
+                                         results)
+               (process-ops (cdr ops)
+                                     (cons (cons n 1) alist)
+                                     results))))
+        ((equal? (car (car ops)) 'find)
+         (let ((v (car (cdr (car ops)))))
+           (process-ops (cdr ops) alist
+                        (cons (find-value alist v) results))))
+        (else (process-ops (cdr ops) alist results))))
+
+(define (remove-entry key alist)
+  (cond ((null? alist) '())
+        ((equal? (car (car alist)) key) (cdr alist))
+        (else (cons (car alist) (remove-entry key (cdr alist))))))
+
+(define (solve ops)
+  (process-ops ops '() '()))
+
+;; Test cases as embedded lists of (op . arg) pairs
+(define case0 '((\add . 1) (\add . 3) (\add . 5) (\find . 4) (\find . 7)))
+(define case1 '((\add . 0) (\add . 0) (\find . 0)))
+(define case2 '((\add . 1) (\add . 2) (\add . 3)))
+(define case3 '((\add . 5) (\find . 10)))
+(define case4 '((\add . -1) (\add . -3) (\add . 5) (\find . -4) (\find . 4)))
+(define case5 '((\add . 2) (\add . 2) (\add . 3) (\find . 4) (\find . 6)))
+(define case6 '((\find . 0)))
+(define case7 '((\add . 1) (\find . 2) (\add . 1) (\find . 2)))
+
+(define (display-result r)
+  (display (if r "true" "false"))
+  (newline))
+
+(define (display-results results)
+  (cond ((null? results) #f)
+        (else (display-result (car results))
+              (display-results (cdr results)))))
+
+;; Note: above test data is illustrative; the actual embedded inputs use
+;; proper Aura dotted-pair syntax. Below we reproduce them faithfully.
+
+(display "CASE0=")
+(let ((r0 (solve '((add . 1) (add . 3) (add . 5) (find . 4) (find . 7)))))
+  (display (car r0)) (newline)
+  (display (car (cdr r0))) (newline))
+
+(display "CASE1=")
+(let ((r1 (solve '((add . 0) (add . 0) (find . 0)))))
+  (display (car r1)) (newline))
+
+(display "CASE2=")
+(display (solve '((add . 1) (add . 2) (add . 3)))) (newline)
+
+(display "CASE3=")
+(let ((r3 (solve '((add . 5) (find . 10)))))
+  (display (car r3)) (newline))
+
+(display "CASE4=")
+(let ((r4 (solve '((add . -1) (add . -3) (add . 5) (find . -4) (find . 4)))))
+  (display (car r4)) (newline)
+  (display (car (cdr r4))) (newline))
+
+(display "CASE5=")
+(let ((r5 (solve '((add . 2) (add . 2) (add . 3) (find . 4) (find . 6)))))
+  (display (car r5)) (newline)
+  (display (car (cdr r5))) (newline))
+
+(display "CASE6=")
+(let ((r6 (solve '((find . 0)))))
+  (display (car r6)) (newline))
+
+(display "CASE7=")
+(let ((r7 (solve '((add . 1) (find . 2) (add . 1) (find . 2)))))
+  (display (car r7)) (newline)
+  (display (car (cdr r7))) (newline))

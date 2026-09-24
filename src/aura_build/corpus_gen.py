@@ -1156,17 +1156,16 @@ def cmd_burn(bc: BurnConfig) -> int:
                         }
                     processed += 1
                     print(json.dumps({"event": "problem_done", **result}, ensure_ascii=False))
+                    if bc.auto_commit:
+                        every = max(1, bc.commit_every)
+                        bucket = processed // every
+                        if bucket > getattr(bc, "_last_commit_bucket", 0):
+                            bc._last_commit_bucket = bucket  # type: ignore[attr-defined]
+                            maybe_auto_commit(bc, note=f"processed={processed}")
                     if bc.limit is not None and processed >= bc.limit:
                         # cancel remaining roughly by setting stop flag
                         stop_flag.write_text("limit\n", encoding="utf-8")
 
-            if bc.auto_commit and processed > 0:
-                every = max(1, bc.commit_every)
-                if processed // every > getattr(bc, "_last_commit_bucket", 0) or (
-                    bc.limit is not None and processed >= bc.limit
-                ):
-                    bc._last_commit_bucket = processed // every  # type: ignore[attr-defined]
-                    maybe_auto_commit(bc, note=f"processed={processed}")
             if bc.limit is not None and processed >= bc.limit:
                 print(json.dumps({"event": "limit_reached", "processed": processed}))
                 break

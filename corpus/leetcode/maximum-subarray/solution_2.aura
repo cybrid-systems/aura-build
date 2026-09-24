@@ -1,0 +1,31 @@
+(define (max a b) (if (> a b) a b))
+
+(define (kadane nums)
+  (let ((n (length nums)))
+    (if (= n 0)
+        0
+        (let loop ((xs nums) (best (car nums)) (curr (car nums)))
+          (if (null? (cdr xs))
+              best
+              (let ((next (cadr xs))
+                    (new-curr (max next (+ curr next))))
+                (loop (cdr xs) (max best new-curr) new-curr)))))))
+
+(define (solve nums)
+  (kadane nums))
+
+(define (run-case i nums)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve nums))
+  (newline))
+
+(run-case 0 '(1 -2 3 -1 2 -1 5 -4))
+(run-case 1 '(-1))
+(run-case 2 '(-2 -3 -1 -5))
+(run-case 3 '(5))
+(run-case 4 '(1 2 3 4 5))
+(run-case 5 '(-1 2 -3 4 -1 2 1 -5 4))
+(run-case 6 '(0 0 0 0))
+(run-case 7 '(2 -1 2 -1 2 -1 2))

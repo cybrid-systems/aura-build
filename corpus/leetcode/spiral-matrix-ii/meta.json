@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:21:18Z",
+      "ts_local": "2026-09-24 22:21:18 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 3050,
+        "total_characters": 0,
+        "prompt_tokens": 1032,
+        "completion_tokens": 2018,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.017,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "warning: unbalanced parentheses in input\n⚠ program returned an uncalled function\n",
+      "stdout_snippet": "#<procedure>\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:21:23Z",
+      "ts_local": "2026-09-24 22:21:23 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1907,
+        "total_characters": 0,
+        "prompt_tokens": 1032,
+        "completion_tokens": 875,
+        "prompt_tokens_details": {
+          "cached_tokens": 1031
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.021,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 81:7: parse error: unexpected ')'\n",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "spiral-matrix-ii",
+  "title": "Spiral Matrix II",
+  "category": "arrays",
+  "updated_at": "2026-09-24T14:21:23Z",
+  "updated_at_local": "2026-09-24 22:21:23 CST"
+}

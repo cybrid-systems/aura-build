@@ -1,0 +1,57 @@
+(define (min-len nums target)
+  ;; sliding window over positive integers
+  (let ((n (length nums)))
+    (if (or (= n 0) (<= target 0))
+        0
+        (let loop ((left 0) (right 0) (sum 0) (best (length nums)))
+          (cond
+            ((>= right n)
+             ;; try shrinking if still qualifying
+             (let shrink ((l left) (r right) (s sum) (b best))
+               (cond
+                 ((>= l r) b)
+                 ((>= s target)
+                  (let ((len (- r l)))
+                    (let ((nb (if (< len b) len b)))
+                      (shrink (+ l 1) r (- s (list-ref nums l)) nb))))
+                 (else b))))
+            (else
+             (let ((v (list-ref nums right)))
+               (let ((new-sum (+ sum v)))
+                 (cond
+                   ((>= new-sum target)
+                    ;; shrink while sum >= target
+                    (let shrink2 ((l left) (r (+ right 1)) (s new-sum) (b best))
+                      (cond
+                        ((>= l r) b)
+                        ((>= s target)
+                         (let ((len (- r l)))
+                           (let ((nb (if (< len b) len b)))
+                             (shrink2 (+ l 1) r (- s (list-ref nums l)) nb))))
+                        (else (loop (+ l 1) r s nb)))))
+                   (else (loop left (+ right 1) new-sum best)))))))))))
+
+(define (solve nums target)
+  (min-len nums target))
+
+(define (display-case i result)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display result)
+  (newline))
+
+(define (run)
+  (display-case 0 (solve '(2 3 1 2 4 3) 7))
+  (display-case 1 (solve '(1 4 4) 4))
+  (display-case 2 (solve '(1 1 1 1 1) 11))
+  (display-case 3 (solve '(5 1 3 5 10 7 4 9 2 8) 15))
+  (display-case 4 (solve '() 5))
+  (display-case 5 (solve '(7) 7))
+  (display-case 6 (solve '(3) 10))
+  (display-case 7 (solve '(1 2 3) 0))
+  (display-case 8 (solve '(1 2 3 4 5) 11))
+  (display-case 9 (solve '(3 3 3 3 3) 9))
+  (display-case 10 (solve '(1 1 1) 1)))
+
+(run)

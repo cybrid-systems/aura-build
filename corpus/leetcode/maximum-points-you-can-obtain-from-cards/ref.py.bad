@@ -1,0 +1,37 @@
+import json
+
+def solve(card_points, k):
+    n = len(card_points)
+    total = sum(card_points)
+    window_size = n - k
+    
+    # If we take all cards, score is total
+    if window_size == 0:
+        return total
+    
+    # Find minimum sum contiguous subarray of length window_size
+    current = sum(card_points[:window_size])
+    min_sum = current
+    for i in range(window_size, n):
+        current += card_points[i] - card_points[i - window_size]
+        if current < min_sum:
+            min_sum = current
+    
+    return total - min_sum
+
+
+def main():
+    with open('CASE0', 'r') as f:
+        data = json.load(f)
+    
+    card_points = data['card_points']
+    k = data['k']
+    
+    result = solve(card_points, k)
+    
+    with open('CASE0.out', 'w') as f:
+        f.write(str(result) + '\n')
+
+
+if __name__ == '__main__':
+    main()

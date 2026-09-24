@@ -1,0 +1,63 @@
+import sys
+import json
+
+
+def add_without_plus(a: int, b: int) -> int:
+    # 32-bit mask to simulate overflow / two's-complement arithmetic
+    MASK = 0xFFFFFFFF
+    MAX = 0x7FFFFFFF
+
+    # Work entirely with non-negative 32-bit values so left-shift stays in range
+    x = a & MASK
+    y = b & MASK
+
+    while y != 0:
+        # XOR -> bits that sum to 1 without a carry
+        sum_bits = x ^ y
+        # AND then left-shift -> carry bits
+        carry = (x & y) << 1
+        x = sum_bits & MASK
+        y = carry & MASK
+
+    # Convert back to signed 32-bit integer
+    result = x & MASK
+    if result > MAX:
+        result = ~(result ^ MASK)
+    return result
+
+
+def solve(a: int, b: int) -> int:
+    return add_without_plus(a, b)
+
+
+CASES = [
+    {"a": 2, "b": 3},
+    {"a": -1, "b": 1},
+    {"a": 0, "b": 0},
+    {"a": -2, "b": -3},
+    {"a": 1, "b": -1},
+    {"a": 1000000000, "b": 1000000000},
+    {"a": -2147483648, "b": -1},
+    {"a": 2147483647, "b": 1},
+]
+
+
+if __name__ == '__main__':
+    results = []
+    for i, case in enumerate(CASES):
+        out = solve(case["a"], case["b"])
+        results.append({
+            "id": i,
+            "input": {"a": case["a"], "b": case["b"]},
+            "expected": json.dumps(out, separators=(',', ':'), ensure_ascii=False),
+        })
+
+    # Also demonstrate the CASE/ANS line protocol on stdout alongside the JSON
+    for i, case in enumerate(CASES):
+        out = solve(case["a"], case["b"])
+        print(f"CASE{i}={case['a']} {case['b']}")
+        print(f"ANS{i}={out}")
+
+    # Per harness spec: a single JSON array describing cases
+    # (uncomment for JSON-only mode; the problem uses CASE/ANS lines, so above is primary)
+    # print(json.dumps(results, separators=(',', ':'), ensure_ascii=False))

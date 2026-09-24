@@ -1,0 +1,95 @@
+(define (length lst)
+  (if (null? lst) 0 (+ 1 (length (cdr lst)))))
+
+(define (list-ref lst i)
+  (if (= i 0) (car lst) (list-ref (cdr lst) (- i 1))))
+
+(define (list-set! lst i v)
+  (if (= i 0)
+      (set-car! lst v)
+      (list-set! (cdr lst) (- i 1) v)))
+
+(define (make-list n v)
+  (if (= n 0) '() (cons v (make-list (- n 1) v))))
+
+(define (solve m)
+  (let ((n (length m)))
+    (if (= n 0)
+        '()
+        (begin
+          ;; transpose in-place
+          (define row-loop (lambda (i)
+            (if (< i n)
+                (begin
+                  (define col-loop (lambda (j)
+                    (if (< j i)
+                        (begin
+                          (let ((a (list-ref (list-ref m i) j))
+                                (b (list-ref (list-ref m j) i)))
+                            (list-set! (list-ref m i) j b)
+                            (list-set! (list-ref m j) i a))
+                          (col-loop (+ j 1)))
+                        '())))
+                  (col-loop 0)
+                  (row-loop (+ i 1)))
+                '())))
+          (row-loop 0)
+          ;; reverse each row in-place
+          (define rev-loop (lambda (i)
+            (if (< i n)
+                (begin
+                  (let ((row (list-ref m i)))
+                    (define r-helper (lambda (lo hi)
+                      (if (< lo hi)
+                          (begin
+                            (let ((a (list-ref row lo))
+                                  (b (list-ref row hi)))
+                              (list-set! row lo b)
+                              (list-set! row hi a))
+                            (r-helper (+ lo 1) (- hi 1)))
+                          '())))
+                    (r-helper 0 (- n 1)))
+                  (rev-loop (+ i 1)))
+                '())))
+          (rev-loop 0)
+          m))))
+
+;; helpers to print results
+(define (display-list lst)
+  (display "[")
+  (define (loop xs)
+    (cond ((null? xs) '())
+          (else
+            (display (car xs))
+            (if (not (null? (cdr xs)))
+                (display ", "))
+            (loop (cdr xs)))))
+  (loop lst)
+  (display "]"))
+
+(define (display-matrix mat)
+  (display "[")
+  (define (loop rows)
+    (cond ((null? rows) '())
+          (else
+            (display-list (car rows))
+            (if (not (null? (cdr rows)))
+                (display ", "))
+            (loop (cdr rows)))))
+  (loop mat)
+  (display "]"))
+
+(define (run-case i mat)
+  (let ((result (solve mat)))
+    (display (string-append "CASE" (number->string i) "="))
+    (display-matrix result)
+    (newline)))
+
+(run-case 0 (list (list 1 2 3) (list 4 5 6) (list 7 8 9)))
+(run-case 1 (list (list 1 2) (list 3 4)))
+(run-case 2 (list (list 1)))
+(run-case 3 '())
+(run-case 4 (list (list 1 2 3 4) (list 5 6 7 8) (list 9 10 11 12) (list 13 14 15 16)))
+(run-case 5 (list (list 1 2 3 4 5) (list 6 7 8 9 10) (list 11 12 13 14 15) (list 16 17 18 19 20) (list 21 22 23 24 25)))
+(run-case 6 (list (list -1 -2) (list -3 -4)))
+(run-case 7 (list (list 0 0) (list 0 0)))

@@ -1,0 +1,101 @@
+(define (min a b) (if (< a b) a b))
+(define (max a b) (if (> a b) a b))
+
+(define (car2 p) (car p))
+(define (cdr2 p) (car (cdr p)))
+
+(define (overlaps? iv newIv)
+  (let ((a (car2 iv)) (b (cdr2 iv))
+        (c (car2 newIv)) (d (cdr2 newIv)))
+    (and (<= a d) (<= c b))))
+
+(define (merge-iv iv1 iv2)
+  (list (min (car2 iv1) (car2 iv2))
+        (max (cdr2 iv1) (cdr2 iv2))))
+
+(define (display-iv iv)
+  (display "[")
+  (display (car2 iv))
+  (display ",")
+  (display (cdr2 iv))
+  (display "]"))
+
+(define (display-list-ivs lst)
+  (display "[")
+  (cond ((null? lst) (display "]"))
+        (else
+         (display-iv (car lst))
+         (let loop ((rest (cdr lst)))
+           (cond ((null? rest) (display "]"))
+                 (else
+                  (display ",")
+                  (display-iv (car rest))
+                  (loop (cdr rest))))))))
+
+(define (solve intervals newInterval)
+  (let ((n (car2 newInterval)) (m (cdr2 newInterval))
+        (result '())
+        (cur-new newInterval)
+        (rest intervals)
+        (placed #f))
+    (let loop ()
+      (cond
+       ((null? rest)
+        ;; no more intervals
+        (set! result (append result (list cur-new)))
+        (set! placed #t))
+       (else
+        (let ((iv (car rest)))
+          (cond
+           ;; current interval ends before newInterval starts: add it as-is
+           ((< (cdr2 iv) n)
+            (set! result (append result (list iv)))
+            (set! rest (cdr rest))
+            (loop))
+           ;; newInterval ends before current interval starts: place new, then rest
+           ((< m (car2 iv))
+            (set! result (append result (list cur-new)))
+            (set! result (append result rest))
+            (set! placed #t))
+           ;; otherwise they overlap (touching included); merge and keep scanning
+           (else
+            (set! cur-new (merge-iv cur-new iv))
+            (set! rest (cdr rest))
+            (loop)))))))
+    result))
+
+;; ---- harness ----
+
+(define (display-case i res)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display-list-ivs res)
+  (newline))
+
+(define (run-case0)
+  (display-case 0 (solve '((1 3) (6 9)) (list 2 5))))
+(define (run-case1)
+  (display-case 1 (solve '((1 2) (3 5) (6 7) (8 10) (12 16)) (list 4 8))))
+(define (run-case2)
+  (display-case 2 (solve '() (list 5 7))))
+(define (run-case3)
+  (display-case 3 (solve '() (list 1 1))))
+(define (run-case4)
+  (display-case 4 (solve '((1 5)) (list 2 3))))
+(define (run-case5)
+  (display-case 5 (solve '((1 5)) (list 5 7))))
+(define (run-case6)
+  (display-case 6 (solve '((1 5)) (list 6 8))))
+(define (run-case7)
+  (display-case 7 (solve '((1 2) (3 4) (5 6)) (list 10 12))))
+
+(begin
+  (run-case0)
+  (run-case1)
+  (run-case2)
+  (run-case3)
+  (run-case4)
+  (run-case5)
+  (run-case6)
+  (run-case7))

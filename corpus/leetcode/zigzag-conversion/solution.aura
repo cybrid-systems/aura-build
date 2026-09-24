@@ -1,0 +1,46 @@
+(define (solve s numRows)
+  (let ((n (string-length s)))
+    (cond
+      ((or (= numRows 1) (<= numRows n))
+       (if (= numRows 1)
+           s
+           ; When numRows >= n, each row has at most 1 char; result is just the chars in order
+           (let loop ((i 0) (acc '()))
+             (if (>= i n)
+                 (list->string (reverse acc))
+                 (loop (+ i 1) (cons (string-ref s i) acc))))))
+      (else
+       (let ((cycle (- (* 2 numRows) 2)))
+         (let loop-row ((row 0) (acc '()))
+           (if (= row numRows)
+               (list->string (reverse acc))
+               (let loop-col ((j 0) (row-acc '()))
+                 (let ((idx (+ row (* j cycle))))
+                   (cond
+                     ((>= idx n) 
+                      (loop-row (+ row 1) (cons (list->string (reverse row-acc)) acc)))
+                     ((= row 0)
+                      (loop-col (+ j 1) (cons (string-ref s idx) row-acc)))
+                     ((= row (- numRows 1))
+                      (loop-col (+ j 1) (cons (string-ref s idx) row-acc)))
+                     (else
+                      (let ((idx2 (+ idx (* 2 (- numRows 1 row)))))
+                        (let ((new-acc (if (< idx2 n)
+                                          (cons (string-ref s idx2) (cons (string-ref s idx) row-acc))
+                                          (cons (string-ref s idx) row-acc))))
+                          (loop-col (+ j 1) new-acc))))))))))))))
+
+(define (list->string lst)
+  (let loop ((l lst) (acc ""))
+    (if (null? l)
+        acc
+        (loop (cdr l) (string-append acc (car l))))))
+
+(display "CASE0=") (display (solve "PAYPALISHIRING" 3)) (newline)
+(display "CASE1=") (display (solve "PAYPALISHIRING" 4)) (newline)
+(display "CASE2=") (display (solve "PAYPALISHIRING" 1)) (newline)
+(display "CASE3=") (display (solve "PAYPALISHIRING" 2)) (newline)
+(display "CASE4=") (display (solve "A" 3)) (newline)
+(display "CASE5=") (display (solve "AB" 4)) (newline)
+(display "CASE6=") (display (solve "ABCDEFGHIJKLMN" 5)) (newline)
+(display "CASE7=") (display (solve "ABCDEFGHIJKLMNOPQRSTUVWXYZ" 6)) (newline)

@@ -1,0 +1,120 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "words": [
+        "This",
+        "is",
+        "an",
+        "example",
+        "of",
+        "text",
+        "justification."
+      ],
+      "maxWidth": 16
+    },
+    "expected": "[\"This    is    an\",\"example  of text\",\"justification.  \"]"
+  },
+  {
+    "id": 1,
+    "input": {
+      "words": [
+        "What",
+        "must",
+        "be",
+        "acknowledgment",
+        "shall",
+        "be"
+      ],
+      "maxWidth": 16
+    },
+    "expected": "[\"What   must   be\",\"acknowledgment  \",\"shall be        \"]"
+  },
+  {
+    "id": 2,
+    "input": {
+      "words": [
+        "Science",
+        "is",
+        "what",
+        "we",
+        "understand"
+      ],
+      "maxWidth": 20
+    },
+    "expected": "[\"Science  is  what we\",\"understand          \"]"
+  },
+  {
+    "id": 3,
+    "input": {
+      "words": [
+        "Single"
+      ],
+      "maxWidth": 10
+    },
+    "expected": "[\"Single    \"]"
+  },
+  {
+    "id": 4,
+    "input": {
+      "words": [
+        "a",
+        "b",
+        "c"
+      ],
+      "maxWidth": 3
+    },
+    "expected": "[\"a b\",\"c  \"]"
+  },
+  {
+    "id": 5,
+    "input": {
+      "words": [
+        "Two",
+        "words"
+      ],
+      "maxWidth": 6
+    },
+    "expected": "[\"Two   \",\"words \"]"
+  },
+  {
+    "id": 6,
+    "input": {
+      "words": [
+        "Listen",
+        "to",
+        "many",
+        "speak",
+        "to",
+        "a",
+        "few",
+        "of",
+        "those",
+        "who",
+        "are",
+        "good",
+        "speakers"
+      ],
+      "maxWidth": 16
+    },
+    "expected": "[\"Listen  to  many\",\"speak  to  a few\",\"of those who are\",\"good speakers   \"]"
+  },
+  {
+    "id": 7,
+    "input": {
+      "words": [
+        "The",
+        "quick",
+        "brown",
+        "fox",
+        "jumps",
+        "over",
+        "the",
+        "lazy",
+        "dog"
+      ],
+      "maxWidth": 11
+    },
+    "expected": "[\"The   quick\",\"brown   fox\",\"jumps  over\",\"the    lazy\",\"dog        \"]"
+  }
+]

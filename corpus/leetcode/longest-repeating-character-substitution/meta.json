@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:25:13Z",
+      "ts_local": "2026-09-24 22:25:13 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1574,
+        "total_characters": 0,
+        "prompt_tokens": 1150,
+        "completion_tokens": 424,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.031,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 2:41: unbound variable: A\n  did you mean 'c'?\nerror: 2:41: unbound variable: A\n  did you mean 'c'?\nerror: 2:41: unbound variable: A\n  did you mean 'c'?\nerror: 2:41: unbound variable: A\n  did you mean 'c'?\nerror: 2:41: unbound variable: A\n  did you mean 'c'?\nerror: 2:41: unbound variable: A\n  did you mean 'c'?\nerror: 2:41: unbound variable: A\n  did you mean 'c'?\nerror: 2:41: unbound variable: A\n  did you mean 'c'?\n",
+      "stdout_snippet": "CASE0=CASE0=CASE1=CASE2=CASE3=CASE4=CASE5=CASE6=CASE7="
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:25:37Z",
+      "ts_local": "2026-09-24 22:25:37 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1752,
+        "total_characters": 0,
+        "prompt_tokens": 1150,
+        "completion_tokens": 602,
+        "prompt_tokens_details": {
+          "cached_tokens": 1149
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": -1,
+      "timeout": true,
+      "duration_s": 20.022,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "timeout",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "longest-repeating-character-substitution",
+  "title": "Longest Repeating Character Substitution",
+  "category": "strings",
+  "updated_at": "2026-09-24T14:25:37Z",
+  "updated_at_local": "2026-09-24 22:25:37 CST"
+}

@@ -1,0 +1,48 @@
+(define (string-length s)
+  (let loop ((i 0))
+    (if (and (number? i) (< i 100000))
+        (if (= (string-ref s i) #\null)
+            i
+            (loop (+ i 1)))
+        i)))
+
+(define (solve s)
+  (let* ((n 0)
+         (left 0)
+         (best 0)
+         (last (make-vector 256 -1)))
+    (let loop ((i 0))
+      (cond
+        ((= i n)
+         best)
+        (else
+         (let* ((c (char->integer (string-ref s i)))
+                (prev (vector-ref last c))
+                (new-left (if (> prev left) (+ prev 1) left)))
+           (vector-set! last c i)
+           (let ((len (- (+ i 1) new-left)))
+             (loop (+ i 1))))))
+    best))
+
+(define (run-tests)
+  (let ((tests (list
+    "abcabcbb"
+    "bbbbb"
+    "pwwkew"
+    ""
+    "a"
+    "au"
+    "dvdf"
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")))
+    (let loop ((i 0) (ts tests))
+      (if (null? ts)
+          'done
+          (begin
+            (display "CASE")
+            (display i)
+            (display "=")
+            (display (solve (car ts)))
+            (newline)
+            (loop (+ i 1) (cdr ts)))))))
+
+(run-tests)

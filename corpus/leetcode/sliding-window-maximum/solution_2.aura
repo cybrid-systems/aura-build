@@ -1,0 +1,223 @@
+;; Sliding Window Maximum using a monotonic deque
+;; Uses two stacks (as list heads) to simulate a deque.
+
+(define (make-deque)
+  (cons '() '()))   ; front-stack, back-stack
+
+(define (dq-empty? dq)
+  (and (null? (car dq)) (null? (cdr dq))))
+
+(define (dq-front dq)
+  (let ((f (car dq)) (b (cdr dq)))
+    (if (null? f)
+        (car (last-pair b))
+        (car f))))
+
+(define (dq-back dq)
+  (let ((f (car dq)) (b (cdr dq)))
+    (if (null? b)
+        (car (last-pair f))
+        (car b))))
+
+;; Transfer all of front-stack to back-stack so back-stack has the elements.
+(define (dq-rebalance f b)
+  (if (null? f)
+      (cons '() (reverse-helper f b))
+      (dq-rebalance (cdr f) (cons (car f) b))))
+
+(define (reverse-helper f acc)
+  (if (null? f)
+      acc
+      (reverse-helper (cdr f) (cons (car f) acc))))
+
+;; Push to back
+(define (dq-push-back dq x)
+  (let ((f (car dq)) (b (cdr dq)))
+    (cons f (cons x b))))
+
+;; Pop from back
+(define (dq-pop-back dq)
+  (let ((f (car dq)) (b (cdr dq)))
+    (if (null? b)
+        (let ((nb (reverse-helper f '())))
+          (cons '() (cdr nb)))
+        (cons f (cdr b)))))
+
+;; Pop from front
+(define (dq-pop-front dq)
+  (let ((f (car dq)) (b (cdr dq)))
+    (if (null? f)
+        ;; Transfer then drop one
+        (let ((nb (reverse-helper f '())))
+          (if (null? nb)
+              dq
+              (cons '() (cdr nb))))
+        (cons (cdr f) b))))
+
+(define (last-pair lst)
+  (if (null? (cdr lst))
+      lst
+      (last-pair (cdr lst)))
+
+Now redefine dq-empty? etc. since I used last-pair before defining it.
+Actually order: define last-pair first.
+
+;; --- redefine cleanly ---
+
+(define (last-pair lst)
+  (if (null? (cdr lst)) lst (last-pair (cdr lst))))
+
+(define (reverse-helper f acc)
+  (if (null? f) acc (reverse-helper (cdr f) (cons (car f) acc))))
+
+(define (make-deque) (cons '() '()))
+
+(define (dq-empty? dq)
+  (and (null? (car dq)) (null? (cdr dq))))
+
+(define (dq-push-back dq x)
+  (let ((f (car dq)) (b (cdr dq)))
+    (cons f (cons x b))))
+
+(define (dq-pop-back dq)
+  (let ((f (car dq)) (b (cdr dq)))
+    (if (null? b)
+        (let ((nb (reverse-helper f '())))
+          (if (null? nb) dq (cons '() (cdr nb))))
+        (cons f (cdr b)))))
+
+(define (dq-pop-front dq)
+  (let ((f (car dq)) (b (cdr dq)))
+    (if (null? f)
+        (let ((nb (reverse-helper f '())))
+          (if (null? nb) dq (cons '() (cdr nb))))
+        (cons (cdr f) b))))
+
+(define (dq-front dq)
+  (let ((f (car dq)) (b (cdr dq)))
+    (if (null? f)
+        (let ((nb (reverse-helper f '())))
+          (if (null? nb) #f (car nb)))
+        (car f))))
+
+(define (dq-back dq)
+  (let ((f (car dq)) (b (cdr dq)))
+    (if (null? b)
+        (let ((nf (reverse-helper b '())))
+          (car (last-pair nf)))
+        (car b))))
+
+;; Helpers on the list representation of nums
+(define (list-length lst)
+  (if (null? lst) 0 (+ 1 (list-length (cdr lst)))))
+
+(define (list-ref lst i)
+  (if (= i 0) (car lst) (list-ref (cdr lst) (- i 1))))
+
+;; Solve: sliding window max using deque of indices, monotonic decreasing by value
+(define (solve nums k)
+  (let ((n (list-length nums)))
+    (if (> k n)
+        '()
+        (solve-helper nums k n 0 '() '())))
+
+  (define (solve-helper nums k n i dq result)
+    (if (>= i n)
+        (reverse-helper result '())
+        (let* ((x (list-ref nums i))
+               (dq1 (prune-back nums k i dq x)))
+          (let* ((dq2 (dq-push-back dq1 i))
+                 (dq3 (prune-front dq2 i k)))
+            (if (>= i (- k 1))
+                (let ((m (list-ref nums (dq-front dq3))))
+                  (solve-helper nums k n (+ i 1) dq3 (cons m result)))
+                (solve-helper nums k n (+ i 1) dq3 result))))))
+
+  (define (prune-back nums k i dq x)
+    (let ((b (dq-back dq)))
+      (if (and (not (null? (cdr dq))) ; back non-empty
+               ;; dq-back returns value from back-stack which holds head-inserted items
+               ;; So (cdr dq) is back-stack whose car is the most-recently pushed element
+               ;; We check (>= x (list-ref nums (car (cdr dq))))
+               (>= x (list-ref nums (car (cdr dq)))))
+          (prune-back nums k i (dq-pop-back dq) x)
+          dq)))
+
+  (define (prune-front dq i k)
+    ;; Remove indices < i - k + 1
+    (let ((front-idx (dq-front dq)))
+      (if (and (not (null? (car dq))) (< front-idx (- (+ i 1) k)))
+          (prune-front (dq-pop-front dq) i k)
+          (if (and (null? (car dq)) (not (null? (cdr dq))))
+              (let ((transferred (cons '() (reverse-helper (car dq) '()))))
+                ;; After transfer, pop front if needed
+                (prune-front-after transferred i k))
+              dq))))
+
+  (define (prune-front-after dq i k)
+    (let ((f (car dq)))
+      (if (and (not (null? f)) (< (car f) (- (+ i 1) k)))
+          (prune-front-after (cons (cdr f) (cdr dq)) i k)
+          dq)))
+
+  ;; Hide local helpers by embedding them in solve
+  )
+
+;; Cleaner: reimplement solve properly using a single cons-pair deque with helpers
+(define (solve nums k)
+  (let ((n (list-length nums)))
+    (if (> k n)
+        '()
+        (let loop ((i 0) (dq (cons '() '())) (acc '()))
+          (if (>= i n)
+              (reverse-helper acc '())
+              (let* ((x (list-ref nums i))
+                     (dq1 (loop-prune-back nums dq x))
+                     (dq2 (cons (car dq1) (cons i (cdr dq1))))
+                     (dq3 (loop-prune-front dq2 i k)))
+                (if (>= i (- k 1))
+                    (loop (+ i 1) dq3 (cons (list-ref nums (car (car dq3))) acc))
+                    (loop (+ i 1) dq3 acc))))))))
+
+(define (loop-prune-back nums dq x)
+  (let ((b (cdr dq)))
+    (if (and (not (null? b))
+             (>= x (list-ref nums (car b))))
+        (loop-prune-back nums (cons (car dq) (cdr b)) x)
+        dq)))
+
+(define (loop-prune-front dq i k)
+  ;; front is in (car dq); we need to drop indices < i - k + 1
+  (let ((cutoff (- (+ i 1) k)))
+    (let ((f (car dq)))
+      (if (and (not (null? f)) (< (car f) cutoff))
+          (loop-prune-front (cons (cdr f) (cdr dq)) i k)
+          dq))))
+
+;; Display helper for lists of ints
+(define (display-list lst)
+  (display "[")
+  (let loop ((lst lst) (first? #t))
+    (if (null? lst)
+        (display "]")
+        (begin
+          (if first? (display "") (display ", "))
+          (display (car lst))
+          (loop (cdr lst) #f))))
+  (newline))
+
+;; Embedded test cases
+(define (run-case i nums k)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display-list (solve nums k)))
+
+(run-case 0 '(1 3 -1 -3 5 3 6 7) 3)
+(run-case 1 '(1) 1)
+(run-case 2 '(1 2 3) 4)
+(run-case 3 '(4 4 4 4) 2)
+(run-case 4 '(9 8 7 6 5 4 3 2 1) 3)
+(run-case 5 '(1 2 3 4 5) 5)
+(run-case 6 '(7 2 4) 2)
+(run-case 7 '(-7 -8 -1 -3 -5 -2 -9) 3)

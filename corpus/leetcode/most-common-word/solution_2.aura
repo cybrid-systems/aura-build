@@ -1,0 +1,101 @@
+(define (lower-char? c)
+  (and (>= (char->integer c) 97) (<= (char->integer c) 122)))
+
+(define (upper-char? c)
+  (and (>= (char->integer c) 65) (<= (char->integer c) 90)))
+
+(define (digit-char? c)
+  (and (>= (char->integer c) 48) (<= (char->integer c) 57)))
+
+(define (letter? c)
+  (or (lower-char? c) (upper-char? c)))
+
+(define (char-downcase c)
+  (if (upper-char? c)
+      (integer->char (+ (char->integer c) 32))
+      c))
+
+(define (string-downcase s)
+  (list->string (map char-downcase (string->list s))))
+
+(define (string-empty? s)
+  (= (string-length s) 0))
+
+;; Build an association list mapping lowercased word -> count.
+;; Iterate through paragraph; current token built up char by char.
+(define (process-chars chars current counts)
+  (cond
+    ((null? chars)
+     (if (and (not (null? current)) (not (string-empty? (list->string current))))
+         (increment-count (list->string current) counts)
+         counts))
+    (else
+     (let ((c (car chars))
+           (rest (cdr chars)))
+       (if (letter? c)
+           (process-chars rest (cons (char-downcase c) current) counts)
+           (let ((updated
+                  (if (and (not (null? current))
+                           (not (string-empty? (list->string current))))
+                      (increment-count (list->string current) counts)
+                      counts)))
+             (process-chars rest '() updated)))))))
+
+(define (increment-count word counts)
+  (cond
+    ((null? counts) (cons (cons word 1) '()))
+    ((equal? (car (car counts)) word)
+     (cons (cons word (+ (cdr (car counts)) 1)) (cdr counts)))
+    (else
+     (cons (car counts) (increment-count word (cdr counts))))))
+
+(define (count->list paragraph)
+  (process-chars (string->list paragraph) '() '()))
+
+;; Build banned set as association list for membership testing
+(define (build-banned banned)
+  (cond
+    ((null? banned) '())
+    (else (cons (cons (car banned) #t) (build-banned (cdr banned)))))))
+
+(define (banned? banned word)
+  (cond
+    ((null? banned) #f)
+    ((equal? (car (car banned)) word) #t)
+    (else (banned? (cdr banned) word))))
+
+;; Find the most common non-banned word
+(define (find-most counts banned best-word best-count)
+  (cond
+    ((null? counts) best-word)
+    ((banned? banned (car (car counts)))
+     (find-most (cdr counts) banned best-word best-count))
+    (else
+     (let ((w (car (car counts)))
+           (c (cdr (car counts))))
+       (if (> c best-count)
+           (find-most (cdr counts) banned w c)
+           (find-most (cdr counts) banned best-word best-count))))))
+
+(define (solve paragraph banned)
+  (let ((counts (count->list paragraph))
+        (bset (build-banned banned)))
+    (let ((result (find-most counts bset "" 0)))
+      result)))
+
+;; Test harness
+(define (display-string s)
+  (display s))
+
+(define (run-tests)
+  (begin
+    (display "CASE0=") (display (solve "Bob hit a ball, the hit BALL flew far after it was hit." '("hit"))) (newline)
+    (display "CASE1=") (display (solve "a." '())) (newline)
+    (display "CASE2=") (display (solve "a, a, a, b, b, c!" '("b"))) (newline)
+    (display "CASE3=") (display (solve "Hello! Hello!! HELLO..." '())) (newline)
+    (display "CASE4=") (display (solve "Only banned words here." '("only" "banned" "words" "here"))) (newline)
+    (display "CASE5=") (display (solve "" '("x"))) (newline)
+    (display "CASE6=") (display (solve "Apple, apple, APPLE, banana; BANANA? banana!" '())) (newline)
+    (display "CASE7=") (display (solve "one two three four five six seven eight nine ten" '())) (newline)))
+
+(run-tests)

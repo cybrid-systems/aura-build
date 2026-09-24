@@ -1,0 +1,46 @@
+(define (solve root)
+  ; Returns (height . balanced-flag) for a subtree
+  ; If unbalanced, returns a sentinel with height -1 to avoid extra work
+  (define (check node)
+    (if (null? node)
+        (cons 0 #t)
+        (let ((l-res (check (cdr (assoc :left node))))
+              (r-res (check (cdr (assoc :right node)))))
+          (if (and (cdr l-res) (cdr r-res))
+              (let ((diff (- (car l-res) (car r-res)))
+                    (lh (car l-res))
+                    (rh (car r-res)))
+                (if (and (>= diff -1) (<= diff 1))
+                    (cons (+ 1 (if (> lh rh) lh rh)) #t)
+                    (cons -1 #f)))
+              (cons -1 #f)))))
+  (cdr (check root)))
+
+; Helper: access field from node map
+(define (assoc key alist)
+  (cond ((null? alist) (cons '() #f))
+        ((equal? (car (car alist)) key) (car alist))
+        (else (assoc key (cdr alist)))))
+
+; Test cases
+(define case0 '())
+(define case1 '((:val . 1) (:left . ()) (:right . ())))
+(define case2 '((:val . 1) (:left . ((:val . 2) (:left . ()) (:right . ()))) (:right . ((:val . 3) (:left . ()) (:right . ())))))
+(define case3 '((:val . 1) (:left . ()) (:right . ((:val . 2) (:left . ()) (:right . ((:val . 3) (:left . ()) (:right . ())))))))
+
+(define case4 '((:val . 1) (:left . ((:val . 2) (:left . ((:val . 4) (:left . ()) (:right . ((:val . 5) (:left . ()) (:right . ()))))) (:right . ()))) (:right . ((:val . 3) (:left . ()) (:right . ())))))
+
+(define case5 '((:val . 1) (:left . ((:val . 2) (:left . ((:val . 4) (:left . ()) (:right . ()))) (:right . ((:val . 5) (:left . ()) (:right . ()))))) (:right . ((:val . 3) (:left . ((:val . 6) (:left . ()) (:right . ()))) (:right . ((:val . 7) (:left . ()) (:right . ())))))))
+
+(define case6 '((:val . 1) (:left . ((:val . 2) (:left . ((:val . 3) (:left . ((:val . 4) (:left . ()) (:right . ()))) (:right . ()))) (:right . ()))) (:right . ())))
+
+(define case7 '((:val . 1) (:left . ((:val . 2) (:left . ((:val . 3) (:left . ((:val . 4) (:left . ()) (:right . ()))) (:right . ()))) (:right . ()))) (:right . ((:val . 2) (:left . ()) (:right . ((:val . 3) (:left . ()) (:right . ((:val . 4) (:left . ()) (:right . ())))))))))
+
+(display "CASE0=") (display (solve case0)) (newline)
+(display "CASE1=") (display (solve case1)) (newline)
+(display "CASE2=") (display (solve case2)) (newline)
+(display "CASE3=") (display (solve case3)) (newline)
+(display "CASE4=") (display (solve case4)) (newline)
+(display "CASE5=") (display (solve case5)) (newline)
+(display "CASE6=") (display (solve case6)) (newline)
+(display "CASE7=") (display (solve case7)) (newline)

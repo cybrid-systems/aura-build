@@ -1,0 +1,40 @@
+(define (length xs)
+  (if (null? xs) 0 (+ 1 (length (cdr xs)))))
+
+(define (append xs ys)
+  (if (null? xs) ys (cons (car xs) (append (cdr xs) ys))))
+
+(define (take n xs)
+  (if (= n 0) '()
+      (if (null? xs) '()
+          (cons (car xs) (take (- n 1) (cdr xs))))))
+
+(define (drop n xs)
+  (if (= n 0) xs
+      (if (null? xs) '()
+          (drop (- n 1) (cdr xs))))))
+
+(define (solve head k)
+  (let ((n (length head)))
+    (if (= n 0) '()
+        (let ((m (modulo k n)))
+          (if (= m 0) head
+              (let ((cut (- n m)))
+                (append (drop cut head) (take cut head))))))))
+
+(define (display-list xs)
+  (if (null? xs) (display "")
+      (begin
+        (display (car xs))
+        (if (not (null? (cdr xs))) (display " "))
+        (display-list (cdr xs)))))
+
+;; Test cases
+(display "CASE0=") (display-list (solve (list 1 2 3 4 5) 2)) (newline)
+(display "CASE1=") (display-list (solve '() 10)) (newline)
+(display "CASE2=") (display-list (solve (list 1) 100)) (newline)
+(display "CASE3=") (display-list (solve (list 1 2 3) 0)) (newline)
+(display "CASE4=") (display-list (solve (list 1 2 3 4 5) 5)) (newline)
+(display "CASE5=") (display-list (solve (list 1 2 3 4 5) 7)) (newline)
+(display "CASE6=") (display-list (solve (list 10 20 30 40) 1)) (newline)
+(display "CASE7=") (display-list (solve (list 5 5 5 5) 2)) (newline)

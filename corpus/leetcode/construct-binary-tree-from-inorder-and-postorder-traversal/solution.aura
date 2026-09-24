@@ -1,0 +1,51 @@
+;; Tree node: '() for null, or (cons value left right)
+(define (make-node v l r) (cons v (cons l r)))
+(define (node-val n) (car n))
+(define (node-left n) (car (cdr n)))
+(define (node-right n) (cdr (cdr n)))
+
+;; Sentinel value for null
+(define NULL 'null)
+
+;; Parse "CASE0_INORDER=[1, 2, null, 5]" -> (1 2 null 5)
+(define (parse-list s)
+  (let ((start (string-contains-ci s "=")))
+    (let ((inner (substring s (+ start 1) (string-length s))))
+      (let ((trimmed (string-trim inner "[]")))
+        (if (= (string-length trimmed) 0)
+            '()
+            (let ((parts (split-string trimmed ",")))
+              (map parse-part parts)))))))
+
+(define (parse-part p)
+  (let ((t (string-trim p " ")))
+    (if (or (string-equal? t "null") (string-equal? t "None"))
+        NULL
+        (string->number t))))
+
+(define (split-string s sep)
+  (let ((len (string-length s)))
+    (let loop ((i 0) (start 0) (acc '()))
+      (cond ((>= i len)
+             (reverse (cons (substring s start len) acc)))
+            ((char-equal? (string-ref s i) sep)
+             (loop (+ i 1) (+ i 1) (cons (substring s start i) acc)))
+            (else (loop (+ i 1) start acc))))))
+
+;; Build tree from inorder and postorder lists
+;; Last element of postorder is root; find it in inorder to split
+(define (build-tree ino post)
+  (cond ((null? ino) '())
+        ((null? post) '())
+        (else
+         (let ((root (car (last post))))
+           (if (null? root)
+               '()
+               (let ((idx (index-of ino root)))
+                 (let ((left-ino (take ino idx))
+                       (right-ino (drop ino (+ idx 1)))
+                       (n (- (length post) 1)))
+                   (let ((left-post (take post (- n (- (length right-ino) 0)))))
+                     (let ((right-post (drop (- post (- n (- (length right-ino) 0)))) ...))
+                       ;; Recursive
+                       ))))))))

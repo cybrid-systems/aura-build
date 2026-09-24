@@ -1,0 +1,82 @@
+;; Parse one level-order token: either the symbol 'null or a number
+(define (parse-token t)
+  (if (eq? t 'null) 'null (string->number t)))
+
+;; Build tree from list of tokens. Indices: node i has children 2i+1, 2i+2.
+(define (build-tree toks n)
+  (if (>= n (length toks))
+      'null
+      (let ((tk (list-ref toks n)))
+        (if (eq? tk 'null)
+            'null
+            (let ((left  (build-tree toks (+ (* 2 n) 1)))
+                  (right (build-tree toks (+ (* 2 n) 2))))
+              (list 'node tk left right))))))
+
+;; Stringify a number token (already a string from the literal).
+(define (num->str x) x)
+
+;; Join a list of strings with "->"
+(define (join-arrow ss)
+  (if (null? ss)
+      ""
+      (let ((h (car ss)) (t (cdr ss)))
+        (if (null? t)
+            h
+            (string-append h "->" (join-arrow t))))))
+
+;; DFS: collect path strings. `acc` is list of stringified values along current path.
+(define (collect-paths node acc)
+  (if (eq? node 'null)
+      '()
+      (let ((v    (car (cdr node)))
+            (l    (car (cdr (cdr node))))
+            (r    (car (cdr (cdr (cdr node)))))
+            (acc2 (cons (num->str v) acc)))
+        (if (and (eq? l 'null) (eq? r 'null))
+            (list (join-arrow (reverse acc2)))
+            (append (collect-paths l acc2)
+                    (collect-paths r acc2))))))
+
+(define (solve root)
+  (collect-paths root '()))
+
+;; ---- Pretty-print the result list using Aura list syntax ----
+(define (display-result xs)
+  (display "[")
+  (let loop ((rest xs) (first? #t))
+    (cond
+      ((null? rest) (display "]"))
+      (else
+        (if first? (display "") (display " "))
+        (display "\"")
+        (display (car rest))
+        (display "\"")
+        (loop (cdr rest) #f)))))
+
+;; ---- Run embedded cases ----
+(define case0 '())
+(define case1 '(1))
+(define case2 '(1 2 3 null 5))
+(define case3 '(1 null 2 null 3))
+(define case4 '())
+(define case5 '(1 2))
+(define case6 '(1 null 2 3))
+(define case7 '(10 5 15 null null 6 20))
+
+(define (run-case i toks)
+  (let ((tree (build-tree (map parse-token toks) 0)))
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display-result (solve tree))
+    (newline)))
+
+(run-case 0 case0)
+(run-case 1 case1)
+(run-case 2 case2)
+(run-case 3 case3)
+(run-case 4 case4)
+(run-case 5 case5)
+(run-case 6 case6)
+(run-case 7 case7)
