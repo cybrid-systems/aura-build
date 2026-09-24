@@ -14,7 +14,7 @@
 
 | Layer | Tip |
 |-------|-----|
-| Aura Soft Ready binary | `/workspace/aura-grok/build_soft4054/aura` (=`build_soft4048`) @ **`8b8c9fa`** (#4054 TLS body-lock across yield; #4053 async http-post; #4048 denseness; #4047 Soft Ready profile) |
+| Aura Soft Ready binary | `/workspace/aura-grok/build_soft4055/aura` (=`build_soft4048`) @ **`bd1c610`** (#4055 native encoding prims; #4054 TLS body-lock; #4053 async http-post; #4048 denseness; #4047 Soft Ready profile) |
 | aura-build | main @ tip after P1 wire (`self-evolve combat` CLI + ROUND1 fix `9cc096c`) |
 
 Rebuild Soft only if that binary is missing/outdated. Soft honesty banner stays **Soft Ready**.
@@ -64,7 +64,7 @@ Soft serve attach (Soft Ready tip 8b8c9fa+)
 Primary CLIs for combat (reuse before rewriting stamp `self-evolve`):
 
 ```bash
-export AURA_BIN=/workspace/aura-grok/build_soft4054/aura
+export AURA_BIN=/workspace/aura-grok/build_soft4055/aura
 
 # Kill Soft --serve / --serve-async zombies first
 pkill -f 'aura .*--serve' || true
@@ -132,7 +132,7 @@ P1 CLI landed as `aura-build self-evolve combat` (`src/aura_build/self_evolve_co
 ## P1 CLI (landed)
 
 ```bash
-export AURA_BIN=/workspace/aura-grok/build_soft4054/aura
+export AURA_BIN=/workspace/aura-grok/build_soft4055/aura
 
 # Refuse without Soft attach (exit 2)
 aura-build self-evolve combat --json

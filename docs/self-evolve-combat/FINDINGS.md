@@ -53,3 +53,21 @@ Aura kernel edits: issue stubs only (never auto-edit).
 **aura-build:** dual-sink no longer files Aura stubs for honest `fiber_serial` without `--concurrent-llm`.
 
 - `20260924-141500` dig=soft_wedge_3rd_minimax_denseness_batch issue=#4055 soft=`8b8c9fa` tier=mini-exchange
+- `20260924-173517` ok=True llm_via=None llm_parallel=None explore=None artifacts=`combat_20260924-173517_stdout.json`
+- `20260924-173517` ok=True llm_via=None llm_parallel=None explore=None artifacts=`combat_20260924-173517_stdout.json`
+- `20260924-173517` ok=True llm_via=fiber llm_parallel=fiber explore=fiber_graph artifacts=`combat_20260924-173517_stdout.json`
+- `20260924-173546` ok=False llm_via=fiber llm_parallel=fiber_serial explore=host_thread artifacts=`combat_20260924-173546_stdout.json`
+- `20260924-174643` ok=False llm_via=fiber llm_parallel=fiber explore=fiber_graph artifacts=`combat_20260924-174643_stdout.json`
+
+## ROUND3 — Soft #4055 live denseness verified; mini-exchange still MiniMax residual (2026-09-24 CST)
+
+**Soft tip:** `bd1c610` `build_soft4055/aura` — local 4054/4055 stubs PASS; live MiniMax denseness **5×N=3** all `llm_via=fiber` / `llm_parallel=fiber` (probe 6.8s; batches 5.6/4.0/6.0/5.8/3.3s). **No #4055 reopen.**
+
+**Combat (no gold/intent):** three max_rounds_8 runs on mini-exchange; Soft fiber denseness held (run C: **8/8** fiber/fiber/fiber_graph). MiniMax residual: FILL1=filled + unbalanced parens.
+
+**aura-build:** `a518797` multi-file repair context; `760a9ee` FILL1/parens scaffolding. Artifacts `combat_20260924-172306_*`, `173546_*`, `174643_*`, `ROUND3.md`.
+
+- `20260924-172306` ok=False llm_via=fiber llm_parallel=fiber_serial explore=fiber_graph artifacts=`combat_20260924-172306_stdout.json`
+- `20260924-173546` ok=False llm_via=fiber llm_parallel=fiber_serial explore=host_thread artifacts=`combat_20260924-173546_stdout.json`
+- `20260924-174643` ok=False llm_via=fiber llm_parallel=fiber explore=fiber_graph artifacts=`combat_20260924-174643_stdout.json` soft=#4055_live_ok
+
