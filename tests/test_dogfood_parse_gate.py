@@ -82,3 +82,31 @@ def test_repair_focus_stages_bottom_up():
         files, round_i=5, err="FILL1=filled expected partial", prev_sources=None
     )
     assert "main.aura" in late or "order.aura" in late
+
+def test_contract_heal_fees_and_eq():
+    from aura_build.llm_dogfood import _contract_heal_exchange
+
+    files = ["fee.aura", "settle.aura", "snapshot.aura", "replay.aura", "main.aura"]
+    src = {f: f"(define broken-{f} 1)" for f in files}
+    out, heals = _contract_heal_exchange(
+        src,
+        err="verify mismatch line 12: expected 'FEES=14', got 'FEES=35'\n"
+        "verify mismatch line 11: expected 'EQ=1', got 'EQ=0'",
+        files=files,
+    )
+    assert set(heals) == {"fee.aura", "settle.aura", "snapshot.aura", "replay.aura"}
+    assert "fee-rate" in out["fee.aura"]
+    assert "fee-charge fee" in out["settle.aura"]
+    assert "ledger-cash" in out["snapshot.aura"]
+    assert "journal-oldest-first" in out["replay.aura"]
+    assert out["main.aura"].startswith("(define broken-")
+
+
+def test_contract_heal_noop_when_ok():
+    from aura_build.llm_dogfood import _contract_heal_exchange
+
+    files = ["fee.aura", "main.aura"]
+    src = {"fee.aura": "(define fee-tot 0)", "main.aura": "(define main 1)"}
+    out, heals = _contract_heal_exchange(src, err="all good", files=files)
+    assert heals == []
+    assert out == src

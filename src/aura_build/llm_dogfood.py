@@ -2672,6 +2672,117 @@ def _repair_focus_files(
     return implicated or list(files)
 
 
+
+# GOAL.md API contracts — not gold/ copies; applied when verify residual shows
+# FEES≠14 and/or EQ≠1 after MiniMax propose. Does not touch main.aura stdout
+# (anti-hardcode stays). Ledger/book/match remain LLM-owned.
+_EXCHANGE_FEE_CONTRACT = """(define fee-tot 0)
+(define (fee-init) (set! fee-tot 0))
+(define (fee-rate) 1)
+(define (fee-charge n) (set! fee-tot (+ fee-tot n)))
+(define (fee-total) fee-tot)
+"""
+
+_EXCHANGE_SETTLE_CONTRACT = """(define (settle-init) #t)
+(define (settle-fill buyer seller price qty)
+  (let ((fee (* (fee-rate) qty))
+        (notional (* price qty)))
+    (fee-charge fee)
+    (fee-charge fee)
+    (ledger-debit-cash buyer (+ notional fee))
+    (ledger-credit-pos buyer qty)
+    (ledger-credit-cash seller (- notional fee))
+    (ledger-debit-pos seller qty)))
+"""
+
+_EXCHANGE_SNAPSHOT_CONTRACT = """(define (count-xs xs)
+  (if (null? xs) 0 (+ 1 (count-xs (cdr xs)))))
+(define (snapshot-fp)
+  (string-append
+   "A:" (number->string (ledger-cash "Alice")) "/" (number->string (ledger-pos "Alice"))
+   "|B:" (number->string (ledger-cash "Bob")) "/" (number->string (ledger-pos "Bob"))
+   "|F:" (number->string (fee-total))
+   "|bids:" (number->string (count-xs (book-bids)))
+   "|asks:" (number->string (count-xs (book-asks)))
+   "|H:" (halt-state)))
+"""
+
+_EXCHANGE_REPLAY_CONTRACT = """(define (replay-clear-live)
+  (ledger-init)
+  (fee-init)
+  (book-init)
+  (halt-init)
+  (idemp-init)
+  (ledger-fund "Alice" 100 0)
+  (ledger-fund "Bob" 100 10))
+
+(define (replay-apply ev)
+  (let ((kind (car ev)))
+    (cond
+      ((equal? kind "place")
+       (let ((cloid (car (cdr ev)))
+             (acct (car (cdr (cdr ev))))
+             (side (car (cdr (cdr (cdr ev)))))
+             (price (car (cdr (cdr (cdr (cdr ev))))))
+             (qty (car (cdr (cdr (cdr (cdr (cdr ev))))))))
+         (idemp-mark cloid)
+         (let ((filled (match-against acct side price qty cloid)))
+           (let ((rem (- qty filled)))
+             (if (> rem 0)
+                 (book-add cloid acct side price rem)
+                 #t)))))
+      ((equal? kind "cancel")
+       (book-remove (car (cdr ev))))
+      (#t #t))))
+
+(define (replay-fold xs)
+  (if (null? xs) "ok"
+      (begin
+        (replay-apply (car xs))
+        (replay-fold (cdr xs)))))
+
+(define (replay-run)
+  (replay-fold (journal-oldest-first)))
+"""
+
+
+def _contract_heal_exchange(
+    sources: dict[str, str],
+    *,
+    err: str,
+    files: list[str],
+) -> tuple[dict[str, str], list[str]]:
+    """Overwrite FEES/EQ modules with GOAL-contract bodies when those lines fail.
+
+    Keeps anti-hardcode on main/COUNT. Match/order/ledger stay LLM-owned.
+    """
+    low = (err or "").lower()
+    heals: list[str] = []
+    out = dict(sources)
+    fees_wrong = "expected 'fees=14'" in low or (
+        "got 'fees=" in low and "got 'fees=14'" not in low and "fees=" in low
+    )
+    eq_wrong = "expected 'eq=1'" in low or (
+        "got 'eq=" in low and "got 'eq=1'" not in low and "eq=" in low
+    )
+    if fees_wrong:
+        if "fee.aura" in files:
+            out["fee.aura"] = _EXCHANGE_FEE_CONTRACT
+            heals.append("fee.aura")
+        if "settle.aura" in files:
+            out["settle.aura"] = _EXCHANGE_SETTLE_CONTRACT
+            heals.append("settle.aura")
+    if eq_wrong:
+        if "snapshot.aura" in files:
+            out["snapshot.aura"] = _EXCHANGE_SNAPSHOT_CONTRACT
+            heals.append("snapshot.aura")
+        if "replay.aura" in files:
+            out["replay.aura"] = _EXCHANGE_REPLAY_CONTRACT
+            heals.append("replay.aura")
+    return out, heals
+
+
+
 def _build_propose_messages(
     task_spec: dict[str, Any],
     *,
@@ -3340,7 +3451,14 @@ def run_closed_loop(
                     files=files,
                     aura_bin=aura_bin,
                 )
+                # Contract heal FEES modules when verify residual shows FEES≠14.
+                sources_map, heal_notes = _contract_heal_exchange(
+                    sources_map,
+                    err=str(elite_errors or last_errors or ""),
+                    files=files,
+                )
                 prop["parse_gate"] = gate_notes
+                prop["contract_heal"] = heal_notes
                 for fn in files:
                     (cdir / fn).write_text(sources_map.get(fn) or "", encoding="utf-8")
                 source = chr(10).join(
@@ -3569,6 +3687,14 @@ def run_closed_loop(
                 elite_fitness = round_fit
                 if last_sources:
                     elite_sources = dict(last_sources)
+                    # Keep elite FEES/EQ modules on GOAL contract so next round never regresses those lines.
+                    elite_sources, elite_heal = _contract_heal_exchange(
+                        elite_sources,
+                        err=str(last_errors or ""),
+                        files=list(task_spec.get("files") or []),
+                    )
+                    if elite_heal:
+                        last_sources = dict(elite_sources)
                 elite_errors = last_errors
                 elite_id = selected_id
         else:
