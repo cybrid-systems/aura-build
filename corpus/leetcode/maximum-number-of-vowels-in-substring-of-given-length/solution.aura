@@ -1,0 +1,38 @@
+(define (vowel? c)
+  (or (equal? c #\a) (equal? c #\e) (equal? c #\i) (equal? c #\o) (equal? c #\u)))
+
+(define (solve s k)
+  (let ((n (string-length s)))
+    (if (or (< n k) (= k 0))
+        0
+        (let* ((first-end k)
+               (init-count (let loop ((i 0) (acc 0))
+                             (if (= i first-end)
+                                 acc
+                                 (loop (+ i 1) (if (vowel? (string-ref s i)) (+ acc 1) acc))))))
+          (let loop ((start 0) (end first-end) (cur init-count) (best init-count))
+            (cond
+              ((>= end n) best)
+              (else
+               (let* ((new-c (vowel? (string-ref s end)))
+                      (old-c (vowel? (string-ref s start)))
+                      (next-cur (+ cur (if new-c 1 0) (- (if old-c 1 0))))
+                      (next-best (if (> next-cur best) next-cur best)))
+                 (loop (+ start 1) (+ end 1) next-cur next-best))))))))
+
+(define (display-case i result)
+  (begin
+    (display "CASE")
+    (display (number->string i))
+    (display "=")
+    (display (number->string result))
+    (newline)))
+
+(display-case 0 (solve "abciiidef" 3))
+(display-case 1 (solve "aeiou" 2))
+(display-case 2 (solve "bcdfg" 3))
+(display-case 3 (solve "a" 1))
+(display-case 4 (solve "a" 2))
+(display-case 5 (solve "aaaaa" 3))
+(display-case 6 (solve "abcdefghijklmnopqrstuvwxyz" 5))
+(display-case 7 (solve "leetcode" 0))

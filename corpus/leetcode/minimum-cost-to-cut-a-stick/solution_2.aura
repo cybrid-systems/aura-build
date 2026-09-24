@@ -1,0 +1,123 @@
+(define (slist->vector lst)
+  (let ((len (length lst)))
+    (let loop ((i 0) (l lst) (v (make-vector len 0)))
+      (if (null? l)
+          v
+          (begin
+            (vector-set! v i (car l))
+            (loop (+ i 1) (cdr l) v))))))
+
+(define (sort-vec v)
+  (let ((n (vector-length v)))
+    (let outer ((i 0))
+      (if (>= i n)
+          v
+          (let inner ((j (+ i 1)) (min-i i))
+            (if (>= j n)
+                (begin
+                  (let ((tmp (vector-ref v i)))
+                    (vector-set! v i (vector-ref v min-i))
+                    (vector-set! v min-i tmp))
+                  (outer (+ i 1)))
+                (if (< (vector-ref v j) (vector-ref v min-i))
+                    (inner (+ j 1) j)
+                    (inner (+ j 1) min-i))))))))
+
+(define (min-heap-new v)
+  (let ((h (vector-copy v))
+        (n (vector-length v)))
+    (let sift ((i 0))
+      (if (>= i n)
+          h
+          (let sift-down ((k i))
+            (let ((l (+ (* 2 k) 1))
+                  (r (+ (* 2 k) 2))
+                  (smallest k))
+              (cond
+                ((and (< l n) (< (vector-ref h l) (vector-ref h smallest)))
+                 (set! smallest l))
+                ((and (< r n) (< (vector-ref h r) (vector-ref h smallest)))
+                 (set! smallest r)))
+              (if (= smallest k)
+                  (sift (+ i 1))
+                  (let ((tmp (vector-ref h k)))
+                    (vector-set! h k (vector-ref h smallest))
+                    (vector-set! h smallest tmp)
+                    (sift-down smallest)))))))))
+
+(define heap '())
+(define heap-size 0)
+
+(define (heappush val)
+  (set! heap (vector-append heap (vector val)))
+  (set! heap-size (+ heap-size 1))
+  (let sift-up ((k (- heap-size 1)))
+    (if (<= k 0)
+        'done
+        (let ((parent (quotient (- k 1) 2)))
+          (if (< (vector-ref heap k) (vector-ref heap parent))
+              (let ((tmp (vector-ref heap k)))
+                (vector-set! heap k (vector-ref heap parent))
+                (vector-set! heap parent tmp)
+                (sift-up parent))
+              'done)))))
+
+(define (heappop)
+  (let ((top (vector-ref heap 0)))
+    (vector-set! heap 0 (vector-ref heap (- heap-size 1)))
+    (set! heap-size (- heap-size 1))
+    (let ((new-vec (make-vector heap-size 0)))
+      (let loop ((i 0))
+        (if (>= i heap-size)
+            'done
+            (begin
+              (vector-set! new-vec i (vector-ref heap i))
+              (loop (+ i 1)))))
+      (set! heap new-vec))
+    (let sift-down ((k 0))
+      (if (>= k heap-size)
+          top
+          (let ((l (+ (* 2 k) 1))
+                (r (+ (* 2 k) 2))
+                (smallest k))
+            (cond
+              ((and (< l heap-size) (< (vector-ref heap l) (vector-ref heap smallest)))
+               (set! smallest l))
+              ((and (< r heap-size) (< (vector-ref heap r) (vector-ref heap smallest)))
+               (set! smallest r)))
+            (if (= smallest k)
+                top
+                (let ((tmp (vector-ref heap k)))
+                  (vector-set! heap k (vector-ref heap smallest))
+                  (vector-set! heap smallest tmp)
+                  (sift-down smallest))))))))
+
+(define (solve L cuts)
+  (if (null? cuts)
+      0
+      (begin
+        (let ((v (sort-vec (slist->vector cuts))))
+          (set! heap (min-heap-new v))
+          (set! heap-size (vector-length heap))
+          (let loop ((cost 0))
+            (if (<= heap-size 1)
+                cost
+                (let ((smallest (heappop)))
+                  (loop (+ cost smallest)))))))))
+
+(define (run-case i L cuts)
+  (let ((result (solve L cuts)))
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display result)
+    (newline)))
+
+(run-case 0 7 '(1 3 5))
+(run-case 1 9 '(5))
+(run-case 2 10 '(2 4 7))
+(run-case 3 100 '())
+(run-case 4 8 '(3 5 7))
+(run-case 5 20 '(1 2 3 4 5 6 7 8 9))
+(run-case 6 50 '(10 20 30 40))
+(run-case 7 1 '())

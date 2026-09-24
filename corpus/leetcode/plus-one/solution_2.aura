@@ -1,0 +1,51 @@
+(define (reverse-helper lst acc)
+  (if (null? lst)
+      acc
+      (reverse-helper (cdr lst) (cons (car lst) acc))))
+
+(define (my-reverse lst)
+  (reverse-helper lst '()))
+
+(define (plus-one-helper digits carry)
+  (cond
+    ((null? digits)
+     (if (= carry 0)
+         '()
+         (cons carry '())))
+    (else
+      (let ((sum (+ (car digits) carry)))
+        (if (= sum 10)
+            (cons 0 (plus-one-helper (cdr digits) 1))
+            (cons sum (plus-one-helper (cdr digits) 0)))))))
+
+(define (solve digits)
+  (my-reverse (plus-one-helper (my-reverse digits) 1)))
+
+(define (display-list lst)
+  (cond
+    ((null? lst)
+     (display "")
+     )
+    ((null? (cdr lst))
+     (display (car lst)))
+    (else
+      (display (car lst))
+      (display " ")
+      (display-list (cdr lst)))))
+
+(define (display-case i result)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display-list result)
+  (newline)
+  )
+
+(display-case 0 (solve (list 1 2 3)))
+(display-case 1 (solve (list 4 3 2 1)))
+(display-case 2 (solve (list 9)))
+(display-case 3 (solve (list 9 9 9 9)))
+(display-case 4 (solve (list 0)))
+(display-case 5 (solve (list 1 0 0 0)))
+(display-case 6 (solve (list 8 9 9 9)))
+(display-case 7 (solve (list 2 0 0 0 0)))

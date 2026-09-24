@@ -1,0 +1,47 @@
+(define (solve prices fee)
+  ; cash[i]: max profit when not holding on/before day i
+  ; hold[i]: max profit when holding on/before day i
+  ; We'll fold over the prices list, tracking cash and hold.
+  ; Initialize: cash = 0, hold = -prices[0] (buy on day 0)
+  (let ((n (length prices)))
+    (if (= n 0)
+        0
+        (let loop ((rest-prices (cdr prices))
+                   (cash 0)
+                   (hold (- 0 (car prices))))
+          (if (null? rest-prices)
+              cash
+              (let ((p (car rest-prices)))
+                (let ((new-cash (max cash (+ hold (- p fee))))
+                     (new-hold (max hold (- cash p))))
+                  (loop (cdr rest-prices) new-cash new-hold))))))))
+
+(define (display-list lst)
+  (display "[")
+  (let loop ((l lst))
+    (cond
+      ((null? l) (display "]"))
+      (else
+        (display (car l))
+        (if (not (null? (cdr l))) (display " "))
+        (loop (cdr l))))))
+
+(define (run-case i prices fee)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (let ((result (solve prices fee)))
+    (display result))
+  (newline))
+
+(define (main)
+  (run-case 0 (list 1 3 2 8 4 9) 2)
+  (run-case 1 (list 1 3 7 5 10 3) 3)
+  (run-case 2 (list 1) 1)
+  (run-case 3 (list 5 5 5 5) 1)
+  (run-case 4 (list 9 8 7 6 5 4 3 2 1) 0)
+  (run-case 5 (list 1 2 3 4 5) 0)
+  (run-case 6 (list 4 5 2 3 7 1 5) 2)
+  (run-case 7 (list 0 1 0 1 0 1) 1))
+
+(main)

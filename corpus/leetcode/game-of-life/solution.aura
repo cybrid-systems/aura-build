@@ -1,0 +1,266 @@
+(define (solve grid)
+  "Update GRID in place from generation N to generation N+1 of Game of Life.
+   Mark dying live cells as 2, newly born cells as 3."
+  (let ((R (length grid)))
+    (let ((C (if (null? grid) 0 (length (car grid)))))
+      ;; For each cell, count live neighbors from current snapshot and apply rules.
+      (let loop ((r 0))
+        (if (< r R)
+            (begin
+              (let inner ((c 0) (row (list-ref grid r)))
+                (if (< c C)
+                    (begin
+                      (let ((live 0)
+                            (cur (list-ref row c)))
+                        ;; Count live neighbors (cells with original value 1).
+                        (let ((dr-min (max 0 (- r 1)))
+                              (dr-max (min (- R 1) (+ r 1)))
+                              (dc-min (max 0 (- c 1)))
+                              (dc-max (min (- C 1) (+ c 1))))
+                          (let nloop ((dr dr-min))
+                            (if (<= dr dr-max)
+                                (let cloop ((dc dc-min))
+                                  (if (<= dc dc-max)
+                                      (begin
+                                        (if (and (or (not (= dr r)) (not (= dc c))) (= 1 (list-ref (list-ref grid dr) dc)))
+                                            (set! live (+ live 1))
+                                            0)
+                                        (cloop (+ dc 1)))
+                                      0))
+                                0)))
+                        ;; Apply rules.
+                        (if (= cur 1)
+                            (if (or (< live 2) (> live 3))
+                                (set! (list-ref (list-ref-no-check grid r) c) 2)
+                                0)
+                            (if (= live 3)
+                                (set! (list-ref (list-ref-no-check grid r) c) 3)
+                                0))
+                        (inner (+ c 1) row))
+                      0)))
+              (loop (+ r 1)))
+            0)))))
+
+;; Helper: since Aura lists are immutable, use a mutable vector via mutation
+;; through indirection. We'll represent grid as a list of vectors (built below).
+(define (make-vector n init)
+  (let loop ((i 0) (acc '()))
+    (if (< i n)
+        (loop (+ i 1) (cons init acc))
+        acc)))
+
+(define (vset! v i x)
+  (set-car! (list-tail v i) x))
+
+;; We rebuild the approach with vectors to allow mutation.
+(define (solve grid)
+  (let ((R (length grid)))
+    (if (= R 0)
+        0
+        (let ((C (length (car grid))))
+          ;; Convert to vector of vectors for mutability.
+          (let ((g (make-vector R 0)))
+            (let ((i 0))
+              (let ((rest grid))
+                (let fill ((rest rest) (i 0))
+                  (if (null? rest)
+                      0
+                      (begin
+                        (let ((row (make-vector C 0)))
+                          (let ((j 0))
+                            (let ((r2 (car rest)))
+                              (let f2 ((r2 r2) (j 0))
+                                (if (null? r2)
+                                    0
+                                    (begin
+                                      (set-car! (list-tail row j) (car r2))
+                                      (f2 (cdr r2) (+ j 1)))))))
+                          (set-car! (list-tail g i) row)
+                          (fill (cdr rest) (+ i 1)))))))))
+          ;; Now g[i][j] is mutable.
+          (let row-loop ((r 0))
+            (if (< r R)
+                (begin
+                  (let col-loop ((c 0))
+                    (if (< c C)
+                        (begin
+                          (let ((live 0) (cur (car (list-tail (car (list-tail g r)) c))))
+                            (let ((dr-min (max 0 (- r 1)))
+                                  (dr-max (min (- R 1) (+ r 1)))
+                                  (dc-min (max 0 (- c 1)))
+                                  (dc-max (min (- C 1) (+ c 1))))
+                              (let dl ((dr dr-min))
+                                (if (<= dr dr-max)
+                                    (let cl ((dc dc-min))
+                                      (if (<= dc dc-max)
+                                          (begin
+                                            (if (and (or (not (= dr r)) (not (= dc c))) (= 1 (car (list-tail (car (list-tail g dr)) dc))))
+                                                (set! live (+ live 1))
+                                                0)
+                                            (cl (+ dc 1)))
+                                          0))
+                                    0)))
+                            (if (= cur 1)
+                                (if (or (< live 2) (> live 3))
+                                    (set-car! (list-tail (car (list-tail g r)) c) 2)
+                                    0)
+                                (if (= live 3)
+                                    (set-car! (list-tail (car (list-tail g r)) c) 3)
+                                    0)))
+                          (col-loop (+ c 1)))
+                        0)))
+                  (row-loop (+ r 1)))
+                0)))
+          0))))
+
+;; Display helper: print a row of integers separated by spaces.
+(define (display-row row)
+  (let loop ((r row) (first #t))
+    (cond ((null? r) (begin (newline) 0))
+          (else
+           (if first (display (car r)) (begin (display " ") (display (car r))))
+           (loop (cdr r) #f)))))
+
+(define (display-grid grid)
+  (let loop ((g grid))
+    (if (null? g)
+        0
+        (begin
+          (display-row (car g))
+          (loop (cdr g))))))
+
+;; Test cases as list-of-lists literals.
+(define (run-case n grid)
+  (display "CASE")
+  (display n)
+  (display "=")
+  (newline)
+  (solve grid)
+  (display-grid grid))
+
+;; Build grid as a deep list structure compatible with vector operations.
+;; We need car/list-tail to mutate. Let's just pass the lists directly
+;; and mutate via set-car! after converting each row to a proper list
+;; where cells are car-mutable. Actually list-tail is non-mutating access.
+;; Better approach: keep grids as lists of lists and use set-car! on the
+;; cell's cons cell. But original cell might be a literal. We need mutable cells.
+;; Solution: rebuild each cell as a cons holding the value.
+
+(define (grid-from raw)
+  (let ((R (length raw)))
+    (let ((out '()))
+      (let loop ((r 0))
+        (if (< r R)
+            (let ((row-src (list-ref raw r)))
+              (let ((row-out '()))
+                (let fill ((i (- (length row-src) 1)))
+                  (if (< i 0)
+                      0
+                      (begin
+                        (set! row-out (cons (cons (list-ref row-src i) '()) row-out))
+                        (fill (- i 1))))))
+              (set! out (cons (cons (car row-out) '()) out))
+              ;; Need row to be a list of cons cells (mutable). row-out already is.
+              (set-car! (car out) row-out)
+              (loop (+ r 1)))
+            0))
+      out)))
+
+;; Fix: build grid where each row is a list of (value . _) cons cells,
+;; and the outer grid is a list of rows, but we also need the outer grid
+;; itself to allow mutating row references. Use cons trick.
+
+(define (build-grid raw)
+  (let ((n (length raw)))
+    (let ((rows '()))
+      (let rloop ((i (- n 1)))
+        (if (< i 0)
+            0
+            (let ((row-raw (list-ref raw i)))
+              (let ((cn (length row-raw)))
+                (let ((cells '()))
+                  (let cloop ((j (- cn 1)))
+                    (if (< j 0)
+                        0
+                        (begin
+                          (set! cells (cons (cons (list-ref row-raw j) '()) cells))
+                          (cloop (- j 1))))))
+                (set! rows (cons (cons cells '()) rows))
+                (set-car! (car rows) cells)
+                (rloop (- i 1)))))))
+      ;; rows is a list of cons cells each pointing to the row's cell list.
+      rows)))
+
+(define (solve-m g R C)
+  (let row-loop ((r 0))
+    (if (< r R)
+        (begin
+          (let ((row (car (list-tail g r))))
+            (let col-loop ((c 0))
+              (if (< c C)
+                  (begin
+                    (let ((cell-cons (list-tail row c)))
+                      (let ((cur (car cell-cons)) (live 0))
+                        (let ((dr-min (max 0 (- r 1)))
+                              (dr-max (min (- R 1) (+ r 1)))
+                              (dc-min (max 0 (- c 1)))
+                              (dc-max (min (- C 1) (+ c 1))))
+                          (let dl ((dr dr-min))
+                            (if (<= dr dr-max)
+                                (let cl ((dc dc-min))
+                                  (if (<= dc dc-max)
+                                      (begin
+                                        (if (and (or (not (= dr r)) (not (= dc c)))
+                                                 (= 1 (car (list-tail (car (list-tail g dr)) dc))))
+                                            (set! live (+ live 1))
+                                            0)
+                                        (cl (+ dc 1)))
+                                      0))
+                                0)))
+                        (if (= cur 1)
+                            (if (or (< live 2) (> live 3))
+                                (set-car! cell-cons 2)
+                                0)
+                            (if (= live 3)
+                                (set-car! cell-cons 3)
+                                0))))
+                    (col-loop (+ c 1)))
+                  0)))
+          (row-loop (+ r 1)))
+        0))
+  0)
+
+(define (print-grid g)
+  (let loop ((rows g))
+    (if (null? rows)
+        0
+        (begin
+          (let ((row (car rows)))
+            (let cloop ((cs row) (first #t))
+              (cond ((null? cs) (newline))
+                    (else
+                     (if first
+                         (display (car (car cs)))
+                         (begin (display " ") (display (car (car cs)))))
+                     (cloop (cdr cs) #f)))))
+          (loop (cdr rows))))))
+
+(define (run n raw)
+  (let ((g (build-grid raw)))
+    (let ((R (length raw)))
+      (let ((C (if (null? raw) 0 (length (car raw)))))
+        (display "CASE")
+        (display n)
+        (display "=")
+        (newline)
+        (solve-m g R C)
+        (print-grid g)))))
+
+(run 0 '((1)))
+(run 1 '((0)))
+(run 2 '((0 1 0) (0 1 0) (0 1 0)))
+(run 3 '((1 1 1) (1 1 1) (1 1 1)))
+(run 4 '((1 0 1) (0 1 0) (1 0 1)))
+(run 5 '((1 1 0 0) (1 0 0 1) (0 0 1 1) (0 1 1 0)))
+(run 6 '((1 0 1 0 1)))
+(run 7 '((1 1) (1 0)))

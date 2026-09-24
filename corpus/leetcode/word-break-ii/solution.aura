@@ -1,0 +1,101 @@
+;; Word Break II - returns all possible sentences
+;; Uses memoization on index to avoid exponential blowup
+
+(define (substring? str start end sub)
+  ;; checks if substring of str from start (inclusive) to end (exclusive) equals sub
+  (let ((len-end (- end start))
+        (len-sub (string-length sub)))
+    (if (= len-end len-sub)
+        (let loop ((i 0))
+          (cond ((= i len-sub) #t)
+                ((char=? (string-ref str (+ start i)) (string-ref sub i)) (loop (+ i 1)))
+                (else #f)))
+        #f)))
+
+(define (make-memo)
+  (let ((cache '()))
+    (lambda (key)
+      (let loop ((entries cache))
+        (cond ((null? entries) #f)
+              ((= (car (car entries)) key) (cdr (car entries)))
+              (else (loop (cdr entries))))))
+    (lambda (key val)
+      (set! cache (cons (cons key val) cache)))))
+
+(define (solve s word-dict)
+  (let* ((n (string-length s))
+         (dict (list->vector word-dict))
+         (dw (vector-length dict))
+         (memo (make-memo))
+         ;; can-break[i] = can s[i..n-1] be broken?
+         (can-break (make-vector (+ n 1) #f)))
+    ;; Build can-break from back to front
+    (vector-set! can-break n #t)
+    (let ((ci (- n 1)))
+      (let loop-i ((i ci))
+        (when (>= i 0)
+          (let loop-j ((j 0) (found #f))
+            (cond (found (vector-set! can-break i #t))
+                  ((>= j dw)
+                   (vector-set! can-break i #f)
+                   (loop-i (- i 1)))
+                  (else
+                   (let ((w (vector-ref dict j))
+                         (wlen (string-length (vector-ref dict j))))
+                     (if (and (<= (+ i wlen) n)
+                              (substring? s i (+ i wlen) w)
+                              (vector-ref can-break (+ i wlen)))
+                         (loop-j dw #t)
+                         (loop-j (+ j 1) found)))))))))
+    ;; Recursive helper with memoization
+    (define (helper i)
+      (let ((cached (memo i)))
+        (if cached
+            cached
+            (let ((results '()))
+              (let loop-j ((j 0))
+                (cond ((>= j dw) '())
+                  (else
+                   (let ((w (vector-ref dict j))
+                         (wlen (string-length (vector-ref dict j))))
+                     (if (and (<= (+ i wlen) n)
+                              (substring? s i (+ i wlen) w)
+                              (vector-ref can-break (+ i wlen)))
+                         (let ((sub-results (helper (+ i wlen))))
+                           (let loop-sub ((subs sub-results))
+                             (cond ((null? subs)
+                                    (loop-j (+ j 1)))
+                                   (else
+                                    (set! results
+                                          (cons (string-append w (if (null? (car subs)) "" (string-append " " (car subs))))
+                                                results))
+                                    (loop-sub (cdr subs))))))
+                         (loop-j (+ j 1)))))))
+              (memo i results)
+              results))))
+    (let* ((raw (helper 0))
+           (rev (reverse raw)))
+      ;; Convert list to vector
+      (list->vector rev))))
+
+;; Display helper for vector of strings
+(define (display-vector v)
+  (display "[")
+  (let loop ((i 0))
+    (when (< i (vector-length v))
+      (when (> i 0) (display ","))
+      (display "\"")
+      (display (vector-ref v i))
+      (display "\"")
+      (loop (+ i 1))))
+  (display "]"))
+
+;; Test cases
+(display "CASE0=") (display-vector (solve "catsanddog" #("cat" "cats" "and" "sand" "dog"))) (newline)
+(display "CASE1=") (display-vector (solve "pineapplepenapple" #("apple" "pen" "applepen" "pine" "pineapple"))) (newline)
+(display "CASE2=") (display-vector (solve "catsandog" #("cats" "dog" "sand" "and" "cat"))) (newline)
+(display "CASE3=") (display-vector (solve "a" #("a"))) (newline)
+(display "CASE4=") (display-vector (solve "aaaa" #("a" "aa"))) (newline)
+(display "CASE5=") (display-vector (solve "abc" #("a" "b" "c" "ab" "bc" "abc"))) (newline)
+(display "CASE6=") (display-vector (solve "leetcoder" #("leet" "code" "coder" "leetcoder"))) (newline)
+(display "CASE7=") (display-vector (solve "ab" #("a" "b"))) (newline)

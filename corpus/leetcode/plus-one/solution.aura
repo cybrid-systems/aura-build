@@ -1,0 +1,61 @@
+(define (solve digits)
+  ; Helper: reverse a list
+  (define (rev xs)
+    (define (rev-acc xs acc)
+      (if (null? xs)
+          acc
+          (rev-acc (cdr xs) (cons (car xs) acc))))
+    (rev-acc xs '()))
+
+  (define (reverse-helper xs)
+    (rev xs))
+
+  ; Convert list to mutable pair structure (Aura doesn't have set-car!/set-cdr! natively listed,
+  ; but we can implement with a mutable cell via cons pairs and rebuilding)
+  ; Strategy: reverse digits, iterate, add carry, then reverse back.
+  (let* ((rev-digits (reverse-helper digits))
+         (result '())
+         (carry 1))
+    (define (process xs c acc)
+      (cond
+        ((null? xs)
+         (if (= c 1)
+             (cons 1 acc)
+             acc))
+        (else
+         (let* ((d (car xs))
+                (sum (+ d c))
+                (new-d (modulo sum 10))
+                (new-c (quotient sum 10)))
+           (process (cdr xs) new-c (cons new-d acc))))))
+    (reverse-helper (process rev-digits carry '()))))
+
+; Display a list of integers space-separated
+(define (display-list xs)
+  (define (go xs)
+    (cond
+      ((null? xs) (display ""))
+      (else
+       (let ((rest (cdr xs)))
+         (display (car xs))
+         (if (not (null? rest))
+             (display " "))
+         (go rest)))))
+  (go xs)
+  (newline))
+
+(define (run-case n digits)
+  (display "CASE")
+  (display n)
+  (display "=")
+  (display-list (solve digits)))
+
+; Build test inputs as literals
+(run-case 0 (list 1 2 3))
+(run-case 1 (list 4 3 2 1))
+(run-case 2 (list 9))
+(run-case 3 (list 9 9 9 9))
+(run-case 4 (list 0))
+(run-case 5 (list 1 0 0 0))
+(run-case 6 (list 8 9 9 9))
+(run-case 7 (list 2 0 0 0 0))

@@ -1,0 +1,258 @@
+;; Sliding Window Median using two heaps with lazy deletion.
+;; max-heap 'lo' holds lower half (top = largest of lower half).
+;; min-heap 'hi' holds upper half (top = smallest of upper half).
+;; We store elements as (val . id) cells (Aura pairs) so we can identify them.
+
+(define (make-pq)
+  ;; simple binary heap implemented as a list with helper functions
+  '())
+
+(define (heap-push h x cmp)
+  ;; push x onto heap h according to comparator cmp
+  (let ((nh (cons x h)))
+    (define (sift-up i)
+      (let ((p (quotient (- i 1) 2)))
+        (if (or (= i 0) (cmp (list-ref nh p) x))
+            nh
+            (begin
+              (set! nh (list-swap nh i p))
+              (sift-up p)))))
+    (set! nh (sift-up (- (length nh) 1)))
+    nh))
+
+(define (list-swap lst i j)
+  ;; swap elements at indices i and j in list lst (returns new list)
+  (define (helper lst ii jj a b)
+    (cond ((null? lst) '())
+          ((= ii 0) (cons b (helper (cdr lst) (- ii 1) (- jj 1) a (car lst))))
+          ((= jj 0) (cons a (helper (cdr lst) (- ii 1) (- jj 1) (car lst) b)))
+          (else (cons (car lst) (helper (cdr lst) (- ii 1) (- jj 1) a b)))))
+  (helper lst i j (list-ref lst i) (list-ref lst j)))
+
+;; This is getting too complex. Let me use a simpler approach with sorted lists
+;; and direct manipulation, since n can be up to 200_000 and we need O(n log k).
+
+;; Better approach: use two sorted "multisets" but implement lazily with
+;; two heaps (priority queues) and a hash-map for lazy deletion.
+
+;; Since Aura doesn't have built-in hash maps, I'll use a different approach:
+;; maintain two sorted lists and rebalance. But that could be O(k) per op.
+
+;; Let me implement a proper binary heap.
+
+(define (make-heap cmp)
+  ;; returns a heap object as a list: (cmp . data)
+  (cons cmp '()))
+
+(define (heap-data h) (cdr h))
+(define (heap-cmp h) (car h))
+(define (heap-set-data! h d) (set-cdr! h d))
+
+(define (heap-size h)
+  (length (heap-data h)))
+
+(define (heap-empty? h)
+  (null? (heap-data h)))
+
+(define (heap-peek h)
+  (car (heap-data h)))
+
+(define (heap-swap! h i j)
+  (let ((d (heap-data h)))
+    (let ((a (list-ref d i)) (b (list-ref d j)))
+      (set! d (list-swap-in d i j))
+      (heap-set-data! h d))))
+
+(define (list-swap-in lst i j)
+  (define (helper lst ii jj)
+    (cond ((null? lst) '())
+          ((= ii 0) (cons (list-ref lst j) (helper (cdr lst) (- ii 1) (- jj 1))))
+          ((= jj 0) (cons (list-ref lst i) (helper (cdr lst) (- ii 1) (- jj 1))))
+          (else (cons (car lst) (helper (cdr lst) (- ii 1) (- jj 1))))))
+  (helper lst i j))
+
+;; This list-based heap is too slow. Let me use vectors-like via lists with
+;; array semantics using a mutable list approach. Actually, since we need
+;; O(n log k) with n up to 200_000, we need an efficient heap.
+
+;; Let me use a different strategy: balanced BST simulation via sorted list
+;; with insertion O(k) but k can be up to n, so this is O(n*k) worst case.
+
+;; A pragmatic solution: use the "two heaps with lazy deletion" but implement
+;; the heaps as sorted lists for simplicity, accepting O(n*k) complexity.
+;; For n=200000 this may be slow but should still complete.
+
+;; Actually, let me implement a real binary heap using arrays (Aura lists as arrays).
+
+;; Aura doesn't have random access lists. Let me think differently.
+
+;; I'll implement a treap (randomized BST) which gives O(log k) per operation
+;; and is easier to implement with lists.
+
+;; Treap node: (priority . (key . (left . right)))
+;; priority is random, key is the value (with id for duplicates).
+
+(define (make-node key id priority left right)
+  (list priority key id left right))
+
+(define (node-key n) (list-ref n 1))
+(define (node-id n) (list-ref n 2))
+(define (node-left n) (list-ref n 3))
+(define (node-right n) (list-ref n 4))
+(define (node-priority n) (list-ref n 0))
+
+(define (rotate-right n)
+  (let ((l (node-left n)))
+    (make-node (node-key l) (node-id l) (node-priority l)
+               (node-left l)
+               (make-node (node-key n) (node-id n) (node-priority n)
+                          (node-right l)
+                          (node-right n)))))
+
+(define (rotate-left n)
+  (let ((r (node-right n)))
+    (make-node (node-key r) (node-id r) (node-priority r)
+               (make-node (node-key n) (node-id n) (node-priority n)
+                          (node-left n)
+                          (node-left r))
+               (node-right r))))
+
+(define (treap-insert n key id priority)
+  (if (null? n)
+      (make-node key id priority '() '())
+      (let ((nk (node-key n)) (ni (node-id n)) (np (node-priority n)))
+        (if (< key nk)
+            (let ((new-left (treap-insert (node-left n) key id priority)))
+              (if (> (node-priority new-left) np)
+                  (rotate-right (make-node nk ni np new-left (node-right n)))
+                  (make-node nk ni np new-left (node-right n))))
+            (if (> key nk)
+                (let ((new-right (treap-insert (node-right n) key id priority)))
+                  (if (> (node-priority new-right) np)
+                      (rotate-left (make-node nk ni np (node-left n) new-right))
+                      (make-node nk ni np (node-left n) new-right)))
+                ;; equal keys: compare by id
+                (if (< id ni)
+                    (let ((new-left (treap-insert (node-left n) key id priority)))
+                      (if (> (node-priority new-left) np)
+                          (rotate-right (make-node nk ni np new-left (node-right n)))
+                          (make-node nk ni np new-left (node-right n))))
+                    (let ((new-right (treap-insert (node-right n) key id priority)))
+                      (if (> (node-priority new-right) np)
+                          (rotate-left (make-node nk ni np (node-left n) new-right))
+                          (make-node nk ni np (node-left n) new-right)))))))))
+
+(define (treap-delete n key id)
+  (cond ((null? n) '())
+        ((and (= (node-key n) key) (= (node-id n) id))
+         (let ((l (node-left n)) (r (node-right n)))
+           (cond ((null? l) r)
+                 ((null? r) l)
+                 ((> (node-priority l) (node-priority r))
+                  (rotate-right (make-node (node-key n) (node-id n) (node-priority n) l r)))
+                 (else
+                  (rotate-left (make-node (node-key n) (node-id n) (node-priority n) l r))))))
+        ((< key (node-key n))
+         (make-node (node-key n) (node-id n) (node-priority n)
+                    (treap-delete (node-left n) key id)
+                    (node-right n)))
+        ((> key (node-key n))
+         (make-node (node-key n) (node-id n) (node-priority n)
+                    (node-left n)
+                    (treap-delete (node-right n) key id)))
+        (else ;; equal key, different id
+         (if (< id (node-id n))
+             (make-node (node-key n) (node-id n) (node-priority n)
+                        (treap-delete (node-left n) key id)
+                        (node-right n))
+             (make-node (node-key n) (node-id n) (node-priority n)
+                        (node-left n)
+                        (treap-delete (node-right n) key id))))))
+
+(define (treap-kth n k)
+  ;; 0-indexed kth smallest
+  (if (null? n) '()
+      (let ((lsize (treap-size (node-left n))))
+        (cond ((< k lsize) (treap-kth (node-left n) k))
+              ((= k lsize) n)
+              (else (treap-kth (node-right n) (- k lsize 1)))))))
+
+(define (treap-size n)
+  (if (null? n) 0
+      (+ 1 (treap-size (node-left n)) (treap-size (node-right n)))))
+
+;; Random number generator (simple LCG for deterministic-ish behavior)
+(define rand-state 12345)
+
+(define (rand-next)
+  (set! rand-state (modulo (* rand-state 1103515245) 2147483648))
+  (+ rand-state 12345))
+
+(define (random-priority)
+  (rand-next))
+
+(define (solve nums k)
+  (let ((n (length nums)))
+    (define treap '())
+    (define result '())
+    (define (insert-val v id)
+      (set! treap (treap-insert treap v id (random-priority))))
+    (define (delete-val v id)
+      (set! treap (treap-delete treap v id)))
+    (define (get-median)
+      (let ((sz (treap-size treap)))
+        (if (= (modulo k 2) 1)
+            (node-key (treap-kth treap (quotient (- k 1) 2)))
+            (+ (node-key (treap-kth treap (quotient (- k 2) 2)))
+               (node-key (treap-kth treap (- (quotient k 2) 1)))))))
+    ;; Process windows
+    (define (loop i inserted)
+      (cond ((< i n)
+             (insert-val (list-ref nums i) i)
+             (set! inserted (+ inserted 1))
+             (if (>= inserted k)
+                 (begin
+                   (set! result (append result (list (get-median))))
+                   (delete-val (list-ref nums (- i (- k 1))) (- i (- k 1)))
+                   (set! inserted (- inserted 1)))
+                 '())
+             (loop (+ i 1) inserted))
+            (else result)))
+    (loop 0 0)))
+
+;; Display list helper
+(define (display-list lst)
+  (display "[")
+  (define (loop l first?)
+    (cond ((null? l) '())
+          (else
+           (if (not first?) (display ",") '())
+           (display (number->string (car l)))
+           (loop (cdr l) #f))))
+  (loop lst #t)
+  (display "]"))
+
+;; Test cases
+(define cases
+  (list
+    (list (list 1 3 -1 -3 5 3 6 7) 3)
+    (list (list 1 3 -1 -3 5 3 6 7) 2)
+    (list (list 1 3 -1 -3 5 3 6 7) 1)
+    (list (list 1 3 -1 -3 5 3 6 7) 4)
+    (list (list 1) 1)
+    (list (list 2 2 2 2) 2)
+    (list (list 5 4 3 2 1) 3)
+    (list (list 1 2 3 4 5 6 7 8) 4)))
+
+(define (run-cases cs i)
+  (cond ((null? cs) '())
+        (else
+         (let ((c (car cs)))
+           (let ((nums (car c)) (k (car (cdr c))))
+             (let ((res (solve nums k)))
+               (display (string-append "CASE" (number->string i) "="))
+               (display-list res)
+               (newline)
+               (run-cases (cdr cs) (+ i 1))))))))
+
+(run-cases cases 0)

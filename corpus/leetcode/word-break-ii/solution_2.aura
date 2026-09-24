@@ -1,0 +1,178 @@
+(define (string-contains? s sub)
+  ;; naive substring check
+  (let ((n (string-length s))
+        (m (string-length sub)))
+    (let loop ((i 0))
+      (cond
+        ((> (+ i m) n) #f)
+        ((string=? (substring s i (+ i m)) sub) #t)
+        (else (loop (+ i 1)))))))
+
+(define (can-break? s word-set n)
+  ;; can-break[i] = can s[0..i-1] be segmented
+  (let ((dp (make-vector (+ n 1) #f)))
+    (vector-set! dp 0 #t)
+    (let loop ((i 1))
+      (cond
+        ((> i n) #f)
+        (else
+         (let inner ((j 0))
+           (cond
+             ((> j (- i 1))
+              (let ((cur (vector-ref dp i)))
+                cur))
+             ((and (vector-ref dp j)
+                   (member? (substring s j i) word-set))
+              (begin
+                (vector-set! dp i #t)
+                (loop (+ i 1))))
+             (else (inner (+ j 1))))))
+        ))))
+
+(define (member? x lst)
+  (cond
+    ((null? lst) #f)
+    ((string=? x (car lst)) #t)
+    (else (member? x (cdr lst)))))
+
+(define (dfs s word-set n start memo)
+  (cond
+    ((assoc start memo)
+     =>
+     (lambda (pair) (cdr pair)))
+    (else
+     (let ((results '()))
+       (cond
+         ((= start n)
+          (set! results (cons '() results)))
+         (else
+          (let loop ((end (+ start 1)))
+            (cond
+              ((> end n) #f)
+              (else
+               (let ((word (substring s start end)))
+                 (cond
+                   ((member? word word-set)
+                    (let ((sub (dfs s word-set n end memo)))
+                      (let inner ((subs sub))
+                        (cond
+                          ((null? subs) #f)
+                          (else
+                           (set! results
+                                 (cons (cons word (car subs)) results))
+                           (inner (cdr subs))))))))
+                 (loop (+ end 1)))))))
+       (set! memo (cons (cons start results) memo))
+       results))))
+
+(define (sentences->strings sents)
+  (cond
+    ((null? sents) '())
+    (else
+     (cons (join-words (car sents)) (sentences->strings (cdr sents))))))
+
+(define (join-words words)
+  (cond
+    ((null? (cdr words)) (car words))
+    (else
+     (string-append (car words) " " (join-words (cdr words))))))
+
+(define (solve s word-dict)
+  (let* ((n (string-length s))
+         (word-set word-dict)
+         (can (can-break? s word-set n))
+         (memo '()))
+    (cond
+      ((not can) '())
+      (else
+       (let* ((raw (dfs s word-set n 0 memo))
+              (strs (sentences->strings raw)))
+         (vector-of-list strs))))))
+
+;; Helper: convert list to vector
+(define (vector-of-list lst)
+  (let ((n (length lst))
+        (v (make-vector 0 #f)))
+    (let loop ((i 0) (l lst))
+      (cond
+        ((null? l) v)
+        (else
+         (vector-set! v i (car l))
+         (loop (+ i 1) (cdr l)))))))
+
+;; Adjust make-vector default since Aura may not allow that — use list-of-vector builder
+
+(define (list->vector lst)
+  (list->vector-helper lst 0 (make-vector (length lst) "")))
+
+(define (list->vector-helper lst i v)
+  (cond
+    ((null? lst) v)
+    (else
+     (vector-set! v i (car lst))
+     (list->vector-helper (cdr lst) (+ i 1) v))))
+
+;; Override solve to use list->vector
+(define (solve s word-dict)
+  (let* ((n (string-length s))
+         (can (can-break? s word-dict n))
+         (memo '()))
+    (cond
+      ((not can) (list->vector '()))
+      (else
+       (let* ((raw (dfs s word-dict n 0 memo))
+              (strs (sentences->strings raw)))
+         (list->vector strs))))))
+
+(define (display-list-as-vector lst)
+  (cond
+    ((null? lst)
+     (begin (display "[") (display "]") (display " ")))
+    (else
+     (begin
+       (display "[")
+       (display (car lst))
+       (display "]")
+       (display " ")))))
+
+(define (display-vec v)
+  (let ((n (vector-length v)))
+    (display "[")
+    (let loop ((i 0))
+      (cond
+        ((>= i n) #f)
+        (else
+         (cond
+           ((> i 0) (display ", "))
+           (else #f))
+         (display "\"")
+         (display (vector-ref v i))
+         (display "\"")
+         (loop (+ i 1))))))
+  (display "]"))
+
+;; ===== TEST CASES =====
+(let ((cases
+       (list
+        (list "catsanddog" (list "cat" "cats" "and" "sand" "dog"))
+        (list "pineapplepenapple" (list "apple" "pen" "applepen" "pine" "pineapple"))
+        (list "catsandog" (list "cats" "dog" "sand" "and" "cat"))
+        (list "a" (list "a"))
+        (list "aaaa" (list "a" "aa"))
+        (list "abc" (list "a" "b" "c" "ab" "bc" "abc"))
+        (list "leetcoder" (list "leet" "code" "coder" "leetcoder"))
+        (list "ab" (list "a" "b")))))
+  (let loop ((i 0) (cs cases))
+    (cond
+      ((null? cs) #f)
+      (else
+       (let* ((c (car cs))
+              (s (car c))
+              (wd (car (cdr c)))
+              (result (solve s wd)))
+         (display "CASE")
+         (display i)
+         (display "=")
+         (display-vec result)
+         (newline)
+         (loop (+ i 1) (cdr cs)))))))

@@ -1,0 +1,132 @@
+;; Helpers for list operations
+(define (list-length xs)
+  (if (null? xs) 0 (+ 1 (list-length (cdr xs)))))
+
+(define (list-ref xs i)
+  (if (= i 0) (car xs) (list-ref (cdr xs) (- i 1))))
+
+(define (append-list a b)
+  (if (null? a) b (cons (car a) (append-list (cdr a) b))))
+
+;; Parse input string into a list of tokens (numbers and "CASEi=" prefix pieces)
+(define (tokenize s)
+  ;; split by spaces
+  (define (split-by-space str)
+    (let loop ((remaining str) (acc '()) (cur ""))
+      (cond
+        ((null? remaining)
+         (reverse (if (= (string-length cur) 0) acc (cons cur acc))))
+        (else
+         (let ((c (string-ref remaining 0))
+               (rest (substring remaining 1 (string-length remaining))))
+           (if (char=? c #\space)
+               (loop rest
+                     (if (= (string-length cur) 0)
+                         acc
+                         (cons cur acc))
+                     "")
+               (loop rest acc (string-append cur (string c))))))))
+  (split-by-space s))
+
+(define (string->int s)
+  (let loop ((i 0))
+    (if (>= i (string-length s)) 0
+        (+ (* (loop (+ i 1))) 0))))
+
+;; Actually we need real int parsing - use a recursive digit parser
+(define (parse-int s)
+  (let ((len (string-length s)))
+    (let loop ((i 0) (acc 0) (neg #f))
+      (cond
+        ((>= i len) (if neg (- acc) acc))
+        ((char=? (string-ref s i) #\-)
+         (loop (+ i 1) acc #t))
+        (else
+         (let ((d (- (char->integer (string-ref s i)) (char->integer #\0))))
+           (loop (+ i 1) (+ (* acc 10) d) neg)))))))
+
+;; Build graph from tokens. tokens = (N k0 a0 a1 ... k1 ... k_{N-1} ...)
+(define (build-graph tokens)
+  (let ((N (parse-int (car tokens))))
+    (let loop ((i 0) (idx 1) (rooms '()))
+      (if (= i N)
+          (reverse rooms)
+          (let* ((ki (parse-int (list-ref tokens idx)))
+                 (start-idx (+ idx 1))
+                 (end-idx (+ start-idx ki)))
+            (let keys-loop ((j start-idx) (kls '()))
+              (if (>= j end-idx)
+                  (loop (+ i 1) end-idx (cons (reverse kls) rooms))
+                  (keys-loop (+ j 1)
+                             (cons (parse-int (list-ref tokens j)) kls)))))))))
+
+;; DFS
+(define (dfs-reachable? graph visited room)
+  (if (list-ref visited room)
+      visited
+      (let* ((new-visited (list-set visited room #t))
+             (neighbors (list-ref graph room)))
+        (let dfs-loop ((ns neighbors) (v new-visited))
+          (if (null? ns) v
+              (dfs-loop (cdr ns) (dfs-reachable? graph v (car ns))))))))
+
+(define (list-set lst i val)
+  (let loop ((j 0) (l lst) (acc '()))
+    (cond
+      ((null? l) (reverse acc))
+      ((= j i)
+       (append-list (reverse acc) (cons val (cdr l))))
+      (else
+       (loop (+ j 1) (cdr l) (cons (car l) acc))))))
+
+(define (all-true? lst n)
+  (let loop ((i 0) (l lst))
+    (cond
+      ((null? l) #t)
+      ((>= i n) #t)
+      (else
+       (if (car l) (loop (+ i 1) (cdr l)) #f)))))
+
+(define (solve case-id)
+  ;; Case data is embedded below
+  (let ((input-str (case-input case-id))
+        (graph (build-graph (case-tokens case-id))))
+    (let* ((N (list-length graph))
+          (visited (let mkv ((i 0) (acc '()))
+                     (if (>= i N) (reverse acc) (mkv (+ i 1) (cons #f acc)))))
+          (final-visited (dfs-reachable? graph visited 0)))
+      (if (all-true? final-visited N) "True" "False"))))
+
+;; Embedded test cases
+;; We'll store each case as a flat list of tokens (the numbers after "CASEi=")
+;; Case 0: 3 rooms: room0=[1,2], room1=[0], room2=[]  => True
+;; Case 1: 4 rooms with disconnected component => False
+;; Case 2: single room => True
+;; Case 3: 2 rooms, both connect each other => True
+;; Case 4: 3 rooms, room0=[1], room1=[], room2=[] => False
+
+(define case-tokens-list
+  (list
+   (list "3" "3" "1" "2" "0" "1" "0" "0")  ;; CASE0 -> True
+   (list "4" "1" "1" "1" "2" "1" "3" "0")   ;; CASE1 -> False (room0->1, room1->2, room2->3, room3->0 only)
+   (list "1" "0")                            ;; CASE2 -> True
+   (list "2" "1" "1" "1" "0")                ;; CASE3 -> True
+   (list "3" "1" "1" "0" "0" "0")            ;; CASE4 -> False
+   ))
+
+(define (case-tokens id)
+  (list-ref case-tokens-list id))
+
+(define (case-input id) "")
+
+(define (main)
+  (let loop ((i 0))
+    (if (>= i 5)
+        'done
+        (begin
+          (display "CASE") (display i) (display "=")
+          (display (solve i))
+          (newline)
+          (loop (+ i 1))))))
+
+(main)

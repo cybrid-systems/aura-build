@@ -1,0 +1,131 @@
+;; Helper: append a value to a list
+(define (append-one lst v)
+  (if (null? lst)
+      (list v)
+      (cons (car lst) (append-one (cdr lst) v))))
+
+;; Helper: reverse a list
+(define (my-reverse lst)
+  (define (rev acc lst)
+    (if (null? lst)
+        acc
+        (rev (cons (car lst) acc) (cdr lst))))
+  (rev '() lst))
+
+;; Helper: length of a list
+(define (my-length lst)
+  (if (null? lst) 0 (+ 1 (my-length (cdr lst)))))
+
+;; Helper: get element at index (0-based) from a list (graph is a list of lists)
+(define (list-ref lst i)
+  (if (= i 0)
+      (car lst)
+      (list-ref (cdr lst) (- i 1))))
+
+;; Get number of nodes (length of graph)
+(define (num-nodes graph) (my-length graph))
+
+;; DFS from node 'u' to target, building path
+;; Returns list of paths (each path is a list of nodes, in order from source to current point)
+;; Uses accumulator to build path during DFS
+(define (dfs graph n target u path)
+  (if (= u target)
+      ;; Reached target - record the path
+      (list (my-reverse path))
+      ;; Otherwise explore neighbors
+      (let ((neighbors (list-ref graph u)))
+        (if (null? neighbors)
+            '()
+            (let ((new-path (cons u path)))
+              (define (explore nbrs acc)
+                (if (null? nbrs)
+                    acc
+                    (let ((nbr (car nbrs)))
+                      (explore (cdr nbrs)
+                               (append-one acc
+                                           (dfs graph n target nbr new-path))))))
+              (explore neighbors '()))))))
+
+;; Wrapper DFS starting from node 0 with empty path
+(define (find-all-paths graph)
+  (let ((n (num-nodes graph)))
+    (dfs graph n (- n 1) 0 '())))
+
+;; Display a single path as [a,b,c]
+(define (display-path path)
+  (define (disp-rec lst)
+    (if (null? lst)
+        '()
+        (let ((rest (disp-rec (cdr lst))))
+          (if (null? rest)
+              (cons (string-append (number->string (car lst)) "]") rest)
+              (cons (string-append (number->string (car lst)) ",") rest)))))
+  (let ((parts (disp-rec path)))
+    (define (show parts)
+      (if (null? parts)
+          '()
+          (cons (car parts) (show (cdr parts)))))
+    ;; Build display
+    (display "[")
+    (show parts)))
+
+;; Hmm, the above display-path is complex. Let's simplify.
+(define (display-path-simple path)
+  (display "[")
+  (define (walk lst)
+    (if (null? lst)
+        '()
+        (begin
+          (display (number->string (car lst)))
+          (if (null? (cdr lst))
+              '()
+              (display ","))
+          (walk (cdr lst)))))
+  (walk path)
+  (display "]"))
+
+;; Display list of paths as [[a,b,c],[d,e,f]]
+(define (display-paths paths)
+  (display "[")
+  (define (walk lst)
+    (if (null? lst)
+        '()
+        (begin
+          (display-path-simple (car lst))
+          (if (null? (cdr lst))
+              '()
+              (display ","))
+          (walk (cdr lst)))))
+  (walk paths)
+  (display "]"))
+
+;; Solve function
+(define (solve graph)
+  (find-all-paths graph))
+
+;; ===== Test cases =====
+(define test0 '((1 2) (3) (3) ()))
+(define test1 '((1 2) (3) (3) (4) ()))
+(define test2 '((1) (2) (3) (4) ()))
+(define test3 '((1 2 3) (3) (3) ()))
+(define test4 '((1) (2 3) (3) ()))
+(define test5 '((4 3 1) (3 2 4) (3) (4) ()))
+(define test6 '((1) (2 3) (3) (4) (5) ()))
+(define test7 '((1 2 3 4 5) (3 4) (3 5) (5) (5) ()))
+
+(define (run-test i g)
+  (let ((result (solve g)))
+    (display "CASE")
+    (display (number->string i))
+    (display "=")
+    (display-paths result)
+    (newline)))
+
+(run-test 0 test0)
+(run-test 1 test1)
+(run-test 2 test2)
+(run-test 3 test3)
+(run-test 4 test4)
+(run-test 5 test5)
+(run-test 6 test6)
+(run-test 7 test7)

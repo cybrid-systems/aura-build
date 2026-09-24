@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:13:54Z",
+      "ts_local": "2026-09-24 23:13:54 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1724,
+        "total_characters": 0,
+        "prompt_tokens": 1001,
+        "completion_tokens": 723,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.044,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 5:15: parse error: expected expression, got invalid character\n   |\n  5 |          (c1 #\\?)\n   |               ^^\nerror: 1:18: unbound variable: solve\n   |\n  1 | (display-result (solve \"eceba\"))\n   |                  ^^^^^\nerror: 1:18: unbound variable: solve\n   |\n  1 | (display-result (solve \"ccaabbb\"))\n   |                  ^^^^^\nerror: 1:18: unbound variable: solve\n   |\n  1 | (display-result (solve \"a\"))\n   |                  ^^^^^\nerror: 1:18: unbound variable: solve\n   |\n  1 | (displa",
+      "stdout_snippet": "CASE0=CASE1=CASE2=CASE3=CASE4=CASE5=CASE6=CASE7="
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:14:01Z",
+      "ts_local": "2026-09-24 23:14:01 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2086,
+        "total_characters": 0,
+        "prompt_tokens": 1001,
+        "completion_tokens": 1085,
+        "prompt_tokens_details": {
+          "cached_tokens": 1000
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.017,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 93:77: parse error: unexpected ')'\n",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "longest-substring-with-at-most-two-distinct-characters",
+  "title": "Longest Substring with At Most Two Distinct Characters",
+  "category": "sliding_window",
+  "updated_at": "2026-09-24T15:14:01Z",
+  "updated_at_local": "2026-09-24 23:14:01 CST"
+}

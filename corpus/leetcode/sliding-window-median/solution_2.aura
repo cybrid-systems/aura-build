@@ -1,0 +1,232 @@
+;; Sliding Window Median in Aura
+;; Uses two sorted lists with lazy deletion to mimic heaps.
+
+(define (make-sorted-list)
+  (cons '() '()))
+
+(define (sl-insert sl x)
+  ;; insert x into sorted list sl (ascending), preserving order
+  (let loop ((rest sl) (acc '()))
+    (cond ((null? rest)
+           (append (reverse acc) (list x)))
+          ((<= x (car rest))
+           (append (reverse acc) (cons x rest)))
+          (else
+           (loop (cdr rest) (cons (car rest) acc))))))
+
+(define (sl-remove sl x)
+  ;; remove first occurrence of x from sl
+  (let loop ((rest sl))
+    (cond ((null? rest) sl)
+          ((= (car rest) x) (cdr rest))
+          (else (cons (car rest) (loop (cdr rest)))))))
+
+(define (sl-front sl) (car sl))
+
+(define (sl-empty? sl) (null? sl))
+
+;; We model "two heaps" as sorted lists with a delayed-delete map.
+;; Each heap entry is (key . count). We'll keep sorted lists and lazily remove.
+
+(define (heap-insert h x) (sl-insert h x))
+
+(define (heap-pop-front h)
+  (values (car h) (cdr h)))
+
+(define (heap-peek h) (car h))
+
+(define (heap-remove h x) (sl-remove h x))
+
+(define (heap-empty? h) (sl-empty? h))
+
+;; Median finder using two sorted lists as heaps + delayed dict
+;; low: max-heap for lower half (stored ascending, top = last)
+;; high: min-heap for upper half (stored ascending, top = first)
+;; We store low in ascending order and access top via last element.
+
+(define (list-last xs)
+  (if (null? (cdr xs))
+      (car xs)
+      (list-last (cdr xs))))
+
+(define (list-init xs)
+  (if (null? (cdr xs))
+      '()
+      (cons (car xs) (list-init (cdr xs)))))
+
+;; delayed: association list of (key . count)
+(define (al-get al key)
+  (let loop ((al al))
+    (cond ((null? al) 0)
+          ((= (car (car al)) key) (cdr (car al)))
+          (else (loop (cdr al))))))
+
+(define (al-add al key delta)
+  (let loop ((al al) (acc '()))
+    (cond ((null? al)
+           (append (reverse acc) (list (cons key delta))))
+          ((= (car (car al)) key)
+           (let ((new-c (+ (cdr (car al)) delta)))
+             (if (= new-c 0)
+                 (append (reverse acc) (cdr al))
+                 (append (reverse acc) (cons (cons key new-c) (cdr al))))))
+          (else
+           (loop (cdr al) (cons (car al) acc))))))
+
+(define (clean-low low delayed)
+  (let loop ()
+    (if (and (not (heap-empty? low))
+             (> (al-get delayed (list-last low)) 0))
+        (begin
+          (set! delayed (al-add delayed (list-last low) -1))
+          (set! low (list-init low))
+          (loop))
+        low)))
+
+;; Helper to compute size balancing
+(define (solve nums k)
+  (let* ((n (length nums))
+         (odd? (= (modulo k 2) 1))
+         (low '())    ;; max-heap (ascending list, top is last)
+         (high '())   ;; min-heap (ascending list, top is first)
+         (delayed '())
+         (result '()))
+    ;; Define helpers using local state through set! on the outer vars
+    (define (rebalance)
+      ;; ensure low has at least as many as high, with low having one extra if odd k
+      (begin
+        ;; If low empty and high non-empty, move top of high to low
+        (if (and (heap-empty? low) (not (heap-empty? high)))
+            (let ((v (heap-peek high)))
+              (set! low (heap-insert low v))
+              (set! high (cdr high))))
+        ;; If high empty and low has more than needed, move top of low to high
+        (if (and (heap-empty? high) (not (heap-empty? low)) (>= (length low) 2))
+            (let ((v (list-last low)))
+              (set! high (heap-insert high v))
+              (set! low (list-init low))))
+        ;; Balance sizes
+        (cond
+          ((> (length low) (+ (length high) (if odd? 1 0)))
+           (let ((v (list-last low)))
+             (set! high (heap-insert high v))
+             (set! low (list-init low))))
+          ((< (length low) (if odd? 1 0))
+           (let ((v (heap-peek high)))
+             (set! low (heap-insert low v))
+             (set! high (cdr high)))))))
+
+    ;; The above rebalance is complex; we'll use a simpler approach via inline code in the loop.
+    ;; Reset and use a clean implementation directly in main loop.
+    (set! low '())
+    (set! high '())
+    (set! delayed '())
+    (set! result '())
+
+    (define (prune-low)
+      (let loop ()
+        (if (and (not (null? low))
+                 (> (al-get delayed (list-last low)) 0))
+            (begin
+              (set! delayed (al-add delayed (list-last low) -1))
+              (set! low (list-init low))
+              (loop))
+            #t)))
+
+    (define (prune-high)
+      (let loop ()
+        (if (and (not (null? high))
+                 (> (al-get delayed (heap-peek high)) 0))
+            (begin
+              (set! delayed (al-add delayed (heap-peek high) -1))
+              (set! high (cdr high))
+              (loop))
+            #t)))
+
+    (define (balance)
+      ;; Move elements between heaps to maintain invariant
+      (begin
+        ;; Move from high to low if low too small
+        (if (< (length low) (if odd? 1 0))
+            (let ((v (heap-peek high)))
+              (set! low (heap-insert low v))
+              (set! high (cdr high))))
+        ;; Move from low to high if low too large
+        (if (> (length low) (+ (length high) (if odd? 1 0)))
+            (let ((v (list-last low)))
+              (set! high (heap-insert high v))
+              (set! low (list-init low))))
+        ;; If low empty and high non-empty and odd? and k>0, move one
+        (if (and odd? (null? low) (not (null? high)))
+            (let ((v (heap-peek high)))
+              (set! low (heap-insert low v))
+              (set! high (cdr high))))
+        #t))
+
+    (define (median-val)
+      (prune-low)
+      (prune-high)
+      (if odd?
+          (list-last low)
+          (+ (list-last low) (heap-peek high))))
+
+    ;; Iterate over nums
+    (let loop ((i 0))
+      (if (>= i n)
+          (begin
+            (set! result (reverse result))
+            result)
+          (begin
+            ;; Insert nums[i]
+            (let ((x (list-ref nums i)))
+              (if (or (null? low) (<= x (list-last low)))
+                  (set! low (heap-insert low x))
+                  (set! high (heap-insert high x))))
+            (balance)
+            (prune-low)
+            (prune-high)
+            ;; If window full, record median and remove nums[i-k+1]
+            (if (>= i (- k 1))
+                (begin
+                  (set! result (cons (median-val) result))
+                  (let ((out (list-ref nums (- i (- k 1)))))
+                    (set! delayed (al-add delayed out 1))
+                    (prune-low)
+                    (prune-high)))
+                #t)
+            (loop (+ i 1)))))))
+
+(define (list-ref xs i)
+  (if (= i 0)
+      (car xs)
+      (list-ref (cdr xs) (- i 1))))
+
+(define (length xs)
+  (let loop ((xs xs) (n 0))
+    (if (null? xs) n (loop (cdr xs) (+ n 1)))))
+
+(define (display-list xs)
+  (display "[")
+  (let loop ((xs xs))
+    (cond ((null? xs) (display "]"))
+          (else
+           (display (car xs))
+           (if (not (null? (cdr xs)))
+               (display ", "))
+           (loop (cdr xs))))))
+
+;; Test cases
+(define (run-case label nums k)
+  (display label)
+  (display "=")
+  (display-list (solve nums k))
+  (newline))
+
+(run-case "CASE0" '(1 3 -1 -3 5 3 6 7) 3)
+(run-case "CASE1" '(1 3 -1 -3 5 3 6 7) 2)
+(run-case "CASE2" '(1 3 -1 -3 5 3 6 7) 1)
+(run-case "CASE3" '(1 3 -1 -3 5 3 6 7) 4)
+(run-case "CASE4" '(1) 1)
+(run-case "CASE5" '(2 2 2 2) 2)
+(run-case "CASE6" '(5 4 3 2 1) 3)
+(run-case "CASE7" '(1 2 3 4 5 6 7 8) 4)

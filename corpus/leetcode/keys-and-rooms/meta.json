@@ -1,5 +1,66 @@
 {
-  "variants": [],
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:09:25Z",
+      "ts_local": "2026-09-24 23:09:25 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 4458,
+        "total_characters": 0,
+        "prompt_tokens": 1268,
+        "completion_tokens": 3190,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 512
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.018,
+      "tests_passed": 0,
+      "tests_total": 5,
+      "stderr_snippet": "error: node[33]: unbound variable: ...\n",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:10:16Z",
+      "ts_local": "2026-09-24 23:10:16 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 5268,
+        "total_characters": 0,
+        "prompt_tokens": 1268,
+        "completion_tokens": 4000,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 1152
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": -1,
+      "timeout": true,
+      "duration_s": 20.025,
+      "tests_passed": 0,
+      "tests_total": 5,
+      "stderr_snippet": "warning: unbalanced parentheses in input\n",
+      "stdout_snippet": ""
+    }
+  ],
   "slug": "keys-and-rooms",
   "title": "Keys and Rooms",
   "category": "graphs_bfs_dfs",
@@ -31,5 +92,6 @@
     },
     "ts": "2026-09-24T15:06:17Z"
   },
-  "updated_at": "2026-09-24T15:06:17Z"
+  "updated_at": "2026-09-24T15:10:16Z",
+  "updated_at_local": "2026-09-24 23:10:16 CST"
 }

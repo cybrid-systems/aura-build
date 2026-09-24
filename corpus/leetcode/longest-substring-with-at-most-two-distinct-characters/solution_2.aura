@@ -1,0 +1,112 @@
+;; Longest substring with at most two distinct characters
+;; Sliding window approach
+
+(define (string-length s)
+  (let loop ((i 0))
+    (if (string=? (substring s i (+ i 1)) (substring s i (+ i 1)))
+        i
+        0)))
+
+;; Helper: get character at index in string as a single-char string
+(define (char-at s i)
+  (substring s i (+ i 1)))
+
+(define (solve s)
+  (let* ((n (string-length s))
+         (result 0))
+    ;; Use three parallel lists to simulate a small hashmap (max 2 entries)
+    ;; Actually, simpler: just track two chars and their counts, but
+    ;; need to handle the case when one leaves the window.
+    ;; We'll use an association-like structure with a-list of size <= 2.
+    (let loop ((left 0)
+               (right 0)
+               (c1 "")
+               (cnt1 0)
+               (c2 "")
+               (cnt2 0)
+               (best 0))
+      (cond
+        ((>= right n)
+         (if (> best result) best result))
+        (else
+         (let* ((ch (char-at s right))
+                (new-c1 c1)
+                (new-cnt1 cnt1)
+                (new-c2 c2)
+                (new-cnt2 cnt2))
+           ;; Try to add ch to the window
+           (cond
+             ;; Case A: ch matches c1
+             ((string=? ch c1)
+              (set! new-c1 c1)
+              (set! new-cnt1 (+ cnt1 1))
+              (set! new-c2 c2)
+              (set! new-cnt2 cnt2))
+             ;; Case B: ch matches c2
+             ((string=? ch c2)
+              (set! new-c1 c2)
+              (set! new-cnt1 (+ cnt2 1))
+              (set! new-c2 c1)
+              (set! new-cnt2 cnt1))
+             ;; Case C: c1 slot empty
+             ((string=? c1 "")
+              (set! new-c1 ch)
+              (set! new-cnt1 1))
+             ;; Case D: c2 slot empty
+             ((string=? c2 "")
+              (set! new-c2 ch)
+              (set! new-cnt2 1))
+             ;; Case E: third distinct char; shrink window from left
+             (else
+              ;; Move left past all occurrences of whichever char appears first at left
+              ;; Simpler approach: decrement counts, move left one at a time
+              ;; We'll do it iteratively below
+              (let shrink-loop ((l left)
+                                (cc1 c1)
+                                (k1 cnt1)
+                                (cc2 c2)
+                                (k2 cnt2))
+                (cond
+                  ((string=? (char-at s l) cc1)
+                   (if (= k1 1)
+                       (begin
+                         (set! left (+ l 1))
+                         (set! c1 ch)
+                         (set! cnt1 1)
+                         (set! c2 cc2)
+                         (set! cnt2 k2))
+                       (shrink-loop (+ l 1) cc1 (- k1 1) cc2 k2)))
+                  ((string=? (char-at s l) cc2)
+                   (if (= k2 1)
+                       (begin
+                         (set! left (+ l 1))
+                         (set! c1 ch)
+                         (set! cnt1 1)
+                         (set! c2 cc1)
+                         (set! cnt2 k1))
+                       (shrink-loop (+ l 1) cc1 k1 cc2 (- k2 1))))
+                  (else
+                   (shrink-loop (+ l 1) cc1 k1 cc2 k2)))))))
+           ;; Now check if we can extend, then compute best
+           (let ((cur-len (- (+ right 1) left)))
+             (if (> cur-len best) (set! best cur-len) best))
+           (loop (+ right 1) left new-c1 new-cnt1 new-c2 new-cnt2 best)))))))
+
+;; Test harness
+(define s0 "eceba")
+(define s1 "ccaabbb")
+(define s2 "a")
+(define s3 "abcd")
+(define s4 "aaaa")
+(define s5 "ababab")
+(define s6 "abcabcabc")
+(define s7 "aabbaa")
+
+(display "CASE0=") (display (solve s0)) (newline)
+(display "CASE1=") (display (solve s1)) (newline)
+(display "CASE2=") (display (solve s2)) (newline)
+(display "CASE3=") (display (solve s3)) (newline)
+(display "CASE4=") (display (solve s4)) (newline)
+(display "CASE5=") (display (solve s5)) (newline)
+(display "CASE6=") (display (solve s6)) (newline)
+(display "CASE7=") (display (solve s7)) (newline)

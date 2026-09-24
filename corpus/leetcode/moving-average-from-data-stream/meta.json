@@ -1,5 +1,66 @@
 {
-  "variants": [],
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:09:01Z",
+      "ts_local": "2026-09-24 23:09:01 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 5471,
+        "total_characters": 0,
+        "prompt_tokens": 1471,
+        "completion_tokens": 4000,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 512
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.058,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=<error>\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:09:17Z",
+      "ts_local": "2026-09-24 23:09:17 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2537,
+        "total_characters": 0,
+        "prompt_tokens": 1471,
+        "completion_tokens": 1066,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 1280
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.066,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 15:34: unbound variable: cadddr\nerror: 15:34: unbound variable: cadddr\nerror: 15:34: unbound variable: cadddr\nerror: 15:34: unbound variable: cadddr\nerror: 15:34: unbound variable: cadddr\nerror: 33:34: unbound variable: cadddr\nerror: 15:34: unbound variable: cadddr\nerror: 15:34: unbound variable: cadddr\n",
+      "stdout_snippet": "CASE0=CASE0=CASE1=CASE2=CASE3=CASE4=CASE5=CASE6=CASE7="
+    }
+  ],
   "slug": "moving-average-from-data-stream",
   "title": "Moving Average from Data Stream",
   "category": "stack_queue",
@@ -28,5 +89,6 @@
     },
     "ts": "2026-09-24T15:02:42Z"
   },
-  "updated_at": "2026-09-24T15:02:42Z"
+  "updated_at": "2026-09-24T15:09:17Z",
+  "updated_at_local": "2026-09-24 23:09:17 CST"
 }

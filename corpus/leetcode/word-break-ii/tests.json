@@ -1,0 +1,104 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "s": "catsanddog",
+      "wordDict": [
+        "cat",
+        "cats",
+        "and",
+        "sand",
+        "dog"
+      ]
+    },
+    "expected": "[\"cat sand dog\",\"cats and dog\"]"
+  },
+  {
+    "id": 1,
+    "input": {
+      "s": "pineapplepenapple",
+      "wordDict": [
+        "apple",
+        "pen",
+        "applepen",
+        "pine",
+        "pineapple"
+      ]
+    },
+    "expected": "[\"pine apple pen apple\",\"pine applepen apple\",\"pineapple pen apple\"]"
+  },
+  {
+    "id": 2,
+    "input": {
+      "s": "catsandog",
+      "wordDict": [
+        "cats",
+        "dog",
+        "sand",
+        "and",
+        "cat"
+      ]
+    },
+    "expected": "[]"
+  },
+  {
+    "id": 3,
+    "input": {
+      "s": "a",
+      "wordDict": [
+        "a"
+      ]
+    },
+    "expected": "[\"a\"]"
+  },
+  {
+    "id": 4,
+    "input": {
+      "s": "aaaa",
+      "wordDict": [
+        "a",
+        "aa"
+      ]
+    },
+    "expected": "[\"a a a a\",\"a a aa\",\"a aa a\",\"aa a a\",\"aa aa\"]"
+  },
+  {
+    "id": 5,
+    "input": {
+      "s": "abc",
+      "wordDict": [
+        "a",
+        "b",
+        "c",
+        "ab",
+        "bc",
+        "abc"
+      ]
+    },
+    "expected": "[\"a b c\",\"a bc\",\"ab c\",\"abc\"]"
+  },
+  {
+    "id": 6,
+    "input": {
+      "s": "leetcoder",
+      "wordDict": [
+        "leet",
+        "code",
+        "coder",
+        "leetcoder"
+      ]
+    },
+    "expected": "[\"leet coder\",\"leetcoder\"]"
+  },
+  {
+    "id": 7,
+    "input": {
+      "s": "ab",
+      "wordDict": [
+        "a",
+        "b"
+      ]
+    },
+    "expected": "[\"a b\"]"
+  }
+]
