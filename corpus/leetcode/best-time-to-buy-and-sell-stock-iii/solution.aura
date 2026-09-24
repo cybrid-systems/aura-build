@@ -1,0 +1,75 @@
+(define (max a b) (if (> a b) a b))
+(define (min a b) (if (< a b) a b))
+
+(define (solve prices)
+  (let* ((n (length prices))
+         (left (make-list n 0))
+         (right (make-list n 0)))
+    (if (< n 2)
+        0
+        (begin
+          ;; left[i] = max profit from one transaction in [0..i]
+          (let loop ((i 1) (minp (car prices)) (best 0))
+            (if (= i n)
+                (begin
+                  (set-car! (list-ref left (- i 1)) best)
+                  'done)
+                (let* ((p (list-ref prices i))
+                       (new-min (min minp p))
+                       (new-best (max best (- p minp))))
+                  (set-car! (list-ref left i) new-best)
+                  (loop (+ i 1) new-min new-best))))
+          ;; right[i] = max profit from one transaction in [i..n-1]
+          (let loop ((i (- n 2)) (maxp (list-ref prices (- n 1))) (best 0))
+            (if (< i 0)
+                (begin
+                  (set-car! (list-ref right (+ i 1)) best)
+                  'done)
+                (let* ((p (list-ref prices i))
+                       (new-max (max maxp p))
+                       (new-best (max best (- new-max p))))
+                  (set-car! (list-ref right i) new-best)
+                  (loop (- i 1) new-max new-best))))
+          ;; combine: max over i of left[i] + right[i+1]
+          (let loop ((i 0) (ans 0))
+            (if (= i (- n 1))
+                ans
+                (loop (+ i 1) (max ans (+ (list-ref left i) (list-ref right (+ i 1)))))))))))
+
+(define (make-list n v)
+  (if (= n 0) '() (cons v (make-list (- n 1) v))))
+
+(define (list-ref lst i)
+  (if (= i 0) (car lst) (list-ref (cdr lst) i)))
+
+(define (set-car! lst v)
+  (let ((cell lst))
+    (set-car! cell v)))
+
+;; Wrapper since set-car! already defined as mutation
+;; Actually let's redefine properly
+(define (set-car! cell v)
+  (define p (cons v '()))
+  ;; We can't actually mutate car in pure Aura; use vector-like via assoc
+  ;; Use a different approach: pass pairs with mutable fields via set-car!
+  ;; Aura supports set-car! natively
+  (set-car! cell v))
+
+;; Test harness
+(define (run-case i prices)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve prices))
+  (newline))
+
+(run-case 0 '())
+(run-case 1 '(5))
+(run-case 2 '(5 5 5 5))
+(run-case 3 '(1 2 3 4 5))
+(run-case 4 '(5 4 3 2 1))
+(run-case 5 '(3 3 5 0 0 3 1 4))
+(run-case 6 '(1 2 4 2 5 7 2 4 9 0))
+(run-case 7 '(7 6 4 3 1))
+(run-case 8 '(1 2 1 2 1 2))
+(run-case 9 '(6 1 3 2 4 7))

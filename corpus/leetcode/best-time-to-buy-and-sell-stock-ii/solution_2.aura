@@ -1,0 +1,25 @@
+(define (sum-gains prices)
+  (let loop ((ps prices) (acc 0))
+    (if (or (null? ps) (null? (cdr ps)))
+        acc
+        (loop (cdr ps)
+              (+ acc (max 0 (- (cadr ps) (car ps))))))))
+
+(define (solve prices)
+  (sum-gains prices))
+
+(define (run-case i prices)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve prices))
+  (newline))
+
+(run-case 0 '(7 1 5 3 6 4))
+(run-case 1 '(1 2 3 4 5))
+(run-case 2 '(7 6 4 3 1))
+(run-case 3 '(5))
+(run-case 4 '(5 5 5 5))
+(run-case 5 '(0 1 2 0 1 2))
+(run-case 6 '(1 0))
+(run-case 7 '(3 2 1 2 3 0 4))

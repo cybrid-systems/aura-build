@@ -1,0 +1,82 @@
+(define (char-at s i)
+  (if (= i 0)
+      (car s)
+      (char-at (cdr s) (- i 1))))
+
+(define (len s)
+  (if (null? s) 0 (+ 1 (len (cdr s)))))
+
+(define (make-table m n)
+  (define (row i)
+    (if (= i n) '()
+        (cons (make-vector m #f) (row (+ i 1)))))
+  (row 0))
+
+(define (make-vector n v)
+  (define (loop i)
+    (if (= i n) '() (cons v (loop (+ i 1)))))
+  (loop 0))
+
+(define (vec-get v i)
+  (if (= i 0) (car v) (vec-get (cdr v) (- i 1))))
+
+(define (vec-set! v i val)
+  (define (loop v i)
+    (if (= i 0)
+        (set-car! v val)
+        (loop (cdr v) (- i 1))))
+  (loop v i))
+
+(define (table-get t i j)
+  (vec-get (vec-get t i) j))
+
+(define (table-set! t i j val)
+  (vec-set! (vec-get t i) j val))
+
+(define (matches-char? s i p j)
+  (and (< i (len s))
+       (let ((c (char-at s i))
+             (pc (char-at p j)))
+         (or (char=? pc #\.) (char=? c pc)))))
+
+(define (memo-match s p i j t)
+  (let ((cached (table-get t i j)))
+    (if cached
+        cached
+        (let ((result (compute-match s p i j t)))
+          (table-set! t i j result)
+          result))))
+
+(define (compute-match s p i j t)
+  (cond ((= j (len p))
+         (= i (len s)))
+        ((and (< (+ j 1) (len p))
+              (char=? (char-at p (+ j 1)) #\*))
+         (let ((skip (memo-match s p i (+ j 2) t)))
+           (if skip
+               #t
+               (if (matches-char? s i p j)
+                   (memo-match s p (+ i 1) j t)
+                   #f))))
+        (else
+         (if (matches-char? s i p j)
+             (memo-match s p (+ i 1) (+ j 1) t)
+             #f))))
+
+(define (solve s p)
+  (let ((t (make-table (+ (len s) 1) (+ (len p) 1))))
+    (if (memo-match s p 0 0 t) #t #f)))
+
+;; Display helper for booleans
+(define (display-bool b) (display (if b "T" "NIL")))
+
+(display "CASE0=") (display-bool (solve "aa" "a")) (newline)
+(display "CASE1=") (display-bool (solve "aa" "a*")) (newline)
+(display "CASE2=") (display-bool (solve "ab" ".*")) (newline)
+(display "CASE3=") (display-bool (solve "aab" "c*a*b")) (newline)
+(display "CASE4=") (display-bool (solve "mississippi" "mis*is*p*.")) (newline)
+(display "CASE5=") (display-bool (solve "" "")) (newline)
+(display "CASE6=") (display-bool (solve "" "a*")) (newline)
+(display "CASE7=") (display-bool (solve "ab" ".*c")) (newline)
+(display "CASE8=") (display-bool (solve "aaa" "a*a")) (newline)
+(display "CASE9=") (display-bool (solve "a" "ab*")) (newline)

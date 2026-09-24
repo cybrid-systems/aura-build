@@ -1,0 +1,57 @@
+(define (solve points)
+  (let* ((sorted (sort-by-end points))
+         (n (length sorted)))
+    (if (= n 0)
+        0
+        (let loop ((i 0) (count 0) (arrow -1))
+          (cond ((>= i n) count)
+                (else
+                 (let ((start (car (list-ref sorted i)))
+                       (end (cadr (list-ref sorted i))))
+                   (if (<= start arrow)
+                       (loop (+ i 1) count arrow)
+                       (loop (+ i 1) (+ count 1) end)))))))))
+
+(define (sort-by-end pts)
+  (letrec ((sorter (lambda (lst)
+                     (if (or (null? lst) (null? (cdr lst)))
+                                 lst
+                                 (let* ((pivot (car lst))
+                                        (rest (cdr lst))
+                                        (less (filter (lambda (x) (< (cadr x) (cadr pivot))) rest))
+                                        (eq (filter (lambda (x) (= (cadr x) (cadr pivot))) rest))
+                                        (greater (filter (lambda (x) (> (cadr x) (cadr pivot))) rest)))
+                                   (append (sorter less)
+                                           (cons pivot (append eq (sorter greater)))))))))
+    (sorter pts)))
+
+(define (filter pred lst)
+  (cond ((null? lst) '())
+        ((pred (car lst)) (cons (car lst) (filter pred (cdr lst))))
+        (else (filter pred (cdr lst)))))
+
+(define (append a b)
+  (if (null? a) b (cons (car a) (append (cdr a) b))))
+
+(define (list-ref lst i)
+  (cond ((= i 0) (car lst))
+        (else (list-ref (cdr lst) (- i 1)))))
+
+;; Test cases
+(define case0 '((10 16) (2 8) (1 6) (7 12)))
+(define case1 '((1 2) (3 4) (5 6) (7 8)))
+(define case2 '((1 2) (2 3) (3 4) (4 5)))
+(define case3 '((0 1)))
+(define case4 '((1 10) (2 5) (6 9) (3 8)))
+(define case5 '((-5 5) (-3 3) (-1 1) (0 2) (4 8)))
+(define case6 '((1 2) (2 3) (2 4) (5 6)))
+(define case7 '((1 3) (2 4) (3 5) (4 6)))
+
+(display "CASE0=") (display (solve case0)) (newline)
+(display "CASE1=") (display (solve case1)) (newline)
+(display "CASE2=") (display (solve case2)) (newline)
+(display "CASE3=") (display (solve case3)) (newline)
+(display "CASE4=") (display (solve case4)) (newline)
+(display "CASE5=") (display (solve case5)) (newline)
+(display "CASE6=") (display (solve case6)) (newline)
+(display "CASE7=") (display (solve case7)) (newline)

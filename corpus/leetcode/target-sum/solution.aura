@@ -1,0 +1,50 @@
+(define (sum-list lst)
+  (if (null? lst)
+      0
+      (+ (car lst) (sum-list (cdr lst)))))
+
+(define (abs x)
+  (if (< x 0) (- 0 x) x))
+
+(define (make-dp n size)
+  (build-list (+ n 1) (lambda (i) (build-list (+ size 1) (lambda (j) 0)))))
+
+(define (dp-get dp i j)
+  (list-ref (list-ref dp i) j))
+
+(define (dp-set dp i j v)
+  (list-set! (list-ref dp i) j v))
+
+(define (subset-count nums target-sum)
+  ;; DP: dp[i][j] = number of ways using first i elements to get sum j
+  (let ((n (length nums))
+        (dp (make-dp 0 target-sum)))
+    (dp-set dp 0 0 1)
+    (let loop-i ((i 0))
+      (if (= i n)
+          (dp-get dp i target-sum)
+          (begin
+            (let loop-j ((j 0))
+              (if (<= j target-sum)
+                  (begin
+                    (let ((v (dp-get dp i j)))
+                      (if (> v 0)
+                          (let ((nv (+ j (list-ref nums i))))
+                            (if (<= nv target-sum)
+                                (dp-set dp (+ i 1) nv (+ (dp-get dp (+ i 1) nv) v))
+                                0))
+                          0))
+                    (dp-set dp (+ i 1) j (+ (dp-get dp (+ i 1) j) (dp-get dp i j)))
+                    (loop-j (+ j 1))))
+                  (loop-i (+ i 1))))))))
+
+(define (solve nums target)
+  (let ((total (sum-list nums))
+        (abs-target (abs target)))
+    (let ((diff (+ total target)))
+      (cond
+        ((< diff 0) 0)
+        ((> (modulo diff 2) 0) 0)
+        (else
+         (let ((p (quotient diff 2)))
+           (subset-count nums p)))))))

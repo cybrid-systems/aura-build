@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:41:56Z",
+      "ts_local": "2026-09-24 22:41:56 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1563,
+        "total_characters": 0,
+        "prompt_tokens": 1007,
+        "completion_tokens": 556,
+        "prompt_tokens_details": {
+          "cached_tokens": 528
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.039,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 21:21: unbound variable: candies\n  did you mean 'cases'?\n",
+      "stdout_snippet": "CASE0=3\nCASE1=5\nCASE2=4\nCASE3=CASE0=3\nCASE1=5\nCASE2=4\nCASE3="
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:42:00Z",
+      "ts_local": "2026-09-24 22:42:00 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1699,
+        "total_characters": 0,
+        "prompt_tokens": 1007,
+        "completion_tokens": 692,
+        "prompt_tokens_details": {
+          "cached_tokens": 1006
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.041,
+      "tests_passed": 2,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=4\nCASE1=5\nCASE2=7\nCASE3=0\nCASE4=1\nCASE5=5\nCASE6=9\nCASE7=5\n\"done\"\n"
+    }
+  ],
+  "slug": "candy",
+  "title": "Candy",
+  "category": "greedy",
+  "updated_at": "2026-09-24T14:42:00Z",
+  "updated_at_local": "2026-09-24 22:42:00 CST"
+}

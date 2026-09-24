@@ -1,0 +1,77 @@
+(define (min-rooms meetings)
+  (let ((starts '())
+        (ends '()))
+    ;; build lists of starts and ends
+    (let loop ((ms meetings))
+      (if (null? ms)
+          'done
+          (begin
+            (set! starts (cons (car (car ms)) starts))
+            (set! ends (cons (cdr (car ms)) ends))
+            (loop (cdr ms)))))
+    ;; sort
+    (set! starts (sort-list starts))
+    (set! ends (sort-list ends))
+    ;; sweep
+    (let loop ((ss starts)
+               (ee ends)
+               (active 0)
+               (best 0))
+      (cond
+        ((null? ss) best)
+        ((null? ee) best)
+        (else
+          (let ((s (car ss))
+                (e (car ee)))
+            (if (<= e s)
+                (loop ss (cdr ee) (- active 1) best)
+                (loop (cdr ss) ee (+ active 1) (if (> active best) (+ active 1) best)))))))))
+
+(define (sort-list lst)
+  (merge-sort lst))
+
+(define (merge-sort lst)
+  (if (or (null? lst) (null? (cdr lst)))
+      lst
+      (let* ((half (split-list lst '() (quotient (length lst) 2)))
+             (a (car half))
+             (b (cdr half)))
+        (merge-lists (merge-sort a) (merge-sort b)))))
+
+(define (split-list lst acc n)
+  (if (or (= n 0) (null? lst))
+      (cons acc lst)
+      (split-list (cdr lst) (cons (car lst) acc) (- n 1))))
+
+(define (merge-lists a b)
+  (cond
+    ((null? a) b)
+    ((null? b) a)
+    ((<= (car a) (car b))
+     (cons (car a) (merge-lists (cdr a) b)))
+    (else
+     (cons (car b) (merge-lists a (cdr b))))))
+
+(define (solve meetings)
+  (min-rooms meetings))
+
+(define (length lst)
+  (let loop ((l lst) (n 0))
+    (if (null? l) n (loop (cdr l) (+ n 1)))))
+
+;; Test inputs
+(define (run-case i meetings)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve meetings))
+  (newline))
+
+(run-case 0 '())
+(run-case 1 '((0 . 30)))
+(run-case 2 '((0 . 30) (5 . 10) (15 . 20)))
+(run-case 3 '((0 . 10) (10 . 20) (20 . 30)))
+(run-case 4 '((1 . 5) (2 . 6) (4 . 8)))
+(run-case 5 '((0 . 5) (0 . 5) (0 . 5)))
+(run-case 6 '((0 . 8) (1 . 3) (3 . 6) (5 . 9) (7 . 11)))
+(run-case 7 '((0 . 1) (1 . 2) (2 . 3) (3 . 4) (4 . 5)))

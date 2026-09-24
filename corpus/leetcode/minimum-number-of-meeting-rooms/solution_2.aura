@@ -1,0 +1,84 @@
+;; Merge two sorted lists of (time . delta) ascending by time;
+;; ties broken by delta ascending so ends (-1) come before starts (+1).
+(define (merge-events a b)
+  (cond ((null? a) b)
+        ((null? b) a)
+        (else
+         (let ((x (car a)) (y (car b)))
+           (if (or (< (car x) (car y))
+                   (and (= (car x) (car y)) (< (cdr x) (cdr y))))
+               (cons x (merge-events (cdr a) b))
+               (cons y (merge-events a (cdr b))))))))
+
+(define (sort-events lst)
+  (if (or (null? lst) (null? (cdr lst)))
+      lst
+      (let ((mid (quotient (length lst) 2)))
+        (let loop ((n 0) (acc '()) (rem lst))
+          (if (= n mid)
+              (merge-events (sort-events acc) (sort-events rem))
+              (loop (+ n 1) (append acc (list (car rem))) (cdr rem)))))))
+
+;; Build events from list of (start, end) pairs:
+;; for each meeting, push (start . +1) and (end . -1).
+(define (build-events meetings)
+  (let loop ((ms meetings) (acc '()))
+    (if (null? ms)
+        acc
+        (let ((m (car ms)))
+          (loop (cdr ms)
+                (cons (cons (car m) -1)
+                      (cons (cons (cadr m) 1) acc)))))))
+
+(define (solve meetings)
+  (let* ((events (sort-events (build-events meetings)))
+         (n (length meetings))
+         (result
+          (let sweep ((evs events) (cur 0) (best 0))
+            (if (null? evs)
+                best
+                (let* ((d (cdr (car evs)))
+                       (cur2 (+ cur d))
+                       (best2 (if (> cur2 best) cur2 best)))
+                  (sweep (cdr evs) cur2 best2))))))
+    result))
+
+;; --- Display helpers ---
+(define (display-list-of-pairs lst)
+  (display "[")
+  (let loop ((xs lst) (first? #t))
+    (cond ((null? xs)
+           (display "]"))
+          (else
+           (if first? (set! first? #f) (display ","))
+           (let ((p (car xs)))
+             (display "[")
+             (display (car p))
+             (display ",")
+             (display (cadr p))
+             (display "]"))
+           (loop (cdr xs) first?)))))
+
+;; --- Embedded test cases ---
+(define tests
+  (list (list 'CASE0 '())
+        (list 'CASE1 (list (list 0 30)))
+        (list 'CASE2 (list (list 0 30) (list 5 10) (list 15 20)))
+        (list 'CASE3 (list (list 0 10) (list 10 20) (list 20 30)))
+        (list 'CASE4 (list (list 1 5) (list 2 6) (list 4 8)))
+        (list 'CASE5 (list (list 0 5) (list 0 5) (list 0 5)))
+        (list 'CASE6 (list (list 0 8) (list 1 3) (list 3 6) (list 5 9) (list 7 11)))
+        (list 'CASE7 (list (list 0 1) (list 1 2) (list 2 3) (list 3 4) (list 4 5))))))
+
+(define (run-tests ts)
+  (let loop ((ts ts))
+    (if (null? ts)
+        'done
+        (let ((t (car ts)))
+          (display (car t))
+          (display "=")
+          (display (solve (cadr t)))
+          (newline)
+          (loop (cdr ts))))))
+
+(run-tests tests)

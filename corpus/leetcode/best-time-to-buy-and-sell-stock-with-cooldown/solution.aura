@@ -1,0 +1,40 @@
+(define (max a b) (if (> a b) a b))
+
+(define (solve prices)
+  (let ((n (length prices)))
+    (if (<= n 1)
+        0
+        (begin
+          (define hold (car prices))        ; max profit holding stock
+          (define sold 0)                   ; max profit just sold (in cooldown next day)
+          (define rest 0)                   ; max profit resting (can buy)
+          (let loop ((i 1) (h hold) (s sold) (r rest))
+            (if (= i n)
+                (max r h)
+                (let ((p (list-ref prices i)))
+                  (loop (+ i 1)
+                        (max r (- p s))     ; new hold: rest before, then buy at p (sold -> cooldown done means rest)
+                        (max h (+ r (- p s)))  ; sell today: hold + (p - prev_sold) ... we'll adjust
+                        h)))))  ; this is getting tangled; restart cleanly below
+          )))
+
+(define (solve prices)
+  (let ((n (length prices)))
+    (if (<= n 1)
+        0
+        (let ((prev-sold 0)         ; sold yesterday -> cooldown today
+              (hold (car prices))    ; best profit holding a stock after day 0
+              (rest 0))              ; best profit neither holding nor in cooldown after day 0
+          (let loop ((i 1) (ps prev-sold) (h hold) (r rest))
+            (if (= i n)
+                (max r h)
+                (let ((p (list-ref prices i))
+                      (new-h (max (list h r) (lambda (a b) (if (> a b) a b))))))
+                ...
+                )
+              )
+            )
+          )
+        )
+    )
+  )

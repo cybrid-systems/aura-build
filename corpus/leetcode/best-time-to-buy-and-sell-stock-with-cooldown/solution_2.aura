@@ -1,0 +1,28 @@
+(define (max a b) (if (> a b) a b))
+(define (len lst)
+  (if (null? lst) 0 (+ 1 (len (cdr lst)))))
+(define (ref lst i)
+  (if (= i 0) (car lst) (ref (cdr lst) (- i 1))))
+
+(define (solve-prices prices)
+  (let ((n (len prices)))
+    (cond
+      ((<= n 1) 0)
+      (else
+       ;; hold[i] = max profit holding stock at end of day i
+       ;; cash[i] = max profit not holding and available to buy at end of day i
+       ;; cool[i] = max profit in cooldown at end of day i
+       (let ((hold -1000000000) (cash 0) (cool 0))
+         (define (loop i hold cash cool)
+           (cond
+             ((>= i n) (max cash cool))
+             (else
+              (let ((p (ref prices i)))
+                (let ((new-hold (max hold (- cash p))))
+                  (let ((new-cash (max cash cool)))
+                    (let ((new-cool (+ hold p)))
+                      (loop (+ i 1) new-hold new-cash new-cool))))))))
+         (loop 0 hold cash cool))))))
+
+(define (solve)
+  (solve-prices prices))

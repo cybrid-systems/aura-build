@@ -1,0 +1,83 @@
+(define (string-length s)
+  (let loop ((i 0))
+    (if (>= i (string-length s)) i
+        (loop (+ i 1)))))
+
+(define (string-ref-safe s i)
+  (if (or (< i 0) (>= i (string-length s))) #f
+      (string-ref s i)))
+
+(define (char=? a b)
+  (if (char? a)
+      (if (char? b) (char=? a b) #f)
+      #f))
+
+(define (match? s p)
+  ;; s and p are strings; full match
+  (let* ((n (string-length s))
+         (m (string-length p))
+         (dp (make-vector (+ n 1) #f)))
+    (vector-set! dp 0 #t)
+    (let loop-i ((i 0) (dp dp))
+      (cond ((> i n) #t)
+            (else
+             (let ((prev (if (= i 0) #t (vector-ref dp i))))
+               (let loop-j ((j 0))
+                 (cond ((>= j m) #t)
+                       (else
+                        (let* ((pi (string-ref p j))
+                               (cur (if (= i 0) #f (vector-ref dp i)))
+                               (left (if (= i 0) #t (vector-ref dp (- i 1))))
+                               (match-char
+                                (if (= i 0)
+                                    #f
+                                    (or (char=? pi #\?) (char=? pi (string-ref s (- i 1)))))))
+                          (cond
+                           ((char=? pi #\*)
+                            (cond
+                             ((= i 0)
+                              (vector-set! dp (+ j 1) (vector-ref dp j)))
+                             (else
+                              (let ((v1 (vector-ref dp j))
+                                    (v2 (if match-char (vector-ref dp (- i 1)) #f)))
+                                (vector-set! dp i (or v1 v2)))))
+                           ((char=? pi #\?)
+                            (cond
+                             ((= i 0)
+                              (vector-set! dp (+ j 1) #f))
+                             (else
+                              (let ((v (if match-char (vector-ref dp (- i 1)) #f)))
+                                (vector-set! dp i v)))))
+                           (else
+                            (cond
+                             ((= i 0)
+                              (vector-set! dp (+ j 1) #f))
+                             (else
+                              (let ((v (if (and match-char (vector-ref dp (- i 1))) #t #f)))
+                                (vector-set! dp i v))))))
+                        (loop-j (+ j 1)))))))))))))
+
+(define (solve s p)
+  (if (match? s p) 1 0))
+
+(define (display-result-case i s p)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve s p))
+  (newline))
+
+;; Tests
+(display-result-case 0 "aa" "a")
+(display-result-case 1 "aa" "*")
+(display-result-case 2 "cb" "?a")
+(display-result-case 3 "cb" "?a*")
+(display-result-case 4 "" "")
+(display-result-case 5 "" "*")
+(display-result-case 6 "abc" "a*c")
+(display-result-case 7 "abc" "*a*b*c*")
+(display-result-case 8 "abcd" "a*d")
+(display-result-case 9 "a" "**")
+(display-result-case 10 "ho" "**ho**")
+(display-result-case 11 "aaa" "a*a")
+(display-result-case 12 "aaa" "*a")

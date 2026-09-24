@@ -1,0 +1,65 @@
+;; Best Time to Buy and Sell Stock III
+;; O(n) solution using forward and backward sweeps
+
+(define (min a b) (if (< a b) a b))
+(define (max a b) (if (> a b) a b))
+
+(define (solve prices)
+  (let* ((n (length prices))
+         (n0 n))
+    (if (<= n 1)
+        0
+        ;; forward pass: best single profit up to each day
+        (let ((left (make-list n 0))
+              (right (make-list n 0)))
+          ;; forward
+          (let loop ((i 0) (min-price (car prices)) (best 0))
+            (if (= i n)
+                (begin)
+                (let* ((p (list-ref prices i))
+                       (cur-min (min min-price p))
+                       (cur-best (max best (- p cur-min))))
+                  (list-set! left i cur-best)
+                  (loop (+ i 1) cur-min cur-best))))
+          ;; backward
+          (let loop ((i (- n 1)) (max-price (list-ref prices (- n 1))) (best 0))
+            (if (< i 0)
+                (begin)
+                (let* ((p (list-ref prices i))
+                       (cur-max (max max-price p))
+                       (cur-best (max best (- cur-max p))))
+                  (list-set! right i cur-best)
+                  (loop (- i 1) cur-max cur-best))))
+          ;; combine
+          (let loop ((i 0) (ans 0))
+            (if (= i n)
+                ans
+                (let ((combined (+ (list-ref left i) (list-ref right i))))
+                  (loop (+ i 1) (max ans combined)))))))))
+
+;; Display helper for a number (just prints it)
+(define (display-number n) (display n))
+
+;; Run all cases
+(let ((cases (list
+  (list)
+  (list 5)
+  (list 5 5 5 5)
+  (list 1 2 3 4 5)
+  (list 5 4 3 2 1)
+  (list 3 3 5 0 0 3 1 4)
+  (list 1 2 4 2 5 7 2 4 9 0)
+  (list 7 6 4 3 1)
+  (list 1 2 1 2 1 2)
+  (list 6 1 3 2 4 7))))
+  (let loop ((idx 0) (cs cases))
+    (if (null? cs)
+        'done
+        (let* ((prices (car cs))
+               (result (solve prices)))
+          (display "CASE")
+          (display idx)
+          (display "=")
+          (display-number result)
+          (newline)
+          (loop (+ idx 1) (cdr cs))))))

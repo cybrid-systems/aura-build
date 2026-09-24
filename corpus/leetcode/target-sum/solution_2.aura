@@ -1,0 +1,126 @@
+(define (sum lst)
+  (if (null? lst)
+      0
+      (+ (car lst) (sum (cdr lst)))))
+
+(define (subset-count nums target)
+  ; Returns number of subsets of nums that sum to target
+  (if (< target 0)
+      0
+      (let ((dp (make-vector (+ target 1) 0)))
+        (vector-set! dp 0 1)
+        (let loop ((i 0) (n (length nums)))
+          (if (>= i n)
+              (vector-ref dp target)
+              (let ((v (list-ref nums i)))
+                (let ((j (+ target 1)))
+                  (let ((k (+ target 1)))
+                    (let inner ((j (+ target 1)) (acc '()))
+                      (if (= j 0)
+                          (let loop2 ((acc acc) (idx 0) (vals '()))
+                            (if (null? acc)
+                                (begin
+                                  ; Apply updates stored
+                                  (let apply ((vals vals) (idx idx))
+                                    (if (null? vals)
+                                        (loop (+ i 1) n)
+                                        (begin
+                                          (vector-set! dp (car vals) (cdr vals))
+                                          (apply (cdr vals) (+ idx 1))))))
+                                (loop2 (cdr acc) idx vals)))
+                          (let ((cur (vector-ref dp j)))
+                            (if (and (>= (- j v) 0)
+                                     (>= (vector-ref dp (- j v)) 0))
+                                (inner (- j 1) (cons (cons j (+ cur (vector-ref dp (- j v)))) acc))
+                                (inner (- j 1) acc)))))))))))))
+
+(define (subset-count-simple nums target)
+  ; Cleaner implementation using a fresh vector each iteration
+  (if (< target 0)
+      0
+      (let ((dp (make-vector (+ target 1) 0)))
+        (vector-set! dp 0 1)
+        (let loop ((i 0) (n (length nums)))
+          (if (>= i n)
+              (vector-ref dp target)
+              (let ((v (list-ref nums i))
+                    (new-dp (make-vector (+ target 1) 0)))
+                (let inner ((j 0))
+                  (if (> j target)
+                      (begin
+                        (set! dp new-dp)
+                        (loop (+ i 1) n))
+                      (begin
+                        (if (>= (- j v) 0)
+                            (vector-set! new-dp j (+ (vector-ref new-dp j) (vector-ref dp (- j v)))))
+                        (vector-set! new-dp j (+ (vector-ref new-dp j) (vector-ref dp j)))
+                        (inner (+ j 1)))))))))))
+
+(define (solve nums target)
+  (let ((total (sum nums)))
+    (let ((diff (+ total target)))
+      (if (or (< diff 0) (not (= 0 (modulo diff 2))))
+          0
+          (subset-count-simple nums (/ diff 2))))))
+
+; Helper for displaying list results
+(define (display-list lst)
+  (cond ((null? lst) (display "()"))
+  (display "[")
+        (display (car lst))
+        (let loop ((rest (cdr lst)))
+          (if (null? rest)
+              (display "]")
+              (begin
+                (display ", ")
+                (display (car rest))
+                (loop (cdr rest)))))))
+
+(define (list-ref lst i)
+  (cond ((null? lst) '())
+        ((= i 0) (car lst))
+        (else (list-ref (cdr lst) (- i 1)))))
+
+(define (vector-set! v i val)
+  (cond ((= i 0) (set-car! v val))
+        (else (vector-set! (cdr v) (- i 1) val))))
+
+(define (make-vector n val)
+  (if (<= n 0)
+      '()
+      (cons val (make-vector (- n 1) val))))
+
+(define (vector-ref v i)
+  (cond ((= i 0) (car v))
+        (else (vector-ref (cdr v) (- i 1)))))
+
+; Override set! for car
+(define set-car! set-car!)
+
+; Test cases
+(define (run-tests)
+  (let ((cases (list
+                (list (list 1 1 1 1 1) 3)
+                (list (list 1 1 1 1 1) 5)
+                (list (list 1 1 1 1 1) -3)
+                (list (list 1) 1)
+                (list (list 1) -1)
+                (list (list 0 0 0 0 0 0 0 0 1) 1)
+                (list (list 1000 1000 1000 1000 1000 1000 1000 1000 1000 1000
+                             1000 1000 1000 1000 1000 1000 1000 1000 1000 1000) 0)
+                (list (list 1 2 3 4 5) 3))))
+    (let loop ((cs cases) (i 0))
+      (if (null? cs)
+          'done
+          (let ((c (car cs)))
+            (let ((nums (car c))
+                  (target (car (cdr c))))
+              (begin
+                (display "CASE")
+                (display i)
+                (display "=")
+                (display (solve nums target))
+                (newline)
+                (loop (cdr cs) (+ i 1)))))))))
+
+(run-tests)

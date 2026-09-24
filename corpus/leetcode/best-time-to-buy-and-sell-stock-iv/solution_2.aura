@@ -1,0 +1,66 @@
+(define (max a b) (if (> a b) a b))
+
+(define (solve prices k)
+  (let ((n (length prices)))
+    (cond ((= k 0) 0)
+          ((null? prices) 0)
+          ((>= k (quotient n 2))
+           (let loop ((xs (cdr prices)) (prev (car prices)) (acc 0))
+             (if (null? xs)
+                 acc
+                 (let ((d (- (car xs) prev)))
+                   (loop (cdr xs) (car xs)
+                         (if (> d 0) (+ acc d) acc))))))
+          (else
+           (let ((hold (make-list (+ k 1) 0))
+                 (cash (make-list (+ k 1) 0)))
+             (let outer ((xs prices))
+               (if (null? xs)
+                   (list-ref cash k)
+                   (let ((price (car xs)))
+                     (let inner ((j 1) (new-hold hold))
+                       (if (> j k)
+                           (begin
+                             (set! hold new-hold)
+                             (outer (cdr xs)))
+                           (let ((prev-cash (list-ref cash j)))
+                             (set! hold (list-set new-hold j
+                                          (max (list-ref new-hold j)
+                                               (- prev-cash price))))
+                             (set! cash (list-set cash j
+                                          (max prev-cash
+                                               (+ (list-ref new-hold j) price))))
+                             (inner (+ j 1) hold))))))))))))
+
+(define (list-set lst idx val)
+  (let loop ((l lst) (i 0) (acc '()))
+    (if (null? l)
+        (reverse acc)
+        (if (= i idx)
+            (loop (cdr l) (+ i 1) (cons val acc))
+            (loop (cdr l) (+ i 1) (cons (car l) acc))))))
+
+(define (make-list n val)
+  (let loop ((i 0) (acc '()))
+    (if (>= i n)
+        (reverse acc)
+        (loop (+ i 1) (cons val acc)))))
+
+;; Test cases
+(define (run-test case-id prices k)
+  (begin
+    (display "CASE")
+    (display case-id)
+    (display "=")
+    (display (solve prices k))
+    (newline)))
+
+(run-test 0 '(2 4 1 7 5 3 6 4) 2)
+(run-test 1 '(3 2 6 5 0 3) 2)
+(run-test 2 '(1 2 3 4 5) 2)
+(run-test 3 '() 2)
+(run-test 4 '(1 2) 0)
+(run-test 5 '(1) 1)
+(run-test 6 '(1 5 2 8 3 9) 3)
+(run-test 7 '(5 4 3 2 1) 2)
+(run-test 8 '(1 2 4 2 5 7 2 4 9 0) 3)

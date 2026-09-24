@@ -1,0 +1,52 @@
+(define (len xs)
+  (if (null? xs) 0 (+ 1 (len (cdr xs)))))
+
+(define (sort xs)
+  (define (insert x ys)
+    (cond ((null? ys) (list x))
+          ((<= x (car ys)) (cons x ys))
+          (else (cons (car ys) (insert x (cdr ys))))))
+  (if (null? xs) '()
+      (insert (car xs) (sort (cdr xs)))))
+
+(define (solve greed size)
+  (let ((g (sort greed)) (s (sort size)))
+    (letrec ((loop (lambda (i j cnt)
+      (cond ((or (null? (list-tail g i)) (null? (list-tail s j))) cnt)
+            ((<= (list-ref g i) (list-ref s j))
+             (loop (+ i 1) (+ j 1) (+ cnt 1)))
+            (else (loop i (+ j 1) cnt))))))
+      (loop 0 0 0))))
+
+;; Test cases
+(define greed0 (list 1 2 3))
+(define size0 (list 1 1))
+(display "CASE0=") (display (solve greed0 size0)) (newline)
+
+(define greed1 (list 1 2))
+(define size1 (list 1 2 3))
+(display "CASE1=") (display (solve greed1 size1)) (newline)
+
+(define greed2 (list 1 2 3))
+(define size2 (list 3))
+(display "CASE2=") (display (solve greed2 size2)) (newline)
+
+(define greed3 (list 10 9 8 7))
+(define size3 (list 5 6 7 8))
+(display "CASE3=") (display (solve greed3 size3)) (newline)
+
+(define greed4 (list 1 1 1 1))
+(define size4 (list 1 1 1 1))
+(display "CASE4=") (display (solve greed4 size4)) (newline)
+
+(define greed5 (list 0 0 0))
+(define size5 (list 0 0 0))
+(display "CASE5=") (display (solve greed5 size5)) (newline)
+
+(define greed6 (list 5))
+(define size6 (list 1 2 3 4))
+(display "CASE6=") (display (solve greed6 size6)) (newline)
+
+(define greed7 (list 1 5 7))
+(define size7 (list 2 3 6))
+(display "CASE7=") (display (solve greed7 size7)) (newline)

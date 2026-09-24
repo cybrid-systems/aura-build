@@ -1,0 +1,85 @@
+(define (max a b)
+  (if (> a b) a b))
+
+(define (count-and-collect tasks)
+  (let ((counts (make-vector 26 0)))
+    (define (inc-char c)
+      (let ((idx (- (char->integer c) (char->integer #\A))))
+        (vector-set! counts idx (+ (vector-ref counts idx) 1))))
+    (define (loop i)
+      (if (< i (string-length tasks))
+          (begin
+            (inc-char (string-ref tasks i))
+            (loop (+ i 1)))))
+    (loop 0)
+    counts))
+
+(define (solve tasks)
+  (let* ((n (string-length tasks))
+         (counts (count-and-collect tasks))
+         (max-freq 0)
+         (max-count 0))
+    (define (find-max i)
+      (if (< i 26)
+          (let ((c (vector-ref counts i)))
+            (cond
+              ((> c max-freq)
+               (begin
+                 (set! max-freq c)
+                 (set! max-count 1)
+                 (find-max (+ i 1))))
+              ((= c max-freq)
+               (begin
+                 (set! max-count (+ max-count 1))
+                 (find-max (+ i 1))))
+              (else (find-max (+ i 1)))))))
+    (find-max 0)
+    (let ((schedule-size (+ (* (- max-freq 1) (+ max-count 1)) max-count)))
+      (max n schedule-size))))
+
+(define (char->integer c)
+  (char->integer c))
+
+(define (make-vector n init)
+  (make-vector n init))
+
+(define (vector-set! v i x)
+  (vector-set! v i x))
+
+(define (vector-ref v i)
+  (vector-ref v i))
+
+(define (string-length s)
+  (string-length s))
+
+(define (string-ref s i)
+  (string-ref s i))
+
+;; Test cases
+(define cases
+  (list
+    (cons 0 "AAABBC")
+    (cons 1 "A")
+    (cons 2 "ABC")
+    (cons 3 "AAAA")
+    (cons 4 "ABABAB")
+    (cons 5 "AAABBB")
+    (cons 6 "AAAAA")
+    (cons 7 "AAABBCC")))
+
+(define (run-cases cases)
+  (cond
+    ((null? cases) (display ""))
+    (else
+      (let* ((pair (car cases))
+             (i (car pair))
+             (tasks (cdr pair))
+             (result (solve tasks)))
+        (display "CASE")
+        (display (number->string i))
+        (display "=")
+        (display (number->string result))
+        (newline)
+        (run-cases (cdr cases))))))
+
+(run-cases cases)

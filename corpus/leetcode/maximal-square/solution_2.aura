@@ -1,0 +1,25 @@
+(define (min3 a b c)
+  (let ((m (min a b)))
+    (min m c)))
+
+(define (list-ref-safe xs i)
+  (cond ((null? xs) 0)
+        ((= i 0) (car xs))
+        (else (list-ref-safe (cdr xs) (- i 1)))))
+
+(define (row-ref grid i n)
+  (list-ref-safe grid i))
+
+(define (solve m n grid)
+  (letrec ((max-side 0)
+           (prev (make-vector (+ n 1) 0))
+           (cur (make-vector (+ n 1) 0))
+           (helper (lambda (i)
+                     (set! prev (vector-copy cur))
+                     (let loop ((j 1) (left 0) (diag 0) (up 0))
+                       (cond ((> j n) 'done)
+                             (else
+                              (let ((cell (row-ref grid (- i 1) n)))
+                               )
+                              ))))))
+    0))

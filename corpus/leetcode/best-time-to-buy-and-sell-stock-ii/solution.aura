@@ -1,0 +1,35 @@
+(define (max a b) (if (> a b) a b))
+
+(define (profit-helper prices prev)
+  (if (null? prices)
+      0
+      (+ (max 0 (- (car prices) prev))
+         (profit-helper (cdr prices) (car prices)))))
+
+(define (solve prices)
+  (if (null? prices)
+      0
+      (profit-helper (cdr prices) (car prices))))
+
+(define (display-case n result)
+  (display "CASE")
+  (display n)
+  (display "=")
+  (display result)
+  (newline))
+
+(let ((cases (list (list 0 (list 7 1 5 3 6 4))
+                   (list 1 (list 1 2 3 4 5))
+                   (list 2 (list 7 6 4 3 1))
+                   (list 3 (list 5))
+                   (list 4 (list 5 5 5 5))
+                   (list 5 (list 0 1 2 0 1 2))
+                   (list 6 (list 1 0))
+                   (list 7 (list 3 2 1 2 3 0 4)))))
+  (define (run cases)
+    (if (null? cases)
+        '()
+        (begin
+          (display-case (car (car cases)) (solve (car (cdr (car cases)))))
+          (run (cdr cases)))))
+  (run cases))

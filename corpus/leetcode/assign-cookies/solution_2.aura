@@ -1,0 +1,44 @@
+(define (len lst)
+  (if (null? lst) 0 (+ 1 (len (cdr lst)))))
+
+(define (append a b)
+  (if (null? a) b (cons (car a) (append (cdr a) b))))
+
+(define (insert x lst)
+  (cond ((null? lst) (cons x '()))
+        ((<= x (car lst)) (cons x lst))
+        (else (cons (car lst) (insert x (cdr lst))))))
+
+(define (sort lst)
+  (if (null? lst) '() (insert (car lst) (sort (cdr lst)))))
+
+(define (max a b) (if (> a b) a b))
+
+(define (content greed size)
+  (let ((g (sort greed)) (s (sort size)))
+       (let loop ((i 0) (j 0) (cnt 0))
+            (cond ((or (>= i (len g)) (>= j (len s))) cnt)
+                  ((>= (list-ref s j) (list-ref g i))
+                   (loop (+ i 1) (+ j 1) (+ cnt 1)))
+                  (else (loop i (+ j 1) cnt))))))
+
+(define (list-ref lst n)
+  (if (= n 0) (car lst) (list-ref (cdr lst) (- n 1))))
+
+(define (solve greed size) (content greed size))
+
+(define (run-case i greed size)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve greed size))
+  (newline))
+
+(run-case 0 '(1 2 3) '(1 1))
+(run-case 1 '(1 2) '(1 2 3))
+(run-case 2 '(1 2 3) '(3))
+(run-case 3 '(10 9 8 7) '(5 6 7 8))
+(run-case 4 '(1 1 1 1) '(1 1 1 1))
+(run-case 5 '(0 0 0) '(0 0 0))
+(run-case 6 '(5) '(1 2 3 4))
+(run-case 7 '(1 5 7) '(2 3 6))

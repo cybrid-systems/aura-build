@@ -1,0 +1,65 @@
+(define (solve ratings)
+  (let ((n (length ratings)))
+    (if (= n 0)
+        0
+        (let ((candies (make-list n 1)))
+          ;; left-to-right pass
+          (let loop ((i 1))
+            (if (< i n)
+                (begin
+                  (if (> (list-ref ratings i) (list-ref ratings (- i 1)))
+                      (set! (list-ref candies i) (+ (list-ref candies (- i 1)) 1)))
+                  (loop (+ i 1)))))
+          ;; right-to-left pass
+          (let loop ((i (- n 2)))
+            (if (>= i 0)
+                (begin
+                  (if (> (list-ref ratings i) (list-ref ratings (+ i 1)))
+                      (if (< (list-ref candies i) (+ (list-ref candies (+ i 1)) 1))
+                          (set! (list-ref candies i) (+ (list-ref candies (+ i 1)) 1))))
+                  (loop (- i 1)))))
+          (sum-list candies)))))
+
+(define (make-list n val)
+  (let loop ((i 0) (acc '()))
+    (if (>= i n)
+        (reverse acc)
+        (loop (+ i 1) (cons val acc)))))
+
+(define (sum-list lst)
+  (let loop ((l lst) (s 0))
+    (if (null? l)
+        s
+        (loop (cdr l) (+ s (car l))))))
+
+(define (reverse lst)
+  (let loop ((l lst) (acc '()))
+    (if (null? l)
+        acc
+        (loop (cdr l) (cons (car l) acc)))))
+
+;; Test cases
+(define cases
+  (list
+    (list 1 0 2)
+    (list 1 2 2 4 3)
+    (list 4 3 2 1)
+    (list)
+    (list 5)
+    (list 1 2 3 4 5)
+    (list 5 4 3 2 1)
+    (list 1 3 4 5 2)))
+
+(define (run-cases cases)
+  (let loop ((cs cases) (i 0))
+    (if (null? cs)
+        'done
+        (begin
+          (display "CASE")
+          (display i)
+          (display "=")
+          (display (solve (car cs)))
+          (newline)
+          (loop (cdr cs) (+ i 1))))))
+
+(run-cases cases 0)

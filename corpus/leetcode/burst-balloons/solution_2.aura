@@ -1,0 +1,83 @@
+;; Burst Balloons - classic interval DP
+;; dp[i][j] = max coins obtainable by bursting all balloons in (i,j) exclusive
+;; Pad with 1 on both ends.
+
+(define (max a b) (if (> a b) a b))
+
+(define (solve nums)
+  (let* ((n (length nums))
+         (padded (list->vector (cons 1 (append nums (list 1)))))
+         (m (+ n 2))
+         (dp (make-vector m 0)))
+    ;; We'll use a vector of vectors for dp.
+    ;; Initialize dp[i][i+1] = 0 for all i.
+    (set! dp (make-vector m 0))
+    ;; Build a 2D structure: list of vectors
+    (define (make-2d rows cols)
+      (let loop ((i 0) (acc '()))
+        (if (= i rows)
+            (reverse acc)
+            (loop (+ i 1) (cons (make-vector cols 0) acc)))))
+    (set! dp (make-2d m m))
+    ;; Fill for increasing window lengths
+    (let ((len 2))
+      (let loop-len ((len 2))
+        (if (> len m) 0
+            (begin
+              (let loop-i ((i 0))
+                (if (> (+ i len) (- m 1)) 0
+                    (begin
+                      (let ((j (+ i len)))
+                        ;; k is the last balloon burst in (i,j) exclusive
+                        (let ((best 0))
+                          (let loop-k ((k (+ i 1)))
+                            (if (= k j) (begin
+                              (vector-set! (vector-ref dp i) j best))
+                            (begin
+                              (let ((left (vector-ref padded i)))
+                              (let ((right (vector-ref padded j)))
+                              (let ((mid (vector-ref padded k)))
+                              (let ((cur (+ (* left mid right)
+                                            (vector-ref (vector-ref dp i) k)
+                                            (vector-ref (vector-ref dp k) j))))
+                                (set! best (max best cur)))))
+                              (loop-k (+ k 1)))))) )
+                          (loop-i (+ i 1)))))
+              (loop-len (+ len 1)))))))
+
+    ;; Max coins for full range: burst everything in (0, m-1)
+    (vector-ref (vector-ref dp 0) (- m 1))))
+
+(define (list->vector lst)
+  (let ((v (make-vector (length lst) 0)))
+    (let loop ((i 0) (l lst))
+      (if (null? l) v
+          (begin
+            (vector-set! v i (car l))
+            (loop (+ i 1) (cdr l)))))))
+
+(define (length lst)
+  (let loop ((l lst) (c 0))
+    (if (null? l) c (loop (cdr l) (+ c 1)))))
+
+(define (append a b)
+  (if (null? a) b (cons (car a) (append (cdr a) b))))
+
+;; ---- Main: print CASEi= for each embedded test ----
+
+(define (display-list lst)
+  (display "(")
+  (let loop ((l lst))
+    (cond ((null? l) (display ")"))
+    (else
+      (display (car l))
+      (if (null? (cdr l)) 0 (begin (display " ") (loop (cdr l))))))))
+
+(display "CASE0=") (display (solve '())) (newline)
+(display "CASE1=") (display (solve '(1))) (newline)
+(display "CASE2=") (display (solve '(3 1 5))) (newline)
+(display "CASE3=") (display (solve '(1 5))) (newline)
+(display "CASE4=") (display (solve '(7 9 8 0 0))) (newline)
+(display "CASE5=") (display (solve '(3 1 5 8))) (newline)
+(display "CASE6=") (display (solve '(0 0 0 0))) (newline)
+(display "CASE7=") (display (solve '(5 5 5 5 5))) (newline)

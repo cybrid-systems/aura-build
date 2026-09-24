@@ -1,0 +1,21 @@
+(define (sum-list lst)
+  (let loop ((xs lst) (acc 0))
+    (if (null? xs)
+        acc
+        (loop (cdr xs) (+ acc (car xs))))))
+
+(define (solve gas cost)
+  (let* ((n (length gas))
+         (total-gas (sum-list gas))
+         (total-cost (sum-list cost)))
+    (if (< total-gas total-cost)
+        -1
+        ;; Classic greedy: start at 0, track running tank, reset start when tank would go negative.
+        (let loop ((i 0) (tank 0) (start 0))
+          (cond
+            ((>= i n) start)
+            (else
+             (let* ((net (+ tank (- (list-ref gas i) (list-ref cost i)))))
+               (if (< net 0)
+                   (loop (+ i 1) 0 (+ i 1))
+                   (loop (+ i 1) net start)))))))))

@@ -1,0 +1,97 @@
+(define (max a b) (if (> a b) a b))
+
+(define (list-length xs)
+  (if (null? xs) 0 (+ 1 (list-length (cdr xs)))))
+
+(define (list-ref xs i)
+  (if (= i 0) (car xs) (list-ref (cdr xs) (- i 1))))
+
+;; Greedy solution: unlimited transactions (sum positive diffs)
+(define (unlimited-profit prices n)
+  (let loop ((i 1) (profit 0))
+    (if (>= i n) profit
+        (let ((cur (list-ref prices i))
+              (prev (list-ref prices (- i 1))))
+          (loop (+ i 1) (if (> cur prev) (+ profit (- cur prev)) profit))))))
+
+;; DP for limited k
+(define (solve prices k)
+  (let ((n (list-length prices)))
+    (cond
+      ((or (= n 0) (= k 0)) 0)
+      ((>= k (quotient n 2)) (unlimited-profit prices n))
+      (else
+       ;; DP arrays of size k+1 for hold and cash
+       ;; We'll build using a helper
+       (let* ((k1 (+ k 1))
+              ;; Initialize: hold[j] = -prices[0] for j in [1..k]; cash[j] = 0
+              (init-hold (let loop ((j 0) (acc '()))
+                           (if (= j k1) acc
+                               (loop (+ j 1)
+                                     (cons (- 0 (list-ref prices 0)) acc)))))
+              (init-cash (let loop ((j 0) (acc '()))
+                           (if (= j k1) acc
+                               (loop (+ j 1) (cons 0 acc))))))
+         ;; Iterate days i = 1..n-1, updating hold and cash in place
+         (let day-loop ((i 1) (hold init-hold) (cash init-cash))
+           (if (>= i n) (list-ref cash k)
+               (let* ((price (list-ref prices i))
+                      ;; Update cash[j] then hold[j] to avoid using updated hold[j] for cash[j]
+                      ;; cash[j] = max(cash[j], hold[j] + price)
+                      (new-cash
+                       (let loop ((j 0) (acc '()) (c cash) (h hold))
+                         (if (null? c) acc
+                             (let ((cval (car c))
+                                   (hval (car h)))
+                               (loop (+ j 1)
+                                     (cons (max cval (+ hval price)) acc)
+                                     (cdr c) (cdr h))))))
+                      (new-cash (reverse new-cash))
+                      ;; hold[j] = max(hold[j], cash[j] - price)
+                      (new-hold
+                       (let loop ((j 0) (acc '()) (c new-cash) (h hold))
+                         (if (null? c) acc
+                             (let ((cval (car c))
+                                   (hval (car h)))
+                               (loop (+ j 1)
+                                     (cons (max hval (- cval price)) acc)
+                                     (cdr c) (cdr h))))))
+                      (new-hold (reverse new-hold)))
+                 (day-loop (+ i 1) new-hold new-cash)))))))))
+
+(define (reverse xs)
+  (let loop ((xs xs) (acc '()))
+    (if (null? xs) acc (loop (cdr xs) (cons (car xs) acc)))))
+
+(define (display-list xs)
+  (display "[")
+  (let loop ((xs xs) (first #t))
+    (cond ((null? xs) (display "]"))
+          (else
+           (if first (display (car xs)) (begin (display ",") (display (car xs))))
+           (loop (cdr xs) #f)))))
+
+(define (run-case i prices k)
+  (let ((result (solve prices k)))
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display result)
+    (newline)))
+
+(let ((p0 (list 2 4 1 7 5 3 6 4)))
+  (run-case 0 p0 2))
+(let ((p1 (list 3 2 6 5 0 3)))
+  (run-case 1 p1 2))
+(let ((p2 (list 1 2 3 4 5)))
+  (run-case 2 p2 2))
+(run-case 3 '() 2)
+(let ((p4 (list 1 2)))
+  (run-case 4 p4 0))
+(run-case 5 (list 1) 1)
+(let ((p6 (list 1 5 2 8 3 9)))
+  (run-case 6 p6 3))
+(let ((p7 (list 5 4 3 2 1)))
+  (run-case 7 p7 2))
+(let ((p8 (list 1 2 4 2 5 7 2 4 9 0)))
+  (run-case 8 p8 3))

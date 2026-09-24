@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:41:29Z",
+      "ts_local": "2026-09-24 22:41:29 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2415,
+        "total_characters": 0,
+        "prompt_tokens": 1168,
+        "completion_tokens": 1247,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": -1,
+      "timeout": true,
+      "duration_s": 20.017,
+      "tests_passed": 0,
+      "tests_total": 13,
+      "stderr_snippet": "timeout",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:41:34Z",
+      "ts_local": "2026-09-24 22:41:34 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1955,
+        "total_characters": 0,
+        "prompt_tokens": 1168,
+        "completion_tokens": 787,
+        "prompt_tokens_details": {
+          "cached_tokens": 1167
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.112,
+      "tests_passed": 0,
+      "tests_total": 13,
+      "stderr_snippet": "error: 30:37: unbound variable: pi\n   |\n 30 |                            ((char=? pi #\\?)\n   |                                     ^^\nerror: internal error: recursion depth exceeded (>700) fiber=0\nerror: internal error: recursion depth exceeded (>700) fiber=0\nerror: internal error: recursion depth exceeded (>700) fiber=0\nerror: internal error: recursion depth exceeded (>700) fiber=0\nerror: internal error: recursion depth exceeded (>700) fiber=0\nerror: internal error: recursion depth exceeded (>7",
+      "stdout_snippet": "CASE0=CASE1=CASE2=CASE3=CASE4=CASE5=CASE6=CASE7=CASE8=CASE9=CASE10=CASE11=CASE12="
+    }
+  ],
+  "slug": "wildcard-matching",
+  "title": "Wildcard Matching",
+  "category": "dynamic_programming",
+  "updated_at": "2026-09-24T14:41:34Z",
+  "updated_at_local": "2026-09-24 22:41:34 CST"
+}

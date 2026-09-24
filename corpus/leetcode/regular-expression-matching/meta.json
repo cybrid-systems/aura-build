@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:41:26Z",
+      "ts_local": "2026-09-24 22:41:26 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2221,
+        "total_characters": 0,
+        "prompt_tokens": 1212,
+        "completion_tokens": 1009,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.017,
+      "tests_passed": 0,
+      "tests_total": 10,
+      "stderr_snippet": "error: 74:26: parse error: unexpected ')'\n",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:41:33Z",
+      "ts_local": "2026-09-24 22:41:33 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2502,
+        "total_characters": 0,
+        "prompt_tokens": 1212,
+        "completion_tokens": 1290,
+        "prompt_tokens_details": {
+          "cached_tokens": 1211
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.139,
+      "tests_passed": 0,
+      "tests_total": 10,
+      "stderr_snippet": "error: 5:31: parse error: expected expression, got identifier 'char=?'\n   |\n  5 |          (or (char=? pc #\\.) (char=? c pc)))))\n   |                               ^^^^^^\nerror: 12:10: unbound variable: else\n  did you mean 'len'?\n   |\n 12 |         (else\n   |          ^^^^\n",
+      "stdout_snippet": "CASE0=TTTT\nCASE1=TTTT\nCASE2=TTTT\nCASE3=TTTT\nCASE4=TTTT\nCASE5=TTTT\nCASE6=TTTT\nCASE7=TTTT\nCASE8=TTTT\nCASE9=TTTT\n"
+    }
+  ],
+  "slug": "regular-expression-matching",
+  "title": "Regular Expression Matching",
+  "category": "dynamic_programming",
+  "updated_at": "2026-09-24T14:41:33Z",
+  "updated_at_local": "2026-09-24 22:41:33 CST"
+}
