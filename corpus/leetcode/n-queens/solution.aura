@@ -1,0 +1,101 @@
+;; N-Queens solver in Aura
+;; Uses backtracking with bitmasks for efficiency, but stays in pure list form.
+
+(define (make-string n ch)
+  ;; Build a string of n copies of ch
+  (let loop ((k n) (acc ""))
+    (if (= k 0)
+        acc
+        (loop (- k 1) (string-append acc (string ch))))))
+
+(define (display-row row)
+  (display row))
+
+(define (display-list xs)
+  ;; Display a list of rows as concatenated strings
+  (cond ((null? xs) #t)
+        (else
+         (display (car xs))
+         (display-list (cdr xs)))))
+
+(define (display-list-of-lists xs)
+  ;; Display a list of solutions (each is a list of rows) as concatenated strings
+  (cond ((null? xs) #t)
+        (else
+         (display-list (car xs))
+         (display-list-of-lists (cdr xs)))))
+
+(define (display-solutions sols)
+  (display-list-of-lists sols))
+
+;; Check if placing a queen at (row, col) is safe given queens placed in earlier rows.
+;; queens-cols is a list of column indices for rows 0..row-1.
+(define (safe? queens-cols row col)
+  (let loop ((r (- row 1)) (qs queens-cols))
+    (cond ((null? qs) #t)
+          ((= (q 0) col) #f)
+          ((= (- row r) (abs (- col (q 0)))) #f)
+          (else (loop (- r 1) (cdr qs))))))
+
+;; Backtracking solver returning list of solutions (each is a list of row strings).
+(define (solve-helper n row queens-cols current-board sols)
+  (if (= row n)
+      (cons (reverse current-board) sols)
+      (let loop ((col 0) (sols sols))
+        (if (= col n)
+            sols
+            (if (safe? queens-cols row col)
+                (let ((new-board (cons (build-row n col) current-board)))
+                  (loop (+ col 1)
+                        (solve-helper n (+ row 1)
+                                      (cons col queens-cols)
+                                      new-board
+                                      sols)))
+                (loop (+ col 1) sols))))))
+
+(define (build-row n col)
+  ;; Build a row string with 'Q' at position col and '.' elsewhere.
+  (string-append (make-string col ".")
+                 "Q"
+                 (make-string (- n col 1) ".")))
+
+(define (solve n)
+  (if (<= n 0)
+      '()
+      (solve-helper n 0 '() '() '())))
+
+;; Embedded test inputs
+(define inputs '(1 2 3 4 5 6 0 7))
+
+(define (run-tests inputs)
+  (let loop ((xs inputs) (i 0))
+    (cond ((null? xs) #t)
+          (else
+           (let ((n (car xs)))
+             (display "CASE")
+             (display i)
+             (display "=")
+             (display n)
+             (newline)
+             (let ((result (solve n)))
+               (display "ANS")
+               (display i)
+               (display "c=")
+               (display (length result))
+               (newline)
+               (let ((k 0))
+                 (let ((rows result))
+                   (let S ((sols rows) (idx j))
+                     (cond ((null? sols) #t)
+                           (else
+                            (display "ANS")
+                            (display i)
+                            (display "_")
+                            (display idx)
+                            (display "=")
+                            (display-solutions (car sols))
+                            (newline)
+                            (S (cdr sols) (+ idx 1)))))))
+               (loop (cdr xs) (+ i 1))))))))
+
+(run-tests inputs)

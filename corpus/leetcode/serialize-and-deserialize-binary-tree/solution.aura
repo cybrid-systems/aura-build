@@ -1,0 +1,237 @@
+;; Serialize and Deserialize Binary Tree in Aura
+;; Tree representation:
+;;   empty tree: '()
+;;   node with val v, left L, right R: (cons v (cons L R))
+
+(define (make-node v l r) (cons v (cons l r)))
+(define (node-val n) (car n))
+(define (node-left n) (car (cdr n)))
+(define (node-right n) (cdr (cdr n)))
+(define (empty-tree? t) (null? t))
+
+;; ---------- Serialize ----------
+;; Pre-order DFS with '#' sentinels, comma-separated values.
+(define (serialize t)
+  (let ((acc '()))
+    (define (walk x)
+      (if (empty-tree? x)
+          (set! acc (cons "#" acc))
+          (begin
+            (set! acc (cons (number->string (node-val x)) acc))
+            (walk (node-left x))
+            (walk (node-right x)))))
+    (walk t)
+    ;; acc is in reverse order; build the string
+    (let ((parts (reverse acc)))
+      (define (join xs)
+        (if (null? xs)
+            ""
+            (if (null? (cdr xs))
+                (car xs)
+                (string-append (car xs) "," (join (cdr xs))))))
+      (join parts))))
+
+;; ---------- Deserialize ----------
+;; Parse comma-separated tokens from the serialized string.
+(define (tokenize s)
+  (let ((len (string-length s))
+        (chars (string->list s))
+        (tokens '())
+        (cur '()))
+    (define (flush)
+      (if (null? cur)
+          '()
+          (begin
+            (set! tokens (cons (list->string (reverse cur)) tokens))
+            (set! cur '()))))
+    (let loop ((i 0))
+      (cond
+        ((= i len) (begin (flush) (reverse tokens)))
+        ((char=? (list-ref chars i) #\,)
+         (begin (flush) (loop (+ i 1))))
+        (else
+         (set! cur (cons (list-ref chars i) cur))
+         (loop (+ i 1)))))))
+
+(define (deserialize s)
+  (let ((tokens (tokenize s))
+        (idx 0))
+    (define (peek) (list-ref tokens idx))
+    (define (advance) (set! idx (+ idx 1)))
+    (define (build)
+      (let ((tok (peek)))
+        (advance)
+        (if (string=? tok "#")
+            '()
+            (let ((v (string->number tok)))
+              (let ((l (build))
+                    (r (build)))
+                (make-node v l r))))))
+    (build)))
+
+;; ---------- List (level-order) <-> Tree helpers ----------
+;; Parse a level-order array literal like [1,2,3,"#",4] into a list of tokens
+;; where tokens are either numbers or the symbol '#'.
+;; For embedded tests we receive the array already parsed into Aura form
+;; by the caller; the helper below is a fallback that converts a flat list
+;; of mixed numbers/strings/symbols.
+(define (normalize-token x)
+  (cond
+    ((number? x) x)
+    ((string? x) (if (string=? x "#") '# '#non-sentinel))
+    ((symbol? x) x)
+    (else x)))
+
+;; Build tree from a list of (normalized) tokens interpreted as level-order.
+;; Token '# or "#" (string) means null.
+;; For robustness, accept both a symbol '# and string "#".
+(define (is-null-token? x)
+  (cond
+    ((string? x) (string=? x "#"))
+    ((symbol? x) (eq? x '#))
+    (else #f)))
+
+(define (build-from-level-order lst)
+  (if (null? lst)
+      '()
+      (let ((first (car lst)))
+        (if (is-null-token? first)
+            '()
+            (let ((nodes (list (cons first (cons '() '()))))
+                  (i 1)
+                  (n (length lst)))
+              ;; BFS building using index-based children
+              (let loop ((idx 0))
+                (if (= idx (length nodes))
+                    (car nodes)
+                    (let ((cur (list-ref nodes idx)))
+                      ;; left child
+                      (when (< i n)
+                        (let ((ltok (list-ref lst i)))
+                          (set! i (+ i 1))
+                          (if (is-null-token? ltok)
+                              '()
+                              (begin
+                                (let ((ln (cons ltok (cons '() '()))))
+                                  (set! nodes (append nodes (list ln)))
+                                  (set-car! (cdr cur) ln))))))
+                      ;; right child
+                      (when (< i n)
+                        (let ((rtok (list-ref lst i)))
+                          (set! i (+ i 1))
+                          (if (is-null-token? rtok)
+                              '()
+                              (begin
+                                (let ((rn (cons rtok (cons '() '()))))
+                                  (set! nodes (append nodes (list rn)))
+                                  (set-cdr! (cdr cur) rn))))))
+                      (loop (+ idx 1))))))))))
+
+;; Convert a tree back to a level-order list (with '#' sentinels) for output.
+(define (tree-to-level-order t)
+  (if (empty-tree? t)
+      '()
+      (let ((result '())
+            (queue (list t)))
+        (let loop ()
+          (if (null? queue)
+              (reverse result)
+              (let ((cur (car queue)))
+                (set! queue (cdr queue))
+                (if (empty-tree? cur)
+                    (begin
+                      (set! result (cons '# result))
+                      (loop))
+                    (begin
+                      (set! result (cons (node-val cur) result))
+                      (set! queue (append queue
+                                          (list (node-left cur))
+                                          (list (node-right cur))))
+                      (loop)))))))))
+
+;; ---------- Display helpers ----------
+(define (display-list xs)
+  (display "[")
+  (let loop ((rest xs))
+    (cond
+      ((null? rest) (display "]"))
+      ((null? (cdr rest))
+       (display (car rest)) (display "]"))
+      (else
+       (display (car rest)) (display ",")
+       (loop (cdr rest))))))
+
+;; Convert a list of mixed values (numbers, symbols '#) into a displayable form.
+;; Numbers printed as numbers; '# symbol printed as "#"; strings as-is.
+(define (display-token x)
+  (cond
+    ((number? x) (display x))
+    ((symbol? x) (display (symbol->string x)))
+    ((string? x) (display x))
+    (else (display x))))
+
+(define (display-list-tokens xs)
+  (display "[")
+  (let loop ((rest xs))
+    (cond
+      ((null? rest) (display "]"))
+      ((null? (cdr rest))
+       (display-token (car rest)) (display "]"))
+      (else
+       (display-token (car rest)) (display ",")
+       (loop (cdr rest))))))
+
+;; ---------- Solve ----------
+;; For each test case:
+;;   1. Build tree from level-order input
+;;   2. Serialize it
+;;   3. Deserialize the serialized string back to a tree
+;;   4. Convert both back to level-order lists and compare
+;;   5. Print "CASEi=<#t or #f>" indicating round-trip success,
+;;      plus the serialized string and resulting level-order.
+
+(define (roundtrip-ok t)
+  (let ((s (serialize t))
+        (t2 (deserialize (serialize t))))
+    (equal? (tree-to-level-order t)
+            (tree-to-level-order t2))))
+
+(define (display-serial s)
+  (display " serial=\"")
+  (display s)
+  (display "\""))
+
+;; We embed test cases as Aura literals. '# represents a null in level-order.
+(define CASE0-IN '(1 2 3 # # 4 5))
+(define CASE1-IN '())
+(define CASE2-IN '(7))
+(define CASE3-IN '(1 2 3 4 5 # #))
+(define CASE4-IN '(0 # 1))
+(define CASE5-IN '(1 # 2 # 3))
+(define CASE6-IN '(5 4 7 3 # 6 8))
+(define CASE7-IN '(10 5 15 # 6 12 20))
+
+(define (run-case idx in)
+  (let ((t (build-from-level-order in))
+        (s (serialize (build-from-level-order in)))
+        (t2 (deserialize (serialize (build-from-level-order in))))
+        (lo (tree-to-level-order (deserialize (serialize (build-from-level-order in))))))
+    (display "CASE")
+    (display idx)
+    (display "=ok=")
+    (display (roundtrip-ok t))
+    (display " serial=\"")
+    (display s)
+    (display "\" levelorder=")
+    (display-list-tokens lo)
+    (newline)))
+
+;; Main
+(run-case 0 CASE0-IN)
+(run-case 1 CASE1-IN)
+(run-case 2 CASE2-IN)
+(run-case 3 CASE3-IN)
+(run-case 4 CASE4-IN)
+(run-case 5 CASE5-IN)
+(run-case 6 CASE6-IN)
+(run-case 7 CASE7-IN)

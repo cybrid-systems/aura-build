@@ -1,0 +1,61 @@
+;; Helpers for tree operations
+
+;; Deep copy a tree (node = (val left right) or NIL)
+(define (copy-tree t)
+  (if (null? t)
+      'NIL
+      (let ((rest (cdr t)))
+        (cons (car t) (cons (copy-tree (car rest))
+                            (cons (copy-tree (car (cdr rest))) '()))))))
+
+;; Merge t1 and t2 into a fresh tree
+(define (merge t1 t2)
+  (cond
+    ((and (null? t1) (null? t2)) 'NIL)
+    ((null? t1) (copy-tree t2))
+    ((null? t2) (copy-tree t1))
+    (else
+      (let ((l1 (car (cdr t1)))
+            (r1 (car (cdr (cdr t1))))
+            (l2 (car (cdr t2)))
+            (r2 (car (cdr (cdr t2)))))
+        (cons (+ (car t1) (car t2))
+              (cons (merge l1 l2)
+                    (cons (merge r1 r2) '())))))))
+
+(define (solve t1 t2) (merge t1 t2))
+
+;; Pretty-print tree in (val left right) format
+(define (print-tree t)
+  (display "(")
+  (if (null? t)
+      (begin (display "NIL") (display ")"))
+      (begin
+        (display (car t)) (display " ")
+        (print-tree (car (cdr t))) (display " ")
+        (print-tree (car (cdr (cdr t)))) (display ")"))))
+
+;; Parse JSON-like array [val, left, right] where null -> NIL
+;; Input is an Aura list: '(1 (3 NIL NIL) (2 NIL NIL)) etc.
+;; But the test harness gives us lists already, so we just use them directly.
+;; t1,t2 are already Aura lists from the harness.
+
+(display "CASE0=") (display (solve '(1 (3 (5 NIL NIL) (NIL NIL NIL)) (2 NIL NIL))
+                                  '(2 (1 NIL (4 NIL NIL)) (3 NIL NIL))))
+(newline)
+(display "CASE1=") (display (solve 'NIL 'NIL)) (newline)
+(display "CASE2=") (display (solve '(1 NIL NIL) '(2 (3 NIL NIL) (NIL NIL NIL))))
+(newline)
+(display "CASE3=") (display (solve '(1 (2 NIL NIL) (3 NIL NIL))
+                                  '(4 (5 NIL NIL) (6 NIL NIL))))
+(newline)
+(display "CASE4=") (display (solve '(1 (2 (4 NIL NIL) NIL) (3 NIL NIL))
+                                  '(2 (1 NIL (5 NIL NIL)) (3 NIL NIL))))
+(newline)
+(display "CASE5=") (display (solve '(1 NIL NIL) '(2 (3 NIL NIL) (4 NIL NIL))))
+(newline)
+(display "CASE6=") (display (solve 'NIL '(1 (2 NIL NIL) (3 NIL NIL))))
+(newline)
+(display "CASE7=") (display (solve '(1 (2 NIL (4 NIL NIL)) NIL)
+                                  '(1 NIL (2 NIL NIL))))
+(newline)

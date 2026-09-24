@@ -1,0 +1,51 @@
+(define (length lst)
+  (if (null? lst) 0 (+ 1 (length (cdr lst)))))
+
+(define (nth lst n)
+  (if (= n 0) (car lst) (nth (cdr lst) (- n 1))))
+
+(define (find-duplicate nums)
+  ;; Floyd's Tortoise and Hare cycle detection
+  (let ((slow (nth nums 0))
+        (fast (nth nums 0)))
+    ;; Phase 1: Find intersection point
+    (let loop1 ()
+      (set! slow (nth nums slow))
+      (set! fast (nth nums (nth nums fast)))
+      (if (not (= slow fast)) (loop1)))
+    ;; Phase 2: Find entrance of cycle (the duplicate)
+    (set! slow (nth nums 0))
+    (let loop2 ()
+      (if (not (= slow fast))
+        (begin
+          (set! slow (nth nums slow))
+          (set! fast (nth nums fast))
+          (loop2))
+        slow))))
+
+(define (solve nums)
+  (find-duplicate nums))
+
+;; Embedded test inputs
+(define test-cases
+  (list
+    (list 1 3 4 2 2)
+    (list 3 1 3 4 2 5 6 7)
+    (list 1 1)
+    (list 1 1 2)
+    (list 2 2 2 2 2)
+    (list 4 2 1 3 4)
+    (list 1 2 3 4 5 6 7 8 9 5)
+    (list 3 4 1 2 5 5 6 7)))
+
+(define (run-tests cases i)
+  (if (not (null? cases))
+    (begin
+      (display "CASE")
+      (display i)
+      (display "=")
+      (display (solve (car cases)))
+      (newline)
+      (run-tests (cdr cases) (+ i 1)))))
+
+(run-tests test-cases 0)

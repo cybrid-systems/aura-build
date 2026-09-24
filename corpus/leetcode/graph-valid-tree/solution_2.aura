@@ -1,0 +1,55 @@
+(define (length lst)
+  (if (null? lst) 0 (+ 1 (length (cdr lst)))))
+
+(define (make-adj n edges)
+  (let ((adj (make-vector n '())))
+    (let loop ((es edges))
+      (if (null? es) adj
+        (let* ((e (car es))
+               (u (car e))
+               (v (car (cdr e))))
+          (vector-set! adj u (cons v (vector-ref adj u)))
+          (vector-set! adj v (cons u (vector-ref adj v)))
+          (loop (cdr es)))))))
+
+(define (dfs adj n visited)
+  (let loop ((stack (list (cons 0 -1))))
+    (if (null? stack) visited
+      (let* ((p (car stack))
+             (node (car p))
+             (parent (cdr p)))
+        (if (vector-ref visited node)
+            visited
+          (vector-set! visited node #t)
+          (let loop2 ((nbrs (vector-ref adj node)) (rest (cdr stack)))
+            (if (null? nbrs) (loop rest)
+              (let ((nb (car nbrs)))
+                (loop2 (cdr nbrs)
+                  (if (= nb parent) rest (cons (cons nb node) rest)))))))))))
+
+(define (valid-tree n edges)
+  (if (< n 2)
+      #t
+      (let ((ec (length edges)))
+        (if (not (= ec (- n 1)))
+            #f
+            (let ((adj (make-adj n edges))
+                  (visited (make-vector n #f)))
+              (dfs adj n visited)
+              (let loop ((i 0))
+                (if (= i n) #t
+                  (if (not (vector-ref visited i)) #f (loop (+ i 1))))))))))
+
+(define (solve n edges)
+  (valid-tree n edges))
+
+(define (bool->str b) (if b "True" "False"))
+
+(display "CASE0=") (display (bool->str (solve 5 '((0 1) (0 2) (0 3) (1 4))))) (newline)
+(display "CASE1=") (display (bool->str (solve 5 '((0 1) (1 2) (2 3) (1 3) (1 4))))) (newline)
+(display "CASE2=") (display (bool->str (solve 0 '()))) (newline)
+(display "CASE3=") (display (bool->str (solve 1 '()))) (newline)
+(display "CASE4=") (display (bool->str (solve 2 '((0 1))))) (newline)
+(display "CASE5=") (display (bool->str (solve 2 '()))) (newline)
+(display "CASE6=") (display (bool->str (solve 4 '((0 1) (2 3))))) (newline)
+(display "CASE7=") (display (bool->str (solve 4 '((0 1) (1 2) (2 0))))) (newline)

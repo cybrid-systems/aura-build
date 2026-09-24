@@ -1,62 +1,118 @@
 import json
 import sys
+from typing import Optional, List
 
-def parse_tree(s, i):
-    """Parse a tree starting at index i. Returns (node, next_index)."""
-    if s[i:i+4] == 'null':
-        return None, i + 4
-    if s[i] == '(':
-        # find space
-        j = s.index(' ', i+1)
-        val = int(s[i+ound1:j])
-        left, j = parse_tree(s, j+1)
-        right, j = parse_tree(s, j+1)
-        assert s[j] == ')', f"expected ) at {j}, got {s[j]!r} in {s!r}"
-        return (val, left, right), j+1
-    raise ValueError(f"unexpected at {i}: {s[i:i+10]!r}")
 
-def full_parse(s):
-    """Parse full line: 'CASE0=(... tree ...)#' """
-    assert s.startswith('CASE0=')
-    s = s[len('CASE0='):]
-    assert s.endswith('#')
-    s = s[:-1]
-    node, _ = parse_tree(s, 0)
-    return node
+class Node:
+    __slots__ = ('val', 'left', 'right')
 
-def is_mirror(a, b):
+    def __init__(self, val: int = 0, left: Optional['Node'] = None, right: Optional['Node'] = None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+
+def parse_tree(s: str) -> Optional[Node]:
+    """Parse a serialized tree like '(1 (2 # #) (3 # #))#' or '(1)#' or '#'."""
+    # remove trailing '#'
+    if s.endswith('#'):
+        s = s[:-1]
+    s = s.strip()
+    if not s:
+        return None
+
+    pos = 0
+
+    def skip_ws():
+        nonlocal pos
+        while pos < len(s) and s[pos] == ' ':
+            pos += 1
+
+    def parse_node():
+        nonlocal pos
+        skip_ws()
+        if pos >= len(s):
+            return None
+        if s[pos] == 'n':  # null
+            assert s[pos:pos+4] == 'null'
+            pos += 4
+            return None
+        if s[pos] == '(':
+            pos += 1
+            skip_ws()
+            # parse value (integer, possibly negative)
+            start = pos
+            if pos < len(s) and (s[pos] == '-' or s[pos].isdigit()):
+                if s[pos] == '-':
+                    pos += 1
+                while pos < len(s) and s[pos].isdigit():
+                    pos += 1
+            val_str = s[start:pos]
+            val = int(val_str)
+            skip_ws()
+            left = parse_node()
+            skip_ws()
+            right = parse_node()
+            skip_ws()
+            if pos < len(s) and s[pos] == ')':
+                pos += 1
+            return Node(val, left, right)
+        # unexpected
+        raise ValueError(f"Unexpected char at {pos}: {s[pos:pos+10]}")
+
+    return parse_node()
+
+
+def is_mirror(a: Optional[Node], b: Optional[Node]) -> bool:
     if a is None and b is None:
         return True
     if a is None or b is None:
         return False
-    if a[0] != b[0]:
+    if a.val != b.val:
         return False
-    return is_mirror(a[1], b[2]) and is_mirror(a[2], b[1])
+    return is_mirror(a.left, b.right) and is_mirror(a.right, b.left)
 
-def is_symmetric(root):
+
+def is_symmetric(root: Optional[Node]) -> bool:
     if root is None:
         return True
-    return is_mirror(root[1], root[2])
+    return is_mirror(root.left, root.right)
 
-def solve(root_str):
-    root = full_parse(root_str)
+
+def solve(root: Optional[Node]) -> bool:
     return is_symmetric(root)
 
+
 CASES = [
-    {"root": "CASE0=(1 (2 (3 # #) (4 # #)) (2 (4 # #) (3 # #)))#"},
-    {"root": "CASE0=(1 (2 (null # #) (3 # #)) (2 (3 # #) (null # #)))#".replace("null ", "")},
-    {"root": "CASE0=(1 (2 # #) (2 # #))#"},
-    {"root": "CASE0=(1 (2 # (3 # #)) (2 (3 # #) null))#"},
-    {"root": "CASE0=#"},
-    {"root": "CASE0=(1 # #)#"},
-    {"root": "CASE0=(1 (2 # #) (3 # #))#"},
-    {"root": "CASE0=(1 (2 (3 # #) #) (2 (# #) 3))#".replace("(# #)", "null").replace(" (3 # #)) (2 null 3))#", " (3 # #)) (2 null 3))#")},
+    {"root": "(1 (2 (3 # #) (4 # #)) (2 (4 # #) (3 # #)))#"},
+    {"root": "(1 (2 # #) (2 # #))#"},
+    {"root": "(1 (2 # (3 # #)) (2 # #))#"},
+    {"root": "(1)#"},
+    {"root": "#"},
+    {"root": "(1 (2 (3 # #) #) (2 # (3 # #)))#"},
+    {"root": "(1 (2 # (3 (4 # #) #)) #)#"},
+    {"root": "(1 (2 (3 (4 # #) (5 # #)) #) (2 (3 (5 # #) (4 # #)) #))#"},
 ]
 
+
+def serialize_for_expected(root: Optional[Node]) -> dict:
+    def to_dict(n):
+        if n is None:
+            return None
+        return {"v": n.val, "l": to_dict(n.left), "r": to_dict(n.right)}
+    return to_dict(root)
+
+
 if __name__ == '__main__':
-    out = []
-    for i, c in enumerate(CASES):
-        result = solve(c["root"])
-        expected = json.dumps(result, separators=(',', ':'), ensure_ascii=False)
-        out.append({"id": i, "input": c, "expected": expected})
-    print(json.dumps(out, separators=(',', ':'), ensure_ascii=False))
+    results = []
+    for i, case in enumerate(CASES):
+        # Parse the root string for this case
+        raw = case["root"]
+        tree = parse_tree(raw)
+        result = solve(tree)
+        results.append({
+            "id": i,
+            "input": {"raw": raw},
+            "expected": json.dumps(result, separators=(',', ':'), ensure_ascii=False)
+        })
+    print(json.dumps(results, ensure_ascii=False))

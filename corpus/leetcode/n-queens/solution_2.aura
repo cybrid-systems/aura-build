@@ -1,0 +1,63 @@
+(define (make-row n col)
+  (let loop ((i 0) (acc '()))
+    (if (= i n)
+        (list->string (reverse acc))
+        (loop (+ i 1) (cons (if (= i col) #\Q #\.) acc)))))
+
+(define (make-board queens n)
+  (let loop ((i 0) (acc '()))
+    (if (= i n)
+        (reverse acc)
+        (loop (+ i 1) (cons (make-row n (list-ref queens i)) acc)))))
+
+(define (backtrack row n cols d1 d2 queens acc)
+  (cond
+    ((= row n)
+     (cons (make-board queens n) acc))
+    (else
+     (let loop ((c 0) (acc acc))
+       (cond
+         ((= c n) acc)
+         ((and (not (member c cols))
+               (not (member (- row c) d1))
+               (not (member (+ row c) d2))
+               (not (member (- (- row c) (* 2 0)) '()))) ; placeholder
+          (loop (+ c 1) acc))
+         (else
+          (let ((next-cols (cons c cols))
+                (next-d1 (cons (- row c) d1))
+                (next-d2 (cons (+ row c) d2))
+                (next-q (append queens (list c))))
+            (loop (+ c 1)
+                  (backtrack (+ row 1) n next-cols next-d1 next-d2 next-q acc)))))))))
+
+(define (solve n)
+  (backtrack 0 n '() '() '() '() '()))
+
+(define (display-list lst)
+  (cond ((null? lst) (display ""))
+        (else (display (car lst)) (display-list (cdr lst)))))
+
+(define (run-case i n)
+  (display "CASE") (display i) (display "=") (display n) (newline)
+  (let ((results (solve n)))
+    (display "ANS") (display i) (display "c=")
+    (display (length results)) (newline)
+    (let loop ((j 0) (rests results))
+      (cond ((null? rests) #t)
+            (else
+             (display "ANS") (display i) (display "_") (display j) (display "=")
+             (let inner ((rows (car rests)))
+               (cond ((null? rows) #t)
+                     (else (display (car rows)) (inner (cdr rows)))))
+             (newline)
+             (loop (+ j 1) (cdr rests)))))))
+
+(run-case 0 1)
+(run-case 1 2)
+(run-case 2 3)
+(run-case 3 4)
+(run-case 4 5)
+(run-case 5 6)
+(run-case 6 0)
+(run-case 7 7)

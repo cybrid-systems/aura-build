@@ -1,0 +1,227 @@
+;; Sudoku Solver in Aura
+;; Uses backtracking with bitmask candidate tracking
+
+(define empty-board '())
+
+;; Convert char to number (1-9), #f for '.'
+(define (char->num c)
+  (if (char=? c #\.) #f
+      (- (char->integer c) (char->integer #\0))))
+
+;; Convert number to char
+(define (num->char n)
+  (integer->char (+ n (char->integer #\0))))
+
+;; Count set bits in mask
+(define (count-bits m)
+  (let loop ((m m) (c 0))
+    (if (= m 0) c
+        (loop (bit-and m (- m 1)) (+ c 1)))))
+
+;; Get index of lowest set bit (0-indexed), returns -1 if none
+(define (lowest-bit m)
+  (if (= m 0) -1
+      (let loop ((m m) (idx 0))
+        (if (= (bit-and m 1) 1) idx
+            (loop (arithmetic-shift m -1) (+ idx 1))))))
+
+;; Get bit value at position (0-indexed)
+(define (get-bit m i)
+  (if (= (bit-and m (arithmetic-shift 1 i)) 0) 0 1))
+
+;; Convert char to bitmask (bit i set if digit i+1 present)
+(define (char->mask c)
+  (let ((n (char->num c)))
+    (if n (arithmetic-shift 1 (- n 1)) 0)))
+
+;; Convert bitmask to list of available digits (numbers)
+(define (mask->avail m)
+  (let loop ((i 0) (acc '()))
+    (if (>= i 9) acc
+        (loop (+ i 1) (if (= (get-bit m i) 1) (cons (+ i 1) acc) acc)))))
+
+;; Compute box index for cell (r,c)
+(define (box-idx r c)
+  (+ (* 3 (quotient r 3)) (quotient c 3)))
+
+;; Find the empty cell with minimum remaining values
+;; Returns (r . c) or #f if board is full
+(define (find-best board row-mask col-mask box-mask)
+  (let loop ((r 0) (best-r -1) (best-c -1) (best-count 10))
+    (cond
+      ((>= r 9) (if (= best-count 10) #f (cons best-r best-c)))
+      (else
+        (let inner ((c 0))
+          (cond
+            ((>= c 9) (loop (+ r 1) best-r best-c best-count))
+            ((char=? (list-ref (list-ref board r) c) #\.)
+             (let* ((used (bit-or (list-ref row-mask r)
+                                  (bit-or (list-ref col-mask c)
+                                          (list-ref box-mask (box-idx r c)))))
+                    (avail (bit-and (bit-not used) 511))
+                    (cnt (count-bits avail)))
+               (if (< cnt best-count)
+                   (loop (+ r 1) r c cnt)
+                   (loop (+ r 1) best-r best-c best-count))))
+            (else (inner (+ c 1)))))))))
+
+;; Try to place digit d at (r,c)
+;; Returns new board row or #f if invalid
+(define (try-place board r c d row-mask col-mask box-mask)
+  (let* ((used (bit-or (list-ref row-mask r)
+                       (bit-or (list-ref col-mask c)
+                               (list-ref box-mask (box-idx r c)))))
+         (bit (arithmetic-shift 1 (- d 1))))
+    (if (= (bit-and used bit) 0)
+        (let* ((old-ch (list-ref (list-ref board r) c))
+               (new-row (list-set (list-ref board r) c (num->char d)))
+               (new-board (list-set board r new-row)))
+          (list new-board
+                (list-set row-mask r (bit-or (list-ref row-mask r) bit))
+                (list-set col-mask c (bit-or (list-ref col-mask c) bit))
+                (list-set box-mask (box-idx r c) (bit-or (list-ref box-mask (box-idx r c)) bit))
+                old-ch))
+        #f)))
+
+;; Undo placement
+(define (undo-place board r c old-ch row-mask col-mask box-mask d)
+  (let ((bit (arithmetic-shift 1 (- d 1))))
+    (list (list-set board r (list-set (list-ref board r) c old-ch))
+          (list-set row-mask r (bit-and (list-ref row-mask r) (bit-not bit)))
+          (list-set col-mask c (bit-and (list-ref col-mask c) (bit-not bit)))
+          (list-set box-mask (box-idx r c) (bit-and (list-ref box-mask (box-idx r c)) (bit-not bit))))))
+
+;; Backtracking solver
+;; Returns solved board or #f
+(define (solve-backtrack board row-mask col-mask box-mask)
+  (let ((cell (find-best board row-mask col-mask box-mask)))
+    (if (not cell)
+        board
+        (let* ((r (car cell))
+               (c (cdr cell))
+               (used (bit-or (list-ref row-mask r)
+                            (bit-or (list-ref col-mask c)
+                                    (list-ref box-mask (box-idx r c)))))
+               (avail (bit-and (bit-not used) 511)))
+          (let try-digits ((d 1))
+            (cond
+              ((> d 9) #f)
+              ((= (bit-and avail (arithmetic-shift 1 (- d 1))) 0) (try-digits (+ d 1)))
+              (else
+                (let ((placed (try-place board r c d row-mask col-mask box-mask)))
+                  (if placed
+                      (let* ((nb (car placed))
+                             (nrm (cadr placed))
+                             (ncm (caddr placed))
+                             (nbm (cadddr placed))
+                             (result (solve-backtrack nb nrm ncm nbm)))
+                        (if result result
+                            (let ((undone (undo-place nb r c #\. nrm ncm nbm d)))
+                              (try-digits (+ d 1)))))
+                      (try-digits (+ d 1)))))))))))
+
+;; Build initial masks from board
+(define (build-masks board)
+  (let loop-r ((r 0) (row-mask '()) (col-mask '(0 0 0 0 0 0 0 0 0)) (box-mask '(0 0 0 0 0 0 0 0 0)))
+    (if (>= r 9)
+        (list (reverse row-mask) col-mask box-mask)
+        (let loop-c ((c 0) (rm 0))
+          (if (>= c 9)
+              (loop-r (+ r 1) (cons rm row-mask) col-mask box-mask)
+              (let* ((ch (list-ref (list-ref board r) c))
+                     (m (char->mask ch)))
+                (loop-c (+ c 1) (bit-or rm m))))))))
+
+;; Update col-mask and box-mask as we process cells
+(define (init-masks board)
+  (let ((masks (build-masks board))
+        (col-mask (make-list 9 0))
+        (box-mask (make-list 9 0)))
+    (let loop-r ((r 0))
+      (if (>= r 9) (list (car masks) col-mask box-mask)
+          (let loop-c ((c 0))
+            (if (>= c 9) (loop-r (+ r 1))
+                (let* ((ch (list-ref (list-ref board r) c))
+                       (m (char->mask ch)))
+                  (if (> m 0)
+                      (begin
+                        (list-set! col-mask c (bit-or (list-ref col-mask c) m))
+                        (list-set! box-mask (box-idx r c) (bit-or (list-ref box-mask (box-idx r c)) m))))
+                  (loop-c (+ c 1)))))))))
+
+;; Convert board (list of 9 lists of chars) to string
+(define (board->string board)
+  (let loop ((r 0) (acc ""))
+    (if (>= r 9) acc
+        (loop (+ r 1) (string-append acc (list->string (list-ref board r)))))))
+
+;; Convert board to 9 lines (each as a string)
+(define (board->lines board)
+  (let loop ((r 0) (acc '()))
+    (if (>= r 9) (reverse acc)
+        (loop (+ r 1) (cons (list->string (list-ref board r)) acc)))))
+
+;; Parse input: list of 9 strings -> board
+(define (parse-board lines)
+  (map (lambda (s) (string->list s)) lines))
+
+;; Main solve function: takes a board as a list of 9 strings,
+;; returns the solved board as 9 strings + "#"
+(define (solve board-lines)
+  (let* ((board (parse-board board-lines))
+         (masks (init-masks board))
+         (row-mask (car masks))
+         (col-mask (cadr masks))
+         (box-mask (caddr masks))
+         (solved (solve-backtrack board row-mask col-mask box-mask)))
+    (if solved
+        (append (board->lines solved) (list "#"))
+        (list "NO_SOLUTION"))))
+
+;; Test cases
+(define test-case-0
+  '("53..7...." "6..195..." ".98....6." "8...6...3" "4..8.3..1" "7...2...6" ".6....28." "...419..5" "....8..79"))
+
+(define test-case-1
+  '("........." "........." "........." "........." "........." "........." "........." "........." "........."))
+
+(define test-case-2
+  '("123456789" "456789123" "789123456" "234567891" "567891234" "891234567" "345678912" "678912345" "912345678"))
+
+(define test-case-3
+  '("1........" "........." "........." "........." "........." "........." "........." "........." "........."))
+
+(define test-case-4
+  '("..2...3.." "........." "........." "........." "........." "........." "........." "........." "........."))
+
+(define test-case-5
+  '(".1.2.3.4." "5.6.7.8.9" ".1.2.3.4." "5.6.7.8.9" ".1.2.3.4." "5.6.7.8.9" ".1.2.3.4." "5.6.7.8.9" ".1.2.3.4."))
+
+(define test-case-6
+  '("9........" "........." "........." "........." "........." "........." "........." "........." "........."))
+
+;; Display helper for list of lines
+(define (display-lines lines)
+  (for-each (lambda (l) (display l) (newline)) lines))
+
+;; Run all test cases
+(display "CASE0=") (newline)
+(display-lines (solve test-case-0))
+
+(display "CASE1=") (newline)
+(display-lines (solve test-case-1))
+
+(display "CASE2=") (newline)
+(display-lines (solve test-case-2))
+
+(display "CASE3=") (newline)
+(display-lines (solve test-case-3))
+
+(display "CASE4=") (newline)
+(display-lines (solve test-case-4))
+
+(display "CASE5=") (newline)
+(display-lines (solve test-case-5))
+
+(display "CASE6=") (newline)
+(display-lines (solve test-case-6))

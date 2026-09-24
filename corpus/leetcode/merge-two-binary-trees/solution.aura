@@ -1,0 +1,76 @@
+;; Helper to check if a tree is null (represented as NIL or '() or just empty)
+(define (null-tree? t)
+  (or (null? t) (equal? t 'NIL)))
+
+;; Helper to extract value, left, right from a tree node (val left right)
+(define (node-val t) (car t))
+(define (node-left t) (cadr t))
+(define (node-right t) (caddr t))
+
+;; Make a fresh leaf node
+(define (make-leaf v)
+  (list v 'NIL 'NIL))
+
+;; Merge two trees, producing a fresh tree
+(define (merge t1 t2)
+  (cond
+    ((null-tree? t1) t2)
+    ((null-tree? t2) t1)
+    (else
+      (let ((v (+ (node-val t1) (node-val t2)))
+            (l (merge (node-left t1) (node-left t2)))
+            (r (merge (node-right t1) (node-right t2))))
+        (list v l r)))))
+
+(define (solve t1 t2)
+  (let ((m (merge t1 t2)))
+    (if (null-tree? m) 'NIL m)))
+
+;; Display helper for a tree
+(define (display-tree t)
+  (display "(")
+  (cond
+    ((null-tree? t)
+     (display "NIL"))
+    (else
+     (display (node-val t))
+     (display " ")
+     (display-tree (node-left t))
+     (display " ")
+     (display-tree (node-right t))))
+  (display ")"))
+
+;; Test cases - tree literals (using 'NIL for empty)
+(define case0-t1 '(1 (3 (5 NIL NIL) (2 NIL NIL)) (NIL NIL NIL)))
+(define case0-t2 '(2 (1 NIL (4 NIL NIL)) (3 NIL NIL)))
+
+(define case1-t1 'NIL)
+(define case1-t2 'NIL)
+
+(define case2-t1 '(1 NIL NIL))
+(define case2-t2 '(2 (3 NIL NIL) (NIL NIL NIL)))
+
+(define case3-t1 '(1 (2 NIL NIL) (3 NIL NIL)))
+(define case3-t2 '(4 (5 NIL NIL) (6 NIL NIL)))
+
+(define case4-t1 '(1 (2 (4 NIL NIL) NIL) (3 NIL NIL)))
+(define case4-t2 '(2 (1 NIL (5 NIL NIL)) (3 NIL NIL)))
+
+(define case5-t1 '(1 NIL NIL))
+(define case5-t2 '(2 (3 NIL NIL) (4 NIL NIL)))
+
+(define case6-t1 'NIL)
+(define case6-t2 '(1 (2 NIL NIL) (3 NIL NIL)))
+
+(define case7-t1 '(1 (2 NIL (4 NIL NIL)) NIL))
+(define case7-t2 '(1 NIL (2 NIL NIL)))
+
+;; Display results
+(display "CASE0=") (display-tree (solve case0-t1 case0-t2)) (newline)
+(display "CASE1=") (display-tree (solve case1-t1 case1-t2)) (newline)
+(display "CASE2=") (display-tree (solve case2-t1 case2-t2)) (newline)
+(display "CASE3=") (display-tree (solve case3-t1 case3-t2)) (newline)
+(display "CASE4=") (display-tree (solve case4-t1 case4-t2)) (newline)
+(display "CASE5=") (display-tree (solve case5-t1 case5-t2)) (newline)
+(display "CASE6=") (display-tree (solve case6-t1 case6-t2)) (newline)
+(display "CASE7=") (display-tree (solve case7-t1 case7-t2)) (newline)

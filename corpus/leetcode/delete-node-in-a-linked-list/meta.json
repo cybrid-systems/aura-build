@@ -8,15 +8,15 @@
       "ok": true,
       "error": "",
       "usage": {
-        "total_tokens": 1647,
+        "total_tokens": 1335,
         "total_characters": 0,
         "prompt_tokens": 868,
-        "completion_tokens": 779,
+        "completion_tokens": 467,
         "completion_tokens_details": {
           "reasoning_tokens": 0
         },
         "prompt_tokens_details": {
-          "cached_tokens": 128
+          "cached_tokens": 256
         }
       },
       "model": "MiniMax-M3"
@@ -24,12 +24,12 @@
     "run": {
       "ref_ok": false,
       "exit_code": 1,
-      "stderr": "Traceback (most recent call last):\n  File \"/workspace/aura-build/corpus/leetcode/delete-node-in-a-linked-list/ref.py\", line 78, in <module>\n    solve(target)\n    ~~~~~^^^^^^^^\n  File \"/workspace/aura-build/corpus/leetcode/delete-node-in-a-linked-list/ref.py\", line 10, in solve\n    node['val'] = node['next']['val']\n                  ~~~~~~~~~~~~^^^^^^^\nTypeError: 'NoneType' object is not subscriptable\n",
-      "duration_s": 0.027,
+      "stderr": "Traceback (most recent call last):\n  File \"/workspace/aura-build/corpus/leetcode/delete-node-in-a-linked-list/ref.py\", line 48, in <module>\n    solve(node)\n    ~~~~~^^^^^^\n  File \"/workspace/aura-build/corpus/leetcode/delete-node-in-a-linked-list/ref.py\", line 10, in solve\n    node.val = node.next.val\n               ^^^^^^^^^^^^^\nAttributeError: 'NoneType' object has no attribute 'val'\n",
+      "duration_s": 0.029,
       "timeout": false,
       "n_tests": 0
     },
-    "ts": "2026-09-24T14:36:46Z"
+    "ts": "2026-09-24T14:45:40Z"
   },
-  "updated_at": "2026-09-24T14:36:46Z"
+  "updated_at": "2026-09-24T14:45:40Z"
 }

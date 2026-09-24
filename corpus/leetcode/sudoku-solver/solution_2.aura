@@ -1,0 +1,49 @@
+;; Sudoku Solver in Aura
+;; Uses bitmask-based backtracking
+
+(define (list-length xs)
+  (if (null? xs) 0 (+ 1 (list-length (cdr xs)))))
+
+(define (list-ref xs n)
+  (if (= n 0) (car xs) (list-ref (cdr xs) (- n 1))))
+
+(define (list-set xs n v)
+  (if (= n 0)
+      (cons v (cdr xs))
+      (cons (car xs) (list-set (cdr xs) (- n 1) v))))
+
+(define (string->list-of-chars s)
+  (if (= 0 (string-length s))
+      '()
+      (cons (string-ref s 0)
+            (string->list-of-chars (substring s 1 (string-length s))))))
+
+(define (chars->string cs)
+  (if (null? cs)
+      ""
+      (string-append (string (car cs))
+                     (chars->string (cdr cs)))))
+
+;; Convert char '1'-'9' to 1-9, '.' to 0
+(define (char->digit c)
+  (cond ((equal? c #\.) 0)
+        (else (- (char->integer c) (char->integer #\0)))))
+
+(define (digit->char d)
+  (integer->char (+ d (char->integer #\0))))
+
+;; Board: list of 9 rows, each row is a list of 9 digits (0-9)
+;; row-mask[i], col-mask[j], box-mask[b] are bitmasks (1=present, bit d corresponds to digit d)
+
+;; Count bits in mask (number of set bits among 9 digits)
+(define (popcount-9 m)
+  (let ((c 0))
+    (let loop ((k 1))
+      (if (> k 9) c
+          (loop (+ k 1) (if (= 0 (bitwise-and m (arithmetic-shift 1 (- k 1))))
+                             c
+                             (+ c 1)))))))
+
+;; Wait, Aura doesn't have bitwise ops necessarily. Let me check.
+;; Let's avoid bitwise and use arithmetic with powers of 2.
+;; Actually, let me use simple approach: track rows/cols/boxes as lists of digits used.

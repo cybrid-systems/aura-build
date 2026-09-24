@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:44:15Z",
+      "ts_local": "2026-09-24 22:44:15 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1890,
+        "total_characters": 0,
+        "prompt_tokens": 1063,
+        "completion_tokens": 827,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.063,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 19:45: unbound variable: j\n  did you mean 'S'?\n",
+      "stdout_snippet": "CASE0=1\nANS0c=1\nCASE0=1\nANS0c=1\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:44:42Z",
+      "ts_local": "2026-09-24 22:44:42 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2343,
+        "total_characters": 0,
+        "prompt_tokens": 1063,
+        "completion_tokens": 1280,
+        "prompt_tokens_details": {
+          "cached_tokens": 1062
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": -1,
+      "timeout": true,
+      "duration_s": 20.022,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "timeout",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "n-queens",
+  "title": "N-Queens",
+  "category": "backtracking",
+  "updated_at": "2026-09-24T14:44:42Z",
+  "updated_at_local": "2026-09-24 22:44:42 CST"
+}

@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:43:48Z",
+      "ts_local": "2026-09-24 22:43:48 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 805177,
+        "total_characters": 0,
+        "prompt_tokens": 801177,
+        "completion_tokens": 4000,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.214,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "warning: unbalanced parentheses in input\n⚠ program returned an uncalled function\n",
+      "stdout_snippet": "#<procedure>\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:44:23Z",
+      "ts_local": "2026-09-24 22:44:23 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 805177,
+        "total_characters": 0,
+        "prompt_tokens": 801177,
+        "completion_tokens": 4000,
+        "prompt_tokens_details": {
+          "cached_tokens": 801176
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.198,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "warning: unbalanced parentheses in input\nerror: 6:10: unbound variable: fold\n   |\n  6 |         (fold + 0 trimmeded)))))\n   |          ^^^^\n",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "shortest-job-first",
+  "title": "Shortest Job First",
+  "category": "greedy",
+  "updated_at": "2026-09-24T14:44:23Z",
+  "updated_at_local": "2026-09-24 22:44:23 CST"
+}

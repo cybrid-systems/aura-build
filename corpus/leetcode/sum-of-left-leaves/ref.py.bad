@@ -1,74 +1,134 @@
-import os, sys, json
+import os
+import json
 
-def tokenize(s):
-    """Split an S-expression string into tokens, keeping parens as tokens."""
-    s = s.replace('(', ' ( ').replace(')', ' ) ')
-    return [t for t in s.split() if t]
-
-def parse(tokens):
-    """Parse token list into nested lists (S-expression)."""
-    if not tokens:
-        return None
-    tok = tokens.pop(0)
-    if tok == '(':
-        lst = []
-        while tokens and tokens[0] != ')':
-            lst.append(parse(tokens))
-        tokens.pop(0)  # consume ')'
-        return lst
-    elif tok == ')':
-        return None
-    elif tok == 'nil':
-        return None
-    else:
-        # number
-        try:
-            return int(tok)
-        except ValueError:
-            return tok
-
-def build_tree(expr):
-    """Convert parsed S-expression into (value, left, right) tuples."""
-    if expr is None:
-        return None
-    # expr should be [value, left, right]
-    if isinstance(expr, list) and len(expr) >= 1:
-        val = expr[0]
-        left = build_tree(expr[1]) if len(expr) > 1 else None
-        right = build_tree(expr[2]) if len(expr) > 2 else None
-        return (val, left, right)
-    return None
-
-def sum_left_leaves(node, is_left=False):
-    """Recursively sum values of left leaves."""
-    if node is None:
-        return 0
-    val, left, right = node
-    # check if this node is a leaf
-    is_leaf = (left is None and right is None)
-    total = 0
-    if is_leaf and is_left:
-        total = val
-    # Recurse: left child is a left child, right child is not
-    total += sum_left_leaves(left, is_left=True)
-    total += sum_left_leaves(right, is_left=False)
-    return total
 
 def solve(root):
-    """Compute sum of all left leaves."""
-    tree = build_tree(root)
-    return sum_left_leaves(tree)
+    """Compute sum of all left leaves in the binary tree.
+    
+    Tree is represented as (value, left, right) tuples where left/right
+    are either subtrees or None.
+    """
+    if root is None:
+        return 0
+    
+    val, left, right = root
+    total = 0
+    
+    # Check if left child is a leaf
+    if left is not None and left[1] is None and left[2] is None:
+        total += left[0]
+    
+    # Recurse on both subtrees
+    total += solve(left)
+    total += solve(right)
+    
+    return total
+
+
+def parse_tree(tokens, pos):
+    """Parse a tree from a token list starting at pos.
+    
+    Expects tokens in S-expression form: '(', value, left_subtree, right_subtree, ')'
+    Returns (tree, new_pos).
+    """
+    if pos >= len(tokens):
+        return None, pos
+    
+    token = tokens[pos]
+    if token == 'nil':
+        return None, pos + 1
+    if token == '(':
+        # Read the value
+        pos += 1
+        # Find the value token (not '(' or ')' or 'nil')
+        # Value is the next token after '('
+        val_token = tokens[pos]
+        val = int(val_token)
+        pos += 1
+        # Read left subtree
+        left, pos = parse_tree(tokens, pos)
+        # Read right subtree
+        right, pos = parse_tree(tokens, pos)
+        # Expect ')'
+        if pos < len(tokens) and tokens[pos] == ')':
+            pos += 1
+        return (val, left, right), pos
+    if token == ')':
+        return None, pos + 1
+    # Lone value - shouldn't happen in well-formed input
+    return None, pos + 1
+
+
+def parse_input(s):
+    """Parse the input string into a tree."""
+    # Tokenize: split on whitespace and parentheses
+    tokens = []
+    i = 0
+    while i < len(s):
+        c = s[i]
+        if c.isspace():
+            i += 1
+        elif c in '()':
+            tokens.append(c)
+            i += 1
+        else:
+            # Read a token (number or 'nil')
+            j = i
+            while j < len(s) and not s[j].isspace() and s[j] not in '()':
+                j += 1
+            tokens.append(s[i:j])
+            i = j
+    tree, _ = parse_tree(tokens, 0)
+    return tree
+
+
+def build_tree_from_list(lst):
+    """Build a tree from a nested list representation [val, left, right]."""
+    if lst is None:
+        return None
+    if len(lst) != 3:
+        return None
+    val, left_lst, right_lst = lst
+    return (val, build_tree_from_list(left_lst), build_tree_from_list(right_lst))
+
+
+CASES = [
+    # Example 1: tree with left leaves 2 and 5, sum = 7
+    {"input": {"root": [3, [2, None, None], [2, [5, None, None], [6, None, None]]]]}, "expected": 7},
+    # Example 2: tree with left leaf 2, sum = 2
+    {"input": {"root": [1, [2, None, None], [3, None, None]]]}, "expected": 2},
+    # Empty tree
+    {"input": {"root": None}, "expected": 0},
+    # Single node (not a leaf in the left-child sense; it's root with no left child)
+    {"input": {"root": [1, None, None]}}, "expected": 0},
+    # Tree with only right leaves (no left leaves)
+    {"input": {"root": [1, None, [3, None, [4, None, None]]]]}, "expected": 0},
+    # Tree where left child is not a leaf (has children), right is a leaf
+    {"input": {"root": [1, [2, [3, None, None], None], [4, None, None]]}, "expected": 3},
+    # Balanced tree: left leaves are 4 and 6, sum = 10
+    {"input": {"root": [1, [2, [4, None, None], [5, None, None]], [3, [6, None, None], [7, None, None]]]}, "expected": 10},
+    # Deep tree: left leaf at depth 3
+    {"input": {"root": [1, [2, [3, [4, None, None], None], None], None]}, "expected": 4},
+]
+
 
 if __name__ == '__main__':
-    # Get CASE0 env var, parse it
-    case0 = os.environ.get('CASE0', '')
-    # tokens format: ("(3" "(2" "(nil" "nil)" ...)
-    tokens = tuple(case0.split())
+    # Also support parsing from CASE0 environment variable
+    case0_input = None
+    if 'CASE0' in os.environ:
+        case0_input = os.environ['CASE0']
     
-    # Build S-expression string
-    expr_str = ' '.join(tokens)
-    toks = tokenize(expr_str)
-    parsed = parse(toks)
+    results = []
+    for i, case in enumerate(CASES):
+        inp = case['input']
+        tree = build_tree_from_list(inp['root'])
+        result = solve(tree)
+        results.append({"id": i, "input": inp, "expected": json.dumps(result, separators=(',', ':'), ensure_ascii=False)})
     
-    result = solve(parsed)
-    print(f"{result}nil")
+    # If CASE0 is provided, parse it and add as case
+    if case0_input is not None:
+        tree = parse_input(case0_input)
+        result = solve(tree)
+        results.append({"id": len(CASES), "input": {"CASE0_raw": case0_input}, "expected": json.dumps(result, separators=(',', ':'), ensure_ascii=False) + "nil"})
+    
+    print(json.dumps(results, separators=(',', ':'), ensure_ascii=False))

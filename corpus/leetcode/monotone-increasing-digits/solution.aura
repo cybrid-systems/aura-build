@@ -1,0 +1,94 @@
+(define (digits-of n)
+  (if (= n 0)
+      '(0)
+      (let loop ((n n) (acc '()))
+        (if (= n 0)
+            acc
+            (loop (quotient n 10) (cons (modulo n 10) acc))))))
+
+(define (digits-to-num ds)
+  (let loop ((ds ds) (acc 0))
+    (if (null? ds)
+        acc
+        (loop (cdr ds) (+ (* acc 10) (car ds))))))
+
+(define (length lst)
+  (if (null? lst) 0 (+ 1 (length (cdr lst)))))
+
+(define (take n lst)
+  (if (= n 0)
+      '()
+      (cons (car lst) (take (- n 1) (cdr lst)))))
+
+(define (drop n lst)
+  (if (= n 0)
+      lst
+      (drop (- n 1) (cdr lst))))
+
+(define (make-list n val)
+  (if (= n 0)
+      '()
+      (cons val (make-list (- n 1) val))))
+
+(define (solve n)
+  (if (= n 0)
+      0
+      (let* ((ds (digits-of n))
+             (len (length ds))
+             (result
+              (let loop ((ds ds))
+                (let* ((viol
+                        (let find ((d ds) (idx 0))
+                          (cond
+                            ((null? d) #f)
+                            ((null? (cdr d)) #f)
+                            ((> (car d) (car (cdr d)))
+                             idx)
+                            (else (find (cdr d) (+ idx 1)))))))
+                  (if viol
+                      (let* ((new-ds
+                              (let fix ((d ds) (i 0) (acc '()))
+                                  (if (= i viol)
+                                      (begin
+                                        (set! acc (cons (- (car d) 1) acc))
+                                        (let fix2 ((d (cdr d)) (acc acc))
+                                          (if (null? d)
+                                              (reverse acc)
+                                              (fix2 (cdr d) (cons (car d) acc)))))
+                                      (fix (cdr d) (+ i 1) (cons (car d) acc)))))
+                            (new-ds2
+                             (let zero ((d new-ds) (i 0) (acc '()))
+                                 (if (= i (length new-ds))
+                                     (reverse acc)
+                                     (if (>= i (+ viol 1))
+                                         (zero (cdr d) (+ i 1) (cons 0 acc))
+                                         (zero (cdr d) (+ i 1) (cons (car d) acc)))))))
+                        (loop new-ds2))
+                      ds))))
+        (let* ((num (digits-to-num result))
+               (clean-ds
+                (let clean ((d result) (acc '()))
+                    (if (null? d)
+                        (reverse acc)
+                        (if (and (null? acc) (= (car d) 0))
+                            (clean (cdr d) acc)
+                            (clean (cdr d) (cons (car d) acc)))))))
+          (if (null? clean-ds)
+              0
+              (digits-to-num clean-ds))))))
+
+;; Helper to reverse a list
+(define (reverse lst)
+  (let loop ((lst lst) (acc '()))
+    (if (null? lst)
+        acc
+        (loop (cdr lst) (cons (car lst) acc)))))
+
+(display "CASE0=") (display (solve 332)) (newline)
+(display "CASE1=") (display (solve 100)) (newline)
+(display "CASE2=") (display (solve 0)) (newline)
+(display "CASE3=") (display (solve 10)) (newline)
+(display "CASE4=") (display (solve 9)) (newline)
+(display "CASE5=") (display (solve 1234)) (newline)
+(display "CASE6=") (display (solve 332111)) (newline)
+(display "CASE7=") (display (solve 111111)) (newline)

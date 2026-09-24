@@ -1,90 +1,55 @@
 import json
 
+class ListNode:
+    __slots__ = ('val', 'next')
+    def __init__(self, val=0, next=None):
+        self.val = val
+        self.next = next
+
 def solve(node):
-    """
-    Delete the given node from a singly linked list.
-    Since we don't have access to the head, we copy the successor's
-    value into this node and bypass the successor.
-    """
-    # Copy the next node's value into current node
-    node['val'] = node['next']['val']
-    # Skip over the successor (its memory becomes unreachable)
-    node['next'] = node['next']['next']
+    node.val = node.next.val
+    node.next = node.next.next
 
-
-# ListNode as a dict: {"val": int, "next": dict | None}
-def build_list(values, target_index):
-    """Build a linked list as nested dicts and return (head, target_node)."""
+def build_list_and_node(values, idx):
     if not values:
         return None, None
-    head = {"val": values[0], "next": None}
-    current = head
+    head = ListNode(values[0])
+    cur = head
     nodes = [head]
     for v in values[1:]:
-        nxt = {"val": v, "next": None}
-        current["next"] = nxt
-        current = nxt
-        nodes.append(nxt)
-    target = nodes[target_index]
-    return head, target
-
+        cur.next = ListNode(v)
+        cur = cur.next
+        nodes.append(cur)
+    return head, nodes[idx]
 
 def list_to_array(head):
-    """Convert linked list (as dicts) to a list of values."""
     out = []
     cur = head
     while cur is not None:
-        out.append(cur["val"])
-        cur = cur["next"]
+        out.append(cur.val)
+        cur = cur.next
     return out
 
-
 CASES = [
-    # Example from the problem
-    {"values": [4, 5, 1, 9], "index": 1},
-
-    # Delete the head
-    {"values": [1, 2, 3, 4], "index": 0},
-
-    # Delete the second-to-last node
-    {"values": [10, 20, 30, 40, 50], "index": 3},
-
-    # Two-node list, delete the first
-    {"values": [7, 8], "index": 0},
-
-    # Two-node list, delete the second
-    {"values": [7, 8], "index": 1},
-
-    # Longer list, delete middle
-    {"values": [1, 2, 3, 4, 5, 6, 7, 8, 9], "index": 4},
-
-    # Delete a node containing a negative value
-    {"values": [3, -1, 4, -2, 5], "index": 2},
-
-    # Delete a node at index 1 in a 3-node list
-    {"values": [100, 200, 300], "index": 1},
+    {"values": [4, 5, 1, 9], "idx": 1},
+    {"values": [1, 2, 3, 4, 5], "idx": 0},
+    {"values": [1, 2, 3, 4, 5], "idx": 3},
+    {"values": [42], "idx": 0},
+    {"values": [7, 8], "idx": 0},
+    {"values": [7, 8], "idx": 1},
+    {"values": [10, 20, 30, 40, 50, 60], "idx": 2},
+    {"values": [1, 2], "idx": 0},
 ]
-
 
 if __name__ == '__main__':
     results = []
     for i, case in enumerate(CASES):
-        values = case["values"]
-        idx = case["index"]
-
-        head, target = build_list(values, idx)
-
-        # Snapshot head before solve (still safe — solve only mutates target)
-        solve(target)
-
-        # The harness prints the resulting list on one line, space-separated.
-        resulting_values = list_to_array(head)
-        expected_str = " ".join(str(v) for v in resulting_values)
-
+        head, node = build_list_and_node(case["values"], case["idx"])
+        solve(node)
+        out = list_to_array(head)
         results.append({
             "id": i,
-            "input": {"values": values, "index": idx},
-            "expected": expected_str,
+            "input": {"values": case["values"], "idx": case["idx"]},
+            "expected": json.dumps(out, separators=(',', ':'), ensure_ascii=False)
         })
-
     print(json.dumps(results, separators=(',', ':'), ensure_ascii=False))

@@ -1,0 +1,91 @@
+;; Helper: display a list as space-separated values
+(define (display-list lst)
+  (cond ((null? lst) (void))
+        (else
+         (display (car lst))
+         (if (not (null? (cdr lst)))
+             (display " "))
+         (display-list (cdr lst)))))
+
+;; Compute max depth of binary tree
+;; node is an atom containing a map with :left and :right
+;; Returns integer depth (number of nodes on longest path)
+(define (max-depth node)
+  (if (null? node)
+      0
+      (let ((m (deref node)))
+        (let ((left (cdr (assq 'left m)))
+              (right (cdr (assq 'right m))))
+          (+ 1 (max (max-depth left) (max-depth right)))))))
+
+(define (max a b) (if (> a b) a b))
+
+(define (solve root)
+  (max-depth root))
+
+;; Build trees for the test cases
+;; Case 0: empty tree (root is nil)
+;; Case 1-7: trees given as Node objects
+
+;; We'll define some sample trees using mutable atoms
+(define (make-node left right)
+  (atom (cons (cons 'left left) (cons (cons 'right right) '()))))
+
+;; Case 0: nil
+(define root0 '())
+
+;; Case 1: single node
+(define node1 (make-node '() '()))
+(define root1 node1)
+
+;; Case 2: tree of depth 2
+(define node2-l (make-node '() '()))
+(define node2-r (make-node '() '()))
+(define node2-root (make-node node2-l node2-r))
+(define root2 node2-root)
+
+;; Case 3: tree of depth 3 - left-skewed
+(define node3-l2 (make-node '() '()))
+(define node3-l1 (make-node node3-l2 '()))
+(define node3-root (make-node node3-l1 '()))
+(define root3 node3-root)
+
+;; Case 4: tree of depth 3 - balanced
+(define node4-l1 (make-node '() '()))
+(define node4-r1 (make-node '() '()))
+(define node4-l2 (make-node node4-l1 node4-r1))
+(define node4-r2 (make-node '() '()))
+(define node4-root (make-node node4-l2 node4-r2))
+(define root4 node4-root)
+
+;; Case 5: tree of depth 4
+(define node5-l3 (make-node '() '()))
+(define node5-l2 (make-node node5-l3 '()))
+(define node5-l1 (make-node node5-l2 '()))
+(define node5-r1 (make-node '() '()))
+(define node5-root (make-node node5-l1 node5-r1))
+(define root5 node5-root)
+
+;; Case 6: tree of depth 3 - right-skewed
+(define node6-r2 (make-node '() '()))
+(define node6-r1 (make-node '() node6-r2))
+(define node6-root (make-node '() node6-r1))
+(define root6 node6-root)
+
+;; Case 7: tree of depth 4 - mixed
+(define node7-l3 (make-node '() '()))
+(define node7-r2 (make-node '() '()))
+(define node7-r1 (make-node node7-r2 '()))
+(define node7-l1 (make-node node7-l3 node7-r1))
+(define node7-root (make-node node7-l1 '()))
+(define root7 node7-root)
+
+;; Run all cases
+(display "CASE0=") (display (solve root0)) (newline)
+(display "CASE1=") (display (solve root1)) (newline)
+(display "CASE2=") (display (solve root2)) (newline)
+(display "CASE3=") (display (solve root3)) (newline)
+(display "CASE4=") (display (solve root4)) (newline)
+(display "CASE5=") (display (solve root5)) (newline)
+(display "CASE6=") (display (solve root6)) (newline)
+(display "CASE7=") (display (solve root7)) (newline)

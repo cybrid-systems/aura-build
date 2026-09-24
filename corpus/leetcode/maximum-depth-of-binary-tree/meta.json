@@ -1,5 +1,66 @@
 {
-  "variants": [],
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:45:49Z",
+      "ts_local": "2026-09-24 22:45:49 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2016,
+        "total_characters": 0,
+        "prompt_tokens": 1128,
+        "completion_tokens": 888,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 512
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.075,
+      "tests_passed": 1,
+      "tests_total": 8,
+      "stderr_snippet": "error: 2:4: unbound variable: atom\nerror: 1:15: unbound variable: node1\n   |\n  1 | (define root1 node1)\n   |               ^^^^^\nerror: 2:4: unbound variable: atom\nerror: 2:4: unbound variable: atom\nerror: 1:31: unbound variable: node2-l\n   |\n  1 | (define node2-root (make-node node2-l node2-r))\n   |                               ^^^^^^^\nerror: 1:15: unbound variable: node2-root\n   |\n  1 | (define root2 node2-root)\n   |               ^^^^^^^^^^\nerror: 2:4: unbound variable: atom\nerror: 1:29: unb",
+      "stdout_snippet": "CASE0=0\nCASE1=\nCASE2=\nCASE3=\nCASE4=\nCASE5=\nCASE6=\nCASE7=\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:46:07Z",
+      "ts_local": "2026-09-24 22:46:07 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2155,
+        "total_characters": 0,
+        "prompt_tokens": 1128,
+        "completion_tokens": 1027,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 896
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.088,
+      "tests_passed": 1,
+      "tests_total": 8,
+      "stderr_snippet": "error: 4:7: unbound variable: atom?\nerror: 4:7: unbound variable: atom?\nerror: 4:7: unbound variable: atom?\nerror: 4:7: unbound variable: atom?\nerror: 4:7: unbound variable: atom?\nerror: 4:7: unbound variable: atom?\nerror: 4:7: unbound variable: atom?\n",
+      "stdout_snippet": "CASE0=0\nCASE1=CASE0=0\nCASE1=\nCASE2=\nCASE3=\nCASE4=\nCASE5=\nCASE6=\nCASE7=\n"
+    }
+  ],
   "slug": "maximum-depth-of-binary-tree",
   "title": "Maximum Depth of Binary Tree",
   "category": "trees",
@@ -28,5 +89,6 @@
     },
     "ts": "2026-09-24T14:36:50Z"
   },
-  "updated_at": "2026-09-24T14:36:50Z"
+  "updated_at": "2026-09-24T14:46:07Z",
+  "updated_at_local": "2026-09-24 22:46:07 CST"
 }

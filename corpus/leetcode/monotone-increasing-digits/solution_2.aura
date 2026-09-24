@@ -1,0 +1,71 @@
+(define (digits n)
+  (if (= n 0)
+      '(0)
+      (let loop ((n n) (acc '()))
+        (if (= n 0)
+            acc
+            (loop (quotient n 10) (cons (modulo n 10) acc))))))
+
+(define (digits-of n)
+  (let ((d (digits n)))
+    (if (and (not (null? (cdr d))) (= (car d) 0))
+        (cdr d)
+        d)))
+
+(define (solve N)
+  (let* ((d (digits-of N))
+         (len (length d)))
+    (let loop ((digits d) (i 0))
+      (if (>= i (- len 1))
+          (list->int digits)
+          (let ((a (list-ref digits i))
+                (b (list-ref digits (+ i 1))))
+            (if (<= a b)
+                (loop digits (+ i 1))
+                (let adjust ((j i) (ds digits))
+                  (cond
+                    ((< j 0) (list->int ds))
+                    ((> (list-ref ds j) 0)
+                     (let ((new-ds (list-set ds j (- (list-ref ds j) 1))))
+                       (zero-tail new-ds (+ j 1))))
+                    (else (adjust (- j 1) ds))))))))))
+
+(define (zero-tail ds start)
+  (let loop ((k start) (d ds))
+    (if (>= k (length d))
+        d
+        (loop (+ k 1) (list-set d k 0)))))
+
+(define (list->int lst)
+  (let loop ((l lst) (acc 0))
+    (if (null? l)
+        acc
+        (loop (cdr l) (+ (* acc 10) (car l))))))
+
+(define (list-ref lst n)
+  (cond ((null? lst) (error "list-ref: out of bounds"))
+        ((= n 0) (car lst))
+        (else (list-ref (cdr lst) (- n 1)))))
+
+(define (list-set lst n v)
+  (cond ((null? lst) '())
+        ((= n 0) (cons v (cdr lst)))
+        (else (cons (car lst) (list-set (cdr lst) (- n 1) v)))))
+
+(define (length lst)
+  (let loop ((l lst) (n 0))
+    (if (null? l) n (loop (cdr l) (+ n 1)))))
+
+(define tests '(332 100 0 10 9 1234 332111 111111))
+(define (run-tests lst i)
+  (if (null? lst)
+      'done
+      (begin
+        (display "CASE")
+        (display i)
+        (display "=")
+        (display (solve (car lst)))
+        (newline)
+        (run-tests (cdr lst) (+ i 1)))))
+
+(run-tests tests 0)

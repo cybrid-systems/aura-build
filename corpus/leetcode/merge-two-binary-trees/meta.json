@@ -1,5 +1,60 @@
 {
-  "variants": [],
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:45:44Z",
+      "ts_local": "2026-09-24 22:45:44 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2465,
+        "total_characters": 0,
+        "prompt_tokens": 1668,
+        "completion_tokens": 797,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.041,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: type mismatch — expected Int, got String 'NIL'\n",
+      "stdout_snippet": "CASE0=(3 (4 (5 (NIL) (NIL)) (6 (NIL) (NIL))) (3 (NIL) (NIL)))\nCASE1=(NIL)\nCASE2=(3 (3 (NIL) (NIL)) (NIL (NIL) (NIL)))\nCASE3=(5 (7 (NIL) (NIL)) (9 (NIL) (NIL)))\nCASE4=(3 (3 (4 (NIL) (NIL)) (5 (NIL) (NIL))) (6 (NIL) (NIL)))\nCASE5=(3 (3 (NIL) (NIL)) (4 (NIL) (NIL)))\nCASE6=(1 (2 (NIL) (NIL)) (3 (NIL) (NIL)))\nCASE7=(2 (2 (NIL) (4 (NIL) (NIL))) (2 (NIL) (NIL)))\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:45:52Z",
+      "ts_local": "2026-09-24 22:45:52 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 3303,
+        "total_characters": 0,
+        "prompt_tokens": 1668,
+        "completion_tokens": 1635,
+        "prompt_tokens_details": {
+          "cached_tokens": 1667
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.038,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=<error>\n"
+    }
+  ],
   "slug": "merge-two-binary-trees",
   "title": "Merge Two Binary Trees",
   "category": "trees",
@@ -28,5 +83,6 @@
     },
     "ts": "2026-09-24T14:38:16Z"
   },
-  "updated_at": "2026-09-24T14:38:16Z"
+  "updated_at": "2026-09-24T14:45:52Z",
+  "updated_at_local": "2026-09-24 22:45:52 CST"
 }
