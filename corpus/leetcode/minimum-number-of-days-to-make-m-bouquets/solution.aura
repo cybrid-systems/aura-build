@@ -1,0 +1,75 @@
+(define (list-min xs)
+  (if (null? (cdr xs))
+      (car xs)
+      (let ((rest-min (list-min (cdr xs))))
+        (if (< (car xs) rest-min) (car xs) rest-min))))
+
+(define (list-max xs)
+  (if (null? (cdr xs))
+      (car xs)
+      (let ((rest-max (list-max (cdr xs))))
+        (if (> (car xs) rest-max) (car xs) rest-max))))
+
+(define (list-len xs)
+  (if (null? xs) 0 (+ 1 (list-len (cdr xs)))))
+
+(define (can-make day bloom-day m k)
+  (let ((n (list-len bloom-day)))
+    (let loop ((bd bloom-day)
+               (i 0)
+               (consecutive 0)
+               (bouquets 0))
+      (cond
+        ((null? bd)
+         (>= bouquets m))
+        (else
+         (let ((bloomed (<= (car bd) day)))
+           (cond
+             (bloomed
+              (let ((new-consec (+ consecutive 1)))
+                (cond
+                  ((= new-consec k)
+                   (loop (cdr bd) (+ i 1) 0 (+ bouquets 1)))
+                  (else
+                   (loop (cdr bd) (+ i 1) new-consec bouquets)))))
+             (else
+              (loop (cdr bd) (+ i 1) 0 bouquets))))))))))
+
+(define (bin-search lo hi bloom-day m k)
+  (if (>= lo hi)
+      lo
+      (let ((mid (quotient (+ lo hi) 2)))
+        (cond
+          ((can-make mid bloom-day m k)
+           (bin-search lo mid bloom-day m k))
+          (else
+           (bin-search (+ mid 1) hi bloom-day m k))))))
+
+(define (solve bloom-day m k)
+  (let ((n (list-len bloom-day)))
+    (cond
+      ((> (* m k) n) -1)
+      (else
+       (let ((lo (list-min bloom-day))
+             (hi (list-max bloom-day)))
+         (bin-search lo (+ hi 1) bloom-day m k))))))
+
+(define (run-tests)
+  (let ((c0 (list 1 10 3 10 2)))
+    (display "CASE0=") (display (solve c0 3 1)) (newline))
+  (let ((c1 (list 1 10 3 10 2)))
+    (display "CASE1=") (display (solve c1 3 2)) (newline))
+  (let ((c2 (list 7 7 7 7 12 7 7)))
+    (display "CASE2=") (display (solve c2 2 3)) (newline))
+  (let ((c3 (list 1 2 3 4 5)))
+    (display "CASE3=") (display (solve c3 1 5)) (newline))
+  (let ((c4 (list 5 5 5 5 5)))
+    (display "CASE4=") (display (solve c4 2 3)) (newline))
+  (let ((c5 (list 1)))
+    (display "CASE5=") (display (solve c5 1 1)) (newline))
+  (let ((c6 (list 1 2 3)))
+    (display "CASE6=") (display (solve c6 2 2)) (newline))
+  (let ((c7 (list 1000000000)))
+    (display "CASE7=") (display (solve c7 1 1)) (newline)))
+
+(run-tests)

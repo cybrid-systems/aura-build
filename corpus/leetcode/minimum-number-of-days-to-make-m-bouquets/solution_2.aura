@@ -1,0 +1,88 @@
+;; Minimum Number of Days to Make m Bouquets - binary search solution
+
+(define (length lst)
+  (if (null? lst) 0 (+ 1 (length (cdr lst)))))
+
+(define (min-list lst)
+  (if (null? (cdr lst))
+      (car lst)
+      (let ((rest-min (min-list (cdr lst))))
+        (if (< (car lst) rest-min) (car lst) rest-min))))
+
+(define (max-list lst)
+  (if (null? (cdr lst))
+      (car lst)
+      (let ((rest-max (max-list (cdr lst))))
+        (if (> (car lst) rest-max) (car lst) rest-max))))
+
+;; count bouquets possible if we wait `day` days
+(define (count-bouquets bloom-day day m k)
+  (let loop ((bd bloom-day) (cnt 0) (streak 0))
+    (cond
+      ((null? bd)
+       (if (>= cnt m) #t #f))
+      ((and (<= (car bd) day) (< streak k))
+       (loop (cdr bd) cnt (+ streak 1)))
+      ((<= (car bd) day)
+       ;; streak == k, completed a bouquet
+       (loop (cdr bd) (+ cnt 1) 0))
+      (else
+       ;; not bloomed, reset streak
+       (loop (cdr bd) cnt 0)))))
+
+;; Improved: returns count directly (with a cap at m for efficiency)
+(define (count-bouquets-cap bloom-day day m k)
+  (let loop ((bd bloom-day) (cnt 0) (streak 0))
+    (cond
+      ((>= cnt m) cnt)
+      ((null? bd) cnt)
+      ((and (<= (car bd) day) (< streak k))
+       (loop (cdr bd) cnt (+ streak 1)))
+      ((<= (car bd) day)
+       (loop (cdr bd) (+ cnt 1) 0))
+      (else
+       (loop (cdr bd) cnt 0)))))
+
+(define (solve bloom-day m k)
+  (let ((n (length bloom-day)))
+    (if (> (* m k) n)
+        -1
+        (let ((lo (min-list bloom-day))
+              (hi (max-list bloom-day)))
+          (let search ((l lo) (r hi))
+            (if (< l r)
+                (let ((mid (quotient (+ l r) 2)))
+                  (if (>= (count-bouquets-cap bloom-day mid m k) m)
+                      (search l mid)
+                      (search (+ mid 1) r)))
+                l))))))
+
+;; ---- Test harness ----
+(define test-cases
+  (list
+    (list (list 1 10 3 10 2) 3 1)
+    (list (list 1 10 3 10 2) 3 2)
+    (list (list 7 7 7 7 12 7 7) 2 3)
+    (list (list 1 2 3 4 5) 1 5)
+    (list (list 5 5 5 5 5) 2 3)
+    (list (list 1) 1 1)
+    (list (list 1 2 3) 2 2)
+    (list (list 1000000000) 1 1)))
+
+(define (run-cases cases i)
+  (if (null? cases)
+      'done
+      (begin
+        (let* ((c (car cases))
+               (bd (car c))
+               (m (car (cdr c)))
+               (k (car (cdr (cdr c))))
+               (ans (solve bd m k)))
+          (display "CASE")
+          (display (number->string i))
+          (display "=")
+          (display (number->string ans))
+          (newline))
+        (run-cases (cdr cases) (+ i 1)))))
+
+(run-cases test-cases 0)

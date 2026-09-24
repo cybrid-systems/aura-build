@@ -1,0 +1,56 @@
+(define (sum-list xs)
+  (if (null? xs)
+      0
+      (+ (car xs) (sum-list (cdr xs)))))
+
+(define (max-list xs)
+  (if (null? (cdr xs))
+      (car xs)
+      (let ((rest (max-list (cdr xs))))
+        (if (> (car xs) rest) (car xs) rest))))
+
+(define (can-split xs m limit)
+  (let loop ((xs xs) (count 1) (cur 0))
+    (cond
+      ((null? xs) (<= count m))
+      (else
+       (let ((x (car xs)))
+         (cond
+           ((> (+ cur x) limit)
+            (if (= count m)
+                #f
+                (loop (cdr xs) (+ count 1) x)))
+           (else
+            (loop (cdr xs) count (+ cur x)))))))))
+
+(define (search xs m lo hi)
+  (cond
+    ((= lo hi) lo)
+    (else
+     (let ((mid (quotient (+ lo hi) 2)))
+       (if (can-split xs m mid)
+           (search xs m lo mid)
+           (search xs m (+ mid 1) hi))))))
+
+(define (solve nums m)
+  (search nums m
+          (max-list nums)
+          (sum-list nums)))
+
+;; Test harness: print CASEi=<result> for each embedded test.
+
+(define (run-case i nums m)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve nums m))
+  (newline))
+
+(run-case 0 (list 7 2 5 10 8) 2)
+(run-case 1 (list 1 2 3 4 5) 2)
+(run-case 2 (list 1 4 4) 3)
+(run-case 3 (list 1 4 4) 1)
+(run-case 4 (list 10 5 2 7 8 4 3 6) 4)
+(run-case 5 (list 5 1 4 5 1) 2)
+(run-case 6 (list 1) 1)
+(run-case 7 (list 2 3 1 2 4 3 2 1 1) 3)

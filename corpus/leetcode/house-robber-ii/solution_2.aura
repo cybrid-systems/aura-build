@@ -1,0 +1,86 @@
+;; House Robber II - Aura solution
+
+;; Linear house robber: max loot from a list of houses (not circular)
+(define (rob-linear lst)
+  ;; returns max money robbing non-adjacent houses from lst
+  (let ((n (length lst)))
+    (cond
+      ((= n 0) 0)
+      ((= n 1) (car lst))
+      (else
+        (let ((prev2 0)
+              (prev1 0))
+          ;; iterate through lst maintaining dp[i-2] and dp[i-1]
+          (let loop ((rest lst))
+            (if (null? rest)
+                prev1
+                (let ((cur (car rest)))
+                    (let ((best (+ (max prev1 (+ prev2 cur)) 0)))
+                      (set! prev2 prev1)
+                      (set! prev1 best))
+                    ;; Actually we need best = max(prev1, prev2 + cur)
+                    ;; redo without set! confusion
+                    ))))))))
+
+;; Cleaner: iterative with two accumulators, no set!
+(define (rob-range start end lst)
+  ;; rob linear houses from index start to end (inclusive), 0-based
+  (let loop ((i start)
+             (prev2 0)
+             (prev1 0))
+    (cond
+      ((> i end) prev1)
+      (else
+        (let ((cur (list-ref lst i)))
+          (let ((best (if (> (+ prev2 cur) prev1)
+                          (+ prev2 cur)
+                          prev1)))
+            (loop (+ i 1) prev1 best)))))))
+
+(define (list-ref lst n)
+  (if (= n 0)
+      (car lst)
+      (list-ref (cdr lst) (- n 1))))
+
+(define (length lst)
+  (if (null? lst) 0 (+ 1 (length (cdr lst)))))
+
+(define (max a b)
+  (if (> a b) a b))
+
+(define (solve nums)
+  (let ((n (length nums)))
+    (cond
+      ((= n 0) 0)
+      ((= n 1) (car nums))
+      ((= n 2) (max (car nums) (car (cdr nums))))
+      (else
+        ;; Exclude first: rob indices 1..n-1
+        ;; Exclude last: rob indices 0..n-2
+        (let ((without-first (rob-range 1 (- n 1) nums))
+              (without-last  (rob-range 0 (- n 2) nums)))
+          (max without-first without-last))))))
+
+;; Helper to display a list as [a,b,c]
+(define (display-list lst)
+  (display "[")
+  (let loop ((rest lst))
+    (cond
+      ((null? rest) (display ""))
+      (else
+        (display (car rest))
+        (if (not (null? (cdr rest))) (display ",") (display ""))
+        (loop (cdr rest)))))
+  (display "]"))
+
+;; Parse input line like: CASE0=nums=[2,3,2]
+;; We'll just hardcode the calls since inputs are embedded.
+
+(display "CASE0=") (display (solve '(2 3 2))) (newline)
+(display "CASE1=") (display (solve '(1 2 3 1))) (newline)
+(display "CASE2=") (display (solve '(0))) (newline)
+(display "CASE3=") (display (solve '(1))) (newline)
+(display "CASE4=") (display (solve '(1 2))) (newline)
+(display "CASE5=") (display (solve '(2 3 2 5 8 1))) (newline)
+(display "CASE6=") (display (solve '(0 0 0 0))) (newline)
+(display "CASE7=") (display (solve '(10 1 1 10 1 1 10))) (newline)

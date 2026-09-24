@@ -1,0 +1,130 @@
+(define (display-list lst)
+  (display "[")
+  (let loop ((rest lst) (first? #t))
+    (if (null? rest)
+        (display "]")
+        (begin
+          (if first?
+              (set! first? #f)
+              (display ", "))
+          (display (car rest))
+          (loop (cdr rest) #f)))))
+
+(define (solve nums)
+  (let* ((n (length nums))
+         (result (make-list n 0)))
+    (define (update-help)
+      (lambda (i)
+        (set! (list-ref result i) (+ (list-ref result i) 1))))
+    (define (merge-sort arr temp left right)
+      (if (>= left right)
+          '()
+          (let* ((mid (quotient (+ left right) 2))
+                 (left-result (merge-sort arr temp left mid))
+                 (right-result (merge-sort arr temp (+ mid 1) right))
+                 (merge-result (merge arr temp left mid right)))
+            (begin
+              (set! left-result left-result)
+              (set! right-result right-result)
+              merge-result))))
+    (define (merge arr temp left mid right)
+      (let loop ((i left) (j (+ mid 1)) (k left) (count 0))
+        (cond
+          ((and (< i (+ mid 1)) (< j (+ right 1)))
+           (if (< (car (list-ref arr i)) (car (list-ref arr j)))
+               (begin
+                 (set! (list-ref temp k) (list-ref arr i))
+                 (loop (+ i 1) j (+ k 1) count))
+               (begin
+                 (set! (list-ref temp k) (list-ref arr j))
+                 (loop i (+ j 1) (+ k 1) (+ count (- (+ mid 1) i))))))
+          ((< i (+ mid 1))
+           (begin
+             (set! (list-ref temp k) (list-ref arr i))
+             (loop (+ i 1) j (+ k 1) count)))
+          (else
+           (begin
+             (let copy-loop ((m j))
+               (if (> m right)
+                   '()
+                   (begin
+                     (set! (list-ref temp k) (list-ref arr m))
+                     (copy-loop (+ m 1)))))
+             (let copy-back ((p left))
+               (if (> p right)
+                   '()
+                   (begin
+                     (set! (list-ref arr p) (list-ref temp p))
+                     (copy-back (+ p 1)))))
+             count)))))
+    (define (merge-sort-and-count arr temp left right)
+      (if (>= left right)
+          0
+          (let* ((mid (quotient (+ left right) 2))
+                 (left-count (merge-sort-and-count arr temp left mid))
+                 (right-count (merge-sort-and-count arr temp (+ mid 1) right))
+                 (cross-count (merge-and-count arr temp left mid right)))
+            (+ left-count right-count cross-count))))
+    (define (merge-and-count arr temp left mid right)
+      (let loop ((i left) (j (+ mid 1)) (k left) (count 0))
+        (cond
+          ((and (< i (+ mid 1)) (< j (+ right 1)))
+           (if (<= (car (list-ref arr i)) (car (list-ref arr j)))
+               (begin
+                 (set! (list-ref temp k) (list-ref arr i))
+                 (loop (+ i 1) j (+ k 1) count))
+               (begin
+                 (set! (list-ref temp k) (list-ref arr j))
+                 (loop i (+ j 1) (+ k 1) (+ count (- (+ mid 1) i))))))
+          ((< i (+ mid 1))
+           (begin
+             (set! (list-ref temp k) (list-ref arr i))
+             (loop (+ i 1) j (+ k 1) count)))
+          (else
+           (begin
+             (let copy-loop ((m j))
+               (if (> m right)
+                   '()
+                   (begin
+                     (set! (list-ref temp k) (list-ref arr m))
+                     (copy-loop (+ m 1)))))
+             (let copy-back ((p left))
+               (if (> p right)
+                   '()
+                   (begin
+                     (set! (list-ref arr p) (list-ref temp p))
+                     (copy-back (+ p 1)))))
+             count)))))
+    (if (= n 0)
+        '()
+        (let* ((arr (make-list n '(0)))
+               (temp (make-list n '(0))))
+          (let init-loop ((k 0))
+            (if (>= k n)
+                '()
+                (begin
+                  (set! (list-ref arr k) (list (list-ref nums k) k))
+                  (init-loop (+ k 1)))))
+          (merge-sort-and-count arr temp 0 (- n 1))
+          result))))
+
+(define (make-list n val)
+  (let loop ((i 0) (acc '()))
+    (if (>= i n)
+        acc
+        (loop (+ i 1) (append acc (list val))))))
+
+(define (test-case idx input)
+  (let ((result (solve input)))
+    (display (string-append "CASE" (number->string idx) "="))
+    (display-list result)
+    (newline)))
+
+(test-case 0 (list 5 2 6 1))
+(test-case 1 (list -1))
+(test-case 2 (list -1 -1))
+(test-case 3 (list))
+(test-case 4 (list 1 2 3 4 5))
+(test-case 5 (list 5 4 3 2 1))
+(test-case 6 (list 2 0 1))
+(test-case 7 (list 1 1 1 1))

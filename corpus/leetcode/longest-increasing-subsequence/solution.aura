@@ -1,0 +1,69 @@
+(define (parse-ints s)
+  (let ((len (string-length s)))
+    (let loop ((i 0) (cur '()) (acc '()))
+      (cond
+        ((= i len)
+         (reverse (cons (if (null? cur) 0 (string->number (list->string (reverse cur)))) acc)))
+        (else
+         (let ((c (string-ref s i))))
+         (let ((c (string-ref s i)))
+           (if (or (char=? c #\space) (char=? c #\tab) (char=? c #\newline))
+               (if (null? cur)
+                   (loop (+ i 1) cur acc)
+                   (loop (+ i 1) '()
+                         (cons (string->number (list->string (reverse cur))) acc)))
+               (loop (+ i 1) (cons c cur) acc))))))))
+
+(define (lis-len nums)
+  (let ((tails '()))
+    (let loop ((xs nums))
+      (cond
+        ((null? xs) (length tails))
+        (else
+         (let ((x (car xs)))
+           (let loop2 ((lo 0) (hi (length tails)))
+             (if (>= lo hi)
+                 (set! tails
+                   (let ((new-tails (make-list 0)))
+                     (let fill ((k 0))
+                       (cond
+                         ((< k lo) (set! new-tails (append new-tails (list (list-ref tails k)))) (fill (+ k 1)))
+                         (else (set! new-tails (append new-tails (list x)))
+                               (let fill2 ((k2 lo))
+                                 (if (< k2 (length tails))
+                                     (begin
+                                       (set! new-tails (append new-tails (list (list-ref tails k2))))
+                                       (fill2 (+ k2 1)))
+                                     (void))))))
+                     new-tails))
+                 (let ((mid (quotient (+ lo hi) 2)))
+                   (if (>= (list-ref tails mid) x)
+                       (loop2 lo mid)
+                       (loop2 (+ mid 1) hi)))))))
+         (loop (cdr xs))))))
+
+(define (solve s)
+  (let ((nums (parse-ints s)))
+    (lis-len nums)))
+
+(define (list->string lst)
+  (let loop ((l lst) (acc ""))
+    (cond
+      ((null? l) acc)
+      (else (loop (cdr l) (string-append acc (string (car l))))))))
+
+(define (solve-and-print idx s)
+  (display "CASE")
+  (display idx)
+  (display "=")
+  (display (solve s))
+  (newline))
+
+(solve-and-print 0 "1 3 2 4 3 5")
+(solve-and-print 1 "5 4 3 2 1")
+(solve-and-print 2 "")
+(solve-and-print 3 "1 2 3 4 5")
+(solve-and-print 4 "5 4 3 2 1 6")
+(solve-and-print 5 "2 2 2")
+(solve-and-print 6 "0")
+(solve-and-print 7 "3 1 4 1 5 9 2 6 5 3")

@@ -1,0 +1,46 @@
+(define (max-list xs)
+  (cond ((null? (cdr xs)) (car xs))
+        (else (let ((m (max-list (cdr xs))))
+                (if (> (car xs) m) (car xs) m)))))
+
+(define (hours-needed piles k)
+  (cond ((null? piles) 0)
+        (else (+ (quotient (+ (car piles) (- k 1)) k)
+                 (hours-needed (cdr piles) k)))))
+
+(define (can-finish piles k h)
+  (<= (hours-needed piles k) h))
+
+(define (solve piles h)
+  (let* ((lo 1)
+         (hi (max-list piles)))
+    (let loop ((l lo) (r hi))
+      (if (>= l r)
+          l
+          (let ((mid (quotient (+ l r) 2)))
+            (if (can-finish piles mid h)
+                (loop l mid)
+                (loop (+ mid 1) r)))))))
+
+(define (run-case i piles h)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve piles h))
+  (newline))
+
+(let ((cases (list
+               (list (list 3 1) 4)
+               (list (list 1 2 3) 6)
+               (list (list 10) 10)
+               (list (list 5 10 3) 3)
+               (list (list 1 1 1 1 1) 100)
+               (list (list 30 11 23 4 20) 5)
+               (list (list 1000000000 1000000000) 2)
+               (list (list 7 3 9 2) 4))))
+  (let loop ((i 0) (cs cases))
+    (if (null? cs)
+        'done
+        (begin
+          (run-case i (car (car cs)) (car (cdr (car cs))))
+          (loop (+ i 1) (cdr cs))))))

@@ -1,0 +1,86 @@
+(define (max-list xs)
+  (if (null? xs) 0
+      (let ((rest-max (max-list (cdr xs))))
+        (if (> (car xs) rest-max) (car xs) rest-max))))
+
+(define (sum-list xs)
+  (if (null? xs) 0
+      (+ (car xs) (sum-list (cdr xs)))))
+
+(define (can-ship? weights D cap)
+  (let loop ((ws weights) (days 1) (cur 0))
+    (cond
+      ((null? ws) (<= days D))
+      ((> (+ cur (car ws)) cap)
+       (if (>= days D) #f
+           (loop (cdr ws) (+ days 1) (car ws))))
+      (else
+       (loop (cdr ws) days (+ cur (car ws)))))))
+
+(define (search weights D lo hi)
+  (if (= lo hi) lo
+      (let ((mid (quotient (+ lo hi) 2)))
+        (if (can-ship? weights D mid)
+            (search weights D lo mid)
+            (search weights D (+ mid 1) hi)))))
+
+(define (solve weights D)
+  (search weights D
+          (max-list weights)
+          (sum-list weights)))
+
+;; Display helpers
+(define (display-list xs)
+  (display "[")
+  (let loop ((rest xs) (first #t))
+    (cond
+      ((null? rest) (display "]"))
+      (first
+       (display (car rest))
+       (loop (cdr rest) #f))
+      (else
+       (display ", ")
+       (display (car rest))
+       (loop (cdr rest) #f)))))
+
+;; Test cases
+(define c0-w (list 1 2 3 4 5 6 7 8 9 10))
+(define c0-d 5)
+(define r0 (solve c0-w c0-d))
+
+(define c1-w (list 3 2 2 4 1 4))
+(define c1-d 3)
+(define r1 (solve c1-w c1-d))
+
+(define c2-w (list 1 2 3 1 1))
+(define c2-d 4)
+(define r2 (solve c2-w c2-d))
+
+(define c3-w (list 10))
+(define c3-d 1)
+(define r3 (solve c3-w c3-d))
+
+(define c4-w (list 1 1 1 1))
+(define c4-d 4)
+(define r4 (solve c4-w c4-d))
+
+(define c5-w (list 1 1 1 1))
+(define c5-d 1)
+(define r5 (solve c5-w c5-d))
+
+(define c6-w (list 5 5 5 5 5))
+(define c6-d 2)
+(define r6 (solve c6-w c6-d))
+
+(define c7-w (list 9 8 10 7 6 5))
+(define c7-d 3)
+(define r7 (solve c7-w c7-d))
+
+(display "CASE0=") (display r0) (newline)
+(display "CASE1=") (display r1) (newline)
+(display "CASE2=") (display r2) (newline)
+(display "CASE3=") (display r3) (newline)
+(display "CASE4=") (display r4) (newline)
+(display "CASE5=") (display r5) (newline)
+(display "CASE6=") (display r6) (newline)
+(display "CASE7=") (display r7) (newline)

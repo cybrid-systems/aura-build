@@ -1,0 +1,244 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "operations": [
+        {
+          "op": "SET",
+          "key": "foo",
+          "value": "bar",
+          "timestamp": 1
+        },
+        {
+          "op": "GET",
+          "key": "foo",
+          "timestamp": 1
+        },
+        {
+          "op": "GET",
+          "key": "foo",
+          "timestamp": 3
+        },
+        {
+          "op": "SET",
+          "key": "foo",
+          "value": "bar2",
+          "timestamp": 4
+        },
+        {
+          "op": "GET",
+          "key": "foo",
+          "timestamp": 4
+        },
+        {
+          "op": "GET",
+          "key": "foo",
+          "timestamp": 5
+        },
+        {
+          "op": "GET",
+          "key": "foo",
+          "timestamp": 0
+        }
+      ]
+    },
+    "expected": "[\"bar\",\"bar\",\"bar2\",\"bar2\",\"\"]"
+  },
+  {
+    "id": 1,
+    "input": {
+      "operations": [
+        {
+          "op": "GET",
+          "key": "missing",
+          "timestamp": 10
+        },
+        {
+          "op": "GET",
+          "key": "missing",
+          "timestamp": 0
+        }
+      ]
+    },
+    "expected": "[\"\",\"\"]"
+  },
+  {
+    "id": 2,
+    "input": {
+      "operations": [
+        {
+          "op": "SET",
+          "key": "k1",
+          "value": "v1",
+          "timestamp": 1
+        },
+        {
+          "op": "SET",
+          "key": "k1",
+          "value": "v2",
+          "timestamp": 2
+        },
+        {
+          "op": "SET",
+          "key": "k1",
+          "value": "v3",
+          "timestamp": 3
+        },
+        {
+          "op": "SET",
+          "key": "k2",
+          "value": "a",
+          "timestamp": 5
+        },
+        {
+          "op": "SET",
+          "key": "k2",
+          "value": "b",
+          "timestamp": 10
+        },
+        {
+          "op": "GET",
+          "key": "k1",
+          "timestamp": 1
+        },
+        {
+          "op": "GET",
+          "key": "k1",
+          "timestamp": 2
+        },
+        {
+          "op": "GET",
+          "key": "k1",
+          "timestamp": 3
+        },
+        {
+          "op": "GET",
+          "key": "k2",
+          "timestamp": 4
+        },
+        {
+          "op": "GET",
+          "key": "k2",
+          "timestamp": 10
+        },
+        {
+          "op": "GET",
+          "key": "k2",
+          "timestamp": 11
+        }
+      ]
+    },
+    "expected": "[\"v1\",\"v2\",\"v3\",\"\",\"b\",\"b\"]"
+  },
+  {
+    "id": 3,
+    "input": {
+      "operations": [
+        {
+          "op": "GET",
+          "key": "x",
+          "timestamp": 1
+        },
+        {
+          "op": "SET",
+          "key": "x",
+          "value": "only",
+          "timestamp": 5
+        },
+        {
+          "op": "GET",
+          "key": "x",
+          "timestamp": 4
+        },
+        {
+          "op": "GET",
+          "key": "x",
+          "timestamp": 5
+        },
+        {
+          "op": "GET",
+          "key": "x",
+          "timestamp": 6
+        }
+      ]
+    },
+    "expected": "[\"\",\"\",\"only\",\"only\"]"
+  },
+  {
+    "id": 4,
+    "input": {
+      "operations": [
+        {
+          "op": "SET",
+          "key": "a",
+          "value": "x",
+          "timestamp": 100
+        },
+        {
+          "op": "SET",
+          "key": "a",
+          "value": "y",
+          "timestamp": 200
+        },
+        {
+          "op": "SET",
+          "key": "a",
+          "value": "z",
+          "timestamp": 300
+        },
+        {
+          "op": "SET",
+          "key": "b",
+          "value": "p",
+          "timestamp": 150
+        },
+        {
+          "op": "GET",
+          "key": "a",
+          "timestamp": 99
+        },
+        {
+          "op": "GET",
+          "key": "a",
+          "timestamp": 100
+        },
+        {
+          "op": "GET",
+          "key": "a",
+          "timestamp": 150
+        },
+        {
+          "op": "GET",
+          "key": "a",
+          "timestamp": 250
+        },
+        {
+          "op": "GET",
+          "key": "a",
+          "timestamp": 300
+        },
+        {
+          "op": "GET",
+          "key": "a",
+          "timestamp": 301
+        },
+        {
+          "op": "GET",
+          "key": "b",
+          "timestamp": 100
+        },
+        {
+          "op": "GET",
+          "key": "b",
+          "timestamp": 150
+        },
+        {
+          "op": "GET",
+          "key": "b",
+          "timestamp": 200
+        }
+      ]
+    },
+    "expected": "[\"\",\"x\",\"x\",\"y\",\"z\",\"z\",\"\",\"p\",\"p\"]"
+  }
+]

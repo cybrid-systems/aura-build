@@ -1,0 +1,47 @@
+;; Linear congruential PRNG (Numerical Recipes constants).
+(define (lcg-next state)
+  (let ((s (car state)))
+    (set-car! state (modulo (+ (* 1664525 s) 1013904223) 2147483647))
+    s))
+
+(define (lcg-new seed)
+  (let ((s (modulo (+ (* 1664525 seed) 1013904223) 2147483647)))
+    (cons s (lambda () (lcg-next (lambda ()
+      (set-car! closure (- 0)) ;; placeholder - won't run
+      #f))))))
+
+;; Counter used to give each solve() a fresh seed.
+(define __seed-counter 12345)
+
+(define (solve w)
+  (set! __seed-counter (+ __seed-counter 1))
+  (let ((seed __seed-counter))
+    ;; Build PRNG state (mutable cell holding current x)
+    (define rng-cell (cons (modulo seed 2147483647) '()))
+    (define (next-rand)
+      (let ((x (car rng-cell)))
+        (set-car! rng-cell (modulo (+ (* 1664525 x) 1013904223) 2147483647))
+        (car rng-cell)))
+    ;; Compute prefix sums
+    (define n (length w))
+    (define total 0)
+    (define prefix (make-vector n 0))
+    (let loop ((i 0))
+      (if (= i n) #t
+        (begin
+          (set! total (+ total (vector-ref w i)))
+          (vector-set! prefix i total)
+          (loop (+ i 1)))))
+    ;; Binary search: find smallest i with prefix[i] > target
+    (define (lower-bound t)
+      (let loop ((lo 0) (hi (- n 1)))
+        (if (= lo hi)
+            lo
+          (let ((mid (quotient (+ lo hi) 2)))
+            (if (> (vector-ref prefix mid) t)
+                (loop lo mid)
+                (loop (+ mid 1) hi))))))
+    (define (pickIndex)
+      (let ((r (modulo (next-rand) total)))
+        (lower-bound r)))
+    (cons 'pickIndex pickIndex)))

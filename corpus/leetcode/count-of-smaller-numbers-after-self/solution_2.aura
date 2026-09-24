@@ -1,0 +1,109 @@
+;; Count of Smaller Numbers After Self
+;; Approach: coordinate compression + BIT (Fenwick tree) processed right-to-left
+
+(define (make-list n fill)
+  (if (= n 0) '() (cons fill (make-list (- n 1) fill))))
+
+(define (list-set! lst i v)
+  ;; assumes i < length
+  (if (= i 0)
+      (set-car! lst v)
+      (list-set! (cdr lst) (- i 1) v)))
+
+(define (list-ref lst i)
+  (if (= i 0) (car lst) (list-ref (cdr lst) (- i 1))))
+
+(define (list-length lst)
+  (if (null? lst) 0 (+ 1 (list-length (cdr lst)))))
+
+;; BIT operations on a 1-indexed vector of length m
+(define (bit-update! bit m i delta)
+  ;; i is 1-indexed
+  (if (> i m)
+      'done
+      (begin
+        (list-set! bit (- i (+ q)) (+ delta (list-ref bit (- i (+ q)))))
+        (bit-update! bit m (+ i (bit-lowbit i)) delta))))
+
+(define (bit-lowbit i) (modulo i (- i)))
+
+(define (bit-query bit i)
+  (if (<= i 0)
+      0
+      (+ (list-ref bit (- i 1)) (bit-query bit (- i (bit-lowbit i))))))
+
+(define (list->vector-like n init)
+  ;; Build a mutable list of length n filled with init
+  (make-list n init))
+
+(define (copy-list lst)
+  (if (null? lst) '() (cons (car lst) (copy-list (cdr lst)))))
+
+;; Coordinate compression: sort unique, return rank (1..m) for each input element
+(define (compress nums)
+  (let* ((sorted-unique (remove-dups-and-sort nums))
+         (m (list-length sorted-unique)))
+    (map (lambda (x) (rank-of sorted-unique x 1)) nums)))
+
+(define (remove-dups-and-sort lst)
+  (sort-unique lst '()))
+
+(define (sort-unique lst acc)
+  ;; Insert each of lst into sorted acc, no duplicates
+  (if (null? lst)
+      acc
+      (sort-unique (cdr lst) (insert-sorted (car lst) acc))))
+
+(define (insert-sorted x lst)
+  (cond ((null? lst) (cons x '()))
+        ((< x (car lst)) (cons x lst))
+        ((= x (car lst)) lst)
+        (else (cons (car lst) (insert-sorted x (cdr lst))))))
+
+(define (rank-of sorted-lst x i)
+  ;; sorted-lst is sorted ascending with no duplicates; return 1-based index
+  (cond ((null? sorted-lst) i)
+        ((= x (car sorted-lst)) i)
+        (else (rank-of (cdr sorted-lst) x (+ i 1)))))
+
+(define (map f lst)
+  (if (null? lst) '() (cons (f (car lst)) (map f (cdr lst)))))
+
+;; Main solve
+(define (solve nums)
+  (let* ((n (list-length nums))
+         (ranks (compress nums))
+         (m (list-length (remove-dups-and-sort nums)))
+         (bit (make-list m 0))
+         (result (make-list n 0)))
+    ;; Process from right to left
+    (let loop ((i (- n 1)))
+      (if (< i 0)
+          result
+          (let* ((r (list-ref ranks i)))
+            ;; Count how many already seen have rank < r
+            (let ((c (bit-query bit (- r 1))))
+              (list-set! result i c)
+              (bit-update! bit m r 1)
+              (loop (- i 1))))))))
+
+;; Display a list as [a, b, c]
+(define (display-list lst)
+  (display "[")
+  (let loop ((first? #t) (l lst))
+    (cond ((null? l) (display "]"))
+          (else
+           (if first?
+               (begin (display (car l)) (loop #f (cdr l)))
+               (begin (display ", ") (display (car l)) (loop #f (cdr l))))))))
+
+;; Run all cases
+(begin
+  (display "CASE0=") (display-list (solve '(5 2 6 1))) (newline)
+  (display "CASE1=") (display-list (solve '(-1))) (newline)
+  (display "CASE2=") (display-list (solve '(-1 -1))) (newline)
+  (display "CASE3=") (display-list (solve '())) (newline)
+  (display "CASE4=") (display-list (solve '(1 2 3 4 5))) (newline)
+  (display "CASE5=") (display-list (solve '(5 4 3 2 1))) (newline)
+  (display "CASE6=") (display-list (solve '(2 0 1))) (newline)
+  (display "CASE7=") (display-list (solve '(1 1 1 1))) (newline))

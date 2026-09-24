@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:39:34Z",
+      "ts_local": "2026-09-24 22:39:34 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1666,
+        "total_characters": 0,
+        "prompt_tokens": 1165,
+        "completion_tokens": 501,
+        "prompt_tokens_details": {
+          "cached_tokens": 528
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.028,
+      "tests_passed": 8,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=1\nCASE1=1\nCASE2=1\nCASE3=100000\nCASE4=30\nCASE5=1\nCASE6=4\nCASE7=5\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:39:38Z",
+      "ts_local": "2026-09-24 22:39:38 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1574,
+        "total_characters": 0,
+        "prompt_tokens": 1165,
+        "completion_tokens": 409,
+        "prompt_tokens_details": {
+          "cached_tokens": 1164
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.016,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 26:27: parse error: unexpected ')'\n",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "find-the-smallest-divisor-given-a-threshold",
+  "title": "Find the Smallest Divisor Given a Threshold",
+  "category": "binary_search",
+  "updated_at": "2026-09-24T14:39:38Z",
+  "updated_at_local": "2026-09-24 22:39:38 CST"
+}

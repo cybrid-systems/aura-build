@@ -1,0 +1,47 @@
+(define (sum-div nums d)
+  (let loop ((rest nums) (acc 0))
+    (if (null? rest)
+        acc
+        (loop (cdr rest) (+ acc (quotient (+ (car rest) d -1) d))))))
+
+(define (max-list nums)
+  (let loop ((rest nums) (m 0))
+    (if (null? rest)
+        m
+        (loop (cdr rest) (if (> (car rest) m) (car rest) m)))))
+
+(define (len-list nums)
+  (let loop ((rest nums) (acc 0))
+    (if (null? rest) acc (loop (cdr rest) (+ acc 1)))))
+
+(define (solve nums threshold)
+  (let ((n (len-list nums)))
+    (if (< threshold n)
+        -1
+        (let ((lo 1) (hi (max-list nums)) (best hi))
+          (let loop ((l lo) (r hi))
+            (if (> l r)
+                best
+                (let ((m (quotient (+ l r) 2)))
+                  (if (<= (sum-div nums m) threshold)
+                      (loop l (- m 1))
+                      (loop (+ m 1) r)))))))))
+
+(define (show-list xs)
+  (display "[")
+  (let loop ((rest xs) (first? #t))
+    (cond ((null? rest) (display "]"))
+          (else
+           (if first? (set! first? #f) (begin (display ", ") #f))
+           (display (car rest))
+           (loop (cdr rest) first?)))))
+  (newline))
+
+(display "CASE0=") (display (solve '(1 2 5) 8)) (newline)
+(display "CASE1=") (display (solve '(2 3 5 7 11) 11)) (newline)
+(display "CASE2=") (display (solve '(19) 1)) (newline)
+(display "CASE3=") (display (solve '(1 1 1 1) 4)) (newline)
+(display "CASE4=") (display (solve '(1000000) 1)) (newline)
+(display "CASE5=") (display (solve '(12 5 7 9 11) 10)) (newline)
+(display "CASE6=") (display (solve '(5 5 5 5 5) 5)) (newline)
+(display "CASE7=") (display (solve '(1) 1)) (newline)

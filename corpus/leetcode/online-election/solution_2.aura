@@ -1,0 +1,46 @@
+(define (solve votes-at votes-for times)
+  ;; Helper: binary search for largest index i where votes-at[i] <= t
+  (define (search t lo hi)
+    (if (>= lo hi)
+        lo
+        (let ((mid (quotient (+ lo hi 1) 2)))
+          (if (<= (list-ref votes-at mid) t)
+              (search t mid hi)
+              (search t lo (- mid 1))))))
+  
+  ;; Build prefix leaders
+  (define n (length votes-at))
+  (define leaders (list))
+  (define counts '())
+  (define current-leader -1)
+  
+  (define (build-leaders i)
+    (if (>= i n)
+        (set! leaders (reverse leaders))
+        (let ((id (list-ref votes-for i)))
+          (set! counts (cons id counts))
+          ;; Compute current leader (simplified approach)
+          (set! current-leader id)  ; placeholder, we'll rebuild properly
+          (build-leaders (+ i 1)))))
+  
+  ;; Better approach: build counts as a list and find leader
+  (define (build-prefix i acc-counts acc-leaders)
+    (if (>= i n)
+        (reverse acc-leaders)
+        (let* ((id (list-ref votes-for i))
+               (new-counts (cons id acc-counts)))
+          ;; Find the leader from new-counts - too expensive
+          ;; Instead, maintain running leader
+          leaders))))
+  
+  ;; Efficient approach: maintain running leader and vote count map
+  (define (process-votes i)
+    (let loop ((i 0) (acc '()))
+      (if (>= i n)
+          (reverse acc)
+          (let ((id (list-ref votes-for i)))
+            ;; Increment count for id - need to track this
+            ;; For simplicity, recompute leader each time using count map
+            (let* ((new-counts (increment-count (list-ref counts i) id))
+                   (leader (find-leader new-counts)))
+              (loop (+ i 1) (cons leader acc)))))))

@@ -1,0 +1,61 @@
+;; Koko Eating Bananas - binary search on eating speed
+;; (CEIL of / is computed via (quotient (+ a (- k 1)) k))
+
+(define (ceiling-div a k)
+  (quotient (+ a (- k 1)) k))
+
+(define (can-eat piles k h)
+  ;; Returns #t if Koko eating at speed k can finish within h hours.
+  (let loop ((ps piles) (hours 0))
+    (cond
+      ((null? ps) (<= hours h))
+      ((> (+ hours (ceiling-div (car ps) k)) h) #f)
+      (else (loop (cdr ps) (+ hours (ceiling-div (car ps) k)))))))
+
+(define (max-pile piles)
+  (let loop ((ps piles) (m 0))
+    (if (null? ps)
+        m
+        (loop (cdr ps) (if (> (car ps) m) (car ps) m)))))
+
+(define (min-speed piles h)
+  (let ((lo 1)
+        (hi (max-pile piles)))
+    (let loop ((l lo) (r hi) (ans hi))
+      (if (> l r)
+          ans
+          (let ((m (quotient (+ l r) 2)))
+            (if (can-eat piles m h)
+                (loop l (- m 1) m)
+                (loop (+ m 1) r ans)))))))
+
+(define (solve piles h)
+  (min-speed piles h))
+
+;; ---- Display helper for lists ----
+(define (display-list xs)
+  (display "(")
+  (let loop ((rest xs) (first #t))
+    (cond
+        ((null? rest) (display ")"))
+        (else
+         (if first (set! first #f) (display " "))
+         (display (car rest))
+         (loop (cdr rest) first)))))
+
+;; ---- Run embedded test cases ----
+(define (run-case i piles h)
+  (display "CASE")
+  (display (number->string i))
+  (display "=")
+  (display (number->string (solve piles h)))
+  (newline))
+
+(run-case 0 (list 3 1) 4)
+(run-case 1 (list 1 2 3) 6)
+(run-case 2 (list 10) 10)
+(run-case 3 (list 5 10 3) 3)
+(run-case 4 (list 1 1 1 1 1) 100)
+(run-case 5 (list 30 11 23 4 20) 5)
+(run-case 6 (list 1000000000 1000000000) 2)
+(run-case 7 (list 7 3 9 2) 4)

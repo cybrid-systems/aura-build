@@ -1,0 +1,209 @@
+;; Search a 2D Matrix II - Staircase approach
+
+(define (vector-ref v i)
+  (list-ref v i))
+
+(define (vector-length v)
+  (length v))
+
+(define (matrix-rows m)
+  (length m))
+
+(define (matrix-cols m)
+  (if (null? m) 0 (length (car m))))
+
+;; Staircase search starting from top-right corner
+(define (search-matrix m target)
+  (if (null? m)
+      #f
+      (let ((rows (matrix-rows m))
+            (cols (matrix-cols m)))
+        (if (= cols 0)
+            #f
+            (search-helper m target 0 (- cols 1))))))
+
+(define (search-helper m target row col)
+  (cond
+    ((or (< row 0) (>= row (matrix-rows m)) (< col 0) (>= col (matrix-cols m)))
+     #f)
+    ((= (vector-ref (vector-ref m row) col) target)
+     #t)
+    ((> (vector-ref (vector-ref m row) col) target)
+     (search-helper m target row (- col 1)))
+    (else
+     (search-helper m target (+ row 1) col))))
+
+;; Parse JSON-like array of arrays of integers
+;; Input format: [[1,4,7,11,15],[2,5,8,12,19],...]
+(define (skip-ws s i)
+  (cond
+    ((>= i (string-length s)) i)
+    ((char-whitespace? (string-ref s i)) (skip-ws s (+ i 1)))
+    (else i)))
+
+(define (char-whitespace? c)
+  (if (or (char=? c #\space) (char=? c #\newline) (char=? c #\tab) (char=? c #\return))
+      #t #f))
+
+;; Read a signed integer starting at index i
+(define (read-int s i)
+  (let ((start i)
+        (len (string-length s)))
+    (let loop ((j i) (neg #f))
+      (cond
+        ((>= j len) (cons (- j start) j))
+        ((and (= j i) (char=? (string-ref s j) #\-))
+         (loop (+ j 1) #t))
+        ((char-digit? (string-ref s j))
+         (loop (+ j 1) neg))
+        (else
+         (let ((substr (substring s start j))
+               (num (string->number substr)))
+           (cons num j)))))))
+
+(define (char-digit? c)
+  (and (char>=? c #\0) (char<=? c #\9)))
+
+(define (char=? a b) (equal? a b))
+(define (char>=? a b) (not (char<? a b)))
+(define (char<? a b)
+  (let ((ca (char->integer a))
+        (cb (char->integer b)))
+    (< ca cb)))
+
+;; Parse a list of integers: [n,n,n]
+(define (parse-int-list s i)
+  (let ((i (skip-ws s i)))
+    (if (or (>= i (string-length s)) (not (char=? (string-ref s i) #\[)))
+        '()
+        (let ((i (skip-ws s (+ i 1))))
+          (parse-int-list-helper s i '())))))
+
+(define (parse-int-list-helper s i acc)
+  (let ((i (skip-ws s i)))
+    (if (>= i (string-length s))
+        (reverse acc)
+        (let ((c (string-ref s i)))
+          (if (char=? c #\])
+              (reverse acc)
+              (let ((p (read-int s i)))
+                (let ((num (car p)) (next-i (cdr p)))
+                  (let ((i (skip-ws s next-i)))
+                    (let ((c2 (if (< i (string-length s)) (string-ref s i) #\])))
+                      (if (char=? c2 #\,)
+                          (parse-int-list-helper s (+ i 1) (cons num acc))
+                          (parse-int-list-helper s i (cons num acc))))))))))))
+
+;; Parse matrix: [[..],[..],...]
+(define (parse-matrix s i)
+  (let ((i (skip-ws s i)))
+    (if (or (>= i (string-length s)) (not (char=? (string-ref s i) #\[)))
+        '()
+        (let ((i (skip-ws s (+ i 1))))
+          (parse-matrix-helper s i '())))))
+
+(define (parse-matrix-helper s i acc)
+  (let ((i (skip-ws s i)))
+    (if (>= i (string-length s))
+        (reverse acc)
+        (let ((c (string-ref s i)))
+          (if (char=? c #\])
+              (reverse acc)
+              (let ((row-result (parse-int-list s i)))
+                (let ((next-i (skip-ws s (+ i 1))))
+                  (let ((j (skip-past-row s next-i)))
+                    (parse-matrix-helper s j (cons row-result acc))))))))))
+
+(define (skip-past-row s i)
+  ;; skip past one [...] block starting at index where i is at '['
+  (let loop ((j i) (depth 0))
+    (cond
+      ((>= j (string-length s)) j)
+      ((char=? (string-ref s j) #\[) (loop (+ j 1) (+ depth 1)))
+      ((char=? (string-ref s j) #\]) 
+       (if (= depth 1) (+ j 1) (loop (+ j 1) (- depth 1))))
+      (else (loop (+ j 1) depth)))))
+
+;; Extract value of "MATRIX": ... or "TARGET": ...
+(define (find-key s key)
+  (let ((len (string-length s))
+        (klen (string-length key)))
+    (let loop ((i 0))
+      (cond
+        ((> (+ i klen) len) #f)
+        ((string-contains-at? s key i)
+         (let ((start (+ i klen)))
+           (let ((start (skip-ws s start)))
+             (if (and (< start len) (char=? (string-ref s start) #\:))
+                 (skip-ws s (+ start 1))
+                 (loop (+ i 1))))))
+        (else (loop (+ i 1)))))))
+
+(define (string-contains-at? s sub i)
+  (let ((slen (string-length s))
+        (sublen (string-length sub)))
+    (let loop ((j 0))
+      (cond
+        ((= j sublen) #t)
+        ((>= (+ i j) slen) #f)
+        ((char=? (string-ref s (+ i j)) (string-ref sub j)) (loop (+ j 1)))
+        (else #f)))))
+
+;; Find the end of a matrix value (matching bracket)
+(define (find-value-end s start)
+  (let ((len (string-length s)))
+    (if (and (< start len) (char=? (string-ref s start) #\[))
+        (let loop ((j start) (depth 0))
+          (cond
+            ((>= j len) j)
+            ((char=? (string-ref s j) #\[) (loop (+ j 1) (+ depth 1)))
+            ((char=? (string-ref s j) #\]) 
+             (if (= depth 1) (+ j 1) (loop (+ j 1) (- depth 1))))
+            (else (loop (+ j 1) depth))))
+        (let loop ((j start))
+          (cond
+            ((>= j len) j)
+            ((or (char=? (string-ref s j) #\,) (char=? (string-ref s j) #\}))
+             j)
+            (else (loop (+ j 1))))))))
+
+;; Parse target integer (after colon, possibly followed by })
+(define (parse-target s start)
+  (let ((start (skip-ws s start)))
+    (let ((p (read-int s start)))
+      (car p))))
+
+;; Solve for a given input string
+(define (solve-input input)
+  (let ((matrix-key-pos (find-key input "MATRIX")))
+    (let ((matrix-start (+ matrix-key-pos 6)))
+      (let ((matrix-start (skip-ws input matrix-start)))
+        (let ((matrix-end (find-value-end input matrix-start)))
+          (let ((matrix-str (substring input matrix-start matrix-end)))
+            (let ((target-key-pos (find-key input "TARGET")))
+              (let ((target-start (+ target-key-pos 6)))
+                (let ((target-start (skip-ws input target-start)))
+                  (let ((target (parse-target input target-start)))
+                    (search-matrix (parse-matrix matrix-str 0) target)))))))))))
+
+(define (solve input)
+  (let ((result (solve-input input)))
+    (if result
+        (display "true")
+        (display "false"))))
+
+;; Test cases
+(define (run-tests)
+  (begin
+    (display "CASE0=") (solve "{\"MATRIX\":[[1,4,7,11,15],[2,5,8,12,19],[3,6,9,16,22],[10,13,14,17,24],[18,21,23,26,30]],\"TARGET\":5}") (newline)
+    (display "CASE1=") (solve "{\"MATRIX\":[[1,4,7,11,15],[2,5,8,12,19],[3,6,9,16,22],[10,13,14,17,24],[18,21,23,26,30]],\"TARGET\":20}") (newline)
+    (display "CASE2=") (solve "{\"MATRIX\":[[1,4,7,11,15],[2,5,8,12,19],[3,6,9,16,22],[10,13,14,17,24],[18,21,23,26,30]],\"TARGET\":1}") (newline)
+    (display "CASE3=") (solve "{\"MATRIX\":[[1,4,7,11,15],[2,5,8,12,19],[3,6,9,16,22],[10,13,14,17,24],[18,21,23,26,30]],\"TARGET\":30}") (newline)
+    (display "CASE4=") (solve "{\"MATRIX\":[[-5]],\"TARGET\":-5}") (newline)
+    (display "CASE5=") (solve "{\"MATRIX\":[[-5]],\"TARGET\":0}") (newline)
+    (display "CASE6=") (solve "{\"MATRIX\":[[1,2,3],[4,5,6],[7,8,9]],\"TARGET\":7}") (newline)
+    (display "CASE7=") (solve "{\"MATRIX\":[],\"TARGET\":1}") (newline)
+    (display "CASE8=") (solve "{\"MATRIX\":[[]],\"TARGET\":1}") (newline)
+    (display "CASE9=") (solve "{\"MATRIX\":[[1,3,5,7],[2,4,6,8],[10,12,14,16]],\"TARGET\":11}") (newline)))
+
+(run-tests)

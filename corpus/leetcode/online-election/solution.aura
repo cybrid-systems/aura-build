@@ -1,0 +1,195 @@
+;; Online Election - prefix leaders + binary search
+
+(define (vector->list v)
+  ;; Convert a pseudo-vector (Aura list of pairs '() with index access) to a list
+  ;; Since Aura doesn't have vectors, we represent them as plain lists and access via list-ref
+  v)
+
+(define (list-ref-safe lst idx)
+  (if (null? lst)
+      '()
+      (if (= idx 0)
+          (car lst)
+          (list-ref-safe (cdr lst) (- idx 1)))))
+
+(define (length lst)
+  (if (null? lst) 0 (+ 1 (length (cdr lst)))))
+
+;; Build prefix-leaders list
+(define (build-prefix-leaders votes-at votes-for)
+  (letrec ((len (length votes-at))
+           (helper (lambda (i counts leaders)
+                     (if (= i len)
+                         leaders
+                         (let* ((id (head votes-at i))
+                                (person (head votes-for i))
+                                (new-counts (increment counts person))
+                                (new-leaders (append leaders (list (current-leader new-counts)))))
+                           (helper (+ i 1) new-counts new-leaders))))))
+    (helper 0 '() '())))
+
+;; Hmm, this is getting complex with association lists. Let me simplify using direct counting.
+;; I'll use a different approach: just track counts as we go.
+
+(define (count-vote counts person)
+  ;; counts is an association list ((id . count) ...)
+  (cond ((null? counts) (list (cons person 1)))
+        ((= (car (car counts)) person)
+         (cons (cons person (+ 1 (cdr (car counts)))) (cdr counts)))
+        (else (cons (car counts) (count-vote (cdr counts) person)))))
+
+(define (get-count counts person)
+  (cond ((null? counts) 0)
+        ((= (car (car counts)) person) (cdr (car counts)))
+        (else (get-count (cdr counts) person))))
+
+(define (find-leader counts current-best current-best-count)
+  (cond ((null? counts) current-best)
+        (else
+         (let* ((entry (car counts))
+                (p (car entry))
+                (c (cdr entry)))
+           (if (or (> c current-best-count)
+                   (and (= c current-best-count) (< p current-best)))
+               (find-leader (cdr counts) p c)
+               (find-leader (cdr counts) current-best current-best-count))))))
+
+(define (current-leader counts)
+  (if (null? counts)
+      0
+      (let ((first (car counts)))
+        (find-leader (cdr counts) (car first) (cdr first)))))
+
+(define (build-leaders votes-at votes-for)
+  (letrec ((len (length votes-at))
+           (helper (lambda (i counts leaders)
+                     (if (= i len)
+                         leaders
+                         (let* ((person (head votes-for i))
+                                (new-counts (count-vote counts person))
+                                (new-leaders (cons (current-leader new-counts) leaders)))
+                           (helper (+ i 1) new-counts new-leaders))))))
+    (reverse (helper 0 '() '()))))
+
+;; I need a `head` function
+(define (head lst n)
+  (if (= n 0)
+      (car lst)
+      (head (cdr lst) (- n 1))))
+
+;; Wait, `head` with index n returns the nth element. Let me redefine:
+(define (nth lst n)
+  (if (= n 0)
+      (car lst)
+      (nth (cdr lst) (- n 1))))
+
+(define (count-vote counts person)
+  (cond ((null? counts) (list (cons person 1)))
+        ((= (car (car counts)) person)
+         (cons (cons person (+ 1 (cdr (car counts)))) (cdr counts)))
+        (else (cons (car counts) (count-vote (cdr counts) person)))))
+
+(define (get-count counts person)
+  (cond ((null? counts) 0)
+        ((= (car (car counts)) person) (cdr (car counts)))
+        (else (get-count (cdr counts) person))))
+
+(define (find-leader counts current-best current-best-count)
+  (cond ((null? counts) current-best)
+        (else
+         (let* ((entry (car counts))
+                (p (car entry))
+                (c (cdr entry)))
+           (if (or (> c current-best-count)
+                   (and (= c current-best-count) (< p current-best)))
+               (find-leader (cdr counts) p c)
+               (find-leader (cdr counts) current-best current-best-count))))))
+
+(define (current-leader counts)
+  (if (null? counts)
+      0
+      (let ((first (car counts)))
+        (find-leader (cdr counts) (car first) (cdr first)))))
+
+(define (build-leaders votes-at votes-for)
+  (letrec ((len (length votes-at))
+           (helper (lambda (i counts leaders)
+                     (if (= i len)
+                         leaders
+                         (let* ((person (nth votes-for i))
+                                (new-counts (count-vote counts person))
+                                (new-leaders (cons (current-leader new-counts) leaders)))
+                           (helper (+ i 1) new-counts new-leaders))))))
+    (reverse (helper 0 '() '()))))
+
+;; Binary search: find largest index i such that votes-at[i] <= t
+(define (upper-bound votes-at t)
+  (letrec ((len (length votes-at))
+           (helper (lambda (lo hi)
+                     (if (= lo hi)
+                         (- lo 1)  ;; lo is first index where votes-at[lo] > t; answer is lo-1
+                         (let ((mid (quotient (+ lo hi) 2)))
+                           (if (<= (nth votes-at mid) t)
+                               (helper (+ mid 1) hi)
+                               (helper lo mid)))))))
+    (helper 0 len)))
+
+;; Wait, need to handle case when t < votes-at[0]
+;; Let's fix upper-bound to return -1 if all votes-at > t
+(define (upper-bound votes-at t)
+  (letrec ((len (length votes-at))
+           (helper (lambda (lo hi)
+                     (if (= lo hi)
+                         (- lo 1)
+                         (let ((mid (quotient (+ lo hi) 2)))
+                           (if (<= (nth votes-at mid) t)
+                               (helper (+ mid 1) hi)
+                               (helper lo mid)))))))
+    (helper 0 len)))
+
+;; Query function
+(define (query leaders votes-at t)
+  (let ((idx (upper-bound votes-at t)))
+    (if (< idx 0)
+        0  ;; no votes yet, shouldn't happen given constraints
+        (nth leaders idx))))
+
+(define (query-all leaders votes-at times)
+  (letrec ((len (length times))
+           (helper (lambda (i acc)
+                     (if (= i len)
+                         acc
+                         (helper (+ i 1) (cons (query leaders votes-at (nth times i)) acc))))))
+    (reverse (helper 0 '()))))
+
+(define (solve votes-at votes-for times)
+  (let ((leaders (build-leaders votes-at votes-for)))
+    (query-all leaders votes-at times)))
+
+;; Display a list of numbers
+(define (display-list lst)
+  (display "[")
+  (letrec ((helper (lambda (l)
+                     (cond ((null? l) (display ""))
+                           ((null? (cdr l)) (display (car l)))
+                           (else (display (car l)) (display ",") (helper (cdr l)))))))
+    (helper lst))
+  (display "]"))
+
+;; Main: run each case
+(define (run-case i votes-at votes-for times)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display-list (solve votes-at votes-for times))
+  (newline))
+
+;; Run all cases
+(run-case 0 '(0 5 10 15) '(1 2 2 1) '(3 12 15 20))
+(run-case 1 '(0 10 20) '(1 1 2) '(-5 0 5))
+(run-case 2 '(0 1 2 3) '(5 5 5 5) '(0 2 3 100))
+(run-case 3 '(0 5 10) '(1 2 3) '(0 5 10 15))
+(run-case 4 '(0 4 8 12 16 20) '(2 1 2 1 2 1) '(1 5 9 13 17 21))
+(run-case 5 '(0) '(42) '(0 1 2))
+(run-case 6 '(0 100 200 300) '(3 1 2 4) '(50 150 250 350))
+(run-case 7 '(0 5 10 15) '(2 1 1 3) '(3 8 12 16))

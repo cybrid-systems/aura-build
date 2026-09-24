@@ -1,0 +1,51 @@
+(define (max-list xs)
+  (let loop ((best 0) (rest xs))
+    (if (null? rest)
+        best
+        (let ((x (car rest)))
+          (loop (if (> x best) x best) (cdr rest))))))
+
+(define (length-list xs)
+  (let loop ((n 0) (rest xs))
+    (if (null? rest) n (loop (+ n 1) (cdr rest)))))
+
+(define (f d nums)
+  (let loop ((rest nums) (sum 0))
+    (if (null? rest)
+        sum
+        (let ((x (car rest)))
+          (loop (cdr rest) (+ sum (quotient (+ x (- d 1)) d)))))))
+
+(define (solve nums threshold)
+  (let ((n (length-list nums)))
+    (if (< threshold n)
+        -1
+        (let ((hi (max-list nums))
+              (lo 1)
+              (ans hi))
+          (let loop ((l lo) (h hi))
+            (if (> l h)
+                ans
+                (let ((m (quotient (+ l h) 2)))
+                  (let ((s (f m nums)))
+                    (if (<= s threshold)
+                        (begin
+                          (set! ans m)
+                          (loop l (- m 1)))
+                        (loop (+ m 1) h))))))))))
+
+(define (run-case i nums threshold)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve nums threshold))
+  (newline))
+
+(run-case 0 '(1 2 5) 8)
+(run-case 1 '(2 3 5 7 11) 11)
+(run-case 2 '(19) 1)
+(run-case 3 '(1 1 1 1) 4)
+(run-case 4 '(1000000) 1)
+(run-case 5 '(12 5 7 9 11) 10)
+(run-case 6 '(5 5 5 5 5) 5)
+(run-case 7 '(1) 1)

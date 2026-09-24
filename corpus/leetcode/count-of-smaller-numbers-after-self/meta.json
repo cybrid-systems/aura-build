@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:39:46Z",
+      "ts_local": "2026-09-24 22:39:46 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2304,
+        "total_characters": 0,
+        "prompt_tokens": 1030,
+        "completion_tokens": 1274,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.103,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 29:15: unbound variable: i\n   |\n 29 |           ((< i (+ mid 1))\n   |               ^\nerror: 28:19: unbound variable: loop\nerror: 28:19: unbound variable: loop\nerror: 28:19: unbound variable: loop\nerror: 28:19: unbound variable: loop\nerror: 28:19: unbound variable: loop\nerror: 28:19: unbound variable: loop\nerror: 28:19: unbound variable: loop\nerror: 28:19: unbound variable: loop\n",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:40:12Z",
+      "ts_local": "2026-09-24 22:40:12 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2157,
+        "total_characters": 0,
+        "prompt_tokens": 1030,
+        "completion_tokens": 1127,
+        "prompt_tokens_details": {
+          "cached_tokens": 1029
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": -9,
+      "timeout": false,
+      "duration_s": 19.569,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=CASE0="
+    }
+  ],
+  "slug": "count-of-smaller-numbers-after-self",
+  "title": "Count of Smaller Numbers After Self",
+  "category": "binary_search",
+  "updated_at": "2026-09-24T14:40:12Z",
+  "updated_at_local": "2026-09-24 22:40:12 CST"
+}

@@ -1,0 +1,79 @@
+(define (max-list lst)
+  (define (max-list-iter lst current-max)
+    (if (null? lst)
+        current-max
+        (let ((x (car lst)))
+          (max-list-iter (cdr lst) (if (> x current-max) x current-max)))))
+  (max-list-iter lst 0))
+
+(define (sum-list lst)
+  (if (null? lst)
+      0
+      (+ (car lst) (sum-list (cdr lst)))))
+
+(define (can-ship? weights D capacity)
+  (define (iter ws days-used current-load)
+    (cond
+      ((null? ws)
+       (<= days-used D))
+      (else
+       (let ((w (car ws)))
+         (cond
+           ((> (+ current-load w) capacity)
+            (iter (cdr ws) (+ days-used 1) w))
+           (else
+            (iter (cdr ws) days-used (+ current-load w))))))))
+  (iter weights 1 0))
+
+(define (solve weights D)
+  (let ((lo (max-list weights))
+        (hi (sum-list weights)))
+    (define (search lo hi)
+      (let ((mid (quotient (+ lo hi) 2)))
+        (cond
+          ((= lo hi) lo)
+          ((can-ship? weights D mid)
+           (search lo mid))
+          (else
+           (search (+ mid 1) hi)))))
+    (search lo hi)))
+
+(define (display-list lst)
+  (display "[")
+  (define (loop l first?)
+    (cond
+      ((null? l)
+       (display "]"))
+      (else
+       (if (not first?) (display ","))
+       (display (car l))
+       (loop (cdr l) #f))))
+  (loop lst #t))
+
+(define (display-case i result)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display result)
+  (newline))
+
+(let ((cases
+       (list
+        (list (list 1 2 3 4 5 6 7 8 9 10) 5)
+        (list (list 3 2 2 4 1 4) 3)
+        (list (list 1 2 3 1 1) 4)
+        (list (list 10) 1)
+        (list (list 1 1 1 1) 4)
+        (list (list 1 1 1 1) 1)
+        (list (list 5 5 5 5 5) 2)
+        (list (list 9 8 10 7 6 5) 3))))
+  (define (run cases i)
+    (if (null? cases)
+        'done
+        (let* ((c (car cases))
+               (w (car c))
+               (d (car (cdr c)))
+               (res (solve w d)))
+          (display-case i res)
+          (run (cdr cases) (+ i 1)))))
+  (run cases 0))

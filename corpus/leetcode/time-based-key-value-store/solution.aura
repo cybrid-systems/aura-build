@@ -1,0 +1,174 @@
+(define (make-key-entry) (list '() '()))  ;; timestamps list, values list
+
+(define (key-entry-ts e) (car e))
+(define (key-entry-vs e) (car (cdr e)))
+(define (key-entry-timestamps e) (key-entry-ts e))
+(define (key-entry-values e) (key-entry-vs e))
+
+;; We'll store global state as a list of (key . entry) pairs.
+(define *store* '())
+
+(define (find-entry key store)
+  (cond
+    ((null? store) #f)
+    ((equal? (car (car store)) key) (cdr (car store)))
+    (else (find-entry key (cdr store)))))
+
+(define (add-entry key entry store)
+  (cons (cons key entry) store))
+
+(define (set-key key value timestamp)
+  (let ((existing (find-entry key *store*)))
+    (if existing
+        (let ((new-ts (append (key-entry-timestamps existing) (list timestamp)))
+              (new-vs (append (key-entry-values existing) (list value))))
+          (set! *store*
+                (add-entry key (list new-ts new-vs)
+                           (filter (lambda (p) (not (equal? (car p) key))) *store*))))
+        (set! *store* (add-entry key (list (list timestamp) (list value)) *store*)))))
+
+;; Binary search: find greatest index i such that ts[i] <= timestamp
+;; Returns -1 if no such index. ts is a list of numbers in ascending order.
+(define (binary-search ts timestamp)
+  (let loop ((lo 0) (hi (- (length ts) 1)) (result -1))
+      (if (< hi lo) -1
+          (let ((mid (quotient (+ lo hi) 2)))
+              (cond
+                ((<= (list-ref ts mid) timestamp)
+                 (loop (+ mid 1) hi mid))
+                (else (loop lo (- mid 1) result)))))))
+
+;; Actually let me use a proper binary search returning index.
+(define (bs-helper ts lo hi timestamp)
+  (if (< hi lo) -1
+      (let ((mid (quotient (+ lo hi) 2)))
+          (if (<= (list-ref ts mid) timestamp)
+              (let ((r (bs-helper ts (+ mid 1) hi timestamp)))
+                  (if (> r mid) r mid))
+              (bs-helper ts lo (- mid 1) timestamp)))))
+
+(define (binary-search-idx ts timestamp)
+  (bs-helper ts 0 (- (length ts) 1) timestamp))
+
+(define (get-key key timestamp)
+  (let ((entry (find-entry key *store*)))
+    (if (not entry) ""
+        (let ((ts (key-entry-timestamps entry))
+              (vs (key-entry-values entry))
+              (idx (binary-search-idx (key-entry-timestamps entry) timestamp)))
+          (if (= idx -1) ""
+              (list-ref vs idx))))))
+
+;; Process operations. Each op is (op-type . key-string timestamp [value])
+(define (process-ops ops)
+  (cond
+    ((null? ops) '())
+    (else
+      (let ((op (car ops)))
+          (cond
+            ((equal? (car op) 'SET)
+             (begin
+               (set-key (car (cdr op)) (car (cdr (cdr op))) (car (cdr (cdr (cdr op)))))
+               (process-ops (cdr ops))))
+            ((equal? (car op) 'GET)
+             (cons (get-key (car (cdr op)) (car (cdr (cdr op))))
+                   (process-ops (cdr ops))))
+            (else (process-ops (cdr ops))))))))
+
+;; Display a list of results, one per line
+(define (display-results results)
+  (cond
+    ((null? results) #t)
+    (else
+      (begin
+        (display (car results))
+        (newline)
+        (display-results (cdr results))))))
+
+(define (solve ops)
+  (set! *store* '())
+  (display-results (process-ops ops)))
+
+;; --- Test cases embedded ---
+
+;; CASE0
+(define case0-ops
+  (list
+    (cons 'SET (cons "foo" (cons "bar" (cons 1 '()))))
+    (cons 'GET (cons "foo" (cons 1 '())))
+    (cons 'GET (cons "foo" (cons 3 '())))
+    (cons 'SET (cons "foo" (cons "bar2" (cons 4 '()))))
+    (cons 'GET (cons "foo" (cons 4 '())))
+    (cons 'GET (cons "foo" (cons 5 '())))
+    (cons 'GET (cons "foo" (cons 0 '())))))
+
+;; CASE1
+(define case1-ops
+  (list
+    (cons 'GET (cons "missing" (cons 10 '())))
+    (cons 'GET (cons "missing" (cons 0 '())))))
+
+;; CASE2
+(define case2-ops
+  (list
+    (cons 'SET (cons "k1" (cons "v1" (cons 1 '()))))
+    (cons 'SET (cons "k1" (cons "v2" (cons 2 '()))))
+    (cons 'SET (cons "k1" (cons "v3" (cons 3 '()))))
+    (cons 'SET (cons "k2" (cons "a" (cons 5 '()))))
+    (cons 'SET (cons "k2" (cons "b" (cons 10 '()))))
+    (cons 'GET (cons "k1" (cons 1 '())))
+    (cons 'GET (cons "k1" (cons 2 '())))
+    (cons 'GET (cons "k1" (cons 3 '())))
+    (cons 'GET (cons "k2" (cons 4 '())))
+    (cons 'GET (cons "k2" (cons 10 '())))
+    (cons 'GET (cons "k2" (cons 11 '())))))
+
+;; CASE3
+(define case3-ops
+  (list
+    (cons 'GET (cons "x" (cons 1 '())))
+    (cons 'SET (cons "x" (cons "only" (cons 5 '()))))
+    (cons 'GET (cons "x" (cons 4 '())))
+    (cons 'GET (cons "x" (cons 5 '())))
+    (cons 'GET (cons "x" (cons 6 '())))))
+
+;; CASE4
+(define case4-ops
+  (list
+    (cons 'SET (cons "a" (cons "x" (cons 100 '()))))
+    (cons 'SET (cons "a" (cons "y" (cons 200 '()))))
+    (cons 'SET (cons "a" (cons "z" (cons 300 '()))))
+    (cons 'SET (cons "b" (cons "p" (cons 150 '()))))
+    (cons 'GET (cons "a" (cons 99 '())))
+    (cons 'GET (cons "a" (cons 100 '())))
+    (cons 'GET (cons "a" (cons 150 '())))
+    (cons 'GET (cons "a" (cons 250 '())))
+    (cons 'GET (cons "a" (cons 300 '())))
+    (cons 'GET (cons "a" (cons 301 '())))
+    (cons 'GET (cons "b" (cons 100 '())))
+    (cons 'GET (cons "b" (cons 150 '())))
+    (cons 'GET (cons "b" (cons 200 '())))))
+
+(define (display-result-list lst)
+  (cond
+    ((null? lst) #t)
+    (else
+      (begin
+        (display (car lst))
+        (newline)
+        (display-result-list (cdr lst))))))
+
+(display "CASE0=") (newline)
+(display-result-list (solve case0-ops))
+
+(display "CASE1=") (newline)
+(display-result-list (solve case1-ops))
+
+(display "CASE2=") (newline)
+(display-result-list (solve case2-ops))
+
+(display "CASE3=") (newline)
+(display-result-list (solve case3-ops))
+
+(display "CASE4=") (newline)
+(display-result-list (solve case4-ops))
