@@ -1,0 +1,82 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "s": "aa",
+      "p": "a"
+    },
+    "expected": "false"
+  },
+  {
+    "id": 1,
+    "input": {
+      "s": "aa",
+      "p": "a*"
+    },
+    "expected": "true"
+  },
+  {
+    "id": 2,
+    "input": {
+      "s": "ab",
+      "p": ".*"
+    },
+    "expected": "true"
+  },
+  {
+    "id": 3,
+    "input": {
+      "s": "aab",
+      "p": "c*a*b"
+    },
+    "expected": "true"
+  },
+  {
+    "id": 4,
+    "input": {
+      "s": "mississippi",
+      "p": "mis*is*p*."
+    },
+    "expected": "false"
+  },
+  {
+    "id": 5,
+    "input": {
+      "s": "",
+      "p": ""
+    },
+    "expected": "true"
+  },
+  {
+    "id": 6,
+    "input": {
+      "s": "",
+      "p": "a*"
+    },
+    "expected": "true"
+  },
+  {
+    "id": 7,
+    "input": {
+      "s": "ab",
+      "p": ".*c"
+    },
+    "expected": "false"
+  },
+  {
+    "id": 8,
+    "input": {
+      "s": "aaa",
+      "p": "a*a"
+    },
+    "expected": "true"
+  },
+  {
+    "id": 9,
+    "input": {
+      "s": "a",
+      "p": "ab*"
+    },
+    "expected": "true"
+  }
+]

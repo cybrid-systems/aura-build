@@ -1,0 +1,105 @@
+;; Random Pick with Weight - Aura solution
+;; Uses prefix sums + binary search over a deterministic seeded PRNG.
+
+(define (list-length xs)
+  (if (null? xs) 0 (+ 1 (list-length (cdr xs)))))
+
+(define (list-ref xs i)
+  (if (= i 0) (car xs) (list-ref (cdr xs) (- i 1))))
+
+;; Build prefix sum array as a list.
+(define (prefix-sums w)
+  (let loop ((rest w) (acc '()) (sum 0))
+    (if (null? rest)
+        (reverse acc)
+        (let ((ns (+ sum (car rest))))
+          (loop (cdr rest) (cons ns acc) ns)))))
+
+;; Binary search: find smallest index i such that prefix[i] >= target.
+;; Operates on a list using length + index access (O(n) but simple).
+(define (lower-bound ps target n)
+  (let loop ((lo 0) (hi (- n 1)))
+    (if (>= lo hi)
+        lo
+        (let ((mid (quotient (+ lo hi) 2)))
+          (if (>= (list-ref ps mid) target)
+              (loop lo mid)
+              (loop (+ mid 1) hi))))))
+
+;; Linear Search alternative - faster for small lists,
+;; we use the binary one above for O(log n).
+
+;; --- Deterministic PRNG (linear congruential) ---
+;; state is a single integer stored in a mutable box via set!
+(define (make-rng seed)
+  (let ((s seed))
+    (define (next)
+      (set! s (modulo (+ (* 1103515245 s) 12345) 2147483648))
+      s)
+    (define (next-bounded hi)
+      (modulo (next) hi))
+    (list 'rng next next-bounded)))
+
+(define (rng-next rnd) (car (cdr rnd)))
+(define (rng-bounded rnd hi) (car (cdr (cdr rnd))))
+
+;; solve w: returns an object with :pickIndex fn.
+(define (solve w)
+  (let* ((ps (prefix-sums w))
+         (n (list-length w))
+         (total (list-ref ps (- n 1)))
+         (rnd (make-rng 42)))
+    (define (pickIndex)
+      (let ((t (+ 1 (rng-bounded rnd total))))
+        (lower-bound ps t n)))
+    (list 'obj pickIndex)))
+
+;; Helper to access a field of the result object.
+(define (get-pick obj)
+  (car (cdr obj)))
+
+;; --- Output formatting for each CASE ---
+
+(define (show-list xs)
+  (display "[")
+  (let loop ((rest xs) (first #t))
+    (cond
+      ((null? rest) (display "]"))
+      (else
+       (if first (set! first #f) (display ","))
+       (display (car rest))
+       (loop (cdr rest) #t))))
+  (newline))
+
+(define (show-case i obj expected-count)
+  (display "CASE")
+  (display i)
+  (display "=")
+  ;; Run pickIndex `expected-count` times and print results.
+  (let loop ((k 0) (acc '()))
+    (if (>= k expected-count)
+        (begin
+          (show-list acc))
+        (loop (+ k 1) (cons ((get-pick obj)) acc))))
+  (newline))
+
+;; Test inputs as Aura literals.
+(define (run-tests)
+  (let ((case0 (solve '(1)))
+        (case1 (solve '(1 3)))
+        (case2 (solve '(1 3 2 4)))
+        (case3 (solve '(10 20 30 40)))
+        (case4 (solve '(5 5 5 5 5)))
+        (case5 (solve '(1 1 1 1 1 1 1 1 1 1)))
+        (case6 (solve '(1 100)))
+        (case7 (solve '(1 2 3 4 5 6 7 8 9 10))))
+    (show-case 0 case0 8)
+    (show-case 1 case1 8)
+    (show-case 2 case2 10)
+    (show-case 3 case3 10)
+    (show-case 4 case4 10)
+    (show-case 5 case5 12)
+    (show-case 6 case6 8)
+    (show-case 7 case7 12)))
+
+(run-tests)

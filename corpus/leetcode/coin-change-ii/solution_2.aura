@@ -1,0 +1,42 @@
+(define (solve amount coins)
+  (define n (+ amount 1))
+  (define dp (make-vector n 0))
+  (vector-set! dp 0 1)
+  (define (coin-loop cs)
+    (if (null? cs)
+        #t
+        (begin
+          (define c (car cs))
+          (define (v-loop v)
+            (if (> v amount)
+                #t
+                (begin
+                  (vector-set! dp v
+                    (+ (vector-ref dp v)
+                       (vector-ref dp (- v c))))
+                  (v-loop (+ v 1)))))
+          (v-loop c)
+          (coin-loop (cdr cs)))))
+  (coin-loop coins)
+  (vector-ref dp amount))
+
+(define (display-list xs)
+  (display "(")
+  (let loop ((rest xs))
+    (cond ((null? rest) (display ")"))
+          (else
+            (display (car rest))
+            (if (null? (cdr rest))
+                (display ")")
+                (begin
+                  (display " ")
+                  (loop (cdr rest))))))))
+
+(display "CASE0=") (display (solve 5 '(1 2 5))) (newline)
+(display "CASE1=") (display (solve 3 '(2))) (newline)
+(display "CASE2=") (display (solve 10 '(1 5 10 25))) (newline)
+(display "CASE3=") (display (solve 0 '(1 2 5))) (newline)
+(display "CASE4=") (display (solve 100 '(1 5 10 25 50))) (newline)
+(display "CASE5=") (display (solve 0 '())) (newline)
+(display "CASE6=") (display (solve 7 '(2 3))) (newline)
+(display "CASE7=") (display (solve 4 '(1 2 3))) (newline)

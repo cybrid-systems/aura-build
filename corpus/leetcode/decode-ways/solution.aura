@@ -1,0 +1,40 @@
+(define MOD 1000000007)
+
+(define (solve s)
+  ;; Convert string to list of digit chars, then to numbers
+  (define n (string-length s))
+  (if (= n 0)
+      0
+      (begin
+        (define digits '())
+        (let loop ((i 0))
+          (if (= i n)
+              digits
+              (begin
+                (set! digits (cons (- (char->integer (string-ref s i)) (char->integer #\0)) digits))
+                (loop (+ i 1)))))
+        (define dvec (reverse digits))
+        ;; dp[i] = number of ways to decode first i digits (1-indexed), dp[0]=1
+        (define prev2 1)
+        (define prev1
+          (let ((c (car dvec)))
+            (if (and (= n 1) (= c 0))
+                0
+                (if (= c 0) 0 1))))
+        (let loop ((i 1) (p2 prev2) (p1 prev1))
+          (if (= i n)
+              p1
+              (let ((c (car (list-tail dvec i)))
+                    (pc (car (list-tail dvec (- i 1)))))
+                (define cur 0)
+                (if (not (= c 0))
+                    (set! cur p1))
+                (define two (+ (* pc 10) c))
+                (if (and (>= two 10) (<= two 26))
+                    (set! cur (modulo (+ cur p2) MOD)))
+                (set! cur (modulo cur MOD))
+                (loop (+ i 1) p1 cur)))))
+  ))
+
+(define (char->integer c)
+  (- (char->integer c) 0)) ; placeholder

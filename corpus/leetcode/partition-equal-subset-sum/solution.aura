@@ -1,0 +1,69 @@
+(define (sum lst)
+  (if (null? lst)
+      0
+      (+ (car lst) (sum (cdr lst)))))
+
+(define (any-sum? lst target)
+  (any-sum-helper lst target 0))
+
+(define (any-sum-helper lst target current)
+  (cond
+    ((= current target) #t)
+    ((null? lst) #f)
+    (else
+      (let ((next (+ current (car lst))))
+        (if (> next target)
+            (any-sum-helper (cdr lst) target current)
+            (or (any-sum-helper (cdr lst) target next)
+                (any-sum-helper (cdr lst) target current)))))))
+
+(define (solve arr)
+  (let ((s (sum arr)))
+    (if (or (null? arr) (null? (cdr arr)))
+        #f
+        (if (not (= 0 (modulo s 2)))
+            #f
+            (any-sum? arr (quotient s 2))))))
+
+(define (print-list lst)
+  (display "[")
+  (cond
+    ((null? lst) (display "]"))
+    (else
+      (display (car lst))
+      (let loop ((rest (cdr lst)))
+        (if (null? rest)
+            (display "]")
+            (begin
+              (display ", ")
+              (display (car rest))
+              (loop (cdr rest))))))))
+
+(define (display-result label val)
+  (display label)
+  (display val)
+  (newline))
+
+(let ((case0 (list 1 5 11 5)))
+  (display-result "CASE0=" (solve case0)))
+
+(let ((case1 (list 1 2 3 4 5 6 7)))
+  (display-result "CASE1=" (solve case1)))
+
+(let ((case2 (list 1 2 3)))
+  (display-result "CASE2=" (solve case2)))
+
+(let ((case3 (list)))
+  (display-result "CASE3=" (solve case3)))
+
+(let ((case4 (list 0)))
+  (display-result "CASE4=" (solve case4)))
+
+(let ((case5 (list 0 0)))
+  (display-result "CASE5=" (solve case5)))
+
+(let ((case6 (list 100 100 100 100)))
+  (display-result "CASE6=" (solve case6)))
+
+(let ((case7 (list 3 3 3 3 3 3)))
+  (display-result "CASE7=" (solve case7)))

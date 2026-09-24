@@ -1,0 +1,111 @@
+;; Minimum Path Sum in Aura
+;; O(m*n) time, O(n) extra memory (rolling row)
+
+(define (list-ref xs i)
+  (if (= i 0) (car xs) (list-ref (cdr xs) i)))
+
+(define (list-set! xs i v)
+  (set-car! (list-drop-helper xs i) v))
+
+(define (list-drop-helper xs i)
+  (if (= i 0) xs (list-drop-helper (cdr xs) (- i 1))))
+
+;; Actually, in Aura we don't have set-car! on cdr-chain easily.
+;; Instead, build a fresh row using mutation of a mutable pair.
+;; Aura provides set-car! and set-cdr! on pairs.
+
+(define (make-row n init)
+  (if (= n 0)
+      '()
+      (cons init (make-row (- n 1) init))))
+
+(define (row-ref row j)
+  (list-ref row j))
+
+(define (row-set! row j v)
+  ;; row is a list; set element at index j to v
+  (define (helper r k)
+    (if (= k 0)
+        (set-car! r v)
+        (helper (cdr r) (- k 1))))
+  (helper row j))
+
+(define (min a b)
+  (if (< a b) a b))
+
+(define (solve grid)
+  ;; grid is a list of rows, each row a list of numbers
+  (define m (length grid))
+  (define n (length (car grid)))
+  ;; Build dp row of size n, initialized to grid[0][0]
+  (define dp (make-row n 0))
+  (row-set! dp 0 (row-ref (car grid) 0))
+  (define (init-cols j)
+    (if (>= j n)
+        'done
+        (begin
+          (row-set! dp j (+ (row-ref dp (- j 1))
+                            (row-ref (car grid) j)))
+          (init-cols (+ j 1)))))
+  (init-cols 1)
+  ;; Process remaining rows
+  (define (process-rows i)
+    (if (>= i m)
+        'done
+        (begin
+          (row-set! dp 0 (+ (row-ref dp 0)
+                            (row-ref (list-ref grid i) 0)))
+          (define (process-cols j)
+            (if (>= j n)
+                'done
+                (begin
+                  (define v (row-ref (list-ref grid i) j))
+                  (define from-up (row-ref dp j))
+                  (define from-left (row-ref dp (- j 1)))
+                  (row-set! dp j (+ v (min from-up from-left)))
+                  (process-cols (+ j 1)))))
+          (process-cols 1)
+          (process-rows (+ i 1)))))
+  (process-rows 1)
+  (row-ref dp (- n 1)))
+
+;; Display helper for grids (just for completeness)
+(define (display-grid g)
+  (display "[")
+  (define (rows r)
+    (if (null? r)
+        '()
+        (begin
+          (display "[")
+          (define (cols c)
+            (if (null? c)
+                '()
+                (begin
+                  (display (car c))
+                  (if (not (null? (cdr c))) (display ", "))
+                  (cols (cdr c)))))
+          (cols (car r))
+          (display "]")
+          (if (not (null? (cdr r))) (display ", "))
+          (rows (cdr r)))))
+  (rows g)
+  (display "]"))
+
+;; Embedded tests
+(define case0 '((1 3 1) (1 5 1) (4 2 1)))
+(define case1 '((1 2) (3 4)))
+(define case2 '((0)))
+(define case3 '((5)))
+(define case4 '((1 2 3)))
+(define case5 '((7) (2) (5)))
+(define case6 '((1 3 1 2) (1 5 1 3) (4 2 1 1) (2 1 3 1)))
+(define case7 '((0 0 0) (0 0 0) (0 0 0)))
+
+(display "CASE0=") (display (solve case0)) (newline)
+(display "CASE1=") (display (solve case1)) (newline)
+(display "CASE2=") (display (solve case2)) (newline)
+(display "CASE3=") (display (solve case3)) (newline)
+(display "CASE4=") (display (solve case4)) (newline)
+(display "CASE5=") (display (solve case5)) (newline)
+(display "CASE6=") (display (solve case6)) (newline)
+(display "CASE7=") (display (solve case7)) (newline)

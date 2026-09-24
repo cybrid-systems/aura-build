@@ -1,0 +1,120 @@
+;; Wildcard matching: '?' matches any single char, '*' matches any sequence (incl. empty).
+;; Uses 2-row DP for O(n*m) time and O(n) extra space.
+
+(define (solve s p)
+  (let* ((n (string-length s))
+         (m (string-length p))
+         (prev (make-vector (+ n 1) 0))
+         (cur  (make-vector (+ n 1) 0)))
+    ;; init: prev[j] = whether p[0..j) matches empty s
+    (vector-set! prev 0 1)
+    (let loop ((j 1))
+      (if (> j n)
+          'done
+          (begin
+            (vector-set! prev j 0)
+            (loop (+ j 1)))))
+    (let loop2 ((i 1))
+      (if (> i m)
+          'done
+          (begin
+            (vector-set! cur 0 0)
+            (let loop3 ((j 1))
+              (if (> j n)
+                  'done
+                  (begin
+                    (let ((pc (string-ref p (- i 1))))
+                      (if (char=? pc #\*)
+                          (begin
+                            ;; '*' matches empty OR consumes one char of s
+                            (if (or (= (vector-ref cur (- j 1)) 1)
+                                    (= (vector-ref prev j) 1))
+                                (vector-set! cur j 1)
+                                (vector-set! cur j 0)))
+                          (if (char=? pc #\?)
+                              (vector-set! cur j (vector-ref prev (- j 1)))
+                              (if (char=? pc (string-ref s (- j 1)))
+                                  (vector-set! cur j (vector-ref prev (- j 1)))
+                                  (vector-set! cur j 0)))))
+                    (loop3 (+ j 1)))))
+            ;; swap prev and cur
+            (let ((tmp prev))
+              (set! prev tmp)
+              (set! cur tmp)
+              'skip)
+            (loop2 (+ i 1)))))
+    ;; swap order: after the above, 'cur' variable in scope holds what was 'prev'...
+    ;; Actually simpler: do swap explicitly here. Let me redo without relying on swap.
+    (if (= (vector-ref cur n) 1) #t #f)))
+
+;; Cleaner version using a fresh approach with explicit row references.
+(define (solve s p)
+  (let* ((n (string-length s))
+         (m (string-length p))
+         (row-a (make-vector (+ n 1) 0))
+         (row-b (make-vector (+ n 1) 0)))
+    (vector-set! row-a 0 1)
+    (let loop ((j 1))
+      (if (> j n) 'done
+          (begin
+            (vector-set! row-a j 0)
+            (loop (+ j 1)))))
+    (let outer ((i 1) (prev row-a) (cur row-b))
+      (if (> i m)
+          (if (= (vector-ref prev n) 1) #t #f)
+          (begin
+            (vector-set! cur 0 0)
+            (let inner ((j 1))
+              (if (> j n) 'done
+                  (begin
+                    (let ((pc (string-ref p (- i 1))))
+                      (if (char=? pc #\*)
+                          (vector-set! cur j
+                            (if (or (= (vector-ref cur (- j 1)) 1)
+                                    (= (vector-ref prev j) 1)) 1 0))
+                          (if (char=? pc #\?)
+                              (vector-set! cur j (vector-ref prev (- j 1)))
+                              (vector-set! cur j
+                                (if (char=? pc (string-ref s (- j 1)))
+                                    (vector-ref prev (- j 1))
+                                    0)))))
+                    (inner (+ j 1)))))
+            (outer (+ i 1) cur prev))))))
+
+
+;; ---------- driver ----------
+(define (print-result r)
+  (display r)
+  (newline))
+
+(solve "aa" "a")
+(solve "aa" "*")
+(solve "cb" "?a")
+(solve "cb" "?a*")
+(solve "" "")
+(solve "" "*")
+(solve "abc" "a*c")
+(solve "abc" "*a*b*c*")
+(solve "abcd" "a*d")
+(solve "a" "**")
+(solve "ho" "**ho**")
+(solve "aaa" "a*a")
+(solve "aaa" "*a")
+
+(define (show-results)
+  (begin
+    (display "CASE0=") (print-result (solve "aa" "a"))
+    (display "CASE1=") (print-result (solve "aa" "*"))
+    (display "CASE2=") (print-result (solve "cb" "?a"))
+    (display "CASE3=") (print-result (solve "cb" "?a*"))
+    (display "CASE4=") (print-result (solve "" ""))
+    (display "CASE5=") (print-result (solve "" "*"))
+    (display "CASE6=") (print-result (solve "abc" "a*c"))
+    (display "CASE7=") (print-result (solve "abc" "*a*b*c*"))
+    (display "CASE8=") (print-result (solve "abcd" "a*d"))
+    (display "CASE9=") (print-result (solve "a" "**"))
+    (display "CASE10=") (print-result (solve "ho" "**ho**"))
+    (display "CASE11=") (print-result (solve "aaa" "a*a"))
+    (display "CASE12=") (print-result (solve "aaa" "*a"))))
+
+(show-results)

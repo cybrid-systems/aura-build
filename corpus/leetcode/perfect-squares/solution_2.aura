@@ -1,0 +1,44 @@
+(define (min a b) (if (< a b) a b))
+
+(define (num-squares n)
+  (if (= n 0) 0
+      (let ((dp (make-list (+ n 1) 0)))
+        (set! (list-ref dp 0) 0)
+        (let loop ((i 1))
+          (if (> i n) #t
+              (begin
+                (set! (list-ref dp i) i)
+                (let inner ((j 1) (best i))
+                  (if (> (* j j) i) (begin (set! (list-ref dp i) best) #t)
+                      (begin
+                        (let ((candidate (+ 1 (list-ref dp (- i (* j j))))))
+                          (if (< candidate best) (set! best candidate) #t))
+                        (inner (+ j 1) best)))))
+                (loop (+ i 1))))))
+        (list-ref dp n))))
+
+(define (solve n) (num-squares n))
+
+(define (display-list lst)
+  (display "(")
+  (let loop ((l lst) (first #t))
+    (if (null? l) (begin (display ")") #t)
+        (begin
+          (if first (set! first #f) (display " "))
+          (display (car l))
+          (loop (cdr l) first)))))
+
+(define inputs '(0 1 2 3 4 7 12 13 100 9999))
+
+(define (run-cases cases)
+  (let loop ((cs cases) (i 0))
+    (if (null? cs) #t
+        (begin
+          (display "CASE")
+          (display (number->string i))
+          (display "=n=")
+          (display (number->string (solve (car cs))))
+          (newline)
+          (loop (cdr cs) (+ i 1))))))
+
+(run-cases inputs)

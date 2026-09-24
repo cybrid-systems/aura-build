@@ -1,0 +1,96 @@
+(define (length xs)
+  (if (null? xs) 0 (+ 1 (length (cdr xs)))))
+
+(define (list-ref xs i)
+  (if (= i 0) (car xs) (list-ref (cdr xs) (- i 1))))
+
+(define (make-list n val)
+  (if (= n 0) '() (cons val (make-list (- n 1) val))))
+
+(define (list-set xs i val)
+  (if (= i 0)
+      (cons val (cdr xs))
+      (cons (car xs) (list-set (cdr xs) (- i 1) val))))
+
+(define (get-row mat i n)
+  (list-ref mat i))
+
+(define (set-row mat i row)
+  (list-set mat i row))
+
+(define (get-cell mat i j n)
+  (list-ref (get-row mat i) j))
+
+(define (set-cell mat i j val n)
+  (let ((row (get-row mat i)))
+    (set-row mat i (list-set row j val))))
+
+(define (min-cost-chain p)
+  (let* ((len (length p))
+         (n (- len 1))
+         (dp (make-list n (make-list n 0))))
+    (define (compute)
+      (define (loop-len length)
+        (if (> length n)
+            'done
+            (begin
+              (define (loop-i i)
+                (if (> i (- n length))
+                    'done
+                    (begin
+                      (let ((j (+ i (- length 1))))
+                        (if (= i j)
+                            'skip
+                            (let ((best #f))
+                              (define (loop-k k)
+                                (if (>= k j)
+                                    'done
+                                    (let* ((cost1 (get-cell dp i k n))
+                                           (cost2 (get-cell dp (+ k 1) j n))
+                                           (cost3 (* (* (list-ref p i) (list-ref p (+ k 1))) (list-ref p j)))
+                                           (total (+ (+ cost1 cost2) cost3)))
+                                      (if (or (not best) (< total best))
+                                          (set! best total)
+                                          'noop)
+                                      (loop-k (+ k 1)))))
+                              (loop-k i)
+                              (set! dp (set-cell dp i j best n)))))
+                      (loop-i (+ i 1)))))
+              (loop-i 0)
+              (loop-len (+ length 1)))))
+      (loop-len 2))
+    (compute)
+    (get-cell dp 0 (- n 1) n)))
+
+(define (solve p)
+  (min-cost-chain p))
+
+(define (display-list xs)
+  (display "[")
+  (define (loop rest)
+    (if (null? rest)
+        'done
+        (begin
+          (display (car rest))
+          (if (not (null? (cdr rest)))
+              (display ", "))
+          (loop (cdr rest)))))
+  (loop xs)
+  (display "]"))
+
+(define (run-case i p)
+  (let ((result (solve p)))
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display result)
+    (newline)))
+
+(run-case 0 (list 1 2))
+(run-case 1 (list 10 30))
+(run-case 2 (list 10 30 5))
+(run-case 3 (list 30 35 15 5 10 20 25))
+(run-case 4 (list 40 20 30 10 30))
+(run-case 5 (list 1 2 3 4 5))
+(run-case 6 (list 5 10 3 12 5 50 6))
+(run-case 7 (list 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95 96 97 98 99 100))

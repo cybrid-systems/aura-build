@@ -1,0 +1,22 @@
+(define (climb n)
+  (cond
+    ((= n 0) 1)
+    ((= n 1) 1)
+    (else (+ (climb (- n 1)) (climb (- n 2))))))
+
+(define (solve n)
+  (climb n))
+
+;; Test cases
+(define (run-tests)
+  (begin
+    (display "CASE0=") (display (solve 1)) (newline)
+    (display "CASE1=") (display (solve 2)) (newline)
+    (display "CASE2=") (display (solve 3)) (newline)
+    (display "CASE3=") (display (solve 4)) (newline)
+    (display "CASE4=") (display (solve 5)) (newline)
+    (display "CASE5=") (display (solve 10)) (newline)
+    (display "CASE6=") (display (solve 44)) (newline)
+    (display "CASE7=") (display (solve 45)) (newline)))
+
+(run-tests)

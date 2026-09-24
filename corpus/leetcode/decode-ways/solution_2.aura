@@ -1,0 +1,119 @@
+(define MOD 1000000007)
+
+(define (string-length s)
+  (let loop ((i 0))
+    (if (and (< i (string-length-raw s)) #t)
+        i
+        i)))
+
+;; Helper: get a char from a string by index (returns a 1-char string)
+(define (char-at s i)
+  (substring s i (+ i 1)))
+
+(define (digit->number ch)
+  (- (char->integer (string-ref ch 0)) (char->integer #\0)))
+
+(define (string-length-raw s)
+  ;; Built-in via R5RS? We don't have it. Implement via recursion.
+  (let loop ((i 0))
+    (if (and (< i 1000000)
+             (< i (byte-count s i)))
+        (loop (+ i 1))
+        i)))
+
+;; Simpler: we know max length is 5000, just compute via substring checks.
+(define (str-len s)
+  (let loop ((i 0))
+    (if (equal? (substring s i (+ i 1)) "")
+        i
+        (loop (+ i 1)))))
+
+(define (solve s)
+  (let* ((n (str-len s))
+         (a (make-vector n 0))
+         (b (make-vector n 0)))
+    ;; a[i] = number of decodings of prefix of length i
+    (if (= n 0)
+        0
+        (begin
+          ;; Check first char
+          (if (equal? (char-at s 0) "0")
+              (vector-set! a 0 0)
+              (vector-set! a 0 1))
+          (if (= n 1)
+              (vector-ref a 0)
+              (let loop ((i 1))
+                (if (>= i n)
+                    'done
+                    (begin
+                      (let ((c1 (char-at s i))
+                            (c0 (char-at s (- i 1)))
+                            (single 0)
+                            (pair 0))
+                        (if (not (equal? c1 "0"))
+                            (set! single (vector-ref a (- i 1))))
+                        (let ((two-str (string-append c0 c1)))
+                          (let ((val (+ (* (digit->number c0) 10)
+                                        (digit->number c1))))
+                            (if (and (>= val 10) (<= val 26))
+                                (set! pair (if (>= (- i 2) 0)
+                                               (vector-ref a (- i 2))
+                                               (if (= i 1) 1 0))))))
+                        (vector-set! b i (modulo (+ single pair) MOD)))
+                      (let ((tmp (vector-ref a i)))
+                        (vector-set! a i (vector-ref b i))
+                        (vector-set! b i tmp))
+                      (loop (+ i 1))))))
+          (vector-ref a (- n 1))))))
+
+;; Actually the vector-swap approach above is convoluted. Let me rewrite cleanly.
+
+(define (solve s)
+  (let* ((n (str-len s))
+         (dp (make-vector (+ n 1) 0)))
+    (vector-set! dp 0 1)
+    (if (>= n 1)
+        (vector-set! dp 1 (if (equal? (char-at s 0) "0") 0 1)))
+    (let loop ((i 2))
+      (if (> i n)
+          (vector-ref dp n)
+          (begin
+            (let ((c (char-at s (- i 1))))
+              (if (not (equal? c "0"))
+                  (vector-set! dp i
+                    (modulo (+ (vector-ref dp i)
+                               (vector-ref dp (- i 1)))
+                            MOD))))
+            (let ((two-str (substring s (- i 2) i)))
+              (let ((val (string->two-digit-number two-str)))
+                (if (and (>= val 10) (<= val 26))
+                    (vector-set! dp i
+                      (modulo (+ (vector-ref dp i)
+                                 (vector-ref dp (- i 2)))
+                              MOD)))))
+            (loop (+ i 1)))))))
+
+(define (string->two-digit-number s)
+  (+ (* (digit->number (char-at s 0)) 10)
+     (digit->number (char-at s 1))))
+
+;; Wrapper for solve that returns int
+(define (solve-main s)
+  (solve s))
+
+;; Test runner
+(define (run-case i s)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve-main s))
+  (newline))
+
+(run-case 0 "12")
+(run-case 1 "226")
+(run-case 2 "06")
+(run-case 3 "0")
+(run-case 4 "27")
+(run-case 5 "1111111111")
+(run-case 6 "1")
+(run-case 7 "10")

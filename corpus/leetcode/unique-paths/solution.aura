@@ -1,0 +1,33 @@
+(define (factorial n)
+  (if (<= n 1)
+      1
+      (* n (factorial (- n 1)))))
+
+(define (solve m n)
+  (let ((a (+ m n -2))
+        (b (- m 1)))
+    ;; C(a, b) = a! / (b! * (a-b)!)
+    (quotient (factorial a)
+              (* (factorial b)
+                 (factorial (- a b))))))
+
+(define (cases)
+  (list (cons 0 3) (cons 1 7)   ;; CASE0: m=3, n=7
+        (cons 1 1) (cons 0 0)   ;; CASE1: m=1, n=1
+        (cons 1 1) (cons 0 5)   ;; CASE2: m=1, n=5
+        (cons 1 1) (cons 5 0)   ;; wait, need m,n list
+        ))
+
+;; Actually let's just call inline per case to avoid confusion:
+(define (run-cases)
+  (begin
+    (display "CASE0=") (display (solve 3 7)) (newline)
+    (display "CASE1=") (display (solve 1 1)) (newline)
+    (display "CASE2=") (display (solve 1 5)) (newline)
+    (display "CASE3=") (display (solve 5 1)) (newline)
+    (display "CASE4=") (display (solve 2 2)) (newline)
+    (display "CASE5=") (display (solve 3 3)) (newline)
+    (display "CASE6=") (display (solve 4 5)) (newline)
+    (display "CASE7=") (display (solve 7 3)) (newline)))
+
+(run-cases)

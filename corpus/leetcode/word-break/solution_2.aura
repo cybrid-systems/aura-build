@@ -1,0 +1,47 @@
+(define (list->set lst)
+  (define (helper lst acc)
+    (if (null? lst)
+        acc
+        (helper (cdr lst) (cons (car lst) acc))))
+  (helper lst '()))
+
+(define (in? x s)
+  (cond ((null? s) #f)
+        ((equal? (car s) x) #t)
+        (else (in? x (cdr s)))))
+
+(define (word-break s wordDict)
+  (let* ((n (string-length s))
+         (dict (list->set wordDict)))
+    (define (seg i)
+      (cond ((= i n) #t)
+            ((> i n) #f)
+            (else
+             (let loop ((j (+ i 1)))
+               (cond ((> j n) #f)
+                     ((in? (substring s i j) dict)
+                      (if (seg j) #t (loop (+ j 1))))
+                     (else (loop (+ j 1))))))))
+    (seg 0)))
+
+(define (solve s wordDict)
+  (word-break s wordDict))
+
+(define (display-case i result)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display result)
+  (newline))
+
+(define (run)
+  (display-case 0 (solve "leetcode" (list "leet" "code")))
+  (display-case 1 (solve "applepenapple" (list "apple" "pen")))
+  (display-case 2 (solve "catsandog" (list "cats" "dog" "sand" "and" "cat")))
+  (display-case 3 (solve "a" (list "a")))
+  (display-case 4 (solve "a" (list "b")))
+  (display-case 5 (solve "abcd" (list "a" "abc" "b" "cd")))
+  (display-case 6 (solve "cars" (list "car" "ca" "rs")))
+  (display-case 7 (solve "aaaaa" (list "aa" "aaa"))))
+
+(run)

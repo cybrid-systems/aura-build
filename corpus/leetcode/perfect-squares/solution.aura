@@ -1,0 +1,44 @@
+(define (min a b)
+  (if (< a b) a b))
+
+(define (square? n)
+  (let ((s (floor (sqrt n))))
+    (= (* s s) n)))
+
+(define (solve n)
+  (if (= n 0) 0
+      (let* ((dp (make-vector (+ n 1) 0))
+             (i 1))
+        (for-loop ((i 1 (+ n 1)))
+          (let ((best 99999))
+            (for-loop ((j 1 (+ i 1)))
+              (let ((sq (* j j)))
+                (if (and (>= sq i) (< j best))
+                    (set! best j))))
+            (vector-set! dp i best)))
+        (vector-ref dp n))))
+
+(define (make-vector size val)
+  (let ((v '()))
+    (let loop ((k 0))
+      (if (= k size)
+          (list->vector v)
+          (begin
+            (set! v (append v (list val)))
+            (loop (+ k 1)))))))
+
+(define (list->vector lst)
+  (apply vector lst))
+
+(define (for-loop bindings body)
+  (letrec ((iter (lambda (vals)
+    (let ((continue #t))
+      (let ((var1 (list-ref vals 0))
+            (start (list-ref vals 1))
+            (end (list-ref vals 2)))
+        (let loop ((i start))
+          (if (< i end)
+              (begin
+                (eval body (interaction-environment))
+                (loop (+ i 1))))))))))
+    (iter (cdr bindings))))

@@ -1,0 +1,111 @@
+(define MOD 1000000007)
+
+(define (mod-add a b)
+  (let ((s (+ a b)))
+    (if (>= s MOD) (- s MOD) s)))
+
+(define (make-row m n)
+  (if (= n 0)
+      '()
+      (cons 0 (make-row m (- n 1)))))
+
+(define (make-rows m n)
+  (if (= m 0)
+      '()
+      (cons (make-row m n) (make-rows (- m 1) n))))
+
+(define (set-cell row idx val)
+  (cond ((null? row) '())
+        ((= idx 0) (cons val (cdr row)))
+        (else (cons (car row) (set-cell (cdr row) (- idx 1) val)))))
+
+(define (set-row grid i n row)
+  (cond ((null? grid) '())
+        ((= i 0) (cons row (cdr grid)))
+        (else (cons (car grid) (set-row (cdr grid) (- i 1) n row)))))
+
+(define (cell grid i j)
+  (let ((row (list-ref (list-ref-safe grid i) j)))
+    row))
+
+(define (list-ref-safe lst k)
+  (cond ((null? lst) (error "out of bounds"))
+        ((= k 0) (car lst))
+        (else (list-ref-safe (cdr lst) (- k 1)))))
+
+(define (get-row grid i)
+  (list-ref-safe grid i))
+
+(define (compute-paths grid m n)
+  (let ((dp (make-rows m n)))
+    (compute-dp dp grid m n)))
+
+(define (compute-dp dp grid m n)
+  (let ((top (get-row grid 0)))
+    (if (= (car top) 1)
+        (compute-dp-loop dp grid 1 0 m n)
+        (let ((row0 (get-row dp 0)))
+          (let ((new-row (set-cell row0 0 1)))
+            (let ((dp2 (set-row dp 0 n new-row)))
+              (compute-dp-loop dp2 grid 1 0 m n)))))))
+
+(define (compute-dp-loop dp grid i j m n)
+  (cond ((= i m) dp)
+        ((= j n) (compute-dp-loop dp grid (+ i 1) 0 m n))
+        (else
+          (let ((cell-val (list-ref-safe (get-row grid i) j)))
+            (if (= cell-val 1)
+                (let ((row (get-row dp i)))
+                  (let ((new-row (set-cell row j 0)))
+                    (let ((dp2 (set-row dp i n new-row)))
+                      (compute-dp-loop dp2 grid i (+ j 1) m n))))
+                (let ((up 0) (left 0))
+                  (let ((u (if (> i 0) (list-ref-safe (get-row dp (- i 1)) j) 0)))
+                    (let ((l (if (> j 0) (list-ref-safe (get-row dp i) (- j 1)) 0)))
+                      (let ((val (mod-add u l)))
+                        (let ((row (get-row dp i)))
+                          (let ((new-row (set-cell row j val)))
+                            (let ((dp2 (set-row dp i n new-row)))
+                              (compute-dp-loop dp2 grid i (+ j 1) m n)))))))))))))
+
+(define (solve grid)
+  (let ((m (length grid)))
+    (let ((n (if (null? grid) 0 (length (car grid)))))
+      (cond ((= m 0) 0)
+            ((= n 0) 0)
+            ((= (list-ref-safe (get-row grid 0) 0) 1) 0)
+            ((and (= m 1) (= n 1)) 1)
+            (else
+              (let ((dp (compute-paths grid m n)))
+                (list-ref-safe (get-row dp (- m 1)) (- n 1))))))))
+
+;; Display helpers
+(define (display-number n) (display n))
+
+;; Run tests
+(define (run-tests)
+  (let ((cases
+         (list
+          (list (list (list 0 0 0) (list 0 1 0) (list 0 0 0)))
+          (list (list (list 0 1) (list 0 0)))
+          (list (list (list 1)))
+          (list (list (list 0)))
+          (list (list (list 0 0) (list 1 0) (list 0 0)))
+          (list (list (list 0 0 0 0) (list 0 0 0 0)))
+          (list (list (list 1 0) (list 0 0)))
+          (list (list (list 0 0) (list 0 1))))))
+    (run-tests-loop cases 0)))
+
+(define (run-tests-loop cases i)
+  (if (null? cases)
+      '()
+      (let ((grid (car (car cases))))
+        (let ((result (solve grid)))
+          (display "CASE")
+          (display i)
+          (display "=")
+          (display result)
+          (newline)
+          (run-tests-loop (cdr cases) (+ i 1))))))
+
+(run-tests)

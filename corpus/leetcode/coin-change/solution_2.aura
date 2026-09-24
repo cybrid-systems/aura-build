@@ -1,0 +1,42 @@
+(define (min a b)
+  (if (< a b) a b))
+
+(define (coin-change denominations amount)
+  (if (= amount 0)
+      0
+      (let* ((amount+1 (+ amount 1))
+             (infinity amount+1)
+             (dp (make-list amount+1 infinity)))
+        (list-set! dp 0 0)
+        (let ((denoms denominations)
+              (n (length denominations)))
+          (let loop-i ((i 1))
+            (if (> i amount)
+                (let ((result (list-ref dp amount)))
+                  (if (>= result infinity) -1 result))
+                (begin
+                  (let loop-d ((ds denoms))
+                    (if (null? ds)
+                        'done
+                        (let ((d (car ds)))
+                          (if (and (>= i d) (< (list-ref dp (- i d)) infinity))
+                              (let ((candidate (+ (list-ref dp (- i d)) 1)))
+                                (if (< candidate (list-ref dp i))
+                                    (list-set! dp i candidate)
+                                    'done))
+                              'done))
+                          (loop-d (cdr ds))))
+                  (loop-i (+ i 1)))))))))
+
+(define (solve denominations amount)
+  (coin-change denominations amount))
+
+;; Test cases
+(display "CASE0=") (display (solve '(1 2 5) 11)) (newline)
+(display "CASE1=") (display (solve '(2) 3)) (newline)
+(display "CASE2=") (display (solve '(1 2 5) 0)) (newline)
+(display "CASE3=") (display (solve '(1) 1)) (newline)
+(display "CASE4=") (display (solve '(5 10 25) 30)) (newline)
+(display "CASE5=") (display (solve '(3 7) 14)) (newline)
+(display "CASE6=") (display (solve '(2 5 10) 1)) (newline)
+(display "CASE7=") (display (solve '(1 3 4) 6)) (newline)

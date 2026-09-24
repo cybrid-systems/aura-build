@@ -1,0 +1,49 @@
+(define (sum-list lst)
+  (if (null? lst)
+      0
+      (+ (car lst) (sum-list (cdr lst)))))
+
+(define (exists-sum? lst target)
+  ;; subset-sum via DP using a list of reachable sums
+  (letrec ((helper (lambda (items achievable)
+                     (if (null? items)
+                         (if (member target achievable) #t #f)
+                         (let ((x (car items)))
+                           (letrec ((add-if-new
+                                     (lambda (ach)
+                                       (if (member (+ x (car ach)) ach)
+                                           ach
+                                           (cons (+ x (car ach)) ach)))))
+                             (helper (cdr items)
+                                     (append achievable
+                                             (filter (lambda (s) (not (member s achievable)))
+                                                     (map (lambda (s) (+ s x)) achievable))))))))))
+    (helper lst '(0))))
+
+(define (solve arr)
+  (let ((n (length arr)))
+    (if (< n 2)
+        #f
+        (let ((s (sum-list arr)))
+          (if (odd? s)
+              #f
+              (exists-sum? arr (quotient s 2)))))))
+
+;; Harness: print CASEi= for each embedded test
+(define arr0 (list 1 5 11 5))
+(define arr1 (list 1 2 3 4 5 6 7))
+(define arr2 (list 1 2 3))
+(define arr3 (list))
+(define arr4 (list 0))
+(define arr5 (list 0 0))
+(define arr6 (list 100 100 100 100))
+(define arr7 (list 3 3 3 3 3 3))
+
+(display "CASE0=") (display (solve arr0)) (newline)
+(display "CASE1=") (display (solve arr1)) (newline)
+(display "CASE2=") (display (solve arr2)) (newline)
+(display "CASE3=") (display (solve arr3)) (newline)
+(display "CASE4=") (display (solve arr4)) (newline)
+(display "CASE5=") (display (solve arr5)) (newline)
+(display "CASE6=") (display (solve arr6)) (newline)
+(display "CASE7=") (display (solve arr7)) (newline)

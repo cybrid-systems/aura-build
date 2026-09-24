@@ -1,0 +1,106 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "s": "aa",
+      "p": "a"
+    },
+    "expected": "false"
+  },
+  {
+    "id": 1,
+    "input": {
+      "s": "aa",
+      "p": "*"
+    },
+    "expected": "true"
+  },
+  {
+    "id": 2,
+    "input": {
+      "s": "cb",
+      "p": "?a"
+    },
+    "expected": "false"
+  },
+  {
+    "id": 3,
+    "input": {
+      "s": "cb",
+      "p": "?a*"
+    },
+    "expected": "false"
+  },
+  {
+    "id": 4,
+    "input": {
+      "s": "",
+      "p": ""
+    },
+    "expected": "true"
+  },
+  {
+    "id": 5,
+    "input": {
+      "s": "",
+      "p": "*"
+    },
+    "expected": "true"
+  },
+  {
+    "id": 6,
+    "input": {
+      "s": "abc",
+      "p": "a*c"
+    },
+    "expected": "true"
+  },
+  {
+    "id": 7,
+    "input": {
+      "s": "abc",
+      "p": "*a*b*c*"
+    },
+    "expected": "true"
+  },
+  {
+    "id": 8,
+    "input": {
+      "s": "abcd",
+      "p": "a*d"
+    },
+    "expected": "true"
+  },
+  {
+    "id": 9,
+    "input": {
+      "s": "a",
+      "p": "**"
+    },
+    "expected": "true"
+  },
+  {
+    "id": 10,
+    "input": {
+      "s": "ho",
+      "p": "**ho**"
+    },
+    "expected": "true"
+  },
+  {
+    "id": 11,
+    "input": {
+      "s": "aaa",
+      "p": "a*a"
+    },
+    "expected": "true"
+  },
+  {
+    "id": 12,
+    "input": {
+      "s": "aaa",
+      "p": "*a"
+    },
+    "expected": "true"
+  }
+]

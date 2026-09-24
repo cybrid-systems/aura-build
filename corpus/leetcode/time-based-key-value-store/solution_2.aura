@@ -1,0 +1,173 @@
+;; Time Based Key Value Store
+;; Stores per key: list of timestamps and list of values (parallel)
+;; For set: append timestamp and value (timestamps strictly increasing per key)
+;; For get: binary search timestamps for greatest <= query timestamp
+
+(define (length lst)
+  (if (null? lst) 0 (+ 1 (length (cdr lst)))))
+
+(define (list-ref lst i)
+  (if (= i 0) (car lst) (list-ref (cdr lst) (- i 1))))
+
+(define (list-set lst i v)
+  (if (= i 0)
+      (cons v (cdr lst))
+      (cons (car lst) (list-set (cdr lst) (- i 1) v))))
+
+;; Binary search: find largest index i in ts such that ts[i] <= target
+;; Return -1 if no such element
+(define (bsearch-largest ts target)
+  (letrec ((helper (lambda (lo hi)
+    (if (> lo hi)
+        (- lo 1)
+        (let ((mid (quotient (+ lo hi) 2)))
+          (let ((tv (list-ref ts mid)))
+            (if (<= tv target)
+                (helper (+ mid 1) hi)
+                (helper lo (- mid 1)))))))))
+    (helper 0 (- (length ts) 1))))
+
+;; Get entry: a pair (timestamps-list . values-list)
+;; Store as (cons ts vs)
+(define (make-empty) (cons '() '()))
+
+(define (entry-get entry key ts)
+  (let ((tss (car entry))
+        (vss (cdr entry)))
+    (if (null? tss)
+        ""
+        (let ((idx (bsearch-largest tss ts)))
+          (if (< idx 0) "" (list-ref vss idx))))))
+
+(define (entry-set entry ts v)
+  (cons (append (car entry) (list ts))
+        (append (cdr entry) (list v))))
+
+;; Map: list of (cons key entry) pairs
+(define (map-get m key ts)
+  (cond ((null? m) "")
+        ((equal? (car (car m)) key)
+         (entry-get (cdr (car m)) key ts))
+        (else (map-get (cdr m) key ts))))
+
+(define (map-set m key ts v)
+  (cond ((null? m)
+         (list (cons key (entry-set (make-empty) ts v))))
+        ((equal? (car (car m)) key)
+         (cons (cons key (entry-set (cdr (car m)) ts v))
+               (cdr m)))
+        (else
+         (cons (car m) (map-set (cdr m) key ts v)))))
+
+;; Solve: take operations as list of (op . args) where
+;; op = "SET" or "GET"
+;; args = (key . (value . timestamp)) for SET, or (key . timestamp) for GET
+;; Returns list of results for GET queries
+(define (run-ops ops state)
+  (cond ((null? ops) '())
+        (else
+         (let ((op (car (car ops)))
+               (args (cdr (car ops))))
+           (if (equal? op "SET")
+               (let ((key (car args))
+                     (rest (cdr args))
+                     (val (car (cdr args)))
+                     (ts (car (cdr (cdr args)))))
+                 ;; Wait, args = (key value . timestamp) actually
+                 ;; Let me reconsider: args = (key value timestamp)
+                 (run-ops (cdr ops) (map-set state key ts val)))
+               ;; GET
+               (let ((key (car args))
+                     (ts (car (cdr args))))
+                 (cons (map-get state key ts)
+                       (run-ops (cdr ops) state))))))))
+
+;; Display a result (string already)
+(define (display-results rs)
+  (cond ((null? rs) (display ""))
+        (else
+         (display (car rs))
+         (newline)
+         (display-results (cdr rs)))))
+
+;; Build operations from a list
+;; CASE0
+(define ops0
+  (list
+    (cons "SET" (list "foo" "bar" 1))
+    (cons "GET" (list "foo" 1))
+    (cons "GET" (list "foo" 3))
+    (cons "SET" (list "foo" "bar2" 4))
+    (cons "GET" (list "foo" 4))
+    (cons "GET" (list "foo" 5))
+    (cons "GET" (list "foo" 0))))
+
+(define (solve0) (run-ops ops0 '()))
+
+;; CASE1
+(define ops1
+  (list
+    (cons "GET" (list "missing" 10))
+    (cons "GET" (list "missing" 0))))
+
+(define (solve1) (run-ops ops1 '()))
+
+;; CASE2
+(define ops2
+  (list
+    (cons "SET" (list "k1" "v1" 1))
+    (cons "SET" (list "k1" "v2" 2))
+    (cons "SET" (list "k1" "v3" 3))
+    (cons "SET" (list "k2" "a" 5))
+    (cons "SET" (list "k2" "b" 10))
+    (cons "GET" (list "k1" 1))
+    (cons "GET" (list "k1" 2))
+    (cons "GET" (list "k1" 3))
+    (cons "GET" (list "k2" 4))
+    (cons "GET" (list "k2" 10))
+    (cons "GET" (list "k2" 11))))
+
+(define (solve2) (run-ops ops2 '()))
+
+;; CASE3
+(define ops3
+  (list
+    (cons "GET" (list "x" 1))
+    (cons "SET" (list "x" "only" 5))
+    (cons "GET" (list "x" 4))
+    (cons "GET" (list "x" 5))
+    (cons "GET" (list "x" 6))))
+
+(define (solve3) (run-ops ops3 '()))
+
+;; CASE4
+(define ops4
+  (list
+    (cons "SET" (list "a" "x" 100))
+    (cons "SET" (list "a" "y" 200))
+    (cons "SET" (list "a" "z" 300))
+    (cons "SET" (list "b" "p" 150))
+    (cons "GET" (list "a" 99))
+    (cons "GET" (list "a" 100))
+    (cons "GET" (list "a" 150))
+    (cons "GET" (list "a" 250))
+    (cons "GET" (list "a" 300))
+    (cons "GET" (list "a" 301))
+    (cons "GET" (list "b" 100))
+    (cons "GET" (list "b" 150))
+    (cons "GET" (list "b" 200))))
+
+(define (solve4) (run-ops ops4 '()))
+
+;; Main: print each case
+(define (print-results-label prefix rs)
+  (display prefix)
+  (display "=")
+  (newline)
+  (display-results rs))
+
+(print-results-label "CASE0" (solve0))
+(print-results-label "CASE1" (solve1))
+(print-results-label "CASE2" (solve2))
+(print-results-label "CASE3" (solve3))
+(print-results-label "CASE4" (solve4))

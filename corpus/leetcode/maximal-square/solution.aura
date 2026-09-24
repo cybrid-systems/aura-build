@@ -1,0 +1,78 @@
+(define (solve m n grid)
+  ;; Returns area of largest all-1s square
+  (let ((max-side 0)
+        (dp (make-vector (* m n) 0)))
+    (let loop-i ((i 0))
+      (if (= i m)
+          (* max-side max-side)
+          (begin
+            (let loop-j ((j 0))
+              (if (= j n)
+                  'done
+                  (begin
+                    (let ((idx (+ (* i n) j)))
+                      (if (= (grid-ref grid i j) 1)
+                          (let ((val
+                                 (if (or (= i 0) (= j 0))
+                                     1
+                                     (let ((a (vector-ref dp (+ (* (- i 1) n) j)))
+                                           (b (vector-ref dp (+ (* i n) (- j 1))))
+                                           (c (vector-ref dp (+ (* (- i 1) n) (- j 1)))))
+                                       (+ 1 (min3 a b c))))))
+                            (vector-set! dp idx val)
+                            (if (> val max-side)
+                                (set! max-side val)
+                                'noop))
+                      (loop-j (+ j 1)))))
+            (loop-i (+ i 1)))))))
+
+(define (min3 a b c)
+  (min a (min b c)))
+
+(define (grid-ref grid i j)
+  ;; grid is list of lists
+  (let loop ((rows grid) (k 0))
+    (if (= k i)
+        (let loop2 ((row (car rows)) (l 0))
+          (if (= l j)
+              (car row)
+              (loop2 (cdr row) (+ l 1))))
+        (loop (cdr rows) (+ k 1)))))
+
+(define (vector v n val)
+  (make-vector n val))
+
+;; Run cases
+(define (run-case i m n grid)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve m n grid))
+  (newline))
+
+(let ((case0-m 4) (case0-n 5)
+      (case0-grid '((1 0 1 0 0) (1 0 1 1 1) (1 1 1 1 1) (1 0 0 1 0))))
+  (run-case 0 case0-m case0-n case0-grid))
+
+(let ((case1-m 1) (case1-n 1) (case1-grid '((0))))
+  (run-case 1 case1-m case1-n case1-grid))
+
+(let ((case2-m 1) (case2-n 1) (case2-grid '((1))))
+  (run-case 2 case2-m case2-n case2-grid))
+
+(let ((case3-m 2) (case3-n 2) (case3-grid '((1 1) (1 1))))
+  (run-case 3 case3-m case3-n case3-grid))
+
+(let ((case4-m 3) (case4-n 3) (case4-grid '((0 0 0) (0 0 0) (0 0 0))))
+  (run-case 4 case4-m case4-n case4-grid))
+
+(let ((case5-m 3) (case5-n 3) (case5-grid '((1 1 1) (1 1 1) (1 1 1))))
+  (run-case 5 case5-m case5-n case5-grid))
+
+(let ((case6-m 5) (case6-n 5)
+      (case6-grid '((1 0 1 1 1) (1 1 1 1 1) (1 1 1 1 1) (1 0 0 1 0) (1 1 1 1 1))))
+  (run-case 6 case6-m case6-n case6-grid))
+
+(let ((case7-m 4) (case7-n 4)
+      (case7-grid '((1 1 0 1) (1 1 1 1) (1 1 1 1) (0 1 1 1))))
+  (run-case 7 case7-m case7-n case7-grid))

@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:40:59Z",
+      "ts_local": "2026-09-24 22:40:59 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1577,
+        "total_characters": 0,
+        "prompt_tokens": 1040,
+        "completion_tokens": 537,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.028,
+      "tests_passed": 8,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=#t\nCASE1=#t\nCASE2=#t\nCASE3=#f\nCASE4=#f\nCASE5=#t\nCASE6=#t\nCASE7=#t\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:41:09Z",
+      "ts_local": "2026-09-24 22:41:09 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1538,
+        "total_characters": 0,
+        "prompt_tokens": 1040,
+        "completion_tokens": 498,
+        "prompt_tokens_details": {
+          "cached_tokens": 896
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.08,
+      "tests_passed": 2,
+      "tests_total": 8,
+      "stderr_snippet": "error: 6:16: unbound variable: odd?\nerror: 6:16: unbound variable: odd?\nerror: 6:16: unbound variable: odd?\nerror: 6:16: unbound variable: odd?\nerror: 6:16: unbound variable: odd?\nerror: 6:16: unbound variable: odd?\n",
+      "stdout_snippet": "CASE0=CASE0=\nCASE1=\nCASE2=\nCASE3=#f\nCASE4=#f\nCASE5=\nCASE6=\nCASE7=\n"
+    }
+  ],
+  "slug": "partition-equal-subset-sum",
+  "title": "Partition Equal Subset Sum",
+  "category": "dynamic_programming",
+  "updated_at": "2026-09-24T14:41:09Z",
+  "updated_at_local": "2026-09-24 22:41:09 CST"
+}

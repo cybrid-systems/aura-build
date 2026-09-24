@@ -1,0 +1,280 @@
+(define (singleton x) (cons x '()))
+(define (length lst)
+    (if (null? lst) 0 (+ 1 (length (cdr lst)))))
+(define (list-ref lst i)
+    (if (= i 0) (car lst) (list-ref (cdr lst) (- i 1))))
+(define (append a b)
+    (if (null? a) b (cons (car a) (append (cdr a) b))))
+
+(define (max-coins nums)
+    (let* ((n (length nums))
+           (padded (append (singleton 1) (append nums (singleton 1))))
+           (dp (make-vector (+ n 2) 0)))
+        ; dp is a list of (+ n 2) lists, each of (+ n 2) zeros
+        (define (make-vec-rows m)
+            (if (= m 0) '()
+                (cons (make-vec-cols (+ n 2)) (make-vec-rows (- m 1)))))
+        (define (make-vec-cols m)
+            (if (= m 0) '()
+                (cons 0 (make-vec-cols (- m 1)))))
+        ; We'll redo with let using a builder function
+        '()))
+
+(define (solve nums)
+    (let* ((n (length nums))
+           (size (+ n 2)))
+        (define (build-grid m)
+            (if (= m 0) '()
+                (cons (build-row size) (build-grid (- m 1)))))
+        (define (build-row m)
+            (if (= m 0) '()
+                (cons 0 (build-row (- m 1)))))
+        (define (grid-ref g i j)
+            (list-ref (list-ref g i) j))
+        (define (grid-set g i j v)
+            (set-row g i (set-col (list-ref g i) j v) 0))
+        ; Helper not ideal; we'll use mutation via set! differently
+        (define arr (build-grid size))
+        ; arr is a list of size rows, each row a list
+        ; We need mutable structure. Let's use vectors via list-of-lists and functional update
+        (define (update g i j v)
+            (cond ((null? g) '())
+                  (else (cons
+                            (if (= i 0) (set-col (car g) j v) (car g))
+                            (update (cdr g) (- i 1) j v)))))
+        (define (set-col row k v)
+            (cond ((null? row) '())
+                  ((= k 0) (cons v (cdr row)))
+                  (else (cons (car row) (set-col (cdr row) (- k 1) v)))))
+        (define (get g i j)
+            (list-ref (list-ref g i) j))
+        ; Use two arrays: one for "best coins" and one for "left neighbor index"
+        (define dp arr)
+        ; Actually let's just do it: padded nums
+        (define (pad-val idx)
+            (cond ((= idx 0) 1)
+                  ((= idx (+ n 1)) 1)
+                  (else (list-ref nums (- idx 1)))))
+        ; Recompute dp using functional updates
+        (define (compute)
+            (define (solve-len len)
+                (if (< len 1) dp
+                    (let ((after (solve-len (- len 1))))
+                        ; for each i from 0 to n+1-len
+                        (solve-i after len 0 (+ n 1 (- len))))))
+        ; Actually, since Aura doesn't have set! on list elements easily,
+        ; let's use vectors differently. We'll build new dp grid at each len iteration.
+        ; This is O(n^4) but n <= 300 ... too slow. We need mutation.
+        ; Aura likely supports vector? The primer doesn't mention vectors explicitly.
+        ; Let's use a single mutable structure via a global cell list of cells.
+        'placeholder))
+
+; Since the above approach is complex, let me restart with a cleaner design
+; using a flat association or using set! on car/cdr via list mutation.
+
+(define (solve nums)
+    (let* ((n (length nums))
+           (size (+ n 2)))
+        ; Create flat cells: indexed (i,j) -> value, stored as a list of (size*size) cells
+        ; Actually use vector-of-lists with set! on car
+        ; Build initial grid
+        (define (mk-row k) (if (= k 0) '() (cons 0 (mk-row (- k 1)))))
+        (define (mk-grid k) (if (= k 0) '() (cons (mk-row size) (mk-grid (- k 1)))))
+        (define grid (mk-grid size))
+        (define (get i j) (list-ref (list-ref grid i) j))
+        (define (set-cell! i j v)
+            (define row (list-ref grid i))
+            (set-car! (cdr (cell-addr row j)) v))
+        ; Helper to find the j-th cdr
+        (define (cell-addr lst j)
+            (if (= j 0) (cons lst '()) ; we'll just use the cons cell directly
+                ; return the cons cell whose car is the j-th element
+                ; For simplicity, rebuild: use a different approach
+                lst))
+        ; This is getting messy. Let me use a totally flat representation:
+        ; grid[i*size + j]
+        (define cells (mk-flat size))
+        (define (mk-flat k) (if (= k 0) '() (cons 0 (mk-flat (- k 1)))))
+        (define total (* size size))
+        ; cells has 'total' zeros. Index = i*size + j
+        (define (idx i j) (+ (* i size) j))
+        (define (gget i j) (list-ref cells (idx i j)))
+        (define (gset i j v)
+            (set-nth! cells (idx i j) v))
+        (define (set-nth! lst k v)
+            (if (= k 0) (set-car! lst v)
+                (set-nth! (cdr lst) (- k 1) v)))
+        (define (pad i)
+            (cond ((= i 0) 1)
+                  ((= i (+ n 1)) 1)
+                  (else (list-ref nums (- i 1)))))
+        ; DP: for len from 1 to n: for i from 0 to n+1-len:
+        ;   j = i + len
+        ;   for k from i+1 to j-1:
+        ;     dp[i][j] = max over k of dp[i][k] + dp[k][j] + pad[i]*pad[k]*pad[j]
+        (define (do-len len)
+            (if (> len n) 'done
+                (begin
+                    (do-i len 0)
+                    (do-len (+ len 1)))))
+        (define (do-i len i)
+            (if (> i (- (+ n 1) len)) 'done
+                (begin
+                    (let ((j (+ i len)))
+                        (gset i j (compute-best i j (- j 1))))
+                    (do-i len (+ i 1)))))
+        (define (compute-best i j k-start)
+            (compute-iter i j (+ i 1) 0)
+        )
+        (define (compute-iter i j k best)
+            (if (>= k j) best
+                    (let ((val (+ (+ (gget i k) (gget k j)) (* (pad i) (pad k) (pad j)))))
+                        (if (> val best) (compute-iter i j (+ k 1) val)
+                            (compute-iter i j (+ k 1) best)))))
+        (do-len 1)
+        (gget 0 (+ n 1))))
+
+(define (set-car! cell v)
+    ; cell is a pair (cons a b); set its car to v
+    ; But we received the actual cell... 
+    ; Actually (car lst) returns the value, not the cell.
+    ; We need the cons cell itself.
+    ; Workaround: traverse and rebuild
+    (define (helper lst n)
+        (cond ((null? lst) '())
+              ((= n 0) (cons v (cdr lst)))
+              (else (cons (car lst) (helper (cdr lst) (- n 1))))))
+    ; This sets the car at position n in lst. But we want to mutate cells at idx(i,j).
+    ; Let's restructure.
+    '())
+
+; The set-car! approach won't work because list-ref gives the value not the cell.
+; Let's just rebuild the cells list each time. Since we update O(n) cells per O(n^2) state,
+; total rebuilds = O(n^3) and each update is O(n^2). Too slow.
+
+; Better: use a mutable single list with explicit cons cells via set-cdr!
+; Actually in standard scheme, (set-car! pair value) mutates the pair.
+; We can capture pairs by building the list and keeping cons cells.
+
+(define (solve nums)
+    (let* ((n (length nums))
+           (size (+ n 2)))
+        ; Build cells as a list of cons cells, each cell is (cons 0 '...)
+        ; Actually let's build a flat list but keep references to all cons cells.
+        (define (build n)
+            (if (= n 0) '()
+                (cons (cons 0 '()) (build (- n 1)))))
+        (define total (* size size))
+        (define cell-list (build total))
+        ; cell-list is a list of pairs. We want to access by index and mutate car.
+        ; (car (list-ref cell-list k)) gives value at index k.
+        ; (set-car! (list-ref cell-list k) v) sets it. But list-ref is O(n).
+        ; Let's store all cons cells in a vector-like list of refs.
+        ; Actually: build refs = list of (lambda() ...) closures? Overkill.
+        ; Use nested structure: grid = list of rows, each row is list of cells (cons pairs).
+        (define (build-row k)
+            (if (= k 0) '()
+                (cons (cons 0 '()) (build-row (- k 1)))))
+        (define (build-grid k)
+            (if (= k 0) '()
+                (cons (build-row size) (build-grid (- k 1)))))
+        (define grid (build-grid size))
+        (define (get i j) (car (list-ref (list-ref grid i) j)))
+        (define (set! i j v)
+            (set-car! (list-ref (list-ref grid i) j) v))
+        (define (pad i)
+            (cond ((= i 0) 1)
+                  ((= i (+ n 1)) 1)
+                  (else (list-ref nums (- i 1)))))
+        (define (compute-iter i j k best)
+            (if (>= k j) best
+                (let ((val (+ (+ (get i k) (get k j)) (* (pad i) (pad k) (pad j)))))
+                    (if (> val best) (compute-iter i j (+ k 1) val)
+                        (compute-iter i j (+ k 1) best)))))
+        (define (do-i len i)
+            (if (> i (- (+ n 1) len)) 'done
+                (begin
+                    (set! i (+ i len) (compute-iter i (+ i len) (+ i 1) 0))
+                    (do-i len (+ i 1)))))
+        (define (do-len len)
+            (if (> len n) 'done
+                (begin
+                    (do-i len 0)
+                    (do-len (+ len 1)))))
+        (do-len 1)
+        (get 0 (+ n 1))))
+
+(define (set-car! pair v)
+    ; In scheme, set-car! is a primitive. In Aura, we assume it exists.
+    ; If not, we need a different approach.
+    ; The problem says "Mutate: (set! x v)" for variables, not for cons cells.
+    ; So maybe set-car! isn't available. Let's avoid it.
+    ; 
+    ; Alternative: use a hash-like structure with set! on a variable holding the list.
+    ; But we have size*size = up to 302*302 ~ 90000 entries. O(n) updates = O(n^4) total.
+    ; 
+    ; Let me think differently: compute dp without mutation using memoization.
+    ; Define memo(i,j) = max coins bursting balloons in (i,j) exclusive.
+    ; memo(i,j) = max over k in (i,j) of memo(i,k) + memo(k,j) + pad[i]*pad[k]*pad[j]
+    ; Use a cache: list of (cons i (cons j val)) entries.
+    ; Lookup: O(cache size). n=300, states ~ n^2/2 ~ 45000. Might be slow but okay.
+    'no-mutation-version)
+
+; Let's do memoization version
+(define (solve nums)
+    (let* ((n (length nums))
+           (size (+ n 2))
+           (cache '()))
+        (define (pad i)
+            (cond ((= i 0) 1)
+                  ((= i (+ n 1)) 1)
+                  (else (list-ref nums (- i 1)))))
+        (define (cache-get i j)
+            (let loop ((c cache))
+                (cond ((null? c) #f)
+                      ((and (= (car (car c)) i) (= (car (cdr (car c))) j))
+                       (cdr (cdr (car c))))
+                      (else (loop (cdr c))))))
+        (define (cache-put i j v)
+            (set! cache (cons (cons i (cons j v)) cache)))
+        (define (memo i j)
+            (let ((cached (cache-get i j)))
+                (if cached cached
+                    (let ((v (compute i j)))
+                        (cache-put i j v)
+                        v))))
+        (define (compute i j)
+            (compute-iter i j (+ i 1) 0))
+        (define (compute-iter i j k best)
+            (if (>= k j) best
+                (let ((val (+ (+ (memo i k) (memo k j))
+                              (* (pad i) (pad k) (pad j)))))
+                    (if (> val best) (compute-iter i j (+ k 1) val)
+                        (compute-iter i j (+ k 1) best)))))
+        (memo 0 (+ n 1))))
+
+; Test harness output
+(define (display-list lst)
+    (display "(")
+    (let loop ((l lst))
+        (cond ((null? l) (display ")"))
+              (else
+                (display (car l))
+                (if (null? (cdr l)) '()
+                    (begin (display " ") (loop (cdr l))))))))
+
+(define (run-case i nums)
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display (solve nums))
+    (newline))
+
+(run-case 0 '())
+(run-case 1 '(1))
+(run-case 2 '(3 1 5))
+(run-case 3 '(1 5))
+(run-case 4 '(7 9 8 0 0))
+(run-case 5 '(3 1 5 8))
+(run-case 6 '(0 0 0 0))
+(run-case 7 '(5 5 5 5 5))

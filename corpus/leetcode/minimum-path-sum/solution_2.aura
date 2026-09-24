@@ -1,0 +1,97 @@
+(define (list-length lst)
+  (if (null? lst)
+      0
+      (+ 1 (list-length (cdr lst)))))
+
+(define (list-ref lst i)
+  (if (= i 0)
+      (car lst)
+      (list-ref (cdr lst) (- i 1))))
+
+(define (grid-ref grid i j)
+  (list-ref (list-ref grid i) j))
+
+(define (list-set! lst i v)
+  (if (= i 0)
+      (set-car! lst v)
+      (list-set! (cdr lst) (- i 1) v)))
+
+(define (grid-set! grid i j v)
+  (let ((row (list-ref grid i)))
+    (list-set! row j v)))
+
+(define (solve grid)
+  (let ((m (list-length grid))
+        (n (list-length (car grid))))
+    ;; Iterate through grid in row-major order, updating in place.
+    (let loop ((i 0))
+      (if (< i m)
+          (begin
+            (let inner ((j 0))
+              (if (< j n)
+                  (begin
+                    (cond
+                      ((and (= i 0) (= j 0)) #f)
+                      ((= i 0)
+                       (grid-set! grid i j
+                                  (+ (grid-ref grid i j)
+                                     (grid-ref grid i (- j 1)))))
+                      ((= j 0)
+                       (grid-set! grid i j
+                                  (+ (grid-ref grid i j)
+                                     (grid-ref grid (- i 1) j))))
+                      (else
+                       (let ((from-top (grid-ref grid (- i 1) j))
+                             (from-left (grid-ref grid i (- j 1))))
+                         (if (< from-top from-left)
+                             (grid-set! grid i j (+ (grid-ref grid i j) from-top))
+                             (grid-set! grid i j (+ (grid-ref grid i j) from-left))))))
+                    (inner (+ j 1)))
+                  'done))
+            (loop (+ i 1)))
+          'done)))
+    (grid-ref grid (- m 1) (- n 1))))
+
+;; Print a list of numbers in readable form
+(define (display-list lst)
+  (display "[")
+  (let loop ((first? #t) (xs lst))
+    (cond
+      ((null? xs) (display "]"))
+      (else
+       (if first? (set! first? #f) (display " "))
+       (display (car xs))
+       (loop first? (cdr xs))))))
+
+(define (display-result r)
+  (cond
+    ((null? r) (display "()"))
+    ((pair? r) (display-list r))
+    (else (display r))))
+
+(define case0 '((1 3 1) (1 5 1) (4 2 1)))
+(define case1 '((1 2) (3 4)))
+(define case2 '((0)))
+(define case3 '((5)))
+(define case4 '((1 2 3)))
+(define case5 '((7) (2) (5)))
+(define case6 '((1 3 1 2) (1 5 1 3) (4 2 1 1) (2 1 3 1)))
+(define case7 '((0 0 0) (0 0 0) (0 0 0)))
+
+(define g0 (map (lambda (r) (map (lambda (x) x) r)) case0))
+(define g1 (map (lambda (r) (map (lambda (x) x) r)) case1))
+(define g2 (map (lambda (r) (map (lambda (x) x) r)) case2))
+(define g3 (map (lambda (r) (map (lambda (x) x) r)) case3))
+(define g4 (map (lambda (r) (map (lambda (x) x) r)) case4))
+(define g5 (map (lambda (r) (map (lambda (x) x) r)) case5))
+(define g6 (map (lambda (r) (map (lambda (x) x) r)) case6))
+(define g7 (map (lambda (r) (map (lambda (x) x) r)) case7))
+
+(display "CASE0=") (display-result (solve g0)) (newline)
+(display "CASE1=") (display-result (solve g1)) (newline)
+(display "CASE2=") (display-result (solve g2)) (newline)
+(display "CASE3=") (display-result (solve g3)) (newline)
+(display "CASE4=") (display-result (solve g4)) (newline)
+(display "CASE5=") (display-result (solve g5)) (newline)
+(display "CASE6=") (display-result (solve g6)) (newline)
+(display "CASE7=") (display-result (solve g7)) (newline)

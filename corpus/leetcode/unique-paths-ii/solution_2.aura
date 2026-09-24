@@ -1,0 +1,150 @@
+(define MOD 1000000007)
+
+(define (mod-add a b)
+  (modulo (+ a b) MOD))
+
+(define (unique-paths grid)
+  ; grid is a list of rows, each row a list of 0/1
+  (let* ((m (length grid))
+         (n (if (null? grid) 0 (length (car grid)))))
+    ; if start or end is obstacle -> 0
+    (define (cell g r c)
+      (let ((row (list-ref g r)))
+        (list-ref row c)))
+    (define start-ob (cell grid 0 0))
+    (define end-ob (cell grid (- m 1) (- n 1)))
+    (if (or (= m 0) (= n 0))
+        0
+        (if (or (= start-ob 1) (= end-ob 1))
+            0
+            (let ((dp (make-vector m 0)))
+              ; init dp as list of vectors
+              (begin
+                (set! dp (make-vector m 0))
+                (let loop-i ((i 0))
+                  (if (>= i m)
+                      'done
+                      (begin
+                        (vector-set! dp i (make-vector n 0))
+                        (loop-i (+ i 1))))))
+                (vector-set! (vector-ref dp 0) 0 1)
+                (let loop-i ((i 0))
+                  (if (>= i m)
+                      'done
+                      (let loop-j ((j 0))
+                        (if (>= j n)
+                            'done
+                            (begin
+                              (if (and (> i 0) (= (cell grid i j) 0))
+                                  (vector-set!
+                                    (vector-ref dp i) j
+                                    (mod-add
+                                      (vector-ref (vector-ref dp i) j)
+                                      (vector-ref (vector-ref dp (- i 1)) j))))
+                              (if (and (> j 0) (= (cell grid i j) 0))
+                                  (vector-set!
+                                    (vector-ref dp i) j
+                                    (mod-add
+                                      (vector-ref (vector-ref dp i) j)
+                                      (vector-ref (vector-ref dp i) (- j 1)))))
+                              (if (= (cell grid i j) 1)
+                                  (vector-set! (vector-ref dp i) j 0))
+                              (loop-j (+ j 1)))))))
+                (let loop-i ((i 0))
+                  (if (>= i m)
+                      'done
+                      (begin
+                        (let loop-j ((j 0))
+                          (if (>= j n)
+                              'done
+                              (begin
+                                (if (and (> i 0) (= (cell grid i j) 0))
+                                    (vector-set!
+                                      (vector-ref dp i) j
+                                      (mod-add
+                                        (vector-ref (vector-ref dp i) j)
+                                        (vector-ref (vector-ref dp (- i 1)) j))))
+                                (if (and (> j 0) (= (cell grid i j) 0))
+                                    (vector-set!
+                                      (vector-ref dp i) j
+                                      (mod-add
+                                        (vector-ref (vector-ref dp i) j)
+                                        (vector-ref (vector-ref dp i) (- j 1)))))
+                                (if (= (cell grid i j) 1)
+                                    (vector-set! (vector-ref dp i) j 0))
+                                (loop-j (+ j 1))))))
+                        (loop-i (+ i 1)))))
+                (vector-ref (vector-ref dp (- m 1)) (- n 1))))))))
+
+; simpler pure-list implementation instead of vectors to avoid quirks
+(define (unique-paths grid)
+  (let* ((m (length grid))
+         (n (if (null? grid) 0 (length (car grid)))))
+    (define (cell g r c)
+      (let ((row (list-ref g r)))
+        (list-ref row c)))
+    (cond
+      ((or (= m 0) (= n 0)) 0)
+      ((or (= (cell grid 0 0) 1) (= (cell grid (- m 1) (- n 1)) 1)) 0)
+      (else
+        (let ((dp-row0 (make-list n 0)))
+          (set! dp-row0 (make-list n 0))
+          ; build dp via nested loops returning list of lists
+          (let ((dp
+                  (let outer ((i 0) (acc '()))
+                    (if (>= i m)
+                        (reverse acc)
+                        (let ((row
+                                (let inner ((j 0) (racc '()))
+                                  (if (>= j n)
+                                      (reverse racc)
+                                      (let ((v
+                                              (cond
+                                                ((= (cell grid i j) 1) 0)
+                                                ((and (= i 0) (= j 0)) 1)
+                                                ((= i 0)
+                                                 (modulo
+                                                   (if (> j 0) (car (reverse racc)) 0)
+                                                   MOD))
+                                                ((= j 0)
+                                                 (modulo
+                                                   (if (> i 0) (car (reverse acc)) 0)
+                                                   MOD))
+                                                (else
+                                                 (modulo
+                                                   (+ 
+                                                     (if (> j 0) (car (reverse racc)) 0)
+                                                     (if (> i 0) 
+                                                         (let ((prev-row (reverse acc)))
+                                                           (car (reverse prev-row)))
+                                                       0))
+                                                   MOD))))))
+                                        (inner (+ j 1) (cons v racc)))))))
+                          (outer (+ i 1) (cons row acc))))))))
+            ; the last row, last col is the answer
+            (car (reverse (car (reverse dp))))))))))
+
+(define (solve grid)
+  (unique-paths grid))
+
+; Test cases
+(define tests
+  (list
+    (list (list 0 0 0) (list 0 1 0) (list 0 0 0))
+    (list (list 0 1) (list 0 0))
+    (list (list 1))
+    (list (list 0))
+    (list (list 0 0) (list 1 0) (list 0 0))
+    (list (list 0 0 0 0) (list 0 0 0 0))
+    (list (list 1 0) (list 0 0))
+    (list (list 0 0) (list 0 1))))
+
+(let loop ((i 0) (ts tests))
+  (if (null? ts)
+      'done
+      (begin
+        (let ((ans (solve (car ts))))
+          (display (string-append "CASE" (number->string i) "="))
+          (display ans)
+          (newline))
+        (loop (+ i 1) (cdr ts)))))

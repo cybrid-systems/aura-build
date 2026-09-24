@@ -1,0 +1,42 @@
+(define (string-length s)
+  (let loop ((i 0))
+    (if (string=? (substring s i (+ i 1)) "")
+        i
+        (loop (+ i 1)))))
+
+(define (char-at s i)
+  (string->symbol (substring s i (+ i 1))))
+
+(define (max a b)
+  (if (> a b) a b))
+
+(define (lcs s m t n)
+  ;; rolling 1D DP, dp[j] = LCS length of s[0..i) and t[0..j)
+  (let ((dp (make-vector (+ n 1) 0)))
+    (let loop-i ((i 0))
+      (if (= i m)
+          (vector-ref dp n)
+          (let ((ci (char-at s i)))
+            (let loop-j ((j 0))
+              (if (= j n)
+                  (loop-i (+ i 1))
+                  (let ((cur (vector-ref dp (+ j 1))))
+                    (let ((v (if (equal? ci (char-at t j))
+                                 (+ (vector-ref dp j) 1)
+                                 (max cur (vector-ref dp (+ j 1))))))
+                      (begin
+                        (vector-set! dp (+ j 1) v)
+                        (loop-j (+ j 1))))))))))))
+
+(define (solve s t)
+  (lcs s (string-length s) t (string-length t)))
+
+;; tests
+(display "CASE0=") (display (solve "ABCBDAB" "BDBACA")) (newline)
+(display "CASE1=") (display (solve "A" "A")) (newline)
+(display "CASE2=") (display (solve "ABC" "DEF")) (newline)
+(display "CASE3=") (display (solve "AGGTAB" "GXTXAYB")) (newline)
+(display "CASE4=") (display (solve "AAA" "AA")) (newline)
+(display "CASE5=") (display (solve "ABCDEF" "ABCDEF")) (newline)
+(display "CASE6=") (display (solve "AB" "BA")) (newline)
+(display "CASE7=") (display (solve "ZXVYZWQ" "ZYZWXRQ")) (newline)

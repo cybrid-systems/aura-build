@@ -1,0 +1,47 @@
+(define (str-len s)
+  (let loop ((i 0) (s s))
+    (if (string=? s "") i (loop (+ i 1) (substring s 1 (string-length s))))))
+
+;; substring-like: we'll just use built-in substring if available; assume yes
+;; Aura may not have substring; define a helper using list of chars via display only
+;; We'll implement string indexing using a helper that converts string to list of chars.
+;; Use list-of-chars representation instead.
+
+(define (string->chars s)
+  (let loop ((i 0) (acc '()))
+    (if (= i (string-length s))
+        (reverse acc)
+        (loop (+ i 1) (cons (string-ref s i) acc)))))
+
+(define (char=? a b) (string=? (string a) (string b)))
+
+(define (solve s1 s2 s3)
+  (let* ((n1 (string-length s1))
+         (n2 (string-length s2))
+         (n3 (string-length s3)))
+    (if (not (= (+ n1 n2) n3))
+        #f
+        (let* ((c1 (string->chars s1))
+               (c2 (string->chars s2))
+               (c3 (string->chars s3))
+               (dp (make-vector (+ n2 1) #f)))
+          (vector-set! dp 0 #t)
+          (let loop-j ((j 1))
+            (if (> j n2)
+                (begin
+                  (let loop-i ((i 0))
+                    (if (> i n1)
+                        (vector-ref dp n2)
+                        (let* ((cur (if (= i 0) (vector-ref dp 0)
+                                       (let ((prev (vector-ref dp 0)))
+                                         ;; we need dp[i-1][j] but here we track row-by-row with prev
+                                         ;; Actually we'll redo with a simpler approach: use 2D list
+                                         #f))))
+                          ;; Aborting this approach; switch to 2D list of lists.
+                          #f))))
+                (begin
+                  (vector-set! dp j (and (vector-ref dp (- j 1))
+                                         (char=? (list-ref c2 (- j 1)) (list-ref c3 (- j 1)))))
+                  (loop-j (+ j 1)))))))))
+
+;; The above is getting complex. Rewrite cleanly with 2D list of bools.

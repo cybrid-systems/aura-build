@@ -1,0 +1,74 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "s1": "aabcc",
+      "s2": "dbbca",
+      "s3": "aadbbcbcac"
+    },
+    "expected": "true"
+  },
+  {
+    "id": 1,
+    "input": {
+      "s1": "aabcc",
+      "s2": "dbbca",
+      "s3": "aadbbbaccc"
+    },
+    "expected": "false"
+  },
+  {
+    "id": 2,
+    "input": {
+      "s1": "",
+      "s2": "",
+      "s3": ""
+    },
+    "expected": "true"
+  },
+  {
+    "id": 3,
+    "input": {
+      "s1": "",
+      "s2": "abc",
+      "s3": "abc"
+    },
+    "expected": "true"
+  },
+  {
+    "id": 4,
+    "input": {
+      "s1": "",
+      "s2": "abc",
+      "s3": "ab"
+    },
+    "expected": "false"
+  },
+  {
+    "id": 5,
+    "input": {
+      "s1": "abc",
+      "s2": "",
+      "s3": "abc"
+    },
+    "expected": "true"
+  },
+  {
+    "id": 6,
+    "input": {
+      "s1": "a",
+      "s2": "b",
+      "s3": "ab"
+    },
+    "expected": "true"
+  },
+  {
+    "id": 7,
+    "input": {
+      "s1": "a",
+      "s2": "b",
+      "s3": "ba"
+    },
+    "expected": "true"
+  }
+]

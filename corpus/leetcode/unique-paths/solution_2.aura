@@ -1,0 +1,32 @@
+(define (factorial n)
+  (if (= n 0)
+      1
+      (* n (factorial (- n 1)))))
+
+(define (solve m n)
+  (let ((total (- (+ m n) 2))
+        (k (- m 1)))
+    (let ((smaller (if (< k (- total k)) k (- total k))))
+      (let ((num (factorial total))
+            (den (factorial smaller)))
+        (let ((den2 (factorial (- total smaller))))
+          (/ (* num 1) (* den den2)))))))
+
+(define case-m '(3 1 1 5 2 3 4 7))
+(define case-n '(7 1 5 1 2 3 5 3))
+
+(define (run-cases idx)
+  (if (< idx 8)
+      (begin
+        (let ((m (list-ref case-m idx))
+              (n (list-ref case-n idx)))
+          (let ((result (solve m n)))
+            (display "CASE")
+            (display idx)
+            (display "=")
+            (display result)
+            (newline)))
+        (run-cases (+ idx 1)))
+      '()))
+
+(run-cases 0)
