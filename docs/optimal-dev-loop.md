@@ -150,7 +150,7 @@ aura-build llm-dogfood --project examples/projects/mini-cache \
 Honesty:
 - `explore_parallel=fiber_graph` only when Soft denseness probe ok; else `host_thread`
 - Default MiniMax propose is host HTTP → `llm_via=host` / `llm_parallel=host_thread`
-- Optional `--fiber-llm` / `AURA_BUILD_LLM_VIA=fiber`: measured Soft in-fiber `http-post` (std/llm) → `llm_via=fiber`; denseness `fiber_graph` ≠ in-fiber LLM. Stamp `llm_parallel=fiber` only when a concurrent Soft-fiber batch (≥2) measured ok this round; else `fiber_serial` / host fallback. Soft join of large JSON was never a Soft hang — aura-build #1 status-line `rfind` choke on braces in `value`; write-file remains optional hygiene after the parser fix
+- Optional `--fiber-llm` / `AURA_BUILD_LLM_VIA=fiber`: measured Soft in-fiber `http-post` (std/llm) → `llm_via=fiber`; denseness `fiber_graph` ≠ in-fiber LLM. Stamp `llm_parallel=fiber` only when a concurrent Soft-fiber batch (≥2) measured ok this round; else `fiber_serial` / host fallback. Soft Ready `std::println` status hangs on raw `{` in `value` (aura-build #1 fixed client parse only). Default fiber LLM is **in-memory Soft join** of `(base64-encode (http-post …))` (request body embedded when small); `write-file` is opt-in only (`AURA_BUILD_FIBER_LLM_MODE=write_file`) / inefficient
 - `concurrent_llm=true` + `llm_parallel_ok` when ≥2 worldlines have `tools_used` containing `llm` in the same round
 - `orch_observation.ok` only when Soft `(engine:metrics "query:orch-module-stats")` returns a live hash (sentinel via Soft hash-values `2589` hits; Soft string `hash-ref` is opaque)
 - `repair_path=soft_session_worldline` when prefer-session verify is on the live Soft holder
