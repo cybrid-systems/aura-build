@@ -7,8 +7,9 @@ Requires a live Soft ``--serve-async`` session with ``LLM_API_KEY`` /
 Honesty:
 - ``llm_via=fiber`` only when http-post ran inside a fiber body and join
   returned a real chat response (response file has choices/content).
-- ``llm_parallel=fiber`` only when ≥2 in-fiber HTTP calls were joined in
-  one Soft eval and wall time looks concurrent; else ``fiber_serial``.
+- ``llm_parallel=fiber`` when ≥2 in-fiber HTTP calls were joined in one Soft
+  eval (wall concurrency not proven without oneshot baseline; see note);
+  else ``fiber_serial``. Soft status braces were aura-build #1, not Soft hang.
 - Denseness ``fiber_graph`` ≠ in-fiber LLM.
 """
 
@@ -243,8 +244,12 @@ def fiber_chat_completions(
 ) -> dict[str, Any]:
     """One Soft-fiber MiniMax chat via file-backed http-post + write-file.
 
-    Soft async can hang when fiber:join returns a huge response string; writing
-    the raw JSON to a scratch file and returning a short status is reliable.
+    write-file keeps Soft status ``value`` short (no braces). Before aura-build
+    #1, Soft status lines with ``{`` inside ``value`` (JSON HTTP bodies) broke
+    the serve_session parser (``rfind``) and looked like a Soft hang — Soft
+    itself joins large plain strings fine. After #1, short-status *or* direct
+    join of content both parse; write-file remains the preferred hygiene /
+    performance path (scratch cleanup + smaller status line).
     """
     cfg = config or load_minimax_config()
     if serve_session is None:
@@ -341,13 +346,15 @@ def fiber_chat_completions_batch(
     max_tokens: int = 2048,
     thinking_disabled: bool = True,
     timeout_s: float = 180.0,
+    oneshot_median_ms: float | None = None,
 ) -> dict[str, Any]:
     """N concurrent Soft fibers each doing file-backed MiniMax http-post.
 
     Returns ``{ok, results, llm_parallel, wall_ms, ...}``.
-    ``llm_parallel`` is ``fiber`` when N≥2 and Soft status ok (wall measured);
-    Soft #4048 body mutex may still serialize HTTP — caller may downgrade
-    to ``fiber_serial`` if wall ≈ sum of oneshots.
+    ``llm_parallel`` is ``fiber`` when N≥2, Soft status ok, and wall time
+    looks concurrent vs median oneshot latency; else ``fiber_serial`` when
+    wall suggests serialization (Soft #4048 body mutex / workers=1).
+    write-file keeps status values brace-free (see ``fiber_chat_completions``).
     """
     cfg = config or load_minimax_config()
     n = len(messages_list)
@@ -454,10 +461,40 @@ def fiber_chat_completions_batch(
     for got in results:
         got["latency_ms"] = wall_ms
     ok_n = sum(1 for x in results if x.get("ok"))
+    # Best-effort scratch cleanup (never log secrets). Bodies always; resp on ok.
+    for bp in bodies:
+        try:
+            bp.unlink(missing_ok=True)
+        except OSError:
+            pass
+    for i, rp in enumerate(resps):
+        if results[i].get("ok"):
+            try:
+                rp.unlink(missing_ok=True)
+            except OSError:
+                pass
     # Honest parallel stamp: Soft joined ≥2 fiber HTTP in one eval.
-    # Soft #4048 may still serialize; wall vs oneshot is caller's note.
-    llm_parallel = "fiber" if ok_n >= 2 else ("fiber_serial" if ok_n == 1 else None)
-    return {
+    # Soft #4048 may still serialize denseness. Without oneshot_median_ms,
+    # stamp fiber + note that wall concurrency is unproven; with baseline,
+    # downgrade to fiber_serial when wall suggests serialization.
+    if ok_n >= 2:
+        llm_parallel = "fiber"
+        parallel_note = "joined_ge2_wall_concurrency_unproven"
+        if oneshot_median_ms is not None and oneshot_median_ms > 0:
+            ratio = wall_ms / float(oneshot_median_ms)
+            # N=2: wall > ~1.6× oneshot → serial-ish; grows with N
+            if ratio > max(1.6, 0.7 * ok_n):
+                llm_parallel = "fiber_serial"
+                parallel_note = f"wall_{wall_ms}ms_{ratio:.2f}x_oneshot"
+            else:
+                parallel_note = f"wall_{wall_ms}ms_{ratio:.2f}x_oneshot"
+    elif ok_n == 1:
+        llm_parallel = "fiber_serial"
+        parallel_note = ""
+    else:
+        llm_parallel = None
+        parallel_note = ""
+    out: dict[str, Any] = {
         "ok": ok_n == n,
         "results": results,
         "llm_parallel": llm_parallel,
@@ -467,3 +504,6 @@ def fiber_chat_completions_batch(
         "soft_value": redact_secrets(str(r.get("value") or ""), cfg.api_key)[:120],
         "reason": "" if ok_n == n else f"partial_ok:{ok_n}/{n}",
     }
+    if parallel_note:
+        out["llm_parallel_note"] = parallel_note
+    return out

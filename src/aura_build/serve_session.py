@@ -152,6 +152,45 @@ def _sock_request(
         return {"status": "error", "msg": f"serve_sock_error:{exc}"}
 
 
+
+def _parse_soft_stdout_line(s: str) -> tuple[str, dict[str, Any] | None]:
+    """Parse Soft --serve-async stdout line into (display_prefix, status_obj|None).
+
+    Soft emits one JSON status object per eval, optionally preceded by display
+    text. The status ``value`` field may contain ``{``/``}`` (JSON HTTP bodies,
+    literal ``"{}"``), so ``rfind("{")`` + ``json.loads`` is wrong: it slices
+    inside the value string and either fails to parse or returns a dict without
+    ``status``, and the client waits until timeout while Soft stays alive.
+
+    Strategy: try ``json.loads`` on the whole line; else scan with
+    ``json.JSONDecoder().raw_decode`` from each ``{`` **from the left** and
+    accept the first object that is a dict with ``"status"``. Preserve any
+    prefix before that ``{`` as display (existing behavior).
+    """
+    if not s:
+        return "", None
+    try:
+        obj = json.loads(s)
+        if isinstance(obj, dict) and "status" in obj:
+            return "", obj
+    except json.JSONDecodeError:
+        pass
+    decoder = json.JSONDecoder()
+    start = 0
+    while True:
+        brace = s.find("{", start)
+        if brace < 0:
+            return s, None
+        try:
+            obj, _end = decoder.raw_decode(s, brace)
+        except json.JSONDecodeError:
+            start = brace + 1
+            continue
+        if isinstance(obj, dict) and "status" in obj:
+            return s[:brace], obj
+        start = brace + 1
+
+
 def _aura_send_line(
     proc: subprocess.Popen[str],
     line: str,
@@ -197,53 +236,46 @@ def _aura_send_line(
         if not s:
             continue
         saw_stdout = True
-        brace = s.rfind("{")
-        if brace >= 0:
-            prefix = s[:brace]
-            if prefix:
-                display_parts.append(prefix)
-            try:
-                obj = json.loads(s[brace:])
-            except json.JSONDecodeError:
-                display_parts.append(s)
-                continue
-            if isinstance(obj, dict) and "status" in obj:
-                obj = dict(obj)
-                # Preserve JSON display; also keep any prefix stdout.
-                prefix_all = "".join(display_parts)
-                json_disp = obj.get("display")
-                json_disp = "" if json_disp is None else str(json_disp)
-                obj["display"] = prefix_all + json_disp
-                # Soft Ready async: top-level display from set-code can arrive
-                # *after* the JSON status line. Drain briefly when empty.
-                if not str(obj.get("display") or "").strip():
-                    drain_deadline = time.monotonic() + min(1.5, max(0.3, timeout_s * 0.25))
-                    extra: list[str] = []
-                    while time.monotonic() < drain_deadline:
-                        try:
-                            import select as _sel
-                            ready, _, _ = _sel.select([stdout], [], [], 0.15)
-                            if not ready:
-                                if extra:
-                                    break
-                                continue
-                        except (ValueError, OSError):
-                            break
-                        raw2 = stdout.readline()
-                        if not raw2:
-                            break
-                        s2 = raw2.rstrip("\n")
-                        if not s2:
+        prefix, obj = _parse_soft_stdout_line(s)
+        if prefix:
+            display_parts.append(prefix)
+        if obj is not None:
+            obj = dict(obj)
+            # Preserve JSON display; also keep any prefix stdout.
+            prefix_all = "".join(display_parts)
+            json_disp = obj.get("display")
+            json_disp = "" if json_disp is None else str(json_disp)
+            obj["display"] = prefix_all + json_disp
+            # Soft Ready async: top-level display from set-code can arrive
+            # *after* the JSON status line. Drain briefly when empty.
+            if not str(obj.get("display") or "").strip():
+                drain_deadline = time.monotonic() + min(1.5, max(0.3, timeout_s * 0.25))
+                extra: list[str] = []
+                while time.monotonic() < drain_deadline:
+                    try:
+                        import select as _sel
+                        ready, _, _ = _sel.select([stdout], [], [], 0.15)
+                        if not ready:
+                            if extra:
+                                break
                             continue
-                        # Stop if another JSON status sneaks in
-                        if s2.lstrip().startswith("{") and '"status"' in s2:
-                            break
-                        extra.append(s2)
-                    if extra:
-                        obj["display"] = "\n".join(extra) + ("\n" if extra else "")
-                return obj
-            display_parts.append(s)
-        else:
+                    except (ValueError, OSError):
+                        break
+                    raw2 = stdout.readline()
+                    if not raw2:
+                        break
+                    s2 = raw2.rstrip("\n")
+                    if not s2:
+                        continue
+                    # Stop if another JSON status sneaks in
+                    if s2.lstrip().startswith("{") and '"status"' in s2:
+                        break
+                    extra.append(s2)
+                if extra:
+                    obj["display"] = "\n".join(extra) + ("\n" if extra else "")
+            return obj
+        # Not a Soft status line — treat as display text.
+        if not prefix:
             display_parts.append(s)
     return {
         "status": "error",
