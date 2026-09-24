@@ -1,0 +1,71 @@
+;; Counting Bits - Aura solution
+;; Uses O(n) DP: bits[i] = bits[i >> 1] + (i & 1)
+
+(define (popcount x)
+  ;; Count number of 1 bits in x
+  (if (= x 0)
+      0
+      (+ (modulo x 2) (popcount (quotient x 2)))))
+
+(define (solve n)
+  ;; Build the vector of popcounts from 0 to n using DP
+  (define (build i acc)
+    (if (< i 0)
+        acc
+        (build (- i 1)
+               (cons
+                 (if (= i 0)
+                     0
+                     (+ (car (cdr (list 0 (vector-ref acc (quotient i 2)))))
+                        (modulo i 2)))
+                 acc))))
+  ;; Use a mutable vector via list-to-vec conversion? Aura has vectors.
+  ;; Simpler: build a list, then reverse. We'll use list approach for clarity.
+  ;; Actually we can just compute directly:
+  (define (helper i)
+    (if (> i n)
+        '()
+        (cons
+          (if (= i 0)
+              0
+              (+ (helper-get (quotient i 2))
+                 (modulo i 2)))
+          (helper (+ i 1)))))
+  (define cache (make-vector (+ n 1) 0))
+  (define (helper-get i) (vector-ref cache i))
+  (define (fill i)
+    (if (> i n)
+        '()
+        (begin
+          (vector-set! cache i
+            (if (= i 0)
+                0
+                (+ (helper-get (quotient i 2))
+                   (modulo i 2))))
+          (fill (+ i 1)))))
+  (fill 0)
+  (define (vec->list i)
+    (if (< i 0)
+        '()
+        (cons (vector-ref cache i) (vec->list (- i 1)))))
+  (define lst (vec->list n))
+  ;; Reverse the list since vec->list built it from n down to 0
+  (define (rev l)
+    (define (rev-acc l acc)
+      (if (null? l)
+          acc
+          (rev-acc (cdr l) (cons (car l) acc))))
+    (rev-acc l '()))
+  (rev lst))
+
+(define (make-vector n init)
+  ;; Create a vector of length n filled with init
+  (define (make-vec n init)
+    (define v (make-vector-internal n))
+    (define (fill i)
+      (if (>= i n)
+          v
+          (begin
+            (vector-set! v i init)
+            (fill (+ i 1)))))
+    (fill 0)))

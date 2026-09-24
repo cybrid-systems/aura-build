@@ -1,0 +1,113 @@
+;; Seat Reservation Manager using a min-heap implemented as a sorted list (insertion sort on unreserve, take-min on reserve).
+;; Since operations count per case is small, an O(n^2) heap is acceptable and keeps the code simple.
+;; We'll implement min-heap operations:
+;;   (heap-insert h x)  -> new heap with x inserted (preserving heap order)
+;;   (heap-pop-min h)   -> returns (cons min-value rest-heap)
+;; Heap is a list of numbers in ascending order (smallest first). Insertion is O(n), pop is O(1).
+
+(define (heap-insert h x)
+  ;; insert x into ascending-ordered list h, preserving ascending order
+  (cond
+    ((null? h) (list x))
+    ((<= x (car h)) (cons x h))
+    (else (cons (car h) (heap-insert (cdr h) x)))))
+
+(define (heap-pop-min h)
+  (cons (car h) (cdr h)))
+
+;; SeatManager state: a list (next-seat max-seat heap-of-unreserved)
+;; next-seat = smallest seat number not yet considered (used for lazy initialization)
+;; max-seat = n
+;; heap = ascending list of unreserved seat numbers
+(define (make-seat-manager n)
+  (list 1 n '()))
+
+(define (mgr-reserve mgr)
+  (let ((next-seat (car mgr))
+        (max-seat (car (cdr mgr)))
+        (heap (car (cdr (cdr mgr)))))
+    (cond
+      ;; If heap non-empty, use the smallest from heap
+      ((not (null? heap))
+       (let ((popped (heap-pop-min heap)))
+         (let ((seat (car popped))
+               (new-heap (cdr popped)))
+           (begin
+             ;; return seat and updated mgr (next-seat and max-seat unchanged, heap = new-heap)
+             seat))))
+      ;; else heap empty: take next-seat (must be <= max-seat per problem guarantee)
+      (else
+       (let ((seat next-seat))
+         (begin
+           ;; We mutate state via set! on the cons cells; easier: rebuild mgr with next-seat+1
+           (set! mgr (list (+ next-seat 1) max-seat '()))
+           seat))))))
+
+(define (mgr-unreserve mgr seat)
+  (let ((next-seat (car mgr))
+        (max-seat (car (cdr mgr)))
+        (heap (car (cdr (cdr mgr)))))
+    (cond
+      ;; If seat >= next-seat, we can lazily add it; but since heap approach: just insert
+      ((>= seat next-seat)
+       (set! mgr (list next-seat max-seat (heap-insert heap seat))))
+      (else
+       (set! mgr (list next-seat max-seat (heap-insert heap seat)))))))
+
+;; solve: build a manager, process ops, collect reserve results
+(define (solve n ops)
+  (let ((mgr (make-seat-manager n))
+        (results '()))
+    (let ((loop
+            (lambda (rest-ops)
+              (if (null? rest-ops)
+                  '()
+                  (let ((op (car rest-ops)))
+                    (let ((kind (car op))
+                          (arg (car (cdr op))))
+                      (cond
+                        ((equal? kind "reserve")
+                         (let ((seat (mgr-reserve mgr)))
+                           (begin
+                             (set! results (append results (list seat)))
+                             (loop (cdr rest-ops)))))
+                        ((equal? kind "unreserve")
+                         (begin
+                           (mgr-unreserve mgr arg)
+                           (loop (cdr rest-ops))))
+                        (else
+                         (loop (cdr rest-ops))))))))))
+      (begin
+        (loop ops)
+        results))))
+
+;; Helper to display a list of numbers
+(define (display-list xs)
+  (display "[")
+  (let ((loop
+          (lambda (rest first?)
+            (if (null? rest)
+                '()
+                (begin
+                  (if (not first?) (display ",") '())
+                  (display (car rest))
+                  (loop (cdr rest) #f))))))
+    (begin
+      (loop xs #t)
+      (display "]"))))
+
+;; Cases
+(define (run-case i n ops)
+  (let ((r (solve n ops)))
+    (begin
+      (display "CASE")
+      (display i)
+      (display "=")
+      (display-list r)
+      (newline))))
+
+(run-case 0 5 '(("reserve" "none") ("reserve" "none") ("unreserve" "2") ("reserve" "none")))
+(run-case 1 1 '(("reserve" "none") ("reserve" "none") ("unreserve" "1") ("reserve" "none")))
+(run-case 2 10 '(("reserve" "none") ("reserve" "none") ("reserve" "none") ("reserve" "none") ("reserve" "none") ("unreserve" "3") ("reserve" "none") ("unreserve" "1") ("reserve" "none")))
+(run-case 3 3 '(("unreserve" "1") ("reserve" "none")))
+(run-case 4 4 '(("reserve" "none") ("unreserve" "1") ("reserve" "none") ("unreserve" "2") ("reserve" "none") ("reserve" "none")))

@@ -1,0 +1,24 @@
+(define (is-power-of-two n)
+  (and (> n 0)
+       (= (logand n (- n 1)) 0)))
+
+(define (solve n)
+  (if (is-power-of-two n)
+      "true"
+      "false"))
+
+(define (run-case i n)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve n))
+  (newline))
+
+(run-case 0 1)
+(run-case 1 16)
+(run-case 2 3)
+(run-case 3 -4)
+(run-case 4 1024)
+(run-case 5 2)
+(run-case 6 -1)
+(run-case 7 1)

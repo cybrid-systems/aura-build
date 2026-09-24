@@ -1,0 +1,165 @@
+;; Seat Reservation Manager using a min-heap (priority queue)
+;; Operations: reserve -> smallest unreserved seat; unreserve -> return seat to pool
+
+;; -------- Min-heap utilities --------
+;; A heap is represented as a list. We use 1-based indexing for simplicity
+;; by storing a dummy element at index 0. So the underlying storage is a
+;; mutable pair representing a list; we use a global variable 'heap'
+;; holding the heap as a Scheme vector-like (we'll use a list of pairs).
+
+;; Since Aura doesn't have mutable arrays easily, we'll use a list and
+;; rebuild; but to be efficient, we'll implement a binary min-heap using
+;; a mutable list via set-car!/set-cdr! on a vector-like structure.
+;; For simplicity and given the small problem sizes in tests, we can use
+;; a list-based sorted insertion, but to honor O(log n) spirit we'll
+;; implement a heap using an association list keyed by index with
+;; mutable cells via vectors.
+
+;; Aura does not have vectors. We'll simulate a heap using a list where
+;; we treat it as a binary heap with positions. We'll use a global
+;; mutable list whose car is a cons cell representing element 1, and we
+;; can mutate via set-car!/set-cdr!.
+
+;; Helper to manage a global mutable heap.
+(define heap '())   ; heap as list, dummy at index 0, real at 1..size
+(define heap-size 0)
+
+(define (heap-empty?) (= heap-size 0))
+
+(define (heap-peek)
+  (car (cdr heap)))
+
+(define (heap-swap! i j)
+  ;; swap elements at positions i and j in the heap list
+  (let ((ci (list-ref heap i))
+        (cj (list-ref heap j)))
+    (let ((vi (car ci))
+          (vj (car cj)))
+      ;; mutate cars
+      (set-car! ci vj)
+      (set-car! cj vi))))
+
+;; list-ref implemented manually since Aura may not have it
+(define (list-ref lst n)
+  (if (= n 0)
+      (car lst)
+      (list-ref (cdr lst) (- n 1))))
+
+;; set-car! / set-cdr! are built-ins in Aura.
+
+(define (heap-sift-up i)
+  (if (> i 1)
+      (let ((parent (quotient i 2)))
+        (if (< (car (list-ref heap i)) (car (list-ref heap parent)))
+            (begin (heap-swap! i parent) (heap-sift-up parent))
+            'done))
+      'done))
+
+(define (heap-sift-down i)
+  (let ((left (* 2 i))
+        (right (+ (* 2 i) 1))
+        (smallest i))
+    (if (<= left heap-size)
+        (if (< (car (list-ref heap left)) (car (list-ref heap smallest)))
+            (set! smallest left)
+            'skip)
+        'skip)
+    (if (<= right heap-size)
+        (if (< (car (list-ref heap right)) (car (list-ref heap smallest)))
+            (set! smallest right)
+            'skip)
+        'skip)
+    (if (not (= smallest i))
+        (begin (heap-swap! i smallest) (heap-sift-down smallest))
+        'done)))
+
+(define (heap-push val)
+  (set! heap-size (+ heap-size 1))
+  ;; ensure heap list has enough cells; if not, extend
+  (if (< (length heap) (+ heap-size 1))
+      (set! heap (append heap (list (cons val '()))))
+      (begin
+        ;; mutate existing cell at heap-size
+        (set-car! (list-ref heap heap-size) val)))
+  (heap-sift-up heap-size))
+
+(define (heap-pop)
+  (let ((top (car (list-ref heap 1))))
+    (set-car! (list-ref heap 1) (car (list-ref heap heap-size)))
+    (set! heap-size (- heap-size 1))
+    (heap-sift-down 1)
+    top))
+
+;; -------- Seat Manager --------
+(define next-seat 1)  ; next seat to add lazily
+(define n-total 0)
+
+(define (mgr-init n)
+  (set! n-total n)
+  (set! next-seat 1)
+  (set! heap '())
+  (set! heap-size 0))
+
+(define (mgr-reserve)
+  ;; If heap has elements, use smallest; else assign next-seat
+  (if (heap-empty?)
+      (let ((s next-seat))
+        (set! next-seat (+ next-seat 1))
+        s)
+      (heap-pop)))
+
+(define (mgr-unreserve seat)
+  (heap-push seat))
+
+;; -------- solve --------
+;; operations is a list of (op . arg) pairs
+(define (solve n ops)
+  (mgr-init n)
+  (let loop ((rest ops) (acc '()))
+    (if (null? rest)
+        (reverse acc)
+        (let ((op (car (car rest)))
+              (arg (cdr (car rest))))
+          (cond
+            ((equal? op "reserve")
+             (loop (cdr rest) (cons (mgr-reserve) acc)))
+            ((equal? op "unreserve")
+             (mgr-unreserve (car arg))
+             (loop (cdr rest) acc))
+            (else (loop (cdr rest) acc)))))))
+
+;; -------- Output helpers --------
+(define (display-list lst)
+  (display "[")
+  (let loop ((l lst))
+    (if (null? l)
+        (display "]")
+        (begin
+          (display (car l))
+          (if (null? (cdr l))
+              '()
+              (begin (display ", ") (loop (cdr l))))))))
+
+;; -------- Run test cases --------
+;; CASE0
+(let ((r (solve 5 '(("reserve" . ()) ("reserve" . ()) ("unreserve" . (2)) ("reserve" . ())))))
+  (display "CASE0=") (display-list r) (newline))
+
+;; CASE1
+(let ((r (solve 1 '(("reserve" . ()) ("reserve" . ()) ("unreserve" . (1)) ("reserve" . ())))))
+  (display "CASE1=") (display-list r) (newline))
+
+;; CASE2
+(let ((r (solve 10 '(("reserve" . ()) ("reserve" . ()) ("reserve" . ()) ("reserve" . ())
+                    ("reserve" . ()) ("unreserve" . (3)) ("reserve" . ())
+                    ("unreserve" . (1)) ("reserve" . ())))))
+  (display "CASE2=") (display-list r) (newline))
+
+;; CASE3
+(let ((r (solve 3 '(("unreserve" . (1)) ("reserve" . ())))))
+  (display "CASE3=") (display-list r) (newline))
+
+;; CASE4
+(let ((r (solve 4 '(("reserve" . ()) ("unreserve" . (1)) ("reserve" . ())
+                    ("unreserve" . (2)) ("reserve" . ()) ("reserve" . ())))))
+  (display "CASE4=") (display-list r) (newline))

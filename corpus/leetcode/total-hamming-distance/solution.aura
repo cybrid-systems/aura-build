@@ -1,0 +1,23 @@
+(define (length xs)
+  (if (null? xs) 0 (+ 1 (length (cdr xs)))))
+
+(define (list-ref xs i)
+  (if (= i 0) (car xs) (list-ref (cdr xs) (- i 1))))
+
+(define (solve nums)
+  (let ((n (length nums)))
+    (let ((total 0)
+          (bit 0))
+      (let loop ((bit 0) (total 0))
+        (if (>= bit 31)
+            total
+            (let ((count (count-bit nums bit 0)))
+              (loop (+ bit 1) (+ total (* count (- n count))))))))))
+
+(define (count-bit nums bit acc)
+  (if (null? nums)
+      acc
+      (count-bit (cdr nums) bit
+                 (+ acc (if (= (bit-and (car nums) (bit-shift-left 1 bit)) 
+                              (bit-shift-left 1 bit))
+                            1 0)))))

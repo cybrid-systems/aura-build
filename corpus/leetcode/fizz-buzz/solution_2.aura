@@ -1,0 +1,43 @@
+(define (fizzbuzz n)
+  (cond
+    ((= (modulo n 15) 0) "FizzBuzz")
+    ((= (modulo n 3) 0) "Fizz")
+    ((= (modulo n 5) 0) "Buzz")
+    (else (number->string n))))
+
+(define (build-list-helper i n)
+  (if (> i n)
+      '()
+      (cons (fizzbuzz i) (build-list-helper (+ i 1) n))))
+
+(define (solve n)
+  (build-list-helper 1 n))
+
+(define (display-list lst)
+  (cond
+    ((null? lst) (newline))
+    (else
+      (display (car lst))
+      (newline)
+      (display-list (cdr lst)))))
+
+(define (display-result lst)
+  (cond
+    ((null? lst) (display ""))
+    (else
+      (display (car lst))
+      (display-list (cdr lst)))))
+
+(define (run-case label n)
+  (display label)
+  (display "=")
+  (display-result (solve n)))
+
+(run-case "CASE0" 1)
+(run-case "CASE1" 3)
+(run-case "CASE2" 5)
+(run-case "CASE3" 15)
+(run-case "CASE4" 30)
+(run-case "CASE5" 0)
+(run-case "CASE6" 100)
+(run-case "CASE7" 7)

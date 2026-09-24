@@ -1,0 +1,28 @@
+(define (power-of-three? n)
+  (if (<= n 0)
+      #f
+      (let loop ((x n))
+        (cond ((= x 1) #t)
+              ((= (modulo x 3) 0) (loop (quotient x 3)))
+              (else #f)))))
+
+(define (solve n)
+  (power-of-three? n))
+
+(define (run-case n)
+  (display "CASE")
+  (display n)
+  (display "=")
+  (if (solve n) (display "True") (display "False"))
+  (newline))
+
+(run-case 27)
+(run-case 0)
+(run-case 45)
+(run-case 1)
+(run-case 3)
+(run-case 9)
+(run-case -3)
+(run-case 1162261467)
+(run-case 1162261466)
+(run-case 3486784401)

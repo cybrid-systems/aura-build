@@ -1,0 +1,32 @@
+(define (popcount n)
+  (if (= n 0)
+      0
+      (+ (modulo n 2) (popcount (quotient n 2)))))
+
+(define (hamming x y)
+  (popcount (logxor x y)))
+
+(define logxor
+  (lambda (a b)
+    (cond
+      ((= b 0) a)
+      ((= (modulo b 2) 0)
+       (* 2 (logxor (quotient a 2) (quotient b 2))))
+      (else
+       (+ 1 (* 2 (logxor (quotient a 2) (quotient b 2))))))))
+
+(define (solve-case x y)
+  (hamming x y))
+
+(define (solve)
+  (begin
+    (display (solve-case 1 4)) (newline)
+    (display (solve-case 3 1)) (newline)
+    (display (solve-case 0 0)) (newline)
+    (display (solve-case 7 8)) (newline)
+    (display (solve-case 0 4294967295)) (newline)
+    (display (solve-case 4294967295 4294967295)) (newline)
+    (display (solve-case 123456789 987654321)) (newline)
+    (display (solve-case 1 1)) (newline)))
+
+(solve)

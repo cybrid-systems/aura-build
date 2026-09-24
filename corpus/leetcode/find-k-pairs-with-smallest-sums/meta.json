@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:16:29Z",
+      "ts_local": "2026-09-24 23:16:29 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2864,
+        "total_characters": 0,
+        "prompt_tokens": 1344,
+        "completion_tokens": 1520,
+        "prompt_tokens_details": {
+          "cached_tokens": 528
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.128,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 1:21: parse error: expected expression, got invalid character\n   |\n  1 | (define CASE0_input {\"nums1\": [1, 7, 11], \"nums2\": [2, 4, 6], \"k\": 3})\n   |                     ^^^^^^^^^\n",
+      "stdout_snippet": "CASE0=(1,7)(2,4)()\nCASE1=(1,7)(2,4)()\nCASE2=(1,2)(3,<unknown>)()\nCASE3=(<unknown>,<unknown>)(1,2)()\nCASE4=(1,1)(1,2)()\nCASE5=(1,2)(1,2)()\nCASE6=(5,6)(1,2)()\nCASE7=(1,1)(1,1)()\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:16:39Z",
+      "ts_local": "2026-09-24 23:16:39 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2392,
+        "total_characters": 0,
+        "prompt_tokens": 1344,
+        "completion_tokens": 1048,
+        "prompt_tokens_details": {
+          "cached_tokens": 1343
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.086,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=CASE0=(1,(7 11))(2,(4 6))[]\nCASE1=(1,(7 11))(2,(4 6))[]\nCASE2=(1,(2))(3,())[]\nCASE3=(<unknown>,<unknown>)(1,(2 3))[]\nCASE4=(1,(1 2))(1,(2 3))[]\nCASE5=(1,(2 3 4))(1,(2 3 4))[]\nCASE6=(5,(6 7))(1,(2 3))[]\nCASE7=(1,(1 1))(1,(1 1))[]\n"
+    }
+  ],
+  "slug": "find-k-pairs-with-smallest-sums",
+  "title": "Find K Pairs with Smallest Sums",
+  "category": "heaps",
+  "updated_at": "2026-09-24T15:16:39Z",
+  "updated_at_local": "2026-09-24 23:16:39 CST"
+}

@@ -1,0 +1,26 @@
+(define (solve n)
+  (if (and (> n 0)
+           (= 0 (modulo n 4))
+           (let loop ((x 1))
+             (cond ((= x n) #t)
+                   ((> x n) #f)
+                   (else (loop (* x 4))))))
+      "true"
+      "false"))
+
+;; Display helper
+(define (display-case i result)
+  (display "CASE")
+  (display (number->string i))
+  (display "=")
+  (display result)
+  (newline))
+
+(display-case 0 (solve 16))
+(display-case 1 (solve 5))
+(display-case 2 (solve 1))
+(display-case 3 (solve -4))
+(display-case 4 (solve 0))
+(display-case 5 (solve 4))
+(display-case 6 (solve 64))
+(display-case 7 (solve 8))

@@ -1,0 +1,57 @@
+(define (make-vec n fill)
+  (let loop ((i 0) (acc '()))
+    (if (>= i n)
+        acc
+        (loop (+ i 1) (cons fill acc)))))
+
+(define (vec-set! v i val)
+  (set! (list-ref v i) val))
+
+(define (vec-ref v i)
+  (list-ref v i))
+
+(define (solve n)
+  (cond
+    ((<= n 2) 0)
+    (else
+      (let* ((size n)
+             (is-prime (make-vec size #t)))
+        (vec-set! is-prime 0 #f)
+        (vec-set! is-prime 1 #f)
+        (let loop ((i 2))
+          (cond
+            ((>= i size) i)
+            ((not (vec-ref is-prime i))
+             (loop (+ i 1)))
+            (else
+              (let ((j (+ i i)))
+                (let mark-loop ((j j))
+                  (cond
+                    ((>= j size) j)
+                    (else
+                      (vec-set! is-prime j #f)
+                      (mark-loop (+ j i))))))
+              (loop (+ i 1))))))
+        (let count-loop ((i 0) (c 0))
+          (cond
+            ((>= i size) c)
+            ((vec-ref is-prime i)
+             (count-loop (+ i 1) (+ c 1)))
+            (else
+             (count-loop (+ i 1) c))))))))
+
+(define (display-case i n)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve n))
+  (newline))
+
+(display-case 0 10)
+(display-case 1 0)
+(display-case 2 1)
+(display-case 3 2)
+(display-case 4 3)
+(display-case 5 5)
+(display-case 6 100)
+(display-case 7 1000)

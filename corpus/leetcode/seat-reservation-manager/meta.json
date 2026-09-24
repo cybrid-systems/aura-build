@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:16:42Z",
+      "ts_local": "2026-09-24 23:16:42 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2921,
+        "total_characters": 0,
+        "prompt_tokens": 1379,
+        "completion_tokens": 1542,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.058,
+      "tests_passed": 0,
+      "tests_total": 5,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=[]\nCASE1=[]\nCASE2=[]\nCASE3=[]\nCASE4=[]\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:16:51Z",
+      "ts_local": "2026-09-24 23:16:51 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2526,
+        "total_characters": 0,
+        "prompt_tokens": 1379,
+        "completion_tokens": 1147,
+        "prompt_tokens_details": {
+          "cached_tokens": 1378
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.064,
+      "tests_passed": 0,
+      "tests_total": 5,
+      "stderr_snippet": "error: 16:31: unbound variable: loop\n  did you mean 'op'?\nerror: 16:31: unbound variable: loop\n  did you mean 'op'?\nerror: 16:31: unbound variable: loop\n  did you mean 'op'?\nerror: 20:29: unbound variable: loop\n  did you mean 'op'?\nerror: 16:31: unbound variable: loop\n  did you mean 'op'?\n",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "seat-reservation-manager",
+  "title": "Seat Reservation Manager",
+  "category": "heaps",
+  "updated_at": "2026-09-24T15:16:51Z",
+  "updated_at_local": "2026-09-24 23:16:51 CST"
+}

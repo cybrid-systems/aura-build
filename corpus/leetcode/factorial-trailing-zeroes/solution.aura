@@ -1,0 +1,24 @@
+(define (count-trailing-zeroes n)
+  (let loop ((p 5) (acc 0))
+    (if (> p n)
+        acc
+        (loop (* p 5) (+ acc (quotient n p))))))
+
+(define (solve n)
+  (count-trailing-zeroes n))
+
+(define (display-case i n)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve n))
+  (newline))
+
+(display-case 0 0)
+(display-case 1 5)
+(display-case 2 100)
+(display-case 3 1)
+(display-case 4 4)
+(display-case 5 6)
+(display-case 6 25)
+(display-case 7 1000000000)

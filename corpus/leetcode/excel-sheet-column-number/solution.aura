@@ -1,0 +1,35 @@
+(define (char-val c)
+  (- (char->integer c) (char->integer #\A) 1))
+
+(define (string-length s)
+  (let loop ((i 0))
+    (if (char=? (string-ref s i) #\null)
+        i
+        (loop (+ i 1)))))
+
+(define (string-ref-safe s i)
+  (string-ref s i))
+
+(define (solve s)
+  (let loop ((i 0) (ans 0))
+    (if (= i (string-length s))
+        ans
+        (let ((v (+ (* ans 26) (char-val (string-ref-safe s i)) 1)))
+          (loop (+ i 1) v)))))
+
+(define (run-case idx s)
+  (display "CASE")
+  (display idx)
+  (display "=")
+  (display (solve s))
+  (newline))
+
+(run-case 0 "A")
+(run-case 1 "Z")
+(run-case 2 "AA")
+(run-case 3 "AB")
+(run-case 4 "AZ")
+(run-case 5 "BA")
+(run-case 6 "ZZ")
+(run-case 7 "AAA")
+(run-case 8 "ZY")

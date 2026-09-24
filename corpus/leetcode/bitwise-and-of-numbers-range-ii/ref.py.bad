@@ -1,0 +1,23 @@
+def solve(m, n):
+    while m != n:
+        m = m & (m - 1)
+    return m
+
+CASES = [
+    {"m": 5, "n": 7},
+    {"m": 0, "n": 0},
+    {"m": 0, "n": 5},
+    {"m": 1, "n": 1},
+    {"m": 1, "n": 2147483647},
+    {"m": 12, "n": 15},
+    {"m": 6, "n": 7},
+    {"m": 8, "n": 16},
+]
+
+if __name__ == '__main__':
+    import json
+    out = []
+    for i, c in enumerate(CASES):
+        result = solve(c["m"], c["n"])
+        out.append({"id": i, "input": c, "expected": json.dumps(result, separators=(',', ':'), ensure_ascii=False)})
+    print(json.dumps(out, separators=(',', ':'), ensure_ascii=False))
