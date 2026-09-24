@@ -319,9 +319,14 @@ def _soft_escape_string(s: str) -> str:
     )
 
 
-# Soft raw_line / sexpr comfort bound. Propose bodies are usually << this;
-# above: keep **request** on disk, still join **response** in memory.
-_INLINE_BODY_MAX = 48_000
+# Soft string-literal embed bound for http-post **request** body.
+# Above: keep request on disk via (read-file …); response still joins in memory
+# (default fiber_llm_mode=direct). Soft double-quoted literals + heavy JSON
+# backslash density (~5KB MiniMax propose) have been measured to yield MiniMax
+# bad_request / no_content_in_response while host HTTP and read-file body ok
+# (combat round1 2026-09-24 Soft Ready tip a9975a3). Keep this well under propose
+# size so dogfood stamps llm_via=fiber instead of silent host fallback.
+_INLINE_BODY_MAX = 2_000
 
 # Unlikely in MiniMax chat JSON; used to pack N join strings into one Soft value.
 _BATCH_SEP = "@@@AURA_FIBER_LLM_SEP@@@"  # outside base64 alphabet

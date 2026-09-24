@@ -2736,6 +2736,7 @@ def run_closed_loop(
         # Optional Soft-fiber MiniMax batch (honest concurrent in-fiber HTTP).
         round_llm_via = "host"
         round_llm_parallel_fiber: str | None = None
+        fiber_batch_reason = ""
         fiber_prefetch: dict[int, dict[str, Any]] = {}
         if fiber_llm_live and serve_sess is not None and "llm" in tools:
             msgs_list: list[list[dict[str, str]]] = []
@@ -2772,9 +2773,15 @@ def run_closed_loop(
                         fiber_prefetch[i]["llm_via"] = "fiber"
                     round_llm_via = "fiber"
                     round_llm_parallel_fiber = batch.get("llm_parallel") or "fiber"
+                    fiber_batch_reason = ""
                 else:
                     # Fall through to per-explorer fiber oneshot / host
                     round_llm_parallel_fiber = "fiber_serial"
+                    fiber_batch_reason = str(
+                        batch.get("reason")
+                        or batch.get("error")
+                        or f"batch_fail:ok={batch.get('ok')}"
+                    )
             # When not batched, per-explorer fiber oneshots below.
 
         def _explore_one(i: int) -> dict[str, Any]:
@@ -3140,6 +3147,7 @@ def run_closed_loop(
                 "llm_parallel": llm_parallel,
                 "llm_parallel_ok": bool(llm_parallel_ok),
                 "llm_via": round_llm_via,
+                "fiber_batch_reason": fiber_batch_reason or None,
                 "fiber_llm_probe": {
                     "ok": bool(fiber_llm_probe_info.get("ok")),
                     "reason": fiber_llm_probe_info.get("reason"),
@@ -3233,6 +3241,7 @@ def run_closed_loop(
                 "llm_parallel": llm_parallel,
                 "llm_parallel_ok": bool(llm_parallel_ok),
                 "llm_via": round_llm_via,
+                "fiber_batch_reason": fiber_batch_reason or None,
                 "fiber_llm_probe": {
                     "ok": bool(fiber_llm_probe_info.get("ok")),
                     "reason": fiber_llm_probe_info.get("reason"),
