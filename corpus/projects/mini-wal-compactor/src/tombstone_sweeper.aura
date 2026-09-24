@@ -1,0 +1,35 @@
+;; tombstone_sweeper.aura
+;; Sweeps tombstone-marked entries from a list of entries.
+;; A "sweeper" structure is (sweeper kept dropped stats)
+;; where stats is an alist of summary statistics.
+
+(define (api sweep-tombstones entries)
+  ;; Walk the entries; collect non-tombstone entries into `kept`
+  ;; and tombstone entries into `dropped`.
+  (let loop ((xs entries) (kept '()) (dropped '()))
+    (if (null? xs)
+        (let* ((kept-count (length kept))
+               (dropped-count (length dropped))
+               (total (length entries))
+               (stats (list
+                       (cons 'kept kept-count)
+                       (cons 'dropped dropped-count)
+                       (cons 'total total)
+                       (cons 'sweep-ratio
+                             (if (= total 0)
+                                 0
+                                 (/ dropped-count total))))))
+          (list 'sweeper (reverse kept) (reverse dropped) stats))
+        (let ((e (car xs)))
+          (if (api entry-tombstone? e)
+              (loop (cdr xs) kept (cons e dropped))
+              (loop (cdr xs) (cons e kept) dropped))))))
+
+(define (api sweep-stats sweeper)
+  (car (cdr (cdr (cdr sweeper)))))
+
+(define (api sweep-kept sweeper)
+  (car (cdr sweeper)))
+
+(define (api sweep-dropped sweeper)
+  (car (cdr (cdr sweeper))))

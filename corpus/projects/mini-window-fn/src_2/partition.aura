@@ -1,0 +1,66 @@
+;; partition.aura — split a relation into per-partition row lists.
+;;
+;; A partition is the tagged list (part key rows). We find the column index
+;; of the partition key once, then bucket rows by equality on that value.
+
+(define (api wf-part-key part)
+  (car (cdr part)))
+
+(define (api wf-part-rows part)
+  (car (cdr (cdr part))))
+
+;; Locate the index of `key-col` (a symbol) within the relation's column list.
+(define (partition-find-col-index cols key-col i)
+  (cond
+    ((null? cols) (error "wf-partition: column not found" key-col))
+    ((equal? (car cols) key-col) i)
+    (else (partition-find-col-index (cdr cols) key-col (+ i 1)))))
+
+;; Walk two lists in parallel: for each (row . key-val) pair, push the row
+;; onto the bucket whose key equals key-val. We rebuild buckets via reverse
+;; at the end so the relative order of first-appearance is preserved.
+(define (partition-bucket rows key-col-idx buckets)
+  (cond
+    ((null? rows) buckets)
+    (else
+     (let ((row (car rows)))
+       (let ((kv (api wf-col row key-col-idx)))
+         (let ((placed (partition-place buckets kv row)))
+           (partition-bucket (cdr rows) key-col-idx placed)))))))
+
+;; Place `row` into the bucket list `buckets` whose key matches `kv`.
+;; buckets is an alist (list of (key . row-list) cells) in first-appearance order.
+;; If no cell exists yet, prepend a new cell. Otherwise cons the row onto that
+;; cell's row list.
+(define (partition-place buckets kv row)
+  (cond
+    ((null? buckets)
+     (cons (cons kv (list row)) '()))
+    ((equal? (car (car buckets)) kv)
+     (cons (cons kv (cons row (cdr (car buckets)))) (cdr buckets)))
+    (else
+     (cons (car buckets) (partition-place (cdr buckets) kv row)))))
+
+;; Reverse each bucket's row list so that within a partition the original
+;; row order is preserved (we cons'd in reverse while bucketing).
+(define (partition-flip buckets)
+  (cond
+    ((null? buckets) '())
+    (else
+     (cons (cons (car (car buckets))
+                 (reverse (cdr (car buckets))))
+           (partition-flip (cdr buckets))))))
+
+;; Public entry: partition a relation by the value of column `key-col`.
+;; Returns a list of (part key rows) tagged lists, in first-appearance order.
+(define (api wf-partition rel key-col)
+  (if (api wf-rel? rel)
+      (let ((cols (api wf-relation-cols rel))
+            (rows (api wf-relation-rows rel)))
+        (let ((idx (partition-find-col-index cols key-col 0)))
+          (let ((buckets (partition-bucket rows idx '())))
+            (let ((flipped (partition-flip buckets)))
+              (map (lambda (cell)
+                     (list 'part (car cell) (cdr cell)))
+                   flipped)))))
+      (error "wf-partition: not a relation")))

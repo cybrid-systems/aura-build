@@ -1,0 +1,39 @@
+;; streaming.aura — Streaming-mode flag and query helpers.
+;;
+;; The runtime has two execution strategies for window functions:
+;;
+;;   'sort      — full sort then per-partition scan (window-sort.aura)
+;;   'streaming — spill-light streaming via a per-partition accumulator
+;;                (window-hash.aura; this is the "hash" path per the
+;;                scenario, just exposed under a streaming-friendly name
+;;                because it never requires a full upfront sort).
+;;
+;; This file owns the global mode toggle (`*mode*`) and exposes three
+;; procedures:
+;;
+;;   wf-streaming-on   : flip *mode* to 'streaming
+;;   wf-streaming-off  : flip *mode* to 'sort  (the default starting mode)
+;;   wf-streaming?     : predicate, #t iff *mode* is 'streaming
+;;
+;; *mode* is a regular top-level binding (a symbol). It is read by
+;; `wf-run` in runner.aura to decide which path to dispatch to, and it is
+;; stringified by main.aura for the WF_MODE output key.
+
+(define *mode* 'sort)
+
+(define (api wf-streaming-on)
+  ;; Switch the global mode flag to 'streaming. Subsequent calls to
+  ;; `wf-run` will dispatch to the hash/streaming path.
+  (set! *mode* 'streaming))
+
+(define (api wf-streaming-off)
+  ;; Switch the global mode flag back to 'sort. This is the default
+  ;; starting mode and is also what the first three scenario steps
+  ;; explicitly request via "Set *mode* to 'sort via wf-streaming-off".
+  (set! *mode* 'sort))
+
+(define (api wf-streaming?)
+  ;; Predicate: return #t when the global mode is 'streaming, #f
+  ;; otherwise. Implemented as an explicit comparison against the
+  ;; symbol 'streaming so it does not rely on any extra predicates.
+  (if (eq? *mode* 'streaming) #t #f))

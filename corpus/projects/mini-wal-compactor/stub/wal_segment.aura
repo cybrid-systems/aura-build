@@ -1,0 +1,40 @@
+;; wal_segment.aura
+;; Represents a WAL segment: id, age (in cycles), entries, computed byte size, tombstone flag.
+
+(define (api make-segment id age entries)
+  (list 'segment id age entries #f))
+
+(define (api segment-id seg)
+  (car (cdr seg)))
+
+(define (api segment-age seg)
+  (car (cdr (cdr seg))))
+
+(define (api segment-entries seg)
+  (car (cdr (cdr (cdr seg)))))
+
+(define (api segment-tombstone? seg)
+  (car (cdr (cdr (cdr (cdr seg))))))
+
+(define (api segment-byte-size seg)
+  ;; Approximate byte size: each entry counts key+value+op overhead.
+  (let ((entries (api segment-entries seg))
+        (base 16))                    ;; segment header overhead
+    (if (null? entries)
+        base
+        (+ base
+           (let loop ((xs entries) (acc 0))
+             (if (null? xs)
+                 acc
+                 (loop (cdr xs)
+                       (+ acc (api entry-byte-size (car xs))))))))))
+
+;; Helper entry byte-size estimator (used above).
+;; An entry is (list 'entry key value op tomb?). We compute
+;; roughly: 8 bytes overhead + length of key value op strings.
+(define (api entry-byte-size e)
+  (let ((kv-op (api entry-op e)))
+    (+ 8
+       (string-length (number->string (string-length (symbol->string (api entry-key e)))))
+       (string-length (number->string (string-length (symbol->string (api entry-value e)))))
+       (string-length (symbol->string kv-op)))))

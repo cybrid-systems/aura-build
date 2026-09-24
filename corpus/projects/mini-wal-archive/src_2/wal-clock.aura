@@ -1,0 +1,15 @@
+;; wal-clock.aura — simulated monotonic clock for the WAL archiver.
+;; The clock lives in a single mutable box: (clock-now).
+;; current-ms reads it; advance-ms! bumps it forward by a delta.
+
+(define clock-now 0)
+
+;; current-ms returns the present simulated time in milliseconds.
+(define (current-ms)
+  clock-now)
+
+;; advance-ms! increases the simulated clock by delta-ms (non-negative integer).
+;; Returns the new clock value.
+(define (advance-ms! delta-ms)
+  (set! clock-now (+ clock-now delta-ms))
+  clock-now)

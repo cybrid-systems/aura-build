@@ -1,0 +1,78 @@
+;; wal-retention.aura — enforce the cold-tier retention cap.
+;;
+;; After archive-sweep! has piled segments into the cold store,
+;; enforce-retention! trims the cold tier back down to the configured
+;; maximum segment count by dropping the oldest cold segments (by
+;; segment-id ascending). The summary it returns mirrors the shape of
+;; archive-sweep!'s summary so the stats module can fold them together
+;; without special-casing each one.
+;;
+;; retention-policy is a small introspection helper that reads a config
+;; and reports the active retention cap as a one-entry alist. It exists
+;; mostly so other modules and the main entry point can confirm the
+;; policy without re-deriving it from the raw config.
+
+;; retention-policy returns an alist describing the active retention
+;; configuration: 'retain-max -> integer. Kept as an alist (not a bare
+;; number) for symmetry with how the rest of the module table reports
+;; config-derived values.
+(define (retention-policy cfg)
+  (list (cons 'retain-max (config-retain-max cfg))))
+
+;; enforce-retention! drops the oldest segments from the cold store
+;; until the store holds at most (config-retain-max cfg) segments.
+;; "Oldest" is defined as the smallest segment-id, since ids are
+;; monotonically assigned at ingest time and ordering by id produces
+;; the same result as ordering by ingest time.
+;;
+;; Returns an alist summary:
+;;   (cons 'dropped n)   -- number of cold segments removed
+;;   (cons 'retained m)  -- number of cold segments left after trimming
+;;   (cons 'bytes k)     -- total bytes of the dropped segments
+;;   (cons 'cold-bytes b)-- total bytes retained in the cold tier
+(define (enforce-retention! cold-store cfg)
+  (let ((cap (config-retain-max cfg))
+        ;; Walk the store's internal segment list. We assume
+        ;; store-all returns the segments in id-ascending order so the
+        ;; first ones in the list are the oldest and get culled first.
+        (segs (store-all cold-store)))
+    (let ((total (length segs))
+          (overflow (- (length segs) cap)))
+      (cond
+        ((<= overflow 0)
+         ;; Already within the cap; nothing to drop.
+         (let ((bytes-total (store-bytes cold-store)))
+           (list (cons 'dropped 0)
+                 (cons 'retained total)
+                 (cons 'bytes 0)
+                 (cons 'cold-bytes bytes-total))))
+        (else
+         ;; Compute how many to drop, then split the list at that
+         ;; boundary. The dropped prefix contributes its summed bytes
+         ;; to the summary; the retained suffix becomes the new store
+         ;; contents.
+         (letrec ((split-at
+                   (lambda (xs n)
+                     (if (= n 0)
+                         (list '() xs)
+                         (let ((rest (cdr xs)))
+                           (let ((sub (split-at rest (- n 1))))
+                             (list (cons (car xs) (car sub))
+                                   (cdr sub))))))))
+           (let* ((drop-count (min overflow total))
+                  (parts (split-at segs drop-count))
+                  (dropped (car parts))
+                  (retained (cdr parts))
+                  (dropped-bytes
+                   (let loop ((xs dropped) (acc 0))
+                     (if (null? xs)
+                         acc
+                         (loop (cdr xs) (+ acc (segment-bytes (car xs))))))))
+             ;; Replace the cold store's segment list in place.
+             (let ((cells (store-segs-cell cold-store)))
+               (set-car! cells retained))
+             (list (cons 'dropped drop-count)
+                   (cons 'retained (length retained))
+                   (cons 'bytes dropped-bytes)
+                   (cons 'cold-bytes
+                         (- (store-bytes cold-store) 0))))))))))

@@ -1,0 +1,144 @@
+;; json-path.aura — Path representation for JSON traversal.
+;;
+;; A "path" identifies a location inside a JSON document. Paths are
+;; built incrementally while walking the AST or while emitting stream
+;; events, and are used both for indexing (json-index.aura) and for
+;; streaming (json-stream.aura).
+;;
+;; Path representation — a plain list with an even structure:
+;;
+;;   '()                                  ;; the root
+;;   '(<step> ... )                        ;; one entry per nesting level
+;;
+;; Each "step" is itself a list of one or two elements:
+;;
+;;   '(<string>)   ;; object member access via a string key
+;;   '(<integer>)  ;; array element access via a 0-based index
+;;
+;; So a path for {"users":[{"name":"ada"}]} → "users" → index 0 → "name"
+;; is encoded as:
+;;
+;;   (("users") (0) ("name"))
+;;
+;; We use lists rather than vectors because the project forbids
+;; mutable vectors and relies on cons / car / cdr throughout.
+;;
+;; The API exposed here is intentionally tiny: equality, prepend,
+;; and accessors for the head step's key or index. Higher layers
+;; build paths up from the root and compare them down.
+
+(define (path-equal? a b)
+  ;; Structural equality of two paths. Two paths are equal iff they
+  ;; have the same length and each corresponding step is equal. For
+  ;; a step which is an object key, both keys must be string=?. For
+  ;; an array step, both indices must be =.
+  (cond
+    ((and (null? a) (null? b)) #t)
+    ((or (null? a) (null? b)) #f)
+    ((not (and (pair? a) (pair? b))) #f)
+    (else
+     (let ((sa (car a)) (sb (car b)))
+       (and (path-step-equal? sa sb)
+            (path-equal? (cdr a) (cdr b)))))))
+
+(define (path-step-equal? a b)
+  ;; Compare two individual steps. A step may be a single-element
+  ;; list holding either a string (object key) or a number (array
+  ;; index). We treat them by inspecting the first element.
+  (cond
+    ((or (not (pair? a)) (not (pair? b))) #f)
+    ((null? (cdr a))
+     ;; Single-element step: compare the first element directly.
+     (cond
+       ((string? (car a))
+        (and (string? (car b))
+             (null? (cdr b))
+             (string=? (car a) (car b))))
+       ((number? (car a))
+        (and (number? (car b))
+             (null? (cdr b))
+             (= (car a) (car b))))
+       (else #f)))
+    (else #f)))
+
+(define (path-prepend p k)
+  ;; Push a new step onto the front of an existing path, returning
+  ;; a fresh path. The new step `k` is expected to be a list of one
+  ;; element — either (key) for an object member or (idx) for an
+  ;; array index.
+  (cons k p))
+
+(define (path-key p)
+  ;; Return the string key of the head step, or #f if the head step
+  ;; is not a string key (e.g. it is an array index, or the path is
+  ;; empty).
+  (cond
+    ((null? p) #f)
+    ((not (pair? p)) #f)
+    (else
+     (let ((s (car p)))
+       (cond
+         ((not (pair? s)) #f)
+         ((null? (cdr s))
+          (let ((v (car s)))
+            (if (string? v) v #f)))
+         (else #f))))))
+
+(define (path-index p)
+  ;; Return the numeric index of the head step, or #f if the head
+  ;; step is not a numeric index (e.g. it is an object key, or the
+  ;; path is empty).
+  (cond
+    ((null? p) #f)
+    ((not (pair? p)) #f)
+    (else
+     (let ((s (car p)))
+       (cond
+         ((not (pair? s)) #f)
+         ((null? (cdr s))
+          (let ((v (car s)))
+            (if (number? v) v #f)))
+         (else #f))))))
+
+;; Path-construction convenience used by json-index.aura and
+;; json-stream.aura. These are not part of the documented API
+;; surface but they are useful helpers that the other modules
+;; will rely on. They are kept here as ordinary top-level
+;; definitions so callers in the project can use them freely.
+
+(define (path-root)
+  ;; The empty path: the document root.
+  '())
+
+(define (path-step-key k)
+  ;; Wrap a string key into a single-element step list.
+  (list k))
+
+(define (path-step-index i)
+  ;; Wrap a numeric index into a single-element step list.
+  (list i))
+
+(define (path-empty? p)
+  ;; True when the path is the empty root path.
+  (null? p))
+
+(define (path-length p)
+  ;; Number of steps in the path.
+  (cond
+    ((null? p) 0)
+    ((pair? p) (+ 1 (path-length (cdr p))))
+    (else 0)))
+
+(define (path-last-step p)
+  ;; Return the last step of the path, or #f for the empty path.
+  (cond
+    ((null? p) #f)
+    ((null? (cdr p)) (car p))
+    (else (path-last-step (cdr p)))))
+
+(define (path-rest p)
+  ;; Drop the head step. For the root path this is also the root.
+  (cond
+    ((null? p) '())
+    ((pair? p) (cdr p))
+    (else '())))

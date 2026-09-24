@@ -1,0 +1,48 @@
+;; wal-store.aura — tiered WAL store backed by a plain list of segments.
+;; A "store" is a single alist cell of the form:
+;;   ((tier . <symbol>) (segs . <list of segments>))
+;; Mutators use set! to swap the (segs . ...) entry; the tier symbol is fixed
+;; at construction time.
+
+(define (make-store tier)
+  ;; Wrap tier + empty segment list in a single alist.
+  (list (cons 'tier tier)
+        (cons 'segs '())))
+
+(define (store-tier store)
+  (cdr (assq 'tier store)))
+
+(define (store-segs store)
+  (cdr (assq 'segs store)))
+
+;; store-add! mutates the store's segs field in place.
+(define (store-add! store seg)
+  (let ((cell (assq 'segs store)))
+    (set! store (cons (cons 'segs (cons seg (cdr cell)))
+                      (filter (lambda (p) (not (eq? p cell))) store))))
+
+;; store-all returns the list of segments currently in the store (newest-first).
+(define (store-all store)
+  (store-segs store))
+
+;; store-size returns the number of segments.
+(define (store-size store)
+  (length (store-segs store)))
+
+;; store-bytes returns the sum of bytes across all segments in the store.
+(define (store-bytes store)
+  (let loop ((xs (store-segs store)) (acc 0))
+    (if (null? xs)
+        acc
+        (loop (cdr xs) (+ acc (segment-bytes (car xs)))))))
+
+;; store-oldest-age returns the maximum age-ms among segments in the store,
+;; or 0 if the store is empty. WAL segments carry an age that grows over time;
+;; the "oldest" segment is the one that has aged the most.
+(define (store-oldest-age store)
+  (let loop ((xs (store-segs store)) (best 0))
+    (cond ((null? xs) best)
+          ((> (segment-age-ms (car xs)) best)
+           (loop (cdr xs) (segment-age-ms (car xs))))
+          (else
+           (loop (cdr xs) best)))))

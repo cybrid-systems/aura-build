@@ -1,0 +1,20 @@
+;; schema.aura — relation construction and accessors.
+;; A relation is the tagged list (rel cols rows) as defined in types.aura.
+
+;; Build a relation from a list of column names and a list of rows.
+;; Each row should be a list whose length equals (length cols);
+;; we trust the caller but expose the constructor uniformly.
+(define (api wf-make-relation cols rows)
+  (list 'rel cols rows))
+
+;; Return the column-name list of a relation.
+(define (api wf-relation-cols rel)
+  (if (api wf-rel? rel)
+      (car (cdr rel))
+      (error "wf-relation-cols: not a relation")))
+
+;; Return the row list of a relation.
+(define (api wf-relation-rows rel)
+  (if (api wf-rel? rel)
+      (car (cdr (cdr rel)))
+      (error "wf-relation-rows: not a relation")))

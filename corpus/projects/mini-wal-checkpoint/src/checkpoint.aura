@@ -1,0 +1,69 @@
+; checkpoint.aura — Fuzzy checkpoint record data type
+;
+; A checkpoint captures the WAL state at a point in time so that on
+; restart, recovery only needs to replay from the checkpoint's start-LSN.
+; A *fuzzy* checkpoint records only the pages dirtied since the previous
+; checkpoint, so the data files can continue being modified while the
+; checkpoint is being written (hence "fuzzy").
+;
+; A checkpoint is represented as a 3-element list:
+;   '(start-lsn end-lsn dirty-pages)
+;   - start-lsn  : LSN at which the previous checkpoint ended (i.e. the
+;                  earliest LSN that recovery must still consider)
+;   - end-lsn    : LSN at which this checkpoint was taken (current WAL tip)
+;   - dirty-pages: list of page-ids that were dirty at checkpoint time
+;
+; Exports (wrapped with `(api ...)` so other modules can consume them):
+;   (api make-checkpoint         start-lsn end-lsn dirty-pages)
+;   (api checkpoint?             cp)
+;   (api checkpoint-start-lsn    cp)
+;   (api checkpoint-end-lsn      cp)
+;   (api checkpoint-dirty-pages  cp)
+
+(define (api make-checkpoint start-lsn end-lsn dirty-pages)
+  (list start-lsn end-lsn dirty-pages))
+
+; A value is a checkpoint iff it is a 3-element list whose first two
+; elements look like valid LSNs (non-negative integers) and whose third
+; element is a list of page-ids.
+(define (api checkpoint? cp)
+  (if (null? cp)
+      #f
+      (let ((rest (cdr cp)))
+        (if (null? rest)
+            #f
+            (let ((rest2 (cdr rest)))
+              (if (null? rest2)
+                  #f
+                  (if (not (null? (cdr rest2)))
+                      #f
+                      (let ((s (car cp))
+                            (e (car rest))
+                            (d (car rest2)))
+                        (if (not (number? s)) #f
+                            (if (not (number? e)) #f
+                                (if (not (list? d)) #f
+                                    (if (or (< s 0) (< e 0)) #f
+                                        (begin
+                                          (set! check-ok #t)
+                                          #t)))))))))))))
+
+; scratch flag used by checkpoint? to short-circuit nested boolean checks
+(define check-ok #f)
+
+; helper: is v a proper list? (handles both null and cons)
+(define (list? v)
+  (if (null? v) #t
+      (if (pair? v) (list? (cdr v)) #f)))
+
+; Accessor for the start LSN of a checkpoint.
+(define (api checkpoint-start-lsn cp)
+  (car cp))
+
+; Accessor for the end LSN of a checkpoint.
+(define (api checkpoint-end-lsn cp)
+  (car (cdr cp)))
+
+; Accessor for the list of dirty page-ids captured by a checkpoint.
+(define (api checkpoint-dirty-pages cp)
+  (car (cdr (cdr cp))))

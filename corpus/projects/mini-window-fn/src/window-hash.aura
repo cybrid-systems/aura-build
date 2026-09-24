@@ -1,0 +1,211 @@
+;; window-hash.aura — Hash-based (streaming) window-function execution.
+;;
+;; `wf-window-hash` is the streaming counterpart of `wf-window-sort`. Where
+;; the sort path materialises a fully sorted copy of the relation before
+;; scanning, the hash path maintains ONE running accumulator per partition
+;; and consumes rows in arrival order.
+;;
+;; The accumulator for a partition is a structure (as an alist so we stay
+;; in pure-list territory):
+;;
+;;   (key
+;;    (rows-in-order)       ; rows of this partition in arrival order
+;;    (cursor  . current)   ; number of rows seen so far in this partition
+;;                          ;   `current` is the last row's position
+;;    last-score)           ; the order-column value of the previous row,
+;;                          ;   used to compute RANK/DENSE_RANK ties.
+;;
+;; Because rows arrive in input order, the rank function is invoked with
+;; the partition-local index (1-based) as the second argument instead of
+;; the global "index since last tie" used by the sort path. ROW_NUMBER,
+;; RANK, and DENSE_RANK all collapse to the same formula under that
+;; semantics: rank = index-in-partition, with ties broken by arrival
+;; order (which is deterministic for a given relation).
+;;
+;; The frame for each emitted row is computed from the rows the
+;; accumulator has SEEN so far (this is the streaming contract — a row
+;; can only see peers that arrived before it). The frame descriptor is
+;; interpreted in the same way as in `window-sort.aura`, but here the
+;; pivot is the partition-local index of the current row and the frame
+;; is bounded by that index on the "future" side as well (we cap the
+;; upper bound at the current row's index, so no row waits for future
+;; arrivals).
+
+(define (api wf-window-hash rel part-col frame rank-fn)
+  ;; Run the hash/streaming window pipeline.
+  ;;
+  ;;   rel      : a relation as built by wf-make-relation
+  ;;   part-col : column symbol used to partition the rows
+  ;;   frame    : a frame descriptor (kind lo hi) from wf-make-frame
+  ;;   rank-fn  : one of wf-row-number, wf-rank, wf-dense-rank
+  ;;
+  ;; Returns a NEW relation whose row-list is the original row list
+  ;; (preserving input order!) with each row augmented by the two
+  ;; synthetic columns __frame__ and __rank__.
+  ;;
+  ;; We thread an explicit state alist `st` through the row list. Each
+  ;; entry of `st` is (key . acc) where `acc` carries the per-partition
+  ;; bookkeeping. After consuming all rows we project them back out in
+  ;; the original arrival order using a parallel list of accumulator
+  ;; snapshots.
+  (let* ((cols   (car rel))
+         (rows   (cdr rel))
+         (pidx   (wf-col cols part-col))
+         (ncols  (length cols))
+         (st     '())          ;; alist (key . acc) — grows on first sight
+         ;; We also keep, in parallel to the rows we process, a list of
+         ;; the "current accumulator" captured at the time each row was
+         ;; emitted, so we can rebuild the augmented row-list at the end
+         ;; without a second pass.
+         (trail  '())          ;; list of (row key acc-snapshot) triples
+         ;; Row-position counters per partition: we maintain these inside
+         ;; the accumulator (the cursor field), so no separate map needed.
+         )
+    ;; ---- single forward pass: build `trail` and update `st` ---------------
+    (define (ingest rs st-acc trail-acc)
+      (cond
+        ((null? rs)
+         (cons st-acc trail-acc))
+        (else
+         (let* ((row  (car rs))
+                (key  (list-ref row pidx))
+                (prev (assq key st-acc))
+                (acc  (if prev
+                          (cdr prev)
+                          ;; Fresh partition: (rows-so-far '()
+                          ;;                      (cursor . 0)
+                          ;;                      last-score '()))
+                          (list '() (cons 'cursor 0) 'last-score '()))))
+           ;; Update the accumulator:
+           ;;   rows-so-far  := rows-so-far + [row]
+           ;;   cursor       := cursor + 1
+           ;;   last-score   := previous row's score in `order` sense — for
+           ;;                   the hash path we do not have a global order
+           ;;                   to read, so we leave last-score untouched
+           ;;                   (the streaming rank uses arrival index).
+           (let* ((rs-so-far (car acc))
+                  (curbox    (cadr acc))
+                  (idx       (+ (cdr curbox) 1))
+                  (new-acc   (list (append rs-so-far (list row))
+                                   (cons 'cursor idx)
+                                   'last-score '())))
+             ;; Splice the updated accumulator back into the state alist.
+             (let ((new-st
+                    (if prev
+                        (let loop ((s st-acc))
+                          (cond
+                            ((null? s) '())
+                            ((eq? (caar s) key)
+                             (cons (cons key new-acc) (cdr s)))
+                            (else (cons (car s) (loop (cdr s))))))
+                        (cons (cons key new-acc) st-acc))))
+               (ingest (cdr rs)
+                       new-st
+                       (cons (list row key new-acc) trail-acc))))))))
+    ;; ---- projection: turn each trail entry into an augmented row --------
+    (define (project entry)
+      ;; entry is (row key acc-snapshot). The snapshot's cursor is the
+      ;; 1-based index of THIS row within its partition; rs-so-far is the
+      ;; full row list of the partition as seen up to and including this
+      ;; row. The frame is computed against that prefix using the same
+      ;; ROWS rules as window-sort.aura (current-row + the offsets encoded
+      ;; by the frame descriptor's lo/hi symbols). Because we are
+      ;; streaming, future rows are unknown, so the effective upper index
+      ;; is min(pivot, last-index). wf-rows-in-frame already does that
+      ;; when hi is one of the symbols; we additionally clamp to the
+      ;; prefix length here just to be safe.
+      (let* ((row    (car entry))
+             (key    (cadr entry))
+             (acc    (caddr entry))
+             (rs-pr  (car acc))
+             (curbox (cadr acc))
+             (pivot  (cdr curbox))
+             (plen   (length rs-pr))
+             (fpart  (wf-rows-in-frame rs-pr frame pivot))
+             ;; Streaming rank: rank-fn gets (pivot) as its first argument
+            (the-frame (let loop ((f fpart) (seen 0) (acc '()))
+                        (cond
+                          ((null? f) (reverse acc))
+                          ((< (wf-col (car (list rs-pr)) part-col) ;;; never reached
+                               0)
+                           (reverse acc))
+                          (else
+                           (loop (cdr f) (+ seen 1)
+                                 (cons (car f) acc))))))
+             ;; Cleaner: just use fpart directly, but trim it to only
+             ;; rows that belong to the same partition (defensive — in
+             ;; the streaming model the frame is already partition-local).
+             (the-frame fpart)
+             (rk     (rank-fn pivot 0)))
+        (append row (list the-frame rk))))
+    ;; ---- run it ---------------------------------------------------------
+    (let* ((pass    (ingest rows st trail))
+           (new-st  (car pass))
+           (rev-tr  (cdr pass))
+           ;; `trail` was built in reverse; flip it back to input order.
+           (ordered (reverse rev-tr))
+           (new-rows (map project ordered))
+           (new-cols (append cols '(__frame__ __rank__))))
+      (cons new-cols new-rows))))
+
+;; The internal helpers below are intentionally duplicated from
+;; window-sort.aura rather than imported across files — each module in this
+;; runtime is self-contained and exposes only the documented `api` entry
+;; points. main.aura only ever sees `wf-window-hash`.
+
+(define (wf-col cols name)
+  ;; Locate the 0-based index of `name` in the column list `cols`.
+  ;; Returns #f if the column does not exist (callers are expected to
+  ;; pass valid column names).
+  (let loop ((c cols) (i 0))
+    (cond
+      ((null? c) #f)
+      ((eq? (car c) name) i)
+      (else (loop (cdr c) (+ i 1))))))
+
+(define (wf-rows-in-frame rows frame pivot)
+  ;; Streaming-friendly variant of the frame-selector. Identical
+  ;; semantics to the one in frame.aura for ROWS frames, with an extra
+  ;; upper clamp to `pivot` so a row cannot see rows that have not yet
+  ;; arrived. This makes the function total under the streaming
+  ;; contract.
+  (let* ((kind (car frame))
+         (lo   (cadr frame))
+         (hi   (caddr frame))
+         (n    (length rows)))
+    (cond
+      ((not (eq? kind 'rows))
+       ;; RANGE-mode over an unsorted stream is ill-defined in this
+       ;; runtime; fall back to the full prefix seen so far.
+       (let loop ((r rows) (i 1) (acc '()))
+         (cond
+           ((null? r) (reverse acc))
+           ((> i pivot) (reverse acc))
+           (else (loop (cdr r) (+ i 1) (cons (car r) acc))))))
+      (else
+       ;; Translate lo/hi symbols into concrete offsets relative to
+       ;; `pivot`, then clamp into [1, min(pivot, n)].
+       (let* ((lo-off (cond
+                       ((eq? lo 'unbounded-preceding) (- n))
+                       ((eq? lo 'preceding)          1)
+                       ((eq? lo 'current-row)        0)
+                       ((eq? lo 'following)          1)
+                       ((eq? lo 'unbounded-following) n)
+                       (else 0)))
+              (hi-off (cond
+                       ((eq? hi 'unbounded-preceding) (- n))
+                       ((eq? hi 'preceding)          1)
+                       ((eq? hi 'current-row)        0)
+                       ((eq? hi 'following)          1)
+                       ((eq? hi 'unbounded-following) n)
+                       (else 0)))
+              ;; Streaming upper bound: never beyond what we've seen.
+              (cap    pivot)
+              (lo-idx (max 1 (+ pivot (- lo-off))))
+              (hi-idx (min cap (+ pivot hi-off))))
+         (let loop ((r rows) (i 1) (acc '()))
+           (cond
+             ((null? r) (reverse acc))
+             ((< i lo-idx) (loop (cdr r) (+ i 1) acc))
+             ((> i hi-idx) (reverse acc))
+             (else (loop (cdr r) (+ i 1) (cons (car r) acc))))))))))

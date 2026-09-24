@@ -1,0 +1,35 @@
+;; merger.aura
+;; Merges cold segments into a single compacted bundle of entries.
+;; A "merged" structure is (merged entries byte-size source-ids).
+
+(define (api merged-entries merged)
+  (car (cdr merged)))
+
+(define (api merged-byte-size merged)
+  (car (cdr (cdr merged))))
+
+(define (api merged-source-ids merged)
+  (car (cdr (cdr (cdr merged)))))
+
+(define (sum-byte-sizes entries)
+  (let loop ((xs entries) (acc 0))
+    (if (null? xs)
+        acc
+        (loop (cdr xs) (+ acc (api entry-byte-size (car xs)))))))
+
+(define (collect-entries segments acc)
+  (if (null? segments)
+      acc
+      (collect-entries (cdr segments)
+                       (append acc (api segment-entries (car segments))))))
+
+(define (collect-source-ids segments acc)
+  (if (null? segments)
+      acc
+      (collect-source-ids (cdr segments)
+                          (cons (api segment-id (car segments)) acc))))
+
+(define (api merge-segments cold-list)
+  (let ((entries (collect-entries cold-list '()))
+        (ids (reverse (collect-source-ids cold-list '()))))
+    (list 'merged entries (sum-byte-sizes entries) ids)))

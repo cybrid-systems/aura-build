@@ -1,0 +1,138 @@
+;; daemon_state.aura
+;; The WAL compactor daemon's mutable runtime state.
+;;
+;; A daemon structure is (daemon status log cycle-counter stats snapshots)
+;; where:
+;;   status        - a symbol describing the daemon's current state
+;;                   ('idle | 'running | 'compacting | 'done | 'error)
+;;   log           - a wal-log (built via wal_log.aura APIs)
+;;   cycle-counter - a cycle counter (built via cycle_counter.aura APIs)
+;;   stats         - a stats collection (built via stats_collector.aura APIs)
+;;   snapshots     - list of snapshot structures produced by past cycles
+;;
+;; API:
+;;   (make-daemon)                 -> a fresh daemon in 'idle state
+;;   (daemon-status d)             -> current status symbol
+;;   (daemon-set-status! d s)      -> mutate daemon status to s
+;;   (daemon-run-cycle! d)         -> execute one compaction cycle
+;;   (daemon-cycles d)             -> number of completed cycles
+
+(define (api make-daemon)
+  ;; Construct a fresh daemon. All mutable state is created here so the
+  ;; daemon starts fully wired up. The cycle counter, log, and stats
+  ;; collection are built by calling their respective module APIs.
+  (list 'daemon
+        'idle
+        (api make-log)
+        (api make-cycle-counter)
+        (api make-stats)
+        '()))
+
+(define (daemon-tag d) (car d))
+(define (daemon-status-field d) (car (cdr d)))
+(define (daemon-log-field d) (car (cdr (cdr d))))
+(define (daemon-counter-field d) (car (cdr (cdr (cdr d)))))
+(define (daemon-stats-field d) (car (cdr (cdr (cdr (cdr d))))))
+(define (daemon-snapshots-field d) (car (cdr (cdr (cdr (cdr (cdr d)))))))
+
+(define (api daemon-status d)
+  (daemon-status-field d))
+
+(define (api daemon-set-status! d status)
+  ;; Mutate the status field in-place. We rebuild the list head.
+  (set-car! (cdr d) status)
+  d)
+
+(define (api daemon-cycles d)
+  ;; Number of cycles completed by the daemon so far.
+  (api cycle-count (daemon-counter-field d)))
+
+;; --- Cycle machinery ------------------------------------------------------
+
+;; Determine whether a segment is "cold" given a threshold.  We use the
+;; cold_detector's classify-cold indirectly, but a single helper here
+;; keeps the cycle logic readable.
+(define (segment-cold? seg threshold)
+  (>= (api segment-age seg) threshold))
+
+;; Pick a snapshot id for this cycle. We use the cycle number as the
+;; id; downstream consumers may treat it as opaque.
+(define (next-snapshot-id cycles)
+  (string-append "snap-"
+                 (number->string (+ cycles 1))))
+
+;; Write a stats key with an integer value via the stats_collector API.
+(define (bump-stat! stats key n)
+  (api stat-inc! stats key n))
+
+;; Run one full compaction cycle. This:
+;;   1. transitions the daemon to 'running, then 'compacting
+;;   2. classifies cold segments
+;;   3. merges them, sweeps tombstones, writes a snapshot
+;;   4. drops the compacted segments from the log
+;;   5. records stats and bumps the cycle counter
+;;   6. transitions to 'done
+;;
+;; The threshold for "cold" is 3 (matches the scenario description in
+;; main.aura: ages >= 3 are cold). Callers may override by editing this
+;; constant; it is not part of the public API.
+(define *cycle-cold-threshold* 3)
+
+(define (api daemon-run-cycle! d)
+  (begin
+    ;; Mark start of cycle.
+    (api daemon-set-status! d 'running)
+    (api daemon-set-status! d 'compacting)
+
+    (let* ((log (daemon-log-field d))
+           (stats (daemon-stats-field d))
+           (counter (daemon-counter-field d))
+           (segs (api log-all-segments log))
+           (cold (api classify-cold segs *cycle-cold-threshold*))
+           (cold-n (length cold)))
+
+      ;; Record how many segments we touched.
+      (bump-stat! stats 'cold-segments cold-n)
+      (bump-stat! stats 'segments-seen (length segs))
+
+      (if (= cold-n 0)
+          ;; Nothing cold to compact; just tick the counter and stop.
+          (begin
+            (api cycle-tick counter)
+            (api daemon-set-status! d 'done)
+            d)
+          (let* ((merged (api merge-segments cold))
+                 (merged-ents (api merged-entries merged))
+                 (before-bytes (api merged-byte-size merged))
+                 (sweeper (api sweep-tombstones merged-ents))
+                 (kept (api sweep-kept sweeper))
+                 (dropped (api sweep-dropped sweeper))
+                 (cycles-so-far (api cycle-count counter))
+                 (snap-id (next-snapshot-id cycles-so-far))
+                 (snap (api write-snapshot merged snap-id))
+                 (after-bytes (api snapshot-byte-size snap))
+                 (cold-ids (api cold-ids cold))
+                 ;; Remove each compacted segment from the log.
+                 (new-log (fold-left (lambda (l id)
+                                       (api log-drop-segment l id))
+                                     log
+                                     cold-ids)))
+            (begin
+              ;; Replace log field.
+              (set-car! (cdr (cdr d)) new-log)
+
+              ;; Record stats.
+              (bump-stat! stats 'tombstones-dropped (length dropped))
+              (bump-stat! stats 'entries-kept (length kept))
+              (bump-stat! stats 'bytes-before before-bytes)
+              (bump-stat! stats 'bytes-after after-bytes)
+              (bump-stat! stats 'snapshots-written 1)
+
+              ;; Append the snapshot to the daemon's snapshot list.
+              (set-car! (cdr (cdr (cdr (cdr (cdr d)))))
+                        (cons snap (daemon-snapshots-field d)))
+
+              ;; Tick the cycle counter and mark done.
+              (api cycle-tick counter)
+              (api daemon-set-status! d 'done)
+              d))))))

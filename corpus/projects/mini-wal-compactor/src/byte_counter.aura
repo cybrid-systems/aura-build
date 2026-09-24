@@ -1,0 +1,43 @@
+;; byte_counter.aura
+;; Aggregates and compares approximate byte sizes across collections of
+;; WAL items (segments, entries, snapshots). All byte sizes are sourced
+;; from the per-item APIs (entry-byte-size, segment-byte-size,
+;; snapshot-byte-size) so that totals are computed, never hard-coded.
+;;
+;; API:
+;;   (total-bytes items)          -> sum of byte sizes across `items`
+;;   (diff-bytes before after)    -> before - after (non-negative when
+;;                                  compaction reduces size)
+;;   (compression-ratio b a)      -> after / before, as a number
+
+;; Helper: pick the right byte-size accessor based on the item's tag.
+;; Items may be entries ('entry), segments ('segment), snapshots
+;; ('snapshot), or merged bundles ('merged).
+(define (item-byte-size item)
+  (let ((tag (car item)))
+    (cond
+      ((eq? tag 'entry)    (api entry-byte-size item))
+      ((eq? tag 'segment)  (api segment-byte-size item))
+      ((eq? tag 'snapshot) (api snapshot-byte-size item))
+      ((eq? tag 'merged)   (api merged-byte-size item))
+      (else 0))))
+
+(define (api total-bytes items)
+  ;; Sum byte sizes across a list of items.  An empty list contributes 0.
+  (let loop ((xs items) (acc 0))
+    (if (null? xs)
+        acc
+        (loop (cdr xs) (+ acc (item-byte-size (car xs)))))))
+
+(define (api diff-bytes before after)
+  ;; Reduction achieved: before - after.  Floors at 0 in case `after`
+  ;; happens to be larger than `before` for any reason.
+  (let ((d (- before after)))
+    (if (< d 0) 0 d)))
+
+(define (api compression-ratio before after)
+  ;; after / before as a plain number.  When `before` is zero, the
+  ;; ratio is defined as 1 (no compression observable).
+  (if (= before 0)
+      1
+      (/ after before)))

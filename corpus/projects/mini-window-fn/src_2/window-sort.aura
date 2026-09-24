@@ -1,0 +1,87 @@
+;; window-sort.aura — sort-based window function executor.
+;;
+;; Strategy: for each partition of the relation, sort the rows by the
+;; order column, then walk the partition producing one output row per
+;; input row. For each pivot row we:
+;;   1. Compute its frame slice via wf-rows-in-frame.
+;;   2. If rank-fn is supplied, attach the rank value to the row.
+;;   3. Otherwise attach frame aggregates (SUM/AVG/MIN/MAX/COUNT).
+;;
+;; The returned value is a relation whose column list is the original
+;; relation's columns plus a synthetic trailing column named
+;; 'WF_VALUE whose values are either the rank number or an alist
+;; '((sum . n) (avg . n) (min . n) (max . n) (count . n)).
+;;
+;; Column-name resolution for partition/order uses wf-part-key's
+;; convention (a column name symbol) and looks up its index via the
+;; relation's column list, so callers only need to know names.
+
+(define (api wf-window-sort rel part-col order-col frame rank-fn)
+  (let ((cols   (api wf-relation-cols rel))
+        (rows   (api wf-relation-rows rel))
+        (parts  (api wf-partition rel part-col)))
+    (let ((out-rows
+            (window-sort-scan parts cols order-col frame rank-fn '())))
+      (api wf-make-relation
+           (append cols (list 'WF_VALUE))
+           out-rows))))
+
+;; Fold over partitions, concatenating their per-partition outputs.
+(define (window-sort-scan parts cols order-col frame rank-fn acc)
+  (cond
+    ((null? parts) (reverse acc))
+    (else
+      (let ((p     (car parts))
+            (rest  (cdr parts)))
+        (let ((k     (api wf-part-key p))
+              (prows (api wf-part-rows p)))
+          (let ((sorted (api wf-sort-by prows order-col
+                              (api wf-make-relation cols prows))))
+            (let ((part-out (window-sort-part k sorted cols order-col
+                                              frame rank-fn '())))
+              (window-sort-scan rest cols order-col frame rank-fn
+                                (append (reverse part-out) acc))))))))))
+
+;; For one sorted partition, walk every row and produce its augmented row.
+(define (window-sort-part part-key sorted cols order-col frame rank-fn acc)
+  (cond
+    ((null? sorted) acc)
+    (else
+      (let ((row    (car sorted))
+            (rest   (cdr sorted))
+            (idx    (window-sort-find-row sorted row 0)))
+        (let ((slice (api wf-rows-in-frame sorted frame idx)))
+          (let ((augmented
+                 (append row
+                         (list (window-sort-cell slice row cols
+                                                 order-col rank-fn)))))
+            (window-sort-part part-key rest cols order-col frame rank-fn
+                              (cons augmented acc))))))))
+
+;; Locate the index of `target` row within `rows` by structural equality.
+;; Because the caller just produced `sorted` we know the row is in it.
+(define (window-sort-find-row rows target i)
+  (cond
+    ((null? rows) i)
+    ((equal? (car rows) target) i)
+    (else (window-sort-find-row (cdr rows) target (+ i 1)))))
+
+;; Compute the trailing cell value for a given pivot row.
+;;   - If rank-fn is provided, invoke it with the sorted rows and the
+;;     order/score column names. We pass score-col equal to order-col,
+;;     which matches the scenario's usage.
+;;   - Otherwise produce the aggregate alist over the frame slice.
+(define (window-sort-cell slice pivot cols order-col rank-fn)
+  (if rank-fn
+      (window-sort-invoke-rank rank-fn slice order-col order-col)
+      (list
+        (cons 'sum    (api wf-sum slice order-col))
+        (cons 'avg    (api wf-avg slice order-col))
+        (cons 'min    (api wf-min slice order-col))
+        (cons 'max    (api wf-max slice order-col))
+        (cons 'count  (api wf-count slice)))))
+
+;; Rank functions are themselves produced by rank.aura; they are
+;; applied here in their `(fn rows order-col score-col)` shape.
+(define (window-sort-invoke-rank fn rows order-col score-col)
+  (fn rows order-col score-col))

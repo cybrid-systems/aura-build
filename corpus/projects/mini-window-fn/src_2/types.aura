@@ -1,0 +1,59 @@
+;; types.aura — type predicates and small constructors for the window-fn runtime.
+
+;; A "relation" is represented as a tagged list: (rel cols rows).
+;; We use plain list predicates and accessors here so other modules can
+;; pattern-match without needing a record type.
+
+(define (api wf-rel? x)
+  (and (pair? x)
+       (eq? (car x) 'rel)
+       (pair? (cdr x))
+       (pair? (cddr x))))
+
+;; Build a single row from a list of column values.
+;; Rows are just plain lists — order matches the relation's column list.
+(define (api wf-row vals)
+  vals)
+
+;; Pull a single column value out of a row by index (0-based).
+(define (api wf-col row i)
+  (cond
+    ((null? row) (error "wf-col: row too short"))
+    ((= i 0) (car row))
+    (else (api wf-col (cdr row) (- i 1)))))
+
+;; Extract the partition-key column from a relation.
+;; A partition is tagged (part key-col rows). The key column is the name
+;; (a symbol) used to look up values inside each row.
+(define (api wf-part-key part)
+  (if (and (pair? part) (eq? (car part) 'part))
+      (car (cdr part))
+      (error "wf-part-key: not a partition")))
+
+;; Convenience: tagged-part constructor used by partition.aura.
+;; Kept here so types.aura owns the shape of every tag in the system.
+(define (api wf-make-part key-col rows)
+  (list 'part key-col rows))
+
+;; A relation tag: (rel cols rows). The columns are a list of symbols;
+;; rows are a list of row-lists. We expose the constructor here too so
+;; other modules have a single source of truth for the shape.
+(define (api wf-rel cols rows)
+  (list 'rel cols rows))
+
+;; Relation accessors that work uniformly on any relation produced
+;; either by wf-make-relation (schema.aura) or by wf-rel (here).
+(define (api wf-rel-cols rel)
+  (if (api wf-rel? rel)
+      (car (cdr rel))
+      (error "wf-rel-cols: not a relation")))
+
+(define (api wf-rel-rows rel)
+  (if (api wf-rel? rel)
+      (car (cdr (cdr rel)))
+      (error "wf-rel-rows: not a relation")))
+
+;; Frame tag: (frame kind lo hi). kind is 'rows or 'range;
+;; lo/hi are pair-tagged bounds like (1 preceding) or (1 following) or 'unbounded.
+(define (api wf-frame? x)
+  (and (pair? x) (eq? (car x) 'frame)))

@@ -1,0 +1,24 @@
+; config.aura — configuration defaults for the fuzzy WAL checkpoint engine
+;
+; Exports:
+;   (api default-config)            -> alist with 'checkpoint-interval and 'fuzzy-cap
+;   (api config-checkpoint-interval c) -> extracts the checkpoint interval
+;   (api config-fuzzy-cap c)        -> extracts the per-checkpoint fuzzy page cap
+
+; The default configuration bundles tunables the engine consults.
+; Both fields default to the values mandated by the spec
+; (checkpoint every 8 redo records; cap each fuzzy checkpoint at 16 pages).
+(define (api default-config)
+  (list
+    (cons 'checkpoint-interval 8)
+    (cons 'fuzzy-cap 16)))
+
+; Accessor for the checkpoint interval (in number of emitted redo records
+; between automatic fuzzy checkpoints).
+(define (api config-checkpoint-interval c)
+  (cdr (assq 'checkpoint-interval c)))
+
+; Accessor for the maximum number of dirty pages that may be recorded
+; in a single fuzzy checkpoint snapshot.
+(define (api config-fuzzy-cap c)
+  (cdr (assq 'fuzzy-cap c)))

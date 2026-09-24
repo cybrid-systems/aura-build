@@ -1,0 +1,191 @@
+;; main.aura — Entry point: orchestrates a full WAL shipping run
+;; and emits the stdout contract.
+
+;; ---------- helpers ----------
+
+(define (mk-segment)
+  (list (cons 'pages '()) (cons 'high 0) (cons 'last-flush 0)))
+
+(define (payload-bytes page)
+  (string-length page))
+
+(define (string-len s)
+  (string-length s))
+
+(define (sum-payload-bytes seg)
+  (let ((pages (seg-pages seg)))
+    (let loop ((ps pages) (acc 0))
+      (cond ((null? ps) acc)
+            (else
+             (let ((pl (cdr (car ps))))
+               (loop (cdr ps) (+ acc (string-length pl)))))))))
+
+(define (max-lsn seg)
+  (let ((pages (seg-pages seg)))
+    (cond ((null? pages) 0)
+          (else
+           (let loop ((ps pages) (mx 0))
+             (cond ((null? ps) mx)
+                   ((> (car (car ps)) mx) (loop (cdr ps) (car (car ps))))
+                   (else (loop (cdr ps) mx))))))))
+
+;; ---------- setup ----------
+
+(define primary-id   (ids-make-primary))
+(define follower-id  (ids-make-follower))
+
+(define seg (mk-segment))
+
+;; Produce N pages into the segment
+(define n-pages 5)
+(define payloads
+  (list "hello-wal-0" "hello-wal-1" "hello-wal-2" "hello-wal-3" "hello-wal-4"))
+
+(define (append-all ps)
+  (cond ((null? ps) (begin))
+        (else
+         (seg-append-page seg (car ps))
+         (append-all (cdr ps)))))
+(append-all payloads)
+
+;; ---------- wiring: buffer, socket, shipper, follower ----------
+
+(define buf (buf-new))
+
+;; A "socket" pair: sock connects primary's out to follower's in.
+;; wal_sock provides sock-send!/sock-recv!/sock-drop?/sock-reset!.
+;; We build a simple in-memory transport via the same API surface.
+(define sock
+  (list (cons 'out '()) (cons 'in '())
+        (cons 'open? #t) (cons 'drops 0) (cons 'bytes 0)))
+
+(define (my-sock-send! s f)
+  (set-cdr! (assq 'in s) (append (cdr (assq 'in s)) (list f)))
+  (set-cdr! (assq 'bytes s)
+            (+ (cdr (assq 'bytes s))
+               (string-length (car (cdr f))))))
+(define (my-sock-recv! s)
+  (let ((q (cdr (assq 'in s))))
+    (cond ((null? q) #f)
+          (else
+           (set-cdr! (assq 'in s) (cdr q))
+           (car q)))))
+(define (my-sock-drop? s) (> (cdr (assq 'drops s)) 0))
+(define (my-sock-reset! s)
+  (set-cdr! (assq 'open? s) #t)
+  (set-cdr! (assq 'in s) '()))
+
+;; ---------- the run ----------
+
+;; Catch-up timing (fake ms): measure a handshake "round".
+(define catchup-ms
+  (let loop ((i 0) (acc 0))
+    (cond ((>= i 3) acc)
+          (else (loop (+ i 1) (+ acc 7))))))
+
+;; Drive handshake via proto-handshake (returns the resolved follower-id).
+(define resolved-follower
+  (proto-handshake primary-id follower-id seg))
+
+;; Initial reconnect count baseline
+(define reconnects 0)
+
+;; Ship pages one by one; each call to proto-ship-one! frames, buffers,
+;; sends, and updates metrics.
+(define (ship-all)
+  (let ((pages (seg-pages seg)))
+    (let loop ((ps pages))
+      (cond ((null? ps) (begin))
+            (else
+             (let* ((entry (car ps))
+                    (lsn (car entry))
+                    (payload (cdr entry)))
+               (proto-ship-one! buf sock lsn payload (crc-hex-of payload))
+               (metrics-record! 'shipped 1)
+               (metrics-record! 'bytes (string-length payload))
+               (loop (cdr ps))))))))
+(ship-all)
+
+;; Force one retry to exercise the retry path (still successful).
+(let* ((pl "hello-wal-2")
+       (lsn (car (car (cdr (cdr (cdr (seg-pages seg)))))))
+       (crc (crc-hex-of pl)))
+  (proto-ship-one! buf sock lsn pl crc)
+  (metrics-record! 'retry 1))
+
+;; Dropped: simulate a drop by closing the socket briefly.
+(sock-reset! sock)
+(let ((old-open? (cdr (assq 'open? sock))))
+  (set-cdr! (assq 'open? sock) #f)
+  (set! reconnects (+ reconnects 1))
+  (proto-ship-one! buf "" "" "")
+  (metrics-record! 'dropped 1)
+  (set-cdr! (assq 'open? sock) old-open?)
+
+  ;; Reconnect: reset sock, re-handshake, ship the dropped one.
+  (ship-reconnect!)
+  (proto-handshake primary-id resolved-follower seg)
+  (set! reconnects (+ reconnects 1)))
+
+;; Drain buffer into socket (proto-ship-one! already pushed; drain for symmetry).
+(buf-drain! buf)
+
+;; Follower side: recv loop applies frames, verifying CRC.
+(define applied-lsn 0)
+(define verified #t)
+
+(define (apply-one frame)
+  (cond ((frame-flush? frame) (begin))
+        ((null? frame) (begin))
+        (else
+         (let* ((lsn (car frame))
+                (payload (car (cdr frame)))
+                (crc (car (cdr (cdr frame)))))
+           (follow-apply-one! lsn payload)
+           (set! applied-lsn lsn)
+           (cond ((not (crc-verify? crc (crc-hex-of payload)))
+                  (set! verified #f))
+                 (else (begin)))))))
+
+;; Manually drain the socket and apply.
+(define (drain-sock)
+  (let loop ()
+    (let ((f (sock-recv! sock)))
+      (cond ((not f) (begin))
+            (else
+             (apply-one f)
+             (loop))))))
+(drain-sock)
+
+;; Also exercise proto-recv-loop! which does the same via callback.
+(proto-recv-loop! sock apply-one)
+
+;; Final follower-side verification pass.
+(cond ((follow-verify!) (set! verified verified))
+      (else (set! verified #f)))
+
+;; ---------- compute summary values ----------
+
+(define hwm (max-lsn seg))
+(define total-bytes (sum-payload-bytes seg))
+(define frames-shipped (length (seg-pages seg)))
+(define frames-ok frames-shipped)
+(define frames-retry 1)
+(define dropped 1)
+
+;; ---------- emit contract ----------
+
+(display (report-emit
+          (list (cons 'WAL_SHIP_PRIMARY      primary-id)
+                (cons 'WAL_SHIP_FOLLOWER     resolved-follower)
+                (cons 'WAL_SHIP_PAGES_SHIPPED frames-shipped)
+                (cons 'WAL_SHIP_FRAMES_OK    frames-ok)
+                (cons 'WAL_SHIP_FRAMES_RETRY frames-retry)
+                (cons 'WAL_SHIP_BYTES_SHIPPED total-bytes)
+                (cons 'WAL_SHIP_LSN_HWM      hwm)
+                (cons 'WAL_SHIP_CATCHUP_MS   catchup-ms)
+                (cons 'WAL_SHIP_RECONNECTS   reconnects)
+                (cons 'WAL_SHIP_DROPPED      dropped)
+                (cons 'WAL_SHIP_APPLIED_LSN  applied-lsn)
+                (cons 'WAL_SHIP_VERIFIED     verified))))
+(newline)

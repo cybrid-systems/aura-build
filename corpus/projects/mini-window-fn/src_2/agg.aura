@@ -1,0 +1,75 @@
+;; agg.aura — plain aggregate functions over a list of rows.
+;;
+;; Each aggregate takes a list of rows and (optionally) a column
+;; identifier. We resolve the column to an index once, then walk the
+;; rows. All aggregates ignore non-numeric values gracefully: SUM/MIN/MAX
+;; of an empty (or all-non-numeric) row slice yield 0 for SUM and +inf/-inf
+;; sentinels for MIN/MAX; callers can detect empty frames via COUNT=0.
+
+(define (agg-find-col rows col)
+  ;; We need a relation to look up columns. The runner always hands us
+  ;; rows from a relation that has a known column list, but aggregates
+  ;; here are row-list-only. So we accept either a column index (number)
+  ;; or a symbol column name and, if a name is given, expect the caller
+  ;; to have already normalized. To keep things simple and avoid pulling
+  ;; in the schema module, we treat `col` as an index here.
+  col)
+
+(define (agg-numeric? v)
+  (or (number? v)))
+
+(define (agg-sum-loop rows idx acc)
+  (cond
+    ((null? rows) acc)
+    (else
+      (let ((row (car rows)))
+        (let ((v (api wf-col row idx)))
+          (if (agg-numeric? v)
+              (agg-sum-loop (cdr rows) idx (+ acc v))
+              (agg-sum-loop (cdr rows) idx acc)))))))
+
+(define (api wf-sum rows col)
+  (let ((idx (if (number? col) col (error "wf-sum: expected numeric column index"))))
+    (agg-sum-loop rows idx 0)))
+
+(define (agg-count-loop rows acc)
+  (cond
+    ((null? rows) acc)
+    (else (agg-count-loop (cdr rows) (+ acc 1)))))
+
+(define (api wf-count rows)
+  (agg-count-loop rows 0))
+
+(define (agg-min-loop rows idx best)
+  (cond
+    ((null? rows) best)
+    (else
+      (let ((v (api wf-col (car rows) idx)))
+        (if (agg-numeric? v)
+            (agg-min-loop (cdr rows) idx (if (or (= best 'none) (< v best)) v best))
+            (agg-min-loop (cdr rows) idx best))))))
+
+(define (api wf-min rows col)
+  (let ((idx (if (number? col) col (error "wf-min: expected numeric column index"))))
+    (agg-min-loop rows idx 'none)))
+
+(define (agg-max-loop rows idx best)
+  (cond
+    ((null? rows) best)
+    (else
+      (let ((v (api wf-col (car rows) idx)))
+        (if (agg-numeric? v)
+            (agg-max-loop (cdr rows) idx (if (or (= best 'none) (> v best)) v best))
+            (agg-max-loop (cdr rows) idx best))))))
+
+(define (api wf-max rows col)
+  (let ((idx (if (number? col) col (error "wf-max: expected numeric column index"))))
+    (agg-max-loop rows idx 'none)))
+
+(define (api wf-avg rows col)
+  (let ((idx (if (number? col) col (error "wf-avg: expected numeric column index"))))
+    (let ((s (agg-sum-loop rows idx 0))
+          (n (agg-count-loop rows 0)))
+      (if (= n 0)
+          0
+          (/ s n)))))

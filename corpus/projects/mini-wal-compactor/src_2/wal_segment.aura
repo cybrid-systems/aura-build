@@ -1,0 +1,33 @@
+;; wal_segment.aura
+;; A segment is an immutable record of WAL entries belonging to one segment file.
+;; We represent it as a plain association list so it composes cleanly with the
+;; rest of the project (no records / structs allowed in this dialect).
+
+(define (api make-segment id age entries)
+  ;; id       : symbol or string identifying the on-disk segment file
+  ;; age      : non-negative integer (cycles since the segment was rotated)
+  ;; entries  : list of wal-entry values (see wal_entry.aura)
+  (list (cons 'id id)
+        (cons 'age age)
+        (cons 'entries entries)
+        (cons 'tombstone? #f)))
+
+(define (api segment-id seg)
+  (cdr (assq 'id seg)))
+
+(define (api segment-age seg)
+  (cdr (assq 'age seg)))
+
+(define (api segment-entries seg)
+  (cdr (assq 'entries seg)))
+
+(define (api segment-byte-size seg)
+  ;; Size is computed lazily on demand: 16-byte header + 8 bytes per entry.
+  ;; We deliberately avoid hard-coding totals anywhere else so the byte budget
+  ;; is always derived from this single source of truth.
+  (let ((header 16)
+        (entry-bytes 8))
+    (+ header (* entry-bytes (length (segment-entries seg))))))
+
+(define (api segment-tombstone? seg)
+  (cdr (assq 'tombstone? seg)))

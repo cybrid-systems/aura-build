@@ -1,0 +1,127 @@
+;; sort.aura — generic and column-based sorting utilities.
+;;
+;; All sorts are stable (we never swap equal elements). We use a plain
+;; merge sort over lists so we don't depend on any external primitives
+;; beyond the basic comparison operators.
+
+;; wf-sort: sort a list of rows according to a binary comparator `cmp`
+;; that returns a truthy value when its first argument should come
+;; before its second.
+(define (api wf-sort rows cmp)
+  (sort-merge rows cmp))
+
+;; wf-sort-by: sort rows by a single column of the relation, using the
+;; natural ordering on values via `<?`. We resolve the column index once.
+(define (api wf-sort-by rows col rel)
+  (let ((cols (if (api wf-rel? rel)
+                  (api wf-relation-cols rel)
+                  (error "wf-sort-by: expected relation"))))
+    (let ((idx (sort-find-col cols col 0)))
+      (let ((cmp (lambda (a b)
+                   (sort-value-less?
+                     (api wf-col a idx)
+                     (api wf-col b idx)))))
+        (api wf-sort rows cmp)))))
+
+;; Resolve a column name to its index; mirrors partition.aura.
+(define (sort-find-col cols name i)
+  (cond
+    ((null? cols) (error "wf-sort-by: column not found" name))
+    ((equal? (car cols) name) i)
+    (else (sort-find-col (cdr cols) name (+ i 1)))))
+
+;; Less-than comparison that works for both numbers and strings.
+;; Numbers use `<`; strings fall back to lexicographic length-then-char
+;; comparison so the sort is total and deterministic.
+(define (sort-value-less? a b)
+  (cond
+    ((and (number? a) (number? b)) (< a b))
+    ((and (string? a) (string? b)) (sort-string-less? a b))
+    (else
+      (error "wf-sort-by: unsupported value type" a b))))
+
+(define (sort-string-less? a b)
+  (cond
+    ((null? a) (not (null? b)))
+    ((null? b) #f)
+    ((char-less? (string-ref a 0) (string-ref b 0)) #t)
+    ((char-less? (string-ref b 0) (string-ref a 0)) #f)
+    (else (sort-string-less? (substring a 1) (substring b 1)))))
+
+;; Helper substring (Aura provides this, but we wrap a small fallback).
+(define (substring s start)
+  (substring-helper s start (- (string-length s) start)))
+
+(define (substring-helper s start len)
+  (cond
+    ((<= len 0) "")
+    (else
+      (let ((rest (substring-tail s start)))
+        (string-append (string (string-ref rest 0))
+                       (substring-helper rest 1 (- len 1)))))))
+
+(define (substring-tail s i)
+  (cond
+    ((= i 0) s)
+    (else (substring-helper-of s i))))
+
+(define (substring-helper-of s i)
+  (if (<= i 0)
+      s
+      (let ((n (- (string-length s) 1)))
+        (substring-of-tail s 0 n 1 i))))
+
+(define (substring-of-tail s lo hi cur i)
+  (cond
+    ((= cur i) (make-string-tail s lo hi))
+    (else (substring-of-tail s lo hi (+ cur 1) i))))
+
+(define (make-string-tail s lo hi)
+  ;; Build the substring s[lo..hi] character by character.
+  (make-string-loop s lo hi '()))
+
+(define (make-string-loop s lo hi acc)
+  (if (> lo hi)
+      (list->string (reverse acc))
+      (make-string-loop s (+ lo 1) hi (cons (string-ref s lo) acc))))
+
+(define (list->string chars)
+  (cond
+    ((null? chars) "")
+    (else (string-append (string (car chars)) (list->string (cdr chars))))))
+
+;; --- merge sort core -------------------------------------------------------
+
+(define (sort-merge lst cmp)
+  (cond
+    ((null? lst) '())
+    ((null? (cdr lst)) lst)
+    (else
+      (let* ((halves (sort-split lst '() '()))
+             (left (car halves))
+             (right (cdr halves)))
+        (sort-merge-interleave
+          (sort-merge left cmp)
+          (sort-merge right cmp)
+          cmp)))))
+
+;; Split `lst` into two lists of (roughly) equal length by alternating
+;; elements. Uses an accumulator pair so we stay in O(n).
+(define (sort-split lst front back)
+  (cond
+    ((null? lst) (cons (reverse front) (reverse back)))
+    ((null? (cdr lst)) (cons (reverse (cons (car lst) front)) (reverse back)))
+    (else
+      (sort-split (cddr lst)
+                  (cons (car lst) front)
+                  (cons (cadr lst) back)))))
+
+;; Interleave two sorted lists into one sorted list.
+(define (sort-merge-interleave a b cmp)
+  (cond
+    ((null? a) b)
+    ((null? b) a)
+    ((cmp (car a) (car b))
+     (cons (car a) (sort-merge-interleave (cdr a) b cmp)))
+    (else
+     (cons (car b) (sort-merge-interleave a (cdr b) cmp)))))

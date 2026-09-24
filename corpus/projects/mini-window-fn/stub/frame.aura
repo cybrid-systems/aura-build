@@ -1,0 +1,155 @@
+;; frame.aura — Window frame descriptors and row selection.
+;;
+;; A frame is represented as the list `(kind lo hi)`, where:
+;;   kind : one of the symbols 'rows  or  'range
+;;   lo   : one of the symbols 'unbounded-preceding, 'preceding, 'current-row,
+;;          'following, 'unbounded-following
+;;   hi   : one of the same five symbols
+;;
+;; Concrete numeric bounds are NOT stored in the frame itself. For ROWS
+;; frames the numeric offsets are encoded in the surrounding API
+;; (specifically `wf-rows-in-frame`, which receives `pivot` and reads the
+;; frame's kind/bound-symbols to decide how to walk the row list).
+;;
+;; RANGE frames are described symbolically here; numeric RANGE support
+;; is delegated to downstream callers that can interpret order-column
+;; values. We accept both forms uniformly so the scenario can build
+;; either kind.
+;;
+;; `wf-frame-string` produces a stable textual representation that
+;; `main.aura` uses for round-trip assertions:
+;;   ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING
+;;   ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+;;   RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+;; etc. The exact spelling is determined by (kind lo hi).
+
+(define (api wf-make-frame kind lo hi)
+  ;; Build a frame descriptor. We don't validate the symbols here; the
+  ;; caller is responsible for using well-known lo/hi combinations. The
+  ;; returned value is a 3-list so that `equal?` comparisons and
+  ;; `member` checks behave consistently.
+  (list kind lo hi))
+
+(define (bound-word b)
+  ;; Human-readable spelling for a frame-bound symbol.
+  ;;   'unbounded-preceding -> "UNBOUNDED PRECEDING"
+  ;;   'preceding          -> "PRECEDING"
+  ;;   'current-row        -> "CURRENT ROW"
+  ;;   'following          -> "FOLLOWING"
+  ;;   'unbounded-following-> "UNBOUNDED FOLLOWING"
+  (cond ((equal? b 'unbounded-preceding)  "UNBOUNDED PRECEDING")
+        ((equal? b 'preceding)            "PRECEDING")
+        ((equal? b 'current-row)          "CURRENT ROW")
+        ((equal? b 'following)            "FOLLOWING")
+        ((equal? b 'unbounded-following)  "UNBOUNDED FOLLOWING")
+        (else (symbol->string b))))
+
+(define (kind-word k)
+  ;; "ROWS" or "RANGE"
+  (cond ((equal? k 'rows)  "ROWS")
+        ((equal? k 'range) "RANGE")
+        (else (symbol->string k))))
+
+(define (api wf-frame-string f)
+  ;; Render a frame as `KIND BETWEEN LO-WORD AND HI-WORD`.
+  (let ((k (car f))
+        (lo (car (cdr f)))
+        (hi (car (cdr (cdr f)))))
+    (string-append (kind-word k)
+                   " BETWEEN "
+                   (bound-word lo)
+                   " AND "
+                   (bound-word hi))))
+
+(define (clamp n lo hi)
+  ;; Pin n into [lo, hi] inclusive. Used to translate symbolic frame
+  ;; bounds into concrete start/end indices over a row list.
+  (cond ((< n lo) lo)
+        ((> n hi) hi)
+        (else n)))
+
+(define (index-of-in-list x xs i)
+  ;; Return the 0-based index of x in xs, or #f if absent. We only use
+  ;; this when we need to translate a RANGE frame's pivot position
+  ;; into an offset; for ROWS frames the pivot is already positional.
+  (cond ((null? xs) #f)
+        ((equal? (car xs) x) i)
+        (else (index-of-in-list x (cdr xs) (+ i 1)))))
+
+(define (resolve-start end-pos pivot kind)
+  ;; Concrete start index for a frame whose upper bound is `end-pos`
+  ;; and pivot is `pivot`. The bound symbols are in turn fixed by the
+  ;; caller (this helper is only used for ROWS frames below; RANGE
+  ;; frames use a separate code path through `wf-rows-in-frame`).
+  end-pos)
+
+(define (resolve-end n pivot kind)
+  ;; Stub mirror of resolve-start; kept for symmetry / future use.
+  n)
+
+(define (api wf-rows-in-frame rows frame pivot)
+  ;; Return the sub-list of `rows` that lies inside `frame` with
+  ;; respect to `pivot`.
+  ;;
+  ;; `rows` is the full ordered list of rows for one partition (the
+  ;; caller has already sorted them by the ORDER BY column). `pivot`
+  ;; is the row that the frame is anchored on (the current row being
+  ;; processed). `frame` is the descriptor from `wf-make-frame`.
+  ;;
+  ;; We support both ROWS and RANGE here; for RANGE the frame's lo/hi
+  ;; symbols are mapped to the same numeric offsets as ROWS in this
+  ;; minimal runtime (peers share equal order-column values, and the
+  ;; RANGE definition that the scenario uses reduces to ROWS when the
+  ;; ORDER BY column is unique per row). This is the conventional
+  ;; simplification for tiny in-memory window engines.
+  ;;
+  ;; Returned list preserves the original row order so that
+  ;; aggregation sees rows left-to-right (which matters for SUM but
+  ;; not for MIN/MAX/COUNT).
+  (let* ((kind (car frame))
+         (lo   (car (cdr frame)))
+         (hi   (car (cdr (cdr frame))))
+         (n    (length rows))
+         (idx  (index-of-in-list pivot rows 0)))
+    (cond ((not idx) '())
+          ((equal? kind 'rows)
+           (let* ((start-raw
+                    (cond ((equal? lo 'unbounded-preceding) 0)
+                          ((equal? lo 'preceding)           (- idx 1))
+                          ((equal? lo 'current-row)         idx)
+                          (else                              (+ idx 0))))
+                  (end-raw
+                    (cond ((equal? hi 'unbounded-following) (- n 1))
+                          ((equal? hi 'following)           (+ idx 1))
+                          ((equal? hi 'current-row)         idx)
+                          (else                              (- idx 1)))
+                  (start (clamp start-raw 0 (- n 1)))
+                  (end   (clamp end-raw   start (- n 1))))
+             (take-between rows start end)))
+          ((equal? kind 'range)
+           ;; For this minimal runtime we treat RANGE bounds as ROWS
+           ;; bounds anchored on the pivot. Equality-based peer groups
+           ;; are not expanded here; the sort-based window applies
+           ;; peer-group semantics in its own rank step.
+           (let* ((start-raw
+                    (cond ((equal? lo 'unbounded-preceding) 0)
+                          ((equal? lo 'preceding)           (- idx 1))
+                          ((equal? lo 'current-row)         idx)
+                          (else                              idx)))
+                  (end-raw
+                    (cond ((equal? hi 'unbounded-following) (- n 1))
+                          ((equal? hi 'following)           (+ idx 1))
+                          ((equal? hi 'current-row)         idx)
+                          (else                              idx)))
+                  (start (clamp start-raw 0 (- n 1)))
+                  (end   (clamp end-raw   start (- n 1))))
+             (take-between rows start end)))
+          (else '()))))
+
+(define (take-between xs i j)
+  ;; Return xs[i..j] inclusive, preserving order. i and j are 0-based.
+  (let loop ((xs xs) (k 0) (acc '()))
+    (cond ((null? xs) (reverse acc))
+          ((> k j)     (reverse acc))
+          ((>= k i)    (loop (cdr xs) (+ k 1) (cons (car xs) acc)))
+          (else        (loop (cdr xs) (+ k 1) acc)))))

@@ -1,0 +1,39 @@
+;; wal_entry.aura
+;; Represents a single WAL entry: key, value, operation type, and tombstone flag.
+;; An entry is encoded as a list: (entry key value op tombstone?)
+
+(define (api make-entry key value op)
+  (list 'entry key value op #f))
+
+(define (api entry-key e)
+  (car (cdr e)))
+
+(define (api entry-value e)
+  (car (cdr (cdr e))))
+
+(define (api entry-op e)
+  (car (cdr (cdr (cdr e)))))
+
+(define (api entry-tombstone? e)
+  (car (cdr (cdr (cdr (cdr e))))))
+
+(define (api make-tombstone key value op)
+  (list 'entry key value op #t))
+
+(define (api entry-byte-size e)
+  ;; Approximate byte cost of an entry: key len + value len + op overhead.
+  (let ((k (api entry-key e))
+        (v (api entry-value e))
+        (op (api entry-op e)))
+    (+ (string-length (number->string k))
+       (string-length (number->string v))
+       4                       ;; op marker overhead
+       8)))                    ;; entry header overhead
+
+(define (api entry-set-tombstone! e)
+  (set-car! (cdr (cdr (cdr (cdr e)))) #t))
+
+(define (api entry-equal? a b)
+  (and (equal? (api entry-key a) (api entry-key b))
+       (equal? (api entry-value a) (api entry-value b))
+       (equal? (api entry-op a) (api entry-op b))))

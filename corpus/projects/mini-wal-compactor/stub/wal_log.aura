@@ -1,0 +1,69 @@
+;; wal_log.aura
+;; In-memory WAL log: an ordered list of segments with aggregate statistics.
+;; A log is represented as (wal-log segments total-bytes entry-count)
+;; API:
+;;   (make-log)                       -> empty log
+;;   (log-append log seg)             -> new log with seg appended
+;;   (log-all-segments log)           -> list of segments (in order)
+;;   (log-size-bytes log)             -> total approximate byte size
+;;   (log-entry-count log)            -> total entry count across segments
+;;   (log-cold-segments log thresh)   -> list of segments with age >= thresh
+;;   (log-drop-segment log id)        -> new log with the segment whose id
+;;                                       matches `id` removed
+
+(define (api make-log)
+  (list 'wal-log '() 0 0))
+
+(define (api log-all-segments log)
+  (car (cdr log)))
+
+(define (api log-size-bytes log)
+  (car (cdr (cdr log))))
+
+(define (api log-entry-count log)
+  (car (cdr (cdr (cdr log)))))
+
+;; Internal helper: count entries in a list of entries.
+(define (count-entries xs)
+  (if (null? xs)
+      0
+      (+ 1 (count-entries (cdr xs)))))
+
+;; Internal helper: sum byte sizes across a list of segments.
+(define (sum_seg_bytes segs)
+  (if (null? segs)
+      0
+      (+ (api segment-byte-size (car segs))
+        (sum_seg_bytes (cdr segs)))))
+
+(define (api log-append log seg)
+  (let ((segs (api log-all-segments log))
+        (bytes (api log-size-bytes log))
+        (count (api log-entry-count log)))
+    (list 'wal-log
+          (append segs (list seg))
+          (+ bytes (api segment-byte-size seg))
+          (+ count (count-entries (api segment-entries seg))))))
+
+(define (api log-cold-segments log threshold)
+  (let ((segs (api log-all-segments log)))
+    (let loop ((xs segs) (acc '()))
+      (cond
+        ((null? xs) (reverse acc))
+        ((>= (api segment-age (car xs)) threshold)
+         (loop (cdr xs) (cons (car xs) acc)))
+        (else (loop (cdr xs) acc))))))
+
+(define (api log-drop-segment log id)
+  (let ((segs (api log-all-segments log)))
+    (let loop ((xs segs) (acc '()) (new-bytes 0) (new-count 0))
+      (cond
+        ((null? xs)
+         (list 'wal-log (reverse acc) new-bytes new-count))
+        ((= (api segment-id (car xs)) id)
+         (loop (cdr xs) acc new-bytes new-count))
+        (else
+         (loop (cdr xs)
+               (cons (car xs) acc)
+               (+ new-bytes (api segment-byte-size (car xs)))
+               (+ new-count (count-entries (api segment-entries (car xs))))))))))

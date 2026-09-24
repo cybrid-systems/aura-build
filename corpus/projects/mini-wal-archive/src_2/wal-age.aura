@@ -1,0 +1,48 @@
+;; wal-age.aura — age-based archive candidacy sweep.
+;;
+;; aged-segment? decides whether a single segment meets the age and byte
+;; thresholds from the config. age-sweep! scans a store and mutates the
+;; tier field of every aged segment from 'hot to 'archive-candidate so that
+;; the archive sweep can recognize and move them.
+;;
+;; The tier field on a segment is a mutable alist cell; we swap it in place
+;; using set! rather than rebuilding the segment, which keeps segment-id
+;; etc. working without changes.
+
+(define (aged-segment? seg cfg)
+  (let ((age-threshold (config-archive-age-ms cfg))
+        (byte-threshold (config-archive-bytes cfg)))
+    (and (>= (segment-age-ms seg) age-threshold)
+         (>= (segment-bytes seg) byte-threshold))))
+
+;; age-sweep! iterates over every segment in the store and, for each one
+;; that is currently in the hot tier and satisfies aged-segment?, mutates
+;; its tier field to 'archive-candidate. Returns the number of segments
+;; that were marked. Leaves non-aged segments and cold segments untouched.
+(define (age-sweep! store cfg)
+  (let ((segs (store-segs store))
+        (marked 0))
+    (let loop ((remaining segs) (count 0))
+      (cond
+        ((null? remaining)
+          (begin
+            (set! count-marked count)
+            count-marked))
+        (else
+          (let ((seg (car remaining)))
+            (if (and (eq? (segment-tier seg) 'hot)
+                     (aged-segment? seg cfg))
+                (let ((tier-cell (assq 'tier seg)))
+                  (set! tier-cell (cons 'tier 'archive-candidate))
+                  ;; Re-bind the tier cell inside the segment alist.
+                  (set-car! seg 'tier)
+                  (begin
+                    ;; Replace the (tier . hot) cell with (tier . archive-candidate)
+                    ;; by mutating the cons cell pointed to by tier-cell.
+                    (set-cdr! tier-cell 'archive-candidate)
+                    (loop (cdr remaining) (+ count 1))))
+                (loop (cdr remaining) count))))))))
+
+;; Local accumulator so age-sweep! can return its marked count without
+;; smuggling a value through loop's tail position.
+(define count-marked 0)

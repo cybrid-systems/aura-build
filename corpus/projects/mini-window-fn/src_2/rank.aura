@@ -1,0 +1,174 @@
+;; rank.aura — ranking functions for the window-fn runtime.
+;;
+;; Ranking functions operate on a list of rows that have already been
+;; sorted (by `order-col`) within a partition. They return either a
+;; function (for the rank-fn slot of wf-window-sort) or a new column
+;; value list (for wf-apply-rank).
+;;
+;; Conventions:
+;;   - `order-col` is the column NAME (symbol) whose ordering we honor.
+;;   - `score-col` is the column NAME (symbol) that holds the value
+;;     used for "tie" detection (typically equal to order-col for a
+;;     simple sort key, but kept separate so callers can choose).
+;;   - `rows` is a list of rows where each row is itself a list of
+;;     values; we look up column indices via the relation's `cols`
+;;     list — but since rank functions take just `rows`, we rely on
+;;     the caller passing rows from a relation whose column order is
+;;     fixed. For self-containment we accept the column NAMES and
+;;     resolve indices against the FIRST row's length by matching
+;;     names to positions: we infer the column index by walking the
+;;     first row? No — names are not stored in rows. Instead we
+;;     require the caller to pre-resolve via wf-col by passing a
+;;     helper. For simplicity, we accept numeric indices OR symbols,
+;;     and we treat a symbol as "unknown" by returning 0 unless an
+;;     index hint is supplied. The window-sort caller passes numeric
+;;     indices. The apply-rank caller passes column names and a
+;;     relation.
+;;
+;; Three ranking functions are provided:
+;;   wf-row-number   — 1, 2, 3, ... per row in the input order.
+;;   wf-rank         — 1, 1, 1, 4, ... (gaps after ties).
+;;   wf-dense-rank   — 1, 1, 1, 2, ... (no gaps).
+;;
+;; Each is exported as a thunk returning a "rank-fn" closure that the
+;; window runtime can invoke per row. The closure receives:
+;;   (rows-so-far current-row) -> next integer rank value.
+;; The closure is stateful: it carries the running counters via a
+;; mutable list cell (set! on the cell's car).
+
+;; ---------------------------------------------------------------------------
+;; wf-row-number
+;; ---------------------------------------------------------------------------
+(define (api wf-row-number)
+  (let ((state (list 0)))
+    (lambda (rows-so-far current-row)
+      (set! state (list (+ (car state) 1)))
+      (car state))))
+
+;; ---------------------------------------------------------------------------
+;; wf-rank
+;; Gaps after ties: equal score values share a rank, the next distinct
+;; value jumps by (count of ties).
+;; ---------------------------------------------------------------------------
+(define (api wf-rank)
+  (let ((state (list 0 0 #f))  ; (prev-rank count-since-last-rank prev-score)
+        (idx (list -1)))       ; column index hint, set lazily
+    (lambda (rows-so-far current-row)
+      (let* ((n (+ (car (cdr state)) 1))
+             (score (car (cdr (cdr (cdr (last-pair rows-so-far)))))))
+        ;; Default column index: assume last column if not configured.
+        ;; We resolve once based on row length and current-row's last
+        ;; element by trying the last position.
+        (cond
+          ((null? rows-so-far)
+           (set! state (list 1 1 score))
+           1)
+          ((equal? score (car (cdr (cdr state))))
+           (set! state (list (car state) n (car (cdr (cdr state)))))
+           (car state))
+          (else
+           (set! state (list (+ (car state) n) 1 score))
+           (car state)))))))
+
+;; ---------------------------------------------------------------------------
+;; wf-dense-rank
+;; No gaps: equal score values share a rank, the next distinct value
+;; advances by exactly 1.
+;; ---------------------------------------------------------------------------
+(define (api wf-dense-rank)
+  (let ((state (list 0 #f)))   ; (current-rank prev-score)
+    (lambda (rows-so-far current-row)
+      (cond
+        ((null? rows-so-far)
+         (set! state (list 1 #f))
+         1)
+        ((equal? (current-row-score current-row)
+                 (car (cdr state)))
+         (set! state (list (car state) (car (cdr state))))
+         (car state))
+        (else
+         (set! state (list (+ (car state) 1)
+                           (current-row-score current-row)))
+         (car state))))))
+
+;; Helper: extract the score from a row using the last column as default.
+;; Callers of the rank-fn in window-sort pass rows in the relation's
+;; canonical column order, so we accept either an explicit index (via
+;; the state cell) or default to the last position.
+(define (current-row-score row)
+  (cond
+    ((null? row) (error "rank: empty row"))
+    ((null? (cdr row)) (car row))
+    (else
+     ;; Walk to the last pair and return its car.
+     (let loop ((xs row))
+       (if (null? (cdr xs))
+           (car xs)
+           (loop (cdr xs)))))))
+
+;; Walk to the last cons cell of a list.
+(define (last-pair xs)
+  (if (null? (cdr xs))
+      xs
+      (last-pair (cdr xs))))
+
+;; ---------------------------------------------------------------------------
+;; wf-apply-rank
+;; Given a list of rows (already sorted by order-col), the column name
+;; for the ordering, and the column name where the resulting rank
+;; should be placed, return a NEW list of rows each augmented with
+;; the rank value as an additional trailing column.
+;;
+;; This is the standalone "apply" form used by tests and by the
+;; scenario driver. It assumes `rows` came from a relation whose
+;; column layout matches the names passed; we look up indices in
+;; the first row by matching value-to-name? No — rows don't carry
+;; names. So we require the caller to supply a RELATION via a
+;; separate path. To keep the API uniform, we accept either:
+;;   - a relation as the second argument (full form), or
+;;   - a column INDEX (number) as the second argument.
+;; To stay simple we accept a column index.
+;; ---------------------------------------------------------------------------
+(define (api wf-apply-rank rows order-col score-col)
+  ;; Resolve column indices by looking at the relation that produced
+  ;; these rows. The runner pipeline passes the relation indirectly,
+  ;; but here we accept column NAMES. We require the first row to
+  ;; carry meta? No. Instead, we accept numeric indices via a small
+  ;; convention: if order-col is a number, use it directly; otherwise
+  ;; treat it as 0 (the score is the first column).
+  (let ((order-idx (cond ((number? order-col) order-col) (else 0)))
+        (score-idx (cond ((number? score-col) score-col) (else 0))))
+    (apply-rank-build rows order-idx score-idx 1 1 #f '())))
+
+;; Recursive builder. Tracks current rank, dense counter, previous
+;; score value, and accumulator.
+(define (apply-rank-build rows order-idx score-idx rank dense prev-score acc)
+  (cond
+    ((null? rows)
+     (reverse acc))
+    (else
+     (let* ((row (car rows))
+            (cur-score (list-nth row score-idx)))
+       (let ((new-rank (cond
+                         ((null? acc) 1)
+                         ((equal? cur-score prev-score) rank)
+                         (else (+ rank 1)))))
+         (let ((new-dense (cond
+                            ((null? acc) 1)
+                            ((equal? cur-score prev-score) dense)
+                            (else (+ dense 1)))))
+           (apply-rank-build
+            (cdr rows)
+            order-idx
+            score-idx
+            new-rank
+            new-dense
+            cur-score
+            (cons (append row (list new-rank)) acc))))))))
+
+;; Helper: nth element of a list (0-based).
+(define (list-nth xs n)
+  (cond
+    ((null? xs) (error "list-nth: index out of bounds"))
+    ((= n 0) (car xs))
+    (else (list-nth (cdr xs) (- n 1)))))

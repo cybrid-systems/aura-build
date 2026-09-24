@@ -1,0 +1,314 @@
+```aura
+;; scenario.aura — Orchestrates the JSON tokenizer / parser pipeline.
+;;
+;; Builds a handful of representative JSON samples, feeds them through
+;; the library APIs (utf8, lexer, parser, index, stream, recovery,
+;; paths, errors, counts) and assembles an alist of observable results.
+;;
+;; The alist returned by (run-scenario) is consumed by main.aura which
+;; prints the 17 KEY=value lines required by the stdout contract.
+;;
+;; Every numeric value and every boolean in the alist is computed by
+;; calling into the library — no literal "expected" answers are baked
+;; into the scenario itself.
+
+;; ---------------------------------------------------------------------------
+;; Sample documents
+;; ---------------------------------------------------------------------------
+;;
+;; Five snippets covering the interesting shapes:
+;;   * a flat object with a nested array of strings
+;;   * a flat array of numbers
+;;   * a deeper mixed-type document
+;;   * a valid prefix followed by trailing garbage
+;;   * a truncated document with an unterminated string
+;;
+(define scenario-samples
+  (list
+    "{\"name\":\"ada\",\"age\":36,\"skills\":[\"math\",\"cs\"]}"
+    "[1,2,3,4,5]"
+    "{\"nested\":{\"a\":1,\"b\":[true,false,null,\"end\"]}}"
+    "{\"x\":1}garbage tail"
+    "{\"only\":\"half"))
+
+;; Convenience: pick the Nth sample (0-based).
+(define (sample-at n)
+  (list-ref scenario-samples n))
+
+;; ---------------------------------------------------------------------------
+;; Generic alist helpers (kept local; counts.aura provides its own helpers)
+;; ---------------------------------------------------------------------------
+
+(define (alist-ref key alist)
+  (cond ((null? alist) #f)
+        ((equal? (car (car alist)) key) (cdr (car alist)))
+        (else (alist-ref key (cdr alist)))))
+
+(define (alist-set key value alist)
+  (cons (cons key value) alist))
+
+;; ---------------------------------------------------------------------------
+;; Tokenization helpers
+;; ---------------------------------------------------------------------------
+
+;; Walk a token list and return the count of tokens whose kind is in
+;; the given list of kinds. We delegate to counts.aura's count-by-kind
+;; when possible; here we provide a local fallback for clarity.
+(define (count-tokens-of tokens kinds)
+  (cond ((null? tokens) 0)
+        (else
+         (+ (if (member (token-kind (car tokens)) kinds) 1 0)
+            (count-tokens-of (cdr tokens) kinds)))))
+
+;; Total number of tokens for a given source string.
+(define (count-all-tokens tokens)
+  (cond ((null? tokens) 0)
+        (else (+ 1 (count-all-tokens (cdr tokens)))))
+
+;; How many top-level comma tokens appear in a token stream — a rough
+;; proxy for "elements at the outermost level of an array/object".
+(define (count-commas tokens)
+  (count-tokens-of tokens '(comma)))
+
+;; How many opening braces + brackets (i.e. structural containers).
+(define (count-openers tokens)
+  (count-tokens-of tokens '(lbrace lbracket)))
+
+;; How many closing braces + brackets.
+(define (count-closers tokens)
+  (count-tokens-of tokens '(rbrace rbracket)))
+
+;; How many literal-keyword tokens appear (true/false/null).
+(define (count-keywords tokens)
+  (count-tokens-of tokens '(true false null)))
+
+;; How many colon tokens (object key/value separators).
+(define (count-colons tokens)
+  (count-tokens-of tokens '(colon)))
+
+;; How many string tokens appear.
+(define (count-strings tokens)
+  (count-tokens-of tokens '(string)))
+
+;; How many number tokens appear.
+(define (count-numbers tokens)
+  (count-tokens-of tokens '(number)))
+
+;; ---------------------------------------------------------------------------
+;; Per-document analyses
+;; ---------------------------------------------------------------------------
+
+;; For a given source string, tokenize it and return an alist of
+;; token-level statistics:
+;;   (tokens . N) (commas . N) (openers . N) (closers . N)
+;;   (keywords . N) (colons . N) (strings . N) (numbers . N)
+(define (token-stats src)
+  (let ((toks (lex-tokenize src)))
+    (list
+      (cons 'tokens (count-all-tokens toks))
+      (cons 'commas (count-commas toks))
+      (cons 'openers (count-openers toks))
+      (cons 'closers (count-closers toks))
+      (cons 'keywords (count-keywords toks))
+      (cons 'colons (count-colons toks))
+      (cons 'strings (count-strings toks))
+      (cons 'numbers (count-numbers toks)))))
+
+(define (stat key stats) (alist-ref key stats))
+
+;; ---------------------------------------------------------------------------
+;; AST-derived statistics
+;; ---------------------------------------------------------------------------
+
+;; Try to parse the source and report summary counts of AST nodes by
+;; kind. If the parser yields an error node we still walk whatever
+;; children it produced.
+(define (ast-node-counts src)
+  (let ((node (parse-json src)))
+    (cond ((not (error? node))
+           (let ((idx (build-index node)))
+             (list
+               (cons 'total (index-count idx 'total))
+               (cons 'object (index-count idx 'object))
+               (cons 'array (index-count idx 'array))
+               (cons 'string (index-count idx 'string))
+               (cons 'number (index-count idx 'number))
+               (cons 'true (index-count idx 'true))
+               (cons 'false (index-count idx 'false))
+               (cons 'null (index-count idx 'null))
+               (cons 'depth (index-depth idx)))))
+          (else
+           (list
+             (cons 'total 0)
+             (cons 'object 0)
+             (cons 'array 0)
+             (cons 'string 0)
+             (cons 'number 0)
+             (cons 'true 0)
+             (cons 'false 0)
+             (cons 'null 0)
+             (cons 'depth 0))))))
+
+;; Walk an AST and count the number of "leaf" nodes (strings, numbers,
+;; true/false/null). We do this by index-walk so we exercise the public
+;; API rather than re-implementing the recursion locally.
+(define (count-leaves-via-index src)
+  (let ((node (parse-json src)))
+    (cond ((not (error? node))
+           (let ((idx (build-index node))
+                 (acc 0))
+             ;; Use a mutable counter via set! in a thunk-like loop.
+             (define (bump) (set! acc (+ acc 1))))
+           ;; Fallback: walk manually because index-walk's callback
+           ;; semantics are library-specific. We count leaves directly.
+           (count-leaves-direct node)))
+        (else 0))))
+
+;; Direct recursive leaf counter — used as the authoritative answer.
+(define (count-leaves-direct node)
+  (let ((k (ast-kind node)))
+    (cond ((eq? k 'string) 1)
+          ((eq? k 'number) 1)
+          ((eq? k 'true)   1)
+          ((eq? k 'false)  1)
+          ((eq? k 'null)   1)
+          ((eq? k 'object)
+           (sum-leaf-list (ast-children node)))
+          ((eq? k 'array)
+           (sum-leaf-list (ast-children node)))
+          (else 0))))
+
+(define (sum-leaf-list lst)
+  (cond ((null? lst) 0)
+        (else (+ (count-leaves-direct (car lst))
+                 (sum-leaf-list (cdr lst))))))
+
+;; ---------------------------------------------------------------------------
+;; Streaming-event statistics
+;; ---------------------------------------------------------------------------
+
+;; Run the streaming emitter on src and count the kinds of events.
+;; Returns an alist (object-open . N) (object-close . N) (array-open . N)
+;; (array-close . N) (scalar . N) where scalar is the total of
+;; string/number/true/false/null leaf events.
+(define (stream-stats src)
+  (let ((events (stream-events src)))
+    (let ((oo 0) (oc 0) (ao 0) (ac 0) (sc 0))
+      (define (walk es)
+        (cond ((null? es) 'done)
+              (else
+               (let ((k (event-kind (car es))))
+                 (cond ((eq? k 'object-open)  (set! oo (+ oo 1)))
+                       ((eq? k 'object-close) (set! oc (+ oc 1)))
+                       ((eq? k 'array-open)   (set! ao (+ ao 1)))
+                       ((eq? k 'array-close)  (set! ac (+ ac 1)))
+                       (else                   (set! sc (+ sc 1)))))
+               (walk (cdr es)))))
+      (walk events)
+      (list
+        (cons 'object-open  oo)
+        (cons 'object-close oc)
+        (cons 'array-open   ao)
+        (cons 'array-close  ac)
+        (cons 'scalar        sc)))))
+
+;; ---------------------------------------------------------------------------
+;; Recovery statistics
+;; ---------------------------------------------------------------------------
+
+;; Run lenient recovery on src and return the status symbol and the
+;; number of input bytes that were consumed.
+(define (recover-info src)
+  (let ((r (recover-lenient src)))
+    (list
+      (cons 'status (recovery-status r))
+      (cons 'used   (recovery-bytes-used r))
+      (cons 'len    (string-length src)))))
+
+;; ---------------------------------------------------------------------------
+;; UTF-8 helpers — exercise the utf8 module on a small sample of bytes
+;; ---------------------------------------------------------------------------
+
+;; A handful of leading bytes used to verify byte-length classification.
+(define utf8-sample-bytes
+  (list 34   ;; '"'   — ASCII, 1 byte
+        123  ;; '{'   — ASCII, 1 byte
+        195  ;; 0xC3 — start of a 2-byte sequence
+        226  ;; 0xE2 — start of a 3-byte sequence (e.g. U+2014 em-dash)
+        240  ;; 0xF0 — start of a 4-byte sequence
+        65)) ;; 'A'   — ASCII, 1 byte
+
+(define (sum-byte-lens bytes)
+  (cond ((null? bytes) 0)
+        (else (+ (utf8-byte-len (car bytes))
+                 (sum-byte-lens (cdr bytes))))))
+
+;; Validate one of our sample strings — the well-formed docs are all
+;; pure ASCII so they should validate cleanly.
+(define (validate-sample src)
+  (utf8-validate src))
+
+;; ---------------------------------------------------------------------------
+;; Path helpers — exercise the path module on a small handful of
+;; constructed paths.
+;; ---------------------------------------------------------------------------
+
+;; Build a few representative paths:
+;;   root        : '()
+;;   .skills     : (("skills"))
+;;   .skills[1]  : (("skills") (1))
+;;   .nested.b   : (("nested") ("b"))
+;;   .nested.b[3]: (("nested") ("b") (3))
+(define path-root '())
+(define path-skills (list (list "skills")))
+(define path-skills-1
+  (path-prepend path-skills 1))
+(define path-nested
+  (path-prepend '() "nested"))
+(define path-nested-b
+  (path-prepend path-nested "b"))
+(define path-nested-b-3
+  (path-prepend path-nested-b 3))
+
+;; How many of our constructed paths equal a known reference path?
+;; We use path-equal? from the library so the answer reflects real API
+;; behaviour rather than literal comparisons.
+(define (count-matching-paths paths ref)
+  (cond ((null? paths) 0)
+        ((path-equal? (car paths) ref)
+         (+ 1 (count-matching-paths (cdr paths) ref)))
+        (else
+         (count-matching-paths (cdr paths) ref))))
+
+;; ---------------------------------------------------------------------------
+;; Error helpers
+;; ---------------------------------------------------------------------------
+
+;; Construct an error and round-trip its fields through the error API
+;; to verify the error representation is stable.
+(define (error-roundtrip code pos msg)
+  (let ((e (make-error code pos msg)))
+    (list
+      (cons 'is-error (error? e))
+      (cons 'code     (error-code e))
+      (cons 'pos      (error-pos e)))))
+
+;; ---------------------------------------------------------------------------
+;; Counts helpers — exercise counts.aura on the token streams.
+;; ---------------------------------------------------------------------------
+
+;; For each sample, count how many tokens have a kind in the given set.
+;; Returns the sum across all samples.
+(define (total-count-by-kind kinds)
+  (let ((acc 0))
+    (define (walk samples)
+      (cond ((null? samples) 'done)
+            (else
+             (set! acc
+               (+ acc
+                  (count-by-kind
+                    (lex-tokenize (car samples))
+                    kinds)))
+             (walk (cdr samples)))))
+    (walk sc
+; truncated by extract_aura_sources

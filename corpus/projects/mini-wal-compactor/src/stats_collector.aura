@@ -1,0 +1,38 @@
+;; stats_collector.aura
+;; Collects running statistics as an alist of (key . count) pairs.
+;; A "stats" structure is a plain association list mapping symbol
+;; keys to numeric counts. New keys default to zero.
+;;
+;; API:
+;;   (make-stats)                 -> empty stats alist
+;;   (stat-inc! stats key n)      -> bump count for `key` by `n` (mutable)
+;;   (stat-get stats key)         -> current count for `key` (0 if absent)
+;;   (stat-all stats)             -> the full alist (in insertion order)
+;;   (stats->alist stats)         -> same as stat-all (alist form)
+
+(define (api make-stats)
+  '())
+
+(define (stat-find xs key)
+  (cond ((null? xs) #f)
+        ((eq? (car (car xs)) key) (car xs))
+        (else (stat-find (cdr xs) key))))
+
+(define (api stat-inc! stats key n)
+  (let ((existing (stat-find stats key)))
+    (if existing
+        (set-cdr! existing (+ (cdr existing) n))
+        (set! stats (cons (cons key n) stats))))
+  stats)
+
+(define (api stat-get stats key)
+  (let ((existing (stat-find stats key)))
+    (if existing
+        (cdr existing)
+        0)))
+
+(define (api stat-all stats)
+  stats)
+
+(define (api stats->alist stats)
+  stats)

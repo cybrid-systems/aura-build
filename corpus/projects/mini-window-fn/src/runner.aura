@@ -1,0 +1,58 @@
+;; runner.aura — Top-level dispatcher for window-function execution.
+;;
+;; `wf-run` is the single entry point used by main.aura and by any user code
+;; that wants to evaluate a window-function plan over a relation. It takes a
+;; configuration alist and a relation and returns a NEW relation whose rows
+;; have been augmented with `__frame__` and `__rank__` synthetic columns
+;; (the same contract as `wf-window-sort` and `wf-window-hash`).
+;;
+;; The dispatch decision is driven by the global `*mode*` symbol, which is
+;; flipped by `wf-streaming-on` / `wf-streaming-off` from streaming.aura.
+;;   *mode* = 'sort      → wf-window-sort   (full sort, then per-partition scan)
+;;   *mode* = 'streaming → wf-window-hash   (per-partition streaming accumulator)
+;;
+;; Configuration keys (all symbols):
+;;   part  : partition column name
+;;   order : order-by column name
+;;   frame : frame descriptor as built by `wf-make-frame`
+;;   rank  : rank-function constructor, e.g. wf-rank, wf-row-number, …
+;;
+;; The dispatcher accepts a *plan*, decodes it, and forwards the four
+;; arguments to the chosen strategy. It also exposes a small strategy-probe
+;; helper (`wf-run-strategy`) so that callers (and the anti-hardcode guard
+;; in main.aura) can verify which path was selected without re-running.
+
+(define *mode* 'sort)
+
+(define (api wf-run-strategy)
+  ;; Return the symbol naming the strategy that the next `wf-run` call would
+  ;; select, given the current value of `*mode*`. We intentionally do NOT
+  ;; mutate *mode* here — this is a pure probe used for assertions.
+  (cond
+    ((eq? *mode* 'streaming) 'hash)
+    ((eq? *mode* 'sort)      'sort)
+    (else                    'sort)))
+
+(define (api wf-run cfg rel)
+  ;; Decode the configuration alist. Each lookup uses a tiny linear search;
+  ;; the cfg is tiny (≤5 keys) so a hand-rolled assoc is cheaper than
+  ;; building a richer table.
+  (define (cfg-get key)
+    (let loop ((xs cfg))
+      (cond
+        ((null? xs) #f)
+        ((eq? (car (car xs)) key) (cdr (car xs)))
+        (else (loop (cdr xs))))))
+
+  (let ((part-col  (cfg-get 'part))
+        (order-col (cfg-get 'order))
+        (frame     (cfg-get 'frame))
+        (rank-fn   (cfg-get 'rank)))
+    ;; Dispatch on the current *mode* symbol. Any value other than the
+    ;; literal 'streaming routes through the sort path, which is also the
+    ;; documented default set by wf-streaming-off.
+    (cond
+      ((eq? *mode* 'streaming)
+       (api wf-window-hash rel part-col frame rank-fn))
+      (else
+       (api wf-window-sort rel part-col order-col frame rank-fn)))))

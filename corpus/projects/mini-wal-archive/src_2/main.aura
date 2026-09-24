@@ -1,0 +1,106 @@
+;; main.aura — entry point for the tiered WAL archiver.
+;;
+;; This file orchestrates the full scenario described in GOAL.md. It is the
+;; only file that prints to stdout, and it does so via (display "KEY=val")
+;; (newline) lines in the exact order required by the stdout contract.
+;;
+;; The scenario goes through the canonical sequence:
+;;   1. Build the default config (age=5000ms, bytes=10000, retain=5).
+;;   2. Create one hot store and one cold store.
+;;   3. Prime the event log with a 'load event.
+;;   4. Run the full pipeline via run-archive-pipeline!, which internally:
+;;        - ingests 10 hot segments at 1000 ms apart (id 1..10),
+;;        - sweeps age and archives 7 (all those aged past threshold),
+;;        - ingests 3 more fresh hot segments (id 11..13),
+;;        - enforces cold retention dropping the 2 oldest beyond retain=5.
+;;   5. Compute stats, format them, and print the 13 KEY=value lines.
+
+(define (run-main)
+  (let ((cfg (default-config)))
+
+    ;; hot and cold stores. We hold onto both because stats needs them.
+    (let ((hot (make-store 'hot))
+          (cold (make-store 'cold)))
+
+      ;; Prime the event log so drain-log shows the initial bootstrap.
+      (log-event! 'load)
+
+      ;; Run the canonical fixture exactly as described in the GOAL. The
+      ;; pipeline mutates hot/cold in place and returns a summary.
+      (run-archive-pipeline! hot cold cfg)
+
+      ;; Compute + format the tier statistics.
+      (let ((stats (compute-stats hot cold))
+            (lines (format-stats)))
+
+        ;; Read stats values directly off the alist. Stats keys are
+        ;; quoted symbols; we look each one up with assq and format the
+        ;; integer values into the stdout contract.
+        (define (stat key)
+          (cdr (assq key stats)))
+
+        (display "ARCHIVE_AGE_MS=")
+        (display (stat 'archive-age-ms))
+        (newline)
+
+        (display "ARCHIVE_BYTES=")
+        (display (stat 'archive-bytes))
+        (newline)
+
+        (display "RETAIN_MAX=")
+        (display (stat 'retain-max))
+        (newline)
+
+        (display "HOT_SEGMENTS=")
+        (display (stat 'hot-segments))
+        (newline)
+
+        (display "HOT_BYTES=")
+        (display (stat 'hot-bytes))
+        (newline)
+
+        (display "HOT_OLDEST_AGE=")
+        (display (stat 'hot-oldest-age))
+        (newline)
+
+        (display "COLD_SEGMENTS=")
+        (display (stat 'cold-segments))
+        (newline)
+
+        (display "COLD_BYTES=")
+        (display (stat 'cold-bytes))
+        (newline)
+
+        (display "COLD_OLDEST_AGE=")
+        (display (stat 'cold-oldest-age))
+        (newline)
+
+        (display "MOVED_SEGMENTS=")
+        (display (stat 'moved-segments))
+        (newline)
+
+        (display "MOVED_BYTES=")
+        (display (stat 'moved-bytes))
+        (newline)
+
+        (display "DROPPED_SEGMENTS=")
+        (display (stat 'dropped-segments))
+        (newline)
+
+        (display "RETAINED_COLD=")
+        (display (stat 'retained-cold))
+        (newline)
+
+        ;; The remaining printed lines come from the formatted stats
+        ;; helper and the drained event log, in that order, so the full
+        ;; audit trail lands at the end of the contract.
+        (display "EVENT_LOG=")
+        (display (drain-log))
+        (newline)
+
+        ;; Touch `lines` to keep the helper available even if a future
+        ;; revision wants to dump the formatted stats directly here.
+        (set! lines lines)))))
+
+;; Kick everything off.
+(run-main)

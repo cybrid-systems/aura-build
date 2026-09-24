@@ -1,0 +1,136 @@
+;; main.aura
+;; Entry point — orchestrates one full compaction cycle end-to-end.
+;; Builds a log, classifies cold segments, merges, sweeps tombstones,
+;; writes a snapshot, computes byte/cycle stats, updates daemon state,
+;; then emits the strict KEY=value stdout contract.
+
+(define THRESHOLD 5)
+
+;; --- 1. Build entries (mix of live + tombstone) ---
+
+(define (build-entries seg-id)
+  (cond
+    ((= seg-id 1)
+     (list
+      (api make-entry 'k1 'v1 'set)
+      (api make-entry 'k2 'v2 'set)
+      (api make-entry 'k3 'v3 'set)))
+    ((= seg-id 2)
+     (list
+      (api make-entry 'k4 'v4 'set)
+      (api make-entry 'k5 'v5 'del)))
+    ((= seg-id 3)
+     (list
+      (api make-entry 'k6 'v6 'set)
+      (api make-entry 'k7 'v7 'del)
+      (api make-entry 'k8 'v8 'del)))
+    ((= seg-id 4)
+     (list
+      (api make-entry 'k9 'v9 'set)))
+    (else
+     (list
+      (api make-entry 'k10 'v10 'set)))))
+
+;; --- 2. Build segments: ids 1,3,5 cold (age >= 5), ids 2,4 hot ---
+
+(define (make-seg id age entries)
+  (api make-segment id age entries))
+
+(define seg-1 (make-seg 1 6 (build-entries 1)))
+(define seg-2 (make-seg 2 2 (build-entries 2)))
+(define seg-3 (make-seg 3 7 (build-entries 3)))
+(define seg-4 (make-seg 4 1 (build-entries 4)))
+(define seg-5 (make-seg 5 8 (build-entries 5)))
+
+;; --- 3. Append segments to log ---
+
+(define log (api make-log))
+(define log (api log-append log seg-1))
+(define log (api log-append log seg-2))
+(define log (api log-append log seg-3))
+(define log (api log-append log seg-4))
+(define log (api log-append log seg-5))
+
+;; --- 4. Classify cold segments ---
+
+(define cold-list (api classify-cold (api log-all-segments log) THRESHOLD))
+(define cold-n (api cold-count cold-list))
+(define cold-id-list (api cold-ids cold-list))
+
+;; --- 5. Merge cold segments ---
+
+(define merged (api merge-segments cold-list))
+(define merged-entries-list (api merged-entries merged))
+(define merged-bytes (api merged-byte-size merged))
+(define merged-sources (api merged-source-ids merged))
+
+;; --- 6. Sweep tombstones ---
+
+(define sweeper (api sweep-tombstones merged-entries-list))
+(define swept-kept (api sweep-kept sweeper))
+(define swept-dropped (api sweep-dropped sweeper))
+(define swept-stats (api sweep-stats sweeper))
+
+;; --- 7. Write snapshot ---
+
+(define SNAPSHOT-ID 100)
+(define snap (api write-snapshot merged SNAPSHOT-ID))
+(define snap-bytes (api snapshot-byte-size snap))
+(define snap-entry-count (length (api snapshot-entries snap)))
+
+;; --- 8. Byte counters ---
+
+(define before-bytes (api total-bytes cold-list))
+(define after-bytes snap-bytes)
+(define saved-bytes (api diff-bytes before-bytes after-bytes))
+(define ratio (api compression-ratio before-bytes after-bytes))
+
+;; --- 9. Cycle counter ---
+
+(define cc (api make-cycle-counter))
+(define cc (api cycle-tick cc))
+(define cycle-n (api cycle-count cc))
+
+;; --- 10. Stats collector ---
+
+(define stats (api make-stats))
+(define stats (api stat-inc! stats 'segments-total 5))
+(define stats (api stat-inc! stats 'segments-cold cold-n))
+(define stats (api stat-inc! stats 'entries-merged (length merged-entries-list)))
+(define stats (api stat-inc! stats 'entries-kept swept-kept))
+(define stats (api stat-inc! stats 'entries-dropped swept-dropped))
+(define stats (api stat-inc! stats 'bytes-before before-bytes))
+(define stats (api stat-inc! stats 'bytes-after after-bytes))
+(define stats (api stat-inc! stats 'bytes-saved saved-bytes))
+(define stats (api stat-inc! stats 'cycles cycle-n))
+(define stats-alist (api stats->alist stats))
+
+;; --- 11. Daemon state ---
+
+(define daemon (api make-daemon))
+(define daemon (api daemon-run-cycle! daemon))
+(define daemon (api daemon-set-status! daemon 'idle))
+(define daemon-status-val (api daemon-status daemon))
+(define daemon-cycles-val (api daemon-cycles daemon))
+
+;; --- 12. Emit KEY=value contract ---
+
+(define (emit key val)
+  (display key)
+  (display "=")
+  (display (api format-key-value key val))
+  (newline))
+
+(emit "SEGMENTS_TOTAL" 5)
+(emit "SEGMENTS_COLD" cold-n)
+(emit "SEGMENTS_HOT" (- 5 cold-n))
+(emit "ENTRIES_MERGED" (length merged-entries-list))
+(emit "ENTRIES_KEPT" swept-kept)
+(emit "ENTRIES_DROPPED" swept-dropped)
+(emit "BYTES_BEFORE" before-bytes)
+(emit "BYTES_AFTER" after-bytes)
+(emit "BYTES_SAVED" saved-bytes)
+(emit "COMPRESSION_RATIO" ratio)
+(emit "SNAPSHOT_ID" SNAPSHOT-ID)
+(emit "SNAPSHOT_ENTRIES" snap-entry-count)
+(emit "CYCLES" cycle-n)

@@ -1,0 +1,31 @@
+;; cold_detector.aura
+;; Classifies segments as cold (age >= threshold) and exposes helpers.
+;; A "cold list" is a plain list of segment structures (as produced by
+;; wal_log / wal_segment).  No additional metadata is wrapped around it,
+;; so downstream modules can consume the segments directly.
+
+(define (api classify-cold segments threshold)
+  ;; Return a list containing every segment whose age is >= threshold.
+  ;; Order of the original segment list is preserved.
+  (let loop ((xs segments) (acc '()))
+    (if (null? xs)
+        (reverse acc)
+        (let ((seg (car xs)))
+          (if (>= (api segment-age seg) threshold)
+              (loop (cdr xs) (cons seg acc))
+              (loop (cdr xs) acc))))))
+
+(define (api cold-count cold-list)
+  ;; Number of segments in the cold list.
+  (let loop ((xs cold-list) (n 0))
+    (if (null? xs)
+        n
+        (loop (cdr xs) (+ n 1)))))
+
+(define (api cold-ids cold-list)
+  ;; Project the id field out of every segment in the cold list.
+  ;; Order is preserved.
+  (let loop ((xs cold-list) (acc '()))
+    (if (null? xs)
+        (reverse acc)
+        (loop (cdr xs) (cons (api segment-id (car xs)) acc)))))

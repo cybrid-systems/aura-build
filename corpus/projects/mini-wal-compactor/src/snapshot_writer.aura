@@ -1,0 +1,21 @@
+;; snapshot_writer.aura
+;; Writes a merged bundle out as an immutable snapshot.
+;; A "snapshot" structure is (snapshot id entries byte-size).
+
+(define (api write-snapshot merged id)
+  ;; Wrap a merged bundle with a new snapshot id.
+  ;; The merged structure is (merged entries byte-size source-ids);
+  ;; we re-use its computed entries and byte-size.
+  (list 'snapshot
+        id
+        (api merged-entries merged)
+        (api merged-byte-size merged)))
+
+(define (api snapshot-id snap)
+  (car (cdr snap)))
+
+(define (api snapshot-entries snap)
+  (car (cdr (cdr snap))))
+
+(define (api snapshot-byte-size snap)
+  (car (cdr (cdr (cdr snap))))))

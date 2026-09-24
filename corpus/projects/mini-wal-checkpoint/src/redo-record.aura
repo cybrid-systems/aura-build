@@ -1,0 +1,56 @@
+; redo-record.aura — Redo record data type
+;
+; A redo record represents a single write-ahead-log entry describing a
+; modification to a page. The fields we care about are:
+;   - page-id  : integer page identifier (in [min-page-id, max-page-id])
+;   - lsn      : LSN at which this record was emitted
+;   - size     : logical size of the record in bytes (used for byte tracking)
+;
+; Records are represented as 3-element lists for compatibility with the
+; minimal Aura runtime (no records/structs):
+;   '(page-id lsn size)  ; using positional accessors
+;
+; Exports (wrapped with `(api ...)` so other modules can consume them):
+;   (api make-redo      pid lsn size) -> construct a new redo record
+;   (api redo?          r)            -> #t iff r is a well-formed redo record
+;   (api redo-page-id   r)            -> extract the page-id field
+;   (api redo-lsn       r)            -> extract the lsn field
+;   (api redo-size      r)            -> extract the size field
+
+; Construct a redo record. We tag the value with a leading symbol so the
+; predicate `redo?` can recognize it robustly (distinguish from other lists).
+; The shape is:  '(redo page-id lsn size)
+(define (api make-redo pid lsn size)
+  (list 'redo pid lsn size))
+
+; Predicate: is `r` a properly shaped redo record?
+; A valid record is a 4-element list whose first element is the tag 'redo,
+; whose page-id is a non-negative integer, whose lsn is a non-negative
+; integer, and whose size is a non-negative integer.
+(define (api redo? r)
+  (if (and (pair? r) (pair? (cdr r)) (pair? (cdr (cdr r))) (pair? (cdr (cdr (cdr r)))))
+      (let ((tag (car r))
+            (pid (car (cdr r)))
+            (lsn (car (cdr (cdr r))))
+            (sz  (car (cdr (cdr (cdr r))))))
+        (and (eq? tag 'redo)
+             (null? (cdr (cdr (cdr (cdr r)))))  ; exactly 4 elements
+             (integer? pid)
+             (>= pid 0)
+             (integer? lsn)
+             (>= lsn 0)
+             (integer? sz)
+             (>= sz 0)))
+      #f))
+
+; Accessor for the page-id field. Assumes `r` is a valid redo record.
+(define (api redo-page-id r)
+  (car (cdr r)))
+
+; Accessor for the lsn field. Assumes `r` is a valid redo record.
+(define (api redo-lsn r)
+  (car (cdr (cdr r))))
+
+; Accessor for the size field (in bytes). Assumes `r` is a valid redo record.
+(define (api redo-size r)
+  (car (cdr (cdr (cdr r)))))

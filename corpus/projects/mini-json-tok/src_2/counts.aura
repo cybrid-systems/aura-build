@@ -1,0 +1,85 @@
+;; counts.aura — Counting helpers over token lists and AST nodes.
+;;
+;; These helpers are used by the scenario to produce aggregate metrics
+;; (token histograms, boolean checks, depth calculations) without
+;; duplicating the recursion logic across modules.
+
+;; (count-by-kind tokens kinds) — count occurrences of each kind in `kinds`
+;; among `tokens`. `tokens` is a list of tokenizer output (list of token
+;; lists); `kinds` is a list of kind symbols. Walks every token, compares
+;; its kind (car) to each requested kind, and returns a flat alist
+;;   ((kind1 . n1) (kind2 . n2) ...)
+;; listing only kinds that actually appear (with count 0 if absent from
+;; the token stream, so callers always get an entry).
+(define (count-by-kind tokens kinds)
+  (define (one-kind k)
+    (cons k
+          (let loop ((ts tokens) (acc 0))
+            (if (null? ts)
+                acc
+                (let ((t (car ts)))
+                  (loop (cdr ts)
+                        (if (and (pair? t) (eq? (car t) k))
+                            (+ acc 1)
+                            acc)))))))
+  (let loop ((ks kinds) (out '()))
+    (if (null? ks)
+        (reverse out)
+        (loop (cdr ks)
+              (cons (one-kind (car ks)) out)))))
+
+;; (sum lst) — sum of numbers in `lst`, where `lst` is a flat list of
+;; numbers. Returns 0 for an empty list.
+(define (sum lst)
+  (let loop ((xs lst) (acc 0))
+    (if (null? xs)
+        acc
+        (loop (cdr xs) (+ acc (car xs))))))
+
+;; (every? p lst) — returns #t if predicate `p` holds for every element
+;; of `lst`, #t for the empty list (vacuous truth), #f as soon as one
+;; element fails.
+(define (every? p lst)
+  (let loop ((xs lst))
+    (cond
+      ((null? xs) #t)
+      ((p (car xs)) (loop (cdr xs)))
+      (else #f))))
+
+;; (max-depth nodes) — maximum nesting depth among a list of AST nodes.
+;; Each node is a list; its kind is (car node) and its children are
+;; extracted according to the AST convention used by json-ast.aura:
+;;   '(object  <alist>)       — children are values of alist entries
+;;   '(array   <list-of-node>) — children are the list elements
+;;   other kinds have no children.
+;; Depth is counted from 1 at the top level: a leaf has depth 1; a node
+;; whose deepest descendant is two levels down has depth 3, etc.
+(define (max-depth nodes)
+  (define (node-depth n)
+    (let ((k (car n)))
+      (cond
+        ((eq? k 'object)
+         (let ((children (alist-values (cadr n))))
+           (+ 1 (or (children-depth children 0) 0))))
+        ((eq? k 'array)
+         (+ 1 (or (children-depth (cadr n) 0) 0)))
+        (else 1))))
+  (define (children-depth cs best)
+    (cond
+      ((null? cs) best)
+      (else
+       (let ((d (node-depth (car cs))))
+         (children-depth (cdr cs) (if (> d best) d best))))))
+  (let loop ((ns nodes) (best 0))
+    (cond
+      ((null? ns) (if (> best 0) best 1))
+      (else
+       (let ((d (node-depth (car ns))))
+         (loop (cdr ns) (if (> d best) d best)))))))
+
+;; Local helper — extract just the values from an alist of (k . v).
+(define (alist-values al)
+  (let loop ((xs al) (out '()))
+    (if (null? xs)
+        (reverse out)
+        (loop (cdr xs) (cons (cdar xs) out)))))

@@ -1,0 +1,178 @@
+;; json-stream.aura — Streaming event emitter over a JSON document.
+;;
+;; Emits a flat list of "events" describing structural transitions while
+;; walking the AST. Events are useful for SAX-style consumers that do
+;; not want to build (or keep) the full tree in memory.
+;;
+;; An event is represented as a list
+;;   '(kind <payload>)
+;; where kind is one of:
+;;
+;;   'object-open   payload : '(object-open <path>)
+;;   'object-close  payload : '(object-close <path>)
+;;   'array-open    payload : '(array-open <path>)
+;;   'array-close   payload : '(array-close <path>)
+;;   'string        payload : '(string <path> <value>)
+;;   'number        payload : '(number <path> <value>)
+;;   'true          payload : '(true <path>)
+;;   'false         payload : '(false <path>)
+;;   'null          payload : '(null <path>)
+;;   'key           payload : '(key <path> <key>)   ;; emitted between
+;;                                                 ;; object-open and
+;;                                                 ;; the value event
+;;   'error         payload : '(error <path> <code> <pos>)
+;;
+;; A path is the json-path module's representation (see json-path.aura).
+;; This module does not depend on json-path directly: it only stores
+;; opaque path lists. The consumer can decode them via path-key and
+;; path-index.
+
+;; ---------------------------------------------------------------------------
+;; Path helpers — a tiny self-contained path builder so this module does
+;; not depend on json-path.aura at load time. Each path is a list whose
+;; first element is the depth (non-negative integer) and whose tail is
+;; a list of (key . index) pairs describing how to reach the node from
+;; the root. For arrays the key is the symbol 'idx and index is the
+;; numeric position; for objects the key is the property name string
+;; and index is #f.
+;; ---------------------------------------------------------------------------
+
+(define (make-empty-path) '(0))
+
+(define (path-depth p)
+  (if (null? p) 0 (car p)))
+
+(define (path-segments p)
+  (if (null? p) '() (cdr p)))
+
+(define (path-with-key p k)
+  (let ((d (path-depth p))
+        (seg (list (cons k #f))))
+    (cons (+ d 1) (append (path-segments p) seg))))
+
+(define (path-with-index p i)
+  (let ((d (path-depth p))
+        (seg (list (cons 'idx i))))
+    (cons (+ d 1) (append (path-segments p) seg))))
+
+;; ---------------------------------------------------------------------------
+;; Internal: append in O(n) is fine because event lists are small.
+;; ---------------------------------------------------------------------------
+
+(define (append-events a b)
+  (if (null? a) b (cons (car a) (append-events (cdr a) b))))
+
+(define (singleton-ev e) (cons e '()))
+
+;; ---------------------------------------------------------------------------
+;; Core walker — produces events for a single AST node at a given path.
+;; ---------------------------------------------------------------------------
+
+(define (node->events node path)
+  (cond
+    ((null? node) '())
+    (else
+      (let ((head (car node)))
+        (cond
+          ((eq? head 'object)
+           (object->events (cadr node) path))
+          ((eq? head 'array)
+           (array->events (cadr node) path))
+          ((eq? head 'string)
+           (singleton-ev (list 'string (list 'string path (cadr node)))))
+          ((eq? head 'number)
+           (singleton-ev (list 'number (list 'number path (cadr node)))))
+          ((eq? head 'true)
+           (singleton-ev (list 'true (list 'true path))))
+          ((eq? head 'false)
+           (singleton-ev (list 'false (list 'false path))))
+          ((eq? head 'null)
+           (singleton-ev (list 'null (list 'null path))))
+          ((eq? head 'error)
+           (let ((code (cadr node))
+                 (pos  (caddr node)))
+             (singleton-ev (list 'error (list 'error path code pos)))))
+          (else '()))))))
+
+(define (object->events alist path)
+  (append-events
+    (singleton-ev (list 'object-open (list 'object-open path)))
+    (append-events
+      (object-pairs->events alist path)
+      (singleton-ev (list 'object-close (list 'object-close path))))))
+
+(define (object-pairs->events alist path)
+  (if (null? alist)
+      '()
+      (let ((pair (car alist)))
+        (let ((k (car pair))
+              (v (cdr pair)))
+          (let ((child-path (path-with-key path k)))
+            (append-events
+              (singleton-ev (list 'key (list 'key child-path k)))
+              (append-events
+                (node->events v child-path)
+                (object-pairs->events (cdr alist) path))))))))
+
+(define (array->events children path)
+  (append-events
+    (singleton-ev (list 'array-open (list 'array-open path)))
+    (append-events
+      (array-children->events children path 0)
+      (singleton-ev (list 'array-close (list 'array-close path))))))
+
+(define (array-children->events children path i)
+  (if (null? children)
+      '()
+      (let ((child (car children)))
+        (let ((child-path (path-with-index path i)))
+          (append-events
+            (node->events child child-path)
+            (array-children->events (cdr children) path (+ i 1)))))))
+
+;; ---------------------------------------------------------------------------
+;; Public API
+;; ---------------------------------------------------------------------------
+
+;; stream-events : AST -> list-of-events
+;; Accepts either an AST node from json-ast.aura or #f (empty stream).
+(define (stream-events src)
+  (cond
+    ((null? src) '())
+    ((eq? src #f) '())
+    (else
+      (let ((head (car src)))
+        (cond
+          ((eq? head 'object) (object->events (cadr src) (make-empty-path)))
+          ((eq? head 'array)  (array->events (cadr src) (make-empty-path)))
+          (else (node->events src (make-empty-path))))))))
+
+;; event-kind : event -> symbol
+;; Returns the kind symbol (object-open, string, number, key, ...).
+(define (event-kind ev)
+  (if (null? ev)
+      '()
+      (car ev)))
+
+;; event-path : event -> path
+;; Returns the path payload associated with the event.
+(define (event-path ev)
+  (cond
+    ((null? ev) '())
+    (else
+      (let ((payload (cadr ev)))
+        (if (null? payload) '() (cadr payload))))))
+
+;; event-depth : event -> integer
+;; Returns the nesting depth at which the event occurred. The root
+;; events have depth 1, children of the root have depth 2, and so on.
+;; Open events use the path's depth; leaf events inherit their parent's
+;; depth as recorded in the payload.
+(define (event-depth ev)
+  (if (null? ev)
+      0
+      (let ((payload (cadr ev)))
+        (if (null? payload)
+            0
+            (let ((p (cadr payload)))
+              (path-depth p))))))

@@ -1,0 +1,25 @@
+;; wal-ingest.aura — ingestion of a new WAL segment into the hot tier.
+;;
+;; ingest-segment! creates a fresh segment stamped with the current simulated
+;; clock (from wal-clock), sized `bytes`, assigned the next id from a running
+;; counter, and tier='hot. The segment is then appended to the given store.
+;;
+;; The id counter is a single mutable top-level box `wal-next-id`. The first
+;; ingested segment gets id=1, the next id=2, and so on. This counter is
+;; deliberately simple — it never resets — so the ids in the final stdout
+// contract line up with the scenario steps.
+
+(define wal-next-id 1)
+
+;; ingest-segment! takes a store (expected to be the hot tier) and a byte
+;; count, creates a new segment at the current clock reading, appends it to
+;; the store, bumps the id counter, and returns the freshly created segment
+;; so callers can log/inspect it.
+(define (ingest-segment! store bytes)
+  (let ((seg (make-segment wal-next-id
+                           bytes
+                           (current-ms)
+                           (store-tier store))))
+    (set! wal-next-id (+ wal-next-id 1))
+    (store-add! store seg)
+    seg))

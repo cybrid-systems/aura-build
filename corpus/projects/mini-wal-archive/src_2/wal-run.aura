@@ -1,0 +1,71 @@
+;; wal-run.aura — orchestrate a full archive pipeline run.
+;;
+;; run-archive-pipeline! encapsulates the exact sequence of steps that
+;; main.aura needs to drive in order to produce the stdout contract:
+;;
+;;   1. reset the simulated clock to 0 and ingest 10 segments (id 1..10),
+;;      each 10000 bytes, spaced 1000 ms apart, into the hot tier.
+;;   2. age-sweep! → flip tier of every segment aged >= 5000 ms.
+;;   3. archive-sweep! → move archive-candidates from hot to cold.
+;;      Per the GOAL's "smaller fixture" note, only 7 of the 10 are old
+;;      enough at the moment of the first sweep (ids 4..10, whose ages
+;;      are 6000..1000 ms after stepping). After archiving, 3 fresh
+;;      segments (id 11..13) remain in hot, and 7 are in cold.
+;;   4. ingest 3 more hot segments (id 11..13) at clock 11000, 12000, 13000.
+;;   5. enforce-retention! on cold with retain=5 → cold has 7 segs, so
+;;      drop the 2 oldest (ids 1, 2) → cold retains 5 segs (ids 3..7).
+;;
+;; The pipeline mutates the supplied stores in place, advances the
+;; global simulated clock, appends events to the log, and returns a
+;; summary alist describing what happened: ids-ingested, ids-archived,
+;; ids-dropped, ids-retained-cold, hot-count, cold-count, hot-bytes,
+;; cold-bytes, log. main.aura reads this summary to print the contract.
+
+(define (run-archive-pipeline! hot cold cfg)
+  ;; Reset the clock so the run is deterministic regardless of any
+  ;; prior advance-ms! calls during module loading.
+  (set! wal-clock 0)
+
+  ;; Step 1: ingest 10 segments of 10000 bytes, 1000 ms apart.
+  (let ((i 0))
+    (begin
+      (set! i 0)
+      (while (< i 10)
+        (begin
+          (ingest-segment! hot 10000)
+          (log-event! 'ingest)
+          (if (< (- i 9) 0) (advance-ms! 1000) 'noop)
+          (set! i (+ i 1))))))
+
+  ;; Step 2: age sweep marks archive-candidates.
+  (age-sweep! hot cfg)
+  (log-event! 'age-sweep)
+
+  ;; Step 3: archive sweep moves candidates from hot to cold.
+  (let ((archive-summary (archive-sweep! hot cold cfg)))
+    (log-event! 'archive-sweep)
+    ;; Step 4: ingest 3 more hot segments spaced 1000 ms apart.
+    (let ((i 0))
+      (begin
+        (set! i 0)
+        (while (< i 3)
+          (begin
+            (advance-ms! 1000)
+            (ingest-segment! hot 10000)
+            (log-event! 'ingest)
+            (set! i (+ i 1))))))
+    ;; Step 5: enforce cold retention — drop the oldest beyond retain-max.
+    (let ((retention-summary (enforce-retention! cold cfg)))
+      (log-event! 'retention)
+      ;; Build the pipeline summary alist from observed store contents.
+      (let ((hot-segs (store-all hot))
+            (cold-segs (store-all cold)))
+        (list (cons 'ids-ingested 13)
+              (cons 'ids-archived (cdr (assq 'moved archive-summary)))
+              (cons 'ids-dropped (cdr (assq 'dropped retention-summary)))
+              (cons 'ids-retained-cold (cdr (assq 'retained retention-summary)))
+              (cons 'hot-count (length hot-segs))
+              (cons 'cold-count (length cold-segs))
+              (cons 'hot-bytes (store-bytes hot))
+              (cons 'cold-bytes (store-bytes cold))
+              (cons 'log (drain-log)))))))

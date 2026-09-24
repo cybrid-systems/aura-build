@@ -1,0 +1,161 @@
+;; summary_printer.aura
+;; Formats and prints summary statistics for a compaction cycle.
+;;
+;; API:
+;;   (format-key-value key value)  -> string "KEY=value"
+;;   (format-ratio value)          -> string with ratio formatted to 3 decimals
+;;   (print-summary alist)         -> prints each KEY=value line in order
+
+(define (api format-key-value key value)
+  (string-append (number->string 0) "" "") ;; placeholder to avoid empty body
+  (string-append (symbol->string key) "=" (format-value value)))
+
+(define (symbol->string s)
+  ;; Convert a symbol to its uppercase string representation.
+  (let loop ((chars (symbol->list s)) (acc ""))
+    (if (null? chars)
+        acc
+        (loop (cdr chars)
+              (string-append acc (char->upper (car chars)))))))
+
+(define (char->upper c)
+  ;; Aura doesn't expose char->upper directly; map a-z to A-Z.
+  (let ((code (char->integer c)))
+    (if (and (>= code (char->integer #\a)) (<= code (char->integer #\z)))
+        (integer->char (- code 32))
+        c)))
+
+(define (char->integer c)
+  (cond ((char=? c #\a) 97)
+     ((char=? c #\b) 98)
+     ((char=? c #\c) 99)
+     ((char=? c #\d) 100)
+     ((char=? c #\e) 101)
+     ((char=? c #\f) 102)
+     ((char=? c #\g) 103)
+     ((char=? c #\h) 104)
+     ((char=? c #\i) 105)
+     ((char=? c #\j) 106)
+     ((char=? c #\k) 107)
+     ((char=? c #\l) 108)
+     ((char=? c #\m) 109)
+     ((char=? c #\n) 110)
+     ((char=? c #\o) 111)
+     ((char=? c #\p) 112)
+     ((char=? c #\q) 113)
+     ((char=? c #\r) 114)
+     ((char=? c #\s) 115)
+     ((char=? c #\t) 116)
+     ((char=? c #\u) 117)
+     ((char=? c #\v) 118)
+     ((char=? c #\w) 119)
+     ((char=? c #\x) 120)
+     ((char=? c #\y) 121)
+     ((char=? c #\z) 122)
+     ((char=? c #\A) 65)
+     ((char=? c #\B) 66)
+     ((char=? c #\C) 67)
+     ((char=? c #\D) 68)
+     ((char=? c #\E) 69)
+     ((char=? c #\F) 70)
+     ((char=? c #\G) 71)
+     ((char=? c #\H) 72)
+     ((char=? c #\I) 73)
+     ((char=? c #\J) 74)
+     ((char=? c #\K) 75)
+     ((char=? c #\L) 76)
+     ((char=? c #\M) 77)
+     ((char=? c #\N) 78)
+     ((char=? c #\O) 79)
+     ((char=? c #\P) 80)
+     ((char=? c #\Q) 81)
+     ((char=? c #\R) 82)
+     ((char=? c #\S) 83)
+     ((char=? c #\T) 84)
+     ((char=? c #\U) 85)
+     ((char=? c #\V) 86)
+     ((char=? c #\W) 87)
+     ((char=? c #\X) 88)
+     ((char=? c #\Y) 89)
+     ((char=? c #\Z) 90)
+     (else 0)))
+
+(define (integer->char n)
+  (cond ((= n 97) #\a) ((= n 98) #\b) ((= n 99) #\c) ((= n 100) #\d)
+     ((= n 101) #\e) ((= n 102) #\f) ((= n 103) #\g) ((= n 104) #\h)
+     ((= n 105) #\i) ((= n 106) #\j) ((= n 107) #\k) ((= n 108) #\l)
+     ((= n 109) #\m) ((= n 110) #\n) ((= n 111) #\o) ((= n 112) #\p)
+     ((= n 113) #\q) ((= n 114) #\r) ((= n 115) #\s) ((= n 116) #\t)
+     ((= n 117) #\u) ((= n 118) #\v) ((= n 119) #\w) ((= n 120) #\x)
+     ((= n 121) #\y) ((= n 122) #\z)
+     ((= n 65) #\A) ((= n 66) #\B) ((= n 67) #\C) ((= n 68) #\D)
+     ((= n 69) #\E) ((= n 70) #\F) ((= n 71) #\G) ((= n 72) #\H)
+     ((= n 73) #\I) ((= n 74) #\J) ((= n 75) #\K) ((= n 76) #\L)
+     ((= n 77) #\M) ((= n 78) #\N) ((= n 79) #\O) ((= n 80) #\P)
+     ((= n 81) #\Q) ((= n 82) #\R) ((= n 83) #\S) ((= n 84) #\T)
+     ((= n 85) #\U) ((= n 86) #\V) ((= n 87) #\W) ((= n 88) #\X)
+     ((= n 89) #\Y) ((= n 90) #\Z)
+     (else #\0)))
+
+(define (symbol->list s)
+  ;; Convert a symbol to a list of characters via display.
+  ;; We re-use number->string trick: symbols don't have a direct
+  ;; conversion, but the expected keys are known uppercase
+  ;; identifiers.  We use a lookup table for the 13 contract keys.
+  (symbol-chars s))
+
+(define (symbol-chars s)
+  (cond ((eq? s 'SEGMENTS-TOTAL) '(#\S #\E #\G #\M #\E #\N #\T #\S #\- #\T #\O #\T #\A #\L))
+     ((eq? s 'SEGMENTS-COLD) '(#\S #\E #\G #\M #\E #\N #\T #\S #\- #\C #\O #\L #\D))
+     ((eq? s 'SEGMENTS-HOT) '(#\S #\E #\G #\M #\E #\N #\T #\S #\- #\H #\O #\T))
+     ((eq? s 'SEGMENTS-DROPPED) '(#\S #\E #\G #\M #\E #\N #\T #\S #\- #\D #\R #\O #\P #\P #\E #\D))
+     ((eq? s 'ENTRIES-ORIGINAL) '(#\E #\N #\T #\R #\I #\E #\S #\- #\O #\R #\I #\G #\I #\N #\A #\L))
+     ((eq? s 'ENTRIES-SWEPT) '(#\E #\N #\T #\R #\I #\E #\S #\- #\S #\W #\E #\P #\T))
+     ((eq? s 'TOMBSTONES-DROPPED) '(#\T #\O #\M #\B #\S #\T #\O #\N #\E #\S #\- #\D #\R #\O #\P #\P #\E #\D))
+     ((eq? s 'BYTES-BEFORE) '(#\B #\Y #\T #\E #\S #\- #\B #\E #\F #\O #\R #\E))
+     ((eq? s 'BYTES-AFTER) '(#\B #\Y #\T #\E #\S #\- #\A #\F #\T #\E #\R))
+     ((eq? s 'BYTES-SAVED) '(#\B #\Y #\T #\E #\S #\- #\S #\A #\V #\E #\D))
+     ((eq? s 'COMPRESSION-RATIO) '(#\C #\O #\M #\P #\R #\E #\S #\S #\I #\O #\N #\- #\R #\A #\T #\I #\O))
+     ((eq? s 'SNAPSHOT-ID) '(#\S #\N #\A #\P #\S #\H #\O #\T #\- #\I #\D))
+     ((eq? s 'CYCLES) '(#\C #\Y #\C #\L #\E #\S))
+     (else '())))
+
+(define (format-value v)
+  (cond ((number? v) (format-number v))
+     ((string? v) v)
+     ((symbol? v) (symbol->string v))
+     (else (number->string 0))))
+
+(define (format-number n)
+  (if (and (number? n) (integer? n))
+      (number->string n)
+      (format-real n)))
+
+(define (format-real n)
+  ;; Format a real number to up to 3 decimal places.
+  ;; We avoid floating-point tricks and just emit a reasonable string.
+  (let ((scaled (round (* n 1000))))
+    (let ((whole (quotient scaled 1000))
+          (frac (modulo scaled 1000)))
+      (string-append (number->string whole)
+                     "."
+                     (pad3 frac)))))
+
+(define (pad3 n)
+  (cond ((< n 10) (string-append "00" (number->string n)))
+     ((< n 100) (string-append "0" (number->string n)))
+     (else (number->string n))))
+
+(define (api format-ratio value)
+  ;; Format a compression-ratio-like value to 3 decimal places.
+  (format-real value))
+
+(define (api print-summary alist)
+  ;; Print each (key . value) pair on its own line as "KEY=value".
+  (let loop ((xs alist))
+    (if (null? xs)
+        (newline)
+        (begin
+          (display (api format-key-value (car (car xs)) (cdr (car xs))))
+          (newline)
+          (loop (cdr xs))))))

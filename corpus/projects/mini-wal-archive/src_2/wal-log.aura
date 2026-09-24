@@ -1,0 +1,20 @@
+;; wal-log.aura — simple in-memory event log for the WAL archiver.
+;; The log is a single mutable top-level box `wal-log` holding a list of
+;; symbols (one entry per significant pipeline event). Helpers append and
+;; drain the log.
+
+(define wal-log '())
+
+;; log-event! appends a single event symbol to the log. Returns the updated
+;; log list so callers may chain, but the canonical state is the global box.
+(define (log-event! evt)
+  (set! wal-log (append wal-log (list evt)))
+  wal-log)
+
+;; drain-log returns the current log contents and resets it to '() so the
+;; caller can inspect or report the events that have accumulated since the
+;; last drain.
+(define (drain-log)
+  (let ((events wal-log))
+    (set! wal-log '())
+    events))

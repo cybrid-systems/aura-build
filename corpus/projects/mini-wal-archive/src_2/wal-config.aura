@@ -1,0 +1,22 @@
+;; wal-config.aura — configuration for the tiered WAL archiver.
+;; The config is an alist with three keys:
+;;   'archive-age-ms   — minimum segment age (in ms) before it is archive-eligible
+;;   'archive-bytes    — byte threshold per segment for archive eligibility
+;;   'retain-max       — maximum number of segments to keep in the cold tier
+;;
+;; Mutators are deliberately omitted: configs are read-only after creation.
+
+(define (default-config)
+  ;; Defaults from the GOAL: age=5000 ms, bytes=10000, retain=5.
+  (list (cons 'archive-age-ms 5000)
+        (cons 'archive-bytes 10000)
+        (cons 'retain-max 5)))
+
+(define (config-archive-age-ms cfg)
+  (cdr (assq 'archive-age-ms cfg)))
+
+(define (config-archive-bytes cfg)
+  (cdr (assq 'archive-bytes cfg)))
+
+(define (config-retain-max cfg)
+  (cdr (assq 'retain-max cfg)))

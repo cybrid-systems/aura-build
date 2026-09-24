@@ -1,0 +1,53 @@
+;; wal-archive.aura — move archive-candidate segments from hot to cold.
+;;
+;; After age-sweep! has flipped the tier field of aged hot segments to
+;; 'archive-candidate, this module is responsible for physically moving
+;; those segments out of the source store and into the destination store.
+;;
+;; tier-move! is the primitive for relocating a single segment from one
+;; store to another; archive-sweep! uses it to drain every archive
+;; candidate currently sitting in the hot store into the cold store.
+;;
+;; The sweep returns an alist summary of the work it performed so that
+;; the runner and stats modules can report counts and bytes without
+;; having to recompute them by scanning the stores again.
+
+(define (tier-move! src-store dst-store seg)
+  ;; Append seg to dst-store's segs list, then drop it from src-store.
+  ;; Both stores are mutated in place.
+  (let ((src-cell (assq 'segs src-store))
+        (dst-cell (assq 'segs dst-store)))
+    (set! dst-cell
+          (cons 'segs (cons seg (cdr dst-cell))))
+    (set! src-cell
+          (cons 'segs
+                          (filter (lambda (s) (not (equal? s seg)))
+                                  (cdr src-cell))))))
+
+(define (archive-sweep! hot cold cfg)
+  ;; Walk every segment in hot; any whose tier has been set to
+  ;; 'archive-candidate gets moved into cold and its tier is then
+  ;; flipped to 'cold (the destination store's tier symbol). The cfg
+  ;; argument is accepted for symmetry with age-sweep! / future
+  ;; configurability but isn't read here.
+  (let ((moved-count 0)
+        (moved-bytes 0)
+        (dst-tier (store-tier cold)))
+    (let loop ((remaining (store-segs hot)))
+      (cond
+        ((null? remaining)
+         (list (cons 'moved-count moved-count)
+               (cons 'moved-bytes moved-bytes)))
+        (else
+         (let ((seg (car remaining)))
+           (if (eq? (segment-tier seg) 'archive-candidate)
+               (begin
+                 ;; Relabel as belonging to the cold tier before moving.
+                 (set-car! seg
+                           (cons 'tier dst-tier))
+                 (set! moved-count (+ moved-count 1))
+                 (set! moved-bytes
+                       (+ moved-bytes (segment-bytes seg)))
+                 (tier-move! hot cold seg))
+               '())
+           (loop (cdr remaining))))))))

@@ -1,0 +1,106 @@
+;; wal-stats.aura — stats computation and formatting for the tiered WAL archiver.
+;;
+;; compute-stats inspects the two tier stores after the pipeline has run and
+;; produces an alist summarizing each tier (segment count, bytes, oldest age)
+;; plus aggregate totals. format-stats then turns that alist into the 11
+;; line strings that main.aura prints as part of the stdout contract.
+
+;; Helper: safe alist lookup with a default value.
+(define (alist-ref alist key default)
+  (let ((cell (assq key alist)))
+    (if cell (cdr cell) default)))
+
+;; Helper: sum of segment bytes across a list of segments.
+(define (sum-bytes segs)
+  (if (null? segs)
+      0
+      (+ (segment-bytes (car segs)) (sum-bytes (cdr segs)))))
+
+;; Helper: find the oldest age (max) across a list of segments.
+(define (max-age segs)
+  (if (null? segs)
+      0
+      (let ((rest-max (max-age (cdr segs))))
+        (if (> (segment-age-ms (car segs)) rest-max)
+            (segment-age-ms (car segs))
+            rest-max))))
+
+;; Helper: find the youngest age (min) across a list of segments.
+(define (min-age segs)
+  (if (null? segs)
+      0
+      (let ((rest-min (min-age (cdr segs))))
+        (if (null? (cdr segs))
+            (segment-age-ms (car segs))
+            (if (< (segment-age-ms (car segs)) rest-min)
+                (segment-age-ms (car segs))
+                rest-min)))))
+
+;; Helper: find the max segment-id across a list of segments.
+(define (max-id segs)
+  (if (null? segs)
+      0
+      (let ((rest-max (max-id (cdr segs))))
+        (if (> (segment-id (car segs)) rest-max)
+            (segment-id (car segs))
+            rest-max))))
+
+;; Helper: find the min segment-id across a list of segments.
+(define (min-id segs)
+  (if (null? segs)
+      0
+      (let ((rest-min (min-id (cdr segs))))
+        (if (null? (cdr segs))
+            (segment-id (car segs))
+            (if (< (segment-id (car segs)) rest-min)
+                (segment-id (car segs))
+                rest-min)))))
+
+;; compute-stats produces an alist summarizing the hot and cold tiers plus
+;; aggregate totals. Keys:
+;;   hot-count, hot-bytes, hot-oldest-age
+;;   cold-count, cold-bytes, cold-oldest-age
+;;   total-count, total-bytes, min-segment-id, max-segment-id
+;; Segments still flagged as 'archive-candidate are considered "hot" since
+;; they physically remain in the hot store until archive-sweep! moves them.
+(define (compute-stats hot cold)
+  (let ((hot-segs (store-all hot))
+        (cold-segs (store-all cold)))
+    (list (cons 'hot-count (store-size hot))
+          (cons 'hot-bytes (store-bytes hot))
+          (cons 'hot-oldest-age (store-oldest-age hot))
+          (cons 'cold-count (store-size cold))
+          (cons 'cold-bytes (store-bytes cold))
+          (cons 'cold-oldest-age (store-oldest-age cold))
+          (cons 'total-count (+ (store-size hot) (store-size cold)))
+          (cons 'total-bytes (+ (store-bytes hot) (store-bytes cold)))
+          (cons 'min-segment-id
+                (let ((all-segs (append hot-segs cold-segs)))
+                  (if (null? all-segs) 0 (min-id all-segs))))
+          (cons 'max-segment-id
+                (let ((all-segs (append hot-segs cold-segs)))
+                  (if (null? all-segs) 0 (max-id all-segs)))))))
+
+;; format-stats turns the alist from compute-stats into a list of
+;; "KEY=value" strings suitable for the stdout contract.
+(define (format-stats stats)
+  (list (string-append "HOT_COUNT="
+                       (number->string (alist-ref stats 'hot-count 0)))
+        (string-append "HOT_BYTES="
+                       (number->string (alist-ref stats 'hot-bytes 0)))
+        (string-append "HOT_OLDEST_AGE_MS="
+                       (number->string (alist-ref stats 'hot-oldest-age 0)))
+        (string-append "COLD_COUNT="
+                       (number->string (alist-ref stats 'cold-count 0)))
+        (string-append "COLD_BYTES="
+                       (number->string (alist-ref stats 'cold-bytes 0)))
+        (string-append "COLD_OLDEST_AGE_MS="
+                       (number->string (alist-ref stats 'cold-oldest-age 0)))
+        (string-append "TOTAL_COUNT="
+                       (number->string (alist-ref stats 'total-count 0)))
+        (string-append "TOTAL_BYTES="
+                       (number->string (alist-ref stats 'total-bytes 0)))
+        (string-append "MIN_SEGMENT_ID="
+                       (number->string (alist-ref stats 'min-segment-id 0)))
+        (string-append "MAX_SEGMENT_ID="
+                       (number->string (alist-ref stats 'max-segment-id 0)))))

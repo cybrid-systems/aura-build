@@ -1,0 +1,59 @@
+;; wal_reporter.aura — Render final WAL_SHIP_* contract lines
+;;
+;; The reporter turns a metrics snapshot (an alist of counters and
+;; identifiers) into the ordered KEY=value lines that the scenario
+;; expects on stdout. We don't print anything ourselves — `report-emit`
+;; is a pure formatter that returns a list of strings. `main.aura`
+;; does the actual `display`ing.
+;;
+;; We intentionally only depend on:
+;;   - `metrics-snapshot` (from wal_metrics.aura)
+;;   - `metrics-render-key` (from wal_metrics.aura)
+;;
+;; so this file stays a thin presentational layer.
+
+(define (api report-emit)
+  ;; Returns a list of strings, one per expected KEY, in the exact
+  ;; order mandated by the scenario contract:
+  ;;
+  ;;   WAL_SHIP_PRIMARY
+  ;;   WAL_SHIP_FOLLOWER
+  ;;   WAL_SHIP_PAGES_SHIPPED
+  ;;   WAL_SHIP_FRAMES_OK
+  ;;   WAL_SHIP_FRAMES_RETRY
+  ;;   WAL_SHIP_BYTES_SHIPPED
+  ;;   WAL_SHIP_LSN_HWM
+  ;;   WAL_SHIP_CATCHUP_MS
+  ;;   WAL_SHIP_RECONNECTS
+  ;;   WAL_SHIP_DROPPED
+  ;;   WAL_SHIP_APPLIED_LSN
+  ;;   WAL_SHIP_VERIFIED
+  ;;
+  ;; Each line is shaped:  "<KEY>=<value>"
+
+  (let ((snap (metrics-snapshot)))
+    (list
+      (string-append "WAL_SHIP_PRIMARY="
+                     (metrics-render-key snap 'primary))
+      (string-append "WAL_SHIP_FOLLOWER="
+                     (metrics-render-key snap 'follower))
+      (string-append "WAL_SHIP_PAGES_SHIPPED="
+                     (metrics-render-key snap 'pages-shipped))
+      (string-append "WAL_SHIP_FRAMES_OK="
+                     (metrics-render-key snap 'frames-ok))
+      (string-append "WAL_SHIP_FRAMES_RETRY="
+                     (metrics-render-key snap 'frames-retry))
+      (string-append "WAL_SHIP_BYTES_SHIPPED="
+                     (metrics-render-key snap 'bytes-shipped))
+      (string-append "WAL_SHIP_LSN_HWM="
+                     (metrics-render-key snap 'lsn-hwm))
+      (string-append "WAL_SHIP_CATCHUP_MS="
+                     (metrics-render-key snap 'catchup-ms))
+      (string-append "WAL_SHIP_RECONNECTS="
+                     (metrics-render-key snap 'reconnects))
+      (string-append "WAL_SHIP_DROPPED="
+                     (metrics-render-key snap 'dropped))
+      (string-append "WAL_SHIP_APPLIED_LSN="
+                     (metrics-render-key snap 'applied-lsn))
+      (string-append "WAL_SHIP_VERIFIED="
+                     (metrics-render-key snap 'verified)))))

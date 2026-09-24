@@ -1,0 +1,58 @@
+;; json-errors.aura — Error representation and helpers.
+;;
+;; Errors raised anywhere by the tokenizer, parser, stream emitter or
+;; recovery layer are funnelled through this module so that the rest of
+;; the project (and downstream consumers) has a single, uniform way to
+;; represent parser errors.
+;;
+;; Error representation — a tagged list:
+;;   '(error <code> <pos> <msg>)
+;;
+;;   code  : a symbol identifying the class of error. Defined codes:
+;;            'unexpected-eof    — input ended in the middle of a value
+;;            'unexpected-char   — a byte was found where another was
+;;                                 expected (e.g. '}' in an array)
+;;            'invalid-number    — a numeric literal could not be parsed
+;;            'invalid-escape    — bad escape inside a string
+;;            'invalid-unicode   — malformed \uXXXX surrogate pair
+;;            'invalid-keyword   — a bare word that isn't true/false/null
+;;            'trailing-garbage  — recovery noticed leftover bytes
+;;            'internal          — should never happen; sentinel
+;;   pos   : absolute byte index in the source where the error was
+;;           detected (an integer). For 'unexpected-eof it is the
+;;           length of the source.
+;;   msg   : a human-readable description (a string). The message is
+;;           intended for diagnostics; consumers must not pattern-match
+;;           on it.
+;;
+;; This module is intentionally tiny: it just defines the constructor
+;; and the accessors/predicates so other files can build and inspect
+;; errors uniformly.
+
+(define (make-error code pos msg)
+  ;; Build a fresh error record. We keep the order stable so the
+  ;; accessors below can rely on it.
+  (list 'error code pos msg))
+
+(define (error? v)
+  ;; True iff `v` looks like one of our error records. We test the
+  ;; tag rather than the type because Aura does not give us a cheap
+  ;; "list-of-length-4" primitive.
+  (if (pair? v)
+      (if (eq? (car v) 'error)
+          #t
+          #f)
+      #f))
+
+(define (error-code e)
+  ;; Project the code symbol out of an error record.
+  (car (cdr e)))
+
+(define (error-pos e)
+  ;; Project the byte position out of an error record.
+  (car (cdr (cdr e))))
+
+(define (error-msg e)
+  ;; Accessor for the human-readable message. Not part of the required
+  ;; API table but useful for callers that want to display diagnostics.
+  (car (cdr (cdr (cdr e)))))

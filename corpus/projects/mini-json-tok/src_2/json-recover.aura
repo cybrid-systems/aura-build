@@ -1,0 +1,134 @@
+;; json-recover.aura — Lenient parser that tolerates trailing garbage.
+;;
+;; Builds on json-lex.aura and json-ast.aura to attempt to parse a JSON
+;; document while skipping over any junk that may follow the first
+;; well-formed value. Useful for ingesting streams where the producer
+;; may concatenate several JSON documents or pad with whitespace and
+;; trailing data.
+;;
+;; Recovery result representation — a list:
+;;   '(recovery <status> <bytes-used> <ast-or-error>)
+;;
+;;   status       : symbol describing what happened
+;;                  'ok        -> full document parsed, no leftover
+;;                  'partial   -> full document parsed, trailing bytes ignored
+;;                  'truncated -> parser could not finish the document
+;;                  'empty     -> source contained no JSON value at all
+;;   bytes-used   : number of leading source bytes consumed by the parser
+;;                  (including the trailing garbage if 'ok, or up to the
+;;                  point where parsing stopped if 'truncated)
+;;   ast-or-error : the AST node from json-ast on success, or an
+;;                  '(error ...) node if parsing aborted.
+
+;; Forward declarations from other modules (provided they are loaded
+;; before this file on the same CLI invocation).
+;;   lex-tokenize : string -> list-of-token
+;;   token-kind   : token -> symbol
+;;   token-span   : token -> (start . end)
+;;   parse-json   : string -> AST-node
+
+;; Walk a token list and decide how many leading tokens are "core"
+;; (i.e. form one well-formed JSON value). We do this by parsing the
+;; prefix of the token stream and asking the parser where it stopped.
+;;
+;; Strategy: parse with json-ast, look at the resulting node. If it is
+;; an error node, return 0 bytes used and 'truncated. Otherwise compute
+;; the byte span covered by the parsed value as the maximum end-offset
+;; of any token consumed.
+;;
+;; Since we don't have direct access to the parser cursor, we infer the
+;; byte extent from the token stream itself: walk tokens in order, keep
+;; track of nesting depth implied by punctuation, and stop when the
+;; depth returns to zero after opening. The byte offset just past the
+;; last such token is the "bytes used" by the document.
+
+(define (recovery-span src)
+  ;; Returns either 'empty or (cons bytes-used ast).
+  (let ((toks (lex-tokenize src)))
+    (cond
+      ((null? toks) 'empty)
+      (else
+       (let ((result (parse-json src)))
+         (if (and (list? result) (eq? (car result) 'error))
+             ;; Truncated: parser refused. We still try to report 0
+             ;; bytes used and let the caller distinguish.
+             '(truncated . 0)
+             ;; Walk tokens to compute how many bytes were consumed.
+             (let ((used (recovery-consumed-bytes toks)))
+               (cons used result))))))))
+
+;; Compute the number of leading source bytes consumed by one
+;; well-formed JSON value, given the full token list produced for the
+;; source. We track bracket/brace depth and stop when it first returns
+;; to 0 after having been positive. If depth never becomes positive
+;; (e.g. a bare number or a bare string), the first token's end is
+;; used.
+(define (recovery-consumed-bytes toks)
+  (let loop ((ts toks) (depth 0) (last-end 0))
+    (cond
+      ((null? ts) last-end)
+      (else
+       (let ((tok (car ts))
+             (rest (cdr ts)))
+         (let ((k (token-kind tok))
+               (span (token-span tok))
+               (start (car span))
+               (end (cdr span)))
+           (let ((new-depth
+                  (cond
+                    ((eq? k 'lbrace) (+ depth 1))
+                    ((eq? k 'lbracket) (+ depth 1))
+                    ((eq? k 'rbrace) (- depth 1))
+                    ((eq? k 'rbracket) (- depth 1))
+                    (else depth))))
+             (cond
+               ((and (> depth 0) (= new-depth 0))
+                ;; The matching closer of the outermost container was
+                ;; just consumed. Stop here.
+                end)
+               (else
+                (loop rest new-depth end))))))))))
+
+;; Public API: recover-lenient
+;; Parse `src` as JSON, tolerating trailing garbage after the first
+;; complete value. Returns a recovery record (see header).
+(define (recover-lenient src)
+  (let ((r (recovery-span src)))
+    (cond
+      ((eq? r 'empty)
+       '(recovery empty 0 (error empty 0 "no input")))
+      ((and (pair? r) (eq? (car r) 'truncated))
+       '(recovery truncated 0 (error truncated 0 "parse failed")))
+      (else
+       (let ((used (car r))
+             (ast (cdr r))
+             (len (string-length src)))
+         (cond
+           ((>= used len)
+            '(recovery ok used ast))
+           ((> used 0)
+            ;; Trailing junk exists; classify it.
+            '(recovery partial used ast))
+           (else
+            '(recovery truncated 0 ast))))))))
+
+;; Accessors over a recovery record produced by recover-lenient.
+;; All four are total: they accept any value and return a sensible
+;; default if the record is malformed.
+(define (recovery-status r)
+  (cond
+    ((and (list? r) (eq? (car r) 'recovery) (>= (length r) 2))
+     (list-ref r 1))
+    (else 'unknown)))
+
+(define (recovery-bytes-used r)
+  (cond
+    ((and (list? r) (eq? (car r) 'recovery) (>= (length r) 3))
+     (list-ref r 2))
+    (else 0)))
+
+(define (recovery-ast r)
+  (cond
+    ((and (list? r) (eq? (car r) 'recovery) (>= (length r) 4))
+     (list-ref r 3))
+    (else '(error unknown 0 "no ast"))))

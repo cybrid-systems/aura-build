@@ -1,0 +1,118 @@
+;; frame.aura — frame descriptors for window functions.
+;;
+;; A frame is a tagged list (frame kind lo hi) where:
+;;   kind ∈ {rows, range}
+;;   lo, hi are either:
+;;     - a non-negative integer (offset, only valid for kind=rows)
+;;     - the symbol 'unbounded  (no boundary on that side)
+;;     - the symbol 'current    (current row, shorthand for 0)
+;;
+;; A frame describes the boundary offsets around the "pivot" row index
+;; inside a sorted partition. The semantics mirror SQL:
+;;   ROWS BETWEEN n PRECEDING AND m FOLLOWING
+;;   RANGE BETWEEN ... (treated like ROWS for our simple numeric scores)
+;;
+;; The runtime in window-sort/window-hash computes a row-index window
+;; via wf-rows-in-frame and feeds the resulting row slice into the
+;; rank or aggregate function.
+
+(define (api wf-make-frame kind lo hi)
+  (list 'frame kind lo hi))
+
+(define (frame-kind f) (car (cdr f)))
+(define (frame-lo f)   (car (cdr (cdr f))))
+(define (frame-hi f)   (car (cdr (cdr (cdr f)))))
+
+;; wf-frame-string: produce a SQL-like textual rendering of a frame.
+;; Used both for display and for the round-trip check in main.aura.
+(define (api wf-frame-string f)
+  (let ((k (frame-kind f))
+        (lo (frame-lo f))
+        (hi (frame-hi f)))
+    (let ((lo-str (frame-bound-string lo 'preceding))
+          (hi-str (frame-bound-string hi 'following)))
+      (string-append
+        (cond ((eq? k 'rows) "ROWS BETWEEN ")
+              ((eq? k 'range) "RANGE BETWEEN ")
+              (else (string-append (symbol->string-cmp k) " BETWEEN ")))
+        lo-str
+        " AND "
+        hi-str))))
+
+;; Render a single frame bound, given the direction in which it applies.
+;; Direction is used purely to pick "PRECEDING" vs "FOLLOWING".
+(define (frame-bound-string b dir)
+  (cond
+    ((eq? b 'unbounded) "UNBOUNDED "
+                        (if (eq? dir 'preceding) "PRECEDING" "FOLLOWING"))
+    ((eq? b 'current)   "CURRENT ROW")
+    ((number? b) (string-append
+                   (number->string (abs b))
+                   " "
+                   (if (eq? dir 'preceding) "PRECEDING" "FOLLOWING")))
+    (else (string-append (symbol->string-cmp b) " "
+                         (if (eq? dir 'preceding) "PRECEDING" "FOLLOWING")))))
+
+;; Minimal symbol->string: we don't have a built-in, and the standard
+;; Aura CLI's symbol->string isn't part of our agreed core. We render
+;; the common cases and fall back to a placeholder.
+(define (symbol->string-cmp s)
+  (cond ((eq? s 'rows) "ROWS")
+        ((eq? s 'range) "RANGE")
+        ((eq? s 'preceding) "PRECEDING")
+        ((eq? s 'following) "FOLLOWING")
+        ((eq? s 'unbounded) "UNBOUNDED")
+        ((eq? s 'current) "CURRENT ROW")
+        (else "?")))
+
+;; wf-rows-in-frame: given the (sorted) rows of a single partition,
+;; a frame descriptor, and the index of the pivot row, return the
+;; sub-list of rows that fall inside the frame window. The returned
+;; list preserves the original ordering of rows (ascending index).
+;;
+;; For kind=rows we use offset arithmetic against the pivot index.
+;; For kind=range we treat numeric Score-style columns as if the
+;; boundary is an offset from the pivot's position in the already-sorted
+;; partition — i.e., the same arithmetic. Callers who need true
+;; value-based RANGE should pre-sort by that column, which window-sort
+;; already does via wf-sort-by.
+(define (api wf-rows-in-frame rows frame pivot)
+  (let ((kind (frame-kind frame))
+        (lo (frame-lo frame))
+        (hi (frame-hi frame)))
+    (let ((start (resolve-bound lo pivot #t))
+          (end   (resolve-bound hi pivot #f)))
+      (let ((s (max 0 start))
+            (e (min (- (length rows) 1) end)))
+        (if (> s e)
+            '()
+            (slice rows s e))))))
+
+;; Translate a frame bound into a concrete integer index relative to
+;; the pivot. `lo?` is #t for the lower bound, #f for the upper bound;
+;; this only affects how 'current / non-negative numbers are interpreted
+;; (we keep the math the same; current row = offset 0 from pivot).
+(define (resolve-bound b pivot lo?)
+  (cond
+    ((eq? b 'unbounded)
+     (if lo? 0 1000000))
+    ((eq? b 'current)
+     pivot)
+    ((number? b)
+     ;; lo? uses the bound as-is for upper; for lower, pivot - b.
+     (if lo?
+         (- pivot b)
+         (+ pivot b)))
+    (else pivot)))
+
+;; Slice rows[start..end] inclusive, preserving order.
+(define (slice rows start end)
+  (slice-helper rows start end 0))
+
+(define (slice-helper rows start end i)
+  (cond
+    ((null? rows) '())
+    ((< i start) (slice-helper (cdr rows) start end (+ i 1)))
+    ((> i end) '())
+    (else (cons (car rows)
+                (slice-helper (cdr rows) start end (+ i 1))))))
