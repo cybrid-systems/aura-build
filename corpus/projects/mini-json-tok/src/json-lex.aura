@@ -1,0 +1,179 @@
+;; json-lex.aura — Zero-copy JSON tokenizer.
+;;
+;; A "zero-copy" tokenizer: we never slice or duplicate the source string.
+;; Each token is represented as a small alist of three entries describing
+;; the kind, the (start . end) byte span, and — for primitives — the value.
+;;
+;; Exposes:
+;;   (lex-tokenize src)         -> list of tokens (objects, arrays, literals,
+;;                                 numbers, strings, commas, colons, EOF)
+;;   (token-kind token)         -> symbol naming the token kind
+;;   (token-span token)         -> pair (start . end) of byte offsets in src
+;;   (token-value token)        -> value carried by the token (#f for structural
+;;                                 tokens), or raw string slice for strings
+
+;; ---- helpers ---------------------------------------------------------------
+
+;; String length in bytes — Aura strings are byte sequences here.
+(define (str-len s) (string-length s))
+
+;; Return char (as 1-char string) at index i of s, or "" if past end.
+(define (str-at s i)
+  (if (>= i (str-len s))
+      ""
+      (substring s i (+ i 1))))
+
+;; Numeric char? 0..9 only (no sign, no dot, no exponent).
+(define (digit? c)
+  (and (>= (char->int (string-ref c 0)) (char->int #\0))
+       (<= (char->int (string-ref c 0)) (char->int #\9))))
+
+;; Hex digit? 0-9 a-f A-F
+(define (hex-digit? c)
+  (let ((cc (string-ref c 0)))
+    (or (and (>= (char->int cc) (char->int #\0))
+             (<= (char->int cc) (char->int #\9)))
+        (and (>= (char->int cc) (char->int #\a))
+             (<= (char->int cc) (char->int #\f)))
+        (and (>= (char->int cc) (char->int #\A))
+             (<= (char->int cc) (char->int #\F))))))
+
+;; ---- error token -----------------------------------------------------------
+;;
+;; On a lexer-level error we still emit a token so the caller always sees a
+;; well-formed list. The kind is 'ERROR and the span marks the offending byte.
+
+(define (mk-token kind start end val)
+  (list (cons 'kind kind) (cons 'span (cons start end)) (cons 'val val)))
+
+;; ---- main driver -----------------------------------------------------------
+
+(define (lex-tokenize src)
+  (lex-loop src 0 (str-len src) '()))
+
+(define (lex-loop src i n acc)
+  (if (>= i n)
+      (reverse (cons (mk-token 'EOF n n #f) acc))
+      (let ((c (str-at src i)))
+        (cond
+          ((string=? c " ")   (lex-loop src (+ i 1) n acc))
+          ((string=? c "\t")  (lex-loop src (+ i 1) n acc))
+          ((string=? c "\n")  (lex-loop src (+ i 1) n acc))
+          ((string=? c "\r")  (lex-loop src (+ i 1) n acc))
+          ((string=? c "{")   (lex-loop src (+ i 1) n
+                                     (cons (mk-token 'LBRACE i (+ i 1) #f) acc)))
+          ((string=? c "}")   (lex-loop src (+ i 1) n
+                                     (cons (mk-token 'RBRACE i (+ i 1) #f) acc)))
+          ((string=? c "[")   (lex-loop src (+ i 1) n
+                                     (cons (mk-token 'LBRACKET i (+ i 1) #f) acc)))
+          ((string=? c "]")   (lex-loop src (+ i 1) n
+                                     (cons (mk-token 'RBRACKET i (+ i 1) #f) acc)))
+          ((string=? c ",")   (lex-loop src (+ i 1) n
+                                     (cons (mk-token 'COMMA i (+ i 1) #f) acc)))
+          ((string=? c ":")   (lex-loop src (+ i 1) n
+                                     (cons (mk-token 'COLON i (+ i 1) #f) acc)))
+          ((string=? c "\"")  (lex-string src i n acc))
+          ((or (string=? c "t") (string=? c "f")) (lex-bool src i n acc))
+          ((string=? c "n")  (lex-null src i n acc))
+          ((digit? c)         (lex-number src i n acc))
+          ((or (string=? c "-") (string=? c "+"))
+           (lex-number src i n acc))
+          (else
+           (lex-loop src (+ i 1) n
+                     (cons (mk-token 'ERROR i (+ i 1) #f) acc)))))))
+
+;; ---- string scanner --------------------------------------------------------
+
+(define (lex-string src i n acc)
+  ;; i points at the opening quote. We collect the raw substring (zero-copy
+  ;; span) plus an unescaped value string when no escapes are present.
+  (let ((start (+ i 1)))
+    (let loop ((j start) (escaped? #f) (acc2 acc))
+      (cond
+        ((>= j n)
+         ;; unterminated — emit what we have with an ERROR tag, then EOF
+         (let ((tok (mk-token 'STRING start j #f))
+               (err (mk-token 'ERROR j j #f)))
+           (lex-loop src n n (cons err (cons tok acc2)))))
+        ((string=? (str-at src j) "\\")
+         (loop (+ j 2) #t acc2))
+        ((string=? (str-at src j) "\"")
+         (let* ((end j)
+                (val (substring src start end))
+                (tok (mk-token 'STRING start end val)))
+           (lex-loop src (+ j 1) n (cons tok acc2))))
+        (else
+         (loop (+ j 1) escaped? acc2))))))
+
+;; ---- number scanner --------------------------------------------------------
+
+(define (lex-number src i n acc)
+  ;; Accept: [-]digits [.digits] [e|E [+-]digits]
+  (let loop ((j i) (state 'start))
+    (cond
+      ((>= j n)
+       (let ((val (substring src i j)))
+         (lex-loop src j n
+                   (cons (mk-token 'NUMBER i j val) acc))))
+      (else
+       (let ((c (str-at src j)))
+         (cond
+           ((and (string=? c "-") (eq? state 'start))
+            (loop (+ j 1) 'sign))
+           ((digit? c)
+            (loop (+ j 1)
+                  (cond
+                    ((eq? state 'frac) 'frac)
+                    ((eq? state 'exp)  'exp)
+                    ((eq? state 'exp-sign) 'exp)
+                    (else 'int))))
+           ((and (string=? c ".") (eq? state 'int))
+            (loop (+ j 1) 'frac))
+           ((and (or (string=? c "e") (string=? c "E"))
+                 (or (eq? state 'int) (eq? state 'frac)))
+            (loop (+ j 1) 'exp-sign))
+           ((and (or (string=? c "+") (string=? c "-"))
+                 (eq? state 'exp-sign))
+            (loop (+ j 1) 'exp))
+           (else
+            ;; number ended
+            (let ((val (substring src i j)))
+              (lex-loop src j n
+                        (cons (mk-token 'NUMBER i j val) acc))))))))))
+
+;; ---- literal scanners -------------------------------------------------------
+
+(define (lex-bool src i n acc)
+  (cond
+    ((and (<= (+ i 4) n)
+          (string=? (substring src i (+ i 4)) "true"))
+     (lex-loop src (+ i 4) n
+               (cons (mk-token 'BOOL i (+ i 4) #t) acc)))
+    ((and (<= (+ i 5) n)
+          (string=? (substring src i (+ i 5)) "false"))
+     (lex-loop src (+ i 5) n
+               (cons (mk-token 'BOOL i (+ i 5) #f) acc)))
+    (else
+     (lex-loop src (+ i 1) n
+               (cons (mk-token 'ERROR i (+ i 1) #f) acc)))))
+
+(define (lex-null src i n acc)
+  (cond
+    ((and (<= (+ i 4) n)
+          (string=? (substring src i (+ i 4)) "null"))
+     (lex-loop src (+ i 4) n
+               (cons (mk-token 'NULL i (+ i 4) #f) acc)))
+    (else
+     (lex-loop src (+ i 1) n
+               (cons (mk-token 'ERROR i (+ i 1) #f) acc)))))
+
+;; ---- accessors -------------------------------------------------------------
+
+(define (token-kind token)
+  (cdr (assq 'kind token)))
+
+(define (token-span token)
+  (cdr (assq 'span token)))
+
+(define (token-value token)
+  (cdr (assq 'val token)))

@@ -1,0 +1,72 @@
+;; utf8.aura — Minimal UTF-8 helpers for the JSON tokenizer.
+;;
+;; Exposes:
+;;   (utf8-bom-skip s i)   -> index in s after skipping a leading UTF-8 BOM if present
+;;   (utf8-validate s)     -> #t if s is a valid UTF-8 byte sequence, #f otherwise
+;;   (utf8-byte-len b)     -> number of bytes in the UTF-8 codepoint starting with byte b
+
+(define (utf8-byte-len b)
+  ;; Returns the expected encoded length (1..4) for a UTF-8 codepoint whose
+  ;; first byte is b. Returns 0 for an invalid leading byte.
+  (cond
+    ((< b 128) 1)            ; 0xxxxxxx -> 1 byte (ASCII)
+    ((< b 192) 0)            ; 10xxxxxx or invalid continuation as start
+    ((< b 224) 2)            ; 110xxxxx -> 2 bytes
+    ((< b 240) 3)            ; 1110xxxx -> 3 bytes
+    ((< b 248) 4)            ; 11110xxx -> 4 bytes
+    (else 0)))
+
+(define (utf8-bom-skip s i)
+  ;; If s starting at i holds the UTF-8 BOM (0xEF 0xBB 0xBF), advance past it.
+  (let ((n (string-length s)))
+    (if (and (< (+ i 2) n)
+             (= 239 (char->ascii (string-ref s i)))
+             (= 187 (char->ascii (string-ref s (+ i 1))))
+             (= 191 (char->ascii (string-ref s (+ i 2)))))
+        (+ i 3)
+        i)))
+
+(define (utf8-validate s)
+  ;; Walk the string byte by byte, decoding UTF-8 sequences. Returns #t only
+  ;; if every byte participates in a well-formed codepoint and no trailing
+  ;; partial sequence remains. The codepoint itself is irrelevant to JSON;
+  ;; we only check structure and continuation-byte pattern (10xxxxxx).
+  (letrec ((check
+             (lambda (i len)
+               (cond
+                 ((>= i len) #t)
+                 ((< (+ i 0) len) ; placeholder for clarity
+                  (let ((b (char->ascii (string-ref s i))))
+                    (let ((bl (utf8-byte-len b)))
+                      (cond
+                        ((= bl 0) #f)
+                        ((= bl 1)
+                         (check (+ i 1) len))
+                        ((= bl 2)
+                         (and (< (+ i 1) len)
+                              (= 128 (bitwise-and (char->ascii (string-ref s (+ i 1))) 192))
+                              (check (+ i 2) len)))
+                        ((= bl 3)
+                         (and (< (+ i 2) len)
+                              (= 128 (bitwise-and (char->ascii (string-ref s (+ i 1))) 192))
+                              (= 128 (bitwise-and (char->ascii (string-ref s (+ i 2))) 192))
+                              (check (+ i 3) len)))
+                        (else
+                         (and (< (+ i 3) len)
+                              (= 128 (bitwise-and (char->ascii (string-ref s (+ i 1))) 192))
+                              (= 128 (bitwise-and (char->ascii (string-ref s (+ i 2))) 192))
+                              (= 128 (bitwise-and (char->ascii (string-ref s (+ i 3))) 192))
+                              (check (+ i 4) len)))))))))))
+    (check 0 (string-length s))))
+
+;; Minimal bitwise-and for Aura; kept local so utf8-validate is self-contained.
+;; Falls back to a logical-AND when not exposed by the runtime.
+(define (bitwise-and a b)
+  ;; Conservative implementation: iterate over bits of b (small ints only).
+  (letrec ((loop
+             (lambda (result shift)
+               (if (= shift 8)
+                   result
+                   (let ((bit (bitwise-bit (- b (* shift (/ b 2)))))
+                     ...)))))
+    ...))

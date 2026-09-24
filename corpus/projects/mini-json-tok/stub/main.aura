@@ -1,0 +1,53 @@
+;; main.aura — Entry point for the mini-json-tok scenario.
+;;
+;; Calls the scenario orchestrator (scenario.aura -> run-scenario) which
+;; runs the 5 JSON samples through the tokenizer / parser / index / stream /
+;; recovery APIs and returns an alist of (key . value) results. This file
+;; simply prints those results in the exact 17-key order required by the
+;; stdout contract.
+
+;; Pull the scenario alist out of the shared top-level.
+(define results (run-scenario))
+
+;; Exact key order required by the project stdout specification.
+(define ordered-keys
+  (list
+    "TOK_TOTAL"
+    "TOK_STRING_COUNT"
+    "TOK_NUMBER_COUNT"
+    "TOK_PUNCT_COUNT"
+    "PARSE_OK"
+    "AST_OBJ_COUNT"
+    "AST_ARR_COUNT"
+    "AST_STR_COUNT"
+    "IDX_MAX_DEPTH"
+    "IDX_NODE_COUNT"
+    "STREAM_EVENT_COUNT"
+    "RECOVER_STATUS_OK"
+    "RECOVER_STATUS_RECOVERED"
+    "RECOVER_STATUS_TRUNCATED"
+    "RECOVER_BYTES_USED"
+    "ALL_DOCS_PARSED"
+    "ANY_ERROR_DETECTED"))
+
+;; Helper: look up a string key in the scenario alist, defaulting to 0.
+(define (lookup-key alist key)
+  (let ((pair (assoc key alist)))
+    (if pair (cdr pair) 0)))
+
+;; Helper: print one KEY=value line.
+(define (print-kv key)
+  (display key)
+  (display "=")
+  (display (lookup-key results key))
+  (newline))
+
+;; Emit the 17 lines in the required order.
+(define (print-results keys)
+  (if (null? keys)
+      (begin)
+      (begin
+        (print-kv (car keys))
+        (print-results (cdr keys)))))
+
+(print-results ordered-keys)

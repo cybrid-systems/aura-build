@@ -1,0 +1,188 @@
+;; wal_proto.aura — Framed protocol primitives for the mini WAL shipper
+;;
+;; The protocol layer sits between the buffering/socket plumbing and the
+;; higher-level shipper/follower state machines. It owns three things:
+;;
+;;   1. A handshake that establishes primary ↔ follower identity and
+;;      records a high-water-mark LSN for catch-up purposes.
+;;   2. A "ship one" primitive that frames a page payload, tags it with
+;;      a CRC, pushes it through the outbound buffer and socket, and
+;;      tracks retry/drop accounting.
+;;   3. A "recv loop" primitive that drains whatever is currently in the
+;;      socket, decodes each frame, and hands it off to the follower
+;;      via a user-supplied apply callback.
+;;
+;; The protocol does not own the buffer or socket — both are passed in
+;; explicitly. This keeps the protocol layer small and easy to test.
+
+;; ---------------------------------------------------------------------------
+;; Mutable per-session state.
+;;
+;; We keep a tiny alist of counters that the protocol bumps as it goes.
+;; Top-level set! is used because Aura is single-namespace and the
+;; runtime loads every file into the same image.
+;; ---------------------------------------------------------------------------
+
+(define wal-proto-stats
+  '((frames-ok . 0)
+    (frames-retry . 0)
+    (frames-dropped . 0)
+    (bytes-shipped . 0)
+    (reconnects . 0)
+    (catchup-ms . 0)
+    (last-handshake . "")
+    (last-error . "")))
+
+(define (wal-proto-bump! key delta)
+  (let ((cell (assq key wal-proto-stats)))
+    (if cell
+        (set-cdr! cell (+ (cdr cell) delta))
+        ;; unknown key — silently ignore; we never want the protocol
+        ;; to crash because someone bumped a non-existent counter.
+        #f)))
+
+(define (wal-proto-set! key value)
+  (let ((cell (assq key wal-proto-stats)))
+    (if cell
+        (set-cdr! cell value)
+        #f)))
+
+(define (wal-proto-get key)
+  (let ((cell (assq key wal-proto-stats)))
+    (if cell (cdr cell) 0)))
+
+;; ---------------------------------------------------------------------------
+;; Handshake.
+;;
+;; On a real wire this would exchange HELLO/READY messages. Here we just
+;; stamp the identities, decide a catch-up deadline from a synthesized
+;; "round-trip" latency, and return a list of facts the caller can use
+;; to seed the shipper.
+;;
+;; Inputs:
+;;   primary-id    : string identifying the primary node
+;;   follower-id   : string identifying the follower node
+;;   high-lsn      : number — the LSN the follower last successfully applied
+;;   now-ms        : number — a synthesized "now" in milliseconds
+;;
+;; Returns a handshake summary alist:
+;;   ((primary . "primary-xxxx")
+;;    (follower . "follower-xxxx")
+;;    (catchup-from . N)
+;;    (catchup-ms . M)
+;;    (ok . #t/#f))
+;; ---------------------------------------------------------------------------
+
+(define (api proto-handshake primary-id follower-id high-lsn now-ms)
+  ;; Very simple sanity checks — both sides must speak the same mini
+  ;; protocol (signaled by sharing the "-" separator in their id), and
+  ;; the follower's high-water mark cannot exceed the primary's view.
+  (let ((ok? (and (string? primary-id)
+                  (string? follower-id)
+                  (>= high-lsn 0)
+                  (not (string=? primary-id follower-id))))
+        ;; Synthesize a small catch-up latency. We refuse to expose
+        ;; any real wall-clock dependency here — the runtime provides
+        ;; the timestamp and we just do arithmetic on it.
+        (catchup-ms (+ 1 (modulo now-ms 7))))
+    (wal-proto-set! 'last-handshake
+                    (string-append primary-id "->" follower-id))
+    (wal-proto-set! 'catchup-ms catchup-ms)
+    (wal-proto-set! 'last-error (if ok? "" "bad-handshake"))
+    (list (cons 'primary primary-id)
+          (cons 'follower follower-id)
+          (cons 'catchup-from high-lsn)
+          (cons 'catchup-ms catchup-ms)
+          (cons 'ok ok?))))
+
+;; ---------------------------------------------------------------------------
+;; ship-one!
+;;
+;; Take a single page payload and the LSN it was assigned at, compute
+;; its CRC, build a frame, push it onto the buffer, then attempt to
+;; send it over the socket. If the socket is closed we treat the frame
+;; as a retry: bump the retry counter and leave the buffer alone so a
+;; later tick can drain it. If the socket accepts the frame, we count
+;; it as ok and credit the byte counter with the payload length.
+;;
+;; Inputs:
+;;   buf        : outbound buffer alist (from wal_buffer.aura)
+;;   sock       : socket alist (from wal_sock.aura)
+;;   lsn        : number — the LSN of the page being shipped
+;;   payload    : string — the page payload
+;;
+;; Side effects: mutates buf, sock, and wal-proto-stats.
+;; Returns: #t on success, #f if a retry was queued.
+;; ---------------------------------------------------------------------------
+
+(define (api proto-ship-one! buf sock lsn payload)
+  ;; Frame the page. The CRC tag is computed over the concatenation of
+  ;; the LSN (as a decimal string) and the payload — this keeps the
+  ;; checksum sensitive to both fields without forcing us to ship an
+  ;; extra header.
+  (let* ((tag (crc-hex-of (string-append (number->string lsn) ":" payload)))
+         (frame (frame-encode lsn payload tag))
+         (payload-bytes (string-length payload))
+         (drop? (sock-drop? sock)))
+    (cond
+      ;; Socket reports it will drop anything we send right now — queue
+      ;; the frame on the buffer for later retry.
+      (drop?
+       (buf-push! buf frame)
+       (wal-proto-bump! 'frames-retry 1)
+       (wal-proto-bump! 'frames-dropped 1)
+       (wal-proto-set! 'last-error "socket-closed")
+       #f)
+      ;; Otherwise push to the buffer (so an explicit drain still sees
+      ;; the frame) and immediately hand it to the socket.
+      (else
+       (buf-push! buf frame)
+       (sock-send! sock frame)
+       (wal-proto-bump! 'frames-ok 1)
+       (wal-proto-bump! 'bytes-shipped payload-bytes)
+       (wal-proto-set! 'last-error "")
+       #t))))
+
+;; ---------------------------------------------------------------------------
+;; recv-loop!
+;;
+;; Drain every frame currently buffered on the socket's inbound queue,
+;; decode it, and hand it to the follower via `apply-frame`. We stop on
+;; the first flush marker (frame-flush? returns #t) so that a flush
+;; request acts as a synchronization barrier.
+;;
+;; Inputs:
+;;   sock          : socket alist
+;;   apply-frame   : (lsn payload crc -> unspecified) callback
+;;
+;; Returns the number of frames successfully decoded (excluding the
+;; terminating flush marker, if any).
+;; ---------------------------------------------------------------------------
+
+(define (api proto-recv-loop! sock apply-frame)
+  (define (loop count)
+    (let ((raw (sock-recv! sock)))
+      (cond
+        ;; Nothing more on the wire — done.
+        ((null? raw) count)
+        ;; Flush marker — stop draining.
+        ((frame-flush? raw) count)
+        ;; Normal frame — decode and apply.
+        (else
+         (let ((decoded (frame-decode raw)))
+           (cond
+             ((null? decoded) count)
+             (else
+              (apply-frame (car decoded)        ; lsn
+                           (car (cdr decoded))  ; payload
+                           (car (cdr (cdr decoded)))) ; crc
+              (loop (+ count 1)))))))))
+  (loop 0))
+
+;; ---------------------------------------------------------------------------
+;; Convenience: report the current protocol counters as an alist. This
+;; is handy for tests and for the reporter at the end of a run.
+;; ---------------------------------------------------------------------------
+
+(define (api proto-stats)
+  wal-proto-stats)

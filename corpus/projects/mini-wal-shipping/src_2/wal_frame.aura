@@ -1,0 +1,17 @@
+;; wal_frame.aura — Frame encoding/decoding
+;; Frames carry an LSN, payload, and CRC tag as a 3-element list.
+;; A special flush marker is represented as the empty list '().
+
+;; Build a (lsn payload crc) frame.
+(define (api frame-encode lsn payload crc)
+  (list lsn payload crc))
+
+;; Decode a frame. On a flush marker ('()) pass it through unchanged
+;; so callers can detect it via frame-flush?.
+(define (api frame-decode frame)
+  (cond ((null? frame) '())
+        (else frame)))
+
+;; Is the given value a flush marker?
+(define (api frame-flush? frame)
+  (null? frame))

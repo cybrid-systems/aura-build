@@ -1,0 +1,39 @@
+;; wal-log.aura — append-only event log for the WAL archiver
+;;
+;; The log is a tiny in-memory audit trail. Other modules call (log-event! sym)
+;; at meaningful checkpoints (ingest, age-sweep, archive-sweep, retention, …).
+;; main.aura drains the log at the end of the scenario to emit the
+;; EVENT=... lines of the stdout contract.
+;;
+;; Implementation: a single global mutable cell holding a list of symbols.
+;; We deliberately keep this module dependency-free — no clock, no config,
+;; no store — so every other module can log without import cycles.
+
+;; Internal mutable log cell. Holds a list of symbols, newest at the front
+;; so (drain-log) can reverse for chronological output.
+(define *log-state* (list '()))
+
+;; log-event! : symbol -> unspecified
+;; Append an event symbol to the log. Idempotent for 'ingest priming calls.
+(define (log-event! evt)
+  (set! *log-state*
+        (cons (if (symbol? evt) evt 'unknown)
+              (car *log-state*)))
+  #t)
+
+;; drain-log : -> list-of-symbols (oldest-first)
+;; Return every logged event in chronological order and reset the log to
+;; empty. The caller is expected to format the returned list.
+(define (drain-log)
+  (let ((events (reverse (car *log-state*))))
+    (set! *log-state* (list '()))
+    events))
+
+;; Helper: count occurrences of a symbol in a list. Used by stats modules
+;; that want to cross-check event counts without re-implementing the walk.
+(define (log-count events sym)
+  (let loop ((xs events) (n 0))
+    (cond
+      ((null? xs) n)
+      ((equal? (car xs) sym) (loop (cdr xs) (+ n 1)))
+      (else (loop (cdr xs) n)))))

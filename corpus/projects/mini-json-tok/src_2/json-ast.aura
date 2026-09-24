@@ -1,0 +1,258 @@
+;; json-ast.aura — Tolerant JSON parser producing a structural AST.
+;;
+;; AST node representation — every node is a list of the form
+;;   '(kind <payload>)
+;; where kind is a symbol describing the JSON value type, and the
+;; payload varies by kind:
+;;
+;;   '(object  <alist>)      ;; alist of (key . node) pairs
+;;   '(array   <list-of-node>) ;; list of child nodes
+;;   '(string  <string>)     ;; decoded string slice
+;;   '(number  <num>)        ;; numeric value (integer or real)
+;;   '(true)                 ;; literal true
+;;   '(false)                ;; literal false
+;;   '(null)                 ;; literal null
+;;   '(error  <symbol> <pos> <msg>) ;; parser error (recoverable/terminal)
+;;
+;; The parser is intentionally simple and tolerant: it relies on the
+;; tokenizer (json-lex.aura) to produce a flat token stream, then walks
+;; that stream recursively. On a parse error it returns a single error
+;; node rather than throwing — callers can inspect it via ast-kind /
+;; ast-value.
+
+;; Forward reference — lexer accessors are loaded before this file,
+;; so token-kind/token-span/token-value are already bound in the
+;; shared top-level.
+
+;; ---- Parser helpers ----------------------------------------------------
+
+;; peek-token : (list-of-token) -> token-or-#f
+;; Return the next token without consuming, or #f on EOF.
+(define (peek-token toks)
+  (if (null? toks) #f (car toks)))
+
+;; take-token : (list-of-token) -> token
+;; Pop and return the head token; assume non-empty (caller's job).
+(define (take-token toks)
+  (car toks))
+
+;; expect-punct : (list-of-token) symbol -> (list-of-token token-or-error)
+;; Consume one token, expecting a punctuation kind; otherwise return an
+;; error token describing what was found.
+(define (expect-punct toks sym)
+  (let ((t (take-token toks)))
+    (let ((k (token-kind t)))
+      (if (eq? k sym)
+          (list (cdr toks) t)
+          (list toks
+                (list 'error
+                      'expected-punct
+                      (car (token-span t))
+                      (string-append "expected "
+                                     (symbol->string sym)
+                                     " got "
+                                     (symbol->string k))))))))
+
+;; ---- Type-specific parsers --------------------------------------------
+
+;; parse-string : (list-of-token) -> (list-of-token ast)
+(define (parse-string toks)
+  (let ((t (take-token toks)))
+    (if (eq? (token-kind t) 'string)
+        (list (cdr toks) (list 'string (token-value t)))
+        (list toks (list 'error 'expected-string
+                         (car (token-span t)) "expected string token")))))
+
+;; parse-number : (list-of-token) -> (list-of-token ast)
+(define (parse-number toks)
+  (let ((t (take-token toks)))
+    (if (eq? (token-kind t) 'number)
+        (list (cdr toks) (list 'number (token-value t)))
+        (list toks (list 'error 'expected-number
+                         (car (token-span t)) "expected number token")))))
+
+;; parse-literal : (list-of-token) symbol -> (list-of-token ast)
+;; Consume a literal token (true/false/null) and wrap it.
+(define (parse-literal toks lit)
+  (let ((t (take-token toks)))
+    (if (eq? (token-kind t) lit)
+        (list (cdr toks) (list lit))
+        (list toks (list 'error 'expected-literal
+                         (car (token-span t))
+                         (string-append "expected "
+                                        (symbol->string lit)))))))
+
+;; parse-array : (list-of-token) -> (list-of-token ast)
+;; '[' elements (',' element)* ']'.  Empty arrays are allowed.
+(define (parse-array toks)
+  (let ((t (take-token toks)))
+    (if (not (eq? (token-kind t) 'lbracket))
+        (list toks (list 'error 'expected-lbracket
+                         (car (token-span t)) "expected '['"))
+        (parse-array-elems (cdr toks) '()))))
+
+;; parse-array-elems : (list-of-token) (list-of-ast) -> (list-of-token ast)
+(define (parse-array-elems toks acc)
+  (let ((head (peek-token toks)))
+    (cond
+      ((not head)
+       (list toks (list 'error 'unterminated-array 0 "EOF in array")))
+      ((eq? (token-kind head) 'rbracket)
+       (list (cdr toks) (list 'array (reverse acc))))
+      (else
+       (let ((r (parse-value toks)))
+         (let ((rest (car r)) (node (cadr r)))
+           (if (eq? (ast-kind node) 'error)
+               (list rest node)
+               (let ((head2 (peek-token rest)))
+                 (cond
+                   ((not head2)
+                     (list rest (list 'error 'unterminated-array 0
+                                      "EOF after array element")))
+                   ((eq? (token-kind head2) 'comma)
+                    (parse-array-elems (cdr rest) (cons node acc)))
+                   ((eq? (token-kind head2) 'rbracket)
+                    (list (cdr rest) (list 'array (reverse (cons node acc)))))
+                   (else
+                    (list rest (list 'error 'expected-comma-or-rbracket
+                                     (car (token-span head2))
+                                     "expected ',' or ']'"))))))))))))
+
+;; parse-object : (list-of-token) -> (list-of-token ast)
+;; '{' (string ':' value (',' string ':' value)*)? '}'.  Empty objects OK.
+(define (parse-object toks)
+  (let ((t (take-token toks)))
+    (if (not (eq? (token-kind t) 'lbrace))
+        (list toks (list 'error 'expected-lbrace
+                         (car (token-span t)) "expected '{'"))
+        (parse-object-pairs (cdr toks) '()))))
+
+;; parse-object-pairs : (list-of-token) (list-of-pair) -> (list-of-token ast)
+(define (parse-object-pairs toks acc)
+  (let ((head (peek-token toks)))
+    (cond
+      ((not head)
+       (list toks (list 'error 'unterminated-object 0 "EOF in object")))
+      ((eq? (token-kind head) 'rbrace)
+       (list (cdr toks) (list 'object (reverse acc))))
+      (else
+       ;; key
+       (let ((kr (parse-string toks)))
+         (let ((rest (car kr)) (kn (cadr kr)))
+           (if (eq? (ast-kind kn) 'error)
+               (list rest kn)
+               ;; expect colon
+               (let ((cr (expect-punct rest 'colon)))
+                 (let ((rest2 (car cr)))
+                   (if (eq? (token-kind (cadr cr)) 'error)
+                       ;; expect-punct returned an error *token* embedded
+                       ;; in the stream — surface it as the AST node.
+                       (list rest2 (list 'error 'expected-colon
+                                        (error-pos-from-token (cadr cr))
+                                        "expected ':'"))
+                       ;; value
+                       (let ((vr (parse-value rest2)))
+                         (let ((rest3 (car vr)) (vn (cadr vr)))
+                           (if (eq? (ast-kind vn) 'error)
+                               (list rest3 vn)
+                               (let ((head2 (peek-token rest3)))
+                                 (cond
+                                   ((not head2)
+                                    (list rest3
+                                          (list 'error
+                                                'unterminated-object 0
+                                                "EOF after value")))
+                                   ((eq? (token-kind head2) 'comma)
+                                    (parse-object-pairs
+                                      (cdr rest3)
+                                      (cons (cons (ast-value kn) vn) acc)))
+                                   ((eq? (token-kind head2) 'rbrace)
+                                    (list (cdr rest3)
+                                          (list 'object
+                                                (reverse
+                                                  (cons (cons (ast-value kn) vn)
+                                                        acc)))))
+                                   (else
+                                    (list rest3
+                                          (list 'error
+                                                'expected-comma-or-rbrace
+                                                (car (token-span head2))
+                                                "expected ',' or '}'"))))))))))))))))))
+
+;; error-pos-from-token : token -> number
+;; Extract a numeric position from an error-bearing token returned by
+;; expect-punct.  expect-punct encodes the position in the *value* slot
+;; as a cons cell '(pos . msg); unpack it here.
+(define (error-pos-from-token tok)
+  (let ((v (token-value tok)))
+    (if (pair? v) (car v) 0)))
+
+;; parse-value : (list-of-token) -> (list-of-token ast)
+;; Dispatch on the leading token's kind.
+(define (parse-value toks)
+  (let ((head (peek-token toks)))
+    (cond
+      ((not head)
+       (list toks (list 'error 'unexpected-eof 0 "unexpected EOF")))
+      ((eq? (token-kind head) 'lbrace)  (parse-object  toks))
+      ((eq? (token-kind head) 'lbracket)(parse-array   toks))
+      ((eq? (token-kind head) 'string)   (parse-string  toks))
+      ((eq? (token-kind head) 'number)   (parse-number  toks))
+      ((eq? (token-kind head) 'true)     (parse-literal toks 'true))
+      ((eq? (token-kind head) 'false)    (parse-literal toks 'false))
+      ((eq? (token-kind head) 'null)     (parse-literal toks 'null))
+      (else
+       (list toks (list 'error 'unexpected-token
+                        (car (token-span head))
+                        (string-append "unexpected token "
+                                       (symbol->string
+                                         (token-kind head)))))))))
+
+;; ---- Public API --------------------------------------------------------
+
+;; parse-json : string -> ast
+;; Tokenize the input and produce a single AST.  The returned value is
+;; always a well-formed AST node (possibly an 'error node); it is never
+;; raw tokens.
+(define (parse-json src)
+  (let ((toks (lex-tokenize src)))
+    (let ((r (parse-value toks)))
+      (cadr r))))
+
+;; ast-kind : node -> symbol
+(define (ast-kind node)
+  (if (and (pair? node) (symbol? (car node)))
+      (car node)
+      'error))
+
+;; ast-children : node -> list
+;; Return a list of child nodes.  For objects we return the value side
+;; of each key/value pair (in order); for arrays we return the elements;
+;; for primitives we return '(); for errors we return '().
+(define (ast-children node)
+  (let ((k (ast-kind node)))
+    (cond
+      ((eq? k 'object)
+       (let loop ((pairs (cadr node)) (acc '()))
+         (if (null? pairs) (reverse acc)
+             (loop (cdr pairs) (cons (cdar pairs) acc)))))
+      ((eq? k 'array)
+       (cadr node))
+      (else '()))))
+
+;; ast-value : node -> value
+;; Return the payload value for a node (string contents, numeric value,
+;; the symbol true/false/null, the alist for objects, the child list
+;; for arrays, or the error triple for errors).
+(define (ast-value node)
+  (let ((k (ast-kind node)))
+    (cond
+      ((eq? k 'object)  (cadr node))
+      ((eq? k 'array)   (cadr node))
+      ((eq? k 'string)  (cadr node))
+      ((eq? k 'number)  (cadr node))
+      ((eq? k 'true)    #t)
+      ((eq? k 'false)   #f)
+      ((eq? k 'null)    'null)
+      ((eq? k 'error)   (cdr node))   ;; ('code pos msg)
+      (else #f))))

@@ -1,0 +1,131 @@
+;; fuzz_schedule.aura
+;; Deterministic fault-injection schedule for the WAL crash-safety fuzz
+;; harness. The schedule decides, for each fuzz round, whether to inject
+;; a simulated power-cycle ("crash") and, if so, where in the journal to
+;; truncate. The point of making the schedule itself deterministic is
+;; that any crash-induced bug the harness detects can be reproduced from
+;; just the master seed.
+;;
+;; The schedule is layered on top of the seeded RNG from `fuzz_rng.aura`,
+;; so callers are expected to seed the RNG before any schedule call. The
+;; three exported entry points are:
+;;
+;;   * (schedule-crash? round)  — boolean: should a crash happen now?
+;;   * (schedule-cutpoint frames) — non-negative integer k in [0, len].
+;;   * (fault-inject log round)  — actually performs the truncation.
+;;
+;; `fault-inject` is the only entry point with side effects on the log.
+
+;; ---- Crash-probability knobs (top-level, mutable) ----------------------
+
+;; Probability (numerator) that a crash is scheduled on a given round.
+;; We compare (rng-next) modulo 100 against this threshold. 25% feels
+;; dense enough to exercise recovery on most runs without crashing so
+;; often that recovery paths dominate the test.
+(define fuzz-crash-threshold 25)
+
+;; Minimum number of rounds between crashes. This prevents the schedule
+;; from clustering all crashes at the very start of the run, which
+;; would leave the rest of the run without recovery coverage.
+(define fuzz-crash-cooldown 3)
+
+;; ---- Internal helpers (not exported) -----------------------------------
+
+;; Track the last round index at which we crashed. -1 means "no crash
+;; yet". Reset by the seeding routine in the harness; we keep it as a
+;; top-level mutable binding so the schedule functions stay pure-ish
+;; (they only consult / mutate this one global).
+(define fuzz-last-crash-round -1)
+
+;; Helper: return the length of a proper list. Aura doesn't have a
+;; builtin, so we count via cdr recursion.
+(define (fuzz-list-len xs)
+  (if (null? xs)
+      0
+      (+ 1 (fuzz-list-len (cdr xs)))))
+
+;; Helper: should we crash on this round?
+;;
+;; We crash when:
+;;   1. (rng-next) mod 100 < fuzz-crash-threshold, AND
+;;   2. we are at least fuzz-crash-cooldown rounds past the last crash.
+;; Returning #f in all other cases.
+(define (fuzz-want-crash? round)
+  (let ((roll (modulo (rng-next) 100)))
+    (if (>= roll fuzz-crash-threshold)
+        #f
+        (if (< (- round fuzz-last-crash-round) fuzz-crash-cooldown)
+            ;; Try again with another draw so we still consume RNG
+            ;; entropy even if the cooldown rejects this round. This
+            ;; keeps the schedule strictly deterministic relative to
+            ;; the seed regardless of the cooldown state.
+            (if (>= (modulo (rng-next) 100) fuzz-crash-threshold)
+                #f
+                (begin
+                  (set! fuzz-last-crash-round round)
+                  #t))
+            (begin
+              (set! fuzz-last-crash-round round)
+              #t)))))
+
+;; Helper: pick a cut-point (number of trailing journal frames to
+;; discard). We always keep at least one frame if the journal is
+;; non-empty (so recovery still has something to replay), but allow
+;; keeping zero if the journal is empty. Result is in [0, len].
+(define (fuzz-pick-cutpoint len)
+  (if (= len 0)
+      0
+      ;; rng-between inclusive on both ends, clamped to len to be safe.
+      (let ((k (rng-between 0 len)))
+        ;; Bias slightly toward keeping more than half of the journal:
+        ;; real crashes tend to leave most of the journal intact.
+        (if (> k (/ len 2))
+            (let ((k2 (rng-between 0 (/ (+ len 1) 2))))
+              (if (< k2 0) 0 k2))
+            k))))
+
+;; ---- API ---------------------------------------------------------------
+
+;; (schedule-crash? round) → boolean
+;;
+;; Decide whether to inject a crash this round. Consumes RNG entropy
+;; in a deterministic way. The `round` argument is used only to enforce
+;; the cooldown policy.
+(define (api schedule-crash? round)
+  (fuzz-want-crash? round))
+
+;; (schedule-cutpoint frames) → non-negative integer
+;;
+;; Given the current journal (a list of frames, most-recent-first per
+;; the wal_log contract), pick how many trailing frames to drop. The
+;; result is the number of frames to remove from the tail. Caller
+;; passes this to `log-truncate!`.
+(define (api schedule-cutpoint frames)
+  (fuzz-pick-cutpoint (fuzz-list-len frames)))
+
+;; (fault-inject log round) → the (possibly truncated) log.
+;;
+;; Top-level entry point that ties the schedule to the WAL. If a crash
+;; is scheduled this round, pick a cut-point and truncate the log's
+;; journal by that many trailing frames. Otherwise return the log
+;; untouched.
+(define (api fault-inject log round)
+  (if (fuzz-want-crash? round)
+      (let ((journal (log-frames log))
+            (cut (fuzz-pick-cutpoint (fuzz-list-len (log-frames log)))))
+        ;; Drop `cut` trailing frames. We pop from the head of the
+        ;; stored most-recent-first list, which corresponds to keeping
+        ;; the OLDEST `len - cut` frames and discarding the NEWEST
+        ;; `cut` ones — i.e. "the last `cut` writes didn't make it to
+        ;; disk", the classic torn-write simulation.
+        (let loop ((n cut) (acc '()) (rest journal))
+          (if (= n 0)
+              (begin
+                (log-truncate! log (fuzz-list-len acc))
+                log)
+              (if (null? rest)
+                  (begin
+                    (log-truncate! log (fuzz-list-len acc))
+                    log)
+                  (loop (- n 1) (cons (car rest) acc) (cdr rest))))))
+      log))

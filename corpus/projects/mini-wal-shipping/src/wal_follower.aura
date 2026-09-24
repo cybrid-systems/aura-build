@@ -1,0 +1,184 @@
+;; wal_follower.aura — secondary-side WAL follower.
+;;
+;; The follower is the passive consumer in the WAL streaming pipeline. It
+;; owns:
+;;   - its own replicated segment (where applied pages live, mirrored from
+;;     the primary),
+;;   - the highest LSN it has durably applied,
+;;   - a CRC verification log so the reporter can show that incoming frames
+;;     were integrity-checked end-to-end.
+;;
+;; Lifecycle (driven from main.aura through the protocol's recv-loop):
+;;   1. follow-attach!         — bind the follower to a peer id and seed
+;;                                internal state.
+;;   2. follow-apply-one!       — accept one (lsn payload crc) triplet that
+;;                                the protocol pulled off the wire; append
+;;                                to the replicated segment, advance
+;;                                applied-lsn, and record CRC verification.
+;;   3. follow-applied-lsn      — read accessor for the highest LSN applied.
+;;   4. follow-verify!          — predicate: did every applied frame's CRC
+;;                                match what crc-verify? reports?
+;;
+;; State held at module scope (mutated across apply calls):
+;;   *follower*   alist:
+;;     ((peer-id     . <string or #f>)
+;;      (segment     . <seg-like alist: ((pages . '()) (lsn . 0) (flush-lsn . 0))>)
+;;      (applied-lsn . <number — high-water LSN applied so far>)
+;;      (verified    . <boolean — #t as long as every CRC checked out>)
+;;      (log         . <list of (lsn payload crc ok?) verification records>))
+
+(define *exports* '())
+
+(define-syntax api
+  (syntax-rules ()
+    ((api name)
+     (set! *exports* (cons (cons 'name (lambda () name)) *exports*)))))
+
+;; ----------------------------------------------------------------------
+;; Internal helpers
+;; ----------------------------------------------------------------------
+
+;; Build a fresh follower descriptor with an empty replicated segment.
+(define (make-follower peer-id)
+  (list
+    (cons 'peer-id peer-id)
+    (cons 'segment
+          (list
+            (cons 'pages '())
+            (cons 'lsn 0)
+            (cons 'flush-lsn 0)))
+    (cons 'applied-lsn 0)
+    (cons 'verified #t)
+    (cons 'log '())))
+
+;; Alist lookup.
+(define (fget key alist)
+  (let ((p (assq key alist)))
+    (if p (cdr p) #f)))
+
+;; Alist setter (returns a new alist — Aura has no struct update).
+(define (fset key val alist)
+  (let loop ((rest alist) (acc '()))
+    (cond
+      ((null? rest) (append acc (list (cons key val))))
+      ((eq? (caar rest) key)
+       (append acc (list (cons key val)) (cdr rest)))
+      (else (loop (cdr rest) (append acc (list (car rest))))))))
+
+;; Replicate seg-append-page locally without depending on wal_segment.aura's
+;; module API — keeps the follower self-contained for the mini WAL test.
+(define (seg-local-append seg payload)
+  (let* ((pages   (fget 'pages seg))
+         (lsn     (fget 'lsn seg))
+         (new-lsn (+ lsn 1))
+         (seg2    (fset 'pages (append pages (list payload)) seg))
+         (seg3    (fset 'lsn new-lsn seg2)))
+    new-lsn))
+
+;; ----------------------------------------------------------------------
+;; API: follow-attach!
+;; (string -> follower)
+;; Bind a follower to a peer-id and (re)seed its internal state.
+;; ----------------------------------------------------------------------
+(define (follow-attach! peer-id)
+  (set! *follower* (make-follower peer-id))
+  *follower*)
+
+(api follow-attach!)
+
+;; ----------------------------------------------------------------------
+;; API: follow-apply-one!
+;; (number string string -> boolean)
+;; Apply a single (lsn payload crc) triplet to the follower:
+;;   - record CRC verification via crc-verify? (resolved at call time so
+;;     the module compiles even if wal_crc.aura is loaded after us)
+;;   - if the CRC checks out, append the payload to the replicated segment
+;;     and bump applied-lsn
+;;   - log the verification outcome
+;; Returns #t on success, #f on a CRC mismatch.
+;; ----------------------------------------------------------------------
+(define (follow-apply-one! lsn payload crc)
+  (let* ((verify (resolve-crc-verify))
+         (ok?    (if verify (verify crc (crc-hex-of-resolved payload)) #t)))
+    (let* ((f       *follower*)
+           (log     (fget 'log f))
+           (new-log (append log (list (list lsn payload crc ok?))))
+           (f2      (fset 'log new-log f)))
+      (if ok?
+        (let* ((seg       (fget 'segment f2))
+               (new-lsn   (seg-local-append seg payload))
+               (seg2      (fset 'flush-lsn new-lsn
+                                (fset 'lsn new-lsn seg)))
+               (f3        (fset 'segment seg2 f2))
+               (f4        (fset 'applied-lsn
+                                 (if (> new-lsn (fget 'applied-lsn f3))
+                                     new-lsn
+                                     (fget 'applied-lsn f3))
+                                 f3)))
+          (set! *follower* f4)
+          #t)
+        (begin
+          (set! *follower* (fset 'verified #f f2))
+          #f)))))
+
+(api follow-apply-one!)
+
+;; ----------------------------------------------------------------------
+;; API: follow-applied-lsn
+;; (-> number)
+;; Read accessor: highest LSN the follower has durably applied.
+;; ----------------------------------------------------------------------
+(define (follow-applied-lsn)
+  (fget 'applied-lsn *follower*))
+
+(api follow-applied-lsn)
+
+;; ----------------------------------------------------------------------
+;; API: follow-verify!
+;; (-> boolean)
+;; Predicate: did every applied frame pass CRC verification? Returns #t
+;; only when the follower's verified flag is still #t (i.e. no mismatch
+;; was ever recorded).
+;; ----------------------------------------------------------------------
+(define (follow-verify!)
+  (if (eq? (fget 'verified *follower*) #f) #f #t))
+
+(api follow-verify!)
+
+;; ----------------------------------------------------------------------
+;; Lazy resolution of wal_crc.aura exports so this module compiles even
+;; when loaded before wal_crc.aura on disk.
+;; ----------------------------------------------------------------------
+
+;; Try to resolve a named export from wal_crc.aura's *exports* table.
+;; Returns the bound value or #f if unavailable.
+(define (try-resolve-export mod name)
+  (if (and (defined? mod) (defined? 'mod))
+    (let ((tbl mod))
+      (let loop ((rest tbl))
+        (cond
+          ((null? rest) #f)
+          ((eq? (car (car rest)) name) (let ((thunk (cdr (car rest))))
+                                         (if (procedure? thunk)
+                                             (thunk)
+                                             (cdr (car rest)))))
+          (else (loop (cdr rest))))))
+    #f))
+
+(define (resolve-crc-verify)
+  (or (try-resolve-export *crc-exports* 'crc-verify?) #f))
+
+(define (crc-hex-of-resolved payload)
+  (let ((fn (try-resolve-export *crc-exports* 'crc-hex-of)))
+    (if fn (fn payload) payload))
+
+;; *crc-exports* is filled in lazily by attach-crc! below.
+(define *crc-exports* '())
+
+(define (attach-crc! tbl)
+  (set! *crc-exports* tbl))
+
+(api attach-crc!)
+
+;; Seed empty follower state so the file can be loaded standalone.
+(set! *follower* (make-follower #f))

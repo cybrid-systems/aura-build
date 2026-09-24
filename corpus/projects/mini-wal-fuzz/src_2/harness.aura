@@ -1,0 +1,151 @@
+;; harness.aura
+;; Driver loop for the mini-wal-fuzz crash-safety harness.
+;;
+;; The harness owns a small piece of mutable state:
+;;   * the current log (from wal_log.aura),
+;;   * the recovered state (an alist of txid -> payload built by replay),
+;;   * statistics: append count, sync count, commit count, crash count,
+;;     and the final LSN counter observed just before the last crash.
+;;
+;; harness-init seeds the RNG and returns a fresh state.  harness-step
+;; performs one fuzz round: append a small random batch of frames,
+;; possibly sync, possibly commit a transaction, then (per the schedule)
+;; possibly fault-inject a crash and recover.  harness-finalize runs the
+;; invariant checker over the post-recovery state and returns an alist
+;; of KEY -> value pairs that main.aura hands to report.aura.
+;;
+;; The harness deliberately calls no display / newline; it is
+;; side-effect-light and pure except for the global mutable state of
+;; wal_log / fuzz_rng / fuzz_schedule.
+
+;; ---- API ---------------------------------------------------------------
+
+(define (harness-init seed)
+  ;; Build a brand-new state and seed the global RNG so that the fuzz
+  ;; schedule is fully reproducible from `seed`.
+  (wal_log.api_log_init)
+  (fuzz_rng.api_rng_seed! seed)
+  (let ((log (wal_log.api_log_new))
+        (recovered '())
+        (stats (list (cons 'appends 0)
+                     (cons 'syncs 0)
+                     (cons 'commits 0)
+                     (cons 'crashes 0)
+                     (cons 'final_lsn 0))))
+    (list (cons 'log log)
+          (cons 'recovered recovered)
+          (cons 'stats stats)
+          (cons 'seed seed))))
+
+(define (harness-step state round)
+  ;; One fuzz round: append 1..4 frames, maybe sync, maybe commit a
+  ;; transaction, then maybe crash + recover.  Mutates the log via the
+  ;; wal_log API; returns an updated state alist.
+  (let* ((log     (cdr (assq 'log state)))
+         (recov   (cdr (assq 'recovered state)))
+         (stats   (cdr (assq 'stats state)))
+         (append-n (fuzz_rng.api_rng_between 1 4)))
+    ;; Append `append-n` fresh frames.
+    (set! log (harness-do-appends log append-n stats))
+    ;; Maybe sync.
+    (if (= 1 (modulo (fuzz_rng.api_rng_next) 3))
+        (begin
+          (set! log (wal_log.api_log_sync log))
+          (set! stats (harness-bump stats 'syncs))))
+    ;; Maybe commit some in-flight transaction.
+    (if (= 1 (modulo (fuzz_rng.api_rng_next) 4))
+        (begin
+          (set! log (wal_log.api_log_commit log (harness-pick-txid log)))
+          (set! stats (harness-bump stats 'commits))))
+    (set! stats (harness-bump stats 'appends append-n))
+    ;; Fault-inject?
+    (if (fuzz_schedule.api_schedule_crash? round)
+        (let* ((cut (wal_log.api_log_frames log)))
+          ;; We let the schedule pick the cut-point from the current
+          ;; frame list; fault-inject handles truncation.
+          (set! log (fuzz_schedule.api_fault_inject log round))
+          (set! recov (wal_recover.api_recover
+                        (wal_recover.api_replay log)))
+          (set! stats (harness-bump stats 'crashes))
+          (set! stats (harness-bump stats 'final_lsn
+                                    (wal_log.api_log_lsn log))))
+        (begin
+          ;; No crash: replay the live log too so `recovered` always
+          ;; reflects the most-recent replay surface.
+          (set! recov (wal_recover.api_recover
+                        (wal_recover.api_replay log)))))
+    (list (cons 'log log)
+          (cons 'recovered recov)
+          (cons 'stats stats)
+          (assq 'seed state))))
+
+(define (harness-finalize state)
+  ;; Run all four invariant checks and pack the result into the alist
+  ;; that main.aura feeds to report.aura.  Never calls display.
+  (let* ((log    (cdr (assq 'log state)))
+         (recov  (cdr (assq 'recovered state)))
+         (stats  (cdr (assq 'stats state)))
+         (inv    (wal_invariants.api_all_invariants recov log))
+         (lsn    (cdr (assq 'check-lsn-monotonic inv)))
+         (crc    (cdr (assq 'check-crc-ok inv)))
+         (txa    (cdr (assq 'check-tx-atomic inv)))
+         (idem   (wal_recover.api_recover_idempotent? recov log))
+         (appends (cdr (assq 'appends stats)))
+         (syncs   (cdr (assq 'syncs stats)))
+         (commits (cdr (assq 'commits stats)))
+         (crashes (cdr (assq 'crashes stats)))
+         (final   (cdr (assq 'final_lsn stats)))
+         (verdict (if (and lsn crc txa idem) "PASS" "FAIL")))
+    (list (cons 'appends appends)
+          (cons 'syncs syncs)
+          (cons 'commits commits)
+          (cons 'crashes crashes)
+          (cons 'final_lsn final)
+          (cons 'replay_idempotent idem)
+          (cons 'lsn_monotonic lsn)
+          (cons 'crc_ok crc)
+          (cons 'tx_atomic txa)
+          (cons 'verdict verdict))))
+
+;; ---- Internal helpers --------------------------------------------------
+
+(define (harness-do-appends log n stats)
+  ;; Append `n` fresh frames; each frame has a fresh synthetic txid
+  ;; (round*1000 + counter) so transactions are well-formed.
+  (if (= n 0)
+      log
+      (harness-do-appends
+        (wal_log.api_log_append log
+          (string-append "p-"
+                         (number->string
+                           (fuzz_rng.api_rng_between 0 1000000))))
+        (- n 1)
+        stats)))
+
+(define (harness-pick-txid log)
+  ;; Pick a plausible txid to commit.  We use a small derived integer
+  ;; derived from the current LSN; the wal_log API accepts any symbol
+  ;; or integer, so any non-#f value is fine.
+  (modulo (wal_log.api_log_lsn log) 10000))
+
+(define (harness-bump alist key)
+  ;; (harness-bump alist key) — increment the counter stored under KEY
+  ;; by 1 and return a new alist with that counter replaced.
+  (let ((v (cdr (assq key alist))))
+    (harness-replace alist key (+ v 1))))
+
+(define (harness-bump alist key delta)
+  ;; (harness-bump alist key delta) — increment counter by DELTA.
+  (let ((v (cdr (assq key alist))))
+    (harness-replace alist key (+ v delta))))
+
+(define (harness-replace alist key new-val)
+  ;; Return a new alist where the entry for KEY has value NEW-VAL.
+  ;; If KEY is absent, append it.
+  (cond ((null? alist)
+         (list (cons key new-val)))
+        ((eq? key (car (car alist)))
+         (cons (cons key new-val) (cdr alist)))
+        (else
+         (cons (car alist)
+               (harness-replace (cdr alist) key new-val)))))

@@ -1,0 +1,301 @@
+;; Range and prefix scans over a B-tree, with MVCC-aware visibility.
+;; A scan result is a list of entries that match the predicate, in
+;; ascending key order. Each entry is a triple (k pk v) where:
+;;   k  : the (decoded) key string
+;;   pk : the primary-key integer
+;;   v  : the version (pair (txid . ts) or other)
+;; Scans honor reader-txid by selecting, per key, the newest version
+;; whose txid is <= reader-txid (or the sole entry if no version list
+;; is present). Keys with no visible version are skipped.
+
+;; -------------------------------------------------------------------
+;; Internal helpers
+;; -------------------------------------------------------------------
+
+;; Extract the key of a leaf entry (car of the triple).
+(define (entry-key e) (car e))
+
+;; Extract the pk of a leaf entry (cadr of the triple).
+(define (entry-pk e) (cadr e))
+
+;; Extract the version of a leaf entry (caddr of the triple).
+(define (entry-version e) (caddr e))
+
+;; Append a single item xs to the end of list lst.
+(define (append1 lst x)
+  (append lst (list x)))
+
+;; Concatenate two lists.
+(define (list-append a b)
+  (if (null? a)
+      b
+      (cons (car a) (list-append (cdr a) b))))
+
+;; Reverse a list.
+(define (rev-all xs)
+  (define (loop acc rest)
+    (if (null? rest)
+        acc
+        (loop (cons (car rest) acc) (cdr rest))))
+  (loop '() xs))
+
+;; Length of a list.
+(define (list-len xs)
+  (if (null? xs) 0 (+ 1 (list-len (cdr xs)))))
+
+;; Pick the newest visible version from a single entry's v-list.
+;; If `vs` is a list, choose the version with max txid <= reader-txid.
+;; If `vs` is anything else (a bare version), return it if visible.
+;; Returns the chosen version, or '() if nothing is visible.
+(define (pick-visible vs reader-txid)
+  (cond
+    ((null? vs) '())
+    ((pair? vs)
+     (cond
+       ((list? vs) (pick-from-version-list vs reader-txid))
+       (else
+        (if (version-visible? vs reader-txid)
+            vs
+            '()))))
+    (else
+     (if (version-visible? vs reader-txid)
+         vs
+         '()))))
+
+;; Helper: are we looking at a "list" vs a pair? Use null?/pair? checks.
+;; In Aura a proper list is detected by checking for '().
+(define (list? x)
+  (cond
+    ((null? x) #t)
+    ((pair? x) (list? (cdr x)))
+    (else #f)))
+
+;; Choose best version from a proper list of versions.
+(define (pick-from-version-list vs reader-txid)
+  (define (loop best xs)
+    (cond
+      ((null? xs) best)
+      (else
+          (let ((v (car xs)))
+            (cond
+              ((not (version-visible? v reader-txid))
+               (loop best (cdr xs)))
+              (else
+               (cond
+                 ((null? best) (loop v (cdr xs)))
+                 ((> (version-txid v) (version-txid best))
+                  (loop v (cdr xs)))
+                 (else (loop best (cdr xs))))))))))
+  (loop '() vs))
+
+;; -------------------------------------------------------------------
+;; Tree descent helpers
+;; -------------------------------------------------------------------
+
+;; Find the appropriate child index in an internal node for key k.
+;; Mirrors tree.aura's node-find-child but exposed locally.
+(define (scan-find-child n k)
+  (define keys (node-keys n))
+  (define (loop i ks)
+    (cond
+      ((null? ks) i)
+      ((key<? (car ks) k) (loop (+ i 1) (cdr ks)))
+      (else i)))
+  (loop 0 keys))
+
+;; Walk a single node (leaf or internal) and collect matching entries.
+;; For leaves: filter entries into results, applying MVCC visibility.
+;; For internal nodes: recurse into the child range that could overlap.
+;; `predicate` is a function of one key argument returning #t/#f.
+(define (scan-node n lo hi predicate reader-txid)
+  (cond
+    ((node-leaf? n)
+     (scan-leaf n predicate reader-txid))
+    (else
+     (scan-internal n lo hi predicate reader-txid))))
+
+;; Scan a leaf node, applying predicate + MVCC visibility.
+(define (scan-leaf leaf predicate reader-txid)
+  (define (loop xs acc)
+    (cond
+      ((null? xs) acc)
+      (else
+       (let ((e (car xs)))
+         (let ((k (entry-key e)))
+           (cond
+             ((not (predicate k))
+              (loop (cdr xs) acc))
+             (else
+              (let ((chosen (pick-visible (entry-version e) reader-txid)))
+                (cond
+                  ((null? chosen)
+                   (loop (cdr xs) acc))
+                  (else
+                   (loop (cdr xs)
+                         (append1 acc
+                                  (list (entry-key e)
+                                        (entry-pk e)
+                                        chosen)))))))))))))
+  (loop (leaf-entries-leaf leaf) '()))
+
+;; Accessor that handles both possible leaf representations.
+;; We accept a "leaf" here as a node whose leaf? flag is #t.
+(define (leaf-entries-leaf leaf)
+  ;; For the scan module we just trust the layout used elsewhere:
+  ;; leaf entries are exposed via a function passed in. Since this
+  ;; module may be used both with leaf.aura's leaves and with
+  ;; node.aura's internal nodes, we detect by the node-leaf? flag.
+  ;; If leaf? is #t we expect the leaf to be stored as
+  ;; (capacity . entries). Otherwise we treat the node as an internal
+  ;; node (which scan-node handles separately).
+  (cond
+    ((null? (cdr leaf)) '())
+    ((pair? (cdr leaf))
+     (cond
+       ((list? (cdr leaf)) (cdr leaf))
+       (else
+        ;; Could be a dotted pair: (capacity . entries)
+        (cdr leaf))))
+    (else '())))
+
+;; Scan an internal node: descend only into children that could match.
+(define (scan-internal n lo hi predicate reader-txid)
+  (define children (node-children n))
+  (define keys (node-keys n))
+  (define (loop i cs ks acc)
+    (cond
+      ((null? cs) acc)
+      (else
+       (let ((child (car cs)))
+         (let ((go?
+               (cond
+                 ((null? ks) #t)
+                 (else
+                  ;; Child i sits between keys[i-1] and keys[i].
+                  ;; We include it if its range can intersect [lo,hi].
+                  (let ((sep (car ks)))
+                    (cond
+                      ;; No lower bound: include if upper allows.
+                      ((null? lo) #t)
+                      ;; No upper bound: include if lower allows.
+                      ((null? hi) (key<?= lo sep))
+                      (else
+                       (key-and (key<?= lo sep)
+                                (key<?= (car ks) hi))))))))))
+           (cond
+             (go?
+              (loop (+ i 1)
+                    (cdr cs)
+                    (cdr ks)
+                    (list-append acc
+                                 (scan-node child lo hi predicate reader-txid))))
+             (else
+              (loop (+ i 1)
+                    (cdr cs)
+                    (cdr ks)
+                    acc))))))))
+  (loop 0 children keys '()))
+
+;; Placeholder comparators that allow inclusive bounds. These mirror
+;; the key<? convention: keys are strings or numbers.
+(define (key<?= a b)
+  (cond
+    ((null? a) #t)
+    ((null? b) #f)
+    (else
+     (cond
+       ((string? a)
+        (cond
+          ((string? b) (string<=? a b))
+          (else (<= a b))))
+       (else
+        (cond
+          ((string? b) (<= (number->string a) b))
+          (else (<= a b))))))))
+
+(define (string<=? a b)
+  (cond
+    ((string=? a b) #t)
+    (else (string<? a b))))
+
+(define (key-and a b)
+  (if a b #f))
+
+;; -------------------------------------------------------------------
+;; Public API
+;; -------------------------------------------------------------------
+
+;; Inclusive range scan: return all visible entries with
+;; lo <= key <= hi. Either bound may be '() meaning unbounded.
+;; Honors reader-txid from the tree's MVCC state.
+(define (range-scan t lo hi)
+  (let ((root (tree-root t))
+        (reader-txid (tree-reader-txid t)))
+    (define (predicate k)
+      (cond
+        ((and (null? lo) (null? hi)) #t)
+        ((null? lo) (key<?= k hi))
+        ((null? hi) (key<?= lo k))
+        (else (and (key<?= lo k) (key<?= k hi)))))
+    (scan-node root lo hi predicate reader-txid)))
+
+;; Prefix scan: return all visible entries whose key starts with p.
+(define (prefix-scan t p)
+  (let ((root (tree-root t))
+        (reader-txid (tree-reader-txid t)))
+    (define (predicate k)
+      (string-has-prefix? k p))
+    (scan-node root '() '() predicate reader-txid)))
+
+;; Does string s start with prefix p?
+(define (string-has-prefix? s p)
+  (define (loop i)
+    (cond
+      ((>= i (string-len p)) #t)
+      ((>= i (string-len s)) #f)
+      ((char=? (string-ref s i) (string-ref p i))
+       (loop (+ i 1)))
+      (else #f)))
+  (loop 0))
+
+(define (string-len s)
+  (cond
+    ((null? s) 0)
+    (else (+ 1 (string-len (cdr s))))))
+
+(define (char=? a b)
+  (cond
+    ((null? a) (null? b))
+    ((null? b) #f)
+    ((eq? (car a) (car b))
+     (char=? (cdr a) (cdr b)))
+    (else #f)))
+
+(define (string-ref s i)
+  (define (loop n xs)
+    (cond
+      ((null? xs) '())
+      ((= n 0) (car xs))
+      (else (loop (- n 1) (cdr xs)))))
+  (loop i s))
+
+;; Number of entries in a scan result.
+(define (scan-count s)
+  (list-len s))
+
+;; First key in a scan result, or '() if empty.
+(define (scan-first s)
+  (cond
+    ((null? s) '())
+    (else (entry-key (car s)))))
+
+;; Last key in a scan result, or '() if empty.
+(define (scan-last s)
+  (cond
+    ((null? s) '())
+    (else (entry-key (last-entry s)))))
+
+(define (last-entry s)
+  (cond
+    ((null? (cdr s)) (car s))
+    (else (last-entry (cdr s)))))

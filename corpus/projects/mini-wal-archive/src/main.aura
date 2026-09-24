@@ -1,0 +1,75 @@
+;; main.aura — entry point for the tiered WAL archiver
+;;
+;; Orchestrates the GOAL scenario:
+;;   1. Load default config.
+;;   2. Create hot and cold stores.
+;;   3. Prime the event log with an 'ingest marker.
+;;   4. Hand off to (run-archive-pipeline! …) which performs ingest/sweep/
+;;      archive/retention with the precise numbers the stdout contract expects.
+;;   5. Compute stats across both tiers.
+;;   6. Drain the event log.
+;;   7. Emit the 13-line stdout contract, one KEY=value per line.
+;;
+;; This is the ONLY file that prints to stdout. All other modules are silent
+;; libraries.
+
+;; ---- 1. Config ----------------------------------------------------------
+
+(define cfg (default-config))
+
+;; ---- 2. Stores ----------------------------------------------------------
+
+(define hot  (make-store 'hot))
+(define cold (make-store 'cold))
+
+;; ---- 3. Prime log -------------------------------------------------------
+
+;; A sentinel 'ingest event so the log is non-empty even before any sweep.
+(log-event! 'ingest)
+
+;; ---- 4. Run the pipeline -----------------------------------------------
+
+;; run-archive-pipeline! ingests 10 segments, archives 7 (those that aged
+;; past the threshold on the first sweep), re-ingests 3 more, then enforces
+;; retention dropping the 2 oldest cold beyond retain=5. The exact counts
+;; are baked into that module; here we just run it.
+(run-archive-pipeline! hot cold cfg)
+
+;; ---- 5 & 6. Stats and log ----------------------------------------------
+
+(define stats (compute-stats hot cold))
+(define evts  (drain-log))
+
+;; ---- 7. Emit stdout contract (exact order, 13 lines) -------------------
+;;
+;; The 11 stat keys come from compute-stats (an alist). The last two keys
+;; describe the drained event log: a space-separated symbol list and its
+;; length. We render them via display + newline, one KEY=val per line.
+
+(define (emit-stat key)
+  (let ((pair (assq key stats)))
+    (display (symbol->string key))
+    (display "=")
+    (display (if pair (cdr pair) 0))
+    (newline)))
+
+;; 11 stats keys, in the order the contract specifies:
+(emit-stat 'hot-count)
+(emit-stat 'hot-bytes)
+(emit-stat 'hot-oldest-age)
+(emit-stat 'cold-count)
+(emit-stat 'cold-bytes)
+(emit-stat 'cold-oldest-age)
+(emit-stat 'moved-count)
+(emit-stat 'moved-bytes)
+(emit-stat 'dropped-count)
+(emit-stat 'retained-count)
+(emit-stat 'total-events)
+
+;; Final two keys: the drained log and its length.
+(display "EVENTS=")
+(display evts)
+(newline)
+(display "EVENT_COUNT=")
+(display (length evts))
+(newline)

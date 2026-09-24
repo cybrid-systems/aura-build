@@ -1,0 +1,171 @@
+;; wal-stats.aura — summary statistics for the tiered WAL archiver
+;;
+;; After every pipeline run we want a concise snapshot of how many segments
+;; live in each tier, how many bytes they consume, and how old the oldest
+;; member of each tier is. This module exposes two APIs:
+;;
+;;   (compute-stats hot cold) -> alist
+;;       Pure-ish: walks both stores via the public wal-store API and returns
+;;       an alist of (key . value) pairs covering tier counts, bytes, oldest
+;;       ages, derived totals, and the (moved/dropped) bookkeeping that the
+;;       stdout contract needs. See KEY REFERENCE below for the exact shape.
+;;
+;;   (format-stats stats) -> list-of-strings
+;;       Turns the stats alist into a list of "KEY=value" strings suitable
+;;       for display. main.aura joins and prints these.
+;;
+;; Key reference (matching the stdout contract in GOAL.md):
+;;   hot-count       — number of segments currently in the hot tier
+;;   cold-count      — number of segments currently in the cold tier
+;;   total-count     — hot-count + cold-count
+;;   hot-bytes       — total bytes in the hot tier
+;;   cold-bytes      — total bytes in the cold tier
+;;   total-bytes     — hot-bytes + cold-bytes
+;;   hot-oldest-ms   — age (in ms) of the oldest segment in the hot tier;
+;;                     0 if the tier is empty
+;;   cold-oldest-ms  — age (in ms) of the oldest segment in the cold tier;
+;;                     0 if the tier is empty
+;;   moved-count     — number of segments promoted hot→cold this run
+;;   moved-bytes     — number of bytes promoted hot→cold this run
+;;   dropped-count   — number of segments evicted from the cold tier
+;;   dropped-bytes   — number of bytes evicted from the cold tier
+;;
+;; Design notes:
+;;   - We compute ages relative to (current-ms) from wal-clock.aura so the
+;;     "oldest age" stays meaningful even after advance-ms! has been called.
+;;   - We rely on store-all / store-size / store-bytes / store-oldest-age
+;;     from wal-store.aura rather than reaching into store internals.
+;;   - moved/dropped bookkeeping is shared with the rest of the pipeline via
+;;     the *stats-state* cell so archive-sweep! / enforce-retention! can
+;;     accumulate into the same numbers that compute-stats reads back out.
+
+;; ---------------------------------------------------------------------------
+;; Shared mutable bookkeeping cell.
+;;
+;; archive-sweep! and enforce-retention! push their own counters in here so
+;; (compute-stats) can surface them in the final report without having to
+;; thread return values through every call site.
+;; Shape: (list moved-count moved-bytes dropped-count dropped-bytes)
+;; ---------------------------------------------------------------------------
+(define *stats-state* (list 0 0 0 0))
+
+;; stats-reset! : -> unspecified
+;; Zero out the accumulated moved/dropped counters. Called by
+;; run-archive-pipeline! at the start of each run so stats from a previous
+;; run don't bleed into the next one.
+(define (stats-reset!)
+  (set! *stats-state* (list 0 0 0 0)))
+
+;; stats-record-moved! : bytes -> unspecified
+;; Bump the moved counter by 1 and the moved-bytes counter by n. Invoked by
+;; archive-sweep! once per segment promoted from hot to cold.
+(define (stats-record-moved! n)
+  (let ((cur *stats-state*))
+    (set! *stats-state*
+          (list (+ (car cur) 1)
+                (+ (cadr cur) n)
+                (caddr cur)
+                (cadddr cur)))))
+
+;; stats-record-dropped! : bytes -> unspecified
+;; Bump the dropped counter by 1 and the dropped-bytes counter by n. Invoked
+;; by enforce-retention! once per segment evicted from cold.
+(define (stats-record-dropped! n)
+  (let ((cur *stats-state*))
+    (set! *stats-state*
+          (list (car cur)
+                (cadr cur)
+                (+ (caddr cur) 1)
+                (+ (cadddr cur) n)))))
+
+;; ---------------------------------------------------------------------------
+;; Internal helpers
+;; ---------------------------------------------------------------------------
+
+;; stats-alist-set : alist key value -> alist
+;; Return a new alist with (key . value) overridden (or inserted) while
+;; preserving the order of existing keys. We can't use hash-set! in Aura, so
+;; we rebuild the list by hand. Existing entries are matched with assoc-style
+;; linear search.
+(define (stats-alist-set al key value)
+  (cond
+    ((null? al)
+     (list (cons key value)))
+    ((equal? (car (car al)) key)
+     (cons (cons key value) (cdr al)))
+    (else
+     (cons (car al) (stats-alist-set (cdr al) key value)))))
+
+;; stats-alist-ref : alist key default -> value
+;; Look up `key` in `al` (an alist) and return its value, or `default` if
+;; the key is absent. Linear search; configs and stats are tiny so this is
+;; fine.
+(define (stats-alist-ref al key default)
+  (cond
+    ((null? al) default)
+    ((equal? (car (car al)) key) (cdr (car al)))
+    (else (stats-alist-ref (cdr al) key default))))
+
+;; safe-oldest-age : store -> integer-ms
+;; Wraps (store-oldest-age store) so an empty tier returns 0 instead of
+;; blowing up — the stdout contract wants 0 in the empty case.
+(define (safe-oldest-age store)
+  (if (= (store-size store) 0)
+      0
+      (store-oldest-age store)))
+
+;; ---------------------------------------------------------------------------
+;; Public API
+;; ---------------------------------------------------------------------------
+
+;; compute-stats : store store -> alist
+;; Walk both stores and assemble the full 13-key stats alist. Reads the
+;; shared *stats-state* cell for moved/dropped counters accumulated by the
+;; archive and retention passes.
+(define (compute-stats hot cold)
+  (let ((hot-n    (store-size hot))
+        (cold-n   (store-size cold))
+        (hot-b    (store-bytes hot))
+        (cold-b   (store-bytes cold))
+        (hot-age  (safe-oldest-age hot))
+        (cold-age (safe-oldest-age cold))
+        (acc      *stats-state*))
+    (let ((moved-n   (car acc))
+          (moved-b   (cadr acc))
+          (dropped-n (caddr acc))
+          (dropped-b (cadddr acc)))
+      (let ((base (list (cons 'hot-count      hot-n)
+                        (cons 'cold-count     cold-n)
+                        (cons 'total-count    (+ hot-n cold-n))
+                        (cons 'hot-bytes      hot-b)
+                        (cons 'cold-bytes     cold-b)
+                        (cons 'total-bytes    (+ hot-b cold-b))
+                        (cons 'hot-oldest-ms  hot-age)
+                        (cons 'cold-oldest-ms cold-age)
+                        (cons 'moved-count    moved-n)
+                        (cons 'moved-bytes    moved-b)
+                        (cons 'dropped-count  dropped-n)
+                        (cons 'dropped-bytes  dropped-b))))
+        ;; stats-alist-set is here mainly so future overrides (e.g. layered
+        ;; stats from multiple runs) can be folded in without rewriting the
+        ;; literal above. For a single-run report base is returned as-is.
+        (stats-alist-set base 'total-count (+ hot-n cold-n))))))
+
+;; format-stats : alist -> list-of-strings
+;; Render the stats alist as a list of "KEY=value" strings, in the canonical
+;; order required by the stdout contract. main.aura appends each one with
+;; (display …) (newline).
+(define (format-stats stats)
+  (list
+    (string-append "HOT_COUNT="      (number->string (stats-alist-ref stats 'hot-count      0)))
+    (string-append "COLD_COUNT="     (number->string (stats-alist-ref stats 'cold-count     0)))
+    (string-append "TOTAL_COUNT="    (number->string (stats-alist-ref stats 'total-count    0)))
+    (string-append "HOT_BYTES="      (number->string (stats-alist-ref stats 'hot-bytes      0)))
+    (string-append "COLD_BYTES="     (number->string (stats-alist-ref stats 'cold-bytes     0)))
+    (string-append "TOTAL_BYTES="    (number->string (stats-alist-ref stats 'total-bytes    0)))
+    (string-append "HOT_OLDEST_MS="  (number->string (stats-alist-ref stats 'hot-oldest-ms  0)))
+    (string-append "COLD_OLDEST_MS=" (number->string (stats-alist-ref stats 'cold-oldest-ms 0)))
+    (string-append "MOVED_COUNT="    (number->string (stats-alist-ref stats 'moved-count    0)))
+    (string-append "MOVED_BYTES="    (number->string (stats-alist-ref stats 'moved-bytes    0)))
+    (string-append "DROPPED_COUNT="  (number->string (stats-alist-ref stats 'dropped-count  0)))
+    (string-append "DROPPED_BYTES="  (number->string (stats-alist-ref stats 'dropped-bytes  0)))))

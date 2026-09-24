@@ -1,0 +1,13 @@
+;; Segment type: immutable record represented as an alist.
+;; Fields: (id . n) (bytes . n) (age-ms . n) (tier . 'hot|'cold)
+
+(define (make-segment id bytes age-ms tier)
+  (list (cons 'id id)
+        (cons 'bytes bytes)
+        (cons 'age-ms age-ms)
+        (cons 'tier tier)))
+
+(define (segment-id seg) (cdr (assq 'id seg)))
+(define (segment-bytes seg) (cdr (assq 'bytes seg)))
+(define (segment-age-ms seg) (cdr (assq 'age-ms seg)))
+(define (segment-tier seg) (cdr (assq 'tier seg)))

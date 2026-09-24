@@ -1,0 +1,78 @@
+;; main.aura
+;; Entry point for the mini-wal-fuzz crash-safety harness.
+;;
+;; This file drives the scenario end-to-end:
+;;   1. Seed the RNG with a fixed value for reproducibility.
+;;   2. Initialize the harness state with seed=20260524 and rounds=120.
+;;   3. Loop round=1..120, calling (harness-step state round) each time.
+;;      harness-step internally does 1..4 appends, occasional syncs,
+;;      commits, and crash+recover sequences per the fuzz schedule.
+;;   4. Finalize the state, then print KEY=value summary lines.
+;;
+;; `main.aura` is the ONLY file in this project that calls
+;; `display`/`newline`.  All other modules are pure-functional (or hold
+;; only their own internal mutable globals that the harness owns).
+
+;; ---- Scenario constants --------------------------------------------------
+
+(define MAIN-SEED 20260524)
+(define MAIN-ROUNDS 120)
+
+;; ---- run -----------------------------------------------------------------
+
+(define (run)
+  ;; Seed the deterministic RNG first so every fuzz run with the same
+  ;; seed produces an identical crash schedule.
+  (rng-seed! MAIN-SEED)
+
+  ;; Build the initial harness state.  harness-init returns an opaque
+  ;; alist containing the seeded log, the recovered state, and counters.
+  (let ((state (harness-init MAIN-SEED MAIN-ROUNDS)))
+    ;; Drive every round.  Each step may append frames, sync, commit,
+    ;; crash (truncate the journal) and/or recover — all decided by the
+    ;; deterministic schedule layered on top of the seeded RNG.
+    (let loop ((round 1))
+      (if (> round MAIN-ROUNDS)
+          state
+          (begin
+            (harness-step state round)
+            (loop (+ round 1))))))
+
+  ;; Pull summary numbers out of the finalized state.  harness-finalize
+  ;; returns an alist of KEY . value pairs that report.aura can print.
+  (let ((final (harness-finalize state)))
+    ;; Convert the boolean flags to the Aura canonical literals so the
+    ;; stdout contract is satisfied exactly.  A single #f forces FAIL.
+    (let* ((recover-ok (let ((v (assq 'recover-ok final)))
+                         (if (eq? v #f) #f #t)))
+           (monotonic  (let ((v (assq 'monotonic-lsn final)))
+                         (if (eq? v #f) #f #t)))
+           (crc-ok     (let ((v (assq 'crc-ok final)))
+                         (if (eq? v #f) #f #t)))
+           (tx-atomic  (let ((v (assq 'tx-atomic final)))
+                         (if (eq? v #f) #f #t)))
+           (any-fail   (or (not recover-ok)
+                           (not monotonic)
+                           (not crc-ok)
+                           (not tx-atomic)))
+           (verdict    (if any-fail "FAIL" "PASS")))
+      ;; Print the report in the exact order required by the contract.
+      (print-report
+       (list
+        (cons 'lsn-max            (let ((p (assq 'lsn-max final)))
+                                    (if (null? p) 0 (cdr p))))
+        (cons 'frames-total       (let ((p (assq 'frames-total final)))
+                                    (if (null? p) 0 (cdr p))))
+        (cons 'recovered-frames   (let ((p (assq 'recovered-frames final)))
+                                    (if (null? p) 0 (cdr p))))
+        (cons 'recover-ok         recover-ok)
+        (cons 'monotonic-lsn      monotonic)
+        (cons 'crc-ok             crc-ok)
+        (cons 'tx-atomic          tx-atomic)
+        (cons 'rounds             MAIN-ROUNDS)
+        (cons 'verdict            verdict))))))
+
+;; ---- main -----------------------------------------------------------------
+
+(define (main)
+  (run))

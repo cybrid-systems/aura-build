@@ -1,0 +1,214 @@
+;; wal_proto.aura — wire protocol for WAL streaming.
+;;
+;; The protocol layer sits between the shipper (primary side) and the
+;; follower (secondary side). It packages frames into "handshake" and
+;; "stream" messages, drives the buffer/socket plumbing, and pumps the
+;; follower receive loop. There is no real network: the protocol talks
+;; to wal_sock.aura's in-memory socket and to wal_buffer.aura's bounded
+;; buffer via the (api ...) handles that earlier modules registered.
+;;
+;; State held at module scope:
+;;   *conn-state*   alist — current connection descriptor, mutated across
+;;                        handshake/reconnect events:
+;;      ((peer-id . <string>)
+;;       (phase   . <'idle | 'handshake | 'streaming | 'closed>)
+;;       (initiated-at . <number — tick at which handshake began>)
+;;       (reconnects   . <number — successful (re)handshakes so far>))
+;;
+;;   *catchup-ms*   number — wall-clock-ish milliseconds the most recent
+;;                  catch-up handshake took. Set inside proto-handshake so
+;;                  the reporter can surface it. Starts at 0.
+;;
+;; API:
+;;   (proto-handshake primary-id follower-id) -> number  ; ms for catch-up
+;;   (proto-ship-one!  buf sock frame)        -> #t | #f
+;;   (proto-recv-loop! buf sock follower-applier) -> number  ; frames applied
+;;
+;; Conventions:
+;;   - Frames are the (lsn payload crc) triplets produced by frame-encode
+;;     in wal_frame.aura. The protocol just forwards them byte-for-byte;
+;;     framing is handled at the socket layer.
+;;   - "Bytes" on the wire are the payload string of each frame; LSN and
+;;     CRC are bookkeeping metadata kept alongside.
+;;   - A payload equal to "<<FLUSH>>" is the end-of-batch flush marker.
+;;     The shipper still pushes it (it travels over the wire), and the
+;;     follower's apply hook is responsible for committing on flush.
+
+(define *exports* '())
+
+(define-syntax api
+  (syntax-rules ()
+    ((api name)
+     (set! *exports* (cons (cons 'name (lambda () name)) *exports*)))))
+
+;; ---- Module-local state --------------------------------------------------
+
+(define *conn-state*
+  '((peer-id . "") (phase . 'idle) (initiated-at . 0) (reconnects . 0)))
+
+(define *catchup-ms* 0)
+
+;; ---- Alist helpers -------------------------------------------------------
+
+(define (alist-ref key alist)
+  (let ((p (assoc key alist)))
+    (if p (cdr p) #f)))
+
+(define (alist-set key val alist)
+  (let loop ((rest alist) (acc '()))
+    (cond ((null? rest) (append (reverse acc) (list (cons key val))))
+          ((equal? (caar rest) key)
+           (append (reverse acc) (cons (cons key val) (cdr rest))))
+          (else (loop (cdr rest) (cons (car rest) acc))))))
+
+;; ---- Module API handles --------------------------------------------------
+;; These are looked up by symbol name from the *exports* alists of the
+;; earlier modules. Each returns the bound procedure value.
+
+(define (resolve-export module key)
+  ;; module is a symbol (one of the (api ...) registered in earlier files).
+  ;; The convention used by wal_*.aura is that calling (api name) registers
+  ;; a zero-arg thunk that returns the procedure bound to `name` in that
+  ;; module's top-level. So we eval a tiny lookup expression.
+  (eval `(,module ,key)))
+
+(define mod-buf    'buf)     ; wal_buffer.aura exports buf-new etc.
+(define mod-sock   'sock)    ; wal_sock.aura exports sock-send! etc.
+(define mod-frame  'frame)   ; wal_frame.aura exports frame-encode etc.
+(define mod-seg    'seg)     ; wal_segment.aura
+(define mod-ids    'ids)     ; wal_ids.aura
+(define mod-ship   'ship)    ; wal_shipper.aura (used only for tick stats)
+(define mod-follow 'follow)  ; wal_follower.aura
+
+;; ---- Connection state mutators ------------------------------------------
+
+(define (conn-get key)
+  (alist-ref key *conn-state*))
+
+(define (conn-set! key val)
+  (set! *conn-state* (alist-set key val *conn-state*)))
+
+(define (now-tick)
+  ;; A monotonically increasing pseudo-tick. We piggy-back on the shipper's
+  ;; tick counter if available; otherwise fall back to a local counter so
+  ;; the protocol module is usable in isolation.
+  (+ (conn-get 'reconnects) 1))
+
+(define (catchup-ms-get) *catchup-ms*)
+(define (catchup-ms-set! v) (set! *catchup-ms* v))
+
+;; ---- Handshake -----------------------------------------------------------
+;; proto-handshake pretends to negotiate a stream from primary-id to
+;; follower-id. We seed the connection descriptor, record the wall-clock
+;; start tick, advance the phase, and stamp the elapsed ms into *catchup-ms*
+;; so wal_reporter.aura can pick it up.
+;;
+;; The actual handshake bytes are simulated by sending a tiny "READY"
+;; marker through the socket so the follower has something to attach to.
+
+(define (proto-handshake primary-id follower-id)
+  (let* ((start (now-tick))
+         ;; Phase bookkeeping
+         (_ (conn-set! 'peer-id follower-id))
+         (_ (conn-set! 'phase 'handshake))
+         (_ (conn-set! 'initiated-at start))
+         ;; Push a synthetic handshake byte down the wire so the follower
+         ;; has a record to bind to. We look up sock-send! dynamically.
+         (sock-send!
+            ((resolve-export mod-sock 'sock-send!))))
+    (sock-send! 'primary (string-append "READY:" primary-id ":" follower-id))
+    ;; Simulate a brief catch-up window: 1 tick == 1ms in this mini world.
+    (let ((elapsed (+ 1 (modulo (+ (string-length primary-id)
+                                    (string-length follower-id)) 8))))
+      (catchup-ms-set! elapsed)
+      (conn-set! 'phase 'streaming)
+      (conn-set! 'reconnects (+ (conn-get 'reconnects) 1))
+      elapsed)))
+
+;; ---- ship-one! -----------------------------------------------------------
+;; Push a single frame onto buf, then attempt to flush buf through sock.
+;; Returns #t if the frame was accepted into the buffer (and possibly
+;; delivered), #f if the buffer refused it (backpressure). Flush markers
+;; travel through the same path; the follower's apply hook decides what
+;; to do with them.
+;;
+;; Frame is a (lsn payload crc) triplet. We pull byte-length from the
+;; payload string and use it as the buffer's byte cost.
+
+(define (proto-ship-one! buf sock frame)
+  (let* ((buf-push! ((resolve-export mod-buf 'buf-push!)))
+         (buf-drain! ((resolve-export mod-buf 'buf-drain!)))
+         (sock-send! ((resolve-export mod-sock 'sock-send!)))
+         (sock-drop? ((resolve-export mod-sock 'sock-drop?)))
+         (payload (list-ref frame 1))
+         (lsn     (list-ref frame 0))
+         (crc     (list-ref frame 2))
+         (pushed? (buf-push! buf frame)))
+    (if (not pushed?)
+        #f
+        (begin
+          ;; Try to drain whatever the buffer is holding onto and ship it.
+          (let ((drained (buf-drain! buf)))
+            (if (sock-drop? sock)
+                ;; Simulated glitch: leave frames in the buffer; the
+                ;; shipper's tick loop will retry. We don't drain.
+                #t
+                (begin
+                  (for-each
+                    (lambda (f)
+                      (sock-send! 'primary (list-ref f 1)))
+                    drained)
+                  ;; Echo an ACK marker per frame so the follower recv
+                  ;; loop has something to advance against.
+                  (for-each
+                    (lambda (f)
+                      (sock-send! 'primary
+                                  (string-append "ACK:" (number->string (list-ref f 0)))))
+                    drained)
+                  #t)))))))
+
+;; ---- recv-loop! ----------------------------------------------------------
+;; Drain everything currently sitting in the socket's rx queue and hand
+;; each non-ACK, non-handshake byte to the follower's apply hook. Returns
+;; the number of frames that were successfully applied.
+;;
+;; follower-applier is the procedure (follow-apply-one! follower frame)
+;; bound from wal_follower.aura — we look it up dynamically so this file
+;; doesn't have a hard dependency on the follower module being loaded
+;; before this one.
+
+(define (proto-recv-loop! buf sock follower-id)
+  (let* ((sock-recv! ((resolve-export mod-sock 'sock-recv!)))
+         (follow-apply-one! ((resolve-export mod-follow 'follow-apply-one!)))
+         (frame-encode ((resolve-export mod-frame 'frame-encode)))
+         (frame-flush? ((resolve-export mod-frame 'frame-flush?)))
+         (inbox (sock-recv! sock))
+         (applied 0))
+    (let loop ((xs inbox) (acc 0))
+      (cond ((null? xs) acc)
+            ;; Skip handshake bytes; they are bookkeeping only.
+            ((and (>= (string-length (car xs)) 5)
+                  (string=? (substring (car xs) 0 5) "READY:"))
+             (loop (cdr xs) acc))
+            ;; Skip ACK echoes.
+            ((and (>= (string-length (car xs)) 4)
+                  (string=? (substring (car xs) 0 4) "ACK:"))
+             (loop (cdr xs) acc))
+            (else
+             ;; Treat each remaining byte-string as a payload. We rebuild
+             ;; a triplet with a placeholder CRC; the follower's verify
+             ;; step will check it against the original tag.
+             (let* ((payload (car xs))
+                    (lsn (+ acc 1))
+                    (triplet (frame-encode lsn payload "00000000")))
+               (if (frame-flush? triplet)
+                   (loop (cdr xs) acc)
+                   (begin
+                     (follow-apply-one! follower-id triplet)
+                     (loop (cdr xs) (+ acc 1))))))))))
+
+;; ---- Exported API --------------------------------------------------------
+
+(api proto-handshake)
+(api proto-ship-one!)
+(api proto-recv-loop!)

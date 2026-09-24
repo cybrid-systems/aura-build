@@ -1,0 +1,125 @@
+;; wal_buffer.aura — bounded outbound frame buffer.
+;; The shipper accumulates frames in a bounded FIFO before flushing them to
+;; the socket layer. A buffer is a list of triplets (lsn payload crc) with
+;; a byte budget derived from payload lengths (each payload byte counts as
+;; one wire byte; CRC + LSN framing overhead are neglected for this mini
+;; implementation). The buffer exposes classic mutators that operate on a
+;; shared mutable cell so the shipper and follower can hold references to
+;; the same buffer without copying.
+;;
+;; A buffer is represented by a single mutable cell (a box) holding an
+;; alist of the form:
+;;   ((frames . ((lsn payload crc) ...)) (bytes . N) (capacity . K))
+;; where:
+;;   - frames:   ordered list of pending frames, head is oldest
+;;   - bytes:    accumulated byte count of all pending payloads
+;;   - capacity: maximum byte budget; buf-push! that would exceed it
+;;               drops the new frame and the buffer records a 'dropped
+;;               frame counter so callers can observe backpressure.
+;;
+;; API:
+;;   (buf-new cap)                -> box        ; fresh empty buffer with capacity cap
+;;   (buf-push! buf lsn p crc)    -> boolean   ; #t on accept, #f on drop
+;;   (buf-drain! buf)             -> list      ; returns all pending frames, clears state
+;;   (buf-size buf)               -> number    ; current byte usage
+;;   (buf-dropped buf)            -> number    ; lifetime dropped-frame count
+;;   (buf-capacity buf)           -> number    ; configured byte capacity
+
+(define *exports* '())
+
+(define-syntax api
+  (syntax-rules ()
+    ((api name)
+     (set! *exports* (cons (cons 'name (lambda () name)) *exports*)))))
+
+;; ---- alist helpers --------------------------------------------------------
+
+(define (alist-ref key alist)
+  (let ((p (assq key alist)))
+    (if p (cdr p) #f)))
+
+(define (alist-set key val alist)
+  (cons (cons key val)
+        (let loop ((xs alist))
+          (cond ((null? xs) '())
+                ((eq? (caar xs) key) (cdr xs))
+                (else (cons (car xs) (loop (cdr xs))))))))
+
+;; ---- core cell accessors --------------------------------------------------
+
+(define (buf-state buf)
+  ;; Return the underlying alist so callers can read without mutation.
+  (car buf))
+
+(define (buf-set-state! buf new-state)
+  (set-car! buf new-state))
+
+;; ---- public API -----------------------------------------------------------
+
+(define (buf-new cap)
+  ;; Build a fresh buffer cell. Capacity is normalized to a non-negative
+  ;; integer; zero or negative capacities still produce a working buffer
+  ;; that simply rejects every push.
+  (let ((c (if (and (number? cap) (>= cap 0)) cap 0)))
+    (list
+      (alist-set 'frames '()
+                 (alist-set 'bytes 0
+                            (alist-set 'capacity c
+                                       (alist-set 'dropped 0 '())))))))
+
+(define (buf-bytes buf)
+  (let ((v (alist-ref 'bytes (buf-state buf))))
+    (if (number? v) v 0)))
+
+(define (buf-frames buf)
+  (let ((v (alist-ref 'frames (buf-state buf))))
+    (if v v '())))
+
+(define (buf-capacity buf)
+  (let ((v (alist-ref 'capacity (buf-state buf))))
+    (if (number? v) v 0)))
+
+(define (buf-dropped buf)
+  (let ((v (alist-ref 'dropped (buf-state buf))))
+    (if (number? v) v 0)))
+
+(define (buf-size buf)
+  ;; Current byte usage — the contract surface.
+  (buf-bytes buf))
+
+(define (buf-push! buf lsn payload crc)
+  ;; Attempt to append a frame. Returns #t on accept, #f if the frame
+  ;; would push us past capacity. On drop, the lifetime 'dropped counter
+  ;; is incremented but the buffer contents stay untouched.
+  (let* ((state (buf-state buf))
+         (cap   (let ((v (alist-ref 'capacity state)))
+                  (if (number? v) v 0)))
+         (cur   (let ((v (alist-ref 'bytes state)))
+                  (if (number? v) v 0)))
+         (plen  (if (string? payload) (string-length payload) 0)))
+    (if (> (+ cur plen) cap)
+        (begin
+          (buf-set-state!
+            buf
+            (alist-set 'dropped (+ (buf-dropped buf) 1) state))
+          #f)
+        (begin
+          (buf-set-state!
+            buf
+            (alist-set 'frames
+                       (append (buf-frames buf)
+                               (list (list lsn payload crc)))
+                       (alist-set 'bytes (+ cur plen) state)))
+          #t))))
+
+(define (buf-drain! buf)
+  ;; Snapshot and reset the pending frames. Bytes counter is zeroed and
+  ;; the frame list cleared. Returns the drained frames in arrival order
+  ;; (oldest first), which matches what proto-ship-one! / shipper expects
+  ;; when iterating the wire.
+  (let* ((state (buf-state buf))
+         (out   (buf-frames buf))
+         (next  (alist-set 'frames '()
+                  (alist-set 'bytes 0 state))))
+    (buf-set-state! buf next)
+    out))

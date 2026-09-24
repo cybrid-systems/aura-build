@@ -1,0 +1,121 @@
+;; Leaf node for the mini-btree index.
+;; A leaf holds entries of the form (key pk v) sorted by key, and supports
+;; insertion (returning #t if a split occurred), splitting, range listing,
+;; and size accounting. Entries live in a flat list; capacity is the maximum
+;; number of entries before a split is required.
+
+(define (make-leaf capacity)
+  (cons capacity '()))
+
+(define (leaf-capacity leaf)
+  (car leaf))
+
+(define (leaf-entries leaf)
+  (cdr leaf))
+
+(define (leaf-set-entries! leaf entries)
+  (set-cdr! leaf entries))
+
+(define (leaf-count leaf)
+  (define (len xs)
+    (if (null? xs) 0 (+ 1 (len (cdr xs)))))
+  (len (leaf-entries leaf)))
+
+;; Find insertion index (0-based) for k in entries, where all keys are < k.
+(define (leaf-find-idx entries k)
+  (define (loop i xs)
+    (cond
+      ((null? xs) i)
+      ((key<? (car (car xs)) k) (loop (+ i 1) (cdr xs)))
+      (else i)))
+  (loop 0 entries))
+
+;; (leaf-insert! leaf k pk v) -> #t if a split is now needed, #f otherwise.
+;; Replaces an existing entry with the same key (preserving order).
+(define (leaf-insert! leaf k pk v)
+  (define entries (leaf-entries leaf))
+  (define idx (leaf-find-idx entries k))
+  (define (loop i xs before)
+    (cond
+      ((null? xs)
+       (leaf-set-entries! leaf
+         (append (reverse (cons (list k pk v) before)) xs))
+       (>= (leaf-count leaf) (leaf-capacity leaf)))
+      ((= i idx)
+       (cond
+         ((and (pair? xs) (key=? (car (car xs)) k))
+          ;; replace in place
+          (set-car! xs (list k pk v))
+          #f)
+         (else
+          (leaf-set-entries! leaf
+            (append (reverse before)
+                    (cons (list k pk v) xs)))
+          (>= (leaf-count leaf) (leaf-capacity leaf)))))
+      (else
+        (loop (+ i 1) (cdr xs) (cons (car xs) before))))))
+  (loop 0 entries '()))
+
+;; (leaf-split! leaf) -> (left . right) pair.
+;; Splits the leaf at the midpoint; the split key is the first key of the
+;; right half (so it becomes the separator in the parent node).
+(define (leaf-split! leaf)
+  (define entries (leaf-entries leaf))
+  (define total (leaf-count leaf))
+  (define mid (quotient total 2))
+  (define (take n xs)
+    (if (= n 0)
+        '()
+        (cons (car xs) (take (- n 1) (cdr xs)))))
+  (define (drop n xs)
+    (if (= n 0)
+        xs
+        (drop (- n 1) (cdr xs))))
+  (define left-entries (take mid entries))
+  (define right-entries (drop mid entries))
+  (define left (make-leaf (leaf-capacity leaf)))
+  (define right (make-leaf (leaf-capacity leaf)))
+  (leaf-set-entries! left left-entries)
+  (leaf-set-entries! right right-entries)
+  (cons left right))
+
+;; (leaf-range leaf lo hi) -> list of entries with lo <= key <= hi.
+;; Returns a flat list in key order.
+(define (leaf-range leaf lo hi)
+  (define (in-range? k)
+    (and (or (not lo) (key<? lo k) (key=? lo k))
+         (or (not hi) (key<? k hi) (key=? k hi))))
+  (define (loop xs acc)
+    (cond
+      ((null? xs) acc)
+      ((in-range? (car (car xs)))
+       (loop (cdr xs) (cons (car xs) acc)))
+      (else acc)))
+  (reverse (loop (leaf-entries leaf) '())))
+
+;; (leaf-first-key leaf) -> first key in the leaf, or '() if empty.
+(define (leaf-first-key leaf)
+  (define es (leaf-entries leaf))
+  (if (null? es)
+      '()
+      (car (car es))))
+
+;; (leaf-last-key leaf) -> last key in the leaf, or '() if empty.
+(define (leaf-last-key leaf)
+  (define es (leaf-entries leaf))
+  (if (null? es)
+      '()
+      (car (car (reverse es)))))
+
+;; (leaf-bytes leaf) -> approximate in-memory byte size of the leaf entries.
+;; Counts each entry's key string length plus fixed overhead.
+(define (leaf-bytes leaf)
+  (define (entry-bytes e)
+    (define k (car e))
+    (define ks (if (string? k) (string-length k) 0))
+    (+ ks 16))
+  (define (loop xs acc)
+    (if (null? xs)
+        acc
+        (loop (cdr xs) (+ acc (entry-bytes (car xs))))))
+  (loop (leaf-entries leaf) 0))

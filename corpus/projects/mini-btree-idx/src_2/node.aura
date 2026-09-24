@@ -1,0 +1,159 @@
+;; Internal node for the mini-btree index.
+;; An internal node holds up to `capacity` child slots and `capacity-1`
+;; separator keys. Keys at index i separate child i from child i+1.
+;; Internal nodes do not store payloads directly; payloads live in leaves.
+;;
+;; A node is represented as a mutable list:
+;;   (leaf? capacity keys children)
+;; where `leaf?` is #t/#f, `capacity` is the max number of children,
+;; `keys` is a list of (n-1) separator keys, and `children` is a list
+;; of (n) child nodes (themselves in this same representation).
+
+(define (make-node leaf? capacity)
+  (list leaf? capacity '() '()))
+
+(define (node-leaf? n) (car n))
+(define (node-capacity n) (cadr n))
+(define (node-keys n) (caddr n))
+(define (node-children n) (cadddr n))
+
+(define (node-set-keys! n keys) (set-car! (cddr n) keys))
+(define (node-set-children! n ch) (set-car! (cdddr n) ch))
+
+(define (node-is-leaf? n)
+  (if (node-leaf? n) #t #f))
+
+(define (node-count n)
+  (node-keys n)
+  ;; count of separator keys (one fewer than number of children)
+  (define (len xs)
+    (if (null? xs) 0 (+ 1 (len (cdr xs)))))
+  (len (node-keys n)))
+
+;; Number of children currently held by an internal node.
+(define (node-child-count n)
+  (define (len xs)
+    (if (null? xs) 0 (+ 1 (len (cdr xs)))))
+  (len (node-children n)))
+
+;; (node-key-at n i) -> the i-th separator key (0-based), or '() if out of range.
+(define (node-key-at n i)
+  (define (loop j xs)
+    (cond
+      ((null? xs) '())
+      ((= j 0) (car xs))
+      (else (loop (- j 1) (cdr xs)))))
+  (loop i (node-keys n)))
+
+;; Find the index of the child that should contain key `k`.
+;; For an internal node with keys k0,k1,...,k_{n-2} and children c0..c_{n-1}:
+;;   - c0 holds keys < k0
+;;   - c_i (i>=1) holds keys in [k_{i-1}, k_i)
+(define (node-find-child n k)
+  (define (loop i keys)
+    (cond
+      ((null? keys) i)
+      ((key<? k (car keys))
+       i)
+      (else (loop (+ i 1) (cdr keys)))))
+  (loop 0 (node-keys n)))
+
+;; Insert (k, pk, v) into subtree rooted at node `n`. Returns #t if this
+;; node was split as a result (caller must pick up the split), #f otherwise.
+;; For leaves, delegates to the leaf operations from leaf.aura.
+;; For internals, recurses into the appropriate child, then rebalances
+;; (splits the child if it became overfull, propagating the median key).
+(define (node-insert! n k pk v)
+  (cond
+    ((node-is-leaf? n)
+     (define split? (leaf-insert! n k pk v))
+     split?)
+    (else
+     ;; Recurse into the appropriate child.
+     (define idx (node-find-child n k))
+     (define children (node-children n))
+     (define (nth i xs)
+       (cond
+         ((= i 0) (car xs))
+         (else (nth (- i 1) (cdr xs)))))
+     (define child (nth idx children))
+     (define child-split? (node-insert! child k pk v))
+     (cond
+       ((not child-split?) #f)
+       (else
+        ;; Child was split into (left . (mid-key . right)). Pull the pieces up.
+        (define split-result child)
+        (define left-child (car split-result))
+        (define mid-pair (cdr split-result))
+        (define up-key (car mid-pair))
+        (define right-child (cdr mid-pair))
+        ;; Splice the new right child into this node's child list after idx.
+        (define new-children
+          (let loop ((acc '()) (i 0) (xs children))
+            (cond
+              ((null? xs) (reverse acc))
+              ((= i idx)
+               (loop (cons right-child (cons (car xs) acc)) (+ i 1) (cdr xs)))
+              (else
+               (loop (cons (car xs) acc) (+ i 1) (cdr xs))))))
+        (set! children new-children)
+        (node-set-children! n children)
+        ;; Insert up-key into this node's separator list at position idx.
+        (define new-keys
+          (let loop ((acc '()) (i 0) (xs (node-keys n)))
+            (cond
+              ((null? xs)
+               ;; Append at end if idx equals current key count.
+               (if (= i idx)
+                   (reverse (cons up-key acc))
+                   (reverse acc)))
+              ((= i idx)
+               (reverse (cons up-key acc)))
+              (else
+               (loop (cons (car xs) acc) (+ i 1) (cdr xs))))))
+        (node-set-keys! n new-keys)
+        ;; Now check whether THIS node is overfull and needs splitting.
+        (node-split! n))))))
+
+;; (node-split! n) -> if node n is overfull (has more than `capacity`
+;; children), split it into two nodes and place the median key upward
+;; by mutating n into the left half and returning (left . (mid-key . right))
+;; for the caller to install as a sibling. Returns #f if no split occurred.
+(define (node-split! n)
+  (define nchild (node-child-count n))
+  (cond
+    ((<= nchild (node-capacity n)) #f)
+    (else
+     ;; Split point: median child index. With capacity c and 2c+1 children,
+     ;; the median is at index c (0-based), and the separator key at that
+     ;; index is the one to push up.
+     (define children (node-children n))
+     (define keys (node-keys n))
+     (define mid-idx (/ (node-capacity n) 1))   ;; = capacity
+     (define mid-key (node-key-at n (- mid-idx 1)))
+     ;; Build left half: children 0..mid-idx-1, keys 0..mid-idx-2
+     ;; Build right half: children mid-idx..end, keys mid-idx..end
+     (define (take xs n)
+       (let loop ((i 0) (acc '()) (xs xs))
+         (if (or (= i n) (null? xs))
+             (reverse acc)
+             (loop (+ i 1) (cons (car xs) acc) (cdr xs)))))
+     (define (drop xs n)
+       (let loop ((i 0) (xs xs))
+         (if (or (= i n) (null? xs))
+             xs
+             (loop (+ i 1) (cdr xs)))))
+     (define left-children (take children mid-idx))
+     (define right-children (drop children mid-idx))
+     (define left-keys (take keys (- mid-idx 1)))
+     (define right-keys (drop keys mid-idx))
+     ;; Mutate n to become the left half.
+     (set! (n (car (cdddr n))) right-children)   ;; placeholder; use setters
+     (node-set-children! n left-children)
+     (node-set-keys! n left-keys)
+     ;; Create the right sibling with the same leaf?/capacity as n.
+     (define right-node (make-node (node-leaf? n) (node-capacity n)))
+     (node-set-children! right-node right-children)
+     (node-set-keys! right-node right-keys)
+     ;; Return split descriptor: left half is n itself, mid-key, right-node.
+     (cons n (cons mid-key right-node)))))

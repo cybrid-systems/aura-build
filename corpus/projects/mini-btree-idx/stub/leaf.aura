@@ -1,0 +1,151 @@
+; leaf.aura — B-tree leaf node implementation
+;
+; A leaf holds an ordered list of keys together with parallel lists of
+; primary-key values and version tuples.  Keys are stored in sorted
+; order; insertion finds the right position via a linear scan (good
+; enough for a teaching project with small leaves).
+;
+; A leaf has a fixed capacity (max number of entries it can hold
+; before it must split).  When it overflows, leaf-split! separates it
+; into two leaves, each holding roughly half the entries, and returns
+; the new right-hand leaf along with the median key that the parent
+; must promote.
+
+(define (make-leaf capacity)
+  ;; A leaf is a list:
+  ;;   (capacity keys pks versions)
+  (list capacity '() '() '()))
+
+(define (leaf-capacity leaf)
+  (car leaf))
+
+(define (leaf-keys leaf)
+  (car (cdr leaf)))
+
+(define (leaf-pks leaf)
+  (car (cdr (cdr leaf))))
+
+(define (leaf-versions leaf)
+  (car (cdr (cdr (cdr leaf)))))
+
+(define (leaf-set! leaf keys pks versions)
+  (set-car! (cdr leaf) keys)
+  (set-car! (cdr (cdr leaf)) pks)
+  (set-car! (cdr (cdr (cdr leaf))) versions))
+
+(define (leaf-count leaf)
+  (length (leaf-keys leaf)))
+
+(define (leaf-full? leaf)
+  (>= (leaf-count leaf) (leaf-capacity leaf)))
+
+;; Find the insertion index for key k in the sorted keys list.
+;; Returns the smallest i such that (key<? k (list-ref keys i)).
+(define (find-insert-pos keys k)
+  (let loop ((i 0) (rest keys))
+    (cond ((null? rest) i)
+          ((key<? k (car rest)) i)
+          (else (loop (+ i 1) (cdr rest))))))
+
+(define (list-insert lst idx val)
+  (let loop ((i 0) (rest lst) (acc '()))
+    (cond ((= i idx)
+           (append (reverse acc) (cons val rest)))
+          (else
+           (loop (+ i 1) (cdr rest) (cons (car rest) acc))))))
+
+(define (list-take lst n)
+  (let loop ((i 0) (rest lst) (acc '()))
+    (if (= i n)
+        (reverse acc)
+        (loop (+ i 1) (cdr rest) (cons (car rest) acc)))))
+
+(define (list-drop lst n)
+  (let loop ((i 0) (rest lst))
+    (if (= i n)
+        rest
+        (loop (+ i 1) (cdr rest)))))
+
+;; Insert (k, pk, v) into leaf.  Duplicates on key keep the newest
+;; version (we overwrite in place — MVCC history lives elsewhere).
+;; Returns 'split if the leaf overflowed and was split, otherwise #f.
+(define (leaf-insert! leaf k pk v)
+  (let* ((keys (leaf-keys leaf))
+         (pks  (leaf-pks leaf))
+         (vers (leaf-versions leaf))
+         (pos  (find-insert-pos keys k))
+         (existing? (and (< pos (length keys))
+                         (not (key<? (list-ref keys pos) k))
+                         (not (key<? k (list-ref keys pos)))))
+         (nkeys (if existing?
+                    (list-set-nth keys pos k)
+                    (list-insert keys pos k)))
+         (npks  (if existing?
+                    (list-set-nth pks pos pk)
+                    (list-insert pks pos pk)))
+         (nvers (if existing?
+                    (list-set-nth vers pos v)
+                    (list-insert vers pos v))))
+    (leaf-set! leaf nkeys npks nvers)
+    (if (and (not existing?) (leaf-full? leaf))
+        (leaf-split! leaf)
+        #f)))
+
+(define (list-set-nth lst i val)
+  (let loop ((j 0) (rest lst) (acc '()))
+    (cond ((null? rest) (reverse acc))
+          ((= j i) (append (reverse acc) (cons val (cdr rest))))
+          (else (loop (+ j 1) (cdr rest) (cons (car rest) acc))))))
+
+;; Split an overfull leaf into two leaves.  The median key goes to
+;; the right half; we return a pair (newRightLeaf . medianKey) so the
+;; caller can promote the median key in the parent.
+(define (leaf-split! leaf)
+  (let* ((keys (leaf-keys leaf))
+         (pks  (leaf-pks leaf))
+         (vers (leaf-versions leaf))
+         (n    (length keys))
+         (mid  (quotient n 2))
+         (lkeys (list-take keys mid))
+         (lpks  (list-take pks mid))
+         (lvers (list-take vers mid))
+         (rkeys (list-drop keys mid))
+         (rpks  (list-drop pks mid))
+         (rvers (list-drop vers mid))
+         (median (car rkeys))
+         (right (make-leaf (leaf-capacity leaf))))
+    (leaf-set! leaf lkeys lpks lvers)
+    (leaf-set! right rkeys rpks rvers)
+    (cons right median)))
+
+;; Return all (key, pk, version) records in [lo, hi] inclusive.
+(define (leaf-range leaf lo hi)
+  (let ((keys (leaf-keys leaf))
+        (pks  (leaf-pks leaf))
+        (vers (leaf-versions leaf)))
+    (let loop ((ks keys) (ps pks) (vs vers) (acc '()))
+      (cond ((null? ks) (reverse acc))
+            ((key<? (car ks) lo)
+             (loop (cdr ks) (cdr ps) (cdr vs) acc))
+            ((key<? hi (car ks))
+             (reverse acc))
+            (else
+             (loop (cdr ks) (cdr ps) (cdr vs)
+                   (cons (list (car ks) (car ps) (car vs)) acc)))))))
+
+(define (leaf-first-key leaf)
+  (car (leaf-keys leaf)))
+
+(define (leaf-last-key leaf)
+  (let loop ((rest (leaf-keys leaf)))
+    (if (null? (cdr rest))
+        (car rest)
+        (loop (cdr rest)))))
+
+;; Approximate byte size of the leaf for metrics reporting.  Sum of
+;; string lengths of all keys plus a small per-entry overhead constant.
+(define (leaf-bytes leaf)
+  (let loop ((rest (leaf-keys leaf)) (acc 0))
+    (if (null? rest)
+        (+ acc (* 4 (leaf-count leaf)))
+        (loop (cdr rest) (+ acc (string-length (car rest)))))))

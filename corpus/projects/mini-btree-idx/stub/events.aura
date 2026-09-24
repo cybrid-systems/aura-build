@@ -1,0 +1,96 @@
+; events.aura — append-only event log for the B-tree index.
+;
+; The B-tree lives in memory for the duration of a single CLI run.  To
+; give the illusion of persistence across runs, every modification is
+; recorded as an event in an append-only log.  On reload, the tree is
+; rebuilt by replaying the log in order.
+;
+; Each event is a list of the shape:
+;   ('insert key pk version)
+; where `key` is a string, `pk` is a primary-key (string here for
+; simplicity), and `version` is the version tuple produced by
+; make-version from types.aura.
+;
+; The log itself is a plain Aura list.  Append is O(n) but the log is
+; small (a teaching project), so this is acceptable.  The module also
+; exposes event-replay which walks the log and re-inserts every
+; 'insert event into a freshly built tree, returning the rebuilt tree.
+;
+; Required API (from the module table in the project README):
+;   (define (event-log-new))
+;   (define (event-insert! log k pk v))
+;   (define (event-replay log order))
+;   (define (event-count log))
+;
+; The tree module's make-tree is used to construct the fresh tree
+; during replay; we rely on tree-insert! from tree.aura to re-apply
+; each event.
+
+; Build an empty event log.  An event log is just a list whose head is
+; the symbol 'log and whose tail is the list of events recorded so
+; far.  Keeping the tag makes it easy to tell a log apart from an
+; ordinary list of strings at a glance.
+(define (event-log-new)
+  (cons 'log '()))
+
+; Predicate: is x an event log?  Used by tests and by event-replay to
+; guard against being handed a plain list.
+(define (event-log? x)
+  (and (pair? x) (eq? (car x) 'log)))
+
+; Return the list of recorded events (without the leading tag).
+(define (event-log-events log)
+  (cdr log))
+
+; Number of events currently stored in the log.
+(define (event-count log)
+  (length (event-log-events log)))
+
+; Append a new 'insert event to the log.  We keep the API
+; side-effecting (note the bang) but we cannot mutate the cons cell
+; that is the head of the log, so we build a fresh list and replace
+; the binding in the caller.  In practice main.aura stores the log in
+; a (let ((log (event-log-new))) ...) form and re-binds via set!.
+;
+; To keep call sites simple we mutate the log *structure* in place:
+; we replace the cdr of the tagged cell with a list that has the new
+; event appended.  That requires set-cdr!, which Aura supports.
+(define (event-insert! log k pk v)
+  (if (not (event-log? log))
+      (error "event-insert!: not an event log")
+      (let ((new-event (list 'insert k pk v))
+            (old-events (event-log-events log)))
+        ;; Append by walking to the tail and set-cdr!ing the last pair.
+        (if (null? old-events)
+            (set-cdr! log (list new-event))
+            (let loop ((xs old-events))
+              (if (null? (cdr xs))
+                  (set-cdr! xs (list new-event))
+                  (loop (cdr xs)))))
+        log)))
+
+; Convenience: build the (key . pk . version) flat record from an
+; event, matching what tree-insert! wants.  Kept private to this file.
+(define (event->entry ev)
+  ;; ev = ('insert k pk v)
+  (list (car (cdr ev))
+        (car (cdr (cdr ev)))
+        (car (cdr (cdr (cdr ev))))))
+
+; Replay an event log into a fresh tree of the given order.  Returns
+; the rebuilt tree.  If the log is empty, returns a freshly made tree
+; with no inserts.
+(define (event-replay log order)
+  (let ((t (make-tree order)))
+    (let loop ((es (event-log-events log)))
+      (if (null? es)
+          t
+          (let ((ev (car es)))
+            (if (and (pair? ev) (eq? (car ev) 'insert))
+                (let ((entry (event->entry ev)))
+                  (tree-insert! t
+                                (car entry)
+                                (car (cdr entry))
+                                (car (cdr (cdr entry))))
+                  (loop (cdr es)))
+                (loop (cdr es))))))))

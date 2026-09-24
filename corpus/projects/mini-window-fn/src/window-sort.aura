@@ -1,0 +1,185 @@
+;; window-sort.aura — Sort-based window-function execution.
+;;
+;; Given a relation, a partition column, an order column, a frame descriptor,
+;; and a rank function, `wf-window-sort` returns a NEW relation whose rows
+;; have been augmented with two synthetic columns:
+;;
+;;   __frame__   : the list of rows included in this row's frame
+;;                 (a list of full rows; aggregates are computed from this)
+;;   __rank__    : the rank value assigned by the user-supplied rank function
+;;
+;; The strategy is the classical "sort, partition, scan" path:
+;;
+;;   1. Sort every row of the relation by the order column.
+;;   2. Walk the sorted list and group rows into partitions by the
+;;      partition-column value.
+;;   3. For each partition:
+;;        a. Inside-partition indices are re-computed (because the global
+;;           sort has mixed partitions together at this point).
+;;        b. For every row of the partition, compute the frame rows via
+;;           `wf-rows-in-frame` using the in-partition index as `pivot`.
+;;        c. Apply the rank function in left-to-right scan order to assign
+;;           the rank column.
+;;        d. Append the row's frame list and rank value to the row list.
+;;   4. Return a fresh relation whose columns include the two synthetic
+;;      columns and whose rows are in original (input) order. We re-sort
+;;      by an internal "__row_id__" tag we carried through the algorithm
+;;      so the caller observes the same row ordering it handed us.
+;;
+;; The rank function is invoked exactly as specified by `rank.aura`:
+;; (rank-fn (order-col-value current-row) tie-count-since-last-distinct).
+;;
+;; The frame column is left as a list-of-rows payload; aggregates downstream
+;; (agg.aura) simply take (cdr (assq '__frame__ row)) and operate on the
+;; value column of interest.
+;;
+;; This file exports exactly one API: `wf-window-sort`.
+
+(define (api wf-window-sort rel part-col order-col frame rank-fn)
+  ;; Step 1: tag rows with their original index so we can restore order
+  ;; at the end. We don't have vectors, so we keep the index inline in a
+  ;; cons cell: (orig-index . row).
+  (let* ((cols (car rel))
+         (rows (cdr rel))
+         (tagged (tag-rows rows 0))
+         ;; Step 2: sort tagged rows by the order column value.
+         (sorted (sort-tagged-by-col tagged cols order-col))
+         ;; Step 3: bucket sorted tagged rows into partitions.
+         (parts (bucket-by-col sorted cols part-col)))
+    ;; Step 4: scan each partition, attach frame + rank, and accumulate
+    ;; the final row list keyed by original index.
+    (let ((final-rows
+           (scan-partitions parts cols order-col frame rank-fn)))
+      ;; Step 5: restore original row order using the orig-index we kept.
+      (let ((in-order (sort-tagged-by-car
+                        (map (lambda (r) (cons (car r) (cdr r)))
+                             final-rows))))
+        ;; Build the new relation: same columns plus __frame__ and __rank__.
+        (cons (append cols (list '__frame__ '__rank__))
+              in-order)))))
+
+;; ---------------------------------------------------------------------------
+;; Helpers (internal — not exported)
+;; ---------------------------------------------------------------------------
+
+(define (tag-rows rows i)
+  ;; Walk `rows` and build (orig-index . row) pairs. We use 0-based
+  ;; indices; the exact numeric value never escapes this file, only its
+  ;; relative ordering matters.
+  (if (null? rows)
+      '()
+      (let ((rest (tag-rows (cdr rows) (+ i 1))))
+        (cons (cons i (car rows)) rest))))
+
+(define (sort-tagged-by-col tagged cols col)
+  ;; Sort tagged rows by the value of `col` in their underlying row, using
+  ;; a strict-less-than comparator. Ties keep their pre-sort relative
+  ;; order (merge sort is stable).
+  (let ((pos (col-index cols col)))
+    (wf-sort tagged
+             (lambda (a b)
+               (less-than (list-ref (cdr a) pos)
+                          (list-ref (cdr b) pos))))))
+
+(define (sort-tagged-by-car tagged)
+  ;; Sort tagged rows by car (orig-index). After sorting ascending by
+  ;; orig-index we can drop the tag and return plain rows.
+  (let loop ((xs tagged)
+             (acc '()))
+    (if (null? xs)
+        (reverse acc)
+        (loop (cdr xs)
+              (cons (cdr (car xs)) acc)))))
+
+(define (col-index cols col)
+  ;; Position of `col` in `cols`, or -1 if missing. We rely on this
+  ;; returning a valid index for every column we query, since callers
+  ;; only pass columns that exist in the relation.
+  (let loop ((xs cols)
+             (i 0))
+    (cond ((null? xs) -1)
+          ((eq? (car xs) col) i)
+          (else (loop (cdr xs) (+ i 1))))))
+
+(define (less-than a b)
+  ;; Total order across numbers and symbols/strings. Numbers compare
+  ;; numerically; everything else compares with `<` on the Aura primitive.
+  (cond ((and (number? a) (number? b)) (< a b))
+        (else (< a b))))
+
+(define (bucket-by-col tagged cols col)
+  ;; Group tagged rows into (key . tagged-rows) pairs. We walk the sorted
+  ;; tagged list once and cons each row onto the head of its bucket. The
+  ;; output is in first-seen key order, which is deterministic for the
+  ;; given input ordering.
+  (let loop ((xs tagged)
+             (buckets '()))
+    (if (null? xs)
+        ;; Reverse each bucket so rows inside the partition come out in
+        ;; their original (now sorted-by-order) sequence.
+        (map (lambda (b)
+               (cons (car b) (reverse (cdr b))))
+             (reverse buckets))
+        (let* ((row (car xs))
+               (key (list-ref (cdr row) (col-index cols col)))
+               (hit (assq key buckets)))
+          (if hit
+              (let ((updated
+                      (map (lambda (b)
+                             (if (eq? (car b) key)
+                                 (cons key (cons row (cdr b)))
+                                 b))
+                           buckets)))
+                (loop (cdr xs) updated))
+              (loop (cdr xs)
+                    (cons (cons key (list row)) buckets)))))))
+
+(define (scan-partitions parts cols order-col frame rank-fn)
+  ;; For each partition, run `scan-partition` and concatenate the
+  ;; augmented rows into one big list. Each augmented row is
+  ;; (orig-index . (row-with-frame-and-rank-appended)).
+  (let loop ((ps parts)
+             (acc '()))
+    (if (null? ps)
+        (reverse acc)
+        (let* ((part (car ps))
+               (rows (cdr part))
+               (augmented (scan-partition rows cols order-col frame rank-fn)))
+          (loop (cdr ps)
+                (append (reverse augmented) acc))))))
+
+(define (scan-partition rows cols order-col frame rank-fn)
+  ;; Walk the rows of a single partition in order. For each row at
+  ;; in-partition index `i`:
+  ;;   - frame-rows := (wf-rows-in-frame rows frame i)
+  ;;   - rank       := (rank-fn (order-col-value row) tie-count)
+  ;; Then emit (orig-index . (row ++ (frame-rows rank))).
+  ;;
+  ;; Tie-count tracks how many consecutive rows have shared the same
+  ;; order-column value as the row at i; it is passed to the rank
+  ;; function so it can produce RANK/DENSE_RANK/ROW_NUMBER semantics.
+  (let loop ((xs rows)
+             (i 0)
+             (last-val 'unbound)
+             (tie-count 0)
+             (acc '()))
+    (if (null? xs)
+        acc
+        (let* ((tagged-row (car xs))
+               (row (cdr tagged-row))
+               (orig-i (car tagged-row))
+               (val (list-ref row (col-index cols order-col)))
+               (frame-rows (wf-rows-in-frame rows frame i))
+               (rank-val (rank-fn val
+                                  (if (eq? last-val 'unbound)
+                                      0
+                                      tie-count)))
+               (new-row (append row (list frame-rows rank-val)))
+               (next-tie (cond ((eq? last-val 'unbound) 1)
+                               ((equal? val last-val) (+ tie-count 1))
+                               (else 1))))
+          (loop (cdr xs)
+                (+ i 1)
+                val
+                next-tie
+                (cons (cons orig-i new-row) acc))))))

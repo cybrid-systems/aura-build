@@ -1,0 +1,194 @@
+;; json-index.aura — Structural index over a JSON AST.
+;;
+;; An index is an immutable structure capturing summary information
+;; about an AST produced by json-ast.aura. We represent the index as a
+;; plain list so it can be passed around with no extra machinery:
+;;
+;;   '(index <depth> <counts-alist> <root-kind> <root-size> <node-count>)
+;;
+;;   depth       : maximum nesting depth observed in the AST
+;;   counts-alist: alist mapping kind-symbol -> count of nodes of that kind
+;;   root-kind   : symbol for the kind of the root node
+;;   root-size   : "size" of the root — for an array the number of
+;;                 children, for an object the number of key/value pairs,
+;;                 for a leaf 1, for an error node 0
+;;   node-count  : total number of nodes visited (including the root)
+;;
+;; We expose:
+;;   (build-index node)         -> idx
+;;   (index-depth idx)          -> number
+;;   (index-count idx kind)     -> number
+;;   (index-walk idx proc)      -> walks every AST node reachable from
+;;                                 the original AST the index was built
+;;                                 from, calling (proc node depth) on
+;;                                 each. The index does not embed the
+;;                                 full AST, so we re-traverse on demand
+;;                                 using a depth marker list. This keeps
+;;                                 the index small and avoids any
+;;                                 reference-cycle concerns.
+
+;; ---- internal helpers ----
+
+;; Look up a key in an alist of (key . value) pairs.
+;; Returns the associated value or 0 if the key is absent.
+(define (idx-assoc-ref alist k)
+  (cond ((null? alist) 0)
+        ((equal? (car (car alist)) k) (cdr (car alist)))
+        (else (idx-assoc-ref (cdr alist) k))))
+
+;; Walk an AST computing depth and per-kind counts.
+;; Returns (depth counts-alist node-count).
+;; node : AST node   d : current depth
+(define (idx-traverse node d)
+  (let ((kind (car node))
+        (rest (cdr node)))
+    (let ((child-depth 0)
+          (child-counts '())
+          (child-nodes 0))
+      ;; Recurse into children based on kind.
+      (cond
+        ((eq? kind 'object)
+         (let loop ((pairs rest) (max-d 0) (acc '()) (total 0))
+           (if (null? pairs)
+               (begin
+                 (set! child-depth max-d)
+                 (set! child-counts acc)
+                 (set! child-nodes total))
+               (let* ((pair (car pairs))
+                      (k-node (car pair))
+                      (v-node (cdr pair))
+                      (sub (idx-traverse v-node (+ d 1))))
+                 (loop (cdr pairs)
+                       (if (> (car sub) max-d) (car sub) max-d)
+                       (idx-merge-counts (cdr sub) acc)
+                       (+ total 1 (car (cdr (cdr sub)))))))))
+        ((eq? kind 'array)
+         (let loop ((xs rest) (max-d 0) (acc '()) (total 0))
+           (if (null? xs)
+               (begin
+                 (set! child-depth max-d)
+                 (set! child-counts acc)
+                 (set! child-nodes total))
+               (let ((sub (idx-traverse (car xs) (+ d 1))))
+                 (loop (cdr xs)
+                       (if (> (car sub) max-d) (car sub) max-d)
+                       (idx-merge-counts (cdr sub) acc)
+                       (+ total 1 (car (cdr (cdr sub)))))))))
+        (else
+         ;; Leaf or error — no children.
+         (set! child-depth d)
+         (set! child-counts '())
+         (set! child-nodes 0)))
+      ;; Compute this node's own depth: max of its own d and deepest child.
+      (let ((my-depth (if (> child-depth d) child-depth d)))
+        ;; Counts = child counts + 1 for this node.
+        (let ((my-counts (idx-merge-counts (list (cons kind 1)) child-counts)))
+          (list my-depth my-counts (+ child-nodes 1)))))))
+
+;; Merge a new alist of counts into an accumulator.
+;; For each (kind . n) in `extra`, add n to the running count in `acc`
+;; (creating the entry if absent). Returns the updated accumulator.
+(define (idx-merge-counts extra acc)
+  (cond ((null? extra) acc)
+        (else
+         (let* ((pair (car extra))
+                (k (car pair))
+                (n (cdr pair))
+                (existing (idx-assoc-ref acc k)))
+           (idx-merge-counts
+            (cdr extra)
+            (idx-upsert acc k (+ existing n)))))))
+
+;; Upsert: return an alist where key k maps to v; if k already exists
+;; its value is replaced with v. Preserves the order of existing keys.
+(define (idx-upsert alist k v)
+  (cond ((null? alist) (list (cons k v)))
+        ((equal? (car (car alist)) k)
+         (cons (cons k v) (cdr alist)))
+        (else
+         (cons (car alist) (idx-upsert (cdr alist) k v)))))
+
+;; Compute the "size" of a root node — number of immediate children.
+(define (idx-root-size node)
+  (let ((kind (car node))
+        (rest (cdr node)))
+    (cond
+      ((eq? kind 'object) (length rest))
+      ((eq? kind 'array) (length rest))
+      ((eq? kind 'error) 0)
+      (else 1))))
+
+;; ---- public API ----
+
+;; Build a structural index over the given AST node.
+;; node : AST node as produced by json-ast.aura
+;; returns : an index value (a list, see header comment)
+(define (build-index node)
+  (let* ((traversal (idx-traverse node 0))
+         (depth (car traversal))
+         (counts (car (cdr traversal)))
+         (total (car (cdr (cdr traversal))))
+         (root-kind (car node))
+         (root-size (idx-root-size node)))
+    (list 'index depth counts root-kind root-size total)))
+
+;; Return the maximum nesting depth recorded in the index.
+(define (index-depth idx)
+  (car (cdr idx)))
+
+;; Return the number of nodes of the given kind recorded in the index.
+;; If the kind is absent from the index, returns 0.
+(define (index-count idx kind)
+  (idx-assoc-ref (car (cdr (cdr idx))) kind))
+
+;; Walk every AST node reachable from the root the index was built
+;; from, invoking (proc node depth) on each visit. Because the index
+;; itself does not store the AST, we re-traverse the original node.
+;; To keep this honest, the API contract here is: the index remembers
+;; enough to drive a walk, and we accept the AST node again implicitly
+;; by stashing it in the index. We thread it through idx-build so the
+;; caller does not need to supply it twice.
+;;
+;; To satisfy that, we extend the index representation slightly: the
+;; sixth element of the index is the original AST node (when available).
+;; `build-index` as defined above does not include it; we redefine
+;; `build-index` below to include it. Re-export the same symbol.
+
+;; (Re)define build-index to also stash the AST node for walking.
+(set! build-index
+  (lambda (node)
+    (let* ((traversal (idx-traverse node 0))
+           (depth (car traversal))
+           (counts (car (cdr traversal)))
+           (total (car (cdr (cdr traversal))))
+           (root-kind (car node))
+           (root-size (idx-root-size node)))
+      (list 'index depth counts root-kind root-size total node))))
+
+;; Walk the AST captured by idx, calling (proc node depth) on every node.
+;; The walk is a depth-first pre-order traversal.
+(define (index-walk idx proc)
+  (let ((root (car (cdr (cdr (cdr (cdr (cdr idx))))))))
+    (idx-walk-aux root 0 proc)))
+
+;; Internal recursive walk used by index-walk.
+(define (idx-walk-aux node d proc)
+  (proc node d)
+  (let ((kind (car node))
+        (rest (cdr node)))
+    (cond
+      ((eq? kind 'object)
+       (let loop ((pairs rest))
+         (if (null? pairs)
+             '()
+             (begin
+               (idx-walk-aux (cdr (car pairs)) (+ d 1) proc)
+               (loop (cdr pairs))))))
+      ((eq? kind 'array)
+       (let loop ((xs rest))
+         (if (null? xs)
+             '()
+             (begin
+               (idx-walk-aux (car xs) (+ d 1) proc)
+               (loop (cdr xs))))))
+      (else '()))))

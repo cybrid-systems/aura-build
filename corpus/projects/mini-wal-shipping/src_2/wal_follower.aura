@@ -1,0 +1,81 @@
+;; wal_follower.aura — Follower state machine
+;;
+;; The follower is the receiving side of the WAL shipper. It owns:
+;;   - 'state        : 'attached | 'detached
+;;   - 'follower-id  : identifier for this follower
+;;   - 'primary-id   : identifier of the attached peer (or #f)
+;;   - 'applied-lsn  : the highest LSN that has been successfully applied
+;;   - 'verified?    : whether the most recent applied frame passed CRC verify
+;;   - 'stats        : alist of counters (verified, failed, etc.)
+;;
+;; The follower does not own the protocol, buffer, or socket — those are
+;; driven by wal_proto / wal_shipper / wal_sock. We only model the
+;; application-side bookkeeping here.
+
+;; Module-local follower state. We start detached with no applied LSN.
+(define *follower-state*
+  '((state . detached)
+    (follower-id . #f)
+    (primary-id . #f)
+    (applied-lsn . 0)
+    (verified? . #f)
+    (stats . ((verified . 0) (failed . 0) (applied . 0)))))
+
+(define (follower-stat-ref key)
+  (let ((pair (assq key (cdr (assq 'stats *follower-state*)))))
+    (if pair (cdr pair) 0)))
+
+(define (follower-stat-set! key value)
+  (set-cdr! (assq key (cdr (assq 'stats *follower-state*))) value))
+
+(define (follower-stat-bump! key)
+  (follower-stat-set! key (+ (follower-stat-ref key) 1)))
+
+;; --- API --------------------------------------------------------------------
+
+;; Attach the follower to a primary. Records the follower id and the
+;; peer primary id, and flips state to 'attached. Returns unspecified.
+(define (api follow-attach! follower-id primary-id)
+  (set-cdr! (assq 'state *follower-state*) 'attached)
+  (set-cdr! (assq 'follower-id *follower-state*) follower-id)
+  (set-cdr! (assq 'primary-id *follower-state*) primary-id)
+  #t)
+
+;; Apply a single decoded frame to follower state.
+;; frame is either:
+;;   - a flush marker '()         -> no-op, returns #t
+;;   - a (lsn payload crc) triplet -> apply, update applied-lsn,
+;;                                  bump applied stat, run CRC verify
+;; Returns #t on success, #f on a CRC mismatch.
+(define (api follow-apply-one! frame)
+  (cond ((null? frame) #t)
+        (else
+         (let ((lsn (car frame))
+               (payload (car (cdr frame)))
+               (crc (car (cdr (cdr frame)))))
+           ;; CRC verify: compare supplied crc against a fresh crc-hex-of
+           ;; of the payload. We rely on crc-verify? from wal_crc.aura.
+           (let ((ok? (crc-verify? crc (crc-hex-of payload))))
+             (set-cdr! (assq 'verified? *follower-state*) ok?)
+             (follower-stat-bump! 'applied)
+             (if ok?
+                 (begin
+                   (set-cdr! (assq 'applied-lsn *follower-state*) lsn)
+                   (follower-stat-bump! 'verified)
+                   #t)
+                 (begin
+                   (follower-stat-bump! 'failed)
+                   #f)))))))
+
+;; Return the highest LSN this follower has applied. Used by main to
+;; build the WAL_SHIP_APPLIED_LSN contract line.
+(define (api follow-applied-lsn)
+  (cdr (assq 'applied-lsn *follower-state*)))
+
+;; Run a CRC verification pass over the most recently applied frame.
+;; In this minimal implementation we just return whatever the last
+;; follow-apply-one! recorded, so callers can query it after a batch
+;; of applies. The frame payload argument is accepted for API symmetry
+;; but unused — verification was already done at apply time.
+(define (api follow-verify!)
+  (cdr (assq 'verified? *follower-state*)))

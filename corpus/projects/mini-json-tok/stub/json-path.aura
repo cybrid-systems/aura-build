@@ -1,0 +1,67 @@
+;; json-path.aura — Path structures used by the streaming events and the
+;; structural index to name locations inside a JSON document.
+;;
+;; A "path" is a small alist that represents a location inside a parsed JSON
+;; value. The path is built up incrementally as the parser / stream descends
+;; into objects and arrays, and can be compared for structural equality so
+;; that two events describing the same location match.
+;;
+;; Path shape (alist-of-3):
+;;   key   -> the string key for an object step, or #f for array steps / root
+;;   index -> the numeric index for an array step, or #f for object steps / root
+;;   next  -> the rest of the path (the parent step), or #f for the root
+;;
+;; The root of a document is represented as:
+;;   ((key . #f) (index . #f) (next . #f))
+;;
+;; An object step leading to "name" is:
+;;   ((key . "name") (index . #f) (next . <parent-path>))
+;;
+;; An array step leading to element 2 is:
+;;   ((key . #f) (index . 2) (next . <parent-path>))
+;;
+;; Exposes:
+;;   (path-equal? a b)   -> #t if two paths describe the same JSON location
+;;   (path-prepend p k)  -> build a new path by prepending either a string key
+;;                          or a numeric index k onto the existing path p
+;;   (path-key p)        -> string key at the head of p, or #f for root / array step
+;;   (path-index p)      -> numeric index at the head of p, or #f for root / object step
+
+(define (path-key p)
+  ;; Return the string key component of path p, or #f if p is the root or
+  ;; the head step is an array index.
+  (cond
+    ((null? p) #f)
+    (else (cdr (assq 'key p)))))
+
+(define (path-index p)
+  ;; Return the numeric index component of path p, or #f if p is the root or
+  ;; the head step is an object key.
+  (cond
+    ((null? p) #f)
+    (else (cdr (assq 'index p)))))
+
+(define (path-equal? a b)
+  ;; Structural equality on paths. Two paths are equal iff their heads
+  ;; agree on key/index and their tails agree recursively.
+  (cond
+    ((and (null? a) (null? b)) #t)
+    ((or (null? a) (null? b)) #f)
+    (else
+      (let ((ka (path-key a)) (kb (path-key b))
+            (ia (path-index a)) (ib (path-index b))
+            (ra (cdr (assq 'next a))) (rb (cdr (assq 'next b))))
+        (if (and (equal? ka kb) (equal? ia ib))
+            (path-equal? ra rb)
+            #f)))))
+
+(define (path-prepend p k)
+  ;; Prepend a new step onto path p. The new step is either:
+;;   - an object key, when k is a string (not #f), or
+;;   - an array index, when k is a number.
+;; The "other" slot of the new step is set to #f.
+  (let ((is-key? (string? k)))
+    (list
+      (cons 'key   (if is-key? k #f))
+      (cons 'index (if is-key? #f k))
+      (cons 'next  p))))

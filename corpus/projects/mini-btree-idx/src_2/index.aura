@@ -1,0 +1,133 @@
+;; index.aura — public façade for the mini-btree secondary index.
+;;
+;; This module wires together the lower-level pieces (leaf, node, tree,
+;; codec, mvcc, scan, metrics, events) into a small set of high-level
+;; operations that main.aura (and any future caller) can rely on:
+;;
+;;   (index-make order)
+;;   (index-insert! idx k pk txid ts)
+;;   (index-point idx k)
+;;   (index-range idx lo hi)
+;;   (index-prefix idx p)
+;;   (index-mvcc-count-visible idx reader-txid)
+;;   (index-mvcc-count-hidden idx reader-txid)
+;;   (index-replay! idx events)
+;;   (index-events idx)
+;;   (index-stats idx)
+;;   (index-metrics idx)
+;;   (index-tree idx)
+;;
+;; An "index" is a mutable structure:
+;;   (tree events)
+;; where `tree` is the underlying B-tree and `events` is an event-log
+;; handle used for rebuild on reload.
+;;
+;; Keys coming in from callers are strings; the tree layer is responsible
+;; for encoding/decoding internally. MVCC versions are produced by
+;; make-version from types.aura and stored alongside each entry.
+
+;; -------------------------------------------------------------------
+;; Construction
+;; -------------------------------------------------------------------
+
+(define (index-make order)
+  (cons (make-tree order) (event-log-new)))
+
+(define (index-tree idx) (car idx))
+(define (index-events idx) (cdr idx))
+
+(define (index-set-tree! idx t)
+  (set-car! idx t))
+
+;; -------------------------------------------------------------------
+;; Convenience accessors (delegate to the underlying tree)
+;; -------------------------------------------------------------------
+
+(define (index-height idx)
+  (tree-height (index-tree idx)))
+
+(define (index-stats idx)
+  (tree-stats (index-tree idx)))
+
+(define (index-metrics idx)
+  (metrics-handle (index-tree idx)))
+
+;; -------------------------------------------------------------------
+;; Insertion
+;; -------------------------------------------------------------------
+;; Insert (k, pk, version) into the index. Records the insertion in the
+;; event log for later replay.
+
+(define (index-insert! idx k pk v)
+  (define t (index-tree idx))
+  (define split? (tree-insert! t k pk v))
+  (event-log-add! (index-events idx) (list 'insert k pk v))
+  split?)
+
+;; Convenience: build the version with make-version then insert.
+(define (index-insert-v! idx k pk txid ts)
+  (index-insert! idx k pk (make-version txid ts)))
+
+;; -------------------------------------------------------------------
+;; Lookup / scan
+;; -------------------------------------------------------------------
+
+(define (index-point idx k)
+  (tree-point (index-tree idx) k))
+
+(define (index-range idx lo hi)
+  (tree-range (index-tree idx) lo hi))
+
+(define (index-prefix idx p)
+  (tree-prefix (index-tree idx) p))
+
+;; -------------------------------------------------------------------
+;; MVCC visibility counts (over the current tree state)
+;; -------------------------------------------------------------------
+
+(define (index-mvcc-count-visible idx reader-txid)
+  (mvcc-count-visible (index-tree idx) reader-txid))
+
+(define (index-mvcc-count-hidden idx reader-txid)
+  (mvcc-count-hidden (index-tree idx) reader-txid))
+
+;; -------------------------------------------------------------------
+;; Event log: append a custom event (e.g. 'snapshot, 'flush).
+;; -------------------------------------------------------------------
+
+(define (index-log-event! idx ev)
+  (event-log-add! (index-events idx) ev))
+
+;; -------------------------------------------------------------------
+;; Rebuild from an event log: produce a fresh index and replay every
+;; 'insert event in order. Other events are ignored.
+;; -------------------------------------------------------------------
+
+(define (index-replay! idx events)
+  ;; Wipe and rebuild: simplest correct approach.
+  (define t (make-tree (tree-order (index-tree idx))))
+  (define (loop es)
+    (cond
+      ((null? es) #t)
+      (else
+       (define e (car es))
+       (cond
+         ((and (pair? e) (eq? (car e) 'insert))
+          (tree-insert! t (cadr e) (caddr e) (cadddr e)))
+         (else #t))
+       (loop (cdr es)))))
+  (loop events)
+  (index-set-tree! idx t)
+  (set-cdr! idx (event-log-new))
+  ;; Replay into the new log too.
+  (define (relog es)
+    (cond
+      ((null? es) #t)
+      (else
+       (define e (car es))
+       (cond
+         ((and (pair? e) (eq? (car e) 'insert))
+          (event-log-add! (index-events idx) e)))
+       (relog (cdr es)))))
+  (relog events)
+  #t)

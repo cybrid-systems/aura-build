@@ -1,0 +1,49 @@
+;; wal_frame.aura — frame encoding/decoding for shipped WAL pages.
+;; A frame is a tagged triplet (lsn payload crc). The shipper builds frames
+;; out of (seg-append-page ...) results; the follower splits the wire bytes
+;; back into triplets. A frame whose payload is the special marker string
+;; "<<FLUSH>>" is a flush marker — frame-decode returns '() for it and
+;; frame-flush? answers #t, telling the shipper/follower to commit.
+;;
+;; API:
+;;   (frame-encode  lsn payload crc) -> list   ; (lsn payload crc) triplet
+;;   (frame-decode  triplet)        -> list   ; triplet itself, or '()
+;;   (frame-flush?  triplet)        -> boolean
+
+(define *exports* '())
+
+(define-syntax api
+  (syntax-rules ()
+    ((api name)
+     (set! *exports* (cons (cons 'name (lambda () name)) *exports*)))))
+
+(define *flush-marker* "<<FLUSH>>")
+
+(define (frame-encode lsn payload crc)
+  ;; Build a frame triplet. The triplet IS the on-wire shape: a 3-element
+  ;; list whose car is the lsn (number), cadr the payload (string), and
+  ;; caddr the hex crc tag (string). We accept anything for lsn/crc but
+  ;; normalise to the canonical triplet shape so downstream code can rely
+  ;; on car/cadr/caddr without surprise.
+  (list lsn payload crc))
+
+(define (frame-flush? triplet)
+  ;; A triplet is a flush marker iff it is a proper 3-element list and
+  ;; its payload slot equals the flush sentinel string.
+  (if (and (list? triplet)
+           (= (length triplet) 3)
+           (string? (list-ref triplet 1)))
+      (string=? (list-ref triplet 1) *flush-marker*)
+      #f))
+
+(define (frame-decode triplet)
+  ;; The frame triplet is the wire shape. If it's a flush marker, signal
+  ;; that with the empty list so loops terminate without applying data.
+  ;; Anything else passes through as a normal page frame.
+  (if (frame-flush? triplet)
+      '()
+      triplet))
+
+(api frame-encode)
+(api frame-decode)
+(api frame-flush?)

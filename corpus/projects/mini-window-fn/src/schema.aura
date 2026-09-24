@@ -1,0 +1,33 @@
+;; schema.aura — Relation construction and accessors.
+;;
+;; A relation is the pair (cons cols rows):
+;;   cols  : list of symbols — column names in positional order
+;;   rows  : list of rows, each row is a list of values, aligned by position
+;;
+;; All accessors below assume a well-formed relation built via `wf-make-relation`.
+;; No mutation of the relation pair is exposed; callers treat it as immutable.
+
+(define (api wf-make-relation cols rows)
+  ;; Construct a relation. We do not deep-copy rows here; the runtime is
+  ;; single-threaded and rows are treated as read-only once placed in a
+  ;; relation. We do, however, defensively assert non-null shape so that
+  ;; downstream code can rely on (cons a (cons b '()))-style invariants.
+  (cond ((null? cols)
+         (cons '() (list->list rows)))
+        ((null? rows)
+         (cons (list->list cols) '()))
+        (else
+         (cons (list->list cols) (list->list rows)))))
+
+(define (api wf-relation-cols rel)
+  ;; Return the column list of a relation. The internal shape is (cons cols rows),
+  ;; so columns live at the car.
+  (if (null? rel)
+      '()
+      (car rel)))
+
+(define (api wf-relation-rows rel)
+  ;; Return the row list of a relation. Rows live at the cdr.
+  (if (null? rel)
+      '()
+      (cdr rel)))

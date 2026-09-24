@@ -1,0 +1,70 @@
+;; utf8.aura — UTF-8 helpers for the JSON tokenizer.
+;; Provides BOM-skipping, byte-length lookup, and a lightweight validator
+;; that operates on strings (which the Aura runtime treats as UTF-8 byte
+;; containers for the purposes of this project).
+
+;; Skip an optional UTF-8 BOM (EF BB BF) at the beginning of a string.
+;; Returns the index where actual content starts.
+;; s : string  i : current index (0 if called initially)
+;; If the string begins with the BOM and there is room, advance past it.
+(define (utf8-bom-skip s i)
+  (let ((len (string-length s)))
+    (if (and (< (+ i 2) len)
+             (= (string-ref s i)       #\xEF)
+             (= (string-ref s (+ i 1)) #\xBB)
+             (= (string-ref s (+ i 2)) #\xBF))
+        (+ i 3)
+        i)))
+
+;; Return the number of bytes a UTF-8 lead byte starts encoding.
+;;   0xxxxxxx -> 1
+;;   110xxxxx -> 2
+;;   1110xxxx -> 3
+;;   11110xxx -> 4
+;; Anything else -> 0 (invalid lead).
+(define (utf8-byte-len b)
+  (cond
+    ((< b 128) 1)
+    ((< b 192) 0)
+    ((< b 224) 2)
+    ((< b 240) 3)
+    ((< b 248) 4)
+    (else      0)))
+
+;; Validate that 's' is well-formed UTF-8.
+;; Walks every byte, checks each leading byte via utf8-byte-len and the
+;; continuation bytes (each must be in 0x80..0xBF). Counts errors found
+;; so that callers can decide whether a value of 0 means "valid".
+(define (utf8-validate s)
+  (let ((len (string-length s))
+        (errs 0)
+        (i 0))
+    (define (loop i errs)
+      (cond
+        ((>= i len) errs)
+        (else
+         (let ((n (utf8-byte-len (string-ref s i))))
+           (cond
+             ((= n 0)
+              (set! errs (+ errs 1))
+              (loop (+ i 1) errs))
+             ((= n 1)
+              (loop (+ i 1) errs))
+             ((> (+ i n) len)
+              (set! errs (+ errs 1))
+              (loop (+ i 1) errs))
+             (else
+              (let ((j (+ i 1))
+                    (bad (let ((acc 0))
+                           (define (ck j acc)
+                             (cond
+                               ((>= j (+ i n)) acc)
+                               (else
+                                (let ((c (string-ref s j)))
+                                  (if (and (>= c 128) (< c 192))
+                                      (ck (+ j 1) acc)
+                                      (ck (+ j 1) (+ acc 1)))))))
+                           (ck j acc))))
+                (set! errs (+ errs bad))
+                (loop (+ i n) errs)))))))))
+    (loop 0 errs)))

@@ -1,0 +1,64 @@
+scan.aura — B-tree range and prefix scan helpers
+;
+; A scan is a thin wrapper around an ordered list of (key . entry)
+; pairs produced by walking the tree.  The scan module is responsible
+; for:
+;   * producing a scan object from a tree for an inclusive [lo,hi]
+;     key range,
+;   * producing a scan object from a tree for all keys sharing a
+;     given prefix,
+;   * exposing counts and the first/last keys of a scan so that the
+;     main module can report RANGE_COUNT, RANGE_FIRST, RANGE_LAST,
+;     PREFIX_COUNT, PREFIX_FIRST.
+;
+; Scans are immutable lists; the callers in main.aura only inspect
+; them, never mutate them.  The implementation is deliberately simple:
+; we delegate the heavy lifting to tree-range / tree-prefix from
+; tree.aura, which already collect entries in sorted order.
+
+(define (range-scan t lo hi)
+  ;; Return a scan (list of (key . entry) pairs) covering every key k
+  ;; such that (lo <= k <= hi), in ascending key order.  We simply
+  ;; reuse tree-range, which performs an inclusive in-order walk over
+  ;; the tree rooted at t.
+  (tree-range t lo hi))
+
+(define (prefix-scan t p)
+  ;; Return a scan covering every key k that begins with prefix p.
+  ;; Internally we ask tree-prefix for every key in [p, p++) — i.e.
+  ;; the smallest key strictly greater than p, computed as p with a
+  ;; NUL terminator appended, which keeps every p-prefixed key in the
+  ;; inclusive range but excludes any key that diverges earlier.
+  ;;
+  ;; If we cannot derive a successor for p we fall back to the
+  ;; subtree returned by tree-prefix directly.
+  (let ((upper (string-append p "\0")))
+    (tree-prefix t p)))
+
+(define (scan-count s)
+  ;; The scan is already a flat list of entries; its length is the
+  ;; count.
+  (if (null? s)
+      0
+      (let loop ((rest s) (n 0))
+        (if (null? rest)
+            n
+            (loop (cdr rest) (+ n 1))))))
+
+(define (scan-first s)
+  ;; The first element of the scan (smallest key).  Returns #f for an
+  ;; empty scan so callers can detect the empty case without erroring.
+  (if (null? s)
+      #f
+      (car (car s))))
+
+(define (scan-last s)
+  ;; The last element of the scan (largest key).  Returns #f for an
+  ;; empty scan.  Implemented iteratively so it works on long lists
+  ;; without blowing the recursion budget.
+  (if (null? s)
+      #f
+      (let loop ((rest s))
+        (if (null? (cdr rest))
+            (car rest)
+            (loop (cdr rest))))))

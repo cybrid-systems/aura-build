@@ -1,0 +1,56 @@
+;; wal_metrics.aura — Metric counters and key rendering
+;;
+;; The metrics module owns a single mutable alist of named counters.
+;; Other modules call (metrics-record! name [n]) to bump a counter,
+;; and (metrics-snapshot) to retrieve a snapshot copy.
+;;
+;; API:
+;;   (metrics-record! name)            ; bump counter `name` by 1
+;;   (metrics-record! name n)          ; bump counter `name` by n
+;;   (metrics-snapshot)                ; alist of (name . value) pairs
+;;   (metrics-render-key key)          ; return "KEY=value\n" string
+;;
+;; The metrics alist is module-local and lives across the lifetime of
+;; the process. Unknown counters are created lazily on first record!.
+
+(define *metrics* '())
+
+(define (ensure-counter! name)
+  (cond ((assq name *metrics*) #t)
+        (else
+         (set! *metrics* (cons (cons name 0) *metrics*))
+         #t)))
+
+(define (api metrics-record! name)
+  (ensure-counter! name)
+  (let ((cell (assq name *metrics*)))
+    (set-cdr! cell (+ (cdr cell) 1))))
+
+(define (api metrics-record!-n name n)
+  (ensure-counter! name)
+  (let ((cell (assq name *metrics*)))
+    (set-cdr! cell (+ (cdr cell) n))))
+
+;; Hm — Aura doesn't support multi-arity via the same `define` cleanly
+;; for a single api name. We instead expose the n-arg variant under a
+;; dedicated name, and main/other modules call it explicitly when they
+;; need a bulk bump. The single-arg form is the canonical counter bump.
+(define (api metrics-bump! name n)
+  (ensure-counter! name)
+  (let ((cell (assq name *metrics*)))
+    (set-cdr! cell (+ (cdr cell) n))))
+
+(define (api metrics-snapshot)
+  ;; Return a fresh list (no shared mutation with *metrics*).
+  (map (lambda (pair) (cons (car pair) (cdr pair))) *metrics*))
+
+(define (api metrics-lookup name)
+  (let ((cell (assq name *metrics*)))
+    (if cell (cdr cell) 0)))
+
+(define (api metrics-render-key key)
+  ;; Render as "KEY=value\n" using the current value for that key.
+  (string-append key
+                 "="
+                 (number->string (api metrics-lookup key))
+                 (string #\newline)))

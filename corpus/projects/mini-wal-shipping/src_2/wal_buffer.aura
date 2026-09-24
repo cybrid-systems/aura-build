@@ -1,0 +1,45 @@
+;; wal_buffer.aura — In-memory outbound buffer for framed pages
+;;
+;; A buffer holds frames that have been produced by the shipper but
+;; not yet drained over the socket. The buffer is a simple mutable
+;; structure built on top of an alist, with a 'frames cell that we
+;; mutate via set-cdr! on its cons cell. We deliberately avoid
+;; define-record and friends — the whole project is list/alist only.
+;;
+;; API:
+;;   (buf-new)                 -> alist representing an empty buffer
+;;   (buf-push! buf frame)     -> unspecified; mutates buf by
+;;                                 appending the frame to the tail
+;;   (buf-drain! buf)          -> returns the list of frames currently
+;;                                 held, then resets the buffer
+;;   (buf-size buf)            -> number of frames currently buffered
+
+;; Build a fresh, empty buffer.
+;; Representation:
+;;   ((frames . ()) (count . 0))
+(define (api buf-new)
+  (list (cons 'frames '())
+        (cons 'count 0)))
+
+;; Append a single frame to the buffer's frame list and bump the
+;; count. We grab the cons cell for 'frames via assq and mutate it
+;; in place so the caller's reference stays live.
+(define (api buf-push! buf frame)
+  (let ((cell (assq 'frames buf))
+        (cnt  (assq 'count buf)))
+    (set-cdr! cell (append (cdr cell) (list frame)))
+    (set-cdr! cnt (+ (cdr cnt) 1))))
+
+;; Drain the buffer: return the full list of frames, then clear the
+;; underlying storage so the next push starts fresh.
+(define (api buf-drain! buf)
+  (let ((cell (assq 'frames buf))
+        (cnt  (assq 'count buf)))
+    (let ((out (cdr cell)))
+      (set-cdr! cell '())
+      (set-cdr! cnt 0)
+      out)))
+
+;; Number of frames currently buffered.
+(define (api buf-size buf)
+  (cdr (assq 'count buf)))

@@ -1,0 +1,76 @@
+; codec.aura — key encoding and prefix compression utilities
+;
+; encode-key / decode-key provide a lossless round-trip for arbitrary
+; string keys.  The encoding wraps the input in a marker so that the
+; raw key and the compressed form are unambiguously distinguishable.
+;
+; prefix-compress / prefix-restore implement a simple prefix-sharing
+; scheme: given the previous full key and the current key, return a
+; compact representation containing the length of the common prefix
+; and the non-shared suffix.  Restoring takes the previous key plus
+; the compact form and rebuilds the full current key.
+;
+; Wire format used here (all strings):
+;   full key (uncompressed): "*" + s
+;   compressed key:          "#" + (number->string n) + "|" + suffix
+; The "#" / "*" markers guarantee encode/decode symmetry and let
+; downstream code tell apart a stored full key from a relative one.
+
+; Return the length of the longest common prefix of two strings.
+; Used by prefix-compress to decide how much of `cur` can be
+; expressed relative to `prev`.
+(define (string-common-prefix-len a b)
+  (let loop ((i 0) (la (string-length a)) (lb (string-length b)))
+    (if (and (< i la) (< i lb) (char=? (string-ref a i) (string-ref b i)))
+        (loop (+ i 1) la lb)
+        i)))
+
+; Encode a key as a self-describing string.  Wrap with "*" so an
+; uncompressed round-trip is symmetric and never collides with the
+; "#" marker used for compressed entries.
+(define (encode-key s)
+  (string-append "*" s))
+
+; Inverse of encode-key: strip the leading marker.  Accepts both
+; full keys ("*...") and compressed entries ("#n|...") — for the
+; latter we still strip one marker byte to keep the contract uniform.
+; Real decompression happens via prefix-restore.
+(define (decode-key s)
+  (let ((len (string-length s)))
+    (if (< len 1)
+        s
+        (substring s 1 len))))
+
+; Compress `cur` against `prev` by recording the length of their
+; shared prefix and the remaining suffix.  When the strings are
+; equal we still emit a compressed form (count = full length, empty
+; suffix) so consumers don't need a special case.
+(define (prefix-compress prev cur)
+  (let ((n (string-common-prefix-len prev cur))
+        (suffix (substring cur n (string-length cur))))
+    (string-append "#"
+                   (number->string n)
+                   "|"
+                   suffix)))
+
+; Rebuild the original key from the previous key and a compressed
+; form produced by prefix-compress.  The first `n` characters are
+; taken from `prev`; the trailing suffix comes from `cur`.
+(define (prefix-restore prev cur)
+  (let* ((hdr-end (string-index cur "|"))
+         (n (if hdr-end
+                (string->number (substring cur 1 hdr-end))
+                0))
+         (suffix (if hdr-end
+                     (substring cur (+ hdr-end 1) (string-length cur))
+                     "")))
+    (string-append (substring prev 0 n) suffix)))
+
+; Helper: locate the first occurrence of character `c` in string `s`,
+; returning its 0-based index, or #f if absent.  Used by
+; prefix-restore to split the compressed wire form.
+(define (string-index s c)
+  (let loop ((i 0) (len (string-length s)))
+    (cond ((= i len) #f)
+          ((char=? (string-ref s i) c) i)
+          (else (loop (+ i 1) len)))))

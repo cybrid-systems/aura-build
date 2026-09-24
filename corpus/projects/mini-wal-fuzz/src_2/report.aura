@@ -1,0 +1,62 @@
+;; report.aura
+;;
+;; Tiny reporting helpers used by `main.aura` to emit the
+;; `KEY=value` summary lines.  Per the project contract, all `display`
+;; calls are funneled through `main.aura`; this module only owns the
+;; formatting and accumulation logic so the API stays pure and easy
+;; to test.
+;;
+;; Exported API:
+;;   * (report-line key value) — produce a single "KEY=value" string.
+;;   * (print-report alist)    — convert an alist of (key . value) pairs
+;;                               into a list of ready-to-print strings,
+;;                               preserving the alist's order.
+
+;; ---- Internal helpers (not exported) -----------------------------------
+
+;; Coerce an arbitrary value into its displayable string form.
+;; Numbers, booleans (#t/#f), strings and symbols all need to work so
+;; that callers can build the report alist naturally without having to
+;; worry about pre-stringifying each value.
+
+;; ---- API ---------------------------------------------------------------
+
+;; Build a single "KEY=value" line.
+;;
+;;   key   — a symbol naming the field (e.g. 'lsn, 'crc_ok).
+;;   value — any printable value; will be coerced to a string.
+;;
+;; Returns a string of the form "KEY=value\n" terminated with a single
+;; newline so that `main.aura` can simply `(display line)` for each
+;; entry without worrying about trailing-newline bookkeeping.
+(define (api report-line key value)
+  (string-append
+    (cond ((symbol? key) (symbol->string key))
+          ((string? key) key)
+          (else (error "report-line: key must be a symbol or string" key)))
+    "="
+    (cond ((string? value) value)
+          ((number? value) (number->string value))
+          ((boolean? value) (if value "#t" "#f"))
+          ((symbol? value) (symbol->string value))
+          ((null? value) "()")
+          ((procedure? value) "<procedure>")
+          (else (error "report-line: unsupported value type" value)))
+    "\n"))
+
+;; Flatten an alist of (key . value) pairs into an ordered list of
+;; finished "KEY=value\n" strings, ready to be displayed by main.
+;;
+;;   alist — a list of pairs, e.g. (cons (cons 'rounds 120) '())
+;;
+;; Returns a list of strings in the same order as the input alist.
+(define (api print-report alist)
+  (define (walk xs)
+    (if (null? xs)
+        '()
+        (let ((p (car xs)))
+          (if (pair? p)
+              (cons (report-line (car p) (cdr p))
+                    (walk (cdr xs)))
+              (error "print-report: expected an alist of pairs" xs)))))
+  (walk alist))

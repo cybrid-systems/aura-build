@@ -1,0 +1,42 @@
+;; types.aura — Predicate and constructor API for the window-function runtime.
+;;
+;; A relation is represented as a list of two items:
+;;   (cons cols rows)
+;; where `cols` is a list of symbols (column names) and `rows` is a list of
+;; rows, each row being itself a list of values aligned by position with `cols`.
+;;
+;; A partition is represented as:
+;;   (cons key part-rows)
+;; where `key` is the partition key value and `part-rows` is a list of rows
+;; belonging to that partition.
+;;
+;; Columns are addressed by symbol; values are accessed positionally.
+
+(define (api wf-col row col cols)
+  ;; Look up the numeric position of `col` in `cols`, then return that
+  ;; element from `row`. Returns #f if the column is not present.
+  (define (pos-loop c cs i)
+    (cond ((null? cs) #f)
+          ((equal? (car cs) c) i)
+          (else (pos-loop c (cdr cs) (+ i 1)))))
+  (let ((p (pos-loop col cols 0)))
+    (if (number? p)
+        (list-ref row p)
+        #f)))
+
+(define (api wf-rel? x)
+  ;; A relation is a non-empty list whose car is a list (the columns).
+  (and (pair? x)
+       (list? x)
+       (pair? (car x))
+       (list? (car x))
+       (list? (cdr x))))
+
+(define (api wf-row x)
+  ;; Coerce `x` into a list representing a row. A row is already a list, so
+  ;; this is essentially an identity check wrapped in a constructor.
+  (if (list? x) x (list x)))
+
+(define (api wf-part-key part)
+  ;; Return the key of a partition (the car of the cons cell).
+  (car part))

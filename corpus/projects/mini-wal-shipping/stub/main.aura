@@ -1,0 +1,189 @@
+;; main.aura — orchestrator and entry point for mini-wal-shipping.
+;;
+;; Drives a complete run: handshake between primary and follower, ship a
+;; known number of pages, force a couple of simulated network drops to
+;; exercise the retry/reconnect logic, then verify the follower applied
+;; every LSN in order and the metrics reflect the run.
+;;
+;; The contract printed at the end is computed from the live state — no
+;; hardcoded totals — so future tweaks to the simulation still satisfy
+;; the expected KEY=… lines.
+
+(define *exports* '())
+
+(define-syntax api
+  (syntax-rules ()
+    ((api name)
+     (set! *exports* (cons (cons 'name (lambda () name)) *exports*)))))
+
+;; ---------------------------------------------------------------------
+;; Pull in module APIs registered by earlier files.
+
+(define ids-random-hex   (cdr (assq 'ids-random-hex   *exports*)))
+(define ids-make-primary (cdr (assq 'ids-make-primary *exports*)))
+(define ids-make-follower (cdr (assq 'ids-make-follower *exports*)))
+
+(define crc-hex-of   (cdr (assq 'crc-hex-of   *exports*)))
+(define crc-verify?  (cdr (assq 'crc-verify?  *exports*)))
+
+(define frame-encode (cdr (assq 'frame-encode *exports*)))
+(define frame-decode (cdr (assq 'frame-decode *exports*)))
+(define frame-flush? (cdr (assq 'frame-flush? *exports*)))
+
+(define seg-append-page    (cdr (assq 'seg-append-page    *exports*)))
+(define seg-pages          (cdr (assq 'seg-pages          *exports*)))
+(define seg-lsn-high       (cdr (assq 'seg-lsn-high       *exports*)))
+(define seg-last-flush-lsn (cdr (assq 'seg-last-flush-lsn *exports*)))
+
+(define buf-new      (cdr (assq 'buf-new      *exports*)))
+(define buf-push!    (cdr (assq 'buf-push!    *exports*)))
+(define buf-drain!   (cdr (assq 'buf-drain!   *exports*)))
+(define buf-size     (cdr (assq 'buf-size     *exports*)))
+
+(define sock-send!   (cdr (assq 'sock-send!   *exports*)))
+(define sock-recv!   (cdr (assq 'sock-recv!   *exports*)))
+(define sock-drop?   (cdr (assq 'sock-drop?   *exports*)))
+(define sock-reset!  (cdr (assq 'sock-reset!  *exports*)))
+
+(define proto-handshake    (cdr (assq 'proto-handshake    *exports*)))
+(define proto-ship-one!    (cdr (assq 'proto-ship-one!    *exports*)))
+(define proto-recv-loop!   (cdr (assq 'proto-recv-loop!   *exports*)))
+
+(define ship-tick!       (cdr (assq 'ship-tick!       *exports*)))
+(define ship-stats       (cdr (assq 'ship-stats       *exports*)))
+(define ship-reconnect!  (cdr (assq 'ship-reconnect!  *exports*)))
+
+(define follow-attach!     (cdr (assq 'follow-attach!     *exports*)))
+(define follow-apply-one!  (cdr (assq 'follow-apply-one!  *exports*)))
+(define follow-applied-lsn (cdr (assq 'follow-applied-lsn *exports*)))
+(define follow-verify!     (cdr (assq 'follow-verify!     *exports*)))
+
+(define metrics-record!   (cdr (assq 'metrics-record!   *exports*)))
+(define metrics-snapshot  (cdr (assq 'metrics-snapshot  *exports*)))
+(define metrics-render-key (cdr (assq 'metrics-render-key *exports*)))
+
+(define report-emit (cdr (assq 'report-emit *exports*)))
+
+;; ---------------------------------------------------------------------
+;; A few tiny helpers used by main.
+
+(define (string->number-safe s)
+  (let ((n (string->number s)))
+    (if n n 0)))
+
+(define (number->padded-hex n)
+  (let ((s (number->string n 16)))
+    (cond ((= (string-length s) 0) "00")
+          ((= (string-length s) 1) (string-append "0" s))
+          ((>= (string-length s) 2) s)
+          (else "00"))))
+
+;; Drive a bounded recv loop: pull everything the socket currently has and
+;; hand each frame to the follower until the socket is empty or we've
+;; consumed `limit` frames. Returns the number of frames applied.
+(define (drain-once! sock limit)
+  (let loop ((n 0) (pending (sock-recv! sock)))
+    (cond ((>= n limit) n)
+          ((null? pending) n)
+          (else
+           (let ((rest (cdr remaining)))
+             (declare-ignore rest)
+             (follow-apply-one! (car pending))
+             (loop (+ n 1) (cdr pending)))))))
+
+;; Pumping wrapper: keep pulling from the socket until it has been empty
+;; for one whole pass — gives the follower a chance to drain whatever the
+;; shipper queued this tick.
+(define (pump-follower! sock)
+  (let loop ((total 0))
+    (let ((pending (sock-recv! sock)))
+      (cond ((null? pending) total)
+          (else
+           (follow-apply-one! (car pending))
+           (loop (+ total 1)))))))
+
+;; ---------------------------------------------------------------------
+;; Orchestration.
+
+;; 1. Mint ids for primary and follower.
+(define primary-id   (ids-make-primary))
+(define follower-id  (ids-make-follower))
+
+;; 2. Bring up both ends of the connection.
+(define sock (proto-handshake primary-id follower-id))
+
+;; 3. Attach the follower to the same socket + shipper so apply/verify
+;;    operate over the live state built up by the protocol layer.
+(follow-attach! follower-id sock)
+
+;; 4. Pump a small number of ticks. Each tick produces one page and ships
+;;    it through the buffer + socket. Mid-run we deliberately inject two
+;;    simulated network glitches to exercise sock-drop?/retry/reconnect.
+(define (run-ticks n)
+  (if (<= n 0)
+      'done
+      (begin
+        (ship-tick! sock)
+        ;; Inject a glitch around tick 3 and tick 7.
+        (cond ((= n 3) (sock-drop! 'simulated-glitch-A))
+              ((= n 7) (sock-drop! 'simulated-glitch-B))
+              (else '()))
+        (run-ticks (- n 1)))))
+
+(define (sock-drop! reason)
+  (declare-ignore reason)
+  ;; We don't expose sock-drop! directly from wal_sock; emulate the drop
+  ;; by tearing down + forcing a reconnect via the shipper. The shipper's
+  ;; reconnect bumps the dropped counter and resets the socket.
+  (ship-reconnect! sock))
+
+(run-ticks 10)
+
+;; 5. Final drain: pump the follower until no more frames remain queued
+;;    on the socket, so the WAL is fully applied before we measure.
+(pump-follower! sock)
+
+;; 6. Verify the follower applied every LSN in order and the CRCs line
+;;    up with the corresponding segments in the primary.
+(define ok? (follow-verify!))
+
+;; 7. Collect statistics straight from the modules that own them.
+(define snap   (ship-stats))
+(define msnap  (metrics-snapshot))
+
+;; Helper to fetch an integer stat by key from the shipper stats alist.
+(define (stat-int key)
+  (let ((p (assq key snap)))
+    (if p (string->number-safe (cdr p)) 0)))
+
+(define (metric-int key)
+  (let ((p (assq key msnap)))
+    (if p (string->number-safe (cdr p)) 0)))
+
+(define pages-shipped (stat-int 'pages-shipped))
+(define frames-ok     (stat-int 'frames-ok))
+(define frames-retry  (stat-int 'frames-retry))
+(define bytes-shipped (stat-int 'bytes-shipped))
+(define lsn-hwm       (stat-int 'lsn-hwm))
+(define catchup-ms    (stat-int 'catchup-ms))
+(define reconnects    (stat-int 'reconnects))
+(define dropped       (stat-int 'dropped))
+
+(define applied-lsn   (follow-applied-lsn))
+(define verified      (if ok? "#t" "#f"))
+
+;; 8. Emit the contract. The report-emit helper handles exact formatting;
+;;    we just hand it the values pulled from the live run.
+(report-emit
+  primary-id
+  follower-id
+  pages-shipped
+  frames-ok
+  frames-retry
+  bytes-shipped
+  lsn-hwm
+  catchup-ms
+  reconnects
+  dropped
+  applied-lsn
+  verified)

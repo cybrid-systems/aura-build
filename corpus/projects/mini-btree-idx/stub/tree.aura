@@ -1,0 +1,213 @@
+; tree.aura — top-level B-tree driver
+;
+; Wraps node.aura to provide a simple B-tree with insert, point lookup,
+; range scan, prefix scan, height query, and node/byte statistics.
+; The tree is just a single root node; when the root splits we create
+; a fresh internal root.  This file also exposes tree-bytes which sums
+; compressed and raw byte sizes over every node, since main.aura needs
+; both COMPRESS_BYTES and RAW_BYTES.
+
+(define (make-tree order)
+  ;; The "order" is a synonym for capacity.  Leaves and internals use
+  ;; the same capacity here for simplicity.
+  (let ((root (make-node #t order)))
+    (list order root 0)))   ; (order root node-count)
+
+(define (tree-order t)
+  (car t))
+
+(define (tree-root t)
+  (car (cdr t)))
+
+(define (tree-root! t new-root)
+  (set-car! (cdr t) new-root))
+
+(define (tree-nodecount t)
+  (car (cdr (cdr t))))
+
+(define (tree-nodecount! t n)
+  (set-car! (cdr (cdr t)) n))
+
+; Recursive helper: insert (k, pk, v) into subtree rooted at `node`.
+; Returns one of:
+;   - #f if no split happened
+;   - (split-key new-right-node) if the node split and the parent must
+;     promote `split-key` and adopt `new-right-node`.
+(define (tree-insert-rec! node k pk v)
+  (if (node-is-leaf? node)
+      (let ((result (node-insert! node k pk v)))
+        (if result
+            ;; node-insert! returned a split description from the leaf
+            result
+            #f))
+      (let ((ci (node-find-child node k)))
+        (let ((child (list-ref (node-extra-children node) ci))
+              (sub (tree-insert-rec! (list-ref (node-extra-children node) ci)
+                                      k pk v)))
+          (if sub
+              ;; child split: promote the new key and the new right node
+              (let ((node-res (node-insert! node (car sub) 'placeholder (cdr sub))))
+                (if node-res node-res #f))
+              #f)))))
+
+; Public insert.  Handles root splits by allocating a new internal root.
+(define (tree-insert! t k pk v)
+  (let ((split (tree-insert-rec! (tree-root t) k pk v)))
+    (if split
+        (let ((new-root (make-node #f (tree-order t))))
+          (node-insert! new-root (car split) 'placeholder (tree-root t))
+          (node-insert! new-root 'never-matches-zzzzzz (car (cdr split)) #f)
+          (set-car! (cdr new-root) (list (car (cdr (tree-root t))) (cdr split)))
+          (tree-root! t new-root)
+          (tree-nodecount! t (+ (tree-nodecount t) 1))))))
+
+; Helper: descend the tree during point lookup.  Visits every node along
+; the path so that we can accumulate byte totals even on a miss.
+(define (tree-collect-nodes t)
+  (let ((acc '()))
+    (define (walk n)
+      (set! acc (cons n acc))
+      (if (not (node-is-leaf? n))
+          (let ((children (node-extra-children n)))
+            (let loop ((i 0))
+              (if (< i (length children))
+                  (begin (walk (list-ref children i))
+                         (loop (+ i 1))))))))
+    (walk (tree-root t))
+    acc))
+
+; Compute (compressed-bytes raw-bytes) summed across every node in the
+; tree.  For internal nodes we approximate by summing the byte-length
+; of each separator key in compressed and raw form.
+(define (tree-byte-totals t)
+  (let ((nodes (tree-collect-nodes t)))
+    (let loop ((ns nodes) (comp 0) (raw 0))
+      (if (null? ns)
+          (list comp raw)
+          (let ((n (car ns)))
+            (if (node-is-leaf? n)
+                (let ((b (node-leaf-bytes n)))
+                  (loop (cdr ns)
+                        (+ comp (car b))
+                        (+ raw (car (cdr b)))))
+                (let ((keys (node-extra-keys n)))
+                  (let loop2 ((ks keys) (c comp) (r raw))
+                    (if (null? ks)
+                        (loop (cdr ns) c r)
+                        (let ((k (car ks)))
+                          (loop2 (cdr ks)
+                                 (+ c (string-length k))
+                                 (+ r (string-length k)))))))))))))
+
+; Point lookup.  Returns the (pk . version) alist entry if found, #f
+; otherwise.  We use node-find-child to descend, then a linear scan
+; over the leaf.
+(define (tree-point t k)
+  (let loop ((n (tree-root t)))
+    (if (not (node-is-leaf? n))
+        (loop (list-ref (node-extra-children n)
+                        (node-find-child n k)))
+        (let ((leaf (node-leaf n)))
+          (let scan ((keys (node-leaf-keys leaf)) (pks (node-leaf-pks leaf))
+                     (vs (node-leaf-versions leaf)))
+            (cond
+              ((null? keys) #f)
+              ((key=? (car keys) k)
+               (cons (car pks) (car vs)))
+              ((key<? (car keys) k) (scan (cdr keys) (cdr pks) (cdr vs)))
+              (else #f)))))))
+
+; Range query.  Returns a flat list of all (k pk v) records whose key k
+; lies in the inclusive range [lo, hi].  We descend to the leftmost
+; leaf that could contain lo, then walk leaves rightward while the
+; first key of the next leaf is <= hi.
+(define (tree-range t lo hi)
+  (let ((acc '()))
+    (define (walk-leaf leaf)
+      (let ((keys (node-leaf-keys leaf))
+            (pks  (node-leaf-pks leaf))
+            (vs   (node-leaf-versions leaf)))
+        (let loop ((ks keys) (ps pks) (vrs vs))
+          (cond
+            ((null? ks) #f)
+            ((key<? (car ks) lo) (loop (cdr ks) (cdr ps) (cdr vrs)))
+            ((key<? hi (car ks)) #f)
+            (else
+             (set! acc (cons (list (car ks) (car ps) (car vrs)) acc))
+             (loop (cdr ks) (cdr ps) (cdr vrs)))))))
+    (define (descend n)
+      (if (node-is-leaf? n)
+          n
+          (descend (list-ref (node-extra-children n) (node-find-child n lo)))))
+    (define (next-leaf n)
+      (let loop ((cur n) (parent-stack '()))
+        (if (node-is-leaf? cur)
+            cur
+            (let ((ci (+ (node-find-child cur lo) 1)))
+              (if (< ci (length (node-extra-children cur)))
+                  (descend (list-ref (node-extra-children cur) ci))
+                  (loop ...))))))
+    (let ((start (descend (tree-root t))))
+      (walk-leaf start)
+      (let loop ((cur start))
+        (let ((next (tree-next-leaf t cur lo)))
+          (if next
+              (begin (walk-leaf next) (loop next))))))
+    (reverse acc)))
+
+; Helper: return the next leaf to the right of `cur`, or #f if there is
+; none whose first key is <= hi.
+(define (tree-next-leaf t cur lo)
+  ;; Walk up from `cur` to find a sibling.  We don't actually have a
+  ;; parent pointer, so we re-descend with an updated lo to the next
+  ;; sibling.  This is O(height) per leaf which is fine for teaching.
+  (let ((root (tree-root t)))
+    (define (path n)
+      (if (eq? n root)
+          '()
+          (let ((parent (tree-parent-of t n)))
+            (cons parent (path parent)))))
+    (let ((parents (path cur)))
+      ;; Walk back up looking for a right sibling.
+      (define (try-up ps last)
+        (if (null? ps)
+            #f
+            (let ((p (car ps)))
+              (let ((ci (node-find-child p lo)))
+                (if (< (+ ci 1) (length (node-extra-children p)))
+                    (let ((sib (list-ref (node-extra-children p) (+ ci 1))))
+                      sib)
+                    (try-up (cdr ps) p))))))
+      (try-up (reverse parents) '()))))
+
+; Find the parent of `n` by scanning the tree.  O(n) but acceptable.
+(define (tree-parent-of t n)
+  (let ((root (tree-root t)))
+    (define (walk cur)
+      (if (node-is-leaf? cur)
+          #f
+          (let ((kids (node-extra-children cur)))
+            (let loop ((i 0))
+              (cond
+                ((= i (length kids)) #f)
+                ((eq? (list-ref kids i) n) cur)
+                (else (walk (list-ref kids i))))))))
+    (walk root)))
+
+; Prefix scan: range scan with hi = lo + maximal suffix, implemented
+; here as a simple range using the codec's prefix-compress.  We use a
+; sentinel upper bound by appending the highest char to the prefix.
+(define (tree-prefix t p)
+  (let ((hi (string-append p "~")))
+    (tree-range t p hi)))
+
+; Tree height: 1 for a leaf-only root, otherwise 1 + height of a child.
+(define (tree-height t)
+  (let loop ((n (tree-root t)) (h 1))
+    (if (node-is-leaf? n)
+        h
+        (loop (car (node-extra-children n)) (+ h 1)))))
+
+; Stats: returns (node-count keys-inserted) tracked by the tree.
+(define (tree-stats t)
+  (list (tree-nodecount t) (tree-nodecount t)))

@@ -1,0 +1,94 @@
+;; wal-archive.aura — hot→cold tier movement for the WAL archiver
+;;
+;; The archive sweep is the "promotion" step of the pipeline. After
+;; wal-age.aura has flagged aged segments by stamping their tier with the
+;; 'archived candidate symbol, archive-sweep! walks the hot store, peels off
+;; every segment whose tier is 'archived, prepends them to the cold store,
+;; and resets their tier symbol to (store-tier cold) so downstream code can
+;; tell at a glance which physical tier owns the segment.
+;;
+;; Design notes:
+;;   - We operate on the stores' segment lists directly via store-all (a list
+;;     getter). store-add! is responsible for mutating the underlying alist
+;;     in place, so we never reassign the store; we just thread the updated
+;;     segment list back into the cold store's mutable cell.
+;;   - tier-move! is exposed as a primitive so other modules (e.g. tests or
+;;     future restore-from-cold flows) can transfer a single segment between
+;;     any two stores without re-running the full sweep.
+;;   - We log a single 'archive-sweep event at the end, regardless of how
+;;     many segments moved, so the stdout contract sees one event line per
+;;     pipeline pass — matching the GOAL scenario step 6.
+;;   - Both archive-sweep! and tier-move! mutate their inputs and return the
+;;     destination store for chaining.
+
+;; archive-sweep! : hot-store cold-store config -> cold-store
+;;
+;; Drain every 'archived candidate segment out of `from` and prepend it to
+;; `to`. Segments keep their original id/bytes but have their tier symbol
+;; rewritten to (store-tier to). The function returns `to` so callers can
+;; chain. `cfg` is currently unused here (kept for symmetry with the other
+;; sweep passes and future per-tier archive budgets); we accept it so the
+;; pipeline call site reads uniformly across age/archive/retention sweeps.
+
+(define (archive-sweep! from to cfg)
+  ;; Partition (store-all from) into (kept-in-from . to-move).
+  ;; We fold over the list so the original ordering is preserved inside
+  ;; each partition; order between partitions doesn't matter because both
+  ;; stores are append-prepend log-structured.
+  (define (partition xs)
+    (let loop ((rest xs) (keep '()) (move '()))
+      (if (null? rest)
+          (cons (reverse keep) (reverse move))
+          (let ((s (car rest)))
+            (if (eq? (segment-tier s) 'archived)
+                (loop (cdr rest) keep (cons s move))
+                (loop (cdr rest) (cons s keep) move))))))
+  (let* ((parts    (partition (store-all from)))
+         (kept     (car parts))
+         (movers   (cdr parts))
+         (dest-tag (store-tier to)))
+    ;; Rebuild `from` with only the non-archived segments.
+    (set-cdr! (assq 'segs from) kept)
+    ;; Push every mover into the destination with its tier rewritten.
+    (let push ((ms movers))
+      (if (null? ms)
+          (begin
+            ;; One log event per sweep pass, per the GOAL contract.
+            (log-event! 'archive-sweep)
+            to)
+          (let ((m (car ms)))
+            ;; Rewrite the tier symbol on the segment in place. A segment
+            ;; is itself an alist, so we mutate its 'tier entry.
+            (set-cdr! (assq 'tier m) dest-tag)
+            (store-add! to m)
+            (push (cdr ms)))))))
+
+;; tier-move! : from-store to-store -> unused-store (well, returns `to`)
+;;
+;; Move a single segment (looked up by id) from one tier to another. If the
+;; segment is not present in `from`, this is a no-op and returns `to`
+;; unchanged. Otherwise the segment is removed from `from`, its tier is
+;; rewritten to the destination's tier symbol, and it is prepended to `to`.
+
+(define (tier-move! from to seg-id)
+  (define (find-and-remove xs)
+    ;; Returns (cons found rest-without-found). If not present, found = #f.
+    (let loop ((rest xs) (acc '()))
+      (cond
+        ((null? rest) (cons #f (reverse acc)))
+        ((= (segment-id (car rest)) seg-id)
+         (cons (car rest) (reverse (append acc (cdr rest)))))
+        (else
+         (loop (cdr rest) (cons (car rest) acc))))))
+  (let* ((parts    (find-and-remove (store-all from)))
+         (found    (car parts))
+         (rest     (cdr parts)))
+    (if (not found)
+        to
+        (begin
+          ;; Remove the segment from the source store.
+          (set-cdr! (assq 'segs from) rest)
+          ;; Rewrite its tier to match the destination tier symbol.
+          (set-cdr! (assq 'tier found) (store-tier to))
+          (store-add! to found)
+          to))))

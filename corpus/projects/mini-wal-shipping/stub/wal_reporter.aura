@@ -1,0 +1,98 @@
+;; wal_reporter.aura — final report emitter.
+;;
+;; Bridges wal_metrics.aura's recorded counters onto the KEY=value contract
+;; required by the GOAL. The reporter is intentionally thin: it pulls a
+;; metrics snapshot and translates it into the canonical key names, in the
+;; exact order the spec demands. main.aura calls (report-emit) once, after
+;; the run, and prints the resulting lines via display.
+;;
+;; The 11 keys, in order:
+;;   WAL_SHIP_PRIMARY      - primary id string
+;;   WAL_SHIP_FOLLOWER     - follower id string
+;;   WAL_SHIP_PAGES_SHIPPED    - integer
+;;   WAL_SHIP_FRAMES_OK        - integer
+;;   WAL_SHIP_FRAMES_RETRY     - integer
+;;   WAL_SHIP_BYTES_SHIPPED    - integer
+;;   WAL_SHIP_LSN_HWM          - integer
+;;   WAL_SHIP_CATCHUP_MS       - integer
+;;   WAL_SHIP_RECONNECTS       - integer
+;;   WAL_SHIP_DROPPED          - integer
+;;   WAL_SHIP_APPLIED_LSN      - integer
+;;   WAL_SHIP_VERIFIED         - boolean (#t / #f)
+;;
+;; API:
+;;   (report-emit) -> list of strings   ; the KEY=value lines, in order
+
+(define *exports* '())
+
+(define-syntax api
+  (syntax-rules ()
+    ((api name)
+     (set! *exports* (cons (cons 'name (lambda () name)) *exports*)))))
+
+(define (alref alist key)
+  (let ((p (assq key alist)))
+    (if p (cdr p) #f)))
+
+;; Reach into the previously-loaded modules via their (api ...) registry.
+;; main.aura is responsible for installing a peer-id provider through
+;; (report-set-ids! primary-id follower-id) before calling report-emit.
+;; This keeps the reporter decoupled from wal_ids.aura's exact API while
+;; still emitting the canonical KEY lines.
+
+(define *primary-id*   "primary-0000")
+(define *follower-id*  "follower-0000")
+(define *applied-lsn*  0)
+(define *verified?*    #f)
+
+(define (report-set-ids! p f)
+  (set! *primary-id*  p)
+  (set! *follower-id* f))
+
+(define (report-set-applied! lsn)
+  (set! *applied-lsn* lsn))
+
+(define (report-set-verified! v)
+  (set! *verified?* (if v #t #f)))
+
+;; Pull the current metrics snapshot via the wal_metrics.aura registry.
+(define *metrics-snapshot-handle*
+  (let ((p (assq 'metrics-snapshot *exports*)))
+    (and p (cdr p))))
+
+(define (snapshot)
+  (if *metrics-snapshot-handle*
+      (*metrics-snapshot-handle*)
+      '()))
+
+;; Format a boolean as "#t" / "#f" — the contract requires this exact form.
+(define (bool->aura b)
+  (if b "#t" "#f"))
+
+(define (report-emit)
+  (let* ((snap (snapshot))
+         (pages    (or (alref snap 'pages-shipped)   0))
+         (fok      (or (alref snap 'frames-ok)       0))
+         (fretry   (or (alref snap 'frames-retry)    0))
+         (bytes    (or (alref snap 'bytes-shipped)   0))
+         (lsn-hwm  (or (alref snap 'lsn-hwm)         0))
+         (catchup  (or (alref snap 'catchup-ms)      0))
+         (recon    (or (alref snap 'reconnects)      0))
+         (dropped  (or (alref snap 'dropped)         0))
+         (lines
+          (list
+           (string-append "WAL_SHIP_PRIMARY="         *primary-id*)
+           (string-append "WAL_SHIP_FOLLOWER="        *follower-id*)
+           (string-append "WAL_SHIP_PAGES_SHIPPED="   (number->string pages))
+           (string-append "WAL_SHIP_FRAMES_OK="       (number->string fok))
+           (string-append "WAL_SHIP_FRAMES_RETRY="    (number->string fretry))
+           (string-append "WAL_SHIP_BYTES_SHIPPED="   (number->string bytes))
+           (string-append "WAL_SHIP_LSN_HWM="         (number->string lsn-hwm))
+           (string-append "WAL_SHIP_CATCHUP_MS="      (number->string catchup))
+           (string-append "WAL_SHIP_RECONNECTS="      (number->string recon))
+           (string-append "WAL_SHIP_DROPPED="         (number->string dropped))
+           (string-append "WAL_SHIP_APPLIED_LSN="     (number->string *applied-lsn*))
+           (string-append "WAL_SHIP_VERIFIED="        (bool->aura *verified?*)))))
+    lines))
+
+(api report-emit)

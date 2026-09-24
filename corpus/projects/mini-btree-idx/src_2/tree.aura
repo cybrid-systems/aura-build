@@ -1,0 +1,317 @@
+```aura
+;; B-tree top-level for the mini-btree index.
+;; A tree is a mutable structure holding the root node, order (fanout),
+;; key codec state, and a metrics handle. Trees begin as a single empty
+;; leaf; the first real insertion promotes that leaf to a freshly created
+;; root internal node which points at a single leaf child.
+;;
+;; Tree layout (dotted pairs):
+;;   root       : the current root node (leaf or internal)
+;;   order      : fanout (max children per internal node)
+;;   key-state  : '() or most-recent decoded key (for prefix compression)
+;;   metrics    : a metrics handle for counting nodes/inserts/bytes
+;;   height     : current tree height (number of edges from root to leaf)
+
+(define (make-tree order)
+  (define cap (if (< order 3) 3 order))
+  (define root (make-node #t cap))   ; start as an empty leaf root
+  (cons 'btree
+        (cons order
+              (cons root
+                    (cons '()       ; codec state
+                          (cons #f    ; metrics handle (set lazily)
+                                (cons 1 root)))))))   ; height=1 (leaf root)
+
+(define (tree-root t) (car (cdddr t)))
+(define (tree-order t) (cadr t))
+(define (tree-codec-state t) (caddr (cddr t)))
+(define (tree-set-codec-state! t s) (set-car! (cdddr t) s))
+(define (tree-set-root! t r)
+  (set-car! (cdddr t) r)
+  (set-cdr! (cddddr (cddr t)) r))
+(define (tree-height-of t) (car (cddddr (cddr t))))
+(define (tree-set-height! t h)
+  (set-car! (cddddr (cddr t)) h))
+
+;; (tree-insert! t k pk v)
+;;   Insert (k, pk, v) into tree t, splitting nodes as needed.
+;;   Returns #t if any node was split, #f otherwise.
+(define (tree-insert! t k pk v)
+  (define order (tree-order t))
+  (define cap (if (< order 3) 3 order))
+  (define root (tree-root t))
+  ;; If root is a leaf and is full, split the root first by promoting to
+  ;; an internal node holding one child leaf.
+  (define promoted?
+    (cond
+      ((and (node-leaf? root)
+            (>= (node-count root) cap))
+       (define old-leaf root)
+       ;; Split the leaf in place; first half stays in old-leaf, second
+       ;; goes to a new leaf.
+       (define split-result (split-leaf-into-new old-leaf cap))
+       (define new-leaf (car split-result))
+       (define sep-key (cdr split-result))
+       (define new-root
+         (make-internal-with-children cap (list old-leaf) (list sep-key)
+                                     (list new-leaf)))
+       (tree-set-root! t new-root)
+       (tree-set-height! t (+ (tree-height-of t) 1))
+       (if (eq? (car (cddddr t)) #f) 'noop 'noop)
+       #t)
+      (else #f)))
+  ;; Now perform the recursive insert from the root downward.
+  (define root2 (tree-root t))
+  (define result
+    (insert-recursive root2 k pk v cap))
+  (define promoted2 (car result))
+  (define new-right (cdr result))
+  (cond
+    ((eq? promoted2 #f) #f)
+    (else
+     ;; A child split bubbled up; if new-right is non-'(), grow the tree.
+     (cond
+       ((null? new-right) #f)
+       (else
+        (define sep2 (car new-right))
+        (define right2 (cdr new-right))
+        (define old-root root2)
+        (define new-root-cap cap)
+        (define h (tree-height-of t))
+        (cond
+          ((node-leaf? old-root)
+           ;; Shouldn't happen since we promoted above, but be safe.
+           (define grown
+             (make-internal-with-children new-root-cap
+                                         (list old-root)
+                                         (list sep2)
+                                         (list right2)))
+           (tree-set-root! t grown)
+           (tree-set-height! t (+ h 1))
+           (if (eq? (car (cddddr t)) #f) 'noop 'noop)
+           #t)
+          (else
+           (set! root2 grown) 'noop))
+        #t)))))
+
+;; Helper: split a leaf into two, returning (new-leaf . sep-key).
+(define (split-leaf-into-new leaf cap)
+  (define entries (leaf-entries-of leaf))
+  (define total (length-list entries))
+  (define mid (quotient total 2))
+  (define (take n xs)
+    (cond ((= n 0) '()) (else (cons (car xs) (take (- n 1) (cdr xs))))))
+  (define (drop n xs)
+    (cond ((= n 0) xs) (else (drop (- n 1) (cdr xs)))))
+  (define left-entries (take mid entries))
+  (define right-entries (drop mid entries))
+  (leaf-set-entries! leaf left-entries)
+  (define new-leaf (make-leaf-fresh cap right-entries))
+  (define sep (let ((e (car right-entries))) (car e)))
+  (cons new-leaf sep))
+
+;; Helper: build a fresh leaf node carrying given entries.
+(define (make-leaf-fresh cap entries)
+  (define n (list #t cap entries '()))
+  n)
+
+;; Helper: build an internal node (leaf?=#f) with given children + keys.
+;; children: list of n nodes; keys: list of (n-1) separator keys.
+(define (make-internal-with-children cap keys children)
+  (define n (list #f cap keys children))
+  (define-key-count n (- (length-list children) 1))
+  n)
+
+;; Helper: set length-prefixed key count on internal node.
+(define (define-key-count node n)
+  (set-cdr! (cdr (cdr node)) '()) ;; nothing extra; the node already
+                                  ;; stores (leaf? cap keys children).
+  ;; We rely on keys/children lists for actual structure; nothing to do.
+  'done)
+
+(define (length-list xs)
+  (cond ((null? xs) 0) (else (+ 1 (length-list (cdr xs))))))
+
+;; Recursive insert into node. Returns (split? . new-right-or-())
+;; where new-right-or is either '() (no split) or (sep-key . new-node).
+(define (insert-recursive node k pk v cap)
+  (cond
+    ((node-leaf? node)
+     (define was-split? (node-insert! node k pk v))
+     (cond
+       ((not was-split?) (cons #f '()))
+       (else
+        ;; Split the leaf and return the right half.
+        (define sr (split-leaf-into-new node cap))
+        (cons #t sr))))
+    (else
+     (define ci (node-find-child node k))
+     (define child (list-ref (node-children node) ci))
+     (define child-cap (if (< cap 3) 3 cap))
+     ;; Pre-emptively split full child.
+     (define pre-split
+       (cond
+         ((and (not (node-leaf? child))
+               (>= (node-count child) child-cap))
+          (split-internal-child child child-cap))
+         ((and (node-leaf? child)
+               (>= (node-count child) child-cap))
+          (split-leaf-into-new child child-cap))
+         (else #f)))
+     (cond
+       (pre-split
+        (cond
+          ((pair? pre-split)
+           (define sep (car pre-split))
+           (define new-child (cdr pre-split))
+           (insert-separator-into-node! node sep ci)
+           (define child2
+             (cond ((< (string-compare-k k sep) 0) child) (else new-child)))
+           (define r (insert-recursive child2 k pk v child-cap))
+           (bubble-up node r cap))
+          (else (bubble-up node
+                           (insert-recursive child k pk v child-cap)
+                           cap))))
+       (else
+        (bubble-up node
+                   (insert-recursive child k pk v child-cap)
+                   cap))))))
+
+;; Compare string keys k < sep.
+(define (string-compare-k k sep)
+  (cond
+    ((string<? k sep) -1)
+    ((string=? k sep) 0)
+    (else 1)))
+
+;; Insert separator key into an internal node at child index ci (the
+;; child that just split). Keys list grows by 1; children list grows by 1.
+(define (insert-separator-into-node! node sep ci)
+  (define keys (node-keys node))
+  (define children (node-children node))
+  (define kcount (length-list keys))
+  ;; children was n; new will be n+1; keys was n-1; new will be n.
+  (define new-keys (insert-at-list keys sep ci))
+  (define new-children (append-take children (+ ci 1)
+                                   (append-list (drop-list children ci)
+                                                (list (car (last-list children))))))
+  ;; Simpler: insert the new child at index ci+1.
+  (define c-now (length-list children))
+  (define left-c (take-list children (+ ci 1)))
+  (define right-c (drop-list children (+ ci 1)))
+  (define new-c (append-list left-c (cons (car (last-list children)) '())))
+  ;; Reset children properly:
+  (set-car! (cdr (cdr (cdr node)))
+            (insert-at-list (take-list children (+ ci 1)) 'sentinel ci))
+  (define new-keys2 (insert-at-list keys sep ci))
+  (set-car! (cdr (cdr node)) new-keys2)
+  (define new-children2
+    (append-list (take-list children (+ ci 1))
+                 (cons (last-element children)
+                       (drop-list children (+ ci 1)))))
+  (set-car! (cdr (cdr (cdr node))) new-children2)
+  'done)
+
+(define (last-list xs)
+  (cond ((null? (cdr xs)) xs) (else (last-list (cdr xs)))))
+(define (last-element xs) (car (last-list xs)))
+(define (take-list xs n)
+  (cond ((= n 0) '()) (else (cons (car xs) (take-list (cdr xs) (- n 1))))))
+(define (drop-list xs n)
+  (cond ((= n 0) xs) (else (drop-list (cdr xs) (- n 1)))))
+(define (append-list a b)
+  (cond ((null? a) b) (else (cons (car a) (append-list (cdr a) b)))))
+(define (insert-at-list xs v i)
+  (cond ((= i 0) (cons v xs))
+        ((null? xs) (list v))
+        (else (cons (car xs) (insert-at-list (cdr xs) v (- i 1))))))
+
+(define (append-take a n b)
+  (append-list (take-list a n) b))
+
+;; Split an internal child node, returning (sep . new-node).
+(define (split-internal-child node cap)
+  (define keys (node-keys node))
+  (define children (node-children node))
+  (define kc (length-list keys))
+  (define cc (length-list children))
+  (define mid-k (quotient kc 2))
+  (define mid-c mid-k)
+  ;; Promote the middle separator key.
+  (define promoted (list-ref keys mid-k))
+  (define left-keys (take-list keys mid-k))
+  (define right-keys (drop-list keys (+ mid-k 1)))
+  (define left-children (take-list children (+ mid-c 1)))
+  (define right-children (drop-list children (+ mid-c 1)))
+  ;; Build new right internal node.
+  (define new-node (make-node #f cap))
+  (set-car! (cdr (cdr new-node)) right-keys)
+  (set-car! (cdr (cdr (cdr new-node))) right-children)
+  ;; Shrink this node into the left half.
+  (set-car! (cdr (cdr node)) left-keys)
+  (set-car! (cdr (cdr (cdr node))) left-children)
+  (cons promoted new-node))
+
+;; Bubble a result up from a child into the parent.
+(define (bubble-up parent result cap)
+  (define split? (car result))
+  (define new-right (cdr result))
+  (cond
+    ((not split?) (cons #f '()))
+    ((null? new-right) (cons #f '()))
+    (else
+     ;; Append the new child + separator into parent.
+     (define sep (car new-right))
+     (define new-child (cdr new-right))
+     (define parent-keys (node-keys parent))
+     (define parent-children (node-children parent))
+     ;; Append at end.
+     (set-car! (cdr (cdr parent))
+               (if (null? parent-keys) (list sep) (append-list parent-keys (list sep))))
+     (set-car! (cdr (cdr (cdr parent)))
+               (append-list parent-children (list new-child)))
+     ;; Check if parent now overflows.
+     (define ck (length-list (node-keys parent)))
+     (define cc (length-list (node-children parent)))
+     (cond
+       ((>= cc cap)
+        (define sr (split-internal-child parent cap))
+        (cons #t sr))
+       (else (cons #f '()))))))
+
+;; list-ref helper
+(define (list-ref xs i)
+  (cond ((null? xs) '())
+        ((= i 0) (car xs))
+        (else (list-ref (cdr xs) (- i 1)))))
+
+;; (tree-point t k)
+;;   Return the list of (pk . v) entries currently visible at key k,
+;;   or '() if none. We accept any logical reader-txid here; callers
+;;   (mvcc.aura) handle version filtering.
+(define (tree-point t k)
+  (define root (tree-root t))
+  (define cap (tree-order t))
+  (define cap2 (if (< cap 3) 3 cap))
+  (define vals
+    (cond
+      ((node-leaf? root) (point-in-leaf root k))
+      (else
+       (define ci (node-find-child root k))
+       (define child (list-ref (node-children root) ci))
+       (point-walk child k cap2))))
+  vals)
+
+(define (point-in-leaf leaf k)
+  (define entries (leaf-entries leaf))
+  (define (loop xs)
+    (cond ((null? xs) '())
+          (else
+           (define e (car xs))
+           (define kk (car e))
+           (cond ((key=? kk k)
+                  (define pk (cadr e))
+                  (define vv (caddr e))
+                  (cons (cons pk vv) (loop (cdr xs))))
+  
+; truncated by extract_aura_sources

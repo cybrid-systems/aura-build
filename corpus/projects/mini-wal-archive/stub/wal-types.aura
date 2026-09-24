@@ -1,0 +1,53 @@
+;; wal-types.aura — segment record primitives (list-based, no records/structs)
+;;
+;; A "segment" is represented as a plain list (alist-style) of key/value pairs:
+;;   'id       — integer segment identifier
+;;   'bytes    — byte size of the segment
+;;   'created  — creation timestamp in ms (clock value at ingest time)
+;;   'tier     — symbol: 'hot, 'cold, or 'archived (candidate marker)
+;;
+;; We deliberately avoid define-record / struct / vector-set! because the Aura
+;; runtime in this project forbids them. Everything is plain cons cells.
+
+;; make-segment : id bytes created-ms tier -> segment
+;; Build a fresh segment list. The tier is normalized to a symbol.
+(define (make-segment id bytes created tier)
+  (list (cons 'id       (if (number? id) id 0))
+        (cons 'bytes    (if (number? bytes) bytes 0))
+        (cons 'created  (if (number? created) created 0))
+        (cons 'tier     (cond ((symbol? tier) tier)
+                               ((null? tier) 'hot)
+                               (else tier)))))
+
+;; Internal helper: look up a key in an alist-style segment.
+(define (seg-key seg k)
+  (let loop ((rest seg))
+    (cond ((null? rest) #f)
+          ((equal? (car (car rest)) k) (cdr (car rest)))
+          (else (loop (cdr rest))))))
+
+;; segment-id : segment -> integer
+(define (segment-id seg)
+  (let ((v (seg-key seg 'id)))
+    (if (number? v) v 0)))
+
+;; segment-bytes : segment -> integer
+(define (segment-bytes seg)
+  (let ((v (seg-key seg 'bytes)))
+    (if (number? v) v 0)))
+
+;; segment-age-ms : segment -> integer
+;; Age is computed relative to the global clock (current-ms).
+;; We tolerate the clock not yet being loaded by returning 0 in that case.
+(define (segment-age-ms seg)
+  (let ((created (seg-key seg 'created))
+        (now     (if (procedure? current-ms) (current-ms) #f)))
+    (cond ((not (number? created)) 0)
+          ((not (number? now))      0)
+          ((<= now created)         0)
+          (else                    (- now created)))))
+
+;; segment-tier : segment -> symbol
+(define (segment-tier seg)
+  (let ((v (seg-key seg 'tier)))
+    (if (symbol? v) v 'hot)))

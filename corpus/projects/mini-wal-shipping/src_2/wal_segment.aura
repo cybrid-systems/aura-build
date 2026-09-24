@@ -1,0 +1,35 @@
+;; wal_segment.aura — In-memory WAL segment
+;; A segment holds an ordered list of pages, each tagged with an LSN.
+;; We keep:
+;;   - 'pages : list of (lsn . payload) pairs
+;;   - 'high  : the highest LSN ever assigned (high water mark)
+;;   - 'last-flush : the LSN of the most recently flushed page
+
+(define (api seg-append-page segment payload)
+  ;; segment is an alist with keys 'pages, 'high, 'last-flush
+  ;; Returns the newly assigned LSN for the appended page.
+  (let ((new-lsn (+ (cdr (assq 'high segment)) 1)))
+    (set-cdr! (assq 'high segment) new-lsn)
+    (set-cdr! (assq 'pages segment)
+              (append (cdr (assq 'pages segment))
+                      (list (cons new-lsn payload))))
+    (set-cdr! (assq 'last-flush segment) new-lsn)
+    new-lsn))
+
+(define (api seg-pages segment)
+  ;; Return the list of (lsn . payload) pairs in append order.
+  (cdr (assq 'pages segment)))
+
+(define (api seg-lsn-high segment)
+  ;; Return the highest LSN assigned so far.
+  (cdr (assq 'high segment)))
+
+(define (api seg-last-flush-lsn segment)
+  ;; Return the LSN of the last flush (highest appended page's LSN).
+  (cdr (assq 'last-flush segment)))
+
+;; Helper constructor used by main / other modules: build a fresh segment.
+(define (seg-new)
+  (list (cons 'pages '())
+        (cons 'high 0)
+        (cons 'last-flush 0)))

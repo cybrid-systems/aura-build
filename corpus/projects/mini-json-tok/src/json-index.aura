@@ -1,0 +1,97 @@
+;; json-index.aura — Structural index over an AST node.
+;;
+;; A "structural index" is a compact summary of an AST that records, for every
+;; node visited, the kind of the node together with its depth in the tree and
+;; the path of keys/indices that leads to it. The index is built in a single
+;; recursive descent over the AST returned by json-ast.aura.
+;;
+;; The index is itself represented as an alist of three entries so the rest of
+;; the project can introspect it with the same uniform interface used elsewhere:
+;;
+;;   entries   -> list of (depth . kind) entries, in DFS (top-down, left-to-right)
+;;                visit order; depth of the root node is 0.
+;;   max-depth -> maximum depth of any node in the tree (root alone = 0).
+;;   size      -> number of nodes recorded.
+;;
+;; Exposes:
+;;   (build-index node)        -> index value for the given AST node
+;;   (index-depth idx)         -> max-depth entry of the index
+;;   (index-count idx kind)    -> how many nodes of `kind` are recorded
+;;   (index-walk idx proc)     -> call (proc depth kind) for each entry, in
+;;                                visit order; returns '()
+
+;; ---- helpers ---------------------------------------------
+
+(define (index-entries idx) (cdr (car idx)))
+(define (index-max-depth idx) (cdr (car (cdr idx))))
+(define (index-size idx) (cdr (car (cdr (cdr idx)))))
+
+(define (index-make entries maxd sz)
+  (cons (cons 'entries entries)
+        (cons (cons 'max-depth maxd)
+              (cons (cons 'size sz) '()))))
+
+;; Walk an AST node and accumulate (depth . kind) entries. The accumulator
+;; `acc` carries the running list of entries and the deepest depth seen so far.
+(define (index-walk-ast node depth acc maxd)
+  (let ((k (ast-kind node))
+        (new-acc (cons (cons depth k) (car acc)))
+        (new-max (if (> depth maxd) depth maxd)))
+    (cond
+      ((equal? k 'object)
+       (index-walk-pairs (ast-children node) depth new-acc new-max))
+      ((equal? k 'array)
+       (index-walk-array (ast-children node) depth new-acc new-max))
+      (else
+       (list new-acc new-max)))))
+
+(define (index-walk-pairs pairs depth acc maxd)
+  (cond
+    ((null? pairs) (list acc maxd))
+    (else
+     (let ((p (car pairs)))
+       (let ((after-key (index-walk-ast (cdr p) depth acc maxd)))
+         (index-walk-ast (car p) depth (car after-key) (cdr after-key)))))))
+
+(define (index-walk-array elts depth acc maxd)
+  (cond
+    ((null? elts) (list acc maxd))
+    (else
+     (let ((after (index-walk-ast (car elts) depth acc maxd)))
+       (index-walk-array (cdr elts) depth (car after) (cdr after))))))
+
+;; ---- public API --------------------------------------------
+
+(define (build-index node)
+  (let ((result (index-walk-ast node 0 '())))
+         ;; result is (list acc maxd)
+    (let ((acc (car result))
+          (maxd (car (cdr result))))
+      (let ((entries (reverse acc))
+            (sz (length acc)))
+        (index-make entries maxd sz)))))
+
+(define (index-depth idx)
+  (index-max-depth idx))
+
+(define (index-count idx kind)
+  (let ((entries (index-entries idx)))
+    (length (filter-by-kind entries kind))))
+
+(define (filter-by-kind entries kind)
+  (cond
+    ((null? entries) '())
+    ((equal? (cdr (car entries)) kind)
+     (cons (car entries) (filter-by-kind (cdr entries) kind)))
+    (else
+     (filter-by-kind (cdr entries) kind))))
+
+(define (index-walk idx proc)
+  (walk-entries (index-entries idx) proc))
+
+(define (walk-entries entries proc)
+  (cond
+    ((null? entries) '())
+    (else
+     (proc (car (car entries)) (cdr (car entries)))
+     (walk-entries (cdr entries) proc))))

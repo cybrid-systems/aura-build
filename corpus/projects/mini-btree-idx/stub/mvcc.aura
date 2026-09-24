@@ -1,0 +1,129 @@
+; mvcc.aura — MVCC visibility helpers
+;
+; The B-tree stores version tuples alongside each (key, pk) entry.
+; When reading at a particular reader-txid, only versions that are
+; visible (i.e. committed at or before the reader's snapshot) should
+; be considered.  This file provides three helpers:
+;
+;   mvcc-choose vlist reader-txid
+;       Pick the newest visible version from a parallel list of
+;       version tuples (a list of version records produced by
+;       make-version in types.aura).  Returns #f if none of the
+;       versions are visible to the reader.
+;
+;   mvcc-count-visible t reader-txid
+;       Walk the entire tree and count the number of entries for
+;       which at least one visible version exists.
+;
+;   mvcc-count-hidden t reader-txid
+;       Walk the entire tree and count the number of entries for
+;       which no version is visible to the reader (they are all
+;       hidden / pending / future).
+;
+; Both walk helpers rely on tree-root / node traversal defined in
+; tree.aura and node.aura.  An "entry" here means one (key, pk, v)
+; row stored at a leaf slot — not a single version.
+
+;; ----------------------------------------------------------------
+;; Pick the newest visible version
+;; ----------------------------------------------------------------
+;;
+;; vlist is a list of version tuples.  Each tuple is opaque to this
+;; file — we only call version-visible? on it (defined in types.aura).
+;; We walk the list keeping track of the best candidate (highest ts
+;; among visible versions).  If the list is empty or no version is
+;; visible, return #f.
+
+(define (mvcc-choose vlist reader-txid)
+  (let loop ((rest vlist)
+             (best #f)
+             (best-ts -1))
+    (cond ((null? rest)
+           ;; If we found nothing visible, return #f; otherwise best.
+           best)
+          (else
+           (let ((v (car rest)))
+             (if (version-visible? v reader-txid)
+                 (let ((ts (cadr v)))   ; ts is the second field of (txid ts)
+                   (if (> ts best-ts)
+                       (loop (cdr rest) v ts)
+                       (loop (cdr rest) best best-ts)))
+                 (loop (cdr rest) best best-ts)))))))
+
+;; ----------------------------------------------------------------
+;; Walk helpers — traverse every leaf in the tree
+;; ----------------------------------------------------------------
+;;
+;; Internally, the tree is just a single root node, and each node
+;; either holds a leaf or a list of child nodes.  We don't depend on
+;; any helper from node.aura beyond what's exposed (node-is-leaf?,
+;; node-key-at, etc.) and we lean on leaf accessors from leaf.aura
+;; when we reach a leaf.  Because node.aura and leaf.aura expose the
+;; pieces we need, we can walk purely with those.
+
+;; Walk the node tree, applying f to each leaf encountered.
+(define (mvcc-walk-leaves node f)
+  (if (node-is-leaf? node)
+      (f node)
+      (let ((child-count (node-count node)))
+        (let loop ((i 0))
+          (if (>= i child-count)
+              '()
+              (begin
+                (mvcc-walk-leaves (node-find-child node "") ; placeholder
+                                  f)
+                (loop (+ i 1))))))))
+
+;; Helper: extract the i-th child of an internal node.  node-count
+;; on an internal node returns the number of children; we need a
+;; way to fetch a specific child.  Since node.aura doesn't directly
+;; expose node-child, we rely on node-find-child with a key that
+;; is guaranteed to route to the i-th child.  To keep things simple
+;; and robust, we instead reach into the node payload directly via
+;; the conventional internal layout (keys children).  We expose
+;; node-children here as a thin wrapper.
+(define (mvcc-node-children node)
+  ;; Payload layout for an internal node is (keys children).
+  (cadr (cdr (cdr node))))
+
+(define (mvcc-leaf-keys leaf)        (cadr leaf))
+(define (mvcc-leaf-versions leaf)    (cadddr leaf))
+
+;; Walk every leaf slot and tally visibility counts.  We do both
+;; tallies in a single pass to avoid double-traversing the tree.
+(define (mvcc-tally t reader-txid)
+  (let ((root (tree-root t)))
+    (mvcc-tally-node root reader-txid 0 0)))
+
+(define (mvcc-tally-node node reader-txid vis hid)
+  (if (node-is-leaf? node)
+      ;; Leaf: iterate over its slots.  Each slot has parallel keys,
+      ;; pks, versions lists.  A slot is "visible" if any version in
+      ;; its vlist is visible; otherwise it's "hidden".
+      (let* ((leaf       (cadr (cdr node)))   ; payload of leaf node
+             (keys       (mvcc-leaf-keys leaf))
+             (vlist-all  (mvcc-leaf-versions leaf))
+             (n          (length keys)))
+        (let loop ((i 0) (v vis) (h hid))
+          (if (>= i n)
+              (list v h)
+              (let* ((vl    (list-ref vlist-all i))
+                     (chosen (mvcc-choose vl reader-txid)))
+                (if chosen
+                    (loop (+ i 1) (+ v 1) h)
+                    (loop (+ i 1) v (+ h 1)))))))
+      ;; Internal node: recurse into each child.
+      (let ((children (mvcc-node-children node)))
+        (let loop ((rest children) (v vis) (h hid))
+          (if (null? rest)
+              (list v h)
+              (let* ((pair (mvcc-tally-node (car rest) reader-txid v h))
+                     (v2 (car pair))
+                     (h2 (cadr pair)))
+                (loop (cdr rest) v2 h2)))))))
+
+(define (mvcc-count-visible t reader-txid)
+  (car (mvcc-tally t reader-txid)))
+
+(define (mvcc-count-hidden t reader-txid)
+  (cadr (mvcc-tally t reader-txid)))

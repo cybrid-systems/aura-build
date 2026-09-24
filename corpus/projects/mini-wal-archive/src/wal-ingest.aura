@@ -1,0 +1,37 @@
+;; wal-ingest.aura — ingestion API for fresh WAL segments
+;;
+;; Ingestion is the entry point for new segments into the pipeline. A caller
+;; supplies a target tier (usually 'hot), the segment size in bytes, and the
+;; current virtual clock; we mint a fresh segment record via (make-segment …)
+;; from wal-types.aura, stamp it with the present (current-ms) timestamp,
+;; and append it to the tier's segment store via (store-add! …) from
+;; wal-store.aura. Each ingest is also recorded in the event log via
+;; (log-event! 'ingest) from wal-log.aura so the stdout contract can show
+;; the audit trail.
+;;
+;; Design notes:
+;;   - ingest-segment! mutates the store in place (via store-add!) and returns
+;;     the newly created segment so callers can chain further operations.
+;;   - The segment id is derived from a small monotonic counter *ingest-id*.
+;;     We don't expose a setter; ids are an implementation detail of ingestion.
+;;   - We deliberately do NOT call (advance-ms!) here. Time advancement is the
+;;     caller's responsibility — this keeps ingestion orthogonal to the clock.
+
+;; Internal monotonic id counter. Stored as a one-element list so we can
+;; use set! on its car, matching the pattern in wal-clock.aura / wal-log.aura.
+(define *ingest-id* (list 0))
+
+;; ingest-segment! : store bytes -> segment
+;;
+;; Mint a new segment of `bytes` size, stamp it at (current-ms), push it into
+;; `store`, log the event, and return the new segment record.
+;;
+;; The id is assigned from the internal counter (1, 2, 3, ...). Tier is taken
+;; from the store itself via (store-tier store) so we can never accidentally
+;; ingest into the wrong tier symbol.
+(define (ingest-segment! store bytes)
+  (set! (car *ingest-id*) (+ (car *ingest-id*) 1))
+  (let ((seg (make-segment (car *ingest-id*) bytes (current-ms) (store-tier store))))
+    (store-add! store seg)
+    (log-event! 'ingest)
+    seg))

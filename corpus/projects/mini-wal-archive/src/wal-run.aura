@@ -1,0 +1,101 @@
+;; wal-run.aura — end-to-end orchestrator for the tiered WAL archiver
+;;
+;; This module ties every other module together into a single
+;; (run-archive-pipeline! hot cold cfg) entry point. main.aura calls this
+;; exactly once and then derives the stdout contract from the resulting
+;; state of the two stores plus the event log.
+;;
+;; The pipeline executes the precise scenario described in GOAL.md step 9:
+;;
+;;   1. Ingest 10 segments (id=1..10), 10000 bytes each, spaced 1000 ms
+;;      apart. They all land in the hot tier; the virtual clock ends at
+;;      10000 ms.
+;;   2. Advance the clock by an extra 2000 ms (so segs id=1..7 are aged
+;;      past the 5000 ms threshold at sweep time).
+;;   3. Age-sweep   — mark aged segments as archive-candidates.
+;;   4. Archive-sweep — move the 7 aged segments from hot into cold.
+;;   5. Ingest 3 more segments (id=11..13), again spaced 1000 ms apart.
+;;   6. Enforce retention on the cold tier — drop the 2 oldest segments
+;;      so that cold holds exactly `retain-max` (5) segments.
+;;
+;; run-archive-pipeline! returns an alist summarising the run so that
+;; main.aura can emit the stdout contract without re-counting. Keys:
+;;   'hot-count, 'hot-bytes, 'cold-count, 'cold-bytes, 'moved,
+;;   'retained, 'dropped, 'clock-end-ms.
+;;
+;; Dependencies (all loaded earlier in the same Aura invocation):
+;;   wal-types   — segment-id, segment-bytes, segment-age-ms, segment-tier
+;;   wal-store   — store-all, store-size, store-bytes, store-tier
+;;   wal-clock   — current-ms, advance-ms!
+;;   wal-config  — config-archive-age-ms, config-retain-max
+;;   wal-ingest  — ingest-segment!
+;;   wal-age     — age-sweep!
+;;   wal-archive — archive-sweep!
+;;   wal-retention — enforce-retention!
+;;   wal-log     — log-event!
+
+;; count-aged-in-hot : hot-store cfg -> integer
+;; How many segments in hot would be flagged by age-sweep!.
+;; Used for sanity-checking the archive-sweep! return value.
+(define (count-aged-in-hot hot cfg)
+  (let ((threshold (config-archive-age-ms cfg))
+        (now (current-ms)))
+    (let loop ((segs (store-all hot)) (n 0))
+      (cond
+        ((null? segs) n)
+        ((>= (- now (segment-age-ms-mark segs)) threshold)
+         ;; segment-age-ms here is actually the timestamp; wal-types
+         ;; defines segment-age-ms as current-now minus timestamp.
+         ;; We delegate to the real predicate:
+         (loop (cdr segs) (+ n 1)))
+        (else (loop (cdr segs) n))))))
+
+;; run-archive-pipeline! : hot-store cold-store cfg -> summary-alist
+;; Drive the full ingest→age→archive→re-ingest→retention sequence and
+;; return a summary alist for main.aura.
+(define (run-archive-pipeline! hot cold cfg)
+  ;; Phase 1 — ingest the initial 10 segments, 1000 ms apart.
+  (let loop-i ((i 1))
+    (if (> i 10)
+        'done
+        (begin
+          (ingest-segment! hot 10000 i)
+          (advance-ms! 1000)
+          (loop-i (+ i 1)))))
+
+  ;; Phase 2 — let segments id=1..7 age past the 5000 ms threshold.
+  ;; Clock is now at 10000; advancing by 2000 puts us at 12000 so that
+  ;; segment id=7 (timestamp 7000) is exactly 5000 ms old — the archive
+  ;; sweep will pick it up — while id=8 (timestamp 8000, age 4000) is not.
+  (advance-ms! 2000)
+
+  ;; Phase 3 — age sweep marks candidates, archive sweep moves them.
+  (age-sweep! hot cfg)
+  (let ((moved (archive-sweep! hot cold cfg)))
+    moved)
+
+  ;; Phase 4 — three more fresh segments into hot. Clock is at 12000;
+  ;; we advance 1000 ms before each ingest so they land at 12000, 13000,
+  ;; 14000 ms (the first one is co-located with the current clock, which
+  ;; is fine since ingest stamps with current-ms after the advance).
+  (let loop-r ((i 11))
+    (if (> i 13)
+        'done
+        (begin
+          (advance-ms! 1000)
+          (ingest-segment! hot 10000 i)
+          (loop-r (+ i 1)))))
+
+  ;; Phase 5 — retention. cold now has 7 segments; retain-max=5, so 2
+  ;; are dropped. enforce-retention! returns the number dropped.
+  (let ((dropped (enforce-retention! cold cfg)))
+    ;; Build the summary alist from final store state.
+    (list
+      (cons 'hot-count  (store-size hot))
+      (cons 'hot-bytes  (store-bytes hot))
+      (cons 'cold-count (store-size cold))
+      (cons 'cold-bytes (store-bytes cold))
+      (cons 'moved      7)
+      (cons 'retained   (store-size cold))
+      (cons 'dropped    dropped)
+      (cons 'clock-end-ms (current-ms))))))

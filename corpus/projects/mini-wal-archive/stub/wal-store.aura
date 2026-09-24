@@ -1,0 +1,55 @@
+;; wal-store.aura — tier store: list of segments for one tier
+;;
+;; A "store" is a plain list of segment records (as produced by wal-types.aura).
+;; Stores track their tier symbol so callers can ask "how big is hot?" or
+;; "what's the oldest age in cold?" without threading the symbol manually.
+
+;; make-store : tier-symbol -> store
+;; Build an empty store bound to the given tier symbol.
+(define (make-store tier)
+  (list (cons 'tier    (if (symbol? tier) tier 'hot))
+        (cons 'segs    '())))
+
+;; store-tier : store -> tier-symbol
+(define (store-tier store)
+  (cdr (assq 'tier store)))
+
+;; store-all : store -> list-of-segments
+(define (store-all store)
+  (cdr (assq 'segs store)))
+
+;; store-add! : store segment -> store  (mutates store, returns it)
+;; Prepend the segment to the store's segment list. Newest-first convention.
+(define (store-add! store seg)
+  (let ((pair (assq 'segs store)))
+    (set-cdr! pair (cons seg (cdr pair))))
+  store)
+
+;; store-size : store -> integer (count of segments)
+(define (store-size store)
+  (length (store-all store)))
+
+;; store-bytes : store -> integer (sum of segment 'bytes)
+(define (store-bytes store)
+  (let loop ((xs (store-all store))
+             (acc 0))
+    (if (null? xs)
+        acc
+        (loop (cdr xs)
+              (+ acc (segment-bytes (car xs)))))))
+
+;; store-oldest-age : store current-ms -> integer (age of oldest segment in ms)
+;; "Oldest" here = the one with the smallest 'created timestamp. Returns 0 when
+;; the store is empty (no segments to age against).
+(define (store-oldest-age store now)
+  (let ((xs (store-all store)))
+    (if (null? xs)
+        0
+        (let loop ((rest (cdr xs))
+                   (oldest (segment-age-ms (car xs))))
+          (if (null? rest)
+              (- now oldest)
+              (let ((a (segment-age-ms (car rest))))
+                (if (< a oldest)
+                    (loop (cdr rest) a)
+                    (loop (cdr rest) oldest))))))))

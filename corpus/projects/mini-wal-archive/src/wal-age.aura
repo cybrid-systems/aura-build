@@ -1,0 +1,73 @@
+;; wal-age.aura — age-based archive candidacy sweep
+;;
+;; The age-sweep pass decides which hot-tier segments are "old enough" to be
+;; moved to cold storage. It does NOT actually move segments — that's the
+;; job of wal-archive.aura. Instead it walks a store's segment list and
+;; stamps each aged segment with the tier symbol 'archived (a candidate
+;; marker) so the archiver can pick them up on the next sweep.
+;;
+;; This module is deliberately small and depends only on wal-types, wal-store,
+;; wal-clock, wal-config, and wal-log:
+;;   - (segment-age-ms s) and (segment-tier s) from wal-types
+;;   - (store-all store), (store-tier store) from wal-store
+;;   - (current-ms)        from wal-clock
+;;   - (config-archive-age-ms cfg) from wal-config
+;;   - (log-event! sym)    from wal-log
+;;
+;; Public API (as required by the module table):
+;;   aged-segment?  : segment config -> boolean
+;;   age-sweep!     : store   config -> store   (mutates in place)
+
+;; aged-segment? : segment config -> boolean
+;; Decide whether a single segment has aged past the archive threshold.
+;; A segment is "aged" when:
+;;   (current-ms) - (segment-age-ms s) >= config-archive-age-ms
+;; and the segment is still in 'hot (we don't re-archive 'cold segments).
+;;
+;; Tier check is important: archive-sweep relies on tier='archived as the
+;; candidate marker, and we don't want a stale cold segment that hasn't
+;; been retention-dropped to be re-flagged.
+(define (aged-segment? seg cfg)
+  (let ((now   (current-ms))
+        (age   (segment-age-ms seg))
+        (tier  (segment-tier seg))
+        (limit (config-archive-age-ms cfg)))
+    (and (eq? tier 'hot)
+         (>= (- now age) limit))))
+
+;; age-sweep! : store config -> store
+;; Walk every segment in the store, mark aged ones as 'archived candidates
+;; by mutating their 'tier field in place, and append 'age-sweep to the log.
+;;
+;; We avoid define-record / struct / vector-set! by treating segments as
+;; alists and using set! on the cons cell's cdr to overwrite the 'tier value.
+;; Each segment is itself a list of (key . value) pairs:
+;;   ((id . N) (bytes . B) (created . T) (tier . SYM))
+;; so (assq 'tier seg) returns the 'tier cons cell whose cdr we overwrite.
+;;
+;; Side effects:
+;;   - mutates the store's segment list (their tier fields)
+;;   - appends 'age-sweep to the global event log
+;; Returns the store so callers can chain.
+(define (age-sweep! store cfg)
+  (let ((segs (store-all store)))
+    (define (mark-one s)
+      (if (aged-segment? s cfg)
+          ;; overwrite the tier cell in place
+          (let ((cell (assq 'tier s)))
+            (if (pair? cell)
+                (set-cdr! cell 'archived)))
+          ;; else leave untouched
+          'noop)
+      s)
+    ;; Iterate over the segment list, marking each aged one.
+    ;; We use a named-let loop over the list to keep things allocation-light.
+    (let loop ((xs segs))
+      (if (null? xs)
+          'done
+          (begin
+            (mark-one (car xs))
+            (loop (cdr xs))))))
+  ;; Record the sweep in the audit log so main.aura can emit EVENT=age-sweep.
+  (log-event! 'age-sweep)
+  store)

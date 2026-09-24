@@ -1,0 +1,54 @@
+; metrics.aura — lightweight metrics aggregator for the B-tree.
+;
+; The metrics module accumulates three pieces of information across
+; the lifetime of an index run:
+;
+;   * number of successful inserts (each call to metrics-on-insert!
+;     counts one insert; the split? flag is informational and lets a
+;     caller bump node-creation accounting in lock-step with inserts
+;     that triggered structural changes),
+;   * number of node creations (every split produces a new node, and
+;     the initial root counts as one node creation),
+;   * running totals of compressed and raw byte sizes seen by the
+;     index.  These are updated via metrics-bytes-delta! whenever a
+;     leaf reports its current size.  Storing them as separate sums
+;     lets main.aura report COMPRESS_BYTES / RAW_BYTES without having
+;     to walk the tree again at the end of the run.
+;
+; The record itself is a plain Aura list so it can be returned and
+; mutated freely using set! through the small accessors defined here.
+
+(define (metrics-new)
+  ;; Layout: (inserts nodes compress-bytes raw-bytes)
+  (list 0 0 0 0))
+
+(define (metrics-inserts m)
+  (car m))
+
+(define (metrics-nodes m)
+  (car (cdr m)))
+
+(define (metrics-compress-bytes m)
+  (car (cdr (cdr m))))
+
+(define (metrics-raw-bytes m)
+  (car (cdr (cdr (cdr m)))))
+
+(define (metrics-on-insert! m split?)
+  ;; Always count the insert itself.
+  (set-car! m (+ (metrics-inserts m) 1))
+  ;; A split produces one new node.  We also count a node creation
+  ;; on the very first insert so that a freshly built tree reports
+  ;; at least one node (its root).
+  (if (or split? (= (metrics-inserts m) 1))
+      (set-car! (cdr m) (+ (metrics-nodes m) 1))
+      #f))
+
+(define (metrics-bytes-delta! m comp raw)
+  ;; Accumulate compressed and raw byte totals.  comp and raw are
+  ;; non-negative integers as reported by leaf-bytes for the
+  ;; compressed and uncompressed representations respectively.
+  (set-car! (cdr (cdr m))
+            (+ (metrics-compress-bytes m) comp))
+  (set-car! (cdr (cdr (cdr m)))
+            (+ (metrics-raw-bytes m) raw)))

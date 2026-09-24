@@ -1,0 +1,111 @@
+;; MVCC visibility helpers for the mini-btree index.
+;; A version is either a plain pair (txid . ts) or, in tests/special
+;; cases, a non-pair value (e.g. a sentinel) which is treated as visible.
+;; A version list (vlist) is a list of versions associated with a
+;; single key entry. We choose the version with the largest txid that
+;; is still <= reader-txid (the newest visible committed version).
+;; If no such version exists, the entry is hidden from that reader.
+
+(define (version-txid v)
+  (cond
+    ((pair? v) (car v))
+    (else 0)))
+
+(define (version-ts v)
+  (cond
+    ((pair? v) (cdr v))
+    (else 0)))
+
+;; Choose the best visible version from a list of versions.
+;; vlist          : list of version values (any may be non-pair)
+;; reader-txid    : non-negative integer, the reader's snapshot txid
+;; returns the chosen version pair, or '() if none is visible.
+(define (mvcc-choose vlist reader-txid)
+  (define (loop xs best)
+    (cond
+      ((null? xs) best)
+      (else
+       (let ((v (car xs)))
+         (cond
+           ((version-visible? v reader-txid)
+            (cond
+              ((null? best) (loop (cdr xs) v))
+              ((> (version-txid v) (version-txid best))
+               (loop (cdr xs) v))
+              (else (loop (cdr xs) best))))
+           (else (loop (cdr xs) best)))))))
+  (loop vlist '()))
+
+;; Walk every leaf in the tree and count how many entries have at
+;; least one version visible to reader-txid (using mvcc-choose).
+(define (mvcc-count-visible t reader-txid)
+  (mvcc-count-aux (tree-root-of t) reader-txid #t))
+
+(define (mvcc-count-hidden t reader-txid)
+  (mvcc-count-aux (tree-root-of t) reader-txid #f))
+
+;; tree-root-of is provided by tree.aura; if not, fall back to
+;; looking it up from the tree's public interface.
+
+(define (mvcc-count-aux node reader-txid want-visible?)
+  (cond
+    ((null? node) 0)
+    ((node-leaf? node)
+     (let ((entries (leaf-entries-of (node-leaf-of node))))
+       (define (loop xs acc)
+         (cond
+           ((null? xs) acc)
+           (else
+            (let ((entry (car xs)))
+              (let ((vlist (cdr (cdr (cdr entry))))) ; (key pk . vlist)
+                (let ((picked (mvcc-choose vlist reader-txid)))
+                  (let ((inc
+                         (if want-visible?
+                             (if (null? picked) 0 1)
+                             (if (null? picked) 1 0))))
+                    (loop (cdr xs) (+ acc inc)))))))))
+       (loop entries 0)))
+    (else
+     (let ((children (node-children node)))
+       (define (loop xs acc)
+         (cond
+           ((null? xs) acc)
+           (else (loop (cdr xs) (+ acc (mvcc-count-aux (car xs) reader-txid want-visible?))))))
+       (loop children 0)))))
+
+;; --- Compatibility shims: extract entries/leaf from node shapes ---
+
+;; node.aura exposes node-leaf?, node-children. The node representation
+;; is (leaf? capacity keys children). The leaf itself is stored as a
+;; child. leaf.aura exposes leaf-entries. We assume each leaf child is
+;; a (capacity . entries) cons cell.
+
+(define (node-leaf-of n)
+  ;; For a leaf node, return the underlying leaf cons cell stored as
+  ;; the sole "child" by leaf.aura's split protocol. We assume the
+  ;; node's children list contains the leaf cons cells directly.
+  (define (find-leaf xs)
+    (cond
+      ((null? xs) '())
+      (else
+       (let ((c (car xs)))
+         (cond
+           ((and (pair? c) (number? (car c))) c)
+           (else '())))))
+  (find-leaf (node-children n)))
+
+;; tree-root accessors: tree.aura exposes tree-root through tree-stats,
+;; but not directly. The tree structure is a pair-like record. We rely
+;; on tree.aura defining (define tree-root-of t ...) — but to be safe,
+;; we expose a helper that locates the root via the public interface.
+;; If tree.aura does not provide tree-root-of, this file's calls would
+;; fail; we therefore require it. Since the spec says tree.aura exists
+;; and exports a tree handle, we define a fallback that peeks at the
+;; tree structure by convention: the root is the first field of the
+;; tree record (a dotted pair (root . rest)).
+
+(define (tree-root-of t)
+  (cond
+    ((procedure? t) (t 'root))
+    ((pair? t) (car t))
+    (else '())))

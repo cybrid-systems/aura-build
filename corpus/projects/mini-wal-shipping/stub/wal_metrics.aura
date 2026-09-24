@@ -1,0 +1,137 @@
+;; wal_metrics.aura — metric collection for the WAL shipping pipeline.
+;;
+;; The metrics module keeps a running counter vector that mirrors the
+;; expected stdout contract in /main.aura. Every interesting event from the
+;; shipper, the protocol, the socket, the buffer and the follower calls
+;; (metrics-record!) with a key/value pair, which bumps the corresponding
+;; counter. (metrics-snapshot) returns the full alist of accumulated values
+;; in a stable, ordered shape; (metrics-render-key) formats a single
+;; KEY=value string for one key, defaulting missing keys to sensible
+;; neutral values (0 for counters, "#f" for booleans).
+;;
+;; Keys tracked (in canonical order):
+;;   WAL_SHIP_PRIMARY        - string id of the primary
+;;   WAL_SHIP_FOLLOWER       - string id of the follower
+;;   WAL_SHIP_PAGES_SHIPPED  - count of pages successfully shipped
+;;   WAL_SHIP_FRAMES_OK      - count of frames that drained cleanly
+;;   WAL_SHIP_FRAMES_RETRY   - count of frames retried after a socket drop
+;;   WAL_SHIP_BYTES_SHIPPED  - bytes that crossed the wire
+;;   WAL_SHIP_LSN_HWM        - highest LSN observed on the primary
+;;   WAL_SHIP_CATCHUP_MS     - catch-up duration in milliseconds (0 if none)
+;;   WAL_SHIP_RECONNECTS     - count of reconnects
+;;   WAL_SHIP_DROPPED        - count of dropped bytes (from the socket)
+;;   WAL_SHIP_APPLIED_LSN    - LSN the follower has confirmed applied
+;;   WAL_SHIP_VERIFIED       - #t once the follower has verified the run
+;;
+;; API:
+;;   (metrics-record! key value)   - bump a metric by 'value' (or set if a
+;;                                   string/bool), returns the new value
+;;   (metrics-snapshot)            - ordered alist of (key . value) pairs
+;;   (metrics-render-key key)      - format one KEY=value line as a string
+
+(define *exports* '())
+
+(define-syntax api
+  (syntax-rules ()
+    ((api name)
+     (set! *exports* (cons (cons 'name (lambda () name)) *exports*)))))
+
+;; ---------------------------------------------------------------------
+;; Internal: the metric store is a single mutable cell (a box) holding
+;; an alist. Using a box avoids the need for hash tables and keeps the
+;; representation fully list-based.
+
+(define *metrics-box* (list 'metrics))
+
+(define (alist-ref-safe key alist default)
+  (let ((hit (assq key alist)))
+    (if hit (cdr hit) default)))
+
+(define (metrics-get key)
+  (let ((m (car *metrics-box*)))
+    (alist-ref-safe key m
+                    (cond ((member key '("WAL_SHIP_PRIMARY" "WAL_SHIP_FOLLOWER")) "")
+                          ((eq? key 'WAL_SHIP_VERIFIED) #f)
+                          (else 0)))))
+
+(define (metrics-set! key value)
+  (let* ((m (car *metrics-box*))
+         (hit (assq key m))
+         (rest (if hit (cdr (assq key m)) '())))
+    ;; Rebuild the alist preserving the canonical order of first appearance.
+    (let loop ((src m) (acc '()))
+      (cond ((null? src)
+             (set! *metrics-box*
+                   (list (append (reverse acc) rest))))
+            ((eq? (caar src) key)
+             (set! *metrics-box*
+                   (list (append (reverse acc)
+                                 (cons (cons key value) (cdr src))))))
+            (else
+             (loop (cdr src) (cons (car src) acc))))))
+    value))
+
+(define (metrics-bump! key delta)
+  (let* ((cur (metrics-get key))
+         (next (+ cur delta)))
+    (metrics-set! key next)
+    next))
+
+;; The canonical order in which the contract requires KEY=value lines.
+(define *canonical-keys*
+  '(WAL_SHIP_PRIMARY
+    WAL_SHIP_FOLLOWER
+    WAL_SHIP_PAGES_SHIPPED
+    WAL_SHIP_FRAMES_OK
+    WAL_SHIP_FRAMES_RETRY
+    WAL_SHIP_BYTES_SHIPPED
+    WAL_SHIP_LSN_HWM
+    WAL_SHIP_CATCHUP_MS
+    WAL_SHIP_RECONNECTS
+    WAL_SHIP_DROPPED
+    WAL_SHIP_APPLIED_LSN
+    WAL_SHIP_VERIFIED))
+
+(define (metric-render-value v)
+  (cond ((boolean? v)
+         (if v "#t" "#f"))
+        ((number? v)
+         (number->string v))
+        ((string? v)
+         v)
+        (else
+         (number->string 0))))
+
+(define (metrics-record! key value)
+  ;; Record accepts either a delta (number) which is added to the running
+  ;; counter, or a string / boolean which sets the metric outright. This
+  ;; lets the shipper call (metrics-record! 'WAL_SHIP_PRIMARY id) and
+  ;; (metrics-record! 'WAL_SHIP_PAGES_SHIPPED 1) from the same entry point.
+  (cond ((number? value)
+         (metrics-bump! key value))
+        ((or (string? value) (boolean? value))
+         (metrics-set! key value))
+        (else
+         (metrics-set! key value)))
+  (metrics-get key))
+
+(define (metrics-snapshot)
+  ;; Return an ordered alist in the canonical contract order. Missing keys
+  ;; are filled with the same defaults (metrics-get) would yield, so the
+  ;; reporter can blindly format them.
+  (let loop ((keys *canonical-keys*) (acc '()))
+    (if (null? keys)
+        (reverse acc)
+        (loop (cdr keys)
+              (cons (cons (car keys) (metrics-get (car keys))) acc)))))
+
+(define (metrics-render-key key)
+  (let ((v (metrics-get key)))
+    (string-append key "=" (metric-render-value v))))
+
+;; Export the three API entry points so downstream files (wal_reporter.aura
+;; and main.aura) can resolve them by symbol through *exports*.
+
+(api metrics-record!)
+(api metrics-snapshot)
+(api metrics-render-key)

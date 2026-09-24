@@ -1,0 +1,115 @@
+;; Event log for the mini-btree index.
+;; A simple append-only event log backed by a flat list. Each event is
+;; a pair (op . payload) where op is a symbol describing the kind of
+;; event and payload is an arbitrary value (typically a list of
+;; fields). The log supports appending events, querying the total
+;; count, and rebuilding the tree state by replaying events from the
+;; beginning in insertion order.
+;;
+;; Event kinds used by the index layer:
+;;   'insert  : payload = (decoded-key pk encoded-key version)
+;;   'split   : payload = (node-id)              ;; informational
+;;
+;; The log itself does not interpret payloads; it only stores and
+;; counts them.
+
+;; -------------------------------------------------------------------
+;; Construction and accessors
+;; -------------------------------------------------------------------
+
+(define (event-log-new)
+  (list 'event-log '() 0))
+
+(define (event-log? x)
+  (and (pair? x) (eq? (car x) 'event-log)))
+
+(define (event-log-events log)
+  (cadr log))
+
+(define (event-log-count log)
+  (caddr log))
+
+(define (event-log-set-events! log events)
+  (set-car! (cdr log) events))
+
+(define (event-log-set-count! log n)
+  (set-car! (cddr log) n))
+
+;; -------------------------------------------------------------------
+;; Mutation
+;; -------------------------------------------------------------------
+
+;; Append a single event to the log. The event is a pair (op . payload).
+;; Returns the (mutated) log for chaining.
+(define (event-log-append! log event)
+  (define events (event-log-events log))
+  (define new-events (append events (list event)))
+  (event-log-set-events! log new-events)
+  (event-log-set-count! log (+ (event-log-count log) 1))
+  log)
+
+;; Convenience constructor for an insert event.
+(define (event-make-insert key pk enc-key version)
+  (cons 'insert (list key pk enc-key version)))
+
+;; Convenience constructor for a split event.
+(define (event-make-split node-id)
+  (cons 'split (list node-id)))
+
+;; -------------------------------------------------------------------
+;; Queries
+;; -------------------------------------------------------------------
+
+;; Total number of events currently in the log.
+(define (event-log-size log)
+  (event-log-count log))
+
+;; Extract the op symbol of an event.
+(define (event-op ev)
+  (car ev))
+
+;; Extract the payload of an event.
+(define (event-payload ev)
+  (cdr ev))
+
+;; Filter the log, returning a list of events whose op matches the
+;; given symbol.
+(define (event-log-filter log op-sym)
+  (define (loop xs)
+    (cond
+      ((null? xs) '())
+      ((eq? (event-op (car xs)) op-sym)
+       (cons (car xs) (loop (cdr xs))))
+      (else (loop (cdr xs)))))
+  (loop (event-log-events log)))
+
+;; Count events whose op matches the given symbol.
+(define (event-log-count-of log op-sym)
+  (define (loop xs n)
+    (cond
+      ((null? xs) n)
+      ((eq? (event-op (car xs)) op-sym)
+       (loop (cdr xs) (+ n 1)))
+      (else (loop (cdr xs) n))))
+  (loop (event-log-events log) 0))
+
+;; -------------------------------------------------------------------
+;; Replay / rebuild
+;;
+;; Replay walks the log from the oldest event to the newest and
+;; returns a list of (decoded-key pk version) triples — i.e. the
+;; material needed to rebuild a tree from scratch. The order matches
+;; insertion order so the rebuilt tree's final state matches the
+;; original.
+;; -------------------------------------------------------------------
+
+(define (event-log-replay-inserts log)
+  (define (loop xs)
+    (cond
+      ((null? xs) '())
+      ((eq? (event-op (car xs)) 'insert)
+       (define p (event-payload (car xs)))
+       (cons (list (list-ref p 0) (list-ref p 1) (list-ref p 3))
+             (loop (cdr xs))))
+      (else (loop (cdr xs)))))
+  (loop (event-log-events log)))

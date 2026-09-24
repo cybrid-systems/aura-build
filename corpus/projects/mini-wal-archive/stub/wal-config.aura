@@ -1,0 +1,44 @@
+;; wal-config.aura — configuration record for the WAL archiver
+;;
+;; A "config" is a plain alist of tuning knobs consumed by the age-sweep,
+;; archive-sweep, and retention-enforcement passes. Keys:
+;;   'archive-age-ms   — segments aged at least this many ms are archived
+;;   'archive-bytes    — per-segment byte threshold (informational/policy)
+;;   'retain-max       — maximum number of segments to keep in the cold tier
+;;
+;; Keeping the config as an alist (rather than a record) lets the rest of
+;; the codebase stay free of define-record / struct / vector-set!.
+
+;; default-config : -> config
+;; The default tuning used by the GOAL scenario. Values chosen so that a
+;; 10-segment ingest of 10 KiB each, spaced 1 s apart, ages out cleanly:
+;;   - age threshold = 5000 ms   (anything 5s+ old becomes archive-candidate)
+;;   - byte threshold = 10000 B  (segments of ~10 KiB qualify)
+;;   - retention cap = 5         (keep at most 5 cold segments)
+(define (default-config)
+  (list (cons 'archive-age-ms   5000)
+        (cons 'archive-bytes    10000)
+        (cons 'retain-max       5)))
+
+;; config-archive-age-ms : config -> integer-ms
+;; Accessor for the age threshold. Returns 0 if the key is missing so a
+;; half-built config can't crash a sweep pass with a type error.
+(define (config-archive-age-ms cfg)
+  (let ((p (assq 'archive-age-ms cfg)))
+    (if (pair? p) (cdr p) 0)))
+
+;; config-archive-bytes : config -> integer-bytes
+;; Accessor for the per-segment byte threshold.
+(define (config-archive-bytes cfg)
+  (let ((p (assq 'archive-bytes cfg)))
+    (if (pair? p) (cdr p) 0)))
+
+;; config-retain-max : config -> integer
+;; Accessor for the cold-tier retention cap. Negative values are clamped
+;; to 0 so downstream passes don't loop forever.
+(define (config-retain-max cfg)
+  (let ((p (assq 'retain-max cfg)))
+    (if (pair? p)
+        (let ((n (cdr p)))
+          (if (and (number? n) (< n 0)) 0 n))
+        0)))

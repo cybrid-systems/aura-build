@@ -1,0 +1,104 @@
+;; counts.aura — Small numeric / list helpers used by the scenario layer.
+;;
+;; These utilities operate on flat lists (typically token lists, AST
+;; children, or event sequences) and compute counts, sums, predicate
+;; sweeps, and tree-depth measurements. They are deliberately
+;; dependency-free so they can be used from any module.
+;;
+;; Exposes:
+;;   (count-by-kind tokens kinds)
+;;       -> counts how many items in `tokens` match any of the kinds in
+;;          `kinds`. Each token is expected to expose its kind via
+;;          `token-kind` (from json-lex.aura), but the helper works on
+;;          any list of pairs where the `car` is a kind tag.
+;;          Returns a non-negative integer.
+;;
+;;   (sum lst)
+;;       -> returns the sum of all numbers in `lst`. Non-numeric
+;;          elements are skipped (they contribute 0). Returns 0 for '().
+;;
+;;   (every? p lst)
+;;       -> returns #t if (p x) is true for every x in `lst`, #f
+;;          otherwise. Returns #t on '().
+;;
+;;   (max-depth nodes)
+;;       -> given a list of AST nodes (as built by json-ast.aura),
+;;          returns the maximum nesting depth found anywhere in the
+;;          forest. A leaf-only list has depth 0; an object containing
+;;          a single nested object has depth 1, etc.
+
+;; ---------------------------------------------------------------------------
+;; count-by-kind: walk a token-like list and tally matches against kinds.
+;; ---------------------------------------------------------------------------
+(define (count-by-kind tokens kinds)
+  (letrec
+      ((matches? (lambda (k)
+                  (let loop ((ks kinds))
+                    (cond ((null? ks) #f)
+                          ((equal? k (car ks)) #t)
+                          (else (loop (cdr ks)))))))
+       (step (lambda (ts)
+               (cond ((null? ts) 0)
+                     ((matches? (car (car ts)))
+                      (+ 1 (step (cdr ts))))
+                     (else (step (cdr ts)))))))
+    (step tokens)))
+
+;; ---------------------------------------------------------------------------
+;; sum: add up every number in lst.
+;; ---------------------------------------------------------------------------
+(define (sum lst)
+  (cond ((null? lst) 0)
+        ((number? (car lst))
+         (+ (car lst) (sum (cdr lst))))
+        (else (sum (cdr lst)))))
+
+;; ---------------------------------------------------------------------------
+;; every?: universal quantifier over a list.
+;; ---------------------------------------------------------------------------
+(define (every? p lst)
+  (cond ((null? lst) #t)
+        ((p (car lst)) (every? p (cdr lst)))
+        (else #f)))
+
+;; ---------------------------------------------------------------------------
+;; max-depth: deepest nesting anywhere in a forest of AST nodes.
+;;
+;; Each node is expected to behave as an alist with at least:
+;;   (kind . k)
+;;   (children . cs)
+;;   (value . v)
+;; as produced by json-ast.aura.
+;;
+;; Depth of a leaf (no useful children) is 0. Depth of a container is
+;; 1 + the max depth of its children. For an object, children are
+;; (key-node . value-node) pairs; we descend into the cdr (the value).
+;; ---------------------------------------------------------------------------
+(define (max-depth nodes)
+  (letrec
+      ((node-kind  (lambda (n) (cdr (assq 'kind n))))
+       (node-kids  (lambda (n) (cdr (assq 'children n))))
+       (value-node?
+                    (lambda (k) (member k '(string number true false null))))
+       (object-values
+                    (lambda (pairs)
+                      (cond ((null? pairs) '())
+                            (else (cons (cdr (car pairs))
+                                        (object-values (cdr pairs)))))))
+       (child-depths
+                    (lambda (n)
+                      (let ((k (node-kind n)))
+                        (cond
+                          ((value-node? k) '())
+                          ((eq? k 'array)  (node-kids n))
+                          ((eq? k 'object) (object-values (node-kids n)))
+                          (else '())))))
+       (depth-of
+                    (lambda (n)
+                      (let ((kids (child-depths n)))
+                        (cond
+                          ((null? kids) 0)
+                          (else (+ 1 (max-depth kids))))))))
+    (cond ((null? nodes) 0)
+          (else (max (depth-of (car nodes))
+                     (max-depth (cdr nodes)))))))

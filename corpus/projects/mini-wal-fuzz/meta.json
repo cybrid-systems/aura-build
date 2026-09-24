@@ -1,0 +1,454 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "src_dir": "src",
+      "temperature": 0.35,
+      "ts": "2026-09-24T15:02:01Z",
+      "ts_local": "2026-09-24 23:02:01 CST",
+      "usage": {
+        "prompt_tokens": 27076,
+        "completion_tokens": 13028,
+        "total_tokens": 40104
+      },
+      "files": [
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 2047,
+            "total_characters": 0,
+            "prompt_tokens": 1545,
+            "completion_tokens": 502,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "wal_types.aura",
+          "temperature": 0.35,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 2972,
+            "total_characters": 0,
+            "prompt_tokens": 1800,
+            "completion_tokens": 1172,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "wal_crc.aura",
+          "temperature": 0.35,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 3084,
+            "total_characters": 0,
+            "prompt_tokens": 2068,
+            "completion_tokens": 1016,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "wal_segment.aura",
+          "temperature": 0.35,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 3446,
+            "total_characters": 0,
+            "prompt_tokens": 2258,
+            "completion_tokens": 1188,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "wal_log.aura",
+          "temperature": 0.35,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 4453,
+            "total_characters": 0,
+            "prompt_tokens": 2479,
+            "completion_tokens": 1974,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "wal_recover.aura",
+          "temperature": 0.35,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 3966,
+            "total_characters": 0,
+            "prompt_tokens": 2689,
+            "completion_tokens": 1277,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "wal_invariants.aura",
+          "temperature": 0.35,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 3456,
+            "total_characters": 0,
+            "prompt_tokens": 2885,
+            "completion_tokens": 571,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "fuzz_rng.aura",
+          "temperature": 0.35,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 3892,
+            "total_characters": 0,
+            "prompt_tokens": 2877,
+            "completion_tokens": 1015,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "fuzz_schedule.aura",
+          "temperature": 0.35,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 5261,
+            "total_characters": 0,
+            "prompt_tokens": 2825,
+            "completion_tokens": 2436,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 384
+            }
+          },
+          "error": "",
+          "file": "harness.aura",
+          "temperature": 0.35,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 3300,
+            "total_characters": 0,
+            "prompt_tokens": 2825,
+            "completion_tokens": 475,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "report.aura",
+          "temperature": 0.35,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 4227,
+            "total_characters": 0,
+            "prompt_tokens": 2825,
+            "completion_tokens": 1402,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "main.aura",
+          "temperature": 0.35,
+          "parse_ok": false,
+          "exists": true
+        }
+      ],
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 6.02,
+      "scenarios_passed": 0,
+      "scenarios_total": 12,
+      "stderr_snippet": "warning: unbalanced parentheses in input\nerror: 2:16: parse error: expected expression, got identifier 'xFFFFFFFF'\n   |\n  2 |   (let ((mask #xFFFFFFFF))\n   |                ^^^^^^^^^\nerror: 4:24: unbound variable: odd?\nerror: 3:58: parse error: expected expression, got ')'\n   |\n  3 |          (shifted (modulo (quotient crc 256) #x100000000))\n   |                                                          ^\nerror: 5:55: parse error: expected expression, got ')'\n   |\n  5 |          (result (modulo (",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "src_dir": "src_2",
+      "temperature": 0.75,
+      "ts": "2026-09-24T15:04:01Z",
+      "ts_local": "2026-09-24 23:04:01 CST",
+      "usage": {
+        "prompt_tokens": 26268,
+        "completion_tokens": 12731,
+        "total_tokens": 38999
+      },
+      "files": [
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 2325,
+            "total_characters": 0,
+            "prompt_tokens": 1545,
+            "completion_tokens": 780,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "wal_types.aura",
+          "temperature": 0.75,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 2709,
+            "total_characters": 0,
+            "prompt_tokens": 1755,
+            "completion_tokens": 954,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "wal_crc.aura",
+          "temperature": 0.75,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 2460,
+            "total_characters": 0,
+            "prompt_tokens": 1964,
+            "completion_tokens": 496,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 256
+            }
+          },
+          "error": "",
+          "file": "wal_segment.aura",
+          "temperature": 0.75,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 3881,
+            "total_characters": 0,
+            "prompt_tokens": 2144,
+            "completion_tokens": 1737,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "wal_log.aura",
+          "temperature": 0.75,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 4292,
+            "total_characters": 0,
+            "prompt_tokens": 2371,
+            "completion_tokens": 1921,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "wal_recover.aura",
+          "temperature": 0.75,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 4189,
+            "total_characters": 0,
+            "prompt_tokens": 2582,
+            "completion_tokens": 1607,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 384
+            }
+          },
+          "error": "",
+          "file": "wal_invariants.aura",
+          "temperature": 0.75,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 3322,
+            "total_characters": 0,
+            "prompt_tokens": 2792,
+            "completion_tokens": 530,
+            "prompt_tokens_details": {
+              "cached_tokens": 491
+            }
+          },
+          "error": "",
+          "file": "fuzz_rng.aura",
+          "temperature": 0.75,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 4164,
+            "total_characters": 0,
+            "prompt_tokens": 2784,
+            "completion_tokens": 1380,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "fuzz_schedule.aura",
+          "temperature": 0.75,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 4489,
+            "total_characters": 0,
+            "prompt_tokens": 2777,
+            "completion_tokens": 1712,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "harness.aura",
+          "temperature": 0.75,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 3401,
+            "total_characters": 0,
+            "prompt_tokens": 2777,
+            "completion_tokens": 624,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 256
+            }
+          },
+          "error": "",
+          "file": "report.aura",
+          "temperature": 0.75,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 3767,
+            "total_characters": 0,
+            "prompt_tokens": 2777,
+            "completion_tokens": 990,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "main.aura",
+          "temperature": 0.75,
+          "parse_ok": false,
+          "exists": true
+        }
+      ],
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.02,
+      "scenarios_passed": 0,
+      "scenarios_total": 12,
+      "stderr_snippet": "error: 169:11: parse error: unexpected ')'\n",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "mini-wal-fuzz",
+  "title": "Crash-safety fuzz harness",
+  "domain": "storage_wal",
+  "files": [
+    "wal_types.aura",
+    "wal_crc.aura",
+    "wal_segment.aura",
+    "wal_log.aura",
+    "wal_recover.aura",
+    "wal_invariants.aura",
+    "fuzz_rng.aura",
+    "fuzz_schedule.aura",
+    "harness.aura",
+    "report.aura",
+    "main.aura"
+  ],
+  "updated_at": "2026-09-24T15:04:01Z",
+  "updated_at_local": "2026-09-24 23:04:01 CST"
+}

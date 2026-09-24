@@ -1,0 +1,98 @@
+;; json-recover.aura — Lenient JSON recovery.
+;;
+;; Given a possibly-malformed JSON source string, attempt to parse the longest
+;; well-formed prefix and report how many leading bytes were consumed, what the
+;; status of the recovery was, and the AST of the recovered prefix (if any).
+;;
+;; Exposes:
+;;   (recover-lenient src)       -> a recovery record (alist-of-4) describing
+;;                                  what we could salvage from src
+;;   (recovery-status r)         -> one of:
+;;                                    'ok          : entire src parsed cleanly
+;;                                    'recovered   : well-formed prefix then trailing garbage
+;;                                    'truncated   : source ended mid-value
+;;                                    'empty       : src had no JSON value
+;;                                    'error       : no valid prefix could be found
+;;   (recovery-bytes-used r)     -> number of bytes of src consumed by the
+;;                                  recovered parse (0 if status is 'error
+;;                                  or 'empty)
+;;   (recovery-ast r)            -> the AST node for the recovered prefix
+;;                                  ('() if status is 'error or 'empty)
+
+(define (recover-lenient src)
+  ;; Try to parse src in one shot. If the parser reports 'error, look at the
+  ;; error position to split src into a candidate prefix and a tail; if the
+  ;; candidate prefix is itself a complete JSON value, accept it and call
+  ;; that 'recovered'. Otherwise keep trimming the tail until either we get
+  ;; a clean parse (and are left with trailing bytes => 'recovered) or we
+  ;; exhaust the input without finding any valid prefix ('error / 'empty).
+  (cond
+    ((null? src)
+     (list (cons 'status 'empty)
+           (cons 'bytes-used 0)
+           (cons 'ast '())
+           (cons 'tail '())))
+    ((or (string=? src "") (string=? src " "))
+     (list (cons 'status 'empty)
+           (cons 'bytes-used 0)
+           (cons 'ast '())
+           (cons 'tail src)))
+    (else
+     (let ((first (parse-json src)))
+       (cond
+         ((not (and (list? first) (equal? (ast-kind first) 'error)))
+          ;; Whole string parsed cleanly.
+          (list (cons 'status 'ok)
+                (cons 'bytes-used (string-length src))
+                (cons 'ast first)
+                (cons 'tail "")))
+         (else
+          ;; Parse failed. Find the byte offset of the failure.
+          (let ((err (ast-value first))
+                (len (string-length src))
+                (best-status 'error)
+                (best-bytes 0)
+                (best-ast '()))
+            ;; Try prefixes of decreasing length, hoping that a shorter prefix
+            ;; parses cleanly and that whatever remains is "trailing garbage".
+            (let loop ((n len) (status 'error) (bytes 0) (ast '()))
+              (cond
+                ((= n 0)
+                 ;; Out of prefixes to try.
+                 (list (cons 'status best-status)
+                       (cons 'bytes-used best-bytes)
+                       (cons 'ast best-ast)
+                       (cons 'tail src)))
+                (else
+                 (let ((prefix (substring src 0 n)))
+                   (let ((trial (parse-json prefix)))
+                     (cond
+                       ((and (list? trial)
+                             (not (equal? (ast-kind trial) 'error)))
+                        ;; prefix parses cleanly.
+                        (let ((remaining
+                               (if (< n len) (substring src n len) "")))
+                          (list (cons 'status 'recovered)
+                                (cons 'bytes-used (string-length prefix))
+                                (cons 'ast trial)
+                                (cons 'tail remaining))))
+                       ((= n 1)
+                        ;; Single-character prefix didn't parse either.
+                        (list (cons 'status best-status)
+                              (cons 'bytes-used best-bytes)
+                              (cons 'ast best-ast)
+                              (cons 'tail src)))
+                       (else
+                        (loop (- n 1) status bytes ast))))))))))))))))
+
+(define (recovery-status r)
+  (let ((p (assq r 'status)))
+    (if p (cdr p) 'error)))
+
+(define (recovery-bytes-used r)
+  (let ((p (assq r 'bytes-used)))
+    (if p (cdr p) 0)))
+
+(define (recovery-ast r)
+  (let ((p (assq r 'ast)))
+    (if p (cdr p) '())))

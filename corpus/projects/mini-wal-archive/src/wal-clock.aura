@@ -1,0 +1,23 @@
+;; wal-clock.aura — monotonic virtual clock for the WAL archiver
+;;
+;; The archiver doesn't read the real wall clock. Instead we maintain a single
+;; monotonically increasing integer "now" (in milliseconds) that all other
+;; modules consult via (current-ms). Time only moves forward via advance-ms!,
+;; which lets tests/scenarios pin segments at exact ages.
+
+;; Internal storage for the current time. A single mutable cell implemented
+;; as a one-element list so we can use set! on its car.
+(define *clock-state* (list 0))
+
+;; current-ms : -> integer-ms
+;; Return the present virtual time in milliseconds.
+(define (current-ms)
+  (car *clock-state*))
+
+;; advance-ms! : delta-ms -> new-now-ms
+;; Move the clock forward by delta-ms (must be a non-negative integer).
+;; Returns the new "now" value so callers can chain or assert.
+(define (advance-ms! delta)
+  (let ((d (if (number? delta) delta 0)))
+    (set! *clock-state* (list (+ (car *clock-state*) d)))
+    (car *clock-state*)))

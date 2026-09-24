@@ -1,0 +1,42 @@
+;; Key codec for the mini-btree index.
+;; Keys are plain strings. Encoding is a no-op identity transform;
+;; prefix compression stores only the shared length + tail so that
+;; (prefix-restore prev cur) reproduces the original key exactly.
+
+;; (encode-key s) -> encoded form (here, the string itself)
+(define (encode-key s) s)
+
+;; (decode-key s) -> string key
+(define (decode-key s) s)
+
+;; (prefix-compress prev cur)
+;;   prev : previous (decoded) string key, or '() if none
+;;   cur  : current  (decoded) string key
+;;   -> (shared . tail) where shared is the count of leading bytes
+;;      shared with prev and tail is the remaining suffix of cur.
+(define (prefix-compress prev cur)
+  (define (shared-len a b)
+    (define (loop i la lb)
+      (cond
+        ((or (>= i la) (>= i lb))
+         (if (and (< i la) (< i lb)
+                  (char=? (string-ref a i) (string-ref b i)))
+             (+ i 1)
+             i))
+        ((char=? (string-ref a i) (string-ref b i))
+         (loop (+ i 1) la lb))
+        (else i)))
+    (loop 0 (string-length a) (string-length b)))
+  (let ((n (if (null? prev) 0 (shared-len prev cur))))
+    (cons n (substring cur n (string-length cur)))))
+
+;; (prefix-restore prev cur)
+;;   prev : previous decoded string key, or '()
+;;   cur  : encoded form as produced by prefix-compress, i.e. (shared . tail)
+;;   -> reconstructed original string key
+(define (prefix-restore prev cur)
+  (let ((shared (car cur))
+        (tail   (cdr cur)))
+    (if (= shared 0)
+        tail
+        (string-append (substring prev 0 shared) tail))))

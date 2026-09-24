@@ -1,0 +1,56 @@
+;; wal_shipper.aura — Shipper state machine
+;;
+;; The shipper is the high-level driver on the primary side. It owns:
+;;   - 'state       : 'attached | 'detached | 'handshaking
+;;   - 'primary-id  : identifier for this primary
+;;   - 'follower-id : identifier for the peer (or #f while detached)
+;;   - 'high-water  : LSN high-water-mark (max LSN acknowledged by peer)
+;;   - 'stats       : alist of counters for shipped/retry/dropped/etc.
+;;   - 'catchup-ms  : ms spent in catch-up (recorded by main)
+;;
+;; API:
+;;   (ship-tick!)            -> drive one step of the state machine
+;;   (ship-stats)            -> return the stats alist
+;;   (ship-reconnect!)       -> detach and immediately re-handshake
+;;
+;; The shipper itself does not produce or frame pages — that is the
+;; job of wal_segment.aura / wal_frame.aura / wal_buffer.aura. It
+;; simply orchestrates: handshake -> ship -> recv ack -> track stats.
+
+(define (api ship-tick!)
+  ;; Single step of the shipper state machine. Pure: takes no args,
+  ;; reads/writes module-local state only.
+  (let ((s *ship-state*))
+    (cond
+      ((equal? (cdr (assq 'state s)) 'detached)
+       ;; No peer to talk to; tick is a no-op.
+       'detached)
+      ((equal? (cdr (assq 'state s)) 'handshaking)
+       ;; The handshake is performed by wal_proto on demand; once
+       ;; invoked we transition into the 'attached steady state.
+       (set-cdr! (assq 'state s) 'attached)
+       'attached)
+      ((equal? (cdr (assq 'state s)) 'attached)
+       ;; Steady state: a tick currently does nothing extra. Page
+       ;; production happens from main, and draining / acking is
+       ;; handled by wal_follower.aura. We just signal readiness.
+       'attached)
+      (else 'unknown))))
+
+(define (api ship-stats)
+  ;; Return the live stats alist (shared structure; callers may read
+  ;; but must not mutate it directly).
+  (cdr (assq 'stats *ship-state*)))
+
+(define (api ship-reconnect!)
+  ;; Force a reconnect: detach, then immediately schedule a fresh
+  ;; handshake on the next tick. We bump the reconnects counter and
+  ;; leave other state alone.
+  (let ((s *ship-state*)
+        (stats (cdr (assq 'stats *ship-state*))))
+    (set-cdr! (assq 'state s) 'handshaking)
+    (set-cdr! (assq 'follower-id s) #f)
+    (set-cdr! (assq 'reconnects stats)
+              (+ (cdr (assq 'reconnects stats)) 1))
+    (set-cdr! (assq 'state s) 'handshaking)
+    'reconnected))

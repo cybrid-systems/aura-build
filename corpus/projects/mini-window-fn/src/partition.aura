@@ -1,0 +1,44 @@
+;; partition.aura — Group a relation's rows by a single key column.
+;;
+;; A partition value is the cons-pair (key . rows) where `rows` is a list of
+;; rows that share that key value. The set of partitions is a list of these
+;; pairs, in first-seen insertion order (so the order is deterministic for a
+;; given row order, which is what sort-mode and streaming-mode rely on).
+
+(define (api wf-partition rel key-col)
+  ;; Split the rows of `rel` into a list of (key . rows) pairs, keyed by the
+  ;; value of `key-col` in each row. We bucket rows by walking `rows` once
+  ;; and consing the row onto the head of its bucket's row-list (then reverse
+  ;; at the end so each bucket preserves the original row order).
+  (let* ((cols   (car rel))
+         (rows   (cdr rel))
+         (acc    '())    ;; alist (key . rows-so-far), in insertion order
+         (loop   (lambda (rs acc)
+                   (if (null? rs)
+                       acc
+                       (let* ((row (car rs))
+                              (k   (api wf-col row key-col cols))
+                              (hit (assq k acc)))
+                         (loop (cdr rs)
+                               (if hit
+                                   (let ((pair hit)
+                                         (rest (delq hit acc)))
+                                     (cons (cons k (cons row (cdr pair)))
+                                           (if (null? rest) '() rest)))
+                                   (cons (cons k (list row)) acc)))))))
+         ;; Reverse each bucket so rows appear in original order.
+         (flip   (lambda (alist)
+                   (if (null? alist)
+                       '()
+                       (cons (cons (car (car alist))
+                                   (reverse (cdr (car alist))))
+                             (flip (cdr alist)))))))
+    (flip (loop rows acc))))
+
+(define (api wf-part-rows part)
+  ;; Return the row-list associated with a partition pair.
+  (cdr part))
+
+(define (api wf-part-key part)
+  ;; Return the key value of a partition pair.
+  (car part))

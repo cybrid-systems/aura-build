@@ -1,0 +1,51 @@
+;; fuzz_rng.aura
+;; Deterministic seeded random-number generator and helpers used by the
+;; fuzz schedule. Keeping the RNG pure-functional and reproducible means
+;; the entire crash schedule can be re-run from a single seed value,
+;; which is essential for making fuzz failures reproducible.
+;;
+;; The generator is a linear congruential generator (LCG) using the
+;; parameters from the glibc `rand()` family, modulo 2^31:
+;;    state_{n+1} = (state_n * 1103515245 + 12345) mod 2^31
+;; This is plenty random for picking crash points, cut-points, and
+;; payload lengths, and it has the nice property that the state itself
+;; is always a non-negative integer < 2^31.
+
+;; ---- Internal helpers (not exported) -----------------------------------
+
+;; The mutable RNG state. Always a non-negative integer < 2^31.
+;; Initially set to a fixed seed so the very first run is deterministic.
+(define rng-state 20260524)
+
+;; 2^31, the modulus of the LCG.
+(define rng-modsq 2147483648)
+
+;; Step the LCG forward by one tick. Returns the new state.
+(define (rng-step)
+  (let ((next (+ (* rng-state 1103515245) 12345)))
+    (let ((m (modulo next rng-modsq)))
+      (set! rng-state m)
+      m)))
+
+;; ---- API ---------------------------------------------------------------
+
+;; Reset the RNG to a deterministic seed. Calling this with the same
+;; seed produces the same sequence of values from `rng-next`.
+(define (api rng-seed! s)
+  (let ((m (modulo (if (number? s) s 0) rng-modsq)))
+    (set! rng-state (if (< m 0) (+ m rng-modsq) m))
+    rng-state))
+
+;; Draw the next pseudo-random integer from the stream. The result is
+;; a non-negative integer < 2^31.
+(define (api rng-next)
+  (rng-step))
+
+;; Draw a uniformly-distributed integer in the inclusive range [lo, hi].
+;; If hi <= lo, lo is returned. The draw is taken from the upper 31 bits
+;; of the RNG state to avoid bias from the small modulus.
+(define (api rng-between lo hi)
+  (if (>= lo hi)
+      lo
+      (let ((span (+ (- hi lo) 1)))
+        (+ lo (modulo (rng-step) span)))))

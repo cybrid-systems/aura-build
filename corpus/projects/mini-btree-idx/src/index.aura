@@ -1,0 +1,98 @@
+; index.aura — top-level index facade
+;
+; This module ties together the B-tree, metrics, and event log into a
+; single "index" abstraction that main.aura can drive without knowing
+; the internal layout.  An index is essentially a triple:
+;
+;     (tree metrics log)
+;
+; where `tree` is the live B-tree from tree.aura, `metrics` is the
+; metrics accumulator from metrics.aura, and `log` is the append-only
+; event log from events.aura.  All write paths flow through this
+; module so that:
+;
+;   * every insert is recorded in the event log,
+;   * every insert updates the metrics (inserts and, when a split
+;     occurs, node creations),
+;   * every insert updates the byte-size metrics from the leaf.
+;
+; Read paths delegate straight to tree.aura / scan.aura / mvcc.aura so
+; that the facade does not duplicate ordering logic.
+
+(define (make-index order)
+  ;; Construct a fresh index with an empty event log, a freshly
+  ;; allocated metrics object, and a brand-new B-tree of the given
+  ;; order (capacity).
+  (list (make-tree order)
+        (metrics-new)
+        (event-log-new)))
+
+(define (index-tree idx)
+  (car idx))
+
+(define (index-metrics idx)
+  (car (cdr idx)))
+
+(define (index-log idx)
+  (car (cdr (cdr idx))))
+
+(define (index-insert! idx k pk v)
+  ;; Insert (k, pk, v) into the live tree, then record the event
+  ;; and update metrics.  We delegate the actual structural work to
+  ;; tree-insert! which returns #t if the insertion caused a split
+  ;; (i.e. a new node was created) and #f otherwise.
+  (let ((tree (index-tree idx)))
+    (let ((split? (tree-insert! tree k pk v)))
+      (event-append (index-log idx) 'insert k pk v)
+      (metrics-on-insert! (index-metrics idx) split?)
+      ;; Update byte-size metrics from the root leaf, if the root is
+      ;; a leaf.  For an internal root we cannot easily reach the
+      ;; leaves from here without walking the tree, so we just record
+      ;; zero deltas in that case (the root has no leaf payload).
+      (let ((root (tree-root tree)))
+        (if (node-is-leaf? root)
+            (let ((bytes (leaf-bytes (node-leaf root))))
+              (metrics-bytes-delta! (index-metrics idx) bytes bytes))
+            (metrics-bytes-delta! (index-metrics idx) 0 0)))
+      idx)))
+
+(define (index-point idx k)
+  (tree-point (index-tree idx) k))
+
+(define (index-range idx lo hi)
+  (tree-range (index-tree idx) lo hi))
+
+(define (index-prefix idx p)
+  (tree-prefix (index-tree idx) p))
+
+(define (index-height idx)
+  (tree-height (index-tree idx)))
+
+(define (index-stats idx)
+  (tree-stats (index-tree idx)))
+
+(define (index-replay idx)
+  ;; Rebuild a brand-new tree from the event log, returning the
+  ;; rebuilt tree.  The original index is left untouched so callers
+  ;; can compare before/after.
+  (event-replay (event-log-new) (index-log idx)))
+
+(define (index-stats-snapshot idx)
+  ;; Convenience helper: return a list
+  ;;   (inserts nodes height)
+  ;; summarizing the index state.  Useful for main.aura.
+  (list (metrics-inserts (index-metrics idx))
+        (metrics-nodes (index-metrics idx))
+        (index-height idx)))
+
+;; ---------------------------------------------------------------------------
+;; Tiny helpers used above
+;; ---------------------------------------------------------------------------
+
+;; node-leaf — extract the leaf payload from a leaf node.  Defined
+;; here rather than in node.aura so that node.aura does not need to
+;; export a leaf-accessor.  A leaf node is a list
+;;   (leaf? capacity leaf)
+;; so the leaf is the third element.
+(define (node-leaf n)
+  (car (cdr (cdr n))))

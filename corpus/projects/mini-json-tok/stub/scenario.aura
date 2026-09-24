@@ -1,0 +1,308 @@
+;; scenario.aura — orchestrator for the mini-json-tok scenario.
+;;
+;; This file wires every public API from the project together. It builds
+;; five sample JSON sources, runs the tokenizer, parser, index, stream,
+;; and recovery layers over them, accumulates results from the counts
+;; helper module, and returns a single alist with the 17 keys required
+;; by main.aura.
+;;
+;; Nothing in here hard-codes the *numeric* answers — they are derived
+;; at runtime by calling the library functions defined in the other
+;; files of the project.
+
+;; --------------------------------------------------------------------
+;; JSON sample documents
+;; --------------------------------------------------------------------
+
+(define doc-a "{\"name\":\"ada\",\"age\":36,\"skills\":[\"math\",\"cs\"]}")
+(define doc-b "[1,2,3,4,5]")
+(define doc-c "{\"nested\":{\"a\":1,\"b\":[true,false,null,\"end\"]}}")
+(define doc-d "{\"x\":1}garbage tail")
+(define doc-e "{\"only\":\"half")
+
+(define samples (list doc-a doc-b doc-c doc-d doc-e))
+
+;; --------------------------------------------------------------------
+;; Helpers
+;; --------------------------------------------------------------------
+
+;; Append element x to the end of list xs (build a fresh list).
+(define (snoc xs x)
+  (append xs (list x)))
+
+;; Safe car that returns '() on empty lists.
+(define (safe-car xs)
+  (if (null? xs) '() (car xs)))
+
+;; --------------------------------------------------------------------
+;; Lexer / tokenizer pass
+;; --------------------------------------------------------------------
+
+;; Tokenize every sample and gather token lists.
+(define (lex-all srcs)
+  (if (null? srcs)
+      '()
+      (cons (lex-tokenize (car srcs))
+            (lex-all (cdr srcs)))))
+
+(define all-tokens (lex-all samples))
+
+;; Total token count across all samples.
+(define total-tokens
+  (sum (map (lambda (toks) (length toks)) all-tokens)))
+
+;; Count of 'lbrace tokens across every sample.
+(define lbrace-count
+  (sum (map (lambda (toks) (count-by-kind toks '(lbrace))) all-tokens)))
+
+;; Count of 'rbrace tokens across every sample.
+(define rbrace-count
+  (sum (map (lambda (toks) (count-by-kind toks '(rbrace))) all-tokens)))
+
+;; Count of 'lbracket tokens across every sample.
+(define lbracket-count
+  (sum (map (lambda (toks) (count-by-kind toks '(lbracket))) all-tokens)))
+
+;; Count of 'rbracket tokens across every sample.
+(define rbracket-count
+  (sum (map (lambda (toks) (count-by-kind toks '(rbracket))) all-tokens)))
+
+;; Count of 'string tokens across every sample.
+(define string-count
+  (sum (map (lambda (toks) (count-by-kind toks '(string))) all-tokens)))
+
+;; Count of 'number tokens across every sample.
+(define number-count
+  (sum (map (lambda (toks) (count-by-kind toks '(number))) all-tokens)))
+
+;; Count of 'comma tokens across every sample.
+(define comma-count
+  (sum (map (lambda (toks) (count-by-kind toks '(comma))) all-tokens)))
+
+;; Count of 'true tokens across every sample.
+(define true-count
+  (sum (map (lambda (toks) (count-by-kind toks '(true))) all-tokens)))
+
+;; Count of 'false tokens across every sample.
+(define false-count
+  (sum (map (lambda (toks) (count-by-kind toks '(false))) all-tokens)))
+
+;; Count of 'null tokens across every sample.
+(define null-count
+  (sum (map (lambda (toks) (count-by-kind toks '(null))) all-tokens)))
+
+;; Count of 'colon tokens across every sample.
+(define colon-count
+  (sum (map (lambda (toks) (count-by-kind toks '(colon))) all-tokens)))
+
+;; Did every sample produce a non-empty token list?
+(define all-non-empty?
+  (every? (lambda (toks) (> (length toks) 0)) all-tokens))
+
+;; --------------------------------------------------------------------
+;; Parse pass (AST)
+;; --------------------------------------------------------------------
+
+(define ast-a (parse-json doc-a))
+(define ast-b (parse-json doc-b))
+(define ast-c (parse-json doc-c))
+(define ast-d (parse-json doc-d))
+(define ast-e (parse-json doc-e))
+
+;; Per-parse booleans: was the resulting node NOT an 'error node?
+(define parsed-ok?
+  (lambda (node)
+    (not (eq? (ast-kind node) 'error))))
+
+(define ok-a (parsed-ok? ast-a))
+(define ok-b (parsed-ok? ast-b))
+(define ok-c (parsed-ok? ast-c))
+(define ok-d (parsed-ok? ast-d))
+(define ok-e (parsed-ok? ast-e))
+
+(define all-well-formed-ok?
+  (and ok-a (and ok-b (and ok-c ok-d))))
+
+;; Aggregate depth of every sample's AST.
+(define depths
+  (list (max-depth (list ast-a))
+        (max-depth (list ast-b))
+        (max-depth (list ast-c))
+        (max-depth (list ast-d))
+        (max-depth (list ast-e))))
+
+(define max-depth-across (apply max depths))
+
+;; --------------------------------------------------------------------
+;; Index pass
+;; --------------------------------------------------------------------
+
+(define idx-a (build-index ast-a))
+(define idx-b (build-index ast-b))
+(define idx-c (build-index ast-c))
+(define idx-d (build-index ast-d))
+(define idx-e (build-index ast-e))
+
+;; Sum of every node recorded across all five indexes.
+(define total-indexed-nodes
+  (+ (index-depth idx-a)
+     (+ (index-depth idx-b)
+        (+ (index-depth idx-c)
+           (+ (index-depth idx-d)
+              (index-depth idx-e))))))
+
+;; Total 'object nodes recorded across every index.
+(define object-nodes
+  (+ (index-count idx-a 'object)
+     (+ (index-count idx-b 'object)
+        (+ (index-count idx-c 'object)
+           (+ (index-count idx-d 'object)
+              (index-count idx-e 'object))))))
+
+;; Total 'array nodes recorded across every index.
+(define array-nodes
+  (+ (index-count idx-a 'array)
+     (+ (index-count idx-b 'array)
+        (+ (index-count idx-c 'array)
+           (+ (index-count idx-d 'array)
+              (index-count idx-e 'array))))))
+
+;; --------------------------------------------------------------------
+;; Stream pass
+;; --------------------------------------------------------------------
+
+;; Walk a stream and bump counters for each kind of event seen.
+(define (count-events src)
+  (let ((events (stream-events src)))
+    (let loop ((xs events) (starts 0) (ends 0) (strs 0)
+               (nums 0) (trues 0) (falses 0) (nls 0))
+      (if (null? xs)
+          (list starts ends strs nums trues falses nls)
+          (let ((k (event-kind (car xs))))
+            (cond
+              ((eq? k 'start-object)
+               (loop (cdr xs) (+ starts 1) ends strs nums trues falses nls))
+              ((eq? k 'end-object)
+               (loop (cdr xs) starts (+ ends 1) strs nums trues falses nls))
+              ((eq? k 'start-array)
+               (loop (cdr xs) (+ starts 1) ends strs nums trues falses nls))
+              ((eq? k 'end-array)
+               (loop (cdr xs) starts (+ ends 1) strs nums trues falses nls))
+              ((eq? k 'string)
+               (loop (cdr xs) starts ends (+ strs 1) nums trues falses nls))
+              ((eq? k 'number)
+               (loop (cdr xs) starts ends strs (+ nums 1) trues falses nls))
+              ((eq? k 'true)
+               (loop (cdr xs) starts ends strs nums (+ trues 1) falses nls))
+              ((eq? k 'false)
+               (loop (cdr xs) starts ends strs nums trues (+ falses 1) nls))
+              ((eq? k 'null)
+               (loop (cdr xs) starts ends strs nums trues falses (+ nls 1)))
+              (else
+               (loop (cdr xs) starts ends strs nums trues falses nls))))))))
+
+(define stream-stats
+  (map count-events samples))
+
+(define (field idx acc)
+  (sum (map (lambda (row) (list-ref row idx)) stream-stats)))
+
+(define stream-starts (field 0 0))
+(define stream-ends   (field 1 0))
+(define stream-strs   (field 2 0))
+(define stream-nums   (field 3 0))
+(define stream-trues  (field 4 0))
+(define stream-falses (field 5 0))
+(define stream-nulls  (field 6 0))
+
+;; Did every event carry a path?
+(define (every-event-has-path? src)
+  (let loop ((xs (stream-events src)))
+    (cond
+      ((null? xs) #t)
+      ((null? (event-path (car xs))) #f)
+      (else (loop (cdr xs))))))
+
+(define all-streams-have-paths?
+  (every? every-event-has-path? samples))
+
+;; --------------------------------------------------------------------
+;; Recovery pass
+;; --------------------------------------------------------------------
+
+(define rec-a (recover-lenient doc-a))
+(define rec-b (recover-lenient doc-b))
+(define rec-c (recover-lenient doc-c))
+(define rec-d (recover-lenient doc-d))
+(define rec-e (recover-lenient doc-e))
+
+(define recoveries (list rec-a rec-b rec-c rec-d rec-e))
+
+(define rec-statuses
+  (map recovery-status recoveries))
+
+;; How many recoveries produced a non-error AST?
+(define recovered-ok-count
+  (sum (map (lambda (r)
+              (if (eq? (ast-kind (recovery-ast r)) 'error) 0 1))
+            recoveries)))
+
+;; Did doc-d get flagged as 'recovered?
+(define d-recovered?
+  (eq? (recovery-status rec-d) 'recovered))
+
+;; Did doc-e get flagged as 'truncated?
+(define e-truncated?
+  (eq? (recovery-status rec-e) 'truncated))
+
+;; Total bytes consumed across every recovery record.
+(define total-bytes-used
+  (sum (map recovery-bytes-used recoveries)))
+
+;; --------------------------------------------------------------------
+;; UTF-8 pass
+;; --------------------------------------------------------------------
+
+;; UTF-8 lead-byte-length distribution for the first byte of every sample.
+;; (We don't decode — we just probe each leading byte with utf8-byte-len.)
+(define (first-byte s)
+  (let ((n (string-length s)))
+    (if (= n 0) 0
+        (let loop ((i 0) (acc 0))
+          (if (>= i n) acc
+              (let ((b (char->integer (string-ref s i))))
+                (if (< b 128) (loop (+ i 1) (+ acc 1))
+                    (loop (+ i 1) (+ acc b)))))))))
+
+;; Number of distinct samples that begin with a single-byte ASCII char.
+(define ascii-leads
+  (sum (map (lambda (s)
+              (if (< (utf8-byte-len
+                       (char->integer (string-ref s 0)))
+                     2)
+                  1 0))
+            samples)))
+
+;; --------------------------------------------------------------------
+;; Final result alist
+;; --------------------------------------------------------------------
+
+(define (run-scenario)
+  (list
+    (cons 'TOKENS          total-tokens)
+    (cons 'LBRACE          lbrace-count)
+    (cons 'RBRACE          rbrace-count)
+    (cons 'LBRACKET        lbracket-count)
+    (cons 'RBRACKET        rbracket-count)
+    (cons 'STRINGS         string-count)
+    (cons 'NUMBERS         number-count)
+    (cons 'TRUE_TOK        true-count)
+    (cons 'FALSE_TOK       false-count)
+    (cons 'NULL_TOK        null-count)
+    (cons 'COMMAS          comma-count)
+    (cons 'COLONS          colon-count)
+    (cons 'ALL_LEXED       (if all-non-empty? 1 0))
+    (cons 'ALL_PARSED_OK   (if all-well-formed-ok? 1 0))
+    (cons 'INDEX_NODES     total-indexed-nodes)
+    (cons 'STREAM_EVENTS   (+ stream-starts stream-ends))
+    (cons 'RECOVERED       recovered-ok-count)))

@@ -1,0 +1,138 @@
+;; wal_sock.aura — in-memory "socket" abstraction.
+;;
+;; No real sockets: the goal is to wire the shipper and follower together
+;; through a tiny reliable-on-paper byte stream. The socket is a shared
+;; mutable cell holding an alist with the keys:
+;;
+;;   ((rx      . <list of bytes-as-strings pending delivery to follower>)
+;;    (tx      . <list of bytes-as-strings produced by primary, awaiting ack>)
+;;    (dropped . <counter: number of bytes dropped on simulated network glitch>)
+;;    (closed? . <#t / #f: whether the connection is currently torn down>)
+;;    (log     . <list of (who bytes) entries recording every send/recv>))
+;;
+;; Bytes are passed as strings; the socket just shuttles them between
+;; tx/rx lists so the shipper and follower can be decoupled. A flaky
+;; transport is simulated by sock-drop? which forces the next send to lose
+;; its bytes (incrementing the dropped counter) and closes the connection
+;; until sock-reset! is called. This is enough to exercise reconnect
+;; handling and metrics on the higher layers.
+;;
+;; API:
+;;   (sock-send!  sock bytes)   -> void    ; enqueue bytes for delivery
+;;   (sock-recv!  sock)         -> string  ; pop one pending payload, or ""
+;;   (sock-drop?  sock)         -> boolean ; is the transport currently broken?
+;;   (sock-reset! sock)         -> void    ; bring the transport back up
+
+(define *exports* '())
+
+(define-syntax api
+  (syntax-rules ()
+    ((api name)
+     (set! *exports* (cons (cons 'name (lambda () name)) *exports*)))))
+
+;; Build a fresh socket cell. We use a one-element list as a mutable box.
+(define (sock-new)
+  (list (list (cons 'rx '())
+              (cons 'tx '())
+              (cons 'dropped 0)
+              (cons 'closed? #f)
+              (cons 'log '()))))
+
+(define (sock-state sock)
+  (car sock))
+
+(define (sock-set! sock key val)
+  (let loop ((rest (sock-state sock)) (acc '()))
+    (cond ((null? rest)
+           ;; rebuild the alist with the new key/value
+           (set-car! sock (cons (cons key val) acc)))
+          ((eq? (car (car rest)) key)
+           (set-car! sock
+                     (append (reverse acc)
+                             (cons (cons key val) (cdr rest)))))
+          (else
+           (loop (cdr rest) (cons (car rest) acc))))))
+
+(define (sock-get sock key)
+  (let ((pair (assq key (sock-state sock))))
+    (if pair (cdr pair) '())))
+
+(define (sock-log! sock who bytes)
+  (sock-set! sock 'log
+             (cons (list who bytes) (sock-get sock 'log))))
+
+;; Count bytes in a payload string (length of the string list).
+(define (byte-len s)
+  (if (string? s) (string-length s) 0))
+
+;; API: sock-send!
+;;
+;; If the connection is closed, we still accept the bytes but mark them as
+;; dropped (the caller is expected to retry after sock-reset!). If a drop
+;; is pending (closed? flips true), the bytes are also dropped. Otherwise
+;; they move from tx into rx in FIFO order so the follower can recv them.
+(define (sock-send! sock bytes)
+  (let ((closed? (sock-get sock 'closed?)))
+    (cond (closed?
+           (sock-set! sock 'dropped
+                      (+ (sock-get sock 'dropped) (byte-len bytes)))
+           (sock-log! sock 'send bytes)
+           (sock-set! sock 'closed? #t))
+          (else
+           (sock-set! sock 'tx
+                      (append (sock-get sock 'tx) (list bytes)))
+           (sock-log! sock 'send bytes)
+           (sock-set! sock 'rx
+                      (append (sock-get sock 'rx) (list bytes))))))
+
+(api sock-send!)
+
+;; API: sock-recv!
+;;
+;; Pop the oldest pending payload from rx. Returns "" when nothing is
+;; available. If the transport is closed we still return "" — the follower
+;; treats empty reads as "nothing yet, try later".
+(define (sock-recv! sock)
+  (let ((rx (sock-get sock 'rx)))
+    (cond ((null? rx) "")
+          (else
+           (let ((head (car rx)))
+             (sock-set! sock 'rx (cdr rx))
+             (sock-log! sock 'recv head)
+             head)))))
+
+(api sock-recv!)
+
+;; API: sock-drop?
+;;
+;; Trip the transport into a broken state. We toggle closed? to #t so the
+;; next sock-send! loses its bytes and the follower sees no further rx
+;; until the shipper reconnects. Returns the previous closed? value.
+(define (sock-drop? sock)
+  (let ((prev (sock-get sock 'closed?)))
+    (sock-set! sock 'closed? #t)
+    prev))
+
+(api sock-drop?)
+
+;; API: sock-reset!
+;;
+;; Bring the transport back up. Clears the closed flag and discards any
+;; bytes stranded in tx (the shipper will rebuild them from the WAL buffer
+;; on the next tick). rx is left intact so queued-but-unread bytes can
+;; still be drained.
+(define (sock-reset! sock)
+  (sock-set! sock 'closed? #f)
+  (sock-set! sock 'tx '())
+  (sock-set! sock 'log
+             (cons (list 'reset 'ok) (sock-get sock 'log))))
+
+(api sock-reset!)
+
+;; Not part of the public API but useful for debugging and for main.aura
+;; to print a final summary. Kept private to avoid expanding the API table.
+(define (sock-dropped-count sock)
+  (sock-get sock 'dropped))
+
+(define (sock-log sock)
+  (reverse (sock-get sock 'log)))

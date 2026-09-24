@@ -1,0 +1,98 @@
+;; wal_crc.aura — deterministic hex CRC tag over byte strings.
+;; Wal frames carry a CRC tag computed over their payload. The shipper
+;; appends a CRC to every frame and the follower verifies it on receive.
+;;
+;; We avoid any real CRC polynomial: the goal is just a stable, deterministic
+;; hex string derived from the payload bytes so that crc-verify? can compare
+;; the producer and consumer tags.
+;;
+;; API:
+;;   (crc-hex-of bytes)        -> string ; 8 lowercase hex chars
+;;   (crc-verify? hex got-hex) -> boolean
+
+(define *exports* '())
+
+(define-syntax api
+  (syntax-rules ()
+    ((api name)
+     (set! *exports* (cons (cons 'name (lambda () name)) *exports*)))))
+
+;; A tiny Fowler–Noll–Vo style mixer so identical inputs always produce
+;; identical output. Operates on the ASCII byte (0..255) of each character.
+;; We fold a 32-bit accumulator in two halves and emit 8 hex chars.
+(define (crc-step acc b)
+  (let ((x (char->integer b)))
+    ;; Mix the byte into the low half, then propagate carries into the high half.
+    (let ((mix (bitwise-xor acc (* 1099511628211 (modulo (+ x (modulo acc 256)) 256)))))
+      ;; Keep the result within 32 bits using modulo arithmetic.
+      (modulo mix 4294967296))))
+
+;; Aura doesn't expose bitwise-xor as a primitive in this dialect; provide a
+;; pure-Arura version that works on non-negative integers via parity halves.
+(define (my-xor a b)
+  (let loop ((a a) (b b) (acc 0) (bit 1))
+    (cond
+      ((and (= a 0) (= b 0)) acc)
+      (else
+       (let ((ab (modulo a 2))
+             (bb (modulo b 2)))
+         (loop (quotient a 2)
+               (quotient b 2)
+               (+ acc (* bit (modulo (+ ab bb) 2)))
+               (* bit 2)))))))
+
+;; Redefine crc-step in terms of my-xor so we never rely on primitives
+;; that may not exist.
+(define (crc-step acc b)
+  (let ((x (char->integer b)))
+    (let ((low (modulo (+ x (modulo acc 256)) 256)))
+      (let ((mixed (modulo (* 1099511628211 low) 4294967296)))
+        (modulo (my-xor acc mixed) 4294967296)))))
+
+;; Walk the string and fold its bytes into the accumulator.
+(define (crc-fold s)
+  (let loop ((i 0) (acc 2166136261))   ; FNV-1a offset basis
+    (if (>= i (string-length s))
+        acc
+        (loop (+ i 1)
+              (crc-step acc (string-ref s i))))))
+
+;; Lowercase hex digits for output.
+(define *hex-chars* '(#\0 #\1 #\2 #\3 #\4 #\5 #\6 #\7
+                      #\8 #\9 #\a #\b #\c #\d #\e #\f))
+
+(define (nibble->char n)
+  (list-ref *hex-chars* (modulo n 16)))
+
+;; Render an integer as exactly 8 lowercase hex chars (zero-padded).
+(define (u32->hex8 n)
+  (let ((a (modulo (quotient n 16) 16))
+        (b (modulo (quotient (quotient n 16) 16) 16))
+        (c (modulo (quotient (quotient (quotient n 16) 16) 16) 16))
+        (d (modulo (quotient (quotient (quotient (quotient n 16) 16) 16) 16) 16))
+        (e (modulo (quotient (quotient (quotient (quotient (quotient n 16) 16) 16) 16) 16) 16))
+        (f (modulo (quotient (quotient (quotient (quotient (quotient (quotient n 16) 16) 16) 16) 16) 16) 16))
+        (g (modulo (quotient (quotient (quotient (quotient (quotient (quotient (quotient n 16) 16) 16) 16) 16) 16) 16) 16))
+        (h (modulo (quotient (quotient (quotient (quotient (quotient (quotient (quotient (quotient n 16) 16) 16) 16) 16) 16) 16) 16) 16)))
+    (list->string
+      (list (nibble->char h)
+            (nibble->char g)
+            (nibble->char f)
+            (nibble->char e)
+            (nibble->char d)
+            (nibble->char c)
+            (nibble->char b)
+            (nibble->char a)))))
+
+;; Public: deterministic 8-char hex CRC over a payload string.
+(define (crc-hex-of s)
+  (u32->hex8 (crc-fold s)))
+
+;; Public: equality check on two CRC hex strings.
+(define (crc-verify? expected got)
+  (and (string? expected)
+       (string? got)
+       (string=? expected got)))
+
+(api crc-hex-of)
+(api crc-verify?)

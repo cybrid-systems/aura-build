@@ -1,0 +1,55 @@
+;; Metrics counters for the mini-btree index.
+;; A metrics handle is a mutable record of the form:
+;;   (inserts nodes compressed-bytes raw-bytes)
+;; where each field is a non-negative integer. Counters accumulate
+;; monotonically across the lifetime of a tree.
+;;
+;; - inserts          : total successful key insertions
+;; - nodes            : total nodes created (leaves and internals alike)
+;; - compressed-bytes : total bytes accounted for encoded (compressed) keys
+;; - raw-bytes        : total bytes accounted for decoded (uncompressed) keys
+
+(define (make-metrics)
+  (list 0 0 0 0))
+
+(define (m-inserts m) (car m))
+(define (m-nodes m) (cadr m))
+(define (m-comp m) (caddr m))
+(define (m-raw m) (cadddr m))
+
+(define (m-set-inserts! m v) (set-car! m v))
+(define (m-set-nodes! m v) (set-car! (cdr m) v))
+(define (m-set-comp! m v) (set-car! (cddr m) v))
+(define (m-set-raw! m v) (set-car! (cdddr m) v))
+
+;; Public API ----------------------------------------------------------------
+
+;; (metrics-new) -> a fresh metrics handle.
+(define (metrics-new)
+  (make-metrics))
+
+;; (metrics-on-insert! m split?)
+;;   Record a successful insert. If split? is #t, also count a new node
+;;   (the freshly allocated right-hand node that resulted from the split).
+;;   Both leaf and internal splits are tracked uniformly here.
+(define (metrics-on-insert! m split?)
+  (m-set-inserts! m (+ (m-inserts m) 1))
+  (if split?
+      (m-set-nodes! m (+ (m-nodes m) 1))
+      #f))
+
+;; (metrics-nodes m) -> total nodes created so far.
+(define (metrics-nodes m)
+  (m-nodes m))
+
+;; (metrics-inserts m) -> total inserts performed so far.
+(define (metrics-inserts m)
+  (m-inserts m))
+
+;; (metrics-bytes-delta! m comp raw)
+;;   Accumulate byte counts for one (compressed, raw) key pair. Used by
+;;   the tree during insertion to track encoded vs. original key sizes.
+;;   comp and raw must be non-negative integers.
+(define (metrics-bytes-delta! m comp raw)
+  (m-set-comp! m (+ (m-comp m) comp))
+  (m-set-raw! m (+ (m-raw m) raw)))

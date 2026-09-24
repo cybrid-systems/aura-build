@@ -1,0 +1,95 @@
+;; wal-retention.aura — cold-tier retention enforcement for the WAL archiver
+;;
+;; After segments have been promoted to the cold tier, we still need to
+;; keep cold storage from growing without bound. (enforce-retention!) walks
+;; the cold store, sorts its segments by id ascending (oldest first), and
+;; drops everything beyond the configured retain-max cap. Dropped segments
+;; are simply omitted from the cold store's segment list; the audit trail
+;; is recorded via (log-event! 'retention) so callers can observe the pass.
+;;
+;; Design notes:
+;;   - Retention only operates on the COLD tier. The hot tier is meant to
+;;     stay bounded by ingest pacing and the archive sweep; retention on hot
+;;     would erase in-flight data.
+;;   - Segments are ordered by (segment-id s) ascending. We rely on the
+;;     invariant that segment ids are minted monotonically (see
+;;     wal-ingest.aura), so ordering by id is equivalent to ordering by
+;;     ingestion time. No tie-breaker is needed.
+;;   - We rebuild the cold store's segment list by partitioning into
+;;     "kept" (first retain-max) and "dropped" (the rest). store-add! is
+;;     used to re-stamp the kept list so the underlying alist cell is
+;;     updated in place.
+;;
+;; Dependencies (provided by other modules on the same CLI invocation):
+;;   - (segment-id s)               from wal-types.aura
+;;   - (store-all store), (store-add! store segs) from wal-store.aura
+;;   - (config-retain-max cfg)      from wal-config.aura
+;;   - (log-event! sym)             from wal-log.aura
+
+;; retention-policy : cold-store cfg -> policy-alist
+;; Describe the retention policy that would be applied to a cold store
+;; without actually mutating anything. Useful for stats / introspection
+;; that wants to report the cap before enforcement runs.
+;;
+;; Returns an alist with three keys:
+;;   'retain-max  -> the configured cap (integer)
+;;   'cold-size   -> number of segments currently in the cold store
+;;   'would-drop  -> number of segments that WOULD be dropped (>= 0)
+(define (retention-policy cold cfg)
+  (let ((cap (config-retain-max cfg))
+        (sz  (length (store-all cold))))
+    (list (cons 'retain-max cap)
+          (cons 'cold-size sz)
+          (cons 'would-drop (if (> sz cap) (- sz cap) 0)))))
+
+;; enforce-retention! : cold-store cfg -> dropped-count
+;; Enforce the retention cap on the cold store:
+;;   1. Snapshot all segments currently in the cold store.
+;;   2. Sort them by segment-id ascending (oldest first).
+;;   3. Keep the first (config-retain-max cfg) of them; drop the rest.
+;;   4. Re-stamp the cold store with the kept list.
+;;   5. Append 'retention to the event log.
+;;
+;; Returns the number of segments that were dropped (non-negative integer).
+;; When the cold store is at or below the cap this is a no-op that still
+;; logs the sweep (so the audit trail shows retention was considered).
+(define (enforce-retention! cold cfg)
+  (let* ((cap  (config-retain-max cfg))
+         (segs (store-all cold))
+         (n    (length segs))
+         (sorted (sort-by-id-ascending segs))
+         (keep  (take-first sorted cap))
+         (drop  (if (> n cap) (- n cap) 0)))
+    ;; Re-stamp the cold store with the kept list. store-add! overwrites
+    ;; the segment-list cell so downstream (store-all cold) sees the result.
+    (store-add! cold keep)
+    ;; Audit trail.
+    (log-event! 'retention)
+    drop))
+
+;; ---- internal helpers --------------------------------------------------
+
+;; sort-by-id-ascending : list-of-segments -> sorted-list
+;; Insertion sort by (segment-id s) ascending. List lengths here are small
+;; (the cold store is bounded by retain-max, typically <100), so a simple
+;; O(n^2) sort is fine and keeps the module dependency-free.
+(define (sort-by-id-ascending segs)
+  (define (insert seg sorted)
+    (cond ((null? sorted) (cons seg '()))
+          ((< (segment-id seg) (segment-id (car sorted)))
+           (cons seg sorted))
+          (else
+           (cons (car sorted) (insert seg (cdr sorted))))))
+  (define (loop remaining acc)
+    (if (null? remaining)
+        acc
+        (loop (cdr remaining) (insert (car remaining) acc))))
+  (loop segs '()))
+
+;; take-first : list n -> list-of-first-n
+;; Return the first n elements of a list (or the whole list if shorter).
+;; Defined locally so we don't depend on any external list-slice helper.
+(define (take-first lst n)
+  (if (or (null? lst) (<= n 0))
+      '()
+      (cons (car lst) (take-first (cdr lst) (- n 1)))))

@@ -1,0 +1,152 @@
+;; wal_invariants.aura
+;; Invariant checker for the WAL subsystem.
+;;
+;; Given a log (and, for tx-atomicity, a recovered state) we verify the
+;; four crash-safety invariants the harness cares about:
+;;
+;;   1. Monotonic LSN: every frame in the journal carries an LSN strictly
+;;      greater than the previous one (with no gaps required, just
+;;      strict monotonicity). Journal is stored most-recent-first inside
+;;      the log; we walk it in chronological order via a helper.
+;;
+;;   2. CRC integrity: every frame's stored CRC equals the CRC computed
+;;      over (lsn, payload, txid). Replay stops at the first bad CRC;
+;;      for invariant checking we treat all currently-stored frames as
+;;      the surface under test.
+;;
+;;   3. Transaction atomicity: for any txid that appears in the recovered
+;;      state, either ALL of its frames were committed (and therefore
+;;      survived recovery), or NONE of them did. A partially-applied
+;;      transaction is a violation.
+;;
+;;   4. Idempotent recovery: replaying twice yields the same state. This
+;;      is delegated to wal_recover.aura's `recover-idempotent?` and
+;;      folded into `all-invariants`.
+;;
+;; All checks return `#t` on success and `#f` on any violation. They are
+;; total: a check over an empty journal or empty state returns `#t`.
+
+;; ---- Internal helpers (not exported) -----------------------------------
+
+;; Walk a most-recent-first journal list and return it in chronological
+;; order (oldest first). We do this with a simple accumulator loop using
+;; set! so we don't blow the stack on long journals.
+(define (journal-chronological frames)
+  (let ((acc '()))
+    (let loop ((xs frames))
+      (if (null? xs)
+          acc
+          (begin
+            (set! acc (cons (car xs) acc))
+            (loop (cdr xs)))))))
+
+;; Return the list of LSNs in chronological order.
+(define (journal-lsns log)
+  (let ((frames (journal-chronological (wal-log-frames log))))
+    (let loop ((xs frames) (acc '()))
+      (if (null? xs)
+          (reverse acc)
+          (loop (cdr xs) (cons (wal-frame-lsn (car xs)) acc))))))
+
+;; ---- API ---------------------------------------------------------------
+
+;; Check that LSNs in the journal are strictly monotonically increasing.
+;; Empty journal -> #t.
+(define (check-lsn-monotonic log)
+  (let loop ((lsns (journal-lsns log)))
+    (cond
+      ((null? lsns) #t)
+      ((null? (cdr lsns)) #t)
+      ((< (cadr lsns) (car lsns)) #f)
+      (else (loop (cdr lsns))))))
+
+;; Check that every frame's stored CRC equals the CRC of (lsn, payload,
+;; txid). Frames whose CRC doesn't match are violations; if we encounter
+;; a bad CRC we stop checking further frames because replay would also
+;; stop there (a torn write truncates everything after it).
+(define (check-crc-ok log)
+  (let loop ((xs (journal-chronological (wal-log-frames log))))
+    (cond
+      ((null? xs) #t)
+      (else
+       (let* ((f (car xs))
+              (stored (wal-frame-crc f))
+              (computed (wal-crc32 (string-append
+                                     (number->string (wal-frame-lsn f))
+                                     (wal-frame-payload f)
+                                     (number->string (wal-frame-txid f))))))
+         (if (wal-crc=? stored computed)
+             (loop (cdr xs))
+             #f))))))
+
+;; Check transaction atomicity of the recovered state.
+;; For each txid present in the state's committed-payloads, the state
+;; must contain a payload iff every frame belonging to that txid in the
+;; original journal was committed. We approximate the "all committed"
+;; requirement by requiring the state to contain that txid (which only
+;; recover-idempotent produces when at least one frame for the txid
+;; survived). A txid that has frames in the journal but does not appear
+;; in the state at all is also fine (it was rolled back / never
+;; committed before the crash).
+;;
+;; A violation is: the state records a payload for txid T but some
+;; frame for T in the journal is uncommitted, OR there exist both
+;; committed and uncommitted frames for T and the state still records a
+;; payload.
+(define (check-tx-atomic state)
+  (let* ((txids-in-journal
+          (let loop ((xs (journal-chronological (wal-log-frames (assq 'log state))))
+                     (acc '()))
+            (if (null? xs)
+                acc
+                (let* ((f (car xs))
+                       (t (wal-frame-txid f)))
+                  (if (= t 0)
+                      (loop (cdr xs) acc)
+                      (loop (cdr xs)
+                            (if (member t acc) acc (cons t acc))))))))
+         (committed-txids
+          (let loop ((xs (journal-chronological (wal-log-frames (assq 'log state))))
+                     (acc '()))
+            (if (null? xs)
+                acc
+                (let* ((f (car xs))
+                       (t (wal-frame-txid f)))
+                  (if (or (= t 0) (not (wal-frame-committed? f)))
+                      (loop (cdr xs) acc)
+                      (loop (cdr xs)
+                            (if (member t acc) acc (cons t acc)))))))))
+    ;; Every txid in the journal that has at least one committed frame
+    ;; must have ALL of its frames committed; otherwise we have a
+    ;; partial transaction.
+    (let loop ((tids committed-txids))
+      (cond
+        ((null? tids) #t)
+        (else
+         (let* ((tid (car tids))
+                (frames-for-tid
+                 (let filter ((xs (journal-chronological (wal-log-frames (assq 'log state)))))
+                   (cond
+                     ((null? xs) '())
+                     ((= (wal-frame-txid (car xs)) tid)
+                      (cons (car xs) (filter (cdr xs))))
+                     (else (filter (cdr xs))))))
+                (all-committed?
+                 (let every ((fs frames-for-tid))
+                   (cond
+                     ((null? fs) #t)
+                     ((wal-frame-committed? (car fs)) (every (cdr fs)))
+                     (else #f)))))
+           (if all-committed?
+               (loop (cdr tids))
+               #f)))))))
+
+;; Check all four invariants. Returns #t only if every check passes.
+;; Idempotency is folded in here via recover-idempotent?; the second
+;; argument is the recovered state produced by `recover`.
+(define (all-invariants state log)
+  (let ((lsn-ok (check-lsn-monotonic log))
+        (crc-ok (check-crc-ok log))
+        (tx-ok  (check-tx-atomic state))
+        (idem-ok (wal-recover-idempotent? state log)))
+    (and lsn-ok crc-ok tx-ok idem-ok)))

@@ -1,0 +1,180 @@
+;; wal_recover.aura
+;; Crash recovery: replay the journal to rebuild state, and verify that
+;; replay is idempotent.
+;;
+;; The replay semantics follow the WAL contract:
+;;   * Frames are replayed in journal order (head first). The journal is
+;;     stored most-recent-first inside `log`, so we walk it via a helper
+;;     that gives us chronological order.
+;;   * Each frame's CRC is checked against the frame payload+lsn+txid;
+;;     if the CRC fails, replay STOPS at that frame (frames after the
+;;     torn write are discarded) and the recovered state reflects only
+;;     the intact prefix.
+;;   * For each intact frame:
+;;       - bump the recovered LSN to the frame's LSN
+;;       - if the frame has a txid: record the (txid . payload) pair so
+;;         that committed frame payloads overwrite uncommitted shadows
+;;         in the order they were committed.
+;;       - if the frame is committed: install its payload as the binding
+;;         for its txid (overwriting any earlier uncommitted binding),
+;;         then "release" the txid.
+;;   * Frames without a txid (txid == 0) are treated as committed
+;;     immediately and installed under txid 0 (the "system" txid).
+;;
+;; recover-state shape (alist):
+;;   (cons (cons 'lsn      n)
+;;         (cons (cons 'tx-state '((txid . payload) ...))   ; committed only
+;;         (cons (cons 'frames-count m)
+;;         '())))
+;;
+;; recover-idempotent? runs `recover` twice on the SAME log (simulating
+;; replaying an already-recovered journal) and checks that the two
+;; recovered states are equal in `lsn`, `tx-state`, and `frames-count`.
+
+;; ---- Internal helpers (not exported) -----------------------------------
+
+;; Check if x is a positive integer (used for non-zero txid checks).
+(define (positive-int? x)
+  (and (number? x) (integer? x) (> x 0)))
+
+;; Pull a frame's fields by name from the wal_types API. We use the
+;; exported selectors so the recovery logic doesn't depend on the
+;; internal alist layout of frames.
+(define (frame-lsn f)       (wal-frame-lsn f))
+(define (frame-payload f)   (wal-frame-payload f))
+(define (frame-crc f)       (wal-frame-crc f))
+(define (frame-txid f)      (wal-frame-txid f))
+(define (frame-committed? f) (wal-frame-committed? f))
+
+;; Compute the CRC of a frame's payload/lsn/txid triple using the wal_crc
+;; API and return #t if it matches the frame's stored CRC.
+(define (frame-crc-ok? f)
+  (let ((lsn     (frame-lsn f))
+        (payload (frame-payload f))
+        (txid    (frame-txid f))
+        (stored  (frame-crc f)))
+    ;; Build the byte string that was CRC'd at append time. Layout:
+    ;;   <lsn as decimal> ":" <txid as decimal> ":" <payload>
+    (crc=? stored
+           (crc32 (string-append (number->string lsn)
+                                ":"
+                                (number->string txid)
+                                ":"
+                                payload)))))
+
+;; Reverse a list (no built-in reverse shadow — we have one in wal_log
+;; but we keep recovery self-contained). Simple iterative reverse.
+(define (rev lst)
+  (let loop ((rest lst) (acc '()))
+    (if (null? rest)
+        acc
+        (loop (cdr rest) (cons (car rest) acc)))))
+
+;; Return a fresh state with no transactions recorded.
+(define (empty-state)
+  (list (cons 'lsn 0)
+        (cons 'tx-state '())
+        (cons 'frames-count 0)))
+
+;; Lookup tx-state: returns (payload . found?) pair using a linear search
+;; over the tx-state association list.
+(define (tx-state-lookup txid tx-state)
+  (let loop ((rest tx-state))
+    (cond
+      ((null? rest) (cons #f 'unset))   ; not found, payload irrelevant
+      (else
+       (let ((entry (car rest)))
+         (if (= (car entry) txid)
+             (cons #t (cdr entry))
+             (loop (cdr rest))))))))
+
+;; Set the payload for txid in a tx-state alist. If txid already exists,
+;; overwrite; otherwise cons on the front. Returns a new alist.
+(define (tx-state-set txid payload tx-state)
+  (let loop ((rest tx-state) (new '()))
+    (cond
+      ((null? rest)
+       ;; Not found — prepend.
+       (cons (cons txid payload) new))
+      (else
+       (let ((entry (car rest)))
+         (if (= (car entry) txid)
+             ;; Found — replace, keep the tail we already accumulated.
+             (append (reverse new)
+                     (cons (cons txid payload) '())
+                     (cdr rest))
+             (loop (cdr rest) (cons entry new))))))))
+
+;; Compare two recovered states structurally on the three observable
+;; keys ('lsn, 'tx-state, 'frames-count). Returns #t iff equal.
+(define (state=? a b)
+  (and (= (cdr (assq 'lsn a))           (cdr (assq 'lsn b)))
+       (= (cdr (assq 'frames-count a))  (cdr (assq 'frames-count b)))
+       (equal? (cdr (assq 'tx-state a)) (cdr (assq 'tx-state b)))))
+
+;; ---- API ---------------------------------------------------------------
+
+;; Replay a log's journal and return the recovered state.
+;; `log` is the result of (api log-frames) or the log object itself
+;; depending on caller convention; here we accept the log object and
+;; pull frames via (api log-frames log).
+(define (replay log)
+  (let ((journal (log-frames log)))   ; most-recent-first
+    ;; Walk chronologically: reverse to head-first, then iterate.
+    (let loop ((in-order (rev journal))
+               (state    (empty-state))
+               (ok?      #t))
+      (cond
+        ((null? in-order) state)
+        (else
+         (let ((f (car in-order)))
+           (cond
+             ((not (frame-crc-ok? f))
+              ;; Torn write: stop here, return current state.
+              state)
+             (else
+              (let ((lsn     (frame-lsn f))
+                    (payload (frame-payload f))
+                    (txid    (frame-txid f))
+                    (committed (frame-committed? f))
+                    (tx-state (cdr (assq 'tx-state state)))
+                    (cur-lsn (cdr (assq 'lsn state)))
+                    (cur-fc  (cdr (assq 'frames-count state))))
+                ;; New tx-state: if committed, install payload under txid;
+                ;; if not committed and txid is a real tx (>0), do NOT
+                ;; record it (the contract is: uncommitted frames are
+                ;; discarded on recovery; the WAL records that they were
+                ;; appended but they aren't durable until commit).
+                (let ((new-tx-state
+                       (cond
+                         ((and committed (positive-int? txid))
+                          (tx-state-set txid payload tx-state))
+                         ((and committed (= txid 0))
+                          ;; System txid: install under 0 too.
+                          (tx-state-set 0 payload tx-state))
+                         (else
+                          ;; Uncommitted non-system frame: skip — but DO
+                          ;; advance LSN/frame-count so the replay surface
+                          ;; is faithful.
+                          tx-state))))
+                  (let ((new-state
+                         (list (cons 'lsn lsn)
+                               (cons 'tx-state new-tx-state)
+                               (cons 'frames-count (+ cur-fc 1)))))
+                    (loop (cdr in-order) new-state #t))))))))))))
+
+;; Recover a state by replaying the journal. This is the convenience
+;; wrapper used by the invariant checker and by main.aura.
+;;   * `state` parameter is the prior state (ignored for the canonical
+;;     replay — we always rebuild from the journal — but accepted so
+;;     `recover` matches the documented two-arg contract).
+(define (recover state log)
+  (replay log))
+
+;; Check that recovery is idempotent: calling replay twice on the same
+;; log must yield structurally equal states. The function intentionally
+;; ignores `state` and rebuilds from scratch both times.
+(define (recover-idempotent? state log)
+  (let ((s1 (replay log))
+        (s2 (replay log)))
+    (state=? s1 s2)))

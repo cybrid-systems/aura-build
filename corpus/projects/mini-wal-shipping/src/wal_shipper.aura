@@ -1,0 +1,230 @@
+;; wal_shipper.aura — primary-side WAL shipper.
+;;
+;; The shipper is the active producer in the WAL streaming pipeline. It owns:
+;;   - the primary's WAL segment (where new pages are appended),
+;;   - the outbound frame buffer (where (lsn payload crc) triplets queue),
+;;   - the wire "socket" (where frames are flushed in order),
+;;   - a small bag of statistics (frames shipped/retried, bytes, reconnects,
+;;     dropped bytes, catch-up duration).
+;;
+;; Each (ship-tick!) call advances the shipper by one logical step:
+;;   1. Produce one new page into the primary segment.
+;;   2. Drain the buffer into the socket via the protocol layer.
+;;   3. If the last batch caused a socket drop, retry (counter increments).
+;;   4. Update statistics and return them so the entry point can collect
+;;      the contract values.
+;;
+;; (ship-stats) returns the current statistics alist.
+;; (ship-reconnect!) tears down + rebuilds the connection descriptor so
+;; the next tick starts a fresh handshake.
+;;
+;; API:
+;;     (ship-tick!)      -> alist  ; (stats ...) snapshot after this tick
+;;     (ship-stats)      -> alist  ; current stats
+;;     (ship-reconnect!) -> #t     ; mark a reconnect request
+
+(define *exports* '())
+
+(define-syntax api
+  (syntax-rules ()
+    ((api name)
+     (set! *exports* (cons (cons 'name (lambda () name)) *exports*)))))
+
+;; ----------------------------------------------------------------------
+;; Resolve an api handle registered by an earlier module. We accept
+;; either the registered binding (a thunk) or the bare value, so the
+;; entry point can also pass a literal where convenient.
+;; ----------------------------------------------------------------------
+
+(define (resolve-api sym)
+  (let loop ((xs *exports*))
+    (cond ((null? xs)
+           (error 'wal_shipper "api not found" sym))
+          ((eq? (caar xs) sym)
+           (let ((thunk (cdar xs)))
+             (if (procedure? thunk) (thunk) thunk)))
+          (else (loop (cdr xs))))))
+
+;; ----------------------------------------------------------------------
+;; Module-local state
+;;
+;; *stats* is mutated by every (ship-tick!) call. Fields:
+;;   (pages-shipped . N)
+;;   (frames-ok     . N)
+;;   (frames-retry  . N)
+;;   (bytes-shipped . N)
+;;   (lsn-hwm       . N)
+;;   (catchup-ms    . N)     ; accumulated "catch-up" time (each retry = 1ms)
+;;   (reconnects    . N)
+;;   (dropped       . N)
+;;   (applied-lsn   . 0)
+;;   (verified      . 0)
+;; ----------------------------------------------------------------------
+
+(define *stats*
+  '((pages-shipped . 0)
+    (frames-ok     . 0)
+    (frames-retry  . 0)
+    (bytes-shipped . 0)
+    (lsn-hwm       . 0)
+    (catchup-ms    . 0)
+    (reconnects    . 0)
+    (dropped       . 0)
+    (applied-lsn   . 0)
+    (verified      . 0)))
+
+(define *reconnect-pending* #f)
+
+(define (stat-ref key)
+  (let ((p (assq key *stats*)))
+    (if p (cdr p) 0)))
+
+(define (stat-set! key val)
+  (set! *stats* (cons (cons key val)
+                      (assq-delete-all key *stats*))))
+
+(define (stat-add! key delta)
+  (stat-set! key (+ (stat-ref key) delta)))
+
+;; ----------------------------------------------------------------------
+;; Tiny helper: assq-delete-all, since Aura lacks SRFI extras.
+;; ----------------------------------------------------------------------
+
+(define (assq-delete-all key alist)
+  (cond ((null? alist) '())
+        ((eq? (caar alist) key) (assq-delete-all key (cdr alist)))
+        (else (cons (car alist) (assq-delete-all key (cdr alist))))))
+
+;; ----------------------------------------------------------------------
+;; Page production. The payload is just the LSN as a string — keeps the
+;; pipeline deterministic without needing a separate generator module.
+;; ----------------------------------------------------------------------
+
+(define (make-payload lsn)
+  (string-append "page-" (number->string lsn)))
+
+;; ----------------------------------------------------------------------
+;; (ship-tick!)
+;;
+;; Drives one shipper cycle. Returns the updated stats alist so callers
+;; can read the post-tick values.
+;; ----------------------------------------------------------------------
+
+(define (ship-tick!)
+  (let* ((seg       (resolve-api 'seg-append-page))
+         (pages-fn  (resolve-api 'seg-pages))
+         (high-fn   (resolve-api 'seg-lsn-high))
+         (flush-fn  (resolve-api 'seg-last-flush-lsn))
+         (buf-new   (resolve-api 'buf-new))
+         (buf-push  (resolve-api 'buf-push!))
+         (buf-drain (resolve-api 'buf-drain!))
+         (buf-size  (resolve-api 'buf-size))
+         (sock-send (resolve-api 'sock-send!))
+         (sock-drop (resolve-api 'sock-drop?))
+         (sock-recv (resolve-api 'sock-recv!))
+         (sock-reset (resolve-api 'sock-reset!))
+         (crc-of    (resolve-api 'crc-hex-of))
+         (frm-enc   (resolve-api 'frame-encode))
+         (proto-handshake (resolve-api 'proto-handshake))
+         (proto-ship      (resolve-api 'proto-ship-one!))
+         (proto-recv      (resolve-api 'proto-recv-loop!))
+         (follow-apply    (resolve-api 'follow-apply-one!))
+         (follow-applied  (resolve-api 'follow-applied-lsn))
+         (follow-verify   (resolve-api 'follow-verify!))
+         (metrics-record  (resolve-api 'metrics-record!))
+         (buf     (buf-new))
+         (payload (string-append "page-"
+                                 (number->string (+ (stat-ref 'pages-shipped) 1))))
+         (new-lsn (seg 'seg payload)))
+    ; statement here is just for the order; seg is an api thunk so we
+    ; already invoked it above by evaluating (seg 'seg payload). We
+    ; rewrite: the real call is (seg-append-page 'seg payload).
+
+    ;; Honour a pending reconnect: reset the socket, bump counter, then
+    ;; perform a fresh handshake so the protocol is in 'streaming again.
+    (when *reconnect-pending*
+      (set! *reconnect-pending* #f)
+      (sock-reset 'sock)
+      (stat-add! 'reconnects 1)
+      (proto-handshake))
+
+    ;; Push the freshly-produced page into the buffer. Each push bumps
+    ;; bytes-shipped by the payload length (wire bytes ≈ payload bytes).
+    (buf-push buf (frm-enc new-lsn payload (crc-of payload)))
+    (stat-add! 'pages-shipped 1)
+    (stat-add! 'bytes-shipped (string-length payload))
+    (stat-set! 'lsn-hwm new-lsn)
+
+    ;; Drain the buffer into the socket via the protocol layer. If the
+    ;; socket reports a drop, retry once (counts frames-retry + catchup-ms
+    ;; + dropped), then attempt the drain again.
+    (let drain-loop ((retries-left 2))
+      (let ((shipped (proto-ship buf)))
+        (cond
+            ((sock-drop 'sock)
+             (stat-add! 'frames-retry 1)
+             (stat-add! 'catchup-ms 1)
+             (stat-add! 'dropped 1)
+             (sock-reset 'sock)
+             (proto-handshake)
+             (if (> retries-left 0)
+                 (drain-loop (- retries-left 1))
+                 (stat-set! 'frames-ok (+ (stat-ref 'frames-ok) 0))))
+            (else
+             (stat-add! 'frames-ok 1)))))
+
+    ;; Pull any newly delivered bytes through the protocol receive loop,
+    ;; then apply whatever frames the follower has been able to chew on.
+    (let ((bytes (sock-recv 'sock)))
+      (when (and bytes (not (null? bytes)))
+        (proto-recv bytes)))
+
+    (let ((applied (follow-applied)))
+      (stat-set! 'applied-lsn applied))
+
+    (let ((ok? (follow-verify)))
+      (stat-set! 'verified (if ok? 1 0)))
+
+    (metrics-record *stats*)
+    *stats*))
+
+;; ----------------------------------------------------------------------
+;; (ship-stats) -> alist
+;; ----------------------------------------------------------------------
+
+(define (ship-stats)
+  *stats*)
+
+;; ----------------------------------------------------------------------
+;; (ship-reconnect!) -> #t
+;;
+;; Sets a flag that the next (ship-tick!) will honour by tearing the
+;; socket down and bumping the reconnects counter.
+;; ----------------------------------------------------------------------
+
+(define (ship-reconnect!)
+  (set! *reconnect-pending* #t)
+  #t)
+
+;; ----------------------------------------------------------------------
+;; Register the public API.
+;; ----------------------------------------------------------------------
+
+(api ship-tick!)
+(api ship-stats)
+(api ship-reconnect!)
+
+;; ----------------------------------------------------------------------
+;; Local cond/when helpers (Aura core already has them, but defining
+;; them defensively here makes this file robust if loaded with a
+;; stricter runtime that only exports a tiny core).
+;; ----------------------------------------------------------------------
+
+(define (when c b)
+  (if c b '()))
+
+(define-syntax cond
+  (syntax-rules (else)
+    ((cond (else e)) e)
+    ((cond (test body) rest ...)
+     (if test body (cond rest ...)))))

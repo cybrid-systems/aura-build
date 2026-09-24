@@ -1,0 +1,21 @@
+;; Type primitives and comparators for the mini-btree index.
+;; Keys are strings (decode-key output). Primary keys are non-negative integers.
+;; Versions are pairs (txid . ts); reader-txid is a non-negative integer.
+
+(define (key=? a b)
+  (if (and (string? a) (string? b))
+      (string=? a b)
+      (= a b)))
+
+(define (key<? a b)
+  (if (and (string? a) (string? b))
+      (string<? a b)
+      (< a b)))
+
+(define (make-version txid ts)
+  (cons txid ts))
+
+(define (version-visible? v reader-txid)
+  (cond
+    ((not (pair? v)) #t)
+    (else (<= (car v) reader-txid))))

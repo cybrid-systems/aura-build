@@ -1,0 +1,65 @@
+;; wal_segment.aura — in-memory WAL segment.
+;; A segment is a list of pages (byte strings) keyed by an LSN counter.
+;; Pages are appended via seg-append-page; the high-water LSN and the
+;; LSN of the last flushed page are tracked so the shipper can compute
+;; backpressure and flush boundaries.
+;;
+;; The segment state is kept in a module-local alist:
+;;   ((pages . (page1 page2 ...)) (lsn . N) (flush-lsn . M))
+;; where the page at position k has LSN (k+1) — 1-indexed.
+;;
+;; API:
+;;   (seg-append-page seg payload)  -> number  ; new LSN assigned
+;;   (seg-pages seg)                -> list    ; payloads in LSN order
+;;   (seg-lsn-high seg)             -> number  ; current high-water LSN
+;;   (seg-last-flush-lsn seg)       -> number  ; LSN of last flushed page
+
+(define *exports* '())
+
+(define-syntax api
+  (syntax-rules ()
+    ((api name)
+     (set! *exports* (cons (cons 'name (lambda () name)) *exports*)))))
+
+(define (seg-new)
+  ;; Fresh empty segment: 0 pages, lsn=0, flush-lsn=0.
+  (list (cons 'pages '()) (cons 'lsn 0) (cons 'flush-lsn 0)))
+
+(define (seg-lookup seg key)
+  (let ((p (assq key seg)))
+    (if p (cdr p) #f)))
+
+(define (seg-set! seg key val)
+  (set-cdr! (assq key seg) val))
+
+(api seg-append-page)
+(define (seg-append-page seg payload)
+  ;; Append `payload` to the segment, returning the LSN assigned to it.
+  ;; Mutates `seg` in place; also bumps the high-water mark.
+  (let* ((cur    (seg-lookup seg 'lsn))
+         (newlsn (+ cur 1))
+         (pages  (seg-lookup seg 'pages)))
+    (seg-set! seg 'pages (append pages (list payload)))
+    (seg-set! seg 'lsn   newlsn)
+    newlsn))
+
+(api seg-pages)
+(define (seg-pages seg)
+  ;; Return the payloads in LSN order.
+  (seg-lookup seg 'pages))
+
+(api seg-lsn-high)
+(define (seg-lsn-high seg)
+  ;; Current high-water LSN (the LSN of the most recently appended page).
+  (seg-lookup seg 'lsn))
+
+(api seg-last-flush-lsn)
+(define (seg-last-flush-lsn seg)
+  ;; LSN of the last page that has been flushed. 0 if none yet.
+  (seg-lookup seg 'flush-lsn))
+
+;; Helper used by shipper/follower to mark progress through the segment.
+;; Not in the required API but handy for callers — exported via *exports*
+;; is unnecessary; keep it private.
+(define (seg-mark-flushed! seg lsn)
+  (seg-set! seg 'flush-lsn lsn))

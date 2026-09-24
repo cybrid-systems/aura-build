@@ -1,0 +1,42 @@
+;; wal_ids.aura — id generation for primary/follower endpoints.
+;; Provides hex random ids via a seeded linear congruential PRNG
+;; so that ids differ between primary and follower.
+
+(define *exports* '())
+
+(define-syntax api
+  (syntax-rules ()
+    ((api name)
+     (set! *exports* (cons (cons 'name (lambda () name)) *exports*)))))
+
+(define *rng-state* 12345)
+
+(define (rng-next!)
+  ;; Linear congruential generator (Numerical Recipes constants).
+  (set! *rng-state* (modulo (+ (* 48271 *rng-state*) 0) 2147483647))
+  *rng-state*)
+
+(define *hex-chars* '(#\0 #\1 #\2 #\3 #\4 #\5 #\6 #\7
+                      #\8 #\9 #\a #\b #\c #\d #\e #\f))
+
+(define (hex-char-of n)
+  (list-ref *hex-chars* (modulo n 16)))
+
+(define (rand-hex n acc)
+  (if (= n 0)
+      (list->string (reverse acc))
+      (let ((v (rng-next!)))
+        (rand-hex (- n 1) (cons (hex-char-of v) acc)))))
+
+(define (ids-random-hex)
+  (rand-hex 4 '()))
+
+(define (ids-make-primary)
+  (string-append "primary-" (ids-random-hex)))
+
+(define (ids-make-follower)
+  (string-append "follower-" (ids-random-hex)))
+
+(api ids-random-hex)
+(api ids-make-primary)
+(api ids-make-follower)

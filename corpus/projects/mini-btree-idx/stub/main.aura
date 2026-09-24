@@ -1,0 +1,95 @@
+; main.aura — orchestrator that runs the GOAL scenario.
+;
+; Wires together every other module to exercise insert, point lookup,
+; range scan, prefix scan, and MVCC visibility, then prints the 14
+; KEY=value lines required by the stdout contract.
+
+;; ---------------------------------------------------------------------------
+;; Small helper: insert a (key, pk, version) tuple, recording the insert in
+;; the metrics aggregator and in the append-only event log.  Returns the
+;; result of tree-insert! so callers can inspect whether a split happened.
+;; ---------------------------------------------------------------------------
+(define (do-insert! t metrics events key pk v)
+  (let ((r (tree-insert! t key pk v)))
+    (metrics-on-insert! metrics (cdr (assq 'split? r)))
+    (event-log-append! events key pk v)
+    r))
+
+;; Convenience wrappers for the common case where the caller has txid/ts.
+(define (ins t m e key pk txid ts)
+  (do-insert! t m e key pk (make-version txid ts)))
+
+;; ---------------------------------------------------------------------------
+;; Main scenario
+;; ---------------------------------------------------------------------------
+(define (run-scenario)
+  (let* ((metrics (metrics-new))
+         (events  (event-log-new))
+         (t       (make-tree 4))
+         (reader-txid 5))
+
+    ;; The freshly created root counts as the first node.
+    (metrics-on-insert! metrics #f)
+
+    ;; Bulk insert a mix of keys.  This is enough data to force the
+    ;; tree to split a few times so that TREE_HEIGHT > 1.
+    (ins t metrics events "apple"  "p1" 1 100)
+    (ins t metrics events "apricot" "p2" 1 105)
+    (ins t metrics events "banana" "p3" 1 110)
+    (ins t metrics events "blueberry" "p4" 2 115)
+    (ins t metrics events "cherry" "p5" 2 120)
+    (ins t metrics events "date"   "p6" 2 130)
+    (ins t metrics events "elderberry" "p7" 3 140)
+    (ins t metrics events "fig"    "p8" 3 150)
+    (ins t metrics events "grape"  "p9" 4 160)
+    (ins t metrics events "honey"  "p10" 4 170)
+    (ins t metrics events "kiwi"   "p11" 5 180)
+    (ins t metrics events "lemon"  "p12" 5 190)
+
+    ;; Re-insert a couple of keys at newer versions so that MVCC has
+    ;; something to filter: an older reader-txid should still see the
+    ;; original versions for those keys, but a newer txid should see
+    ;; the replacement.
+    (ins t metrics events "banana" "p3-new" 6 200)
+    (ins t metrics events "fig"    "p8-new" 7 210)
+
+    ;; Pull byte accounting from the tree stats and feed it into the
+    ;; metrics module so we can report compressed vs raw bytes.
+    (let ((stats (tree-stats t)))
+      (metrics-bytes-delta! metrics
+                            (car stats)            ; compressed bytes
+                            (car (cdr stats))))    ; raw bytes
+
+    ;; Point lookups: one hit, one miss.
+    (let* ((hit-res  (tree-point t "banana"))
+           (miss-res (tree-point t "zzz"))
+           (hit  (if hit-res  1 0))
+           (miss (if miss-res 1 0)))
+
+      ;; Build the range and prefix scans.
+      (let* ((rs (range-scan t "banana" "grape"))
+             (ps (prefix-scan t "b")))
+
+        ;; MVCC visibility tallies for our chosen reader snapshot.
+        (let ((mv-visible (mvcc-count-visible t reader-txid))
+              (mv-hidden  (mvcc-count-hidden  t reader-txid)))
+
+          ;; ---------------------------------------------------------------
+          ;; Stdout contract: exactly these 14 lines, in this order.
+          ;; ---------------------------------------------------------------
+          (display "KEYS_INSERTED=")  (display (metrics-inserts metrics)) (newline)
+          (display "NODES_CREATED=")  (display (metrics-nodes   metrics)) (newline)
+          (display "TREE_HEIGHT=")    (display (tree-height t))           (newline)
+          (display "POINT_HIT=")      (display hit)                       (newline)
+          (display "POINT_MISS=")     (display miss)                      (newline)
+          (display "RANGE_COUNT=")    (display (scan-count rs))           (newline)
+          (display "RANGE_FIRST=")    (display (scan-first rs))           (newline)
+          (display "RANGE_LAST=")     (display (scan-last  rs))           (newline)
+          (display "PREFIX_COUNT=")   (display (scan-count ps))           (newline)
+          (display "PREFIX_FIRST=")   (display (scan-first ps))           (newline)
+          (display "MVCC_VISIBLE=")   (display mv-visible)                (newline)
+          (display "MVCC_HIDDEN=")    (display mv-hidden)                 (newline)
+          (display "COMPRESS_BYTES=") (display (metrics-comp-bytes metrics)) (newline)
+          (display "RAW_BYTES=")      (display (metrics-raw-bytes  metrics)) (newline))))))
+
+(run-scenario)

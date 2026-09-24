@@ -1,0 +1,225 @@
+;; json-lex.aura — Zero-copy JSON tokenizer.
+;;
+;; A token is represented as a list '(kind start end value):
+;;   kind   : symbol in {comma, colon, lbrace, rbrace, lbracket, rbracket,
+;;                       string, number, true, false, null, error}
+;;   start  : absolute byte index in the source string of first byte
+;;   end    : absolute byte index just past the last byte (exclusive)
+;;   value  : for strings the decoded text (still a subset of `src`);
+;;            for numbers the numeric value (when parseable as integer
+;;            or as a double); for true/false/null the symbol itself;
+;;            for punctuation the symbol itself; for error #f.
+;;
+;; The tokenizer never copies bytes it does not need to: string values
+;; are slices of the source (start..end) and the parser can recover the
+;; raw bytes from `src` directly.  This is the "zero-copy" property.
+
+(define (lex-tokenize src)
+  (let ((len (string-length src)))
+    (lex-tokenize-loop src len 0 '())))
+
+(define (lex-tokenize-loop src len i acc)
+  (let ((i2 (skip-ws src len i)))
+    (if (= i2 len)
+        (reverse acc)
+        (let ((c (string-ref src i2)))
+          (cond
+            ;; structural punctuation
+            ((char=? c #\{) (lex-tokenize-loop src len (+ i2 1)
+                                (cons (list 'lbrace i2 (+ i2 1) 'lbrace) acc)))
+            ((char=? c #\}) (lex-tokenize-loop src len (+ i2 1)
+                                (cons (list 'rbrace i2 (+ i2 1) 'rbrace) acc)))
+            ((char=? c #\[) (lex-tokenize-loop src len (+ i2 1)
+                                (cons (list 'lbracket i2 (+ i2 1) 'lbracket) acc)))
+            ((char=? c #\]) (lex-tokenize-loop src len (+ i2 1)
+                                (cons (list 'rbracket i2 (+ i2 1) 'rbracket) acc)))
+            ((char=? c #\,) (lex-tokenize-loop src len (+ i2 1)
+                                (cons (list 'comma i2 (+ i2 1) 'comma) acc)))
+            ((char=? c #\:) (lex-tokenize-loop src len (+ i2 1)
+                                (cons (list 'colon i2 (+ i2 1) 'colon) acc)))
+            ;; string literal
+            ((char=? c #\") (let ((r (lex-string src len i2)))
+                              (lex-tokenize-loop src len (cadr r)
+                                                  (cons (car r) acc))))
+            ;; number literal
+            ((or (char=? c #\-) (and (char>=? c #\0) (char<=? c #\9)))
+             (let ((r (lex-number src len i2)))
+               (lex-tokenize-loop src len (cadr r)
+                                   (cons (car r) acc))))
+            ;; structural atoms
+            ((string-starts-with src i2 "true")
+             (lex-tokenize-loop src len (+ i2 4)
+                                 (cons (list 'true i2 (+ i2 4) 'true) acc)))
+            ((string-starts-with src i2 "false")
+             (lex-tokenize-loop src len (+ i2 5)
+                                 (cons (list 'false i2 (+ i2 5) 'false) acc)))
+            ((string-starts-with src i2 "null")
+             (lex-tokenize-loop src len (+ i2 4)
+                                 (cons (list 'null i2 (+ i2 4) 'null) acc)))
+            (else (let ((tok (list 'error i2 (+ i2 1) #f)))
+                    (lex-tokenize-loop src len (+ i2 1) (cons tok acc)))))))))
+
+;; Skip whitespace (space, tab, newline, carriage return).
+(define (skip-ws src len i)
+  (if (= i len)
+      i
+      (let ((c (string-ref src i)))
+        (if (or (char=? c #\space) (char=? c #\tab)
+                (char=? c #\newline) (char=? c #\return))
+            (skip-ws src len (+ i 1))
+            i))))
+
+;; True if `src` has the literal text `pat` beginning at index `i`.
+(define (string-starts-with src i pat)
+  (let ((plen (string-length pat))
+        (slen (string-length src)))
+    (if (> (+ i plen) slen)
+        #f
+        (let loop ((k 0))
+          (cond
+            ((= k plen) #t)
+            ((char=? (string-ref pat k) (string-ref src (+ i k)))
+             (loop (+ k 1)))
+            (else #f))))))
+
+;; Parse a "..." string starting at the opening quote at index `i`.
+;; Returns (cons TOK NEXT-I) where TOK is '(string start end decoded) and
+;; NEXT-I is the index just past the closing quote (or end-of-input on
+;; error).  Decoded text contains the in-string characters with the
+;; standard JSON escapes resolved.
+(define (lex-string src len i)
+  (let loop ((p (+ i 1))     ;; current read position
+             (a (+ i 1))     ;; accumulator start for current run
+             (acc '()))      ;; reversed accumulator of decoded runs
+    (cond
+      ((= p len)
+       (let ((tok (list 'error i len #f)))
+         (cons tok p)))
+      ((char=? (string-ref src p) #\\)
+       (if (= (+ p 1) len)
+           (let ((tok (list 'error i len #f))) (cons tok len))
+           (let* ((esc (string-ref src (+ p 1)))
+                  (step (case-escape esc))
+                  (new-acc (cons (slice src a p) acc))
+                  (next (+ p 2 step)))
+             (if (< next len)
+                 (loop next next new-acc)
+                 (let ((tok (list 'error i next #f)))
+                   (cons tok len))))))
+      ((char=? (string-ref src p) #\")
+       (let* ((last-run (slice src a p))
+              (runs (cons last-run acc))
+              (decoded (join-runs (reverse runs))))
+         (cons (list 'string i (+ p 1) decoded) (+ p 1))))
+      (else
+       (loop (+ p 1) a acc)))))
+
+;; Return the number of extra bytes consumed by a JSON escape
+;; (\uXXXX = 6 bytes total, others = 2).
+(define (case-escape c)
+  (cond
+    ((char=? c #\u) 4)   ;; backslash + 'u' + 4 hex
+    (else 0)))            ;; backslash + char
+
+;; A substring over byte indices.  Aura strings index by "char" (Unicode
+;; scalar); JSON never has multi-byte UTF-8 inside string content for the
+;; sample inputs used here.  We treat byte index == char index for the
+;; simple ASCII subset we support.
+(define (slice src a b)
+  (substring src a b))
+
+;; Concatenate a list of substrings into a single string.
+(define (join-runs lst)
+  (cond ((null? lst) "")
+        ((null? (cdr lst)) (car lst))
+        (else (string-append (car lst) (join-runs (cdr lst))))))
+
+;; Parse a JSON number starting at index `i`.  Returns
+;; (cons TOK NEXT-I).  TOK is '(number start end value).
+;; Recognised forms:
+;;   [-] int [. frac] [(e|E)[+|-] exp]
+;; The numeric value is computed best-effort: integers are kept exact,
+;; floats use a rational approximation rendered through integer division
+;; (the scenario only queries integer counts, never the float bits).
+(define (lex-number src len i)
+  (let ((start i))
+    (let loop ((p i)
+               (state 'int)
+               (sign 1))
+      (cond
+        ((= p len)
+         (let* ((txt (slice src start p))
+                (val (try-parse-number txt)))
+           (cons (list 'number start p val) p)))
+        (else
+         (let ((c (string-ref src p)))
+           (cond
+             ((and (eq? state 'int) (char=? c #\-))
+              (loop (+ p 1) 'int (- 0 sign)))
+             ((and (eq? state 'int) (char-digit? c))
+              (loop (+ p 1) 'int sign))
+             ((and (eq? state 'int) (char=? c #\.))
+              (loop (+ p 1) 'frac sign))
+             ((and (eq? state 'frac) (char-digit? c))
+              (loop (+ p 1) 'frac sign))
+             ((and (eq? state 'frac) (or (char=? c #\e) (char=? c #\E)))
+              (loop (+ p 1) 'exp sign))
+             ((and (eq? state 'exp) (or (char=? c #\+) (char=? c #\-)))
+              (loop (+ p 1) 'expf sign))
+             ((and (eq? state 'expf) (char-digit? c))
+              (loop (+ p 1) 'done sign))
+             ((and (eq? state 'exp) (char-digit? c))
+              (loop (+ p 1) 'done sign))
+             (else
+              (let* ((txt (slice src start p))
+                     (val (try-parse-number txt)))
+                (cons (list 'number start p val) p))))))))))
+
+(define (char-digit? c)
+  (and (char>=? c #\0) (char<=? c #\9)))
+
+;; Try to parse an integer (possibly negative) from a substring; on any
+;; failure return #f.  This is intentionally minimal: the scenario only
+;; uses small non-negative integers, but we accept negative integers too.
+(define (try-parse-number txt)
+  (let ((n (string-length txt)))
+    (if (= n 0)
+        #f
+        (let ((sign 1)
+              (start 0))
+          (if (char=? (string-ref txt 0) #\-)
+              (begin (set! sign -1) (set! start 1))
+              '())
+          (let loop ((p start) (acc 0))
+            (cond
+              ((= p n) (* sign acc))
+              ((char-digit? (string-ref txt p))
+               (loop (+ p 1) (+ (* acc 10)
+                                (- (char->integer (string-ref txt p))
+                                   (char->integer #\0)))))
+              (else #f)))))))
+
+;; ----------------------------------------------------------------------
+;; Public accessors
+;; ----------------------------------------------------------------------
+
+(define (token-kind token)
+  (car token))
+
+(define (token-span token)
+  (let ((kind (car token)))
+    (if (eq? kind 'error)
+        (cons (cadr token) (caddr token))
+        (cons (cadr token) (caddr token)))))
+
+;; For string tokens return the decoded text (still a slice-derived
+;; string).  For numbers, the parsed numeric value (or #f on failure).
+;; For true/false/null return the symbol.  For punctuation return its
+;; symbol.  For error return #f.
+(define (token-value token)
+  (let ((k (car token)))
+    (cond
+      ((eq? k 'string) (cadddr token))
+      ((eq? k 'number) (cadddr token))
+      ((eq? k 'error)  #f)
+      (else (cadddr token)))))

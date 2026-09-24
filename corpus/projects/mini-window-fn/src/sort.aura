@@ -1,0 +1,109 @@
+;; sort.aura — In-place-style list sort and a relation-aware row sort.
+;;
+;; We never mutate caller-visible lists: sort consumes a list and returns a
+;; freshly-built list of the same elements in ascending order under `cmp`.
+;; The standard merge-sort form keeps this O(n log n) without index juggling.
+;;
+;; `wf-sort-by` is the convenience adapter used by window-sort.aura: it
+;; looks up the value of `col` in each row using the relation's column
+;; list, then sorts the row-list by those values.
+
+(define (api wf-sort rows cmp)
+  ;; Classic top-down merge sort over lists.
+  ;;  - `rows` : list of elements to be sorted.
+  ;;  - `cmp`  : (lambda (a b) ...) returning #t when a precedes b.
+  ;; Returns a new list containing exactly the elements of `rows`, in
+  ;; non-decreasing order under `cmp` (stable).
+  (define (take n xs)
+    ;; First n elements of xs, as a list, in original order.
+    (if (= n 0)
+        '()
+        (cons (car xs) (take (- n 1) (cdr xs)))))
+
+  (define (drop n xs)
+    ;; xs with the first n elements removed.
+    (if (= n 0)
+        xs
+        (drop (- n 1) (cdr xs))))
+
+  (define (length-xs xs)
+    ;; Hand-rolled length so we don't depend on a runtime `length` builtin.
+    (let loop ((rest xs) (n 0))
+      (if (null? rest)
+          n
+          (loop (cdr rest) (+ n 1)))))
+
+  (define (merge a b)
+    ;; Stable merge of two already-sorted lists.
+    (cond ((null? a) b)
+          ((null? b) a)
+          ((cmp (car a) (car b))
+           (cons (car a) (merge (cdr a) b)))
+          (else
+           (cons (car b) (merge a (cdr b))))))
+
+  (define (sort-loop xs)
+    (let ((n (length-xs xs)))
+      (if (<= n 1)
+          xs
+          (let ((mid (quotient n 2)))
+            (merge (sort-loop (take mid xs))
+                   (sort-loop (drop mid xs)))))))
+
+  (sort-loop rows))
+
+(define (api wf-sort-by rows col rel)
+  ;; Sort `rows` (a list of row-lists) by the value of `col` in each row,
+  ;; using the column list inside `rel` to find each row's sort key.
+  ;;
+  ;; `rel` may be either:
+  ;;   (cons cols rows)        — a full relation
+  ;;   (cons cols '())         — a relation whose rows list is just the cols
+  ;; We extract `cols` uniformly via `car`.
+  ;;
+  ;; We pre-compute each row's key once (outside the comparator) so that
+  ;; the comparator itself is O(1) per call.
+  (define cols (car rel))
+
+  ;; Locate the position of `col` within `cols`. Mirrors wf-col's logic so
+  ;; sort-by is self-contained if the caller only imports this module.
+  (define (col-pos c cs i)
+    (cond ((null? cs) #f)
+          ((equal? c (car cs)) i)
+          (else (col-pos c (cdr cs) (+ i 1)))))
+
+  (define pos (col-pos col cols 0))
+
+  ;; Key-extractor: returns the sort key for a row. If `col` is not found
+  ;; in the relation's column list we fall back to the whole row, which
+  ;; preserves a deterministic (if coarse) order rather than crashing.
+  (define (key-of row)
+    (if (and pos (>= pos 0))
+        (let loop ((r row) (k 0))
+          (cond ((null? r) #f)
+                ((= k pos) (car r))
+                (else (loop (cdr r) (+ k 1)))))
+        row))
+
+  ;; Build an alist (key . row) so each element carries its key alongside,
+  ;; then sort that alist by key only. This keeps the comparator O(1) and
+  ;; avoids recomputing keys during the merge.
+  (define keyed
+    (let loop ((rs rows) (acc '()))
+      (if (null? rs)
+          (reverse acc)
+          (let ((r (car rs)))
+            (loop (cdr rs)
+                  (cons (cons (key-of r) r) acc))))))
+
+  (define (cmp-key a b)
+    (cmp (car a) (car b)))
+
+  (define sorted (api wf-sort keyed cmp-key))
+
+  ;; Strip the keys back off so we return just rows, in sorted order.
+  (let loop ((ss sorted) (out '()))
+    (if (null? ss)
+        (reverse out)
+        (loop (cdr ss)
+              (cons (cdr (car ss)) out)))))

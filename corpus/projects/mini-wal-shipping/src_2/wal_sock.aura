@@ -1,0 +1,100 @@
+;; wal_sock.aura — Virtual socket for the mini WAL shipper
+;;
+;; A "socket" here is a simple in-memory transport. It owns:
+;;   - 'out      : list of frames sent by the primary, in order
+;;   - 'in       : list of frames waiting to be received by follower
+;;   - 'open?    : boolean — is the connection currently up?
+;;   - 'drops    : counter — number of dropped frames since boot
+;;   - 'bytes    : counter — total payload bytes that have crossed
+;;
+;; Because there is no real network, "send" pushes onto the receiver's
+;; queue and "recv" pops from it. We expose the four required APIs:
+;;
+;;   (sock-send! sock frame)        ; ship a frame; may drop if closed
+;;   (sock-recv! sock)              ; pop next frame from receiver
+;;   (sock-drop? sock)              ; did the last op drop something?
+;;   (sock-reset! sock)             ; drop everything & mark closed
+;;
+;; All state lives in module-local set! variables so that the socket
+;; can be shared across the proto/shipper/follower modules.
+
+;; --- Module-local transport state -----------------------------------
+
+(define *sock-out*     '())   ; outgoing queue (frames waiting to deliver)
+(define *sock-in*      '())   ; incoming queue at the receiver
+(define *sock-open?*   #f)    ; is the link currently up?
+(define *sock-drops*   0)     ; total frames dropped due to failures
+(define *sock-bytes*   0)     ; total payload bytes successfully sent
+(define *sock-last-drop?* #f) ; flag: did the most recent op drop?
+
+;; Compute byte count for a frame. A frame is (lsn payload crc). If
+;; it's the flush marker '(), payload length is 0. Otherwise we use
+;; string-length as a stand-in for byte length.
+(define (frame-byte-len frame)
+  (cond ((null? frame) 0)
+        (else (string-length (cadr frame)))))
+
+;; --- Public API ------------------------------------------------------
+
+;; Send a frame over the socket. If the link is closed, the frame is
+;; silently dropped and the drop counter is bumped. Otherwise it is
+;; queued onto the receiver's incoming list.
+(define (api sock-send! sock frame)
+  ;; The `sock` argument is for interface compatibility; the real
+  ;; state lives in the module-local variables above. We accept it
+  ;; and ignore it.
+  (set! *sock-last-drop?* #f)
+  (cond
+    ((not *sock-open?*)
+     ;; Link is down — frame is dropped.
+     (set! *sock-drops* (+ *sock-drops* 1))
+     (set! *sock-last-drop?* #t)
+     'dropped)
+    (else
+     ;; Queue the frame for delivery, accounting payload bytes.
+     (set! *sock-in*
+           (append *sock-in* (list frame)))
+     (set! *sock-bytes* (+ *sock-bytes* (frame-byte-len frame)))
+     'sent)))
+
+;; Receive the next frame from the socket. Returns '() if the queue
+;; is empty (also signals end-of-stream to callers).
+(define (api sock-recv! sock)
+  (cond
+    ((null? *sock-in*) '())
+    (else
+     (let ((head (car *sock-in*)))
+       (set! *sock-in* (cdr *sock-in*))
+       head))))
+
+;; Was the most recent operation a drop?
+(define (api sock-drop? sock)
+  *sock-last-drop?*)
+
+;; Reset the socket: close the link, flush all queues, and reset
+;; counters. After reset! the socket is closed; callers must reopen
+;; via proto-handshake before sending again.
+(define (api sock-reset! sock)
+  (set! *sock-out* '())
+  (set! *sock-in*  '())
+  (set! *sock-open?* #f)
+  (set! *sock-last-drop?* #f)
+  ;; We deliberately do NOT zero *sock-drops* or *sock-bytes* — they
+  ;; are lifetime counters observed by the metrics/reporter modules.
+  'reset)
+
+;; --- Extra accessors used by other modules ---------------------------
+
+;; Open the socket. Called by proto-handshake after a successful
+;; handshake. Exported here for convenience (non-required API).
+(define (sock-open!)
+  (set! *sock-open?* #t)
+  'open)
+
+;; Read the open state.
+(define (sock-open?)
+  *sock-open?*)
+
+;; Read lifetime counters. Used by reporter for the stdout contract.
+(define (sock-drops)   *sock-drops*)
+(define (sock-bytes)   *sock-bytes*)

@@ -1,0 +1,289 @@
+;; json-ast.aura — Recursive-descent JSON parser that consumes tokens from
+;; json-lex.aura and produces a structural AST.
+;;
+;; The AST is a tagged value (alist-of-3) where every node has:
+;;   kind      -> one of 'object 'array 'string 'number 'true 'false 'null 'error
+;;   children  -> for objects: list of (key-node . value-node) pairs;
+;;                for arrays:  list of value nodes;
+;;                for scalars: '()
+;;   value     -> the underlying scalar for primitives, or '() for containers,
+;;                or an error alist for 'error nodes.
+;;
+;; Exposes:
+;;   (parse-json src)        -> AST node (or error node on failure)
+;;   (ast-kind node)         -> node kind symbol
+;;   (ast-children node)     -> children list (object pairs or array elts)
+;;   (ast-value node)        -> scalar / payload / error alist
+
+;; ---- helpers ---------------------------------------------------
+
+(define (ast-kind node)
+  (let ((k (assq 'kind node)))
+    (if k (cdr k) 'error)))
+
+(define (ast-children node)
+  (let ((c (assq 'children node)))
+    (if c (cdr c) '())))
+
+(define (ast-value node)
+  (let ((v (assq 'value node)))
+    (if v (cdr v) '())))
+
+(define (make-ast kind children value)
+  (list (cons 'kind kind) (cons 'children children) (cons 'value value)))
+
+(define (make-err code pos msg)
+  (make-ast 'error '() (list (cons 'code code) (cons 'pos pos) (cons 'msg msg))))
+
+;; A token is an alist with at least 'kind and 'span; 'value is optional.
+(define (tk-kind t) (cdr (assq 'kind t)))
+(define (tk-span t) (cdr (assq 'span t)))
+(define (tk-val t)
+  (let ((v (assq 'value t)))
+    (if v (cdr v) #f)))
+
+;; Slice the source between (start . end) byte offsets, inclusive of start,
+;; exclusive of end. Iterative to stay within Aura recursion comfort.
+(define (slice-span src start end)
+  (let loop ((i 0) (out '()))
+    (if (>= i (string-length src))
+        (list->string (reverse out))
+        (if (and (>= i start) (< i end))
+            (loop (+ i 1)
+                  (cons (string-ref src i) out))
+            (loop (+ i 1) out)))))
+
+;; Convert a JSON-escaped string body (raw bytes between the quotes, WITHOUT
+;; the surrounding quotes) into a host string. Handles \", \\, \/, \b, \f,
+;; \n, \r, \t, and \uXXXX. Invalid escapes fall back to the raw character.
+(define (decode-string s)
+  (let ((len (string-length s)))
+    (let loop ((i 0) (out '()))
+      (cond
+        ((>= i len)
+         (list->string (reverse out)))
+        ((char=? (string-ref s i) #\\)
+         (cond
+           ((>= (+ i 1) len)
+            (loop (+ i 1) out))
+           (else
+             (let ((c (string-ref s (+ i 1))))
+               (cond
+                 ((char=? c #\")
+                  (loop (+ i 2) (cons #\" out)))
+                 ((char=? c #\\)
+                  (loop (+ i 2) (cons #\\ out)))
+                 ((char=? c #\/)
+                  (loop (+ i 2) (cons #\/ out)))
+                 ((char=? c #\b)
+                  (loop (+ i 2) (cons (integer->char 8) out)))
+                 ((char=? c #\f)
+                  (loop (+ i 2) (cons (integer->char 12) out)))
+                 ((char=? c #\n)
+                  (loop (+ i 2) (cons #\newline out)))
+                 ((char=? c #\r)
+                  (loop (+ i 2) (cons (integer->char 13) out)))
+                 ((char=? c #\t)
+                  (loop (+ i 2) (cons #\tab out)))
+                 ((char=? c #\u)
+                  (if (>= (+ i 5) len)
+                      (loop (string-length s) out)
+                      (let ((v (hex-char-value (string-ref s (+ i 2)))
+                              (hex-char-value (string-ref s (+ i 3)))
+                              (hex-char-value (string-ref s (+ i 4)))
+                              (hex-char-value (string-ref s (+ i 5)))))
+                        (loop (+ i 6)
+                              (cons (integer->char v) out)))))
+                 (else
+                  (loop (+ i 2) (cons c out))))))))
+        (else
+         (loop (+ i 1) (cons (string-ref s i) out)))))))
+
+(define (hex-char-value c)
+  (cond
+    ((char=? c #\0) 0) ((char=? c #\1) 1) ((char=? c #\2) 2)
+    ((char=? c #\3) 3) ((char=? c #\4) 4) ((char=? c #\5) 5)
+    ((char=? c #\6) 6) ((char=? c #\7) 7) ((char=? c #\8) 8)
+    ((char=? c #\9) 9) ((char=? c #\a) 10) ((char=? c #\b) 11)
+    ((char=? c #\c) 12) ((char=? c #\d) 13) ((char=? c #\e) 14)
+    ((char=? c #\f) 15) ((char=? c #\A) 10) ((char=? c #\B) 11)
+    ((char=? c #\C) 12) ((char=? c #\D) 13) ((char=? c #\E) 14)
+    ((char=? c #\F) 15)
+    (else 0)))
+
+;; Strict numeric parse (integers + signed + decimals + exponents).
+;; Returns the number, or #f on failure.
+(define (parse-number s)
+  (let ((len (string-length s)))
+    (if (= len 0)
+        #f
+        (let ((sign 1) (start 0))
+          (cond
+            ((and (>= len 1) (char=? (string-ref s 0) #\-))
+             (set! sign -1) (set! start 1))
+            ((and (>= len 1) (char=? (string-ref s 0) #\+))
+             (set! start 1)))
+          (if (>= start len)
+              #f
+              (let loop ((i start) (whole 0) (frac 0) (frac-div 1) (phase 0))
+                ;; phase 0 = whole, 1 = frac, 2 = exp
+                (cond
+                  ((>= i len)
+                   (* sign (+ whole (/ (exact->inexact frac) frac-div))))
+                  ((and (= phase 0) (char=? (string-ref s i) #\.))
+                   (loop (+ i 1) whole 0 1 1))
+                  ((and (< phase 2) (or (char=? (string-ref s i) #\e)
+                                        (char=? (string-ref s i) #\E)))
+                   (let ((e (parse-int-from s (+ i 1))))
+                     (if (eq? e #f)
+                         #f
+                         (let ((p (expt 10 e)))
+                           (if (= phase 1)
+                               (* sign (+ whole
+                                          (/ (exact->inexact frac) frac-div)))
+                               (* sign whole)))))
+                  ((and (>= (char->integer (string-ref s i)) (char->integer #\0))
+                        (<= (char->integer (string-ref s i)) (char->integer #\9)))
+                   (let ((d (- (char->integer (string-ref s i))
+                               (char->integer #\0))))
+                     (cond
+                       ((= phase 0)
+                        (loop (+ i 1) (+ (* whole 10) d) 0 1 0))
+                       ((= phase 1)
+                        (loop (+ i 1) whole (+ (* frac 10) d) (* frac-div 10) 1))
+                       (else
+                        (loop (+ i 1) whole frac frac-div phase)))))
+                  (else #f))))))))
+
+;; We can't actually reassign phase above inside the recursion cleanly, so we
+;; inline a simpler single-pass numeric parse as a robust fallback.
+(define (parse-number src-str)
+  (let ((len (string-length src-str)))
+    (if (= len 0)
+        #f
+        (let ((neg #f))
+          (let ((i 0))
+            (cond
+              ((and (> len 0) (char=? (string-ref src-str 0) #\-))
+               (set! neg #t) (set! i 1))
+              ((and (> len 0) (char=? (string-ref src-str 0) #\+))
+               (set! i 1)))
+            (let loop ((i i)
+                       (whole 0)
+                       (frac-num 0)
+                       (frac-den 1)
+                       (mode 0))
+              (cond
+                ((>= i len)
+                 (let ((v (+ whole (/ (exact->inexact frac-num) frac-den))))
+                   (if neg (- v) v)))
+                ((and (= mode 0) (char=? (string-ref src-str i) #\.))
+                 (loop (+ i 1) whole frac-num frac-den 1))
+                ((char=? (string-ref src-str i) #\e)
+                 (let ((rest (substring-no-zeros src-str (+ i 1) len)))
+                   (if rest
+                       (let ((e (string->number rest)))
+                         (if e
+                             (let ((v (+ whole
+                                         (/ (exact->inexact frac-num) frac-den))))
+                               (let ((scaled (* v (expt 10 e))))
+                                 (if neg (- scaled) scaled))
+                             #f))
+                       #f)))
+                ((char-numeric? (string-ref src-str i))
+                 (let ((d (char->digit (string-ref src-str i))))
+                   (cond
+                     ((= mode 0)
+                      (loop (+ i 1) (+ (* whole 10) d) frac-num frac-den 0))
+                     ((= mode 1)
+                      (loop (+ i 1) whole (+ (* frac-num 10) d)
+                            (* frac-den 10) 1))
+                     (else
+                      (loop (+ i 1) whole frac-num frac-den mode)))))
+                (else #f))))))))
+
+(define (char-numeric? c)
+  (and (>= (char->integer c) (char->integer #\0))
+       (<= (char->integer c) (char->integer #\9))))
+
+(define (char->digit c)
+  (- (char->integer c) (char->integer #\0)))
+
+(define (substring-no-zeros s start end)
+  (if (>= start end)
+      #f
+      (substring s start end)))
+
+;; ---- parsing --------------------------------------------------
+
+;; Parse starting at the first non-EOF token. Returns (ast-node . rest-tokens).
+(define (parse-value tokens src)
+  (if (null? tokens)
+      (cons (make-err 'unexpected-eof 0 "unexpected end of input") '())
+      (let ((t (car tokens)) (rest (cdr tokens)))
+        (let ((k (tk-kind t)))
+          (cond
+            ((eq? k 'lbrace) (parse-object t rest src))
+            ((eq? k 'lbrack) (parse-array t rest src))
+            ((eq? k 'string)
+             (cons (make-ast 'string '()
+                             (decode-string
+                              (slice-span src (car (tk-span t))
+                                          (+ (cdr (tk-span t)) 1))))
+                   rest))
+            ((eq? k 'number)
+             (let ((s (slice-span src (car (tk-span t))
+                                  (+ (cdr (tk-span t)) 1))))
+               (let ((n (parse-number s)))
+                 (if n
+                     (cons (make-ast 'number '() n) rest)
+                     (cons (make-err 'bad-number
+                                     (car (tk-span t))
+                                     "invalid number literal")
+                           rest)))))
+            ((eq? k 'true)
+             (cons (make-ast 'true '() #t) rest))
+            ((eq? k 'false)
+             (cons (make-ast 'false '() #f) rest))
+            ((eq? k 'null)
+             (cons (make-ast 'null '() '()) rest))
+            (else
+             (cons (make-err 'unexpected-token
+                             (car (tk-span t))
+                             (string-append "unexpected token: "
+                                            (symbol->string k)))
+                   rest)))))))
+
+(define (parse-object open-tok tokens src)
+  ;; open-tok is '{'; tokens is what follows.
+  (let ((pos (car (tk-span open-tok))))
+    (let loop ((tokens tokens) (kvs '()))
+      (cond
+        ((null? tokens)
+         (cons (make-err 'unterminated-object pos "missing closing '}'")
+               '()))
+        ((eq? (tk-kind (car tokens)) 'rbrace)
+         (cons (make-ast 'object (reverse kvs) '())
+               (cdr tokens)))
+        (else
+         (let* ((kv (parse-keyval tokens src))
+                (ntok (car kv))
+                (kvs (if (ast-kind (car ntok)) ; not an error?
+                         (cons (cdr ntok) kvs)
+                         kvs))
+                (rest (cdr ntok)))
+           ;; we don't filter here; we'll let caller decide based on error
+           (let ((next-tok (car tokens)))
+             (let ((nk (tk-kind next-tok)))
+               (cond
+                 ((eq? (ast-kind (car ntok)) 'error)
+                  (cons (car ntok) rest))
+                 ((eq? nk 'comma)
+                  (loop (cdr tokens) kvs))
+                 ((eq? nk 'rbrace)
+                  (cons (make-ast 'object (reverse kvs) '())
+                        (cdr tokens)))
+                 (else
+                  (let ((err (make-err 'expected-comma-or-rbrace
+                                       (car (tk-span 
+; truncated by extract_aura_sources

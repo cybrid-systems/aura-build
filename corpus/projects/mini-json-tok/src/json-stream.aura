@@ -1,0 +1,127 @@
+;; json-stream.aura — Streaming SAX-style events over a JSON source.
+;;
+;; Walks the AST produced by json-ast.aura (which itself is built from the
+;; tokenizer in json-lex.aura) and emits a flat sequence of "events" that
+;; describe the structural descent of a JSON value without keeping the whole
+;; tree in the consumer's head.
+;;
+;; An event is an alist-of-4 with these entries:
+;;   kind   -> one of:
+;;             'start-object   'end-object
+;;             'start-array    'end-array
+;;             'string         'number
+;;             'true           'false           'null
+;;             'error
+;;   path   -> a path structure (built with json-path.aura helpers) that
+;;             names the location of the event in the document. For
+;;             'start-object / 'end-object the path points AT the object,
+;;             for 'start-array  / 'end-array  it points AT the array, for
+;;             primitive children it points AT the child itself.
+;;   depth  -> nesting depth of the node that produced the event (root = 0).
+;;             'end-* events have the same depth as their matching 'start-*.
+;;   value  -> scalar value for primitive events; '() otherwise. Errors
+;;             carry the error alist here.
+;;
+;; The streaming API is intentionally lossless: every node in the AST
+;; produces at least one event, and containers emit *two* events (start
+;; before children, end after children). The order is a strict DFS that
+;; matches the structural index built by json-index.aura.
+;;
+;; Exposes:
+;;   (stream-events src)     -> list of events for the JSON document in src
+;;   (event-kind ev)         -> event kind symbol
+;;   (event-path ev)         -> event path
+;;   (event-depth ev)        -> event depth (non-negative integer)
+
+;; ---- forward / local references -----------------------------
+;;
+;; json-ast.aura and json-path.aura are loaded BEFORE this file, so we can
+;; reference parse-json, ast-kind, ast-children, ast-value, path-prepend,
+;; path-key and path-index directly. We capture them locally for clarity.
+
+(define (js-ast-parse src) (parse-json src))
+(define (js-path-prepend p k) (path-prepend p k))
+(define (js-path-key    p)   (path-key p))
+(define (js-path-index  p)   (path-index p))
+
+;; Build a single event record.
+(define (mk-event kind path depth value)
+  (list (cons 'kind  kind)
+        (cons 'path  path)
+        (cons 'depth depth)
+        (cons 'value value)))
+
+;; Append in O(n) — total event count is small for the scenario snippets.
+(define (ev-append ev rest) (cons ev rest))
+
+;; ---- per-kind emitters --------------------------------------
+
+(define (emit-primitive kind path depth value)
+  (mk-event kind path depth value))
+
+(define (emit-array node path depth)
+  ;; Walk array elements left-to-right. Each element gets an index key.
+  (let loop ((elts (ast-children node))
+             (acc  '())
+             (i    0))
+    (if (null? elts)
+        ;; We've collected all child events in REVERSE order; reverse them.
+        (reverse acc)
+        (let ((child  (car elts))
+              (child-path (js-path-prepend path i)))
+          (loop (cdr elts)
+                (append (reverse (js-walk child child-path depth))
+                        acc)
+                (+ i 1))))))
+
+(define (emit-object node path depth)
+  ;; Object children are (key-node . value-node) pairs from json-ast.aura.
+  (let loop ((pairs (ast-children node))
+             (acc   '()))
+    (if (null? pairs)
+        (reverse acc)
+        (let* ((pair  (car pairs))
+               (kn    (car pair))
+               (vn    (cdr pair))
+               (kname (ast-value kn))           ; raw string scalar
+               (child-path (js-path-prepend path kname)))
+          (loop (cdr pairs)
+                (append (reverse (js-walk vn child-path depth))
+                        acc))))))
+
+;; js-walk: produce the event list for `node' at the given path/depth.
+;; Containers emit a 'start-* event followed by children followed by
+;; 'end-*; primitives emit exactly one event.
+(define (js-walk node path depth)
+  (let ((kind (ast-kind node)))
+    (cond
+      ((eq? kind 'object)
+       (ev-append (mk-event 'start-object path depth '())
+                  (ev-append (emit-object node path depth)
+                            (list (mk-event 'end-object path depth '())))))
+      ((eq? kind 'array)
+       (ev-append (mk-event 'start-array path depth '())
+                  (ev-append (emit-array node path depth)
+                            (list (mk-event 'end-array path depth '())))))
+      ((eq? kind 'string)  (list (emit-primitive 'string  path depth (ast-value node))))
+      ((eq? kind 'number)  (list (emit-primitive 'number  path depth (ast-value node))))
+      ((eq? kind 'true)    (list (emit-primitive 'true    path depth #t)))
+      ((eq? kind 'false)   (list (emit-primitive 'false   path depth #f)))
+      ((eq? kind 'null)    (list (emit-primitive 'null    path depth '())))
+      ((eq? kind 'error)   (list (emit-primitive 'error   path depth (ast-value node))))
+      (else
+       ;; Unknown kind — surface as an error event so consumers notice.
+       (list (mk-event 'error path depth
+                       (list (cons 'code 'unknown-kind)
+                             (cons 'pos  0)
+                             (cons 'msg  (number->string 0)))))))))
+
+;; ---- public API ---------------------------------------------
+
+(define (stream-events src)
+  ;; Entry point. The empty path represents "root"; depth is 0.
+  (js-walk (js-ast-parse src) 'root 0))
+
+(define (event-kind ev)  (cdr (assq 'kind  ev)))
+(define (event-path ev)  (cdr (assq 'path  ev)))
+(define (event-depth ev) (cdr (assq 'depth ev)))

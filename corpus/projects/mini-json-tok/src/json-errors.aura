@@ -1,0 +1,66 @@
+;; json-errors.aura — Error records used across the JSON pipeline.
+;;
+;; The parser, tokenizer, recovery layer, and stream can all surface
+;; structured errors instead of just aborting. To keep the project
+;; uniform, every error is represented as a small alist with three
+;; fields:
+;;
+;;   code  -> a symbol naming the error class, e.g.
+;;            'unexpected-token, 'unterminated-string,
+;;            'invalid-number, 'invalid-unicode,
+;;            'trailing-garbage, 'empty-input, 'truncated,
+;;            'invalid-escape, etc.
+;;   pos   -> a non-negative integer giving the byte offset in the
+;;            source string where the error was detected. Use 0 when
+;;            the position is unknown.
+;;   msg   -> a human-readable string describing the problem.
+;;
+;; The alist shape lets the rest of the project treat errors like any
+;; other tagged value and inspect them with the helpers below.
+;;
+;; Exposes:
+;;   (make-error code pos msg)   -> build an error record
+;;   (error? v)                  -> #t if v is an error record, else #f
+;;   (error-code e)              -> the code symbol of an error record
+;;   (error-pos e)               -> the byte position of an error record
+
+(define (make-error code pos msg)
+  ;; Build the canonical error alist. We keep the field order stable so
+  ;; downstream code can rely on it; an alist lookup would also work,
+  ;; but explicit cons-ing is cheaper and clearer.
+  (cons (cons 'code code)
+        (cons (cons 'pos pos)
+              (cons (cons 'msg msg) '()))))
+
+(define (error? v)
+  ;; An error record is a non-empty list whose car is itself a pair
+  ;; keyed by the symbol 'code. Anything else (numbers, strings,
+  ;; #t/#f, '(), proper lists not starting with such a pair) is not.
+  (if (null? v)
+      #f
+      (if (pair? v)
+          (let ((head (car v)))
+            (if (pair? head)
+                (if (symbol? (car head))
+                    (if (equal? (car head) 'code)
+                        #t
+                        #f)
+                    #f)
+                #f))
+          #f)))
+
+(define (error-code e)
+  ;; Pull the 'code field out of the alist. Assumes e is an error;
+  ;; callers should gate on error? first.
+  (let ((entry (assq 'code e)))
+    (if entry
+        (cdr entry)
+        #f)))
+
+(define (error-pos e)
+  ;; Pull the 'pos field out of the alist. Defaults to 0 if the entry
+  ;; is missing, so partial records still behave sanely.
+  (let ((entry (assq 'pos e)))
+    (if entry
+        (cdr entry)
+        0)))
