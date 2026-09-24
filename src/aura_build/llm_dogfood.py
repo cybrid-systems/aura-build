@@ -3336,6 +3336,8 @@ def run_closed_loop(
             "concurrent_llm": bool(concurrent_llm_mode),
             "llm_parallel": last_round.get("llm_parallel"),
             "llm_parallel_ok": bool(last_round.get("llm_parallel_ok")),
+            "llm_via": last_round.get("llm_via"),
+            "fiber_llm": bool(fiber_llm_live),
             "repair_path": last_round.get("repair_path"),
             "orch_observation_ok": bool(
                 (last_round.get("orch_observation") or {}).get("ok")
