@@ -1,0 +1,211 @@
+; main.aura — Entry point for the mini-wal-checkpoint demonstration
+;
+; This file orchestrates the whole scenario:
+;   1. Load constants + config, build a default config and an engine.
+;   2. Run a deterministic synthetic workload of N=32 iterations that
+;      dirties pages and emits redo records, occasionally emitting
+;      fuzzy checkpoints when the engine signals it is time.
+;   3. After the loop, gather stats from every relevant module.
+;   4. Run the recovery analysis (anchor LSN + max replay window).
+;   5. Print the 13 KEY=value lines required by the contract.
+;
+; All values come from real API calls into the other modules — no
+; constants are inlined as the source of truth.
+
+; ---------------------------------------------------------------------
+; 0. Module loads (the runtime loads files in the order given on the
+;    CLI, but we still require the relevant APIs here for clarity).
+; ---------------------------------------------------------------------
+
+(api min-page-id)
+(api max-page-id)
+(api lsn-start)
+(api checkpoint-interval)
+(api max-pages-per-fuzzy)
+
+(api default-config)
+(api config-checkpoint-interval)
+(api config-fuzzy-cap)
+
+(api make-lsn)
+(api lsn=?)
+(api lsn<=?)
+(api lsn-advance)
+
+(api make-page-table)
+(api page-dirty!)
+(api page-dirty?)
+(api dirty-pages)
+(api dirty-page-count)
+
+(api make-redo)
+(api redo?)
+(api redo-page-id)
+(api redo-lsn)
+(api redo-size)
+
+(api make-redo-log)
+(api redo-log-append!)
+(api redo-log-length)
+(api redo-log-bytes)
+(api redo-log-bytes-since!)
+
+(api make-checkpoint)
+(api checkpoint?)
+(api checkpoint-start-lsn)
+(api checkpoint-end-lsn)
+(api checkpoint-dirty-pages)
+
+(api make-fuzzy-collector)
+(api fuzzy-collect!)
+(api fuzzy-reset!)
+(api fuzzy-count)
+
+(api make-stats)
+(api stats-inc!)
+(api stats-get)
+(api stats-snapshot)
+
+(api recovery-replay-from)
+(api recovery-scan-window)
+(api recovery-reset-dirty-count)
+
+(api make-engine)
+(api engine-emit-redo!)
+(api engine-should-checkpoint?)
+(api engine-emit-checkpoint!)
+(api engine-stats)
+(api engine-replay-from-lsn)
+(api engine-max-replay-length)
+
+(api report-stats)
+(api report-snapshot)
+
+; ---------------------------------------------------------------------
+; 1. Build config + engine.
+; ---------------------------------------------------------------------
+
+(define cfg (default-config))
+
+; Save frequently-used config values in locals so the loop is readable.
+(define ckpt-interval (config-checkpoint-interval cfg))
+(define fuzzy-cap     (config-fuzzy-cap cfg))
+
+(define engine (make-engine cfg))
+
+; Convenience: bound constants for the random-ish page picker.
+(define lo-page (min-page-id))
+(define hi-page (max-page-id))
+
+; ---------------------------------------------------------------------
+; 2. Synthetic workload: N=32 iterations.
+;
+;    For each iteration i in [1..32]:
+;      - pick a "pseudo-random" page id using a deterministic LCG-ish
+;        mix of i, so the run is reproducible without requiring any
+;        external RNG;
+;      - dirt the page in the engine's page table;
+;      - construct a redo record with an advancing LSN and a small
+;        payload size that depends on the page id (just for variety);
+;      - append the record via the engine.
+;    Every `ckpt-interval` records we ask the engine if it is time to
+;    checkpoint; when yes, we emit one. emit-checkpoint internally
+;    drains the fuzzy collector and resets dirty bits in the page
+;    table.
+; ---------------------------------------------------------------------
+
+(define N 32)
+(define current-lsn (lsn-start))
+
+(define i 1)
+(while (<= i N)
+  (begin
+    ; deterministic page pick: spread across [lo-page, hi-page]
+    (define pid (+ lo-page (modulo (* i 1103515245 7) (+ (- hi-page lo-page) 1))))
+    (define sz  (+ 16 (modulo pid 32)))             ; payload size 16..47 bytes
+
+    ; engine-emit-redo! handles dirtying the page, the redo record
+    ; construction and the log append. The LSN is passed in by us.
+    (engine-emit-redo! engine pid current-lsn sz)
+
+    ; advance our own LSN by the record size (simulating WAL writes
+    ; consuming LSN space). The engine's internal LSN moves the same
+    ; way via lsn-advance.
+    (set! current-lsn (lsn-advance current-lsn sz))
+
+    ; Should we emit a checkpoint now?
+    (if (engine-should-checkpoint? engine)
+        (engine-emit-checkpoint! engine))
+
+    (set! i (+ i 1))))
+
+; ---------------------------------------------------------------------
+; 3. Gather engine stats + log metrics.
+; ---------------------------------------------------------------------
+
+(define stats        (engine-stats engine))
+(define redo-len     (redo-log-length engine))      ; engine wraps log
+(define redo-bytes   (redo-log-bytes engine))
+
+; pull named counters out of the stats alist
+(define REDO_RECORDS       redo-len)
+(define REDO_BYTES         redo-bytes)
+(define PAGES_DIRTIED      (stats-get stats 'pages-dirtied))
+(define CHECKPOINT_COUNT   (stats-get stats 'checkpoints-emitted))
+(define DIRTY_BIT_RESET    (recovery-reset-dirty-count engine))
+(define LAST_CHECKPOINT_LSN
+        (let ((s (stats-get stats 'last-checkpoint-lsn)))
+          (if (number? s) s (lsn-start))))
+
+; ---------------------------------------------------------------------
+; 4. Recovery analysis.
+;
+;    The recovery anchor is the LSN from which replay must begin; the
+;    scan window bounds the worst-case amount of log we will read.
+; ---------------------------------------------------------------------
+
+(define RECOVERY_LSN        (recovery-replay-from engine))
+(define MAX_REPLAY_LEN      (recovery-scan-window engine))
+(define REPLAY_FROM_LSN     (engine-replay-from-lsn engine))
+(define MAX_REPLAY_LENGTH   (engine-max-replay-length engine))
+
+; LSN line: we prefer the explicit engine accessor, fall back to
+; recovery-replay-from if the engine returns 0 (cold start case).
+(define LSN_LINE
+  (if (> REPLAY_FROM_LSN 0)
+      REPLAY_FROM_LSN
+      RECOVERY_LSN))
+
+; ---------------------------------------------------------------------
+; 5. Emit the 13 KEY=value lines in the exact required order.
+;
+;    We use the `report-stats` formatter where it matches a field,
+;    and `(number->string …)` for the raw numeric lines. Every value
+;    was produced by a module API above.
+; ---------------------------------------------------------------------
+
+; helper: print "KEY=value" + newline
+(define (emit k v)
+  (begin
+    (display k)
+    (display "=")
+    (display v)
+    (newline)))
+
+; Snapshot block (informational; not one of the 13 keys, but useful).
+(report-snapshot engine)
+
+; The 13 required lines, in order:
+(emit "LSN"                       LSN_LINE)
+(emit "REDO_RECORDS"              REDO_RECORDS)
+(emit "REDO_BYTES"                REDO_BYTES)
+(emit "PAGES_DIRTIED"             PAGES_DIRTIED)
+(emit "DIRTY_BIT_RESET"           DIRTY_BIT_RESET)
+(emit "CHECKPOINT_COUNT"          CHECKPOINT_COUNT)
+(emit "LAST_CHECKPOINT_LSN"       LAST_CHECKPOINT_LSN)
+(emit "RECOVERY_LSN"              RECOVERY_LSN)
+(emit "MAX_REPLAY_LEN"            MAX_REPLAY_LEN)
+(emit "MAX_REPLAY_LENGTH"         MAX_REPLAY_LENGTH)
+(emit "CHECKPOINT_INTERVAL"       ckpt-interval)
+(emit "FUZZY_CAP"                 fuzzy-cap)
+(emit "REPORT"                    (report-stats engine))

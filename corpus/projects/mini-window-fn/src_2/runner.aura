@@ -1,0 +1,29 @@
+;; runner.aura — top-level dispatcher for the window-fn runtime.
+;;
+;; The runner inspects the global `*mode*` flag and forwards the work
+;; to either the sort-based or hash-based window executor. Both
+;; executors return a relation with a synthetic 'WF_VALUE column, so
+;; the runner's contract is just "give me a cfg + a relation, get a
+;; derived relation back". The strategy symbol is exposed via the
+;; internal helper `wf-run-strategy` so main.aura can probe it for the
+;; WF_STRATEGY assertion.
+
+(define *mode* 'sort)
+
+(define (wf-run-strategy)
+  *mode*)
+
+(define (api wf-run cfg rel)
+  (let ((strategy (wf-run-strategy)))
+    (cond
+      ((eq? strategy 'hash)
+       (api wf-window-hash rel
+            (api wf-part-key cfg)
+            (api wf-frame-from-cfg cfg)
+            (api wf-rank-fn-from-cfg cfg)))
+      (else
+       (api wf-window-sort rel
+            (api wf-part-key cfg)
+            (api wf-order-col-from-cfg cfg)
+            (api wf-frame-from-cfg cfg)
+            (api wf-rank-fn-from-cfg cfg))))))

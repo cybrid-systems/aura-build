@@ -1,0 +1,9 @@
+;; constants.aura
+;; Tag constants and global counters used across the mini-wal-txn system.
+
+(define wal-tag 'wal)
+(define txn-tag 'txn)
+(define committed-tag 'committed)
+(define aborted-tag 'aborted)
+
+(define current-txn-id 0)

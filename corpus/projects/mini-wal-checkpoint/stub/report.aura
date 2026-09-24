@@ -1,0 +1,77 @@
+; report.aura — Formatting helpers for the WAL checkpoint engine
+;
+; The report module is responsible for turning the engine's raw state
+; (stats alist, log counters, recovery metrics) into the human-readable
+; KEY=value lines that the scenario prints to stdout.
+;
+; Two top-level helpers are exposed via `(api ...)`:
+;
+;   (report-stats stats)         -> alist of (KEY . value-string)
+;   (report-snapshot engine)     -> alist of (KEY . value-string) derived
+;                                   directly from the engine's live state
+;
+; Both helpers return association lists rather than printing directly.
+; The caller (main.aura) is responsible for walking the alist and
+; emitting each line with (display ...) / (newline). Keeping printing
+; out of this module makes it easy to reuse the formatters in tests or
+; alternative drivers.
+
+(define (api report-stats stats)
+  ; Convert a stats alist of the form
+  ;   ((name . count) (name . count) ...)
+  ; into a list of (KEY . "value") pairs where KEY is the uppercased
+  ; metric name and value is rendered as a decimal string.
+  (define (render-one entry)
+    (let ((name (symbol->string (car entry)))
+          (val  (cdr entry)))
+      (cons (string-upcase name)
+            (number->string val))))
+  (map render-one stats))
+
+(define (api report-snapshot engine)
+  ; Produce a full snapshot alist derived from the live engine. The
+  ; engine is expected to expose the following accessors (defined in
+  ; checkpoint-engine.aura / recovery.aura / redo-log.aura):
+  ;
+  ;   engine-stats              -> stats alist
+  ;   engine-redo-log-length    -> integer record count
+  ;   engine-redo-log-bytes     -> integer byte count
+  ;   engine-replay-from-lsn    -> LSN (integer) for recovery anchor
+  ;   engine-recovery-window    -> max replay length (integer)
+  ;   engine-dirty-page-count   -> dirty pages currently in table
+  ;   engine-checkpoint-count   -> # of checkpoints emitted so far
+  ;   engine-last-checkpoint    -> most recent checkpoint record
+  ;
+  ; We deliberately query each metric independently rather than
+  ; pre-computing a big struct — this keeps the report module decoupled
+  ; from the engine's internal representation.
+  (let ((stats       (engine-stats engine))
+        (rec-count   (engine-redo-log-length engine))
+        (rec-bytes   (engine-redo-log-bytes engine))
+        (replay-lsn  (engine-replay-from-lsn engine))
+        (window      (engine-recovery-window engine))
+        (dirty-count (engine-dirty-page-count engine))
+        (ckpt-count  (engine-checkpoint-count engine))
+        (last-ckpt   (engine-last-checkpoint engine)))
+    (define (kv k v)
+      (cons (string-upcase (symbol->string k))
+            (number->string v)))
+    (append
+      ; First, the stats alist (everything stats.aura tracks).
+      (map (lambda (entry)
+             (let ((name (symbol->string (car entry)))
+                   (val  (cdr entry)))
+               (cons (string-upcase name)
+                     (number->string val))))
+           stats)
+      ; Then the live engine counters.
+      (list (kv 'redo-records     rec-count)
+            (kv 'redo-bytes       rec-bytes)
+            (kv 'replay-from-lsn  replay-lsn)
+            (kv 'recovery-window  window)
+            (kv 'dirty-pages      dirty-count)
+            (kv 'checkpoint-count ckpt-count)
+            (kv 'last-checkpoint-end-lsn
+                (if (null? last-ckpt)
+                    0
+                    (checkpoint-end-lsn last-ckpt)))))))

@@ -1,0 +1,41 @@
+;; cold_detector.aura
+;; Given a list of WAL segments and an age threshold, classify which
+;; segments are "cold" (eligible for compaction) versus "hot"
+;; (still warm and left untouched).  A segment is cold when its age
+;; is greater than or equal to the threshold.
+;;
+;; We expose a small, pure API:
+;;   classify-cold   -> (cold-list . hot-list) or one of the two
+;;                      depending on caller need
+;;   cold-count      -> length of a cold-list
+;;   cold-ids        -> list of segment ids in a cold-list
+;;
+;; Internally we keep cold and hot separate so main.aura can pick the
+;; right list to feed to the merger.
+
+(define (api classify-cold segments threshold)
+  ;; Walk the segment list once, partitioning by age.
+  ;; Returns a pair: (cold-segments . hot-segments)
+  (define (loop segs cold hot)
+    (cond ((null? segs)
+           (list (reverse cold) (reverse hot)))
+          (else
+           (let ((s (car segs))
+                 (rest (cdr segs)))
+             (if (>= (api segment-age s) threshold)
+                 (loop rest (cons s cold) hot)
+                 (loop rest cold (cons s hot)))))))
+  (loop segments '() '()))
+
+(define (api cold-count cold-list)
+  ;; Number of cold segments in a cold-list.
+  (length cold-list))
+
+(define (api cold-ids cold-list)
+  ;; Project the segment ids out of a cold-list, preserving order.
+  (define (loop segs acc)
+    (cond ((null? segs) (reverse acc))
+          (else
+           (loop (cdr segs)
+                 (cons (api segment-id (car segs)) acc)))))
+  (loop cold-list '()))

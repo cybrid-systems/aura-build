@@ -1,0 +1,62 @@
+; lsn.aura — Log Sequence Number (LSN) primitives
+;
+; An LSN is a monotonically increasing integer used to order redo records
+; in the WAL. We represent an LSN as a plain Aura integer; this module
+; provides constructors, predicates, comparison, advance, and difference.
+;
+; Exports (all wrapped with `(api ...)` so other modules can consume them):
+;   (api make-lsn         n)      -> LSN with value n (integer)
+;   (api lsn?             v)      -> #t iff v is a valid LSN (a non-negative integer)
+;   (api lsn=?            a b)    -> #t iff a and b have the same numeric value
+;   (api lsn<=?           a b)    -> #t iff a's value is less than or equal to b's
+;   (api lsn-advance      l k)    -> new LSN k positions ahead of l
+;   (api lsn-diff         a b)    -> how far b is ahead of a (b - a); non-negative
+;                                    when b >= a, otherwise a negative sentinel
+;
+; Design notes:
+;   * We keep the LSN type extremely simple: it is just an integer. All of
+;     the "type" machinery is a thin predicate (`lsn?`) plus a convention
+;     that non-negative integers are valid LSNs.
+;   * `make-lsn` is the constructor every other module is expected to use
+;     instead of writing raw integer literals when an LSN is required.
+;   * `lsn-advance` does *not* mutate; it returns a new LSN. Callers that
+;     need to "move forward" persist the returned value themselves.
+;   * `lsn-diff` is signed so that callers can detect the (illegal) case
+;     where an end LSN precedes a start LSN.
+
+(define (api make-lsn n)
+  ; Construct an LSN from an integer. We deliberately accept negative
+  ; inputs as a programming error rather than silently coercing them;
+  ; the surrounding modules are responsible for never going negative.
+  n)
+
+(define (api lsn? v)
+  ; An LSN is a non-negative integer. We test with `number?` first to
+  ; avoid confusing the compiler when a non-number slips in.
+  (if (number? v)
+      (if (>= v 0)
+          #t
+          #f)
+      #f))
+
+(define (api lsn=? a b)
+  ; Equality on LSN values. Both arguments should already be LSNs, but
+  ; we use `=` rather than `equal?` so that two integers compare directly.
+  (= a b))
+
+(define (api lsn<=? a b)
+  ; Less-than-or-equal on LSN values. Mirrors the typical checkpoint
+  ; start-LSN <= end-LSN check used by recovery.
+  (<= a b))
+
+(define (api lsn-advance l k)
+  ; Return a new LSN that is `k` units ahead of `l`. We assume k >= 0;
+  ; if a caller hands us a negative k we still obey the math, which
+  ; effectively becomes a "rewind" — useful for synthetic tests.
+  (+ l k))
+
+(define (api lsn-diff a b)
+  ; Signed distance from `a` to `b` (i.e. b - a). Recovery code relies
+  ; on this being non-negative when the engine is well-behaved; we let
+  ; the arithmetic speak for itself in any other case.
+  (- b a))

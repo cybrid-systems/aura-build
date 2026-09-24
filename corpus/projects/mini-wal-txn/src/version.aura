@@ -1,0 +1,23 @@
+;; version.aura
+;; A version represents one versioned write of a key: (key value txn-id op).
+;; Encoded as a dotted-pair list so we can carry all four fields compactly.
+
+(define (api make-version key value txn-id op)
+  ;; Build a version value '(key . (value txn-id op)) per the API contract.
+  (cons key (list value txn-id op)))
+
+(define (api version-key v)
+  ;; The key half of the dotted pair.
+  (car v))
+
+(define (api version-value v)
+  ;; The value field is the first element of the cdr list.
+  (car (cdr v)))
+
+(define (api version-txn v)
+  ;; The txn-id is the second element of the cdr list.
+  (car (cdr (cdr v))))
+
+(define (api version-op v)
+  ;; The op tag is the third element of the cdr list.
+  (car (cdr (cdr (cdr v)))))

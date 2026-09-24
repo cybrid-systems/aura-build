@@ -1,0 +1,153 @@
+; checkpoint-engine.aura — Fuzzy WAL checkpoint engine
+;
+; The engine glues together the page table, redo log, fuzzy collector
+; and stats tracker. It tracks the current LSN, decides when to emit a
+; checkpoint based on either record count or byte volume, and exposes
+; replay/recovery helpers used by main.aura at the end of the run.
+;
+; Engine state is a list (mutable via set!):
+;   (cons current-lsn
+;         (cons config
+;         (cons page-table
+;         (cons redo-log
+;         (cons collector
+;         (cons stats
+;         (cons checkpoint-history
+;         (cons records-since-cp
+;         (cons bytes-since-cp '())))))))))
+;
+; Exports (wrapped with `(api ...)`):
+;   (api make-engine)                     -> fresh engine
+;   (api engine-emit-redo! e pid size)    -> append a redo record
+;   (api engine-should-checkpoint? e)     -> is it time?
+;   (api engine-emit-checkpoint! e)       -> write a fuzzy checkpoint
+;   (api engine-stats e)                  -> stats alist snapshot
+;   (api engine-replay-from-lsn e)        -> LSN to start replay at
+;   (api engine-max-replay-length e)      -> number of records to replay
+
+(define (api make-engine)
+  (lambda (config)
+    (list (api lsn-start)
+          config
+          (api make-page-table)
+          (api make-redo-log)
+          (api make-fuzzy-collector)
+          (api make-stats)
+          '()         ; checkpoint history (newest first)
+          0           ; records since last checkpoint
+          0           ; bytes   since last checkpoint
+          0)))        ; total redo bytes counter
+
+(define (api engine-emit-redo!)
+  (lambda (e pid size)
+    (let* ((cur-lsn (car e))
+           (rest    (cdr e))
+           (config  (car rest))
+           (rest2   (cdr rest))
+           (ptbl    (car rest2))
+           (rest3   (cdr rest2))
+           (log     (car rest3))
+           (rest4   (cdr rest3))
+           (coll    (car rest4))
+           (rest5   (cdr rest4))
+           (stats   (car rest5))
+           (rest6   (cdr rest5))
+           (history (car rest6))
+           (rest7   (cdr rest6))
+           (rec-since (car rest7))
+           (rest8  (cdr rest7))
+           (byt-since (car rest8))
+           (total-bytes (car (cdr rest8)))
+           (next-lsn (api lsn-advance cur-lsn 1))
+           (rec (api make-redo pid next-lsn size)))
+      ; mutate log first
+      ((api redo-log-append!) log rec)
+      ; dirty page in page table
+      ((api page-dirty!) ptbl pid)
+      ; dirty page in fuzzy collector
+      ((api fuzzy-collect!) coll pid)
+      ; bump stats
+      ((api stats-inc!) stats 'redo-emitted)
+      ; mutate engine
+      (set-car! e next-lsn)
+      (set-car! (cdr (cdr (cdr (cdr (cdr (cdr (cdr (cdr e))))))))
+                (+ rec-since 1))
+      (set-car! (cdr (cdr (cdr (cdr (cdr (cdr (cdr (cdr e))))))))
+                (+ byt-since size))
+      (set-car! (cdr (cdr (cdr (cdr (cdr (cdr (cdr (cdr (cdr e)))))))))
+                (+ total-bytes size))
+      next-lsn)))
+
+(define (api engine-should-checkpoint?)
+  (lambda (e)
+    (let* ((rest (cdr e))
+           (config (car rest))
+           (rest7  (cdr (cdr (cdr (cdr (cdr (cdr e)))))))
+           (rec-since (car rest7))
+           (rest8  (cdr rest7))
+           (byt-since (car rest8))
+           (interval (api config-checkpoint-interval config)))
+      (or (>= rec-since interval)
+          (>= byt-since (* interval 16))))))
+
+(define (api engine-emit-checkpoint!)
+  (lambda (e)
+    (let* ((cur-lsn (car e))
+           (rest    (cdr e))
+           (config  (car rest))
+           (rest2   (cdr rest))
+           (ptbl    (car rest2))
+           (rest3   (cdr rest2))
+           (log     (car rest3))
+           (rest4   (cdr rest3))
+           (coll    (car rest4))
+           (rest5   (cdr rest4))
+           (stats   (car rest5))
+           (rest6   (cdr rest5))
+           (history (car rest6))
+           (rest7   (cdr rest6))
+           (rec-since (car rest7))
+           (rest8  (cdr rest7))
+           (byt-since (car rest8))
+           (total-bytes (car (cdr rest8)))
+           ; start-lsn = LSN of previous checkpoint's end, or lsn-start if none
+           (start-lsn (if (null? history)
+                          (api lsn-start)
+                          (api checkpoint-end-lsn) (car history)))
+           (dirty (api dirty-pages ptbl))
+           (cp (api make-checkpoint start-lsn cur-lsn dirty)))
+      ; append to history
+      (set-car! (cdr (cdr (cdr (cdr (cdr (cdr e))))))
+                (cons cp history))
+      ; bump stats
+      ((api stats-inc!) stats 'checkpoints-emitted)
+      ; capture bytes-since on log (no-op for now beyond bump)
+      ; reset page table dirty bits
+      ((api reset-dirty-bits!) ptbl)
+      ; reset fuzzy collector
+      ((api fuzzy-reset!) coll)
+      ; reset counters
+      (set-car! (cdr (cdr (cdr (cdr (cdr (cdr (cdr e))))))) 0)
+      (set-car! (cdr (cdr (cdr (cdr (cdr (cdr (cdr (cdr e)))))))) 0)
+      cp)))
+
+(define (api engine-stats)
+  (lambda (e)
+    (let* ((rest5 (cdr (cdr (cdr (cdr (cdr e))))))
+           (stats (car rest5))
+           (log   (car (cdr (cdr (cdr (cdr (cdr (cdr e))))))))
+           (ptbl  (car (cdr (cdr (cdr (cdr e)))))))
+      ((api stats-snapshot) stats))))
+
+(define (api engine-replay-from-lsn)
+  (lambda (e)
+    (let* ((rest6 (cdr (cdr (cdr (cdr (cdr (cdr e)))))))
+           (history (car rest6)))
+      (if (null? history)
+          (api lsn-start)
+          (api checkpoint-start-lsn) (car history)))))
+
+(define (api engine-max-replay-length)
+  (lambda (e)
+    (let* ((log (car (cdr (cdr (cdr (cdr e)))))))
+      ((api redo-log-length) log))))

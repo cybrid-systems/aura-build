@@ -1,0 +1,81 @@
+; redo-log.aura — Append-only redo log
+;
+; The redo log stores redo records in the order they were emitted by the
+; engine. We back the log with a flat Aura list (newest at the head) plus
+; a running byte counter so we can answer length/byte queries in O(1).
+;
+; Each log entry is a pair:
+;   (cons record bytes-since-mark)
+; where `record` is a redo record (from redo-record.aura) and
+; `bytes-since-mark` is the number of bytes appended since the last
+; `redo-log-bytes-since!` checkpoint (used by the engine to decide when
+; to trigger a fuzzy checkpoint based on volume, not just count).
+;
+; Exports (wrapped with `(api ...)` for the rest of the project):
+;   (api make-redo-log)             -> a fresh, empty redo log
+;   (api redo-log-append!  log rec) -> append a redo record (mutates log)
+;   (api redo-log-length    log)    -> number of records currently in log
+;   (api redo-log-bytes     log)    -> total byte volume of all records
+;   (api redo-log-bytes-since! log) -> bytes appended since last mark; resets mark
+
+; ---------------------------------------------------------------------------
+; Internal helpers (not exported)
+; ---------------------------------------------------------------------------
+
+; Sum of all record sizes currently in the log. Iterates the entire log;
+; callers use this only on demand (it is not on the hot path).
+(define (redo-log--total-bytes log)
+  (if (null? log)
+      0
+      (+ (cdr (car log))
+         (redo-log--total-bytes (cdr log)))))
+
+; Count the records in the log (number of cons cells).
+(define (redo-log--count log)
+  (if (null? log)
+      0
+      (+ 1 (redo-log--count (cdr log)))))
+
+; ---------------------------------------------------------------------------
+; Public API
+; ---------------------------------------------------------------------------
+
+; (api make-redo-log) -> a new empty redo log.
+;
+; Represented as a pair:
+;   (cons 'entries-list 'byte-marker)
+; so that `redo-log-bytes-since!` can stash its counter without an extra
+; box. The byte marker starts at the total accumulated bytes (which is 0).
+(define (api make-redo-log)
+  (cons '() 0))
+
+; (api redo-log-append! log rec) -> mutates `log` to include `rec` at the
+; head. Byte accounting is taken from the record's own size field.
+;
+; We prepend (newest-first) so future replay from an arbitrary index can
+; be implemented as a reverse + cdr walk without losing performance on
+; the common "just append" path.
+(define (api redo-log-append! log rec)
+  (let ((size (caddr rec)))
+    (set-car! log (cons (cons rec size) (car log)))
+    (set-cdr! log (+ (cdr log) size))))
+
+; (api redo-log-length log) -> number of records in the log.
+(define (api redo-log-length log)
+  (redo-log--count (car log)))
+
+; (api redo-log-bytes log) -> cumulative byte volume across all records.
+(define (api redo-log-bytes log)
+  (redo-log--total-bytes (car log)))
+
+; (api redo-log-bytes-since! log) -> bytes appended since the last call.
+;
+; "Since" semantics: the first call returns the total bytes accumulated
+; since the log was created (or since the last reset); the act of reading
+; resets the marker to 0, so subsequent calls report only newly appended
+; bytes. This matches the typical "watermark" pattern used by WAL
+; engines that trigger checkpoints based on volume.
+(define (api redo-log-bytes-since! log)
+  (let ((since (cdr log)))
+    (set-cdr! log 0)
+    since))

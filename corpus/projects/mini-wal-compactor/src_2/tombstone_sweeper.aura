@@ -1,0 +1,60 @@
+;; tombstone_sweeper.aura
+;; Walk the entries coming out of the merger and drop everything marked
+;; as a tombstone.  A tombstone is any entry whose operation is 'delete
+;; (see wal_entry.aura / (api entry-tombstone? e)).
+;;
+;; The sweeper returns a structure that records:
+;;   - which entries survived ('kept)
+;;   - which entries were dropped ('dropped)
+;;   - summary counts so callers can print them cheaply
+;;
+;; APIs:
+;;   (api sweep-tombstones entries)  -> sweeper
+;;   (api sweep-stats sweeper)       -> (kept-count . dropped-count)
+;;   (api sweep-kept sweeper)        -> list of surviving entries
+;;   (api sweep-dropped sweeper)     -> list of removed entries
+;;
+;; The "stats" pair is exposed as a dotted pair so it can be destructured
+;; with car/cdr or just consumed via length on either side.
+
+(define (sweep-keep? entry)
+  ;; Local helper: an entry is kept iff it is NOT a tombstone.
+  ;; We call into wal_entry.aura via its public API.
+  (not (api entry-tombstone? entry)))
+
+(define (sweep-step entry kept-acc dropped-acc)
+  ;; Internal fold step.  Walk one entry, partition it.
+  (if (sweep-keep? entry)
+      (cons entry kept-acc)
+      (cons entry dropped-acc)))
+
+(define (api sweep-tombstones entries)
+  ;; Single linear pass: O(n) in the number of entries.
+  ;; We accumulate kept and dropped lists in reverse, then reverse them
+  ;; once at the end so the output preserves the original entry order.
+  (define (loop xs kept dropped)
+    (if (null? xs)
+        ;; Done — flip both accumulators and build the sweeper value.
+        (list (cons 'kept      (reverse kept))
+              (cons 'dropped   (reverse dropped))
+              (cons 'kept-n    (length kept))
+              (cons 'dropped-n (length dropped)))
+        (loop (cdr xs)
+              (sweep-step (car xs) kept dropped)
+              (if (sweep-keep? (car xs))
+                  dropped
+                  (cons (car xs) dropped))))
+  (loop entries '() '()))
+
+(define (api sweep-kept sweeper)
+  (cdr (assq 'kept sweeper)))
+
+(define (api sweep-dropped sweeper)
+  (cdr (assq 'dropped sweeper)))
+
+(define (api sweep-stats sweeper)
+  ;; Return a pair (kept-count . dropped-count) so callers can either
+  ;; destructure it with (let ((k+d (sweep-stats s)))) or read the
+  ;; counts directly via car/cdr.
+  (cons (cdr (assq 'kept-n sweeper))
+        (cdr (assq 'dropped-n sweeper))))

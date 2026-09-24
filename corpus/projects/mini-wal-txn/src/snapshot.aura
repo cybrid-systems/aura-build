@@ -1,0 +1,30 @@
+;; snapshot.aura
+;; Snapshot isolation support.
+;; A snapshot is a simple wrapper around a txn-id that marks the boundary
+;; at which a read is being taken. A version is visible to a snapshot if
+;; the version's producing transaction has been committed AND its txn-id
+;; is <= the snapshot's txn-id.
+
+(define (api make-snapshot txn-id)
+  ;; Build a snapshot as a single-element list (box) holding the txn-id,
+  ;; mirroring the boxed-counter pattern so the id can be carried opaquely.
+  (list txn-id))
+
+(define (api snapshot-id s)
+  ;; Read the txn-id bound to this snapshot.
+  (car s))
+
+(define (api snapshot-visible? snap version)
+  ;; A version is visible to a snapshot when:
+  ;;   1. The version's txn-id is <= the snapshot's txn-id
+  ;;      (snapshot isolation: reads see only versions from earlier txns).
+  ;;   2. The version's op is 'put (a real write), AND the producing
+  ;;      transaction is committed. Versions from aborted transactions are
+  ;;      not visible.
+  ;; Note: the committed check is performed at the caller level via the
+  ;; version-op field; here we accept any version and inspect its op.
+  (cond
+    ((null? version) #f)
+    ((> (api version-txn version) (api snapshot-id snap)) #f)
+    ((equal? (api version-op version) 'put) #t)
+    (else #f)))

@@ -1,0 +1,72 @@
+;; merger.aura
+;; Take a list of cold segments (see wal_segment.aura) and merge their
+;; entries into a single, compacted merged structure.  The merged result
+;; is what the snapshot_writer.aura module will turn into a snapshot.
+;;
+;; The merged value is a plain association list with three keys:
+;;   'entries    : concatenation of every entry from every cold segment
+;;                (in the original order: earlier segments first, then
+;;                later segments, entries preserved within each segment)
+;;   'byte-size  : total bytes of the merged entry stream
+;;   'source-ids : list of segment ids that contributed to the merge
+;;
+;; APIs:
+;;   (api merge-segments cold-list)        -> merged
+;;   (api merged-entries merged)           -> list of entries
+;;   (api merged-byte-size merged)         -> integer
+;;   (api merged-source-ids merged)        -> list of ids
+;;
+;; Note: byte size is approximated as the sum of entry-value string
+;; lengths when the value is a string, otherwise as a flat 1 byte per
+;; entry.  This keeps the merger self-contained without coupling it to
+;; wal_segment.aura internals.  When wal_segment.aura provides
+;; segment-byte-size, we prefer that for the segment-level total and
+;; fall back to per-entry estimation.
+
+(define (api merge-segments cold-list)
+  ;; Merge every segment in `cold-list` into one combined value.
+  ;; Returns the merged alist described above.
+  (let ((merged (list (cons 'entries '())
+                      (cons 'byte-size 0)
+                      (cons 'source-ids '()))))
+    (define (entry-bytes e)
+      ;; Approximate byte size of one entry.
+      (let ((v (api entry-value e)))
+        (if (string? v)
+            (string-length v)
+            1)))
+    (define (collect segs acc-entries acc-bytes acc-ids)
+      (if (null? segs)
+          (begin
+            (set-cdr! (assq 'entries merged) acc-entries)
+            (set-cdr! (assq 'byte-size merged) acc-bytes)
+            (set-cdr! (assq 'source-ids merged) acc-ids)
+            merged)
+          (let ((seg (car segs)))
+            (let ((es  (api segment-entries seg))
+                  (id  (api segment-id seg)))
+              (let ((seg-bytes
+                     (if (procedure? api segment-byte-size)
+                         (api segment-byte-size seg)
+                         0)))
+                (let loop ((xs es) (acc-e acc-entries) (acc-b acc-bytes))
+                  (if (null? xs)
+                      (collect (cdr segs)
+                               acc-e
+                               (if (> seg-bytes 0)
+                                   (+ acc-b seg-bytes)
+                                   acc-b)
+                               (cons id acc-ids))
+                      (loop (cdr xs)
+                            (append acc-e (list (car xs)))
+                            (+ acc-b (entry-bytes (car xs)))))))))))
+    (collect cold-list '() 0 '())))
+
+(define (api merged-entries merged)
+  (cdr (assq 'entries merged)))
+
+(define (api merged-byte-size merged)
+  (cdr (assq 'byte-size merged)))
+
+(define (api merged-source-ids merged)
+  (cdr (assq 'source-ids merged)))

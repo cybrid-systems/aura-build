@@ -1,0 +1,24 @@
+;; streaming.aura — global streaming-mode flag.
+;;
+;; The runner reads *mode* to decide whether to dispatch to the sort
+;; path (full sort, then per-partition scan) or the hash-based streaming
+;; path. The flag is just a top-level mutable cell.
+;;
+;; Default mode is 'sort. Callers can flip it via:
+;;   (wf-streaming-on)   → sets *mode* to 'streaming
+;;   (wf-streaming-off)  → sets *mode* to 'sort
+;;   (wf-streaming?)     → returns #t when in streaming mode, else #f
+;;
+;; We expose (api wf-streaming?) rather than raw *mode* access so that
+;; other modules can ask about it through the documented API surface.
+
+(define *mode* 'sort)
+
+(define (api wf-streaming-on)
+  (set! *mode* 'streaming))
+
+(define (api wf-streaming-off)
+  (set! *mode* 'sort))
+
+(define (api wf-streaming?)
+  (equal? *mode* 'streaming))

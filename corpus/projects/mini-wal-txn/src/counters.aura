@@ -1,0 +1,20 @@
+;; counters.aura
+;; Simple mutable integer counters.
+;; A counter is represented as a single-element list (box) holding a number,
+;; so we can mutate its value with set! through the box.
+
+(define (api counter-new)
+  ;; Create a new counter initialised to 0.
+  (list 0))
+
+(define (api counter-inc! c)
+  ;; Increment the counter by 1. Destructures-and-reboxes via set! on car.
+  (set! (car c) (+ (car c) 1)))
+
+(define (api counter-value c)
+  ;; Read the current value of the counter.
+  (car c))
+
+(define (api counter-add! c n)
+  ;; Add arbitrary integer n (positive or negative) to the counter.
+  (set! (car c) (+ (car c) n)))

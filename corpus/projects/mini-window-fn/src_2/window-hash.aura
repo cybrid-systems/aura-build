@@ -1,0 +1,73 @@
+;; window-hash.aura — hash-based window function executor.
+;;
+;; Strategy: like the sort-based executor, we split the relation into
+;; partitions keyed by `part-col`. But instead of sorting each
+;; partition's rows, we maintain a running accumulator per partition
+;; (a single "current window" of rows in arrival order) and emit one
+;; output row per input row by evaluating the frame/rank function
+;; against that accumulator.
+;;
+;; This is "spill-light streaming": rows flow through one partition at
+;; a time. Within a partition we never sort — we just remember every
+;; row that has arrived so far. The frame slice is then computed by
+;; wf-rows-in-frame with pivot = (length accumulator) - 1 (the most
+;; recently arrived row). Aggregates are evaluated incrementally: SUM,
+;; COUNT, MIN, MAX all fold nicely over an append-only row list; AVG
+;; is derived as SUM/COUNT when needed.
+;;
+;; The returned relation has the same shape as wf-window-sort's
+;; output (original columns plus a trailing 'WF_VALUE column).
+
+(define (api wf-window-hash rel part-col frame rank-fn)
+  (let ((partitions (api wf-partition rel part-col)))
+    (let ((out-rows (hash-process-partitions partitions frame rank-fn '())))
+      (api wf-make-relation
+           (append (api wf-relation-cols rel) (list 'WF_VALUE))
+           out-rows))))
+
+;; Fold over each partition, building the output row list in arrival
+;; order. For each partition we walk its rows, maintaining an
+;; accumulator `acc` of rows seen so far; for each row we compute the
+;; frame slice and apply either the rank function (returning a single
+;; number) or the aggregate suite (returning an alist).
+(define (hash-process-partitions parts frame rank-fn acc-rows)
+  (cond
+    ((null? parts) (reverse acc-rows))
+    (else
+      (let ((part-rows (api wf-part-rows (car parts))))
+        (let ((new-rows (hash-process-partition part-rows frame rank-fn '())))
+          (hash-process-partitions (cdr parts) frame rank-fn
+                                   (append acc-rows new-rows)))))))
+
+;; Walk a single partition's rows left-to-right. `acc` holds rows seen
+;; so far in this partition; its length is the pivot index for the
+;; next incoming row.
+(define (hash-process-partition rows frame rank-fn acc)
+  (cond
+    ((null? rows) '())
+    (else
+      (let ((cur (car rows)))
+        (let ((pivot (- (length acc) 1)))
+          (let ((slice (api wf-rows-in-frame acc frame pivot)))
+            (let ((value (hash-compute-value slice rank-fn)))
+              (cons (append cur (list value))
+                    (hash-process-partition (cdr rows) frame rank-fn
+                                            (append acc (list cur)))))))))))
+
+;; Decide what to emit for a given frame slice.
+;;   - If rank-fn is provided, call it on the slice (matches sort path).
+;;   - Otherwise, build a full aggregate alist '((sum . n) (avg . n)
+;;     (min . n) (max . n) (count . n)).
+(define (hash-compute-value slice rank-fn)
+  (cond
+    ((null? rank-fn)
+     (let ((s   (api wf-sum   slice 'WF_VALUE))
+           (cnt (api wf-count slice))
+           (mn  (api wf-min   slice 'WF_VALUE))
+           (mx  (api wf-max   slice 'WF_VALUE)))
+       (list (cons 'sum s)
+             (cons 'avg (if (= cnt 0) 0 (/ s cnt)))
+             (cons 'min mn)
+             (cons 'max mx)
+             (cons 'count cnt))))
+    (else (rank-fn slice))))

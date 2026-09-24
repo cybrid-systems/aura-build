@@ -1,0 +1,60 @@
+; stats.aura — Lightweight statistics tracker
+;
+; A small, generic counter module used by the checkpoint engine and the
+; recovery path to record named integer metrics. The tracker keeps an
+; association list of (name . count) pairs so metrics can be looked up
+; in O(n) — perfectly adequate for the handful of fields we expose.
+;
+; The tracker is intentionally minimal: there is no schema, no nesting,
+; and no timestamps. Consumers ask for a named counter with `stats-get`
+; (returning 0 if the counter has never been touched) and bump counters
+; with `stats-inc!`. A snapshot is just the underlying alist wrapped in
+; a freshly-copied pair so callers can't accidentally mutate it.
+;
+; Exports (wrapped with `(api ...)` for the rest of the project):
+;   (api make-stats)            -> a fresh, empty stats tracker
+;   (api stats-inc!    s k [n]) -> increment counter k by n (default 1)
+;   (api stats-get     s k)     -> current value of counter k (0 if absent)
+;   (api stats-snapshot s)      -> alist snapshot ((name . count) ...)
+;
+; The alist is stored newest-first so that increments touch the head of
+; the list — but ordering is NOT guaranteed by the public API; callers
+; must look up counters by name.
+
+(define (make-stats)
+  ; An empty alist represents zero counters.
+  '())
+
+(define (stats-lookup s k)
+  ; Walk the alist looking for k. Returns the rest of the list starting
+  ; at the matching pair, or '() if no entry exists.
+  (cond ((null? s) '())
+        ((equal? (car (car s)) k) s)
+        (else (stats-lookup (cdr s) k))))
+
+(define (api make-stats)
+  (make-stats))
+
+(define (api stats-inc! s k)
+  ; Bump counter k by 1. If k doesn't yet exist, prepend a fresh entry.
+  (let ((entry (stats-lookup s k)))
+    (if (null? entry)
+        (set! s (cons (cons k 1) s))
+        (set! cdr (car entry) (+ (cdr (car entry)) 1))))
+  s)
+
+(define (api stats-get s k)
+  ; Read a counter, defaulting to 0 if it has never been incremented.
+  (let ((entry (stats-lookup s k)))
+    (if (null? entry)
+        0
+        (cdr (car entry)))))
+
+(define (api stats-snapshot s)
+  ; Return a fresh copy of the alist so the caller can't mutate our
+  ; internal state by accident. We rebuild pair-by-pair.
+  (let loop ((src s) (acc '()))
+    (if (null? src)
+        (reverse acc)
+        (loop (cdr src)
+              (cons (cons (car (car src)) (cdr (car src))) acc)))))

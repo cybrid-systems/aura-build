@@ -1,0 +1,69 @@
+;; daemon_state.aura
+;; The top-level mutable state of the compaction daemon.  A "daemon"
+;; here is just a bag of fields that main.aura reads and mutates as
+;; it walks through one compaction cycle:
+;;
+;;   status : one of 'idle, 'running, 'done (string/keyword-like symbol)
+;;   log    : the wal_log value (created via (api make-log))
+;;   cycles : cycle counter (created via (api make-cycle-counter))
+;;   stats  : stats collector (created via (api make-stats))
+;;
+;; The daemon is intentionally light: it does NOT itself perform the
+;; compaction.  All real work happens by calling the per-module APIs
+;; directly from main.aura.  The daemon just remembers where we are
+;; in the lifecycle so other modules / debug output can ask
+;; "are we idle, running, done?".
+;;
+;; APIs:
+;;   (api make-daemon)              -> daemon
+;;   (api daemon-status daemon)     -> current status symbol
+;;   (api daemon-set-status! d s)   -> set status, returns daemon
+;;   (api daemon-run-cycle! daemon) -> advance cycles, flip status to 'done
+;;   (api daemon-cycles daemon)     -> cycle count
+;;
+;; We use alists everywhere (no structs / records) so this file
+;; remains portable across the tiny Aura runtime.
+
+(define (api make-daemon)
+  ;; Build a fresh daemon in 'idle state with an empty log, a fresh
+  ;; cycle counter, and a fresh stats collector.
+  (list (cons 'status 'idle)
+        (cons 'log    ((lambda () (api make-log))))
+        (cons 'cycles ((lambda () (api make-cycle-counter))))
+        (cons 'stats  ((lambda () (api make-stats))))))
+
+(define (api daemon-status daemon)
+  ;; Read the current status symbol ('idle / 'running / 'done).
+  (cdr (assq 'status daemon)))
+
+(define (api daemon-set-status! daemon status)
+  ;; Mutate the daemon's status field.  We do this by walking the
+  ;; alist and replacing the cons cell whose car is 'status.
+  (define (loop cells)
+    (cond ((null? cells)
+           ;; status not present — append it at the end
+           (cons (cons 'status status) '()))
+          ((eq? (car (car cells)) 'status)
+           (cons (cons 'status status) (cdr cells)))
+          (else
+           (cons (car cells) (loop (cdr cells))))))
+  (set! daemon (loop daemon))
+  daemon)
+
+(define (api daemon-run-cycle! daemon)
+  ;; Perform one compaction cycle on the daemon.  In this minimalist
+  ;; implementation the cycle counter ticks and the status flips
+  ;; 'idle -> 'running -> 'done.  All actual compaction work is
+  ;; orchestrated by main.aura; here we just bump the bookkeeping.
+  (begin
+    (set! daemon (api daemon-set-status! daemon 'running))
+    (set! daemon
+          (list (cons 'status 'done)
+                (cons 'log    (cdr (assq 'log    daemon)))
+                (cons 'cycles (api cycle-tick (cdr (assq 'cycles daemon))))
+                (cons 'stats  (cdr (assq 'stats  daemon)))))
+    daemon))
+
+(define (api daemon-cycles daemon)
+  ;; Read the current cycle count from the embedded cycle counter.
+  (api cycle-count (cdr (assq 'cycles daemon))))

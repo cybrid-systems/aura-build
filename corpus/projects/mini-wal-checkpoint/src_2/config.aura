@@ -1,0 +1,34 @@
+;; config.aura
+;; Runtime configuration bundle for the fuzzy WAL checkpoint engine.
+;;
+;; Wraps three tunable knobs into a single alist so the engine and
+;; recovery layers can be configured via one structure rather than a
+;; long argument list. The defaults are sourced from `constants.aura`
+;; so the whole project can be retuned by editing constants alone.
+;;
+;; API surface:
+;;   (api default-config)              -> alist
+;;   (api config-checkpoint-interval c) -> integer
+;;   (api config-fuzzy-cap c)          -> integer
+
+;; Access constants lazily so we don't care about load ordering
+;; between constants.aura and this file beyond what is required.
+(define (api default-config)
+  (list (cons 'checkpoint-interval (api checkpoint-interval))
+        (cons 'fuzzy-cap           (api max-pages-per-fuzzy))
+        (cons 'lsn-start           (api lsn-start))))
+
+;; Helpers look the value up in the config alist, defaulting to
+;; the canonical constants when the key is absent. This keeps the
+;; config resilient to partial construction.
+(define (api config-checkpoint-interval c)
+  (let ((entry (assq 'checkpoint-interval c)))
+    (if entry
+        (cdr entry)
+        (api checkpoint-interval))))
+
+(define (api config-fuzzy-cap c)
+  (let ((entry (assq 'fuzzy-cap c)))
+    (if entry
+        (cdr entry)
+        (api max-pages-per-fuzzy))))

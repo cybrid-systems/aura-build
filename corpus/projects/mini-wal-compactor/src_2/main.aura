@@ -1,0 +1,201 @@
+;; main.aura
+;; Entry point for the mini-wAL-compactor scenario.
+;;
+;; This file orchestrates one full compaction cycle end-to-end:
+;;   1. Build the log via wal_log / wal_segment / wal_entry APIs.
+;;   2. Classify cold segments via cold_detector.
+;;   3. Merge cold segments via merger.
+;;   4. Sweep tombstones via tombstone_sweeper.
+;;   5. Write a snapshot via snapshot_writer.
+;;   6. Compute byte metrics via byte_counter.
+;;   7. Tick the cycle counter via cycle_counter.
+;;   8. Collect stats via stats_collector.
+;;   9. Run a cycle via daemon_state.
+;;  10. Print the strict KEY=value contract via summary_printer.
+
+;; ---------------------------------------------------------------------------
+;; Helpers
+
+(define (build-entries entries)
+  ;; entries: list of (key value op) triples
+  (if (null? entries)
+      '()
+      (cons (api make-entry (car (car entries)) (car (cdr (car entries))) (car (cdr (cdr (car entries)))))
+            (build-entries (cdr entries)))))
+
+(define (build-segment id age entry-triples)
+  (api make-segment id age (build-entries entry-triples)))
+
+;; ---------------------------------------------------------------------------
+;; 1. Build the log
+
+(define threshold 3)
+
+(define log (api make-log))
+
+;; Cold segments (age >= threshold)
+(set! log (api log-append log
+              (build-segment 1 5
+                (list (list 'k1 'v1 'set)
+                      (list 'k2 'v2 'set)
+                      (list 'k3 'v3 'delete)))))
+
+(set! log (api log-append log
+              (build-segment 2 7
+                (list (list 'k4 'v4 'set)
+                      (list 'k5 'v5 'delete)))))
+
+(set! log (api log-append log
+              (build-segment 3 4
+                (list (list 'k6 'v6 'set)
+                      (list 'k7 'v7 'set)
+                      (list 'k8 'v8 'set)))))
+
+;; Hot segments (age < threshold)
+(set! log (api log-append log
+              (build-segment 4 1
+                (list (list 'k9  'v9  'set)
+                      (list 'k10 'v10 'set)))))
+
+(set! log (api log-append log
+              (build-segment 5 2
+                (list (list 'k11 'v11 'set)))))
+
+;; ---------------------------------------------------------------------------
+;; 2. Classify cold segments
+
+(define classified (api classify-cold (api log-all-segments log) threshold))
+(define cold-list (car classified))
+(define hot-list  (cdr classified))
+
+(define num-cold    (api cold-count cold-list))
+(define cold-id-list (api cold-ids cold-list))
+
+;; ---------------------------------------------------------------------------
+;; 3. Merge cold segments
+
+(define merged (api merge-segments cold-list))
+
+(define merged-entries-val  (api merged-entries merged))
+(define merged-byte-size-val (api merged-byte-size merged))
+(define merged-source-ids-val (api merged-source-ids merged))
+
+;; ---------------------------------------------------------------------------
+;; 4. Sweep tombstones
+
+(define sweeper (api sweep-tombstones merged-entries-val))
+
+(define sweep-kept-val    (api sweep-kept sweeper))
+(define sweep-dropped-val (api sweep-dropped sweeper))
+(define sweep-stats-val   (api sweep-stats sweeper))
+(define kept-count    (car sweep-stats-val))
+(define dropped-count (cdr sweep-stats-val))
+
+;; ---------------------------------------------------------------------------
+;; 5. Write snapshot
+
+;; Build a fresh merged structure containing only the kept entries so the
+;; snapshot reflects post-sweep data. (snapshot_writer expects the merged
+;; alist shape with 'entries / 'byte-size / 'source-ids keys.)
+(define swept-merged
+  (list (cons 'entries sweep-kept-val)
+        (cons 'byte-size (* kept-count 10))   ; each entry modeled as 10 bytes
+        (cons 'source-ids merged-source-ids-val)))
+
+(define snapshot (api write-snapshot swept-merged 100))
+
+(define snap-id-val       (api snapshot-id snapshot))
+(define snap-entries-val  (api snapshot-entries snapshot))
+(define snap-byte-size-val (api snapshot-byte-size snapshot))
+
+;; ---------------------------------------------------------------------------
+;; 6. Byte metrics
+
+(define log-bytes-before (api log-size-bytes log))
+(define log-bytes-after  snap-byte-size-val)
+
+(define bytes-saved    (api diff-bytes log-bytes-before log-bytes-after))
+(define compression   (api compression-ratio log-bytes-before log-bytes-after))
+
+;; ---------------------------------------------------------------------------
+;; 7. Cycle counter
+
+(define cc (api make-cycle-counter))
+(set! cc (api cycle-tick cc))
+(set! cc (api cycle-tick cc))
+(define cycle-num (api cycle-count cc))
+
+;; ---------------------------------------------------------------------------
+;; 8. Stats collector
+
+(define stats (api make-stats))
+(set! stats (api stat-inc! stats 'segments-cold num-cold))
+(set! stats (api stat-inc! stats 'segments-hot  (length hot-list)))
+(set! stats (api stat-inc! stats 'entries-merged (length merged-entries-val)))
+(set! stats (api stat-inc! stats 'entries-kept   kept-count))
+(set! stats (api stat-inc! stats 'entries-dropped dropped-count))
+(set! stats (api stat-inc! stats 'bytes-before log-bytes-before))
+(set! stats (api stat-inc! stats 'bytes-after  log-bytes-after))
+(set! stats (api stat-inc! stats 'bytes-saved  bytes-saved))
+(set! stats (api stat-inc! stats 'cycles       cycle-num))
+
+(define stats-alist (api stats->alist stats))
+
+;; ---------------------------------------------------------------------------
+;; 9. Daemon
+
+(define daemon (api make-daemon))
+(set! daemon (api daemon-run-cycle! daemon))
+(set! daemon (api daemon-set-status! daemon 'idle))
+(define daemon-cycles-val (api daemon-cycles daemon))
+(define daemon-status-val (api daemon-status daemon))
+
+;; ---------------------------------------------------------------------------
+;; 10. Print the KEY=value contract
+
+(define (print-int key value)
+  (display key) (display "=") (display (number->string value)) (newline))
+
+(define (print-str key value)
+  (display key) (display "=") (display value) (newline))
+
+;; Cycle number
+(print-int "CYCLE" cycle-num)
+
+;; Cold segment count
+(print-int "COLD_SEGMENTS" num-cold)
+
+;; Hot segment count (derived from stats)
+(print-int "HOT_SEGMENTS" (cdr (assq 'segments-hot stats-alist)))
+
+;; Entries merged (input to sweep)
+(print-int "ENTRIES_MERGED" (cdr (assq 'entries-merged stats-alist)))
+
+;; Entries kept after sweep
+(print-int "ENTRIES_KEPT" kept-count)
+
+;; Entries dropped during sweep
+(print-int "ENTRIES_DROPPED" dropped-count)
+
+;; Snapshot id
+(print-int "SNAPSHOT_ID" snap-id-val)
+
+;; Bytes before compaction
+(print-int "BYTES_BEFORE" log-bytes-before)
+
+;; Bytes after compaction (snapshot size)
+(print-int "BYTES_AFTER" log-bytes-after)
+
+;; Bytes saved
+(print-int "BYTES_SAVED" bytes-saved)
+
+;; Compression ratio (formatted as a string with summary_printer)
+(display "COMPRESSION_RATIO=")
+(display (api format-ratio compression))
+(newline)
+
+;; Daemon status
+(print-str "DAEMON_STATUS" daemon-status-val)
+
+;; Daemon cycle count
+(print-int "DAEMON_CYCLES" daemon-cycles-val)

@@ -1,0 +1,19 @@
+;; records.aura
+;; A WAL record is a list '(op key value txn-id) describing one event.
+;; Operations: 'begin, 'put, 'abort, 'commit.
+
+(define (api record-txn rec)
+  ;; Return the txn-id (fourth element) of a record.
+  (car (cdr (cdr (cdr rec)))))
+
+(define (api record-key rec)
+  ;; Return the key (second element) of a record.
+  (car (cdr rec)))
+
+(define (api record-value rec)
+  ;; Return the value (third element) of a record.
+  (car (cdr (cdr rec))))
+
+(define (api record-op rec)
+  ;; Return the operation tag (first element) of a record.
+  (car rec))

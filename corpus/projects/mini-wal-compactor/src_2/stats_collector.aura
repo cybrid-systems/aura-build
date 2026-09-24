@@ -1,0 +1,64 @@
+;; stats_collector.aura
+;; A tiny accumulator that maps string keys to integer counters.  It is
+;; the bridge between the various modules (log, merger, sweeper, snapshot,
+;; byte counter, cycle counter) and the summary printer.  Every numeric
+;; value that ends up in the stdout contract flows through here.
+;;
+;; The collector is mutable on purpose: a single instance is threaded
+;; through the cycle and incremented as each stage reports its numbers.
+;; We expose both a destructive `stat-inc!` and a read-only `stat-get`,
+;; plus a `stat-all` snapshot and an `alist` view for the printer.
+;;
+;; APIs:
+;;   (api make-stats)              -> fresh stats container
+;;   (api stat-inc! stats key n)   -> add n (default 1) to stats[key]
+;;   (api stat-get stats key)      -> current value (0 if missing)
+;;   (api stat-all stats)          -> list of (key . value) pairs
+;;   (api stats->alist stats)      -> same, sorted by key for stable output
+
+(define (api make-stats)
+  ;; A stats value is a single mutable cons cell whose car holds the
+  ;; current association list of counters.  Wrapping it this way lets
+  ;; us mutate the alist in place without rebuilding the outer cell.
+  (cons 'stats '()))
+
+(define (api stat-inc! stats key n)
+  ;; Bump the counter for `key` by `n` (default 1).  Returns the new value.
+  ;; If `key` is missing we insert it with the starting value `n`.
+  (let ((default-n (if (null? n) 1 n)))
+    (let ((cell   (assq key (cdr stats)))
+          (rest   (cdr stats)))
+      (if cell
+          (begin
+            (set-cdr! cell (+ (cdr cell) default-n))
+            (cdr cell))
+          (begin
+            (set-cdr! stats (cons (cons key default-n) rest))
+            default-n)))))
+
+(define (api stat-get stats key)
+  ;; Look up the current counter for `key`.  Missing keys read as 0 so
+  ;; callers never have to special-case an absent metric.
+  (let ((cell (assq key (cdr stats))))
+    (if cell
+        (cdr cell)
+        0)))
+
+(define (api stat-all stats)
+  ;; Return the raw association list of counters, in insertion order.
+  (cdr stats))
+
+(define (api stats->alist stats)
+  ;; Return the counters sorted by key so the printer emits deterministic
+  ;; output regardless of the order in which keys were registered.
+  (define (insert-sorted xs kv)
+    (cond ((null? xs) (list kv))
+          ((string<? (car kv) (caar xs))
+           (cons kv xs))
+          (else
+           (cons (car xs) (insert-sorted (cdr xs) kv)))))
+  (define (sort-loop xs)
+    (if (null? xs)
+        '()
+        (insert-sorted (sort-loop (cdr xs)) (car xs))))
+  (sort-loop (cdr stats)))

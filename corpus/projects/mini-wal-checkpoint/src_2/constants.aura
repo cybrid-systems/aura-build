@@ -1,0 +1,27 @@
+;; constants.aura
+;; Project-wide constant values for the fuzzy WAL checkpoint engine.
+;;
+;; Exposes the five numeric tunables required by the engine, config,
+;; and recovery layers. All values are simple integers so they can be
+;; inlined by downstream modules via the exported `api` accessors.
+
+(define min-page-id 0)
+(define max-page-id 1023)
+
+(define lsn-start 0)
+
+;; Number of redo records between fuzzy checkpoints. The engine compares
+;; (redo-log-length since last checkpoint) against this value to decide
+;; when to emit a new fuzzy checkpoint.
+(define checkpoint-interval 8)
+
+;; Hard upper bound on the number of dirty pages recorded in a single
+;; fuzzy checkpoint. Caps the worst-case size of one checkpoint entry
+;; and bounds the maximum recovery scan window.
+(define max-pages-per-fuzzy 64)
+
+(define (api min-page-id) min-page-id)
+(define (api max-page-id) max-page-id)
+(define (api lsn-start) lsn-start)
+(define (api checkpoint-interval) checkpoint-interval)
+(define (api max-pages-per-fuzzy) max-pages-per-fuzzy)

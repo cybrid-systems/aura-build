@@ -1,0 +1,48 @@
+;; summary_printer.aura
+;; Format the daemon's compaction metrics into the strict `KEY=value`
+;; stdout contract expected by the scenario.
+;;
+;; We expose a small formatting + printing API:
+;;   (api format-key-value key value)  -> "KEY=value" string
+;;   (api format-ratio value)          -> numeric string (truncated to 2dp)
+;;   (api print-summary alist)         -> side-effecting: emits each line
+;;
+;; The printer does not perform any arithmetic of its own — callers
+;; pass in already-computed (key . value) pairs.  We only worry about
+;; turning numbers and strings into the right textual shape.
+
+(define (api format-key-value key value)
+  ;; Render a single contract line: "KEY=value\n".
+  ;; Accepts either a number or a string for `value`.
+  (let ((v (cond ((number-> number) (number->string value))
+                  ((string? value) value)
+                  (else (number->string value)))))
+    (string-append (symbol->string key) "=" v)))
+
+(define (api format-ratio value)
+  ;; Render a ratio as a string with two decimal places.  We round by
+  ;; converting through an integer "hundredths" representation, since
+  ;; the Aura runtime we target has no built-in printf("%0.2f").
+  (let* ((raw   value)
+         (hund  (cond ((< raw 0) (- (quotient (- raw) 100) (modulo (truncate (* (- raw) 100)) 100)))
+                      (else (truncate (* raw 100)))))
+         ;; Round to nearest hundredth.
+         (whole (quotient hund 100))
+         (frac  (abs (- hund (* whole 100)))))
+    (let ((frac-str (cond ((< frac 10) (string-append "0" (number->string frac)))
+                          (else (number->string frac)))))
+      (string-append (number->string whole) "." frac-str))))
+
+(define (api print-summary alist)
+  ;; Walk an alist of (key . value) pairs in order, emitting one
+  ;; "KEY=value\n" line per pair via (display ...).  Order is the
+  ;; alist's natural left-to-right order, which the caller controls.
+  (define (loop xs)
+    (cond ((null? xs) (display ""))
+          (else
+           (let ((p   (car xs))
+                 (rst (cdr xs)))
+             (display (api format-key-value (car p) (cdr p)))
+             (newline)
+             (loop rst)))))
+  (loop alist))

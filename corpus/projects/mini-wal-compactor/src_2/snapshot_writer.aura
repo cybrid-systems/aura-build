@@ -1,0 +1,39 @@
+;; snapshot_writer.aura
+;; Take the merged entry stream produced by merger.aura and persist it
+;; as a snapshot.  In a real system this would write to disk; here we
+;; model the snapshot as an immutable association list so the rest of
+;; the pipeline can read it back via the small API below.
+;;
+;; A snapshot has the shape:
+;;   ((id . <id>)
+;;    (entries . <list of wal-entry values>)
+;;    (byte-size . <non-negative integer>))
+;;
+;; APIs:
+;;   (api write-snapshot merged id) -> snapshot
+;;   (api snapshot-id snap)         -> id
+;;   (api snapshot-entries snap)    -> list of entries
+;;   (api snapshot-byte-size snap)  -> byte size
+;;
+;; `merged` is expected to be the value produced by
+;; `(api merge-segments ...)` from merger.aura.  We do not duplicate the
+;; entries list; the snapshot simply references it so memory stays small.
+
+(define (api write-snapshot merged id)
+  ;; Build a snapshot from the merged stream.  We pull the entries and
+  ;; byte-size straight out of the merged alist so the snapshot stays in
+  ;; sync with whatever the merger produced.
+  (let ((entries (cdr (assq 'entries merged)))
+        (b       (cdr (assq 'byte-size merged))))
+    (list (cons 'id id)
+          (cons 'entries entries)
+          (cons 'byte-size b))))
+
+(define (api snapshot-id snap)
+  (cdr (assq 'id snap)))
+
+(define (api snapshot-entries snap)
+  (cdr (assq 'entries snap)))
+
+(define (api snapshot-byte-size snap)
+  (cdr (assq 'byte-size snap)))

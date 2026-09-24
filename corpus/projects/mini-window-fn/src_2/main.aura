@@ -1,0 +1,50 @@
+;; main.aura — scenario driver and stdout emitter for the mini-window-fn
+;; runtime. This file has no exported APIs; it builds a 10-row relation,
+;; runs the sort and hash paths through wf-run, validates determinism,
+;; and prints the 16 KEY=value lines required by GOAL.md.
+
+;; --- Helpers ---------------------------------------------------------------
+
+;; Locate a column's index in a relation's column list. Returns an integer.
+(define (main-find-col-index cols name)
+  (let loop ((cs cols) (i 0))
+    (cond
+      ((null? cs) (error "main: column not found" name))
+      ((equal? (car cs) name) i)
+      (else (loop (cdr cs) (+ i 1))))))
+
+;; Pull a single column value out of a row given a column index.
+(define (main-row-ref row idx)
+  (let loop ((r row) (i 0))
+    (cond
+      ((null? r) (error "main: index out of bounds" idx))
+      ((= i idx) (car r))
+      (else (loop (cdr r) (+ i 1))))))
+
+;; Pull a column value out by column NAME (symbol) and a relation.
+(define (main-col-of rel row col-name)
+  (main-row-ref row (main-find-col-index (api wf-relation-cols rel) col-name)))
+
+;; Build an alist mapping column name -> value for a single row, using
+;; the relation's column list as the schema.
+(define (main-row-alist rel row)
+  (let loop ((cs (api wf-relation-cols rel)) (rs row))
+    (cond
+      ((null? cs) '())
+      (else (cons (cons (car cs) (car rs))
+                  (loop (cdr cs) (cdr rs)))))))
+
+;; Compute the list of distinct partition values, in first-seen order.
+(define (main-distinct-by rows col-name)
+  (let loop ((rs rows) (acc '()))
+    (cond
+      ((null? rs) (reverse acc))
+      ((member (main-row-ref (car rs) (main-find-col-index (api wf-relation-cols
+                          (let ((tmp (api wf-make-relation (list 'Tmp) (list (car rs)))) tmp))
+                          col-name)) acc)
+       (loop (cdr rs) acc))
+      (else (loop (cdr rs) (cons (main-row-ref
+                                   (car rs)
+                                   (main-find-col-index (api wf-relation-cols
+                                       (let ((tmp (api wf-make-relation (list 'Tmp) (list (car rs)))) tmp))
+                                       col-name)) acc))))))

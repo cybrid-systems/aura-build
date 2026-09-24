@@ -1,0 +1,53 @@
+;; byte_counter.aura
+;; Small arithmetic helpers that turn lists of byte-carrying items into
+;; meaningful compaction metrics.  Everything here is pure (no mutation,
+;; no shared state) and operates on plain integers.
+;;
+;; Items are expected to be association lists or structures that expose
+;; a 'byte-size key via assq (this is what both wal_segment.aura and
+;; snapshot_writer.aura produce).  For convenience we also accept a raw
+;; integer, which is treated as already-counted bytes.
+;;
+;; APIs:
+;;   (api total-bytes items)              -> sum of byte sizes
+;;   (api diff-bytes before after)        -> before - after
+;;   (api compression-ratio before after) -> after / before (0 if before == 0)
+;;
+;; Conventions:
+;;   - total-bytes  is the sum of every item's byte-size field.
+;;   - diff-bytes   is positive when the post-compaction state is smaller.
+;;   - compression-ratio is in the range [0, 1]; a smaller ratio means
+;;     tighter compaction.  We return an exact rational so callers can
+;;     decide how to format it (e.g. via format-ratio in
+;;     summary_printer.aura).
+
+(define (api total-bytes items)
+  ;; Sum the 'byte-size field of each item.  Items may be:
+  ;;   * a pair (item . byte-size)        -> take cdr
+  ;;   * an alist with (byte-size . n)    -> take cdr of assq result
+  ;;   * a plain non-negative integer     -> use directly
+  ;;   * anything else                    -> treated as 0 bytes
+  (define (one x)
+    (cond
+      ((number? x) x)
+      ((pair? x)
+       (let ((bs (assq 'byte-size x)))
+         (if bs (cdr bs) 0)))
+      (else 0)))
+  (let loop ((xs items) (acc 0))
+    (if (null? xs)
+        acc
+        (loop (cdr xs) (+ acc (one (car xs)))))))
+
+(define (api diff-bytes before after)
+  ;; Bytes saved (positive) or grown (negative) between two measurements.
+  ;; Both arguments are raw byte counts (numbers), not lists.
+  (- before after))
+
+(define (api compression-ratio before after)
+  ;; Return after / before as an exact ratio.  When the "before" value is
+  ;; 0 there is nothing to compress, so we define the ratio to be 0
+  ;; (no compaction occurred, no size to shrink against).
+  (if (= before 0)
+      0
+      (/ after before)))

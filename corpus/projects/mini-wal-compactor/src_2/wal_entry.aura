@@ -1,0 +1,27 @@
+;; wal_entry.aura
+;; A single WAL entry. We model three operation kinds:
+;;   'put     : key/value set, value is the stored bytes
+;;   'delete  : key removed, value carries a tombstone marker
+;; Tombstone flag is derived from the operation so callers can query it
+;; without inspecting internals.
+
+(define (api make-entry key value op)
+  ;; key   : symbol/string identifying the record key
+  ;; value : any value (the payload or a marker)
+  ;; op    : 'put or 'delete
+  (list (cons 'key key)
+        (cons 'value value)
+        (cons 'op op)))
+
+(define (api entry-key e)
+  (cdr (assq 'key e)))
+
+(define (api entry-value e)
+  (cdr (assq 'value e)))
+
+(define (api entry-op e)
+  (cdr (assq 'op e)))
+
+(define (api entry-tombstone? e)
+  ;; A 'delete entry is a tombstone; everything else is live.
+  (if (eq? (cdr (assq 'op e)) 'delete) #t #f))

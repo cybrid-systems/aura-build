@@ -1,0 +1,26 @@
+;; cycle_counter.aura
+;; A tiny mutable counter that tracks how many compaction cycles the
+;; daemon has completed.  One "cycle" is a full pass through the
+;; pipeline (classify cold segments -> merge -> sweep tombstones ->
+;; write snapshot -> drop old segments).  Each call to
+;; `(api cycle-tick cc)` advances the counter by 1, and
+;; `(api cycle-count cc)` returns the current value.
+;;
+;; The counter is stored as a single-element association list
+;; ( (count . n) ) so callers can introspect it like any other alist
+;; produced in this project.  Mutation goes through set! on the cdr
+;; of that pair.
+
+(define (api make-cycle-counter)
+  ;; Build a fresh counter starting at 0.
+  (list (cons 'count 0)))
+
+(define (api cycle-tick cc)
+  ;; Advance the counter by exactly one cycle.  Returns the new count.
+  (let ((pair (assq 'count cc)))
+    (set-cdr! pair (+ (cdr pair) 1))
+    (cdr pair)))
+
+(define (api cycle-count cc)
+  ;; Read the current cycle count without mutating anything.
+  (cdr (assq 'count cc)))

@@ -1,0 +1,51 @@
+;; conflict.aura
+;; Conflict detection for concurrent transactions updating the same key.
+;;
+;; A conflict exists for (store, key, writer-txn) when either:
+;;   (a) an uncommitted (active) transaction has already written `key`,
+;;       and that active transaction is not the writer itself; or
+;;   (b) a committed transaction with a txn-id strictly greater than the
+;;       writer-txn has already written `key` (newer-committed writer),
+;;       and that newer-committed writer is not the writer itself.
+;;
+;; Self-writes never conflict with the writer that produced them.
+
+(define (api detect-conflict store key writer-txn)
+  ;; Scan store's alist; if any committed version of `key` came from a
+  ;; txn-id strictly greater than writer-txn, that is a newer-committed
+  ;; writer touching the same key -> conflict.
+  (define (check-committed alist)
+    (cond
+      ((null? alist) #f)
+      ((equal? (car (car alist)) key)
+       ;; alist entry is (key . version); version is '(value txn-id op)
+       (let ((v (cdr (car alist))))
+         (let ((other-txn (car (cdr v))))
+           (if (and (> other-txn writer-txn)
+                    (not (= other-txn writer-txn)))
+               #t
+               #f))))
+      (else (check-committed (cdr alist)))))
+  ;; Check for an uncommitted (active) writer on the same key. The active
+  ;; list is the second element of the store; an active entry is a txn
+  ;; whose versions include the key, with state 'active.
+  (define (check-active active-list)
+    (cond
+      ((null? active-list) #f)
+      (else
+        (let ((t (car active-list)))
+          (let ((versions (car (cdr (cdr t)))))
+            (if (and (equal? (api txn-state t) 'active)
+                     (key-in-versions? versions key)
+                     (not (= (api txn-id t) writer-txn)))
+                #t
+                (check-active (cdr active-list))))))))
+  (define (key-in-versions? versions k)
+    (cond
+      ((null? versions) #f)
+      ((equal? (api version-key (car versions)) k) #t)
+      (else (key-in-versions? (cdr versions) k))))
+  (let ((committed-result (check-committed (car store))))
+    (if committed-result
+        #t
+        (check-active (car (cdr store))))))

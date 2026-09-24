@@ -1,0 +1,86 @@
+; fuzzy-collector.aura — Per-checkpoint dirty page accumulator
+;
+; A "fuzzy collector" is a small helper that gathers the set of pages
+; dirtied since the previous checkpoint. The collector is given to the
+; checkpoint engine, which calls `fuzzy-collect!` on every new dirty
+; page notification. At checkpoint time, the collector's accumulated
+; pages are flushed into the checkpoint record; after the checkpoint is
+; safely written, the collector is reset so it starts accumulating for
+; the next interval.
+;
+; We deliberately keep the collector independent from the page table
+; implementation: the collector stores the dirty page set itself, so
+; that even if `reset-dirty-bits!` is called externally, the collector
+; still has a stable snapshot to hand off to the checkpoint.
+;
+; Representation:
+;   A collector is a single cons cell:
+;     (cons 'fuzzy-collector (cons cap pages))
+;   where
+;     cap   -> maximum number of pages the collector should remember
+;              (0 means "unlimited"; useful for fuzz testing).
+;     pages -> list of page-ids that have been collected so far in this
+;              interval, in the order they were first seen. We also keep
+;              an internal "seen" set so duplicate notifications for the
+;              same page-id don't bloat the list.
+;
+; Exports (wrapped with `(api ...)` for the rest of the project):
+;   (api make-fuzzy-collector)              -> a new, empty collector
+;   (api fuzzy-collect!    coll page-id)    -> add a dirty page
+;   (api fuzzy-reset!      coll)            -> clear the accumulated pages
+;   (api fuzzy-count       coll)            -> how many pages accumulated
+;
+; Internal helpers (private, not wrapped with `(api ...)`):
+;   (fuzzy-seen? pages pid) -> #t if pid already in the page list
+
+; --- private helpers -------------------------------------------------
+
+; Walk the list `pages` and return #t if `pid` is already present.
+; Linear search is fine because each checkpoint interval accumulates at
+; most `max-pages-per-fuzzy` (small) page-ids.
+(define (fuzzy-seen? pages pid)
+  (cond
+    ((null? pages) #f)
+    ((= (car pages) pid) #t)
+    (else (fuzzy-seen? (cdr pages) pid))))
+
+; --- public API ------------------------------------------------------
+
+; Build a fresh fuzzy collector with no accumulated pages and an
+; effectively unlimited cap. The caller (checkpoint-engine) is
+; responsible for any external cap enforcement if desired.
+(define (api make-fuzzy-collector)
+  (cons 'fuzzy-collector (cons 0 '())))
+
+; Record that `page-id` is dirty in the current interval. If the page
+; has already been collected in this interval, the call is a no-op so
+; the snapshot stays a *set* rather than a multiset. We also honour a
+; non-zero cap on the collector: if the number of accumulated pages
+; would exceed `cap`, we stop growing (the existing entries stand).
+(define (api fuzzy-collect! coll page-id)
+  (let ((cap (car (cdr coll)))
+        (pages (cdr (cdr coll))))
+    (cond
+      ((fuzzy-seen? pages page-id)
+       ; already collected this page in the current interval
+       coll)
+      ((and (> cap 0) (>= (length pages) cap))
+       ; cap reached; ignore further additions so the snapshot stays
+       ; bounded in size (matches the spec's "max-pages-per-fuzzy")
+       coll)
+      (else
+       ; grow the accumulated page set
+       (set-cdr! (cdr coll) (cons page-id pages))
+       coll))))
+
+; Reset the collector so the next interval starts empty. We keep the
+; tag and the cap intact so callers can reuse the same collector
+; across many checkpoints.
+(define (api fuzzy-reset! coll)
+  (set-cdr! (cdr coll) '())
+  coll)
+
+; Number of distinct pages currently accumulated in the collector.
+; Used by the engine and by reporting code.
+(define (api fuzzy-count coll)
+  (length (cdr (cdr coll))))

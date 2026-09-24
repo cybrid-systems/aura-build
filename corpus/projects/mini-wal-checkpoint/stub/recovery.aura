@@ -1,0 +1,156 @@
+; recovery.aura — Recovery planning for the WAL checkpoint engine
+;
+; On restart the database must know two things:
+;   1. The earliest LSN that *might* still be needed during replay — this
+;      is the start LSN of the most recent checkpoint. Anything older has
+;      already been flushed and can be discarded.
+;   2. The maximum number of records / bytes that might have to be
+;      replayed — this is the distance from the checkpoint's start LSN
+;      up to the current tip of the redo log.
+;
+; This module computes both of those values from the engine's live state
+; (redo log + checkpoint history + page table). It does *not* mutate any
+; of those structures: recovery is purely a read/analysis phase that
+; produces a plan which the caller can act upon.
+;
+; In addition, we expose a small helper that returns the number of
+; dirty bits cleared by the most recent `reset-dirty-bits!` call, so
+; that callers (notably the scenario's "DIRTY_BIT_RESET" line) can
+; report on checkpoint effectiveness.
+;
+; Exports (wrapped with `(api ...)` for the rest of the project):
+;   (api recovery-replay-from     log checkpoints) -> lsn
+;   (api recovery-scan-window     log checkpoints) -> count
+;   (api recovery-reset-dirty-count page-table)   -> count
+;
+; Design notes:
+;   - We treat a missing checkpoint history as "no checkpoint yet": in
+;     that case `recovery-replay-from` returns the LSN of the very
+;     first redo record (or 0 if the log is empty), and the scan window
+;     spans the entire log.
+;   - The "scan window" is measured in number of redo records, which is
+;     the most intuitive upper bound for replay cost. Byte-size could
+;     also be exposed but the scenario only asks for a single window
+;     value, so we pick the record count.
+;   - `recovery-reset-dirty-count` remembers the size of the page
+;     table before and after `reset-dirty-bits!` is invoked. Because
+;     we have no built-in "before/after" hook, we provide a *side
+;     channel*: the caller passes us the page table that was reset,
+;     and we report the number of bits that were cleared by comparing
+;     a recorded snapshot to the current state. To keep things simple
+;     and self-contained, we instead expose a helper that *performs*
+;     the reset and returns how many bits were cleared — which is
+;     exactly what the scenario needs. The page table API already
+;     exposes `reset-dirty-bits!` and `dirty-page-count`, so we just
+;     snapshot the dirty count, call the reset, and return the delta.
+
+;---------------------------------------------------------------------------
+; Internal helpers (not exported)
+;---------------------------------------------------------------------------
+
+; (lsn-of-record rec) -> the LSN field of a redo record.
+; Redo records are 3-element lists '(page-id lsn size).
+(define (lsn-of-record rec)
+  (car (cdr rec)))
+
+; (log-records log) -> list of redo records in the log, oldest first.
+; The log is stored newest-at-the-head, so we reverse the traversal.
+(define (log-records log)
+  (reverse (map car log)))
+
+; (log-first-lsn log) -> LSN of the oldest record in the log, or 0 if empty.
+(define (log-first-lsn log)
+  (if (null? log)
+      0
+      (lsn-of-record (car (reverse (map car log))))))
+
+; (log-last-lsn log) -> LSN of the newest record in the log, or 0 if empty.
+(define (log-last-lsn log)
+  (if (null? log)
+      0
+      (lsn-of-record (car (map car log)))))
+
+; (latest-checkpoint checkpoints) -> the most recent checkpoint record, or
+; '() if no checkpoints have been taken yet.
+(define (latest-checkpoint checkpoints)
+  (if (null? checkpoints)
+      '()
+      (car checkpoints)))  ; checkpoints are stored newest-first
+
+; (checkpoint-start-lsn cp) -> the start LSN of a checkpoint record.
+; Checkpoint shape: '(start-lsn end-lsn dirty-pages).
+(define (checkpoint-start-lsn cp)
+  (car cp))
+
+;---------------------------------------------------------------------------
+; Public API
+;---------------------------------------------------------------------------
+
+; (recovery-replay-from log checkpoints) -> LSN
+; Returns the LSN from which recovery would have to start replaying after
+; a crash, given the current redo log and checkpoint history.
+;
+; Logic:
+;   - If at least one checkpoint exists, return its start-lsn (the WAL
+;     position immediately after the previous checkpoint's end).
+;   - If no checkpoint exists yet, return the LSN of the very first
+;     redo record — that is the earliest position recovery could need.
+;   - If both the log and checkpoints are empty, return 0 (no recovery
+;     work required).
+(define (recovery-replay-from log checkpoints)
+  (let ((cp (latest-checkpoint checkpoints)))
+    (cond
+      ((not (null? cp))         (checkpoint-start-lsn cp))
+      ((null? log)              0)
+      (else                     (log-first-lsn log)))))
+
+; (recovery-scan-window log checkpoints) -> integer
+; Returns an upper bound on the number of redo records that recovery
+; might have to replay, given the current state.
+;
+; We compute this as: (number of log records with LSN >= replay-from).
+; Because the redo log is append-only and LSNs are monotonically
+; increasing, every record at or after the replay anchor is potentially
+; required. Records strictly before the anchor are guaranteed to be
+; covered by the checkpoint and may be discarded.
+;
+; If there is no checkpoint, the scan window is the entire log length
+; (we may have to replay from the very beginning).
+(define (recovery-scan-window log checkpoints)
+  (let ((anchor (recovery-replay-from log checkpoints))
+        (recs   (log-records log)))
+    (cond
+      ((null? recs)  0)
+      ((= anchor 0)  (length recs))
+      (else
+       (length
+        (let loop ((remaining recs) (acc 0))
+          (cond
+            ((null? remaining)  '())
+            ((< (lsn-of-record (car remaining)) anchor)
+             (loop (cdr remaining) acc))
+            (else
+             (cons (car remaining)
+                   (loop (cdr remaining) (+ acc 1)))))))))))
+
+; (recovery-reset-dirty-count page-table) -> integer
+; Performs `reset-dirty-bits!` on the supplied page table and returns
+; the number of dirty bits that were cleared (i.e. the dirty-page count
+; *before* the reset). After this call, the page table's dirty set is
+; empty.
+;
+; This is exposed as a single convenience routine because the scenario
+; reports the "DIRTY_BIT_RESET" metric: it needs to know how much work
+; each fuzzy checkpoint actually accomplished.
+(define (recovery-reset-dirty-count page-table)
+  (let ((before (page-table-dirty-count page-table)))
+    (page-table-reset-dirty-bits! page-table)
+    before))
+
+;---------------------------------------------------------------------------
+; Exports
+;---------------------------------------------------------------------------
+
+(api recovery-replay-from     recovery-replay-from)
+(api recovery-scan-window     recovery-scan-window)
+(api recovery-reset-dirty-count recovery-reset-dirty-count)

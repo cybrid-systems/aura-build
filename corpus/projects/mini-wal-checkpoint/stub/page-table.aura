@@ -1,0 +1,104 @@
+; page-table.aura — in-memory page table with per-page dirty bits
+;
+; The page table tracks which page IDs (in [min-page-id, max-page-id]) have
+; been modified since the last checkpoint. Each entry is a pair
+;   (cons page-id dirty-flag)
+; where dirty-flag is #t if the page has been dirtied and not yet cleared.
+;
+; The implementation uses a flat association list (alist) so the module
+; works with the minimal Aura runtime — no hash tables, records, or vectors.
+;
+; Exports (wrapped with `(api ...)` for the rest of the project):
+;   (api make-page-table)              -> a fresh, empty page table
+;   (api page-dirty!     tbl pid)      -> mark page-id dirty (idempotent)
+;   (api page-dirty?     tbl pid)      -> #t iff the page-id is currently dirty
+;   (api dirty-pages     tbl)          -> list of dirty page-ids (order = insertion)
+;   (api dirty-page-count tbl)         -> count of dirty pages
+;   (api reset-dirty-bits! tbl)        -> clear all dirty flags; returns #t
+;   (api page-table-size tbl)          -> number of pages currently tracked
+;
+; Internal conventions:
+;   * An entry exists in the alist only if the page has ever been dirtied
+;     during the lifetime of the current checkpoint cycle.
+;   * `reset-dirty-bits!` flips every entry's flag to #f but keeps the
+;     entries around so subsequent `page-dirty?` calls still have O(n)
+;     lookup behaviour (a fresh cycle simply starts with all flags cleared).
+;   * To start a brand new cycle from scratch, call `make-page-table`.
+
+; Internal: look up an entry in the alist. Returns the (pid . flag) pair or #f.
+(define (pt-assoc pid entries)
+  (cond
+    ((null? entries) #f)
+    ((= (car (car entries)) pid) (car entries))
+    (else (pt-assoc pid (cdr entries)))))
+
+; Internal: walk the alist and apply f to each entry, producing a new list.
+; Used by mutation helpers that need to update or filter entries.
+(define (pt-map f entries)
+  (if (null? entries)
+      '()
+      (cons (f (car entries))
+            (pt-map f (cdr entries)))))
+
+; Internal: rebuild an alist preserving only entries for which (keep? entry) is #t.
+(define (pt-filter keep? entries)
+  (cond
+    ((null? entries) '())
+    ((keep? (car entries))
+     (cons (car entries) (pt-filter keep? (cdr entries))))
+    (else (pt-filter keep? (cdr entries)))))
+
+; --- Exports ---------------------------------------------------------------
+
+; Build a brand new, empty page table. Represented as '() so every operation
+; that walks the table terminates immediately on a fresh table.
+(define (api make-page-table)
+  '())
+
+; Mark `pid` as dirty. If the page is already present, flip its flag to #t
+; (idempotent — repeated calls do not duplicate entries). If absent, append
+; a new (pid . #t) entry at the tail so insertion order is preserved for
+; `dirty-pages`.
+(define (api page-dirty! tbl pid)
+  (if (pt-assoc pid tbl)
+      (pt-map (lambda (e) (if (= (car e) pid) (cons pid #t) e)) tbl)
+      (append tbl (list (cons pid #t)))))
+
+; Predicate: is `pid` currently flagged dirty in `tbl`?
+(define (api page-dirty? tbl pid)
+  (let ((entry (pt-assoc pid tbl)))
+    (if entry (cdr entry) #f)))
+
+; Return a list of every page-id whose dirty flag is #t, in the order
+; the pages were first dirtied during this checkpoint cycle.
+(define (api dirty-pages tbl)
+  (let loop ((entries tbl) (acc '()))
+    (cond
+      ((null? entries) (reverse acc))
+      ((cdr (car entries))
+       (loop (cdr entries) (cons (car (car entries)) acc)))
+      (else
+       (loop (cdr entries) acc)))))
+
+; Number of pages currently flagged dirty.
+(define (api dirty-page-count tbl)
+  (let loop ((entries tbl) (n 0))
+    (cond
+      ((null? entries) n)
+      ((cdr (car entries)) (loop (cdr entries) (+ n 1)))
+      (else (loop (cdr entries) n)))))
+
+; Clear every dirty flag in the table. Returns #t on success.
+; Entries themselves are retained (with their flag now #f) so the table
+; still reflects the universe of pages touched since startup; however,
+; `dirty-pages` and `dirty-page-count` will both report zero afterwards.
+(define (api reset-dirty-bits! tbl)
+  (begin
+    (set! tbl (pt-map (lambda (e) (cons (car e) #f)) tbl))
+    #t))
+
+; Total number of pages tracked (dirty + clean) — i.e. the number of entries
+; in the underlying alist. A freshly made page table has size 0.
+(define (api page-table-size tbl)
+  (let loop ((entries tbl) (n 0))
+    (if (null? entries) n (loop (cdr entries) (+ n 1)))))

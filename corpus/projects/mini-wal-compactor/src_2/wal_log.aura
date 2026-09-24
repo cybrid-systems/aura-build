@@ -1,0 +1,81 @@
+;; wal_log.aura
+;; An in-memory representation of the on-disk WAL. A log is a mutable list
+;; of segment objects (see wal_segment.aura). We keep the segments in
+;; append-order so the most-recently rotated segment is at the tail.
+;;
+;; The log also caches derived statistics (total byte size and total entry
+;; count) so callers can read them in O(1) without re-walking the segment
+;; list every time.
+
+(define (api make-log)
+  ;; Returns a fresh, empty log.
+  ;; Structure: (segments total-bytes total-entries)
+  (list (cons 'segments '())
+        (cons 'total-bytes 0)
+        (cons 'total-entries 0)))
+
+(define (api log-append log seg)
+  ;; Append a segment to the log. Mutates `log` via set! on its cons cells.
+  (let ((segs   (cdr (assq 'segments log)))
+        (size0  (cdr (assq 'total-bytes log)))
+        (ents0  (cdr (assq 'total-entries log))))
+    (let ((seg-bytes  (api segment-byte-size seg))
+          (seg-count  (length (api segment-entries seg))))
+      ;; Replace the 'segments cell with the extended list.
+      (set-cdr! (assq 'segments log) (append segs (list seg)))
+      ;; Update cached byte total.
+      (set-cdr! (assq 'total-bytes log) (+ size0 seg-bytes))
+      ;; Update cached entry total.
+      (set-cdr! (assq 'total-entries log) (+ ents0 seg-count))))
+  log)
+
+(define (api log-all-segments log)
+  (cdr (assq 'segments log)))
+
+(define (api log-size-bytes log)
+  (cdr (assq 'total-bytes log)))
+
+(define (api log-entry-count log)
+  (cdr (assq 'total-entries log)))
+
+(define (api log-cold-segments log threshold)
+  ;; Return a list of segments whose age is >= threshold.
+  (let loop ((out '())
+             (rest (cdr (assq 'segments log))))
+    (if (null? rest)
+        (reverse out)
+        (let ((s (car rest)))
+          (if (>= (api segment-age s) threshold)
+              (loop (cons s out) (cdr rest))
+              (loop out       (cdr rest)))))))
+
+(define (api log-drop-segment log id)
+  ;; Remove the segment whose id matches `id`. Updates the cached totals
+  ;; using the dropped segment's current size. If `id` is not found the
+  ;; log is returned unchanged.
+  (let loop ((rest (cdr (assq 'segments log))))
+    (cond
+      ((null? rest) #f)
+      ((equal? (api segment-id (car rest)) id)
+       (let ((dropped (car rest)))
+         (set-cdr! (assq 'segments log)
+                   (append (take-prefix (cdr (assq 'segments log)) id) (cdr rest)))
+         (set-cdr! (assq 'total-bytes log)
+                   (- (cdr (assq 'total-bytes log)) (api segment-byte-size dropped)))
+         (set-cdr! (assq 'total-entries log)
+                   (- (cdr (assq 'total-entries log))
+                      (length (api segment-entries dropped))))
+         dropped))
+      (else (loop (cdr rest))))))
+
+;; --- internal helper --------------------------------------------------------
+
+(define (take-prefix lst id)
+  ;; Return the prefix of `lst` up to (but not including) the first segment
+  ;; whose id equals `id`. Used by log-drop-segment.
+  (let loop ((acc '())
+             (rest lst))
+    (cond
+      ((null? rest) (reverse acc))
+      ((equal? (api segment-id (car rest)) id) (reverse acc))
+      (else (loop (cons (car rest) acc) (cdr rest))))))

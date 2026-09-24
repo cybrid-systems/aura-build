@@ -1,0 +1,50 @@
+;; lsn.aura
+;; Log Sequence Number (LSN) primitives for the fuzzy WAL checkpoint engine.
+;;
+;; A Log Sequence Number is a monotonically increasing integer that
+;; uniquely identifies a position in the redo log. Every redo record
+;; receives an LSN when it is appended, and every checkpoint records
+;; the [start, end] LSN range it covers so recovery knows exactly
+;; where to begin replay.
+;;
+;; LSNs are plain integers; this module just provides the constructor
+;; and a small set of predicates / arithmetic helpers used by every
+;; other layer (redo-log, checkpoint, recovery, engine).
+;;
+;; API surface:
+;;   (api make-lsn n)            -> integer (the LSN itself; identity for ints)
+;;   (api lsn? x)                -> boolean
+;;   (api lsn=? a b)             -> boolean
+;;   (api lsn-advance lsn delta) -> integer (lsn + delta)
+;;   (api lsn-diff a b)          -> integer (a - b)
+;;   (api lsn<=? a b)            -> boolean
+
+;; Make an LSN. Since LSNs are integers, this is the identity function,
+;; but keeping it as a constructor means callers can be explicit about
+;; intent and we can later swap in a richer representation if needed.
+(define (api make-lsn n) n)
+
+;; A value is an LSN iff it is a number. We deliberately do NOT require
+;; positive values so the exported `lsn-start` constant (0) qualifies.
+(define (api lsn? x)
+  (and (number? x) (integer? x)))
+
+(define (api lsn=? a b)
+  (= a b))
+
+;; Advance an LSN by `delta` records. Used when computing the end LSN
+;; of a checkpoint as (start-lsn + N) or when stamping a new record
+;; after a batch of redos.
+(define (api lsn-advance lsn delta)
+  (+ lsn delta))
+
+;; Difference between two LSNs: how far `a` is ahead of `b`.
+;; Result may be negative if `a < b`; callers that need a magnitude
+;; should clamp themselves.
+(define (api lsn-diff a b)
+  (- a b))
+
+;; Less-than-or-equal comparison. Useful for "is this LSN inside the
+;; [start, end] window recorded by a checkpoint?" tests.
+(define (api lsn<=? a b)
+  (<= a b))
