@@ -1,0 +1,161 @@
+;; Helper: parse a whitespace-separated string into a list of integers
+(define (tokenize s)
+  (let loop ((chars (string->list s))
+             (cur '())
+             (acc '()))
+    (cond
+      ((null? chars)
+       (if (null? cur)
+           (reverse acc)
+           (reverse (cons (list->number (reverse cur)) acc))))
+      ((char=? (car chars) #\space)
+       (if (null? cur)
+           (loop (cdr chars) cur acc)
+           (loop (cdr chars) '() (cons (list->number (reverse cur)) acc))))
+      (else
+       (loop (cdr chars) (cons (car chars) cur) acc)))))
+
+;; Helper: convert a list of chars to a number
+(define (list->number lst)
+  (let loop ((chars (reverse lst))
+             (result 0)
+             (sign 1))
+    (cond
+      ((null? chars) (* result sign))
+      ((char=? (car chars) #\-) (loop (cdr chars) result -1))
+      (else
+       (loop (cdr chars)
+             (+ (* result 10) (- (char->integer (car chars)) (char->integer #\0)))
+             sign)))))
+
+;; Helper: convert a list of numbers to a space-separated string
+(define (list->string lst)
+  (let loop ((l lst) (first? #t))
+    (cond
+      ((null? l) "")
+      (first? (string-append (number->string (car l)) (loop (cdr l) #f)))
+      (else (string-append " " (string-append (number->string (car l)) (loop (cdr l) #f)))))))
+
+;; Simpler tokenizer using string operations
+(define (parse-nums s)
+  ;; Split string by spaces
+  (let ((len (string-length s)))
+    (let loop ((i 0) (acc '()))
+      (if (>= i len)
+          (reverse acc)
+          (let ((j (string-index s #\space i)))
+            (if (= j -1)
+                (reverse (cons (string->number (substring s i len)) acc))
+                (loop (+ j 1) (cons (string->number (substring s i j)) acc))))))))
+
+;; Find index of space in string starting from position i
+(define (string-index s c i)
+  (let ((len (string-length s)))
+    (let loop ((j i))
+      (cond
+        ((>= j len) -1)
+        ((char=? (string-ref s j) c) j)
+        (else (loop (+ j 1)))))))
+
+;; Main solve function
+(define (solve nums1 nums2)
+  (let ((nge (compute-nge nums2)))
+    (map (lambda (x) (hash-ref nge x -1)) nums1)))
+
+;; Compute next greater element mapping using a stack
+;; Returns a list of pairs ((value next-greater) ...)
+(define (compute-nge nums2)
+  ;; We'll use association list as a simple "map"
+  (let loop ((remaining (reverse nums2))  ; Process right-to-left
+             (stack '())
+             (result '()))
+    (cond
+      ((null? remaining)
+       ;; Pop remaining stack items, adding -1 for them
+       (let ((final (append result 
+                            (map (lambda (x) (cons x -1)) stack))))
+         final))
+      (else
+       (let ((x (car remaining)))
+         ;; Pop stack while top <= x
+         (let ((new-stack (pop-while-small stack x)))
+           ;; current next greater is top of new-stack (or -1)
+           (let ((next-val (if (null? new-stack) -1 (car new-stack))))
+             (loop (cdr remaining)
+                   (cons x new-stack)
+                   (cons (cons x next-val) result)))))))))
+
+(define (pop-while-small stack x)
+  (cond
+    ((null? stack) '())
+    ((<= (car stack) x) (pop-while-small (cdr stack) x))
+    (else stack)))
+
+;; Hash-ref for association list
+(define (hash-ref alist key default)
+  (cond
+    ((null? alist) default)
+    ((= (car (car alist)) key) (cdr (car alist)))
+    (else (hash-ref (cdr alist) key default))))
+
+;; Test cases
+(define (run-tests)
+  (begin
+    ;; CASE0: [4,1,2] in [1,3,4,2] -> [-1, 3, -1]
+    (let ((r0 (solve '(4 1 2) '(1 3 4 2))))
+      (display "CASE0=")
+      (display (format-list r0))
+      (newline))
+    
+    ;; CASE1: [2,4] in [1,2,3,4] -> [3, -1]
+    (let ((r1 (solve '(2 4) '(1 2 3 4))))
+      (display "CASE1=")
+      (display (format-list r1))
+      (newline))
+    
+    ;; CASE2: [] in [1,2,3] -> []
+    (let ((r2 (solve '() '(1 2 3))))
+      (display "CASE2=")
+      (display (format-list r2))
+      (newline))
+    
+    ;; CASE3: [1,2,3] in [] -> [-1, -1, -1]
+    (let ((r3 (solve '(1 2 3) '())))
+      (display "CASE3=")
+      (display (format-list r3))
+      (newline))
+    
+    ;; CASE4: [5] in [5] -> [-1]
+    (let ((r4 (solve '(5) '(5))))
+      (display "CASE4=")
+      (display (format-list r4))
+      (newline))
+    
+    ;; CASE5: [1,1,1] in [1,2,3] -> [2, 2, 2]
+    (let ((r5 (solve '(1 1 1) '(1 2 3))))
+      (display "CASE5=")
+      (display (format-list r5))
+      (newline))
+    
+    ;; CASE6: [3,2,1] in [1,2,3,4,5] -> [4, 3, 2]
+    (let ((r6 (solve '(3 2 1) '(1 2 3 4 5))))
+      (display "CASE6=")
+      (display (format-list r6))
+      (newline))
+    
+    ;; CASE7: [9,7,5,3,1] in [1,3,5,7,9] -> [-1, -1, -1, -1, -1]
+    (let ((r7 (solve '(9 7 5 3 1) '(1 3 5 7 9))))
+      (display "CASE7=")
+      (display (format-list r7))
+      (newline))))
+
+(define (format-list lst)
+  (if (null? lst)
+      ""
+      (let loop ((l lst) (first? #t))
+        (cond
+          ((null? l) "")
+          (first? (string-append (number->string (car l)) (loop (cdr l) #f)))
+          (else (string-append " " (string-append (number->string (car l)) (loop (cdr l) #f))))))))
+
+(run-tests)

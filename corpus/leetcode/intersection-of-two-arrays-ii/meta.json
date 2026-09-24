@@ -1,5 +1,60 @@
 {
-  "variants": [],
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:36:11Z",
+      "ts_local": "2026-09-24 22:36:11 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2084,
+        "total_characters": 0,
+        "prompt_tokens": 1222,
+        "completion_tokens": 862,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.099,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 7:25: unbound variable: assq\n  did you mean 'xs'?\nerror: 7:25: unbound variable: assq\n  did you mean 'xs'?\nerror: 7:25: unbound variable: assq\n  did you mean 'xs'?\nerror: 7:25: unbound variable: assq\n  did you mean 'xs'?\nerror: 7:25: unbound variable: assq\n  did you mean 'xs'?\nerror: 7:25: unbound variable: assq\n  did you mean 'xs'?\nerror: 7:25: unbound variable: assq\n  did you mean 'xs'?\nerror: 7:25: unbound variable: assq\n  did you mean 'xs'?\n",
+      "stdout_snippet": "CASE0=CASE0=\nCASE1=\nCASE2=\nCASE3=\nCASE4=\nCASE5=\nCASE6=\nCASE7=\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:36:15Z",
+      "ts_local": "2026-09-24 22:36:15 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1962,
+        "total_characters": 0,
+        "prompt_tokens": 1222,
+        "completion_tokens": 740,
+        "prompt_tokens_details": {
+          "cached_tokens": 1221
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.015,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "warning: unbalanced parentheses in input\nerror: no complete S-expression in program source\nusage: /workspace/aura-grok/build_soft4055/aura [options] [file.aura …]\n       /workspace/aura-grok/build_soft4055/aura -e '(+ 1 2)'\n       echo '(+ 1 2)' | /workspace/aura-grok/build_soft4055/aura\n       /workspace/aura-grok/build_soft4055/aura < file.aura\n\nPrograms are read from stdin when no file/-e is given.\nDenseness / span host env (soft multi-module probes):\n  export AURA_BIN=…/build/aura   absolute",
+      "stdout_snippet": ""
+    }
+  ],
   "slug": "intersection-of-two-arrays-ii",
   "title": "Intersection of Two Arrays II",
   "category": "hashing",
@@ -28,5 +83,6 @@
     },
     "ts": "2026-09-24T14:26:11Z"
   },
-  "updated_at": "2026-09-24T14:26:11Z"
+  "updated_at": "2026-09-24T14:36:15Z",
+  "updated_at_local": "2026-09-24 22:36:15 CST"
 }

@@ -1,5 +1,60 @@
 {
-  "variants": [],
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:36:24Z",
+      "ts_local": "2026-09-24 22:36:24 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1753,
+        "total_characters": 0,
+        "prompt_tokens": 1131,
+        "completion_tokens": 622,
+        "prompt_tokens_details": {
+          "cached_tokens": 528
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.048,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 2:13: unbound variable: open-output-file\nerror: 2:13: unbound variable: open-output-file\nerror: 2:13: unbound variable: open-output-file\nerror: 2:13: unbound variable: open-output-file\nerror: 2:13: unbound variable: open-output-file\nerror: 2:13: unbound variable: open-output-file\nerror: 2:13: unbound variable: open-output-file\nerror: 2:13: unbound variable: open-output-file\n",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:36:30Z",
+      "ts_local": "2026-09-24 22:36:30 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1634,
+        "total_characters": 0,
+        "prompt_tokens": 1131,
+        "completion_tokens": 503,
+        "prompt_tokens_details": {
+          "cached_tokens": 1130
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.03,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=<error>\n"
+    }
+  ],
   "slug": "maximum-points-you-can-obtain-from-cards",
   "title": "Maximum Points You Can Obtain from Cards",
   "category": "sliding_window",
@@ -28,5 +83,6 @@
     },
     "ts": "2026-09-24T14:28:28Z"
   },
-  "updated_at": "2026-09-24T14:28:28Z"
+  "updated_at": "2026-09-24T14:36:30Z",
+  "updated_at_local": "2026-09-24 22:36:30 CST"
 }

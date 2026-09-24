@@ -8,12 +8,12 @@
       "ok": true,
       "error": "",
       "usage": {
-        "total_tokens": 3770,
+        "total_tokens": 1722,
         "total_characters": 0,
         "prompt_tokens": 742,
-        "completion_tokens": 3028,
+        "completion_tokens": 980,
         "prompt_tokens_details": {
-          "cached_tokens": 128
+          "cached_tokens": 741
         }
       },
       "model": "MiniMax-M3"
@@ -21,12 +21,12 @@
     "run": {
       "ref_ok": false,
       "exit_code": 1,
-      "stderr": "Traceback (most recent call last):\n  File \"/workspace/aura-build/corpus/leetcode/maximum-depth-of-binary-tree/ref.py\", line 60, in <module>\n    root_name = first.split('=', 1)[1].strip()\n                ~~~~~~~~~~~~~~~~~~~^^^\nIndexError: list index out of range\n",
-      "duration_s": 0.026,
+      "stderr": "Traceback (most recent call last):\n  File \"/workspace/aura-build/corpus/leetcode/maximum-depth-of-binary-tree/ref.py\", line 90, in <module>\n    {'name': 'single_node', 'root': build([1])},\n                                    ~~~~~^^^^^\n  File \"/workspace/aura-build/corpus/leetcode/maximum-depth-of-binary-tree/ref.py\", line 85, in build\n    return helper(0)\n  File \"/workspace/aura-build/corpus/leetcode/maximum-depth-of-binary-tree/ref.py\", line 82, in helper\n    n = AtomClass()\nTypeError: 'NoneTy",
+      "duration_s": 0.028,
       "timeout": false,
       "n_tests": 0
     },
-    "ts": "2026-09-24T14:33:40Z"
+    "ts": "2026-09-24T14:36:50Z"
   },
-  "updated_at": "2026-09-24T14:33:40Z"
+  "updated_at": "2026-09-24T14:36:50Z"
 }

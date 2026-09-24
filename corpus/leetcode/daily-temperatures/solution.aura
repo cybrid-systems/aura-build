@@ -1,0 +1,91 @@
+;; Daily Temperatures solution in Aura
+;; Uses monotonic decreasing stack of indices
+
+(define (parse-int s i)
+  ;; Parse integer starting at index i, return (value . next-index)
+  (let ((len (string-length s)))
+       (let loop ((j i) (neg #f) (val 0))
+            (cond ((>= j len) (cons val (if neg (- 0 val) val)))
+                  ((char=? (string-ref s j) #\-)
+                   (loop (+ j 1) #t val))
+                  ((char=? (string-ref s j) #\,)
+                   (cons (if neg (- 0 val) val) j))
+                  ((char=? (string-ref s j) #\])
+                   (cons (if neg (- 0 val) val) j))
+                  ((char=? (string-ref s j) #\space)
+                   (loop (+ j 1) neg val))
+                  ((char=? (string-ref s j) #\[)
+                   (loop (+ j 1) neg val))
+                  (else
+                   (let ((d (- (char->integer (string-ref s j))
+                               (char->integer #\0))))
+                        (loop (+ j 1) neg
+                              (+ (* val 10) d))))))))
+
+(define (parse-temps s)
+  ;; Skip "CASE0=" prefix and parse array
+  (let ((len (string-length s)))
+       (let ((start (cond ((> len 6) 6) (else 0))))
+            (let loop ((i start) (acc '()))
+                 (cond ((>= i len) (reverse acc))
+                       ((char=? (string-ref s i) #\])
+                        (reverse acc))
+                       (else
+                        (let ((p (parse-int s i)))
+                             (let ((v (car p)) (ni (cdr p)))
+                                  (loop (+ ni 1) (cons v acc))))))))))
+
+(define (daily-temps temps)
+  ;; Compute next warmer temperature distances
+  (let ((n (length temps)))
+       (let ((result (make-list n 0)))
+            (let loop ((i 0) (stack '()))
+                 (cond ((= i n)
+                        ;; pop remaining with 0
+                        result)
+                       (else
+                        (let ((t (list-ref temps i)))
+                             ;; pop while current temp > temps[idx]
+                             (let pop-loop ((st stack) (res result))
+                                  (cond ((null? st)
+                                         (loop (+ i 1) (cons i st)))
+                                        (else
+                                         (let ((idx (car st)))
+                                              (let ((tt (list-ref temps idx)))
+                                                   (if (> t tt)
+                                                       (begin
+                                                        (set! (list-ref res idx) (- i idx))
+                                                        (pop-loop (cdr st) res))
+                                                       (loop (+ i 1) (cons i st)))))))))))))))
+
+(define (list->vector-like lst)
+  ;; We represent as list; print as JSON array
+  lst)
+
+(define (print-json-array lst)
+  (display "[")
+  (let loop ((l lst) (first #t))
+       (cond ((null? l) (void))
+             (else
+              (if first
+                  (begin (display (car l)) (loop (cdr l) #f))
+                  (begin (display ",") (display (car l)) (loop (cdr l) #f))))))
+  (display "]")
+  (newline))
+
+;; Test cases embedded as strings (simulating stdin lines)
+(define (run-case label input-str)
+  (let ((temps (parse-temps input-str)))
+       (let ((result (daily-temps temps)))
+            (display label)
+            (display "=")
+            (print-json-array result))))
+
+(run-case "CASE0" "CASE0=[73,74,75,71,69,72,76,73]")
+(run-case "CASE1" "CASE1=[30,40,50,60]")
+(run-case "CASE2" "CASE2=[30,60,90]")
+(run-case "CASE3" "CASE3=[90,60,30]")
+(run-case "CASE4" "CASE4=[70]")
+(run-case "CASE5" "CASE5=[]")
+(run-case "CASE6" "CASE6=[0,-1,-2,-3,-4]")
+(run-case "CASE7" "CASE7=[-5,-5,-5,-5,-5]")

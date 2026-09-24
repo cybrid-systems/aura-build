@@ -1,0 +1,184 @@
+;; Walls and Gates solution in Aura
+;; Multi-source BFS starting from all gates
+
+(define INF 2147483647)
+(define WALL -1)
+
+;; Helper: list length
+(define (len xs)
+  (if (null? xs) 0 (+ 1 (len (cdr xs)))))
+
+;; Helper: list ref
+(define (list-ref xs i)
+  (if (= i 0) (car xs) (list-ref (cdr xs) i)))
+
+;; Helper: set list ref (returns new list)
+(define (list-set xs i v)
+  (if (= i 0) (cons v (cdr xs))
+      (cons (car xs) (list-set (cdr xs) (- i 1) v))))
+
+;; Grid accessors: grid is list of lists (rows)
+(define (grid-rows g) g)
+(define (grid-ref g r c)
+  (list-ref (list-ref g r) c))
+(define (grid-set g r c v)
+  (list-set g r (list-set (list-ref g r) c v)))
+
+;; Queue implementation as pair (front . back) where back is list in reverse
+(define (make-queue) (cons '() '()))
+(define (queue-empty? q) (null? (car q)))
+(define (queue-push q x)
+  (let ((front (car q)) (back (cdr q)))
+    (cons front (cons x back))))
+(define (queue-pop q)
+  (let ((front (car q)) (back (cdr q)))
+    (if (null? front)
+        (let loop ((b back) (acc '()))
+          (if (null? b)
+              (cons '() '())
+              (loop (cdr b) (cons (car b) acc))))
+        (cons (cdr front) back))))
+
+;; BFS from all gates
+(define (bfs g m n)
+  (let ((dirs '((0 . 1) (0 . -1) (1 . 0) (-1 . 0))))
+    (let loop ((q (let ((q (make-queue)))
+                    (let ((init-q (let ((qq (make-queue)))
+                                    (let ((found (let ((gates '()))
+                                                   (let cell-loop ((r 0))
+                                                     (if (= r m)
+                                                         gates
+                                                         (let col-loop ((c 0) (gs gates))
+                                                           (if (= c n)
+                                                               (cell-loop (+ r 1))
+                                                               (if (= (grid-ref g r c) 0)
+                                                                   (col-loop (+ c 1) (cons (cons r c) gs))
+                                                                   (col-loop (+ c 1) gs)))))))
+                                                   found))))
+                                      (let push-all ((gs init-q) (qq qq))
+                                        (if (null? gs) qq
+                                            (push-all (cdr gs) (queue-push qq (car gs))))))
+                                    q)))
+                init-q)))
+          (g g))
+      (if (queue-empty? q)
+          g
+          (let* ((p (queue-pop q))
+                 (qq (car p))
+                 (new-g (cdr p))
+                 (front (car qq)))
+            (if (null? front)
+                g  ; shouldn't happen normally
+                (let* ((cell front)
+                       (r (car cell))
+                       (c (cdr cell))
+                       (dist (grid-ref new-g r c)))
+                  (let expand ((ds dirs) (ng new-g) (qq qq))
+                    (if (null? ds)
+                        (loop qq ng)
+                        (let* ((d (car ds))
+                               (nr (+ r (car d)))
+                               (nc (+ c (cdr d)))
+                               (inside (and (>= nr 0) (< nr m) (>= nc 0) (< nc n))))
+                          (if inside
+                              (let ((v (grid-ref ng nr nc)))
+                                (if (= v INF)
+                                    (let ((ng2 (grid-set ng nr nc (+ dist 1))))
+                                      (expand (cdr ds) ng2 (queue-push qq (cons nr nc))))
+                                    (expand (cdr ds) ng ng)))
+                              (expand (cdr ds) ng qq))))))))))))
+
+;; main solve: mutates grid in place
+(define (solve grid)
+  (let ((m (len grid)))
+    (if (= m 0) '()
+        (let ((n (len (car grid))))
+          (let ((result (bfs grid m n)))
+            ;; mutate original grid row by row
+            (let ((m' m))
+              (let loop ((r 0) (g grid))
+                (if (= r m')
+                    '()
+                    (let ((row (list-ref result r)))
+                      (set! g (grid-set g r 0 0)) ; placeholder
+                      ;; actually we need to replace the row
+                      ;; but since grid is list-of-lists, we can mutate via set!
+                      ;; Aura set! works on variables; we'll rebuild
+                      (loop (+ r 1) g))))))))))
+
+;; Simpler approach: since grid is immutable lists, just rebuild it.
+(define (solve grid)
+  (let ((m (len grid)))
+    (if (= m 0) '()
+        (let ((n (len (car grid))))
+          (bfs grid m n)))))
+
+;; Display helpers
+(define (display-list xs)
+  (display "[")
+  (let loop ((first #t) (xs xs))
+    (if (null? xs)
+        (display "]")
+        (begin
+          (if first (set! first #f) (display " "))
+          (display (car xs))
+          (loop first (cdr xs))))))
+
+(define (display-row row)
+  (let loop ((first #t) (xs row))
+    (if (null? xs)
+        (begin (newline) '())
+        (begin
+          (if first (set! first #f) (display " "))
+          (display (car xs))
+          (loop first (cdr xs))))))
+
+(define (display-grid g)
+  (let loop ((rows g))
+    (if (null? rows)
+        '()
+        (begin
+          (display-row (car rows))
+          (loop (cdr rows))))))
+
+;; Embedded test cases
+(define cases
+  (list
+    (list -1 0 2147483647 2147483647 2147483647 2147483647 0 2147483647 -1)
+    (list 0)
+    (list -1)
+    (list 2147483647 2147483647 2147483647 2147483647)
+    (list 0 2147483647 -1 2147483647)
+    (list 0 -1 2147483647 2147483647)
+    (list 2147483647 0 2147483647 -1 2147483647 2147483647 2147483647 2147483647)
+    (list 0 2147483647 0 2147483647 2147483647 2147483647 0 2147483647 0)))
+
+;; Case 0: 3x3, Case 1: 1x1, Case 2: 1x1, Case 3: 2x2, Case 4: 2x2, Case 5: 2x2, Case 6: 2x4, Case 7: 3x3
+(define dims (list (cons 3 3) (cons 1 1) (cons 1 1) (cons 2 2) (cons 2 2) (cons 2 2) (cons 2 4) (cons 3 3)))
+
+(define (take n xs)
+  (if (= n 0) '() (cons (car xs) (take (- n 1) (cdr xs)))))
+(define (drop n xs)
+  (if (= n 0) xs (drop (- n 1) (cdr xs))))
+
+(define (split-rows flat n-cols)
+  (let loop ((xs flat) (acc '()))
+    (if (null? xs) (reverse acc)
+        (loop (drop n-cols xs) (cons (take n-cols xs) acc)))))
+
+(define (run-cases cases dims i)
+  (if (null? cases) '()
+      (let* ((d (car dims))
+             (m (car d))
+             (n (cdr d))
+             (flat (car cases))
+             (grid (split-rows flat n))
+             (result (solve grid)))
+        (begin
+          (display "CASE")
+          (display i)
+          (display "=")
+          (display-grid result)
+          (run-cases (cdr cases) (cdr dims) (+ i 1))))))
+
+(run-cases cases dims 0)

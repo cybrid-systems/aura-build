@@ -1,0 +1,144 @@
+;; Design Browser History in Aura using doubly linked list nodes
+;; Each node holds a url, a prev pointer, and a next pointer.
+
+(define (make-node url)
+  (list url '() '()))   ; (url prev next)
+
+(define (node-url n) (car n))
+(define (node-prev n) (cadr n))
+(define (node-next n) (caddr n))
+(define (set-node-prev! n p) (set-car! (cdr n) p))
+(define (set-node-next! n x) (set-car! (cddr n) x))
+
+(define (make-browser-history homepage)
+  (let ((head (make-node homepage))
+        (tail (make-node homepage)))
+    ;; For simplicity we don't actually use tail separately;
+    ;; we rely on prev/next links between nodes.
+    (list 'browser head)))
+
+(define (bh-state bh) (cadr bh))
+(define (bh-current bh) (car (bh-state bh)))
+
+(define (bh-visit! bh url)
+  ;; Create a new node, link from current; drop forward history.
+  (let* ((cur (bh-current bh))
+         (new (make-node url)))
+    (set-node-prev! new cur)
+    (set-node-next! cur new)
+    (set-car! (bh-state bh) new)))
+
+(define (bh-back bh steps)
+  (let loop ((cur (bh-current bh)) ((k steps)))
+    (if (or (= k 0) (null? (node-prev cur)))
+        cur
+        (loop (node-prev cur) (- k 1)))))
+
+(define (bh-forward bh steps)
+  (let loop ((cur (bh-current bh)) ((k steps)))
+    (if (or (= k 0) (null? (node-next cur)))
+        cur
+        (loop (node-next cur) (- k 1)))))
+
+(define (bh-set-current! bh node)
+  (set-car! (bh-state bh) node))
+
+(define (solve case-id ops)
+  ;; ops is a list of operations; each op is a list:
+  ;;   ("Visit" url)  -> no output
+  ;;   ("Back" k)     -> output url
+  ;;   ("Forward" k)  -> output url
+  ;; We need to know the homepage from the first "Visit".
+  (let* ((first (car ops))
+         (homepage (cadr first))
+         (rest-ops (cdr ops))
+         (bh (make-browser-history homepage)))
+    (let loop ((xs rest-ops))
+      (if (null? xs)
+          'done
+          (let* ((op (car xs))
+                 (tag (car op)))
+            (cond
+              ((equal? tag "Visit")
+               (bh-visit! bh (cadr op))
+               (loop (cdr xs)))
+              ((equal? tag "Back")
+               (let ((n (bh-back bh (cadr op))))
+                 (bh-set-current! bh n)
+                 (display (node-url n))
+                 (newline)
+                 (loop (cdr xs))))
+              ((equal? tag "Forward")
+               (let ((n (bh-forward bh (cadr op))))
+                 (bh-set-current! bh n)
+                 (display (node-url n))
+                 (newline)
+                 (loop (cdr xs))))
+              (else
+               (display "UNKNOWN")
+               (newline)
+               (loop (cdr xs)))))))))
+
+;; ---- Embedded test inputs ----
+
+(define CASE0
+  (list
+    (list "Visit" "leetcode.com")
+    (list "Visit" "google.com")
+    (list "Visit" "facebook.com")
+    (list "Visit" "youtube.com")
+    (list "Back" "1")
+    (list "Back" "1")
+    (list "Forward" "1")
+    (list "Visit" "linkedin.com")
+    (list "Forward" "2")
+    (list "Back" "2")
+    (list "Back" "7")))
+
+(define CASE1
+  (list
+    (list "Visit" "home.io")
+    (list "Back" "3")
+    (list "Forward" "5")))
+
+(define CASE2
+  (list
+    (list "Visit" "a.com")
+    (list "Visit" "b.com")
+    (list "Visit" "c.com")
+    (list "Forward" "2")
+    (list "Back" "2")
+    (list "Visit" "d.com")
+    (list "Forward" "1")
+    (list "Back" "1")
+    (list "Back" "1")
+    (list "Forward" "3")))
+
+(define CASE3
+  (list
+    (list "Visit" "root")
+    (list "Visit" "p1")
+    (list "Visit" "p2")
+    (list "Visit" "p3")
+    (list "Back" "1")
+    (list "Visit" "p4")
+    (list "Forward" "10")
+    (list "Back" "10")))
+
+(define CASE4
+  (list
+    (list "Visit" "x")
+    (list "Visit" "y")
+    (list "Back" "1")
+    (list "Back" "1")
+    (list "Back" "1")
+    (list "Forward" "1")
+    (list "Visit" "z")
+    (list "Forward" "1")
+    (list "Back" "1")))
+
+(display "CASE0=") (solve 0 CASE0) (newline)
+(display "CASE1=") (solve 1 CASE1) (newline)
+(display "CASE2=") (solve 2 CASE2) (newline)
+(display "CASE3=") (solve 3 CASE3) (newline)
+(display "CASE4=") (solve 4 CASE4) (newline)

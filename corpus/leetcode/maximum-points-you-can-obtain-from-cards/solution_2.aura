@@ -1,0 +1,43 @@
+(define (list-length xs)
+  (if (null? xs) 0 (+ 1 (list-length (cdr xs)))))
+
+(define (sum-list xs)
+  (if (null? xs) 0 (+ (car xs) (sum-list (cdr xs)))))
+
+(define (ref xs i)
+  (if (= i 0) (car xs) (ref (cdr xs) (- i 1))))
+
+(define (min a b) (if (< a b) a b))
+
+(define (max-points cps k)
+  (let ((n (list-length cps)))
+    (let ((total (sum-list cps)))
+      (if (= k n)
+          total
+          (let ((wsize (- n k)))
+            (let loop ((i 0) (sum 0) (best 0))
+              (cond
+                ((= i wsize) (loop (+ i 1) (+ sum (ref cps i)) sum))
+                ((= i 0) (loop (+ i 1) (+ sum (ref cps i)) (min best (+ sum (ref cps 0)))))
+                (else
+                 (let ((news (- (+ sum (ref cps i)) (ref cps (- i wsize)))))
+                   (let ((newmin (min best news)))
+                     (if (= (+ i 1) n) newmin
+                         (loop (+ i 1) news newmin))))))))))))
+
+(define (solve card_points k)
+  (max-points card_points k))
+
+(define (run-case i cps k)
+  (display (string-append "CASE" (number->string i) "="))
+  (display (solve cps k))
+  (newline))
+
+(run-case 0 (list 1 2 3 4 5 6 1) 3)
+(run-case 1 (list 2 2 2) 2)
+(run-case 2 (list 9 7 5 3 1) 5)
+(run-case 3 (list 1 2 3 4 5) 1)
+(run-case 4 (list 1 2 3 4 5) 4)
+(run-case 5 (list -1 -2 -3 -4 -5) 2)
+(run-case 6 (list 100 0 -100 0 100) 2)
+(run-case 7 (list 1) 1)

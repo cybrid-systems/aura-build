@@ -1,0 +1,63 @@
+;; Intersection of Two Arrays II
+;; Build an association list as a "hash map": list of (key . count) pairs.
+
+(define (assq-update lst key delta)
+  ;; Returns new assoc list with key's count incremented by delta.
+  ;; If key not present and delta > 0, adds it with count delta.
+  ;; If delta would make count 0 or negative, removes the entry.
+  (cond
+    ((null? lst)
+     (if (> delta 0) (list (cons key delta)) '()))
+    (else
+     (let ((p (car lst)))
+       (if (equal? (car p) key)
+           (let ((nc (+ (ntp) delta)))
+             (if (<= nc 0)
+                 (cdr lst)
+                 (cons (cons key nc) (cdr lst))))
+           (cons p (assq-update (cdr lst) key delta))))))
+
+(define (assq-lookup lst key)
+  (cond
+    ((null? lst) #f)
+    (else
+     (let ((p (car lst)))
+       (if (equal? (car p) key) (ntp)
+           (assq-lookup (cdr lst) key))))))
+
+(define (solve nums1 nums2)
+  ;; Count occurrences in nums1
+  (let loop ((xs nums1) (counts '()))
+    (if (null? xs)
+        ;; Now iterate over nums2, decrementing counts, collecting matches
+        (let loop2 ((ys nums2) (cnts counts) (acc '()))
+          (if (null? ys)
+              (reverse acc)
+              (let ((k (car ys)))
+                (let ((c (assq-lookup cnts k)))
+                  (if (and c (> c 0))
+                      (loop2 (cdr ys)
+                             (assq-update cnts k -1)
+                             (cons k acc))
+                      (loop2 (cdr ys) cnts acc))))))
+        (loop (cdr xs)
+              (assq-update counts (car xs) 1)))))
+
+(define (display-list xs)
+  (let loop ((ys xs) (first #t))
+    (cond
+      ((null? ys) (display ""))
+      (else
+       (if first (set! first #f) (display " "))
+       (display (car ys))
+       (loop (cdr ys) #f)))))
+
+;; Print results for each case.
+(display "CASE0=") (display-list (solve '(1 2 2 1) '(2 2))) (newline)
+(display "CASE1=") (display-list (solve '(4 9 5) '(9 4 9 8 4))) (newline)
+(display "CASE2=") (display-list (solve '(1 2 3 4) '(3 4 5 6))) (newline)
+(display "CASE3=") (display-list (solve '() '(1 2 3))) (newline)
+(display "CASE4=") (display-list (solve '(1 1 1 1) '(1 1))) (newline)
+(display "CASE5=") (display-list (solve '(1 2 3) '())) (newline)
+(display "CASE6=") (display-list (solve '(5 5 5 5 5) '(5 5 5))) (newline)
+(display "CASE7=") (display-list (solve '(0 0 0) '(0 0))) (newline)

@@ -1,0 +1,64 @@
+(define (build-list vals)
+  (define (helper i)
+    (if (= i (length vals))
+        '()
+        (cons (list-ref vals i) (helper (+ i 1)))))
+  (helper 0))
+
+(define (node-val n) (car n))
+(define (node-next n) (car (cdr n)))
+(define (make-node v nx) (list v nx))
+
+(define (solve head)
+  (if (null? head)
+      '()
+      (let ((slow head) (fast head))
+        (let loop ()
+          (if (or (null? fast) (null? (node-next fast)))
+              (node-val slow)
+              (begin
+                (set! slow (node-next slow))
+                (set! fast (node-next (node-next fast)))
+                (loop)))))))
+
+(define (display-list lst)
+  (display "(")
+  (let loop ((xs lst) (first? #t))
+    (if (null? xs)
+        (display ")")
+        (begin
+          (if first?
+              (set! first? #f)
+              (display " "))
+          (display (car xs))
+          (loop (cdr xs) #f)))))
+
+(define cases
+  (list
+    (list)
+    (list 1)
+    (list 1 2)
+    (list 1 2 3)
+    (list 1 2 3 4)
+    (list 1 2 3 4 5)
+    (list 10 20 30 40 50 60 70 80)
+    (list -1 0 1 2 3)))
+
+(define (run-case i vals)
+  (let ((head (build-list vals)))
+    (let ((result (solve head)))
+      (display "CASE")
+      (display i)
+      (display "=")
+      (if (null? result)
+          (newline)
+          (begin
+            (display result)
+            (newline))))))
+
+(let loop ((i 0) (cs cases))
+  (if (null? cs)
+      '()
+      (begin
+        (run-case i (car cs))
+        (loop (+ i 1) (cdr cs)))))

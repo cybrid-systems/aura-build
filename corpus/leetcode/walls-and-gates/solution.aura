@@ -1,0 +1,137 @@
+;; Walls and Gates - multi-source BFS
+;; Mutates grid in place using a pair-list queue and recursive BFS expansion.
+
+(define INF 2147483647)
+(define WALL -1)
+(define GATE 0)
+
+(define (make-queue) (cons '() '()))
+(define (enq q x) (let ((in (car q)) (out (cdr q)))
+  (set-car! q (cons x in))
+  q))
+(define (deq q)
+  (let ((out (cdr q)))
+    (if (null? out)
+        (let ((in (car q)))
+          (set-car! q '())
+          (set-cdr! q (reverse in))
+          (let ((out2 (cdr q)))
+            (set-car! q '())
+            (set-cdr! q (cdr out2))
+            (cons (car out2) q)))
+        (begin
+          (set-car! q (car q))
+          (set-cdr! q (cdr out))
+          (cons (car out) q)))))
+
+(define (empty-queue? q)
+  (and (null? (car q)) (null? (cdr q))))
+
+(define (get-rows grid)
+  (let ((len 0) (g grid))
+    (let loop ((lst g) (acc 0))
+      (if (null? lst) acc (loop (cdr lst) (+ acc 1))))))
+
+(define (grid-ref grid i j)
+  (list-ref (list-ref grid i) j))
+
+(define (grid-set! grid i j v)
+  (set-car! (list-tail (list-ref grid i) j) v))
+
+(define (solve grid)
+  (let ((m (get-rows grid)))
+    (if (= m 0)
+        'done
+        (let ((n (get-length (car grid))))
+          (let ((q (make-queue)))
+            (let ((i 0))
+              (let outer ((i 0))
+                (if (>= i m) 'done
+                  (let ((j 0))
+                    (let inner ((j 0))
+                      (if (>= j n) 'done
+                        (begin
+                          (if (= (grid-ref grid i j) GATE)
+                              (enq q (cons i (cons j '()))))
+                          (inner (+ j 1))))))
+                    (outer (+ i 1))))))
+            (let loop ()
+              (if (empty-queue? q) 'done
+                (let ((d (deq q)))
+                  (let ((ci (car d)) (cj (car (cdr d))))
+                    (let ((cur (grid-ref grid ci cj)))
+                      (let ((dirs (list (cons -1 (cons 0 '())) (cons 1 (cons 0 '())) (cons 0 (cons -1 '())) (cons 0 (cons 1 '())))))
+                        (let dloop ((ds dirs))
+                          (if (null? ds) 'done
+                            (let ((di (car (car ds))) (dj (car (cdr (car ds)))))
+                              (let ((ni (+ ci di)) (nj (+ cj dj)))
+                                (if (and (>= ni 0) (< ni m) (>= nj 0) (< nj n))
+                                    (let ((nv (grid-ref grid ni nj)))
+                                      (if (= nv INF)
+                                          (begin
+                                            (grid-set! grid ni nj (+ cur 1))
+                                            (enq q (cons ni (cons nj '())))))
+                                      'noop))
+                                (dloop (cdr ds)))))))
+                      (loop))))))))))))
+
+;; Helper: length of a list
+(define (get-length lst)
+  (let loop ((l lst) (acc 0))
+    (if (null? l) acc (loop (cdr l) (+ acc 1)))))
+
+;; Helper: list-ref by index
+(define (list-ref lst i)
+  (let loop ((l lst) (k i))
+    (if (= k 0) (car l) (loop (cdr l) (- k 1)))))
+
+;; Display helpers for tests
+(define (display-list-of-lists grid)
+  (let ((m (get-rows grid)))
+    (let loop ((i 0))
+      (if (>= i m) (newline)
+        (let ((row (list-ref grid i)) (n (get-length (car grid))))
+          (let rloop ((j 0))
+            (if (>= j n) (begin (newline) (loop (+ i 1)))
+              (begin
+                (display (number->string (list-ref row j)))
+                (if (< j (- n 1)) (display " ") (display ""))
+                (rloop (+ j 1))))))))))
+
+;; --- Test cases ---
+
+(define (run-case grid)
+  (solve grid)
+  (display-list-of-lists grid))
+
+;; CASE0
+(run-case (list (list -1 0 INF) (list INF INF INF) (list 0 INF -1)))
+(display "CASE0=") (newline)
+
+;; CASE1
+(run-case (list (list 0)))
+(display "CASE1=") (newline)
+
+;; CASE2
+(run-case (list (list -1)))
+(display "CASE2=") (newline)
+
+;; CASE3
+(run-case (list (list INF INF) (list INF INF)))
+(display "CASE3=") (newline)
+
+;; CASE4
+(run-case (list (list 0 INF) (list -1 INF)))
+(display "CASE4=") (newline)
+
+;; CASE5
+(run-case (list (list 0 -1) (list INF INF)))
+(display "CASE5=") (newline)
+
+;; CASE6
+(run-case (list (list INF 0 INF -1) (list INF INF INF INF)))
+(display "CASE6=") (newline)
+
+;; CASE7
+(run-case (list (list 0 INF 0) (list INF INF INF) (list 0 INF 0)))
+(display "CASE7=") (newline)

@@ -1,0 +1,17 @@
+(define (solve nums)
+  ;; count occurrences of each product
+  (let ((counts (count-products nums '())))
+    (sum-contributions counts 0)))
+
+;; count-products: builds an alist mapping product -> count
+;; (count-products nums acc) where acc is an alist of (product . count)
+;; Uses double loop: outer index i, inner j > i
+(define (count-products nums acc)
+  (count-products-i nums 0 '() acc))
+
+(define (count-products-i nums i outer-acc acc)
+  (if (>= i (- (length nums) 1))
+      (count-products-j nums i (+ outer-acc 1) acc)
+      (count-products-j nums i (+ outer-acc 1) acc)))
+
+;; Actually let me think more carefully

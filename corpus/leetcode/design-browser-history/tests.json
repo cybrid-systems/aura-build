@@ -1,0 +1,206 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "operations": [
+        [
+          "Visit",
+          "leetcode.com"
+        ],
+        [
+          "Visit",
+          "google.com"
+        ],
+        [
+          "Visit",
+          "facebook.com"
+        ],
+        [
+          "Visit",
+          "youtube.com"
+        ],
+        [
+          "Back",
+          "1"
+        ],
+        [
+          "Back",
+          "1"
+        ],
+        [
+          "Forward",
+          "1"
+        ],
+        [
+          "Visit",
+          "linkedin.com"
+        ],
+        [
+          "Forward",
+          "2"
+        ],
+        [
+          "Back",
+          "2"
+        ],
+        [
+          "Back",
+          "7"
+        ]
+      ]
+    },
+    "expected": "{\"outputs\":[\"facebook.com\",\"google.com\",\"facebook.com\",\"linkedin.com\",\"google.com\",\"leetcode.com\"]}"
+  },
+  {
+    "id": 1,
+    "input": {
+      "operations": [
+        [
+          "Visit",
+          "home.io"
+        ],
+        [
+          "Back",
+          "3"
+        ],
+        [
+          "Forward",
+          "5"
+        ]
+      ]
+    },
+    "expected": "{\"outputs\":[\"home.io\",\"home.io\"]}"
+  },
+  {
+    "id": 2,
+    "input": {
+      "operations": [
+        [
+          "Visit",
+          "a.com"
+        ],
+        [
+          "Visit",
+          "b.com"
+        ],
+        [
+          "Visit",
+          "c.com"
+        ],
+        [
+          "Forward",
+          "2"
+        ],
+        [
+          "Back",
+          "2"
+        ],
+        [
+          "Visit",
+          "d.com"
+        ],
+        [
+          "Forward",
+          "1"
+        ],
+        [
+          "Back",
+          "1"
+        ],
+        [
+          "Back",
+          "1"
+        ],
+        [
+          "Forward",
+          "3"
+        ]
+      ]
+    },
+    "expected": "{\"outputs\":[\"c.com\",\"a.com\",\"d.com\",\"a.com\",\"a.com\",\"d.com\"]}"
+  },
+  {
+    "id": 3,
+    "input": {
+      "operations": [
+        [
+          "Visit",
+          "root"
+        ],
+        [
+          "Visit",
+          "p1"
+        ],
+        [
+          "Visit",
+          "p2"
+        ],
+        [
+          "Visit",
+          "p3"
+        ],
+        [
+          "Back",
+          "1"
+        ],
+        [
+          "Visit",
+          "p4"
+        ],
+        [
+          "Forward",
+          "10"
+        ],
+        [
+          "Back",
+          "10"
+        ]
+      ]
+    },
+    "expected": "{\"outputs\":[\"p2\",\"p4\",\"root\"]}"
+  },
+  {
+    "id": 4,
+    "input": {
+      "operations": [
+        [
+          "Visit",
+          "x"
+        ],
+        [
+          "Visit",
+          "y"
+        ],
+        [
+          "Back",
+          "1"
+        ],
+        [
+          "Back",
+          "1"
+        ],
+        [
+          "Back",
+          "1"
+        ],
+        [
+          "Forward",
+          "1"
+        ],
+        [
+          "Visit",
+          "z"
+        ],
+        [
+          "Forward",
+          "1"
+        ],
+        [
+          "Back",
+          "1"
+        ]
+      ]
+    },
+    "expected": "{\"outputs\":[\"x\",\"x\",\"x\",\"y\",\"z\",\"y\"]}"
+  }
+]

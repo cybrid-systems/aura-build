@@ -1,0 +1,121 @@
+(define (make-vec2 H W init)
+  (let ((rows (make-vector H 0)))
+    (let loop ((i 0))
+      (if (< i H)
+          (begin
+            (vector-set! rows i (make-vector W init))
+            (loop (+ i 1)))
+          rows))))
+
+(define (vref2 v i j) (vector-ref (vector-ref v i) j))
+(define (vset2! v i j x) (vector-set! (vector-ref v i) j x))
+
+(define (bfs grid H W sr sc)
+  (let ((queue '()))
+    (set! queue (cons (list sr sc) queue))
+    (vector-set! (vector-ref grid sr) sc #\0)
+    (let loop ()
+      (if (null? queue)
+          'done
+          (let* ((cell (car queue))
+                 (r (car cell))
+                 (c (cadr cell))
+                 (restq (cdr queue)))
+            (set! queue restq)
+            ;; up
+            (if (and (> r 0) (char=? (vref2 grid (- r 1) c) #\1))
+                (begin
+                  (vector-set! (vector-ref grid (- r 1)) c #\0)
+                  (set! queue (cons (list (- r 1) c) queue)))
+                'noop)
+            ;; down
+            (if (and (< (+ r 1) H) (char=? (vref2 grid (+ r 1) c) #\1))
+                (begin
+                  (vector-set! (vector-ref grid (+ r 1)) c #\0)
+                  (set! queue (cons (list (+ r 1) c) queue)))
+                'noop)
+            ;; left
+            (if (and (> c 0) (char=? (vref2 grid r (- c 1)) #\1))
+                (begin
+                  (vector-set! (vector-ref grid r) (- c 1) #\0)
+                  (set! queue (cons (list r (- c 1)) queue)))
+                'noop)
+            ;; right
+            (if (and (< (+ c 1) W) (char=? (vref2 grid r (+ c 1)) #\1))
+                (begin
+                  (vector-set! (vector-ref grid r) (+ c 1) #\0)
+                  (set! queue (cons (list r (+ c 1)) queue)))
+                'noop)
+            (loop))))))
+
+(define (solve H W grid)
+  (let ((count 0))
+    (let loop ((i 0))
+      (if (< i H)
+          (let inner ((j 0))
+            (if (< j W)
+                (begin
+                  (if (char=? (vref2 grid i j) #\1)
+                      (begin
+                        (set! count (+ count 1))
+                        (bfs grid H W i j))
+                      'noop)
+                  (inner (+ j 1)))
+                (loop (+ i 1))))
+          count))))
+
+(define (run-case H W grid)
+  (let ((gvec (make-vec2 H W 0)))
+    ;; fill gvec with chars from grid strings
+    (let fillr ((i 0))
+      (if (< i H)
+          (begin
+            (let fillc ((j 0))
+              (if (< j W)
+                  (begin
+                    (vector-set! (vector-ref gvec i) j
+                                 (string-ref (vector-ref grid i) j))
+                    (fillc (+ j 1)))
+                  'done))
+            (fillr (+ i 1)))
+          'done))
+    (solve H W gvec)))
+
+(define (display-int n) (display (number->string n)))
+
+;; CASE0
+(let ((c0 (run-case 4 5
+                     #("11110" "11010" "11000" "00000"))))
+  (display "CASE0=") (display-int c0) (newline))
+
+;; CASE1
+(let ((c1 (run-case 4 5
+                     #("11000" "11000" "00100" "00011"))))
+  (display "CASE1=") (display-int c1) (newline))
+
+;; CASE2
+(let ((c2 (run-case 1 1 #("1"))))
+  (display "CASE2=") (display-int c2) (newline))
+
+;; CASE3
+(let ((c3 (run-case 1 1 #("0"))))
+  (display "CASE3=") (display-int c3) (newline))
+
+;; CASE4
+(let ((c4 (run-case 1 4 #("1111"))))
+  (display "CASE4=") (display-int c4) (newline))
+
+;; CASE5
+(let ((c5 (run-case 3 3
+                     #("101" "010" "101"))))
+  (display "CASE5=") (display-int c5) (newline))
+
+;; CASE6
+(let ((c6 (run-case 4 4
+                     #("1100" "1110" "0110" "0001"))))
+  (display "CASE6=") (display-int c6) (newline))
+
+;; CASE7
+(let ((c7 (run-case 3 3
+                     #("000" "000" "000"))))
+  (display "CASE7=") (display-int c7) (newline))

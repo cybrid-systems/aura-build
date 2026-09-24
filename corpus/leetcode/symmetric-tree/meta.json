@@ -8,12 +8,12 @@
       "ok": true,
       "error": "",
       "usage": {
-        "total_tokens": 1744,
+        "total_tokens": 2811,
         "total_characters": 0,
         "prompt_tokens": 732,
-        "completion_tokens": 1012,
+        "completion_tokens": 2079,
         "prompt_tokens_details": {
-          "cached_tokens": 128
+          "cached_tokens": 731
         }
       },
       "model": "MiniMax-M3"
@@ -21,12 +21,12 @@
     "run": {
       "ref_ok": false,
       "exit_code": 1,
-      "stderr": "Traceback (most recent call last):\n  File \"/workspace/aura-build/corpus/leetcode/symmetric-tree/ref.py\", line 116, in <module>\n    root = parse_tree(c['root'])\n  File \"/workspace/aura-build/corpus/leetcode/symmetric-tree/ref.py\", line 75, in parse_tree\n    return parse()\n  File \"/workspace/aura-build/corpus/leetcode/symmetric-tree/ref.py\", line 63, in parse\n    left = parse()\n  File \"/workspace/aura-build/corpus/leetcode/symmetric-tree/ref.py\", line 74, in parse\n    return Node(int(t))\n         ",
-      "duration_s": 0.03,
+      "stderr": "Traceback (most recent call last):\n  File \"/workspace/aura-build/corpus/leetcode/symmetric-tree/ref.py\", line 59, in <module>\n    result = solve(c[\"root\"])\n  File \"/workspace/aura-build/corpus/leetcode/symmetric-tree/ref.py\", line 42, in solve\n    root = full_parse(root_str)\n  File \"/workspace/aura-build/corpus/leetcode/symmetric-tree/ref.py\", line 24, in full_parse\n    node, _ = parse_tree(s, 0)\n              ~~~~~~~~~~^^^^^^\n  File \"/workspace/aura-build/corpus/leetcode/symmetric-tree/ref.py\",",
+      "duration_s": 0.029,
       "timeout": false,
       "n_tests": 0
     },
-    "ts": "2026-09-24T14:33:50Z"
+    "ts": "2026-09-24T14:37:05Z"
   },
-  "updated_at": "2026-09-24T14:33:50Z"
+  "updated_at": "2026-09-24T14:37:05Z"
 }

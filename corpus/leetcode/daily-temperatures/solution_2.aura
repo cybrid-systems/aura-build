@@ -1,0 +1,92 @@
+;; Daily Temperatures - monotonic stack solution
+
+(define (parse-int s)
+  (let loop ((i 0) (sign 1) (n 0))
+    (cond
+      ((>= i (string-length s)) (* sign n))
+      ((char=? (string-ref s i) #\-)
+       (loop (+ i 1) -1 n))
+      ((char=? (string-ref s i) #\+)
+       (loop (+ i 1) 1 n))
+      ((and (>= (char->integer (string-ref s i)) (char->integer #\0))
+            (<= (char->integer (string-ref s i)) (char->integer #\9)))
+       (loop (+ i 1) sign
+             (+ (* n 10)
+                (- (char->integer (string-ref s i))
+                   (char->integer #\0)))))
+      (else (loop (+ i 1) sign n)))))
+
+(define (parse-array s)
+  ;; s is like "[1,2,3]" or "[]"
+  (let ((len (string-length s)))
+    (let loop ((i 0) (acc '()) (neg #f) (cur 0) (has #f))
+      (cond
+        ((>= i len)
+         (reverse acc))
+        ((char=? (string-ref s i) #\[)
+         (loop (+ i 1) acc #f 0 #f))
+        ((char=? (string-ref s i) #\])
+         (if has
+             (reverse (cons (if neg (- cur) cur) acc))
+             (reverse acc)))
+        ((char=? (string-ref s i) #\,)
+         (if has
+             (let ((v (if neg (- cur) cur)))
+               (loop (+ i 1) (cons v acc) #f 0 #f))
+             (loop (+ i 1) acc #f 0 #f)))
+        ((char=? (string-ref s i) #\-)
+         (loop (+ i 1) acc #t cur has))
+        ((char=? (string-ref s i) #\space)
+         (loop (+ i 1) acc neg cur has))
+        (else
+         (let ((d (- (char->integer (string-ref s i))
+                     (char->integer #\0))))
+           (loop (+ i 1) acc neg (+ (* cur 10) d) #t))))))))
+
+(define (read-case)
+  (let ((line (read-line)))
+    (let ((idx (string-contains line "=")))
+      (if idx
+          (let ((val (substring line (+ idx 1) (string-length line))))
+            (parse-array val))
+          '()))))
+
+(define (solve temps)
+  ;; return list of result integers
+  (let ((n (length temps)))
+    (let loop ((i 0) (stack '()) (result '()))
+      (cond
+        ((= i n)
+         ;; fill remaining zeros for indices in stack
+         (let fill ((st stack) (acc result))
+           (if (null? st)
+               (reverse acc)
+               (fill (cdr st) (cons 0 acc)))))
+        (else
+         (let ((cur (list-ref temps i)))
+           ;; pop while current > temps[stack top]
+           (let pop ((st stack) (res result))
+             (if (and (not (null? st))
+                      (> cur (list-ref temps (car st))))
+                 (begin
+                   (set-car! (cdr res)
+                             (- i (car st)))
+                   (pop (cdr st) (cdr res)))
+                 (loop (+ i 1) (cons i st) res))))))))))
+
+(define (display-list lst)
+  (display "[")
+  (let loop ((l lst) (first? #t))
+    (cond
+      ((null? l) (display "]"))
+      (else
+       (if first?
+           (display (car l))
+           (begin (display ",") (display (car l))))
+       (loop (cdr l) #f)))))
+
+;; Main
+(define temps (read-case))
+(define res (solve temps))
+(display-list res)
+(newline)

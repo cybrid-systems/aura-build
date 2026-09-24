@@ -1,0 +1,82 @@
+(define (list-ref lst i)
+  (if (= i 0) (car lst) (list-ref (cdr lst) i)))
+
+(define (list-set! lst i v)
+  (if (= i 0)
+      (set-car! lst v)
+      (list-set! (cdr lst) (- i 1) v)))
+
+(define (reverse-list! lst)
+  (define (rev-iter remaining acc)
+    (if (null? remaining)
+        acc
+        (rev-iter (cdr remaining) (cons (car remaining) acc))))
+  (rev-iter lst '()))
+
+(define (next-permutation arr n)
+  (let ((i (- n 2)))
+      (define (find-break i)
+        (if (< i 0)
+            #f
+            (if (< (list-ref arr i) (list-ref arr (+ i 1)))
+                i
+                (find-break (- i 1)))))
+      (let ((pos (find-break i)))
+          (if (not pos)
+              (begin
+                (reverse-list! arr)
+                arr)
+              (begin
+                (define (find-swap j)
+                  (if (<= (list-ref arr j) (list-ref arr pos))
+                      (find-swap (- j 1))
+                      j))
+                (let ((j (find-swap (- n 1))))
+                    (let ((tmp (list-ref arr pos)))
+                        (list-set! arr pos (list-ref arr j))
+                        (list-set! arr j tmp)
+                        (let ((tail (list-tail-helper arr (+ pos 1))))
+                            (let ((rev (reverse-list! tail)))
+                                (append-prefix arr rev (+ pos 1))
+                                arr)))))))))
+
+(define (list-tail-helper lst i)
+  (if (= i 0) lst (list-tail-helper (cdr lst) (- i 1))))
+
+(define (append-prefix lst suffix i)
+  (if (= i 0)
+      (begin
+        (set-cdr! lst suffix)
+        '())
+      (append-prefix (cdr lst) suffix (- i 1))))
+
+(define (solve n arr)
+  (next-permutation arr n))
+
+(define (display-list lst)
+  (display "[")
+  (define (iter l)
+    (cond ((null? l) (display "]"))
+          (else
+            (display (car l))
+            (if (not (null? (cdr l))) (display " "))
+            (iter (cdr l)))))
+  (iter lst))
+
+(define CASE0_ARR (list 1 2 3))
+(define CASE1_ARR (list 3 2 1))
+(define CASE2_ARR (list 1 1 5))
+(define CASE3_ARR (list 1 3 2 4))
+(define CASE4_ARR (list 1 2 3 4))
+(define CASE5_ARR (list 1))
+(define CASE6_ARR (list 2 3 1 3))
+(define CASE7_ARR (list 5 4 3 2 1))
+
+(display "CASE0=") (display-list (solve 3 CASE0_ARR)) (newline)
+(display "CASE1=") (display-list (solve 3 CASE1_ARR)) (newline)
+(display "CASE2=") (display-list (solve 3 CASE2_ARR)) (newline)
+(display "CASE3=") (display-list (solve 4 CASE3_ARR)) (newline)
+(display "CASE4=") (display-list (solve 4 CASE4_ARR)) (newline)
+(display "CASE5=") (display-list (solve 1 CASE5_ARR)) (newline)
+(display "CASE6=") (display-list (solve 4 CASE6_ARR)) (newline)
+(display "CASE7=") (display-list (solve 5 CASE7_ARR)) (newline)

@@ -1,0 +1,91 @@
+(define (solve nums1 nums2)
+  (let* (
+    ;; Build mapping using right-to-left monotonic stack
+    (build-map
+      (lambda (stack-result)
+        (if (null? stack-result)
+            '()
+            (build-map (cdr stack-result)))))
+    ;; Process nums2 right-to-left to find next greater elements
+    (process
+      (lambda (lst stack acc)
+        (cond
+          ((null? lst) (reverse acc))
+          (else
+            (let* (
+              (x (car lst))
+              ;; Pop elements from stack that are <= x
+              (pop-smaller
+                (lambda (stk)
+                  (cond
+                    ((null? stk) '())
+                    ((<= (car stk) x) (pop-smaller (cdr stk)))
+                    (else stk))))
+              (new-stack (pop-smaller stack))
+              (next-val
+                (cond
+                  ((null? new-stack) -1)
+                  (else (car new-stack))))
+              ;; Push current x onto stack
+              (final-stack (cons x new-stack))
+              ;; Cons onto accumulator in correct order (we're going right-to-left)
+              ;; Each element x in nums2 has next greater = next-val at this point
+              ;; We build pairs (x . next-val)
+              (new-acc (cons (cons x next-val) acc)))
+            (process (cdr lst) final-stack new-acc))))))
+    ;; Compute the map of next greater elements
+    (pairs (process nums2 '() '()))
+    ;; Build lookup: given list of pairs and key, find matching value
+    (lookup
+      (lambda (key pairs)
+        (cond
+          ((null? pairs) -1)
+          ((= (car (car pairs)) key) (cdr (car pairs)))
+          (else (lookup key (cdr pairs))))))
+    ;; Apply lookup to each element of nums1
+    (build-result
+      (lambda (ns)
+        (if (null? ns)
+            '()
+            (cons (lookup (car ns) pairs) (build-result (cdr ns))))))))
+    (build-result nums1)))
+
+;; Display a list as space-separated values
+(define (display-list xs)
+  (cond
+    ((null? xs) (display ""))
+    (else
+      (display (car xs))
+      (if (not (null? (cdr xs)))
+          (begin (display " ") (display-list (cdr xs)))
+          (display "")))))
+
+;; Helper to call solve with embedded inputs
+(define (run-case nums1 nums2)
+  (display "CASE=")
+  (display-list (solve nums1 nums2))
+  (newline))
+
+;; Case 0: [4,1,2] in [1,3,4,2]
+(run-case '(4 1 2) '(1 3 4 2))
+
+;; Case 1: [2,4] in [1,2,3,4]
+(run-case '(2 4) '(1 2 3 4))
+
+;; Case 2: [] in [1,2,3]
+(run-case '() '(1 2 3))
+
+;; Case 3: [1,2,3] in []
+(run-case '(1 2 3) '())
+
+;; Case 4: [5] in [5]
+(run-case '(5) '(5))
+
+;; Case 5: [1,1,1] in [1,2,3]
+(run-case '(1 1 1) '(1 2 3))
+
+;; Case 6: [3,2,1] in [1,2,3,4,5]
+(run-case '(3 2 1) '(1 2 3 4 5))
+
+;; Case 7: [9,7,5,3,1] in [1,3,5,7,9]
+(run-case '(9 7 5 3 1) '(1 3 5 7 9))

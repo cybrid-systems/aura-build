@@ -1,0 +1,35 @@
+(define (mask32 x)
+  (bit-and x 4294967295))
+
+(define (add-no-plus a b)
+  (let loop ((x (mask32 a)) (y (mask32 b)))
+    (if (= y 0)
+        x
+        (loop (mask32 (bit-xor x y))
+              (mask32 (bit-shift-left (bit-and x y) 1))))))
+
+(define (sign-correct v)
+  (let ((m (mask32 v))
+        (top (bit-and m 2147483648)))
+    (if (= top 0)
+        m
+        (- (- m 4294967295) 1))))
+
+(define (solve a b)
+  (sign-correct (add-no-plus a b)))
+
+(define (run-case i a b)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve a b))
+  (newline))
+
+(run-case 0 2 3)
+(run-case 1 -1 1)
+(run-case 2 0 0)
+(run-case 3 -12 -8)
+(run-case 4 100 -200)
+(run-case 5 2147483647 0)
+(run-case 6 -2147483648 -1)
+(run-case 7 123456789 -987654321)
