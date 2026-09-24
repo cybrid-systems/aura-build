@@ -2317,8 +2317,9 @@ def _implicated_files(
         (("halt", "resume", "rej_halt"), ["halt.aura", "order.aura", "exchange.aura", "main.aura"]),
         (("dup", "idemp"), ["idemp.aura", "order.aura", "main.aura"]),
         (("replay", "eq=", "eq\n", "snapshot"), ["replay.aura", "snapshot.aura", "exchange.aura", "journal.aura", "main.aura"]),
-        (("fees", "fee"), ["fee.aura", "settle.aura", "query.aura", "main.aura"]),
-        (("count",), ["main.aura"]),
+        (("fees", "fee", "fees=14", "fees=35"), ["fee.aura", "settle.aura", "query.aura", "main.aura"]),
+        (("eq=", "eq=0", "eq=1", "replay"), ["replay.aura", "snapshot.aura", "journal.aura", "exchange.aura", "main.aura"]),
+        (("count", "count=8", "count=10"), ["main.aura"]),
         (("parse error", "unbalanced", "unbound", "warning: unbalanced"),
          ["match.aura", "order.aura", "exchange.aura", "main.aura", "book.aura", "settle.aura"]),
     ]
@@ -2369,6 +2370,13 @@ def _interface_contracts_blob(task_spec: dict[str, Any]) -> str:
             "Stub hardcodes to DELETE: FILL1=\"filled\", STP=7, COUNT=0 — replace with\n"
             "  (define left1 (query-left \"A1\")) (define fill1 (if (= left1 3) \"partial\" \"other\"))\n"
             "  and real STP/COUNT from APIs. order-place must return \"partial\" when rem>0.\n"
+            "FEES must be 14 = fee-rate 1 × qty 7 × both sides (buyer+seller) on the B1 fill;\n"
+            "  do not double-charge resting/cancels/STP-zero. If FEES>14, settle-fill/fee-charge\n"
+            "  is over-firing — fix fee.aura/settle.aura only.\n"
+            "EQ=1 requires snapshot-fp identical before/after exchange-replay (replay must\n"
+            "  rebuild ledger/book/fees from journal-oldest-first without drift).\n"
+            "COUNT=10 counts holds among {FILL1 partial, LEFT1 3, RISK reject, STP 0, CXL cancelled,\n"
+            "  HALT halted, REJ_HALT reject, RESUME open, DUP dup, EQ 1} — fix EQ/FEES first.\n"
             "If verify mentions unbalanced parentheses / parse error: fix ONLY that file's\n"
             "parens first; do not rewrite unrelated modules in the same turn."
         )
@@ -2640,6 +2648,26 @@ def _repair_focus_files(
         for f in implicated:
             if f not in focus:
                 focus.append(f)
+        # Late-stage: when EQ/FEES/COUNT dominate the error, prefer those modules.
+        err_l = (err or "").lower()
+        if "fees=" in err_l or "eq=" in err_l or "count=" in err_l:
+            late = [
+                f
+                for f in (
+                    "fee.aura",
+                    "settle.aura",
+                    "replay.aura",
+                    "snapshot.aura",
+                    "journal.aura",
+                    "exchange.aura",
+                    "main.aura",
+                    "query.aura",
+                )
+                if f in files
+            ]
+            for f in late:
+                if f not in focus:
+                    focus.append(f)
         return focus or implicated or list(files)
     return implicated or list(files)
 
