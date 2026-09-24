@@ -1,0 +1,74 @@
+;; txn-table.aura
+;; Tracks the lifecycle of transactions: active, committed, or aborted.
+;;
+;; A txn-table is an association list mapping txn-id (integer) to a status
+;; symbol: 'active, 'committed, or 'aborted. By convention, a transaction is
+;; implicitly 'active the moment it is begun; commit and abort are terminal.
+;;
+;; Lookups for unknown txn-ids return 'unknown so callers can distinguish a
+;; never-begun transaction from one that explicitly aborted.
+
+(define (api txn-table-init)
+  '())
+
+;; begin! marks a transaction as active. If the transaction was previously
+;; known (e.g. still 'active from a duplicate begin), this is a no-op for the
+;; status itself but we still update the entry to keep semantics consistent.
+(define (api txn-table-begin! table txn-id)
+  (let ((existing (assq txn-id table)))
+    (if existing
+        ;; Already present: leave status alone unless it was 'unknown, in
+        ;; which case promote to 'active. For our purposes unknown never
+        ;; appears in the alist, so this is effectively a no-op.
+        table
+        (cons (cons txn-id 'active) table))))
+
+;; commit! marks a transaction as committed. Calling commit on an unknown
+;; transaction is an error in a real system, but for this toy we record the
+;; committed status regardless so downstream visibility checks can see it.
+(define (api txn-table-commit! table txn-id)
+  (let loop ((rest table) (acc '()))
+    (cond ((null? rest)
+           ;; Not found: record the commit anyway so readers see it.
+           (append acc (list (cons txn-id 'committed))))
+          ((= (car (car rest)) txn-id)
+           (append acc (list (cons txn-id 'committed)) (cdr rest)))
+          (else
+           (loop (cdr rest) (append acc (list (car rest))))))))
+
+;; abort! marks a transaction as aborted. Like commit!, this overrides any
+;; prior status. Aborted transactions must not be visible to any snapshot.
+(define (api txn-table-abort! table txn-id)
+  (let loop ((rest table) (acc '()))
+    (cond ((null? rest)
+           (append acc (list (cons txn-id 'aborted))))
+          ((= (car (car rest)) txn-id)
+           (append acc (list (cons txn-id 'aborted)) (cdr rest)))
+          (else
+           (loop (cdr rest) (append acc (list (car rest))))))))
+
+;; status returns the lifecycle status of a transaction. Returns 'unknown
+;; when the transaction has never been recorded in the table.
+(define (api txn-table-status table txn-id)
+  (let ((entry (assq txn-id table)))
+    (if entry
+        (cdr entry)
+        'unknown)))
+
+;; active-count: number of transactions currently in the 'active state.
+(define (api txn-table-active-count table)
+  (let loop ((rest table) (n 0))
+    (cond ((null? rest) n)
+          ((eq? (cdr (car rest)) 'active)
+           (loop (cdr rest) (+ n 1)))
+          (else
+           (loop (cdr rest) n)))))
+
+;; committed-count: number of transactions currently in the 'committed state.
+(define (api txn-table-committed-count table)
+  (let loop ((rest table) (n 0))
+    (cond ((null? rest) n)
+          ((eq? (cdr (car rest)) 'committed)
+           (loop (cdr rest) (+ n 1)))
+          (else
+           (loop (cdr rest) n)))))

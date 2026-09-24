@@ -1,0 +1,28 @@
+;; keys.aura — Key extraction helpers for mini-wal-zstd-frames
+;;
+;; The WAL stores records as (key . value) pairs. These helpers extract
+;; the first and last keys from the sequence of records, and count them.
+;;
+;; Exports:
+;;   key-first wal  -> key of the first record (byte string -> integer key id)
+;;                     Returns 0 if there are no records.
+;;   key-last  wal  -> key of the last record (0 if none).
+;;   key-count wal  -> number of records currently in the WAL.
+
+(define (key-first wal)
+  ;; wal-records returns the list of records (key . value) pairs.
+  ;; Take the car of the first record as the key, or 0 if empty.
+  (let ((recs (wal-records wal)))
+    (if (null? recs)
+        0
+        (car (car recs)))))
+
+(define (key-last wal)
+  (let ((recs (wal-records wal)))
+    (if (null? recs)
+        0
+        (car (car (reverse recs))))))
+
+(define (key-count wal)
+  ;; Count the records in the WAL.
+  (length (wal-records wal)))

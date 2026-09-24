@@ -1,0 +1,86 @@
+;; recovery.aura -- restart recovery orchestration
+;;
+;; After a crash + repair pass, recovery re-opens the WAL and replays
+;; committed frames so the caller can see the final state. Since our WAL
+;; lives entirely in memory, "re-opening" means rebuilding a fresh WAL
+;; from the repaired sectors and replaying them via the standard
+;; wal-append! + replay-frames path.
+;;
+;; Required (define (api ...)) forms:
+;;   (api recovery-run w)   -> run the full recovery procedure on a
+;;                             repaired WAL `w`; returns #t on success,
+;;                             #f if an error was detected.
+;;
+;; A report side-effect is attached to `w` under the key 'recovery so
+;; downstream code (report.aura / main.aura) can inspect what happened.
+
+(define recovery-last-error #f)
+
+;; Build a fresh WAL of the same sector size as `w`, then re-append
+;; every committed frame recovered from the old WAL. This is a no-op
+;; shell for our in-memory engine but mirrors the on-disk restart flow.
+(define (recovery-rebuild w)
+  (let ((new-size (sector-size-of w)))
+    (let ((new-wal (api wal-open new-size)))
+      (let loop ((frames (api replay-frames w))
+                 (ok #t))
+        (if (null? frames)
+            (if ok
+                (begin
+                  (set! new-wal
+                        (wal-replace-contents! new-wal (api wal-sectors w)))
+                  new-wal)
+                #f)
+            (let ((f (car frames)))
+              (api wal-append! new-wal f)
+              (loop (cdr frames) ok)))))))
+
+;; Replace the sector list of a WAL with a pre-built one. This lets us
+;; hand the rebuilt sectors from the old WAL straight into the new one
+;; without paying the cost of re-appending every byte.
+(define (wal-replace-contents! w sectors)
+  (set-car! (cdr w) sectors)
+  w)
+
+;; Try to extract the sector size used by the original WAL.
+(define (sector-size-of w)
+  (let ((secs (api wal-sectors w)))
+    (if (null? secs)
+        64
+        (let ((first (car secs)))
+          ;; Sectors are (payload . checksum) pairs.
+          (+ (length (car first)) 4))))
+
+;; Public entry point: run recovery on the WAL.
+(define (api recovery-run w)
+  (set! recovery-last-error #f)
+  (let ((replay (api replay-frames w))
+        (verified (api wal-verify w)))
+    (let ((count (length replay))
+          (ok (if (eq? verified #t) #t #f)))
+      (let ((report (cons 'recovery
+                          (list (cons 'status (if ok 'OK 'FAIL))
+                                (cons 'replayed count)
+                                (cons 'verified (if ok 'yes 'no))))))
+        ;; Stash the report on the WAL so report.aura can read it.
+        (wal-attach-report! w report)
+        (if ok
+            #t
+            (begin
+              (set! recovery-last-error "verification failed after recovery")
+              #f))))))
+
+;; Attach a side-channel report alist onto the WAL object. The WAL is
+;; represented as a 2-element list (sectors . reports), so we hang the
+;; report there.
+(define (wal-attach-report! w report)
+  (let ((cell (cdr w)))
+    (if (null? cell)
+        (set-cdr! w (list report))
+        (let loop ((xs cell))
+          (cond
+            ((null? xs) #f)
+            ((equal? (caar xs) 'recovery)
+             (set-car! xs report))
+            (else (loop (cdr xs)))))))
+  w)

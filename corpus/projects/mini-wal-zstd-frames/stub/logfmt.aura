@@ -1,0 +1,40 @@
+;; logfmt.aura — Logfmt-style key=value formatting helpers.
+;;
+;; Exposes:
+;;   (logfmt kv-alist)     -> single string of "k1=v1 k2=v2 ..." for an alist
+;;   (logfmt-line k v)     -> single string "k=v" for one key/value pair
+;;
+;; Values are coerced to strings via number->string when they are numbers,
+;; passed through as strings otherwise. Boolean #t / #f are rendered as
+;; "true" / "false". Empty keys produce empty output. No quoting is applied
+;; beyond what the coercion gives — callers are expected to pass values
+;; that do not contain spaces or '='.
+
+(define (logfmt-coerce v)
+  (cond
+    ((number? v) (number->string v))
+    ((string? v) v)
+    ((equal? v #t) "true")
+    ((equal? v #f) "false")
+    (else (display "logfmt: cannot coerce value: "))))
+
+(define (logfmt-line k v)
+  (string-append k "=" (logfmt-coerce v)))
+
+(define (logfmt-pair pair)
+  (logfmt-line (car pair) (cdr pair)))
+
+(define (logfmt-join-first pair)
+  (logfmt-pair pair))
+
+(define (logfmt-join-rest rest)
+  (if (null? rest)
+      ""
+      (string-append " " (logfmt-pair (car rest))
+                     (logfmt-join-rest (cdr rest)))))
+
+(define (logfmt kv-alist)
+  (if (null? kv-alist)
+      ""
+      (string-append (logfmt-join-first (car kv-alist))
+                     (logfmt-join-rest (cdr kv-alist)))))

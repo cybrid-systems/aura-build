@@ -1,0 +1,17 @@
+;; recovery.aura — restart recovery: re-open the WAL and replay frames
+;; This is the high-level recovery driver: takes a (possibly torn) WAL,
+;; invokes the repair pass, then re-opens by rebuilding the log from
+;; the surviving sectors and counting what was recovered.
+
+;; Recover a WAL by:
+;;   1. Running the scan-and-repair pass to fix any torn sectors.
+;;   2. Replaying frames from the (now-consistent) sector stream.
+;;   3. Returning the list of replayed frames.
+;;
+;; The repair pass itself truncates the partial sector or rebuilds it from
+;; prior committed frames; after that, the WAL is consistent and replay
+;; yields a deterministic frame list.
+(define (api recovery-run w)
+  (begin
+    (repair-scan w)
+    (replay-frames w)))

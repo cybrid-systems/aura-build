@@ -1,0 +1,115 @@
+;; main.aura
+;; Entry point for the mini-wal-direct-io scenario.
+;;
+;; This file orchestrates the WAL simulation by calling the public APIs from
+;; each module and printing the resulting state as KEY=value lines. All values
+;; printed below are computed at runtime; no expected values are hard-coded
+;; as the sole source of truth.
+
+;; ---- Scenario setup ---------------------------------------------------------
+
+;; 1. Build a WAL config and capture its primary fields.
+(define cfg (wal-make-config 4096 #t 1))
+(define sector-size (wal-sector-size cfg))
+(define direct?    (wal-direct? cfg))
+(define version    (wal-version cfg))
+
+;; 2. Open a direct writer with that config.
+(define w (writer-open cfg))
+
+;; 3. Create a bump allocator of 64 slots and record its free count.
+(define alloc (allocator-new 64))
+(define alloc-free (allocator-free alloc))
+
+;; 4+5. Loop 20 times: take a slot, build a record, append, and (every 4
+;; appends) issue a barrier that the writer records.
+
+;; Helpers local to main.
+(define (mod n d) (- n (* (quotient n d) d)))
+;; increment helper using set!
+(define (bump x) (set! x (+ x 1)) x)
+
+;; State we accumulate across the loop, since Aura loop bodies are simple.
+(define i 0)
+(define appended-count 0)
+(define barrier-step 0)
+(define br (barrier-new))
+
+;; Number of iterations and barrier cadence.
+(define total-iters 20)
+(define barrier-every 4)
+
+;; Pre-declare a few helpers we'll fill in as we go.
+(define (advance-loop)
+  (set! i (+ i 1)))
+
+;; We'll do a manual fixed-length iteration by recursive calls.
+(define (loop-step n)
+  (if (= n total-iters)
+      'done
+      (begin
+        ;; Take a slot from the allocator.
+        (define slot (allocator-take alloc))
+        ;; txid cycles 1..5: (mod n 5) gives 0..4, so add 1.
+        (define txid (+ (mod n 5) 1))
+        ;; Payload size derived from slot index so record-len varies.
+        ;; Use a simple deterministic mapping: payload size grows with n
+        ;; but is bounded so it always fits well below a 4096-byte sector.
+        (define plen (+ 4 (mod n 13)))
+        ;; Build a payload byte list of length plen, bytes 0..plen-1.
+        (define (make-payload k)
+          (if (= k plen)
+              '()
+              (cons (mod k 256) (make-payload (+ k 1)))))
+        (define payload (make-payload 0))
+        ;; Construct the record.
+        (define rec (record-make txid (mod n 3) payload))
+        ;; Append to the writer. The writer performs align-up / direct-append
+        ;; internally against sector-size and updates its tail offset.
+        (writer-append! w rec)
+        (set! appended-count (+ appended-count 1))
+        ;; Every barrier-every appends, issue a barrier covering this record's
+        ;; length. barrier-step counts appends modulo barrier-every.
+        (set! barrier-step (+ barrier-step 1))
+        (if (= (mod barrier-step barrier-every) 0)
+            (begin
+              (barrier-issue br (record-len rec))
+              (writer-barrier! w br)))
+        (loop-step (+ n 1)))))
+
+(loop-step 0)
+
+;; ---- Build the report from the live state -----------------------------------
+
+;; Snapshot the live writer, allocator, barrier, and replay objects.
+(define replay (replay-open (cdr (assq 'buf w)) sector-size))
+(define report (report-build w alloc br replay))
+
+;; Convenience: pull each field out of the report alist.
+(define (rget key) (cdr (assq key report)))
+
+(define report-version            (rget 'version))
+(define report-sector-size        (rget 'sector-size))
+(define report-direct?            (rget 'direct?))
+(define report-tail               (rget 'tail))
+(define report-appends            (rget 'appends))
+(define report-barrier-count      (rget 'barrier-count))
+(define report-barrier-bytes      (rget 'barrier-bytes))
+(define report-alloc-allocated    (rget 'alloc-allocated))
+(define report-alloc-free         (rget 'alloc-free))
+(define report-replay-count       (rget 'replay-count))
+(define report-replay-tail        (rget 'replay-tail))
+
+;; ---- Stdout contract --------------------------------------------------------
+
+;; Print KEY=value lines in the documented order, single trailing newline.
+(display (string-append "WAL_VERSION="   (number->string version)))            (newline)
+(display (string-append "WAL_SECTOR="    (number->string sector-size)))        (newline)
+(display (string-append "WAL_DIRECT="    (if direct? "true" "false")))         (newline)
+(display (string-append "TAIL="          (number->string (writer-tail w))))    (newline)
+(display (string-append "APPENDS="       (number->string appended-count)))      (newline)
+(display (string-append "BARRIERS="      (number->string (barrier-count br))))  (newline)
+(display (string-append "BARRIER_BYTES=" (number->string (barrier-bytes br))))  (newline)
+(display (string-append "ALLOC_FREE="    (number->string alloc-free)))          (newline)
+(display (string-append "REPLAY_COUNT="  (number->string (replay-count replay)))) (newline)
+(display (string-append "REPLAY_TAIL="   (number->string (replay-tail replay))))  (newline)

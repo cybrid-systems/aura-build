@@ -1,0 +1,257 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "hint": 10,
+      "operations": [
+        {
+          "op": "INSERT",
+          "args": [
+            0,
+            "apple"
+          ]
+        },
+        {
+          "op": "INSERT",
+          "args": [
+            1,
+            "apply"
+          ]
+        },
+        {
+          "op": "INSERT",
+          "args": [
+            2,
+            "ape"
+          ]
+        },
+        {
+          "op": "INSERT",
+          "args": [
+            3,
+            "applet"
+          ]
+        },
+        {
+          "op": "QUERY",
+          "args": [
+            "ap",
+            "le"
+          ]
+        },
+        {
+          "op": "QUERY",
+          "args": [
+            "a",
+            "e"
+          ]
+        },
+        {
+          "op": "QUERY",
+          "args": [
+            "b",
+            "x"
+          ]
+        }
+      ]
+    },
+    "expected": "-1\n-1\n-1"
+  },
+  {
+    "id": 1,
+    "input": {
+      "hint": 5,
+      "operations": [
+        {
+          "op": "INSERT",
+          "args": [
+            0,
+            "a"
+          ]
+        },
+        {
+          "op": "INSERT",
+          "args": [
+            1,
+            "aa"
+          ]
+        },
+        {
+          "op": "INSERT",
+          "args": [
+            2,
+            "aaa"
+          ]
+        },
+        {
+          "op": "QUERY",
+          "args": [
+            "",
+            ""
+          ]
+        },
+        {
+          "op": "QUERY",
+          "args": [
+            "a",
+            "a"
+          ]
+        },
+        {
+          "op": "QUERY",
+          "args": [
+            "aa",
+            "aa"
+          ]
+        },
+        {
+          "op": "QUERY",
+          "args": [
+            "aaa",
+            "aaa"
+          ]
+        }
+      ]
+    },
+    "expected": "-1\n1\n-1\n-1"
+  },
+  {
+    "id": 2,
+    "input": {
+      "hint": 3,
+      "operations": [
+        {
+          "op": "QUERY",
+          "args": [
+            "x",
+            "y"
+          ]
+        },
+        {
+          "op": "INSERT",
+          "args": [
+            5,
+            "abcabc"
+          ]
+        },
+        {
+          "op": "QUERY",
+          "args": [
+            "abc",
+            "abc"
+          ]
+        },
+        {
+          "op": "QUERY",
+          "args": [
+            "a",
+            "c"
+          ]
+        },
+        {
+          "op": "QUERY",
+          "args": [
+            "abc",
+            "c"
+          ]
+        },
+        {
+          "op": "QUERY",
+          "args": [
+            "a",
+            "abc"
+          ]
+        }
+      ]
+    },
+    "expected": "-1\n5\n-1\n-1\n-1"
+  },
+  {
+    "id": 3,
+    "input": {
+      "hint": 5,
+      "operations": [
+        {
+          "op": "INSERT",
+          "args": [
+            0,
+            "test"
+          ]
+        },
+        {
+          "op": "INSERT",
+          "args": [
+            5,
+            "test"
+          ]
+        },
+        {
+          "op": "QUERY",
+          "args": [
+            "te",
+            "st"
+          ]
+        },
+        {
+          "op": "QUERY",
+          "args": [
+            "t",
+            "t"
+          ]
+        },
+        {
+          "op": "INSERT",
+          "args": [
+            3,
+            "team"
+          ]
+        },
+        {
+          "op": "QUERY",
+          "args": [
+            "te",
+            "m"
+          ]
+        }
+      ]
+    },
+    "expected": "5\n-1\n-1"
+  },
+  {
+    "id": 4,
+    "input": {
+      "hint": 2,
+      "operations": [
+        {
+          "op": "INSERT",
+          "args": [
+            0,
+            "z"
+          ]
+        },
+        {
+          "op": "QUERY",
+          "args": [
+            "",
+            "z"
+          ]
+        },
+        {
+          "op": "QUERY",
+          "args": [
+            "z",
+            ""
+          ]
+        },
+        {
+          "op": "QUERY",
+          "args": [
+            "",
+            ""
+          ]
+        }
+      ]
+    },
+    "expected": "0\n0\n-1"
+  }
+]

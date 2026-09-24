@@ -1,0 +1,48 @@
+;; wal-encode.aura — encode records/fields/values into an s-expression
+;;
+;; A "value" is encoded depending on its declared type:
+;;   - 'int    -> the number itself
+;;   - 'string -> a string (number->string would be wrong for strings)
+;;   - 'bool   -> a symbol 'true or 'false
+;;   - 'symbol -> the symbol itself
+;;
+;; An "encoded field" is a list: (tag-name encoded-value)
+;; An "encoded record" is a list: (schema-id (encoded-field ...))
+;;
+;; We keep this file free of dependencies on other WAL modules (besides
+;; what is trivial to inline). Records are decoded via wal-decode, but
+;; encoding here just walks the (tag . value) pairs.
+
+(define (api encode-value v type)
+  (cond
+    ((equal? type 'int) v)
+    ((equal? type 'string) v)
+    ((equal? type 'bool)
+     (if v 'true 'false))
+    ((equal? type 'symbol)
+     (if (symbol? v) v
+         (begin
+           (display "encode-value: expected symbol, got ")
+           (display v)
+           (newline)
+           'unknown)))
+    (else
+     (begin
+       (display "encode-value: unknown type ")
+       (display type)
+       (newline)
+       v))))
+
+(define (api encode-field f)
+  ;; f is (tag . value). Encode the value using the tag's declared type.
+  (let ((tag (car f))
+        (val (cdr f)))
+    (let ((ty (api tag-type tag)))
+      (cons (api tag-name tag)
+            (api encode-value val ty)))))
+
+(define (api encode-record r)
+  ;; r is (sid . fields). fields is a list of (tag . value) pairs.
+  (let ((sid (api record-schema-id r))
+        (fields (api record-fields r)))
+    (cons sid (map (lambda (f) (api encode-field f)) fields))))

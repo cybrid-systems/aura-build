@@ -1,0 +1,97 @@
+;; Maximum XOR of Two Numbers in an Array - bitwise trie solution
+
+;; Trie node: pair of (left . right) where left = bit 0 child, right = bit 1 child
+;; children are either #f or another trie node (pair)
+(define (make-node)
+  (cons #f (cons #f '())))
+
+(define (node-left n) (car n))
+(define (node-right n) (car (cdr n)))
+
+(define (set-left! n v) (set-car! n v))
+(define (set-right! n v) (set-car! (cdr n) v))
+
+;; Insert a number into the trie (bits 30 down to 0)
+(define (insert num root)
+  (let loop ((i 30) (node root))
+    (if (< i 0)
+        'done
+        (let ((bit (if (= 0 (bitwise-and num (arithmetic-shift-left 1 i)))
+                      0
+                      1)))
+          (if (= bit 0)
+              (let ((child (node-left node)))
+                (if child
+                    (loop (- i 1) child)
+                    (let ((newc (make-node)))
+                      (set-left! node newc)
+                      (loop (- i 1) newc))))
+              (let ((child (node-right node)))
+                (if child
+                    (loop (- i 1) child)
+                    (let ((newc (make-node)))
+                      (set-right! node newc)
+                      (loop (- i 1) newc)))))))))
+
+;; Compute max XOR of num with anything in the trie
+(define (max-xor num root)
+  (let loop ((i 30) (node root) (acc 0))
+    (if (< i 0)
+        acc
+        (let ((bit (if (= 0 (bitwise-and num (arithmetic-shift-left 1 i)))
+                      0
+                      1)))
+          (if (= bit 0)
+              ;; want to go right (bit 1) if possible
+              (let ((pref (node-right node)))
+                (if pref
+                    (loop (- i 1) pref (+ acc (arithmetic-shift-left 1 i)))
+                    (loop (- i 1) (node-left node) acc)))
+              ;; bit is 1, want to go left (bit 0) if possible
+              (let ((pref (node-left node)))
+                (if pref
+                    (loop (- i 1) pref (+ acc (arithmetic-shift-left 1 i)))
+                    (loop (- i 1) (node-right node) acc))))))))
+
+(define (solve nums)
+  (let ((n (length nums)))
+    (if (< n 2)
+        0
+        (let ((root (make-node)))
+          ;; Build trie
+          (for-each (lambda (x) (insert x root)) nums)
+          ;; For each number, find best xor in trie and track max
+          (let ((best 0))
+            (for-each
+             (lambda (x)
+               (let ((v (max-xor x root)))
+                 (when (> v best) (set! best v))))
+             nums)
+            best)))))
+
+;; Display helper
+(define (display-list xs)
+  (display "(")
+  (let loop ((xs xs) (first #t))
+    (if (null? xs)
+        (display ")")
+        (begin
+         (if first (set! first #f) (display " "))
+         (display (car xs))
+         (loop (cdr xs) first)))))
+
+(define (run-case i nums)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve nums))
+  (newline))
+
+(run-case 0 '(4 1 2 3))
+(run-case 1 '(8 10 2))
+(run-case 2 '(0 0))
+(run-case 3 '(5))
+(run-case 4 '())
+(run-case 5 '(1 2 3 4 5 6 7 8))
+(run-case 6 '(0 2147483647))
+(run-case 7 '(1000000000 999999999 1 2))

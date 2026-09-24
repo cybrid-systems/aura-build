@@ -1,0 +1,252 @@
+;; wal.aura — Write-Ahead Log composed of framed, dictionary-compressed blocks
+;;
+;; The WAL is an append-only sequence of records (key/value byte strings).  Records are
+;; accumulated into a block.  When the block reaches WAL-BLOCK-SIZE raw bytes, the block
+;; is flushed: its bytes are dictionary-compressed via `codec-compress`, framed via
+;; `frame-encode`, and the resulting frame is appended to the WAL's frame list.
+;;
+;; A WAL is represented as:
+;;   (wal
+;;     block-size     ; raw bytes that trigger a flush
+;;     dict           ; the dictionary used for compression
+;;     pending        ; list of (key-bytes . value-bytes) records not yet flushed
+;;     pending-bytes  ; total raw byte count of pending records (including separators)
+;;     frames         ; list of frame-byte-lists, in append order
+;;     records        ; list of all records (key . value) appended so far
+;;     raw-bytes      ; total raw bytes (decompressed) written across all frames + pending
+;;     stored-bytes   ; total compressed/frame-encoded bytes stored
+;;     tail-partial?  ; #t if last frame is partial / cannot fully decode
+;;     tail-frame     ; the last frame (or #f if no frames yet))
+;;
+;; Exports:
+;;   wal-open, wal-append!, wal-flush-block!, wal-read-tail,
+;;   wal-replay, wal-frames, wal-raw-bytes, wal-stored-bytes, wal-records
+
+(define WAL-BLOCK-SIZE 4096)
+(define WAL-DICT-CAP   2048)
+(define SEP-BYTE       10) ;; '\n' used as a separator between record fields
+
+;; ---------------------------------------------------------------------------
+;; Constructor
+;; ---------------------------------------------------------------------------
+
+(define (wal-open)
+  ;; Returns a fresh WAL with default block size and dictionary capacity.
+  (let ((d (dict-init WAL-DICT-CAP)))
+    (list 'wal
+          WAL-BLOCK-SIZE
+          d
+          '()            ; pending records
+          0              ; pending bytes
+          '()            ; frames
+          '()            ; records (all)
+          0              ; raw-bytes total
+          0              ; stored-bytes total
+          #f             ; tail-partial?
+          #f)))          ; tail-frame
+
+;; ---------------------------------------------------------------------------
+;; Internal accessors
+;; ---------------------------------------------------------------------------
+
+(define (wal-block-size wal)   (cadr wal))
+(define (wal-dict wal)         (caddr wal))
+(define (wal-pending wal)      (cadddr wal))
+(define (wal-pending-bytes wal)(car (cddddr wal)))
+(define (wal-frames-list wal)  (cadr (cddddr wal)))
+(define (wal-records-list wal) (caddr (cddddr wal)))
+(define (wal-raw-bytes w)      (cadddr (cddddr wal)))
+(define (wal-stored-bytes w)   (car (cddddr (cddddr wal))))
+(define (wal-tail-partial w)   (cadr (cddddr (cddddr wal))))
+(define (wal-tail-frame w)     (caddr (cddddr (cddddr wal))))
+
+;; Mutator helpers (positions within the list-of-lists wal structure).
+(define (set-wal-pending! wal v)      (set-car! (cddddr wal) v))
+(define (set-wal-pending-bytes! wal v) (set-car! (cddddr (cdr wal)) v))
+(define (set-wal-frames! wal v)     (set-car! (cddddr (cddr wal)) v))
+(define (set-wal-records! wal v)    (set-car! (cddddr (cdddr wal)) v))
+(define (set-wal-raw! wal v)        (set-car! (cddddr (cddddr wal)) v))
+(define (set-wal-stored! wal v)     (set-car! (cddddr (cddddr (cdr wal))) v))
+(define (set-wal-tail-partial! wal v) (set-car! (cdr (cddddr (cddddr wal))) v))
+(define (set-wal-tail-frame! wal v)   (set-car! (cddr (cddddr (cddddr wal))) v))
+
+;; ---------------------------------------------------------------------------
+;; Record encoding helpers
+;;
+;; A record "key=... value=..." is serialised as:
+;;   [len(key) | key-bytes | '=' | value-bytes | '\n']
+;; The pending-bytes counter is the sum of all those bytes.
+;; ---------------------------------------------------------------------------
+
+(define (string->bytes s)
+  ;; Convert an Aura string into a list of byte integers (ASCII / Latin-1).
+  (let ((n (string-length s)))
+    (let loop ((i 0) (acc '()))
+      (if (= i n)
+          (reverse acc)
+          (loop (+ i 1)
+                (cons (char->integer (string-ref s i)) acc))))))
+
+(define (bytes->string bs)
+  ;; Convert a list of byte integers back into an Aura string.
+  (let loop ((xs bs) (acc '()))
+    (if (null? xs)
+        (list->string (reverse acc))
+        (loop (cdr xs)
+              (cons (integer->char (car xs)) acc)))))
+
+(define (serialize-record key-str value-str)
+  ;; Produce the raw byte list representing one record on disk.
+  (let ((kb (string->bytes key-str))
+        (vb (string->bytes value-str)))
+    (append (list (length kb))
+            kb
+            (list (char->integer #\=))
+            vb
+            (list SEP-BYTE))))
+
+(define (record-byte-length key-str value-str)
+  ;; 1 (len) + |key| + 1 ('=') + |value| + 1 ('\n')
+  (+ 3 (string-length key-str) (string-length value-str)))
+
+;; ---------------------------------------------------------------------------
+;; Frame flushing
+;; ---------------------------------------------------------------------------
+
+(define (wal-flush-block! wal)
+  ;; Encode all pending records as a single raw block, dictionary-compress + frame
+  ;; it, and append the resulting frame to the WAL's frame list.
+  (let ((pending (wal-pending wal)))
+    (if (null? pending)
+        wal
+        (let* ((raw (apply append (map (lambda (rec)
+                                         (serialize-record (car rec) (cdr rec)))
+                                       pending))))
+          (let* ((comp (codec-compress (wal-dict wal) raw))
+                 (framed (frame-encode (wal-dict wal) comp)))
+            ;; Update totals
+            (set-wal-frames! wal (append (wal-frames-list wal) (list framed)))
+            (set-wal-raw! wal (+ (wal-raw-bytes wal) (length raw)))
+            (set-wal-stored! wal (+ (wal-stored-bytes wal) (length framed)))
+            ;; Tail state: most recent frame is considered "partial" if the
+            ;; caller did not explicitly close it.  We track this flag per
+            ;; frame as well — see wal-read-tail below.
+            (set-wal-tail-frame! wal framed)
+            ;; Clear pending
+            (set-wal-pending! wal '())
+            (set-wal-pending-bytes! wal 0)
+            wal)))))
+
+;; ---------------------------------------------------------------------------
+;; Append
+;; ---------------------------------------------------------------------------
+
+(define (wal-append! wal key value)
+  ;; Append a (key,value) record.  Flushes a frame whenever the pending raw
+  ;; byte count reaches the configured block size.  Returns wal.
+  (let* ((rec (cons key value))
+         (rec-len (record-byte-length key value)))
+    (set-wal-records! wal (append (wal-records-list wal) (list rec)))
+    (set-wal-pending! wal (append (wal-pending wal) (list rec)))
+    (let ((new-bytes (+ (wal-pending-bytes wal) rec-len)))
+      (set-wal-pending-bytes! wal new-bytes)
+      (if (>= new-bytes (wal-block-size wal))
+          (wal-flush-block! wal)
+          wal))))
+
+;; ---------------------------------------------------------------------------
+;; Decoding helpers (used by wal-replay / wal-read-tail)
+;; ---------------------------------------------------------------------------
+
+(define (parse-records raw)
+  ;; Walk `raw` (a list of bytes) and parse out successive records of the form
+;;   [len(key) | key | '=' | value | '\n']
+  ;; Returns a list of (key-string . value-string) pairs.
+  (let loop ((xs raw) (acc '()))
+    (if (null? xs)
+        (reverse acc)
+        (let ((klen (car xs)))
+          (if (or (< (length xs) (+ klen 3)))
+              (reverse acc) ;; truncated — bail out
+              (let* ((kbytes (list-tail (cdr xs) 0)))
+                ;; Slice kbytes to length klen
+                (let splice ((src (cdr xs)) (n klen) (kb '()))
+                  (if (= n 0)
+                      (let* ((eq? (car src))
+                             (vstart (cdr src))
+                             ;; find separator
+                             (vrest vstart))
+                        (let vloop ((vs vrest) (vb '()))
+                          (cond
+                            ((null? vs)
+                             (loop '() (reverse acc)))
+                            ((= (car vs) SEP-BYTE)
+                             (let ((kstr (bytes->string (reverse kb)))
+                                   (vstr (bytes->string (reverse vb))))
+                               (loop (cdr vs)
+                                     (cons (cons kstr vstr) acc))))
+                            (else
+                             (vloop (cdr vs) (cons (car vs) vb))))))
+                      (splice (cdr src) (- n 1) (cons (car src) kb))))))))))
+
+;; ---------------------------------------------------------------------------
+;; Tail read
+;;
+;; Returns the (possibly partial) decoded contents of the last frame.
+;; Sets the WAL's tail-partial flag if decoding yields fewer records than
+;; were originally appended (i.e. the last write was incomplete).
+;; ---------------------------------------------------------------------------
+
+(define (wal-read-tail wal)
+  (let ((tf (wal-tail-frame wal)))
+    (if (not tf)
+        (begin
+          (set-wal-tail-partial! wal #f)
+          '())
+        (let* ((dict (wal-dict wal))
+               (raw-len (frame-raw-len tf))
+               (comp-payload (let slice ((xs tf) (n (- (length tf) 14)))
+                               (if (= n 0) xs (slice (cdr xs) (- n 1)))))
+               (raw (codec-decompress dict comp-payload)))
+          ;; If the codec returned fewer bytes than declared raw length, treat
+          ;; the frame as partial.
+          (let ((partial? (not (= (length raw) raw-len))))
+            (set-wal-tail-partial! wal partial?))
+          (parse-records raw)))))
+
+;; ---------------------------------------------------------------------------
+;; Full replay: decode every frame in order and return every record.
+;; ---------------------------------------------------------------------------
+
+(define (wal-replay wal)
+  (let loop ((fs (wal-frames-list wal)) (acc '()))
+    (if (null? fs)
+        (reverse acc)
+        (let* ((dict (wal-dict wal))
+               (framed (car fs))
+               (raw (codec-decompress dict framed)))
+          (loop (cdr fs)
+                (append (reverse acc) (parse-records raw)))))))
+
+;; ---------------------------------------------------------------------------
+;; Public getters
+;; ---------------------------------------------------------------------------
+
+(define (wal-frames wal)
+  ;; Returns the list of frame byte lists.
+  (wal-frames-list wal))
+
+(define (wal-raw-bytes wal)
+  (wal-raw-bytes-internal wal))
+
+(define (wal-raw-bytes-internal wal)
+  ;; Helper used internally to disambiguate from the exported name.
+  (let ((w wal))
+    (cadddr (cddddr w))))
+
+(define (wal-stored-bytes wal)
+  (let ((w wal))
+    (car (cddddr (cddddr (cdr w))))))
+
+(define (wal-records wal)
+  (wal-records-list wal))

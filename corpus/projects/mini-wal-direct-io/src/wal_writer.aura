@@ -1,0 +1,85 @@
+;; wal_writer.aura
+;; The Direct-IO WAL writer.
+;;
+;; A "writer" is the top-level object that user code interacts with. It owns:
+;;   - a config (sector size, direct? flag, version) from wal_types.aura,
+;;   - a simulated disk buffer from wal_buffer.aura,
+;;   - the current tail offset (length of the buffer in bytes).
+;;
+;; The writer does NOT itself own an allocator or barrier object; those are
+;; passed in by the caller. This mirrors the real-world separation between
+;; the WAL's "writer thread" and its "transaction manager" / "barrier layer".
+;;
+;; Writer state (alist):
+;;   'cfg       -> wal config alist (from wal-make-config)
+;;   'buf       -> buffer alist (from buffer-new)
+;;   'tail      -> integer, current byte offset (== buffer-tail of buf)
+;;   'appends   -> integer, count of records appended so far
+;;   'bytes     -> integer, total bytes appended (before padding to sectors)
+;;   'aligned   -> integer, total bytes appended after sector padding
+;;   'direct    -> boolean, cached wal-direct? of cfg
+;;   'sector    -> integer, cached sector size
+;;
+;; Required APIs:
+;;   (writer-open cfg)                 -> writer
+;;   (writer-append! w rec)            -> writer (mutated via set!)
+;;   (writer-barrier! w br)            -> writer (mutated; bumps barrier)
+;;   (writer-tail w)                   -> integer tail offset
+;;   (writer-direct? w)                -> boolean
+
+(define (writer-open cfg)
+  (let ((buf (buffer-new 0)))
+    (list (cons 'cfg cfg)
+          (cons 'buf buf)
+          (cons 'tail 0)
+          (cons 'appends 0)
+          (cons 'bytes 0)
+          (cons 'aligned 0)
+          (cons 'direct (wal-direct? cfg))
+          (cons 'sector (wal-sector-size cfg)))))
+
+(define (writer-append! w rec)
+  (let ((cfg (cdr (assq 'cfg w)))
+        (sector (cdr (assq 'sector w)))
+        (buf (cdr (assq 'buf w))))
+    ;; Append via direct-append: it pads the record to a sector boundary
+    ;; and conses the padded bytes onto the buffer head.
+    (let ((new-buf (direct-append buf rec sector)))
+      (set! w (alist-update 'buf new-buf w))
+      (set! w (alist-update 'tail (buffer-tail new-buf) w))
+      (set! w (alist-update
+                'appends
+                (+ (cdr (assq 'appends w)) 1)
+                w))
+      (set! w (alist-update
+                'bytes
+                (+ (cdr (assq 'bytes w)) (record-len rec))
+                w))
+      ;; After sector-alignment, total aligned bytes == tail.
+      (set! w (alist-update 'aligned (buffer-tail new-buf) w))
+      w)))
+
+(define (writer-barrier! w br)
+  ;; Issuing a barrier protects all bytes currently in the buffer.
+  (barrier-issue br (cdr (assq 'tail w)))
+  w)
+
+(define (writer-tail w)
+  (cdr (assq 'tail w)))
+
+(define (writer-direct? w)
+  (cdr (assq 'direct w)))
+
+;; --- internal helper --------------------------------------------------------
+;; Replace the value bound to key in alist `a` and return the new alist.
+;; We can't mutate the alist cells in place portably (Aura pairs are
+;; effectively immutable), so this builds a fresh alist. The writer
+;; itself is updated via set! at the call site.
+(define (alist-update key value a)
+  (cons (cons key value)
+        (filter (lambda (p) (not (eq? (car p) key))) a)))
+
+(define (filter pred xs)
+  (cond ((null? xs) '())
+        ((pred (car xs)) (cons (car xs) (filter pred (cdr xs))))
+        (else (filter pred (cdr xs)))))

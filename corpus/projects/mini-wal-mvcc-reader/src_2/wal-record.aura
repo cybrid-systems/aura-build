@@ -1,0 +1,27 @@
+;; wal-record.aura
+;; A WAL record is a tagged list carrying transaction id, op, key, value, and prev-version pointer.
+;; Fields:
+;;   txn-id       - integer transaction identifier
+;;   op           - symbol: 'put or 'del
+;;   key          - string key being written
+;;   value        - string value (empty string for 'del)
+;;   prev-version - integer index in the WAL store of the previous version for this key,
+;;                  or -1 if this is the first version.
+
+(define (api wal-record-make txn-id op key value prev-version)
+  (list 'wal-record txn-id op key value prev-version))
+
+(define (api wal-record-op rec)
+  (car (cdr rec)))
+
+(define (api wal-record-key rec)
+  (car (cdr (cdr rec))))
+
+(define (api wal-record-value rec)
+  (car (cdr (cdr (cdr rec)))))
+
+(define (api wal-record-txn rec)
+  (car (cdr (cdr (cdr (cdr rec))))))
+
+(define (api wal-record-prev rec)
+  (car (cdr (cdr (cdr (cdr (cdr rec)))))))

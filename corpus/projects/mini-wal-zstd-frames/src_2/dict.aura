@@ -1,0 +1,68 @@
+;; dict.aura — Rolling-window dictionary for mini-zstd style compression
+;; Maintains a sliding window of the most recent literals (up to `capacity` bytes).
+;; Dictionary entries are 2-byte (offset, length) back-references into the window.
+;;
+;; Exports: dict-init, dict-train!, dict-id, dict-window
+
+(define MAX-DICT-ID 65535)
+
+;; A dictionary is represented as a list:
+;;   (dict
+;;    capacity      ; max window size in bytes
+;;    window        ; ring buffer (list of bytes, at most `capacity` long)
+;;    size          ; current window fill (<= capacity)
+;;    next-id       ; monotonically increasing dict id (mod 65536) [unused for compression]
+;;    trained-len)  ; how many bytes have been trained in total (used for id derivation)
+
+(define (dict-init capacity)
+  (list 'dict capacity '() 0 1 0))
+
+;; Trim window to at most `capacity` bytes (FIFO).
+(define (dict-trim! dict)
+  (let ((cap (cadr dict))
+        (win (caddr dict))
+        (sz (cadddr dict)))
+    (if (> sz cap)
+        (let ((drop (- sz cap)))
+          (set-car! (cddr dict) (list-tail win drop))
+          (set-car! (cdddr dict) cap))
+        dict)))
+
+;; Append a single byte to the dictionary window.
+(define (dict-push-byte! dict b)
+  (let ((win (caddr dict))
+        (sz (cadddr dict)))
+    (set-car! (cddr dict) (append win (list b)))
+    (set-car! (cdddr dict) (+ sz 1))
+    (dict-trim! dict)))
+
+;; Public API: train the dictionary by appending a list of bytes (literals).
+;; Returns the updated dictionary.
+(define (dict-train! dict literals)
+  (let loop ((ls literals))
+    (if (null? ls)
+        (begin
+          ;; Update trained length and roll the dict id.
+          (let ((old-len (car (cddddr (cdr dict)))))
+            (set-car! (cddddr (cdr dict)) (+ old-len (length literals)))
+            (set-car! (cddddr (cdr (cdr dict))))
+            ;; bump next-id
+            (let ((nid (car (cddddr (cdr (cdr dict))))))
+              (set-car! (cddddr (cdr (cdr dict))))
+              (set-car! (cddddr (cdr (cdr dict)))
+                        (if (= nid MAX-DICT-ID) 1 (+ nid 1))))
+            dict))
+        (begin
+          (dict-push-byte! dict (car ls))
+          (loop (cdr ls))))))
+
+;; Public API: return the dictionary id (a 16-bit integer).
+;; Computed from capacity + trained length so it is stable per session.
+(define (dict-id dict)
+  (let ((cap (cadr dict))
+        (trained (car (cddddr (cdr dict)))))
+    (modulo (+ (* cap 31) trained) 65536)))
+
+;; Public API: return a copy of the current window bytes as a list.
+(define (dict-window dict)
+  (caddr dict))

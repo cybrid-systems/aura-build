@@ -1,0 +1,46 @@
+(util.aura)
+
+(provide 'util)
+
+(define current-id 0)
+
+(define (make-id)
+  (set! current-id (+ current-id 1))
+  current-id)
+
+(define (now-ms)
+  ;; Deterministic monotonic clock, in milliseconds, base 1000.
+  ;; Increments by 7ms per call so successive appends are visibly ordered.
+  (set! current-id (+ current-id 1))
+  (+ 1000 (* 7 (- current-id 2))))
+
+(define (fmt-int n)
+  (number->string n))
+
+(define (acons k v alist)
+  (cons (cons k v) alist))
+
+(define (alist-ref alist k)
+  (cond ((null? alist) #f)
+        ((equal? (car (car alist)) k) (cdr (car alist)))
+        (else (alist-ref (cdr alist) k))))
+
+(define (alist-set! alist k v)
+  ;; Mutates the given alist so that key k maps to v.
+  ;; If k already present, updates in place by modifying the pair's cdr;
+  ;; otherwise prepends a new (k . v) cell.
+  (let loop ((xs alist) (prev #f))
+    (cond ((null? xs)
+           (let ((new-cell (cons k (cons v '()))))
+             (if (null? prev)
+                 ;; Empty list case: replace top-level binding externally.
+                 (begin
+                   (set! alist (cons new-cell alist))
+                   alist)
+                 (begin
+                   (set-cdr! prev new-cell)
+                   alist))))
+          ((equal? (car (car xs)) k)
+           (set-cdr! (car xs) v)
+           alist)
+          (else (loop (cdr xs) xs)))))

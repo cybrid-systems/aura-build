@@ -1,0 +1,63 @@
+(define (solve roots sentence)
+  (let ((root-set (list->set roots)))
+    (let ((words (split-words sentence '() 0 (string-length sentence))))
+      (join-words (map (lambda (w) (find-shortest-root w root-set 0)) words) ""))))
+
+(define (list->set lst)
+  (let loop ((xs lst) (acc '()))
+    (if (null? xs)
+        acc
+        (loop (cdr xs) (cons (car xs) acc)))))
+
+(define (member? x lst)
+  (cond ((null? lst) #f)
+        ((equal? x (car lst)) #t)
+        (else (member? x (cdr lst)))))
+
+(define (find-shortest-root word set len)
+  (let ((n (string-length word)))
+    (let loop ((i 1) (best #f))
+      (cond
+        ((> i n) (if best best word))
+        ((member? (substring word 0 i) set)
+         (if best best (substring word 0 i)))
+        (else (loop (+ i 1) best))))))
+
+(define (split-words s acc start end)
+  (cond
+    ((>= start end) (reverse acc))
+    ((char-at? s start #\space)
+     (if (= (+ start 1) end)
+         (reverse acc)
+         (split-words s acc (+ start 1) end)))
+    (else
+     (let ((spc (find-space s start end)))
+       (split-words s (cons (substring s start spc) acc) spc end)))))
+
+(define (find-space s start end)
+  (let loop ((i start))
+    (cond
+      ((>= i end) i)
+      ((char-at? s start #\space) i)
+      (else (loop (+ i 1))))))
+
+(define (char-at? s i c)
+  (equal? (string-ref s i) c))
+
+(define (join-words ws sep)
+  (cond
+    ((null? ws) "")
+    ((null? (cdr ws)) (car ws))
+    (else (string-append (car ws) sep (join-words (cdr ws) sep)))))
+
+(define (substring s start end)
+  (let ((n (- end start)))
+    (let loop ((i 0) (acc ""))
+      (cond
+        ((>= i n) acc)
+        (else (loop (+ i 1) (string-append acc (string (string-ref s (+ start i))))))))))
+
+(define (string ch)
+  (let ((buf (make-string 1)))
+    (string-set! buf 0 ch)
+    buf))

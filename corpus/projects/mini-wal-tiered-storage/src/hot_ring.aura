@@ -1,0 +1,65 @@
+(hot_ring.aura)
+
+(provide 'hot_ring)
+
+;; A hot ring buffer is a fixed-capacity sequence of records.
+;; Internally we use a list (most-recent first) plus a length counter
+;; and a running byte total. Once capacity is exceeded, the oldest
+;; records are dropped from the ring (snapshot returns the live set).
+;;
+;; Ring representation (alist stored on a single cons cell):
+;;   ring = (cons records . meta)
+;; where:
+;;   records = list of records, most-recent first
+;;   meta    = (capacity . (count . bytes))  — plain list tail for set!
+
+(define (make-hot-ring capacity)
+  (cons '() (list capacity (cons 0 0))))
+
+(define (ring-records ring) (car ring))
+(define (ring-meta ring)   (cdr ring))
+(define (ring-capacity ring) (car (ring-meta ring)))
+(define (ring-count-cell ring) (car (cdr (ring-meta ring))))
+(define (ring-bytes-cell ring) (cdr (cdr (ring-meta ring))))
+
+(define (hot-ring-push! ring lsn payload)
+  ;; Build the record using the record module's API would create a
+  ;; dependency, but we can reconstruct a record locally as (lsn payload bytes).
+  ;; We use a deterministic byte estimate: 12 + string-length(payload).
+  (let ((rec (list lsn payload (+ 12 (string-length payload)))))
+    (set-car! ring (cons rec (ring-records ring)))
+    (set-car! (ring-count-cell ring)
+              (+ (car (ring-count-cell ring)) 1))
+    (set-cdr! (ring-bytes-cell ring)
+              (+ (cdr (ring-bytes-cell ring)) (car (cdr (cdr rec)))))
+    ;; Enforce capacity: drop oldest (tail) records until count <= capacity.
+    (let loop ((cap (ring-capacity ring))
+               (count (car (ring-count-cell ring)))
+               (records (ring-records ring)))
+      (cond ((<= count cap) 'done)
+            (else
+              ;; Drop the oldest record (last element of records list).
+              (let ((dropped (list-tail records (- count 1))))
+                (set-cdr! dropped '())
+                (set-car! (ring-count-cell ring) (- count 1))
+                (set-cdr! (ring-bytes-cell ring)
+                          (- (cdr (ring-bytes-cell ring))
+                             (car (cdr (cdr (car (cdr dropped)))))))
+                ;; Actually: simpler — rebuild without the tail.
+                'ok)
+              (loop cap (- count 1) records))))
+    ring))
+
+(define (hot-ring-len ring)
+  (car (ring-count-cell ring)))
+
+(define (hot-ring-capacity ring)
+  (ring-capacity ring))
+
+(define (hot-ring-bytes ring)
+  (cdr (ring-bytes-cell ring)))
+
+(define (hot-ring-snapshot ring)
+  ;; Return the live records as a list, oldest-first order, so callers
+  ;; can drain the ring into a cold segment in correct sequence.
+  (reverse (ring-records ring)))

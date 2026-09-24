@@ -1,0 +1,98 @@
+(rotator.aura)
+
+(provide 'rotator)
+
+;; The rotator is a tiny background-tick mechanism.  It doesn't run on its
+;; own thread — instead, the tiered storage driver calls (rotator-tick! rot wal)
+;; periodically.  A tick does exactly one of two things:
+;;
+;;   1. If the hot ring is at-or-over capacity, force-rotate the WAL,
+;;      sealing the hot records into a fresh cold segment.
+;;   2. Otherwise, no-op.
+;;
+;; The rotator keeps a journal of seals it has triggered: an alist of
+;; (tick-no . seg-id) pairs, so that callers can audit how many segments
+;; were created by the rotator (versus by other paths).
+;;
+;; Representation:
+;;   rot = (cons state . ())
+;;   state = alist of:
+;;     'tick-count : how many ticks have been processed
+;;     'seals      : alist of (tick-no . seg-id) — seg-ids of segments
+;;                   that the rotator caused to be sealed, in tick order
+;;     'last-seg   : seg-id of the most recent seal, or #f if none yet
+
+(define (rot-state rot) (car rot))
+
+(define (rot-tick-count-cell rot)
+  (cdr (alist-ref (rot-state rot) 'tick-count)))
+
+(define (rot-seals-cell rot)
+  (cdr (alist-ref (rot-state rot) 'seals)))
+
+(define (rot-last-seg-cell rot)
+  (cdr (alist-ref (rot-state rot) 'last-seg)))
+
+(define (make-rotator)
+  (cons
+    (list
+      (cons 'tick-count (cons 0 '()))
+      (cons 'seals '())
+      (cons 'last-seg (cons #f '())))
+    '()))
+
+;; Seal the WAL's hot buffer by calling wal-force-rotate!, capture the
+;; seg-id of the freshly sealed segment (the last one in the WAL's
+;; segments list), and record it in the rotator's journal.
+(define (rotator-do-seal! rot wal)
+  (let ((before-segs (wal-segments wal))
+        (before-len (length before-segs)))
+    (wal-force-rotate! wal)
+    (let ((after-segs (wal-segments wal))
+          (after-len (length after-segs)))
+      (cond
+        ((> after-len before-len)
+         (let ((new-seg (list-ref after-segs (- after-len 1))))
+           (let ((seg-id (car new-seg)))
+             (set-car! (rot-last-seg-cell rot) seg-id)
+             (let ((tick (car (rot-tick-count-cell rot))))
+               (set-cdr! (rot-seals-cell rot)
+                         (acons tick seg-id (rot-seals-cell rot)))))))
+        (else #f)))))
+
+;; Process one rotator tick against the given WAL.
+;; Returns the number of seals performed by this tick (0 or 1).
+(define (rotator-tick! rot wal)
+  (set-car! (rot-tick-count-cell rot)
+            (+ (car (rot-tick-count-cell rot)) 1))
+  (let ((hot-bytes (wal-hot-bytes wal)))
+    ;; Use a simple byte threshold: if hot bytes > 0 and the WAL has
+    ;; accumulated more than half its capacity in bytes, seal.
+    ;; Actually, the contract is simpler: just check wal-hot-bytes > 0
+    ;; and force a rotate — let wal-force-rotate! decide if there's
+    ;; anything to seal.  We track seals via the segment-list delta.
+    (cond
+      ((> hot-bytes 0)
+       (let ((segs-before (length (wal-segments wal))))
+         (wal-force-rotate! wal)
+         (let ((segs-after (length (wal-segments wal))))
+           (cond
+             ((> segs-after segs-before)
+              (let ((new-seg (list-ref (wal-segments wal) (- segs-after 1))))
+                (let ((seg-id (car new-seg)))
+                  (set-car! (rot-last-seg-cell rot) seg-id)
+                  (let ((tick (car (rot-tick-count-cell rot))))
+                    (set-cdr! (rot-seals-cell rot)
+                              (acons tick seg-id (rot-seals-cell rot)))))
+                  1))
+             (else 0)))))
+      (else 0))))
+
+;; Return the journal of seals triggered by this rotator.
+;; An alist of (tick-no . seg-id), in chronological (oldest-first) order.
+(define (rotator-seals rot)
+  (reverse (rot-seals-cell rot)))
+
+;; Convenience: how many seals has this rotator triggered?
+(define (rotator-seal-count rot)
+  (length (rot-seals-cell rot)))

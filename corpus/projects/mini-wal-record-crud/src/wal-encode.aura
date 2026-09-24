@@ -1,0 +1,36 @@
+;; wal-encode.aura — Encode WAL records into portable s-expression form.
+;;
+;; A record (schema-id . fields) is encoded as a list:
+;;   (sid tag1-enc tag2-enc ...)
+;; where each tag is encoded as:
+;;   (tag-name tag-type encoded-value)
+;;
+;; encoded-value depends on the declared type:
+;;   'string  -> the string itself (a bare atom)
+;;   'int     -> the number itself
+;;   'bool    -> the symbol 'true or 'false
+;;   'symbol  -> the symbol itself
+;;
+;; The function returns a list of atoms suitable for joining and printing.
+
+;; ---- internal: build an entry for a value of a given type ----
+(define (encode-value v type)
+  (cond ((equal? type 'string) v)
+        ((equal? type 'int) v)
+        ((equal? type 'bool)
+         (if v 'true 'false))
+        ((equal? type 'symbol) v)
+        (else v)))
+
+;; ---- encode a single field tag triple ----
+;; A tag triple is (name type value). Returns (name type encoded-value).
+(define (encode-field f)
+  (list (tag-name f)
+        (tag-type f)
+        (encode-value (tag-value f) (tag-type f))))
+
+;; ---- encode a full record ----
+;; A record is (schema-id . field-list). Returns (sid encoded-field ...).
+(define (encode-record r)
+  (cons (record-schema-id r)
+        (map encode-field (record-fields r))))

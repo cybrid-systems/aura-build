@@ -1,0 +1,36 @@
+;; wal-types.aura — basic record/tag types for the WAL codec
+
+;; A "tag" represents a field name + its declared type.
+;; We store it as a pair (name . type) so we can use cons/car/cdr and a
+;; small predicate `tag?` that accepts both fresh pairs and already-built ones.
+
+(define (api make-tag name type)
+  (cons name type))
+
+(define (api tag? t)
+  (if (and (pair? t)
+           (symbol? (car t))
+           (symbol? (cdr t)))
+      #t
+      #f))
+
+(define (api tag-name t)
+  (car t))
+
+(define (api tag-type t)
+  (cdr t))
+
+;; wal-version — schema version of this module.
+(define (api wal-version) 2)
+
+;; A "record" is (sid . fields) where sid is a number (schema id)
+;; and fields is a list of (tag . value) pairs.
+
+(define (api make-record sid fields)
+  (cons sid fields))
+
+(define (api record-schema-id r)
+  (car r))
+
+(define (api record-fields r)
+  (cdr r))

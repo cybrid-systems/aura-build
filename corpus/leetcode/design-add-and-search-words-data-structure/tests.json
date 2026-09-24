@@ -1,0 +1,201 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "n": 5,
+      "ops": [
+        [
+          "add",
+          "bad"
+        ],
+        [
+          "add",
+          "dad"
+        ],
+        [
+          "add",
+          "mad"
+        ],
+        [
+          "search",
+          "pad"
+        ],
+        [
+          "search",
+          "bad"
+        ]
+      ]
+    },
+    "expected": "[0,1]"
+  },
+  {
+    "id": 1,
+    "input": {
+      "n": 4,
+      "ops": [
+        [
+          "add",
+          "a"
+        ],
+        [
+          "search",
+          "a"
+        ],
+        [
+          "search",
+          "b"
+        ],
+        [
+          "search",
+          "."
+        ]
+      ]
+    },
+    "expected": "[1,0,1]"
+  },
+  {
+    "id": 2,
+    "input": {
+      "n": 6,
+      "ops": [
+        [
+          "add",
+          "at"
+        ],
+        [
+          "add",
+          "and"
+        ],
+        [
+          "add",
+          "an"
+        ],
+        [
+          "add",
+          "add"
+        ],
+        [
+          "search",
+          "a"
+        ],
+        [
+          "search",
+          "a."
+        ]
+      ]
+    },
+    "expected": "[0,1]"
+  },
+  {
+    "id": 3,
+    "input": {
+      "n": 5,
+      "ops": [
+        [
+          "add",
+          "hello"
+        ],
+        [
+          "add",
+          "hell"
+        ],
+        [
+          "search",
+          "hello"
+        ],
+        [
+          "search",
+          "hell"
+        ],
+        [
+          "search",
+          "...."
+        ]
+      ]
+    },
+    "expected": "[1,1,1]"
+  },
+  {
+    "id": 4,
+    "input": {
+      "n": 7,
+      "ops": [
+        [
+          "search",
+          "."
+        ],
+        [
+          "add",
+          "a"
+        ],
+        [
+          "search",
+          "."
+        ],
+        [
+          "search",
+          "b"
+        ],
+        [
+          "add",
+          "ab"
+        ],
+        [
+          "search",
+          ".."
+        ],
+        [
+          "search",
+          "a."
+        ]
+      ]
+    },
+    "expected": "[0,1,0,1,1]"
+  },
+  {
+    "id": 5,
+    "input": {
+      "n": 3,
+      "ops": [
+        [
+          "add",
+          "abc"
+        ],
+        [
+          "add",
+          "abd"
+        ],
+        [
+          "search",
+          "ab."
+        ]
+      ]
+    },
+    "expected": "[1]"
+  },
+  {
+    "id": 6,
+    "input": {
+      "n": 4,
+      "ops": [
+        [
+          "add",
+          "test"
+        ],
+        [
+          "search",
+          "...."
+        ],
+        [
+          "search",
+          "....."
+        ],
+        [
+          "search",
+          "t..t"
+        ]
+      ]
+    },
+    "expected": "[1,0,1]"
+  }
+]

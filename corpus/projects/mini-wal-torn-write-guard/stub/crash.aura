@@ -1,0 +1,117 @@
+;; crash.aura -- crash injection helpers
+;;
+;; Simulates torn-write failures on an in-memory WAL. These functions
+;; deliberately corrupt or truncate the WAL so that the repair pass has
+;; real work to do.
+;;
+;; Required (define (api ...)) forms:
+;;   (api crash-truncate-last-sector! w) -- drop bytes from the tail of
+;;                                          the final sector, simulating
+;;                                          a torn write mid-frame.
+;;   (api crash-clear-checksums! w)      -- corrupt the stored checksum
+;;                                          of the last (up to 2) sectors
+;;                                          to force repair to validate
+;;                                          and rebuild them.
+;;
+;; The WAL is expected to expose:
+;;   (api wal-sectors w)  -> number of sectors
+;;   (api sector-add-byte! s b) -> append a byte to a sector
+;;   (api sector-payload s)    -> current payload byte list
+;;   (api sector-checksum s)   -> current checksum
+;;
+;; Internally sectors are stored in the WAL as an alist under the key
+;; 'sectors, mapping sector-index -> sector object. We only mutate via
+;; the public sector api.
+
+;; Look up the sectors alist from the WAL.
+(define (wal-sectors-alist w)
+  (let ((entry (assq 'sectors w)))
+    (if entry (cdr entry) '())))
+
+;; Replace the sectors alist in the WAL with a new one.
+(define (wal-set-sectors! w sectors)
+  (let loop ((rest w) (acc '()))
+    (cond ((null? rest)
+           ;; shouldn't happen -- 'sectors key must exist
+           (begin
+             (set! w (cons (cons 'sectors sectors) acc))
+             w))
+          ((eq? (car (car rest)) 'sectors)
+           (append (reverse acc) (cons (cons 'sectors sectors) (cdr rest))))
+          (else
+           (loop (cdr rest) (cons (car rest) acc))))))
+
+;; Get the nth sector (0-indexed) from the sectors alist.
+(define (sectors-nth sectors n)
+  (let loop ((rest sectors) (i 0))
+    (cond ((null? rest) '())
+          ((= i n) (car rest))
+          (else (loop (cdr rest) (+ i 1))))))
+
+;; Build a new alist where the entry at index n is replaced by new-v,
+;; leaving every other entry untouched.
+(define (sectors-replace sectors n new-v)
+  (let loop ((rest sectors) (i 0) (acc '()))
+    (cond ((null? rest) (reverse acc))
+          ((= i n)
+           (loop (cdr rest) (+ i 1) (cons new-v acc)))
+          (else
+           (loop (cdr rest) (+ i 1) (cons (car rest) acc))))))
+
+;; Build a fresh empty sector (capacity doesn't matter here since we
+;; only use it as a tombstone for "this sector no longer exists").
+(define (make-empty-sector)
+  (cons '() 0))
+
+;; Truncate the payload of the last sector in the WAL, keeping only the
+;; first half of its bytes. This simulates a torn write that cut power
+;; mid-frame.
+(define (api crash-truncate-last-sector! w)
+  (let* ((sectors (wal-sectors-alist w))
+         (n (length sectors)))
+    (if (= n 0)
+        w
+        (let* ((last-idx (- n 1))
+               (last (sectors-nth sectors last-idx))
+               (payload (api sector-payload last))
+               (plen (length payload))
+               (keep (quotient plen 2))
+               (new-payload (list-head payload keep)))
+          ;; Replace last sector with one whose payload is just the
+          ;; kept prefix and whose checksum has been left as-is
+          ;; (so it will no longer verify -- the repair pass must
+          ;; detect and fix it).
+          (let* ((new-sector (cons new-payload (api sector-checksum last)))
+                 (new-sectors (sectors-replace sectors last-idx new-sector)))
+            (wal-set-sectors! w new-sectors))))))
+
+;; Return the first k elements of list xs.
+(define (list-head xs k)
+  (let loop ((rest xs) (i 0) (acc '()))
+    (if (or (null? rest) (= i k))
+        (reverse acc)
+        (loop (cdr rest) (+ i 1) (cons (car rest) acc)))))
+
+;; Corrupt the checksums of the last (up to 2) sectors. The repair pass
+;; will then have to validate them and decide whether to truncate or
+;; rebuild. "Corrupting" means setting the stored checksum to 0 so that
+;; it no longer matches the recomputed checksum over the payload.
+(define (api crash-clear-checksums! w)
+  (let* ((sectors (wal-sectors-alist w))
+         (n (length sectors)))
+    (if (= n 0)
+        w
+        (let* ((last-idx (- n 1))
+               (prev-idx (- n 2))
+               ;; Corrupt the last sector's checksum.
+               (last (sectors-nth sectors last-idx))
+               (last-corrupted (cons (api sector-payload last) 0))
+               (after-last (sectors-replace sectors last-idx last-corrupted))
+               ;; Also corrupt the previous sector if it exists.
+               (new-sectors
+                (if (>= prev-idx 0)
+                    (let* ((prev (sectors-nth after-last prev-idx))
+                           (prev-corrupted (cons (api sector-payload prev) 0)))
+                      (sectors-replace after-last prev-idx prev-corrupted))
+                    after-last)))
+          (wal-set-sectors! w new-sectors)))))

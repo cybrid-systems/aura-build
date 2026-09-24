@@ -1,0 +1,97 @@
+(readahead.aura)
+
+(provide 'readahead)
+
+;; A readahead cache for cold segments.
+;; We keep a bounded LRU-ish map of segment-id -> cached cold-segment.
+;; Since Aura has no hash tables or mutable vectors, the cache is
+;; represented as an alist stored on a single mutable cons cell, paired
+;; with a metadata tail. Each cache entry is (seg-id . segment).
+;;
+;; Representation:
+;;   rh = (cons entries . (max-seg . (hits . misses)))
+;;   entries   : alist of (seg-id . segment) pairs, most-recently-used at head
+;;   max-seg   : maximum number of segments to retain
+;;   hits      : count of cache hits
+;;   misses    : count of cache misses
+
+(define (make-readahead max-segments)
+  (cons '() (list max-segments (cons 0 0))))
+
+(define (rh-entries rh) (car rh))
+(define (rh-meta rh)    (cdr rh))
+(define (rh-max rh)     (car (rh-meta rh)))
+(define (rh-hits-cell rh)   (car (cdr (rh-meta rh))))
+(define (rh-misses-cell rh) (cdr (cdr (rh-meta rh))))
+
+(define (rh-set-entries! rh entries)
+  (set-car! rh entries))
+
+(define (rh-set-hits! rh n)
+  (set-car! (cdr (rh-meta rh)) n))
+
+(define (rh-set-misses! rh n)
+  (set-cdr! (cdr (rh-meta rh)) n))
+
+(define (rh-bump-hits! rh)
+  (rh-set-hits! rh (+ (rh-hits rh) 1)))
+
+(define (rh-bump-misses! rh)
+  (rh-set-misses! rh (+ (rh-misses rh) 1)))
+
+(define (rh-find-entry entries seg-id)
+  (cond ((null? entries) #f)
+        ((= (car (car entries)) seg-id) (car entries))
+        (else (rh-find-entry (cdr entries) seg-id))))
+
+(define (readahead-prefetch! rh seg)
+  (let ((seg-id (car seg))
+        (entries (rh-entries rh))
+        (max-seg (rh-max rh)))
+    (let ((existing (rh-find-entry entries seg-id)))
+      (let ((new-entries
+             (cond (existing
+                    ;; Move to front (MRU), keep segment value as-is.
+                    (cons existing
+                          (filter-not-id entries seg-id)))
+                   (else
+                    (cons (cons seg-id seg)
+                          (rh-trim entries max-seg))))))
+        (rh-set-entries! rh new-entries)))))
+
+(define (filter-not-id entries seg-id)
+  (cond ((null? entries) '())
+        ((= (car (car entries)) seg-id)
+         (cdr entries))
+        (else (cons (car entries)
+                    (filter-not-id (cdr entries) seg-id)))))
+
+(define (rh-trim entries max-seg)
+  ;; Keep at most max-seg entries; drop from the tail (oldest).
+  (let loop ((e entries) (acc '()) (n max-seg))
+    (cond ((null? e) acc)
+          ((<= n 0) acc)
+          (else (loop (cdr e) (cons (car e) acc) (- n 1))))))
+
+(define (readahead-lookup rh seg-id)
+  (let ((entries (rh-entries rh))
+        (hit (rh-find-entry entries seg-id)))
+    (cond (hit
+           (rh-bump-hits! rh)
+           (let ((seg (cdr hit))
+                 (new-entries (cons hit (filter-not-id entries seg-id))))
+             (rh-set-entries! rh new-entries)
+             seg))
+          (else
+           (rh-bump-misses! rh)
+           #f))))
+
+(define (readahead-hits rh)
+  (car (cdr (rh-meta rh))))
+
+(define (readahead-misses rh)
+  (cdr (cdr (rh-meta rh))))
+
+(define (readahead-count rh)
+  ;; Number of segments currently cached.
+  (length (rh-entries rh)))

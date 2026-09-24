@@ -1,0 +1,122 @@
+;; version-resolve.aura
+;; MVCC version-chain resolution.
+;;
+;; Each key in the WAL has a version chain: a linked list of record
+;; indices, where each record carries a `prev-version` pointer back to
+;; the previous version of the same key. Reading a key at a given
+;; snapshot means walking that chain from the head and returning the
+;; first record that is visible to the snapshot.
+;;
+;; Visibility rule (snapshot isolation):
+;;   A record is visible to a snapshot iff:
+;;     - its txn-id <= snap-txn-id   (the record was written by a
+;;                                    transaction that began at or
+;;                                    before the snapshot's watermark),
+;;     - AND that txn is committed.  (Aborted and still-active txns
+;;                                    are not visible.)
+;;
+;; Records are returned in chain order (newest first) because that
+;; is the order the walk visits them.
+;;
+;; API:
+;;   (version-resolve
+;;      walk-state snap-txn-id is-committed? record-at)
+;;     -> (visible-records . not-visible-records)
+;;        where visible-records is the list of records visited
+;;        before settling on the first visible one (with that one
+;;        first), and not-visible-records is the list of records
+;;        visited and rejected (newest-first, including any "decoy"
+;;        records from aborted/uncommitted txns).
+;;
+;;   (version-resolve-visible?
+;;      snap-txn-id is-committed? rec)
+;;     -> #t iff `rec` is visible under snap-txn-id and is-committed?.
+;;
+;; The functions take `is-committed?` and `record-at` as arguments
+;; rather than holding global state — this keeps the resolver pure
+;; and easy to test. `walk-state` is whatever the caller threads
+;; through (typically the current head index for a key, or the
+;; sentinel -1 meaning "no chain"). When walk-state is -1 the
+;; version chain is empty and we return (() . ()).
+
+;; --- visibility predicate ------------------------------------------------
+
+;; (version-resolve-visible? snap-txn-id is-committed? rec)
+;;   Returns #t iff rec is visible under the snapshot.
+;;   A record is visible when:
+;;     (wal-record-txn rec) <= snap-txn-id
+;;     AND (is-committed? (wal-record-txn rec)) is true.
+;;
+;;   Note: opacity of a still-active txn depends on is-committed?
+;;   reporting #f for it. We don't need to special-case 'active'
+;;   here — the txn table treats active as not-committed.
+(define (version-resolve-visible? snap-txn-id is-committed? rec)
+  (let ((t (wal-record-txn rec)))
+    (if (<= t snap-txn-id)
+        (is-committed? t)
+        #f)))
+
+;; --- chain walk ----------------------------------------------------------
+;;
+;; We model the walk as a small state machine over (head-idx . rest).
+;; Each step:
+;;   - read the record at head-idx via record-at
+;;   - classify it: visible? or not?
+;;   - on visible: stop. The accumulator so far (vis-so-far) is the
+;;     list of records we'll return, newest first; the rejected ones
+;;     collected along the way form the not-visible list.
+;;   - on not-visible: prepend to rej-so-far, follow prev-version
+;;     pointer, continue.
+;;
+;; If we run off the end (prev-version == -1) without ever finding a
+;; visible record, we return (() . rev-rejected).
+
+;; Helper: rebuild the rejected list in newest-first order from an
+;; accumulator that collected them in walk order. We accumulated in
+;; the order they were visited (newest-first already) by consing
+;; onto rej-acc in walk order, so rej-acc is already newest-first.
+;; (No reversal needed.)
+
+;; Main walk loop.
+;;   walk-state: current index to visit, or -1 to stop
+;;   snap-txn-id: watermark
+;;   is-committed?: predicate on txn-id
+;;   record-at: (idx -> wal-record)
+;;
+;; Returns (cons visible-list rejected-list) where:
+;;   visible-list  = records we visited leading up to and including
+;;                   the chosen visible one (newest first; the
+;;                   chosen one is the head of this list).
+;;   rejected-list = records we visited and rejected (newest first).
+;;
+;; If walk-state is -1 (empty chain), returns (() . ()).
+(define (version-resolve-loop walk-state snap-txn-id is-committed? record-at
+                              vis-acc rej-acc)
+  (if (= walk-state -1)
+      ;; ran off the end of the chain with no visible record
+      (cons (reverse vis-acc)
+            rej-acc)
+      (let ((rec (record-at walk-state)))
+        (if (version-resolve-visible? snap-txn-id is-committed? rec)
+            ;; found one: emit everything so far plus this one.
+            ;; vis-acc was collected newest-first already by walking
+            ;; newest-first, so the first visible we hit is the
+            ;; newest visible — we want it at the head of the
+            ;; returned list.
+            (cons (cons rec vis-acc)
+                  rej-acc)
+            ;; not visible: park it and keep walking.
+            (version-resolve-loop
+               (wal-record-prev rec)
+               snap-txn-id
+               is-committed?
+               record-at
+               vis-acc
+               (cons rec rej-acc))))))
+
+;; Top-level entry point.
+;;   walk-state is typically the head index for the key from the
+;;   chain-index, or -1 if there is no chain yet.
+(define (version-resolve walk-state snap-txn-id is-committed? record-at)
+  (version-resolve-loop walk-state snap-txn-id is-committed? record-at
+                        '() '()))

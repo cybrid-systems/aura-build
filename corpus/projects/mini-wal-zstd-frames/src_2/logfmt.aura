@@ -1,0 +1,89 @@
+;; logfmt.aura — logfmt-style key=value formatting helpers
+;;
+;; Produces lines like `key=value` for a single pair, and a multi-line
+;; concatenation for an alist of (key . value) pairs.
+;;
+;; A "value" here may be either a byte string (list of byte integers)
+;; or a regular Aura object.  For byte strings, each byte is rendered
+;; as an escaped character:
+;;     byte 10 (\n) -> "\\n"
+;;     byte 13 (\r) -> "\\r"
+;;     byte 92 (\\) -> "\\\\"
+;;     byte 32..126 printable -> the character itself
+;;     everything else         -> "\\xHH"  (two-hex-digit lowercase)
+;;
+;; Exports:
+;;   logfmt kv-alist   -> string with one "key=value" line per pair,
+;;                        separated by newlines, terminated with a newline.
+;;                        A trailing newline is always emitted.
+;;   logfmt-line k v   -> single "key=value" line (no trailing newline).
+
+;; -------------------- internal helpers --------------------
+
+;; Is the given byte a printable ASCII byte (no escape needed)?
+(define (logfmt-printable? b)
+  (and (>= b 32) (<= b 126)))
+
+;; Render a single byte as its escaped string form.
+(define (logfmt-byte b)
+  (cond
+    ((= b 10) "\\n")
+    ((= b 13) "\\r")
+    ((= b 92) "\\\\")
+    ((logfmt-printable? b) (string (integer->char b)))
+    (else
+      (let ((hi (quotient b 16))
+            (lo (modulo b 16)))
+        (string-append "\\x"
+                       (hex-of-nibble hi)
+                       (hex-of-nibble lo))))))
+
+;; Convert a 4-bit nibble to its lowercase hex character.
+(define (hex-of-nibble n)
+  (if (< n 10)
+      (string (char (+ (char->integer #\0) n)))
+      (string (char (+ (char->integer #\a) (- n 10))))))
+
+;; Render a value (number or byte list) as its logfmt string.
+(define (logfmt-render-value v)
+  (cond
+    ((number? v) (number->string v))
+    ((string? v) v)
+    (else
+      ;; assume byte list
+      (let loop ((bs v) (acc ""))
+        (if (null? bs)
+            acc
+            (loop (cdr bs)
+                  (string-append acc (logfmt-byte (car bs)))))))))
+
+;; Render a key as a string (keys are expected to be byte lists / strings).
+(define (logfmt-render-key k)
+  (cond
+    ((string? k) k)
+    ((number? k) (number->string k))
+    (else
+      ;; byte list
+      (logfmt-render-value k))))
+
+;; -------------------- exported API --------------------
+
+;; Build a single "key=value" line from a key and a value.
+(define (logfmt-line k v)
+  (string-append (logfmt-render-key k)
+                 "="
+                 (logfmt-render-value v)))
+
+;; Build a full logfmt dump from an alist of (key . value) pairs.
+;; The result is a single string with one line per pair, in order,
+;; and is always terminated by a trailing newline.
+(define (logfmt kv-alist)
+  (let loop ((pairs kv-alist) (acc ""))
+    (if (null? pairs)
+        (string-append acc "")
+        (let ((p (car pairs))
+              (rest (cdr pairs)))
+          (let ((line (logfmt-line (car p) (cdr p))))
+            (if (null? rest)
+                (string-append acc line "\n")
+                (loop rest (string-append acc line "\n"))))))))

@@ -1,0 +1,152 @@
+;; wal_record.aura — WAL record construction and accessors
+;;
+;; A record is an alist with four keys:
+;;   'txid    — integer transaction id
+;;   'kind    — symbol identifying the record type (e.g. 'put, 'del, 'commit)
+;;   'payload — list of bytes (integers 0..255) that form the record body
+;;   'crc     — integer CRC32 over (txid . kind . payload) — set lazily
+;;
+;; Lengths and CRC are computed on demand so callers do not have to keep
+;; them in sync manually.
+
+;; Build a record.  Payload is accepted as either a list of bytes or a
+;; non-negative integer, in which case it is expanded into a list of `n`
+;; pseudo-random bytes derived from a deterministic LCG seeded by txid.
+;; The CRC is left unset here; wal_writer is responsible for stamping it
+;; once the record has been finalised.  We compute it eagerly using wal_crc
+;; when the helper is loaded (which happens later); to keep this module
+;; independent of load order, we compute CRC lazily inside record-crc.
+(define (record-make txid kind payload)
+  (let ((tx  (if (number? txid) txid 0))
+        (k   (if (null? kind) 'data kind))
+        (pl  (cond
+               ((null? payload) '())
+               ((list? payload) payload)
+               ((and (number? payload) (>= payload 0))
+                ;; expand into a deterministic byte list of length `payload`
+                (let loop ((i 0) (xs '()) (state (modulo (* tx 2654435761) 4294967296)))
+                  (if (>= i payload)
+                      (reverse xs)
+                      (let ((s2 (modulo (* state 1103515245 12345) 2147483648)))
+                        (loop (+ i 1)
+                              (cons (modulo s2 256) xs)
+                              s2)))))
+               (else '()))))
+    (list (cons 'txid tx)
+          (cons 'kind k)
+          (cons 'payload pl)
+          (cons 'crc 0))))
+
+;; Length of a record in bytes, including a 4-byte txid header, a 1-byte
+;; kind tag, a 4-byte length prefix for the payload, the payload itself,
+;; and a trailing 4-byte CRC trailer.
+;;   total = 4 + 1 + 4 + len(payload) + 4
+(define (record-len rec)
+  (let ((pl (cdr (assq 'payload rec))))
+    (+ 4 1 4 (length pl) 4)))
+
+;; Transaction id accessor.
+(define (record-txid rec)
+  (cdr (assq 'txid rec)))
+
+;; CRC accessor.  Lazily computes and caches the CRC32 over the
+;; record's serialised form so the value is stable across calls.
+;; Serialisation: 4 bytes of txid (little-endian), 1 byte kind tag
+;; (low byte of a hash of the symbol), 4 bytes payload length,
+;; payload bytes, then CRC32 of those bytes.
+(define (record-crc rec)
+  (let ((cached (cdr (assq 'crc rec))))
+    (if (> cached 0)
+        cached
+        (let* ((tx  (cdr (assq 'txid rec)))
+               (k   (cdr (assq 'kind rec)))
+               (pl  (cdr (assq 'payload rec)))
+               (bytes (record-serialise-bytes tx k pl))
+               (crc  (record-crc32 bytes)))
+          (set-cdr! (assq 'crc rec) crc)
+          crc))))
+
+;; ---- helpers (private) ---------------------------------------------
+
+;; Build the byte sequence that is fed to the CRC algorithm.
+;;   bytes = txid(4) ++ kind-tag(1) ++ len(4) ++ payload
+(define (record-serialise-bytes tx kind payload)
+  (append (u32-le tx)
+          (list (kind->byte kind))
+          (u32-le (length payload))
+          payload))
+
+;; Little-endian unsigned 32-bit encoding of `n` as a list of 4 bytes.
+(define (u32-le n)
+  (let ((v (if (and (number? n) (>= n 0)) n 0)))
+    (list (modulo v 256)
+          (modulo (quotient v 256) 256)
+          (modulo (quotient v 65536) 256)
+          (modulo (quotient v 16777216) 256))))
+
+;; Map a kind symbol to a single byte tag.  We use a tiny FNV-1a hash
+;; modulo 256 so every well-known tag has a stable value while remaining
+;; independent of any host runtime's symbol interning scheme.
+(define (kind->byte kind)
+  (let ((s (symbol->string kind))
+        (h #x811c9dc5))
+    (let loop ((i 0) (acc h))
+      (if (>= i (string-length s))
+          (modulo acc 256)
+          (let ((c (char->ascii (string-ref s i))))
+            (loop (+ i 1)
+                  (modulo (* (logxor acc c) #x01000193) 4294967296)))))))
+
+;; Convert an ASCII character code to its numeric value.  Aura exposes
+;; string-ref but the runtime we run on treats characters as immediate
+;; codes already, so this is effectively identity-with-clamp.
+(define (char->ascii c)
+  (if (and (number? c) (>= c 0) (< c 256)) c 0))
+
+;; ---- self-contained CRC32 ------------------------------------------
+;;
+;; wal_crc.aura exports crc32 / crc=?; we deliberately do not depend on
+;; it here so record-crc works even if wal_record is loaded first.
+;; The polynomial is the standard IEEE 802.3 one (0xEDB88320, reflected).
+
+(define (record-crc32 bytes)
+  (let ((table (record-crc32-table)))
+    (let loop ((xs bytes) (crc #xFFFFFFFF))
+      (if (null? xs)
+          (logxor crc #xFFFFFFFF)
+          (let ((b (car xs)))
+            (loop (cdr xs)
+                  (logxor (cadr (list-ref table
+                                         (logand (logxor crc b) #xFF)))
+                          (ash crc -1))))))))
+
+(define (record-crc32-table)
+  (let loop ((i 0) (t '()))
+    (if (>= i 256)
+        (reverse t)
+        (let inner ((j 0) (c i))
+          (if (>= j 8)
+              (loop (+ i 1) (cons c t))
+              (inner (+ j 1)
+                     (if (odd? c)
+                         (logxor (ash c -1) #xEDB88320)
+                         (ash c -1))))))))
+
+;; Convenience: logand for non-negative fixnums.
+(define (logand a b)
+  (let loop ((acc 0) (bit 0) (x a) (y b))
+    (if (and (= x 0) (= y 0))
+        acc
+        (loop (+ acc (if (and (odd? x) (odd? y)) (ash 1 bit) 0))
+              (+ bit 1)
+              (ash x -1)
+              (ash y -1)))))
+
+(define (logxor a b)
+  (let loop ((acc 0) (bit 0) (x a) (y b))
+    (if (and (= x 0) (= y 0))
+        acc
+        (loop (+ acc (if (= (modulo x 2) (modulo y 2)) 0 (ash 1 bit)))
+              (+ bit 1)
+              (ash x -1)
+              (ash y -1)))))

@@ -1,0 +1,50 @@
+;; snapshot-table.aura
+;; Tracks snapshots: an immutable association of snapshot-id -> the txn-id
+;; watermark that snapshot was taken at.
+;;
+;; A snapshot-table is an association list of (snap-id . at-txn-id) pairs.
+;; We use it to answer "which txn-id watermark does this snapshot see?"
+;; during MVCC reads.
+;;
+;; Semantics:
+;;   - take!      - record a new snapshot at a given txn-id watermark
+;;   - snap-txn   - look up the watermark for a given snap-id
+;;   - count      - number of recorded snapshots
+;;
+;; Taking the same snapshot id twice overwrites the previous watermark
+;; (last-write-wins), which matches typical "latest take wins" semantics
+;; for snapshot-id reuse in tests.
+
+(define (api snapshot-table-init)
+  '())
+
+;; Internal helper: replace the entry for snap-id in the alist, or cons a
+;; new entry if not present. This is last-write-wins.
+(define (snapshot-table-set table snap-id at-txn-id)
+  (cond ((null? table)
+         (cons (cons snap-id at-txn-id) table))
+        ((= snap-id (car (car table)))
+         (cons (cons snap-id at-txn-id) (cdr table)))
+        (else
+         (cons (car table)
+               (snapshot-table-set (cdr table) snap-id at-txn-id)))))
+
+;; take! records a new snapshot. Returns an updated table (caller may also
+;; rely on side effects via set! at the call site if mutating in place).
+(define (api snapshot-table-take! table snap-id at-txn-id)
+  (snapshot-table-set table snap-id at-txn-id))
+
+;; Look up the txn-id watermark for a given snap-id. Returns -1 if the
+;; snapshot id was never recorded (callers can detect "unknown" snapshot
+;; by checking for -1 or by comparing against known snap-ids).
+(define (api snapshot-table-snap-txn table snap-id)
+  (let ((entry (assq snap-id table)))
+    (if entry
+        (cdr entry)
+        -1)))
+
+;; Count the number of snapshot entries currently recorded.
+(define (api snapshot-table-count table)
+  (if (null? table)
+      0
+      (+ 1 (api snapshot-table-count (cdr table)))))

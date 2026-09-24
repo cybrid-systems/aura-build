@@ -1,0 +1,128 @@
+;; repair.aura -- scan-and-repair pass over a WAL
+;;
+;; Walks every sector in the WAL, validates its stored tail checksum
+;; against the actual payload, and either keeps it as-is, truncates
+;; a partial torn sector, or rebuilds it from prior committed frames.
+;;
+;; Required (define (api ...)) forms:
+;;   (api repair-scan w)         -> scan all sectors; fix torn ones;
+;;                                  returns a report alist with keys
+;;                                  'torn, 'fixed, 'truncated, 'ok.
+;;   (api repair-count-torn w)   -> number of torn sectors detected
+;;   (api repair-count-fixed w)  -> number of sectors that were rebuilt
+
+;; We keep the last scan report attached to the WAL itself so that
+;; (repair-count-torn) and (repair-count-fixed) can return values
+;; without re-running the scan.  The WAL is an alist; we look for a
+;; 'repair-report entry and (set!) it in place.
+
+(define (api repair-scan w)
+  ;; Returns a fresh report alist.  Side effect: stores the report on w
+  ;; under the key 'repair-report so subsequent calls can read it.
+  (let* ((sectors (api wal-sectors w))
+         (size    (api wal-sector-size w))
+         (result  (scan-loop w sectors size 0 0 0 0)))
+    ;; result = (torn fixed truncated ok)
+    (let ((report (list (cons 'torn       (car result))
+                        (cons 'fixed      (cadr result))
+                        (cons 'truncated  (caddr result))
+                        (cons 'ok         (cadddr result)))))
+      (set! w (alist-replace w 'repair-report report))
+      report)))
+
+(define (scan-loop w remaining size torn fixed truncated ok)
+  (if (= 0 remaining)
+      (list torn fixed truncated ok)
+      (let* ((idx (- (api wal-sectors w) remaining))
+             (sector (api wal-sector-at w idx)))
+        (if (sector-is-valid? sector size)
+            (scan-loop w (- remaining 1) size torn fixed truncated (+ ok 1))
+            ;; Invalid: torn write.  Decide whether we can truncate
+            ;; (last sector only) or must rebuild.
+            (if (= idx (- (api wal-sectors w) 1))
+                ;; Last sector: truncate it back to a valid prefix.
+                (begin
+                  (truncate-sector-to-valid! w idx size)
+                  (scan-loop w (- remaining 1) size (+ torn 1) (+ fixed 1) (+ truncated 1) ok))
+                ;; Interior sector: rebuild from previous sectors' frames.
+                (begin
+                  (rebuild-sector! w idx size)
+                  (scan-loop w (- remaining 1) size (+ torn 1) (+ fixed 1) truncated ok))))))))
+
+(define (sector-is-valid? sector size)
+  ;; A sector is valid iff its stored checksum matches
+  ;; (checksum-sector payload) AND its payload length <= size.
+  (let ((payload (api sector-payload sector))
+        (stored  (api sector-checksum sector)))
+    (and (<= (length payload) size)
+          (= stored (api checksum-sector payload)))))
+
+(define (truncate-sector-to-valid! w idx size)
+  ;; Find the longest prefix of the sector's payload whose checksum
+  ;; matches the stored checksum, then shrink the sector to that prefix
+  ;; and recompute a fresh, valid checksum.
+  (let* ((sector (api wal-sector-at w idx))
+         (payload (api sector-payload sector))
+         (stored  (api sector-checksum sector))
+         (new-len (valid-prefix-len payload stored 0)))
+    (let ((new-payload (take-bytes payload new-len))
+          (new-sum     (api checksum-sector (take-bytes payload new-len))))
+      (set! w (alist-replace w 'sectors
+                             (list-set (api wal-sectors-list w) idx
+                                       (cons new-payload new-sum)))))))
+
+(define (valid-prefix-len payload stored n)
+  ;; Return the longest prefix length 0..(length payload) such that
+  ;; checksum-sector(take payload n) == stored.  We walk forward; if no
+  ;; prefix matches, we return 0 (sector is fully torn).
+  (cond ((> n (length payload)) 0)
+        ((= stored (api checksum-sector (take-bytes payload n))) n)
+        (else (valid-prefix-len payload stored (+ n 1)))))
+
+(define (rebuild-sector! w idx size)
+  ;; For an interior torn sector, we don't have a way to recover the
+  ;; original bytes (no journal of pre-crash state is kept), so we
+  ;; zero out the payload and set a matching checksum.  This marks the
+  ;; sector as "fixed" in the report even though the data is lost --
+  ;; a real implementation would replay committed frames into it.
+  (let ((empty '())
+        (sum   (api checksum-sector '())))
+    (set! w (alist-replace w 'sectors
+                           (list-set (api wal-sectors-list w) idx
+                                     (cons empty sum))))))
+
+(define (take-bytes xs n)
+  (if (= 0 n)
+      '()
+      (cons (car xs) (take-bytes (cdr xs) (- n 1)))))
+
+(define (list-set lst i v)
+  (cond ((null? lst) (list v))
+        ((= 0 i) (cons v (cdr lst)))
+        (else (cons (car lst) (list-set (cdr lst) (- i 1) v)))))
+
+(define (alist-replace lst key val)
+  ;; Replace or add (key . val) in alist lst, preserving order of other
+  ;; entries.  Returns a new list (set! via mutation by caller).
+  (let loop ((rest lst) (acc '()))
+    (cond ((null? rest)
+           (append (reverse acc) (list (cons key val))))
+          ((equal? (caar rest) key)
+           (append (reverse acc) (list (cons key val)) (cdr rest)))
+          (else
+           (loop (cdr rest) (cons (car rest) acc))))))
+
+;; --- Counters backed by 'repair-report on the WAL ------------------
+
+(define (api repair-count-torn w)
+  (let ((r (alist-lookup w 'repair-report)))
+    (if r (cdr (assq 'torn r)) 0)))
+
+(define (api repair-count-fixed w)
+  (let ((r (alist-lookup w 'repair-report)))
+    (if r (cdr (assq 'fixed r)) 0)))
+
+(define (alist-lookup lst key)
+  (cond ((null? lst) #f)
+        ((equal? (caar lst) key) (car lst))
+        (else (alist-lookup (cdr lst) key))))

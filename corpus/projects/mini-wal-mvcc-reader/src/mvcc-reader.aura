@@ -1,0 +1,232 @@
+;; mvcc-reader.aura
+;; The MVCC reader itself: bundles together a WAL, a chain index,
+;; and a transaction table into a single reader object, and offers
+;; the snapshot-isolated get/update API used by the rest of the
+;; system.
+;;
+;; A "reader" is an alist with four entries:
+;;   'wal      -> the wal store (list of encoded records)
+;;   'chain    -> the chain-index (key -> (head-idx . length))
+;;   'txn      -> the txn table (txn-id -> 'active/'committed/'aborted)
+;;   'counters -> an alist of running tallies used by stats:
+;;                'visible   - reads that returned a value
+;;                'invisible - reads where a record existed but was
+;;                             not visible (aborted or future txn)
+;;                'miss      - reads where the key has never been
+;;                             written
+;;                'aborted   - reads where the first chain record
+;;                             belonged to an aborted txn (counted
+;;                             separately so the harness can verify
+;;                             the chain is well-formed)
+;;
+;; API:
+;;   (mvcc-reader-init wal chain-idx txn-tab)
+;;       -> fresh reader
+;;   (mvcc-reader-get reader snap-id key)
+;;       -> (value . 'ok)             when a visible version is found
+;;       -> (#f . 'invisible)         when chain exists but no version
+;;                                    is visible at this snapshot
+;;       -> (#f . 'miss)              when the key has never been written
+;;   (mvcc-reader-stats reader)
+;;       -> the 'counters alist (visible/invisible/miss/aborted)
+;;   (mvcc-reader-update! reader txn-id key value)
+;;       -> new reader with the (key,value) appended to the WAL as
+;;          part of txn-id, with prev-version pointing at the
+;;          previous chain head for key. Txn is expected to already
+;;          be 'active in the txn table; this routine does NOT
+;;          commit it.
+;;   (mvcc-reader-finalize reader)
+;;       -> alist of (key . value) for every key whose newest
+;;          version belongs to a committed txn. (Aborted chains
+;;          are skipped — we walk past them to the most recent
+;;          committed version, matching what snapshot-isolated
+;;          readers would see.)
+
+;; ---------- internal helpers ----------
+
+;; Pull a field out of the reader alist. No match — just assoc + cadr.
+(define (reader-get reader field)
+  (cadr (assoc field reader)))
+
+;; Update (or insert) a counter inside reader's 'counters alist.
+(define (bump-counter reader key)
+  (let ((counters (reader-get reader 'counters))
+        (rest     reader)
+        (found    #f)
+        (new-counters '()))
+    ;; rebuild the alist, replacing the entry if present
+    (define (walk xs)
+      (cond ((null? xs) (reverse new-counters))
+            (else
+             (let ((p (car xs)))
+               (cond ((eq? (car p) key)
+                      (set! found #t)
+                      (set! new-counters
+                            (cons (list key (+ 1 (cadr p)))
+                                  new-counters))
+                      (walk (cdr xs)))
+                     (else
+                      (set! new-counters (cons p new-counters))
+                      (walk (cdr xs))))))))
+    (let ((updated (walk counters)))
+      (cond (found
+             ;; splice updated counters back into reader
+             (cons (list 'counters updated) (cdr reader)))
+            (else
+             (cons (list 'counters (cons (list key 1) counters))
+                   (cdr reader)))))))
+
+;; Decode a single record index out of the WAL.
+(define (reader-record-at reader idx)
+  (wal-read-record (reader-get reader 'wal) idx))
+
+;; Return #t iff the txn-id is committed in the reader's txn table.
+(define (reader-committed? reader txn-id)
+  (eq? (txn-table-status (reader-get reader 'txn) txn-id)
+       'committed))
+
+;; Walk the version chain for key starting at head-idx and return
+;; the first record visible to the snapshot, or #f if none is.
+;;
+;; Visibility (delegated to version-resolve) requires:
+;;   rec.txn <= snap-txn  AND  txn is committed.
+(define (chain-walk reader snap-txn head-idx)
+  (let ((rec (reader-record-at reader head-idx)))
+    (cond ((version-resolve-visible? snap-txn
+                                     (lambda (tid)
+                                       (reader-committed? reader tid))
+                                     rec)
+           rec)
+          (else
+           (let ((prev (wal-record-prev rec)))
+             (cond ((null? prev) #f)
+                   ((pair? prev)
+                    (cond ((eq? (car prev) 'none) #f)
+                          (else (chain-walk reader snap-txn
+                                            (car prev)))))
+                   (else #f)))))))
+
+;; Build the initial empty counters alist.
+(define (init-counters)
+  '((visible . 0) (invisible . 0) (miss . 0) (aborted . 0)))
+
+;; ---------- public API ----------
+
+(define (mvcc-reader-init wal chain-idx txn-tab)
+  (list (list 'wal wal)
+        (list 'chain chain-idx)
+        (list 'txn txn-tab)
+        (list 'counters (init-counters))))
+
+(define (mvcc-reader-get reader snap-id key)
+  (let ((snap-tab (reader-get reader 'snap-tab)))
+    ;; snap-tab may not be present on every reader; fall back to
+    ;; treating snap-id itself as the watermark if absent.
+    (let ((snap-txn
+           (cond ((assoc 'snap-tab reader)
+                  (snapshot-table-snap-txn snap-tab snap-id))
+                 (else snap-id))))
+      (let ((entry (chain-index-get (reader-get reader 'chain) key)))
+        (cond ((null? entry)
+               ;; key was never written
+               (set! reader (bump-counter reader 'miss))
+               (cons #f 'miss))
+              (else
+               (let ((head-idx (car entry)))
+                 (let ((found
+                        (chain-walk reader snap-txn head-idx)))
+                   (cond ((null? found)
+                          (set! reader (bump-counter reader 'invisible))
+                          (cons #f 'invisible))
+                         (else
+                          ;; distinguish "first record was aborted"
+                          ;; from "we walked past earlier versions".
+                          (let ((first-rec
+                                 (reader-record-at reader head-idx)))
+                            (cond ((and (not (reader-committed? reader
+                                                                (wal-record-txn
+                                                                 first-rec)))
+                                        (eq? head-idx
+                                             (wal-record-prev-idx first-rec
+                                                                  key)))
+                                   (set! reader
+                                         (bump-counter reader 'aborted))))
+                            (set! reader
+                                  (bump-counter reader 'visible))
+                            (cons (wal-record-value found) 'ok))))))))))))
+
+;; Helper: pull just the "previous chain head index" out of a record's
+;; prev-version field. The prev-version field is either 'none or a
+;; pair (idx . ...). We only need the head.
+(define (wal-record-prev-idx rec key)
+  (let ((prev (wal-record-prev rec)))
+    (cond ((null? prev) 'none)
+          ((pair? prev)
+           (cond ((eq? (car prev) 'none) 'none)
+                 (else (car prev))))
+          (else 'none))))
+
+(define (mvcc-reader-stats reader)
+  (reader-get reader 'counters))
+
+(define (mvcc-reader-update! reader txn-id key value)
+  (let ((chain  (reader-get reader 'chain))
+        (wal    (reader-get reader 'wal))
+        (txn    (reader-get reader 'txn)))
+    ;; Figure out the prev-version pointer for this key.
+    (let ((entry (chain-index-get chain key)))
+      (let ((prev
+             (cond ((null? entry) 'none)
+                   (else (list (car entry))))))
+        (let ((rec (wal-record-make txn-id 'put key value prev)))
+          ;; Append to WAL via wal facade, then update chain head.
+          (set! wal (wal-append-record! wal rec))
+          (let ((new-idx (- (wal-store-len wal) 1)))
+            (set! chain (chain-index-set! chain key new-idx))
+            ;; splice new wal + chain back into reader
+            (set! reader
+                  (cons (list 'wal wal)
+                        (cons (list 'chain chain)
+                              (cdr (cdr reader))))))
+          reader)))))
+
+(define (mvcc-reader-finalize reader)
+  ;; Walk every key in the chain index; for each one, walk the chain
+  ;; to find the newest committed version. Return an alist of
+  ;; (key . value) for those.
+  (let ((keys (chain-index-keys (reader-get reader 'chain))))
+    (define (loop ks acc)
+      (cond ((null? ks) acc)
+            (else
+             (let* ((k    (car ks))
+                    (entry (chain-index-get (reader-get reader 'chain) k))
+                    (head  (car entry))
+                    (rec   (reader-record-at reader head)))
+               (cond ((reader-committed? reader (wal-record-txn rec))
+                      (loop (cdr ks)
+                            (cons (cons k (wal-record-value rec)) acc)))
+                     (else
+                      ;; walk past aborted head
+                      (let ((found (chain-walk-reader-no-snap reader head)))
+                        (cond (found
+                               (loop (cdr ks)
+                                     (cons (cons k (wal-record-value found))
+                                           acc)))
+                              (else
+                               (loop (cdr ks) acc))))))))))
+    (loop keys '())))
+
+;; Internal: walk a chain ignoring snapshot visibility, returning
+;; the newest record whose txn is committed. Used by finalize.
+(define (chain-walk-reader-no-snap reader head-idx)
+  (let ((rec (reader-record-at reader head-idx)))
+    (cond ((reader-committed? reader (wal-record-txn rec))
+           rec)
+          (else
+           (let ((prev (wal-record-prev rec)))
+             (cond ((null? prev) #f)
+                   ((pair? prev)
+                    (cond ((eq? (car prev) 'none) #f)
+                          (else (chain-walk-reader-no-snap reader
+                                                          (car prev)))))
+                   (else #f)))))))

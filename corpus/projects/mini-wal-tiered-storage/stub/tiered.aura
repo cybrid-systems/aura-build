@@ -1,0 +1,205 @@
+(tiered.aura)
+
+(provide 'tiered)
+
+;; The tiered storage layer wires a WAL together with a readahead cache,
+;; an object store, a local filesystem sink, and a cache metrics recorder.
+;; Writes flow: payload -> WAL (hot ring) -> on rotation -> cold segment
+;;              -> handoff to object store + local FS (idempotent).
+;; Reads flow:  WAL (hot) -> if miss, readahead lookup -> if miss,
+;;              segment walk in WAL.
+;; Cache hits/misses are recorded in the cache-metrics recorder.
+;;
+;; Tiered representation (a single mutable cons cell holding an alist):
+;;   t = (cons state . ())
+;;   state = alist of keys:
+;;     'wal        : the WAL
+;;     'readahead  : the readahead cache
+;;     'obj-store  : the object store
+;;     'local-fs   : the local filesystem sink
+;;     'metrics    : the cache-metrics recorder
+
+(define (make-tiered wal readahead obj-store local-fs metrics)
+  (cons
+    (list (cons 'wal wal)
+          (cons 'readahead readahead)
+          (cons 'obj-store obj-store)
+          (cons 'local-fs local-fs)
+          (cons 'metrics metrics))
+    '()))
+
+(define (tiered-wal       t) (alist-ref (car t) 'wal))
+(define (tiered-readahead t) (alist-ref (car t) 'readahead))
+(define (tiered-obj-store t) (alist-ref (car t) 'obj-store))
+(define (tiered-local-fs  t) (alist-ref (car t) 'local-fs))
+(define (tiered-metrics   t) (alist-ref (car t) 'metrics))
+
+;; tiered-write!: append a payload to the WAL.
+;; Returns the newly assigned LSN. The readahead cache and object store
+;; are not touched on writes — rotation drives that path.
+(define (tiered-write! t payload)
+  (wal-append! (tiered-wal t) payload))
+
+;; tiered-read: read a record by LSN.
+;; If the WAL's hot ring has it, return immediately (cache "hit" from
+;; the reader's perspective). If not, consult the readahead cache, and
+;; fall through to walking the WAL's cold segments. The readahead
+;; lookup itself records a hit or miss in cache metrics.
+(define (tiered-read t lsn)
+  (let ((wal (tiered-wal t))
+        (rh  (tiered-readahead t))
+        (m   (tiered-metrics t)))
+    ;; Try WAL's own read first.
+    (let ((r (wal-read wal lsn)))
+      (if (not (null? r))
+          r
+          ;; Not in WAL hot/cold — try readahead cache.
+          (let ((segments (wal-segments wal)))
+            (let ((cached (find-segment-with-lsn segments rh lsn)))
+              (if cached
+                  (begin
+                    (cache-metrics-record-hit! m)
+                    cached)
+                  (begin
+                    (cache-metrics-record-miss! m)
+                    #f))))))))
+
+;; find-segment-with-lsn: scan the segment list, and for any segment
+;; whose seg-id is in the readahead cache, check whether it contains
+;; the LSN. Returns the record (and updates readahead usage) or #f.
+(define (find-segment-with-lsn segments rh lsn)
+  (cond
+    ((null? segments) #f)
+    (else
+      (let ((seg (car segments)))
+        (let ((cached (readahead-lookup rh (seg-id-helper seg))))
+          (if cached
+              ;; Cache contained this segment — search it for the record.
+              (let ((rec (cold-segment-find cached lsn)))
+                (if rec
+                    rec
+                    ;; Not in this cached segment; try next segment.
+                    (find-segment-with-lsn (cdr segments) rh lsn)))
+              ;; Not in readahead; keep walking segments.
+              (find-segment-with-lsn (cdr segments) rh lsn)))))))
+
+;; seg-id-helper: extract the seg-id from a cold segment produced by
+;; cold_segment.aura. The cold-segment-find expects a segment; we just
+;; need its id for the cache key. We import the seg-id accessor via
+;; the public API: cold-segment-len etc. don't expose the id, so we
+;; rely on the fact that we never actually need the id here — the
+;; readahead-lookup takes a seg-id integer. Cold segments created via
+;; wal-force-rotate! carry ids that we can recover through the cache by
+;; prefetching. To keep things simple, we look up by attempting to
+;; match each segment against every cached entry.
+(define (seg-id-helper seg) 0)  ;; placeholder; replaced via find-any-cache below
+
+;; The cold-segment-find / seg-id pairing means we need a different
+;; lookup strategy: walk the cache and for each cached segment, ask
+;; whether it contains the lsn. That's cleaner.
+(define (find-segment-with-lsn segments rh lsn)
+  (scan-cache-for-lsn (readahead-entries rh) lsn))
+
+(define (readahead-entries rh) (car rh))
+
+(define (scan-cache-for-lsn entries lsn)
+  (cond
+    ((null? entries) #f)
+    (else
+      (let ((entry (car entries)))
+        (let ((seg (cdr entry)))
+          (let ((rec (cold-segment-find seg lsn)))
+            (if rec
+                rec
+                (scan-cache-for-lsn (cdr entries) lsn))))))))
+
+;; tiered-rotate-and-handoff!: force the WAL to rotate its hot ring
+;; into a fresh cold segment, then handoff that new segment to both
+;; the object store and the local filesystem. Returns the new segment.
+(define (tiered-rotate-and-handoff! t)
+  (let ((wal (tiered-wal t))
+        (os  (tiered-obj-store t))
+        (lfs (tiered-local-fs t)))
+    ;; Rotate to seal the hot ring into a new cold segment.
+    (wal-force-rotate! wal)
+    ;; The newest cold segment is the last in wal-segments.
+    (let ((segments (wal-segments wal)))
+      (let ((new-seg (last-segment segments)))
+        (object-store-handoff! os new-seg)
+        (local-fs-handoff! lfs new-seg)
+        new-seg))))
+
+;; last-segment: return the last element of a list.
+(define (last-segment segs)
+  (cond
+    ((null? segs) #f)
+    ((null? (cdr segs)) (car segs))
+    (else (last-segment (cdr segs)))))
+
+;; tiered-prefetch-segment!: pull a cold segment into the readahead
+;; cache. The segment is taken from the WAL by id (id corresponds to
+;; creation order: we scan wal-segments and pick the matching one).
+(define (tiered-prefetch-segment! t seg)
+  (let ((rh (tiered-readahead t)))
+    (readahead-prefetch! rh seg)))
+
+;; tiered-prefetch-by-id!: helper — find a segment in the WAL by id
+;; and load it into the readahead cache. Returns the segment or #f.
+(define (tiered-prefetch-by-id! t seg-id)
+  (let ((wal (tiered-wal t))
+        (rh  (tiered-readahead t)))
+    (let ((seg (find-seg-by-id (wal-segments wal) seg-id)))
+      (if seg
+          (begin
+            (readahead-prefetch! rh seg)
+            seg)
+          #f))))
+
+;; find-seg-by-id: scan a list of cold segments for one with the
+;; given seg-id. We compare against the segment's id, which we read
+;; via cold-segment-find's expected layout. Since cold-segment-find
+;; takes (lsn) and returns a record (or #f), we use a different
+;; approach: each cold segment from wal.aura knows its id through
+;; the public cold-segment-len etc., but the id accessor is internal.
+;; We instead use a side channel: we generated the segment and stored
+;; it in wal-segments; the order itself encodes ids 1,2,3,... starting
+;; at 1. For the tiered API's purposes, we'll match by content (any
+;; segment containing the lsn — or simply by index).
+(define (find-seg-by-id segments seg-id)
+  ;; seg-id is 1-indexed by creation order.
+  (find-seg-by-index segments seg-id 1))
+
+(define (find-seg-by-index segments target current)
+  (cond
+    ((null? segments) #f)
+    ((= current target) (car segments))
+    (else (find-seg-by-index (cdr segments) target (+ current 1)))))
+
+;; tiered-stats: return an alist of stats describing the tiered
+;; storage state. Includes counts for readahead, object store, local
+;; filesystem, cache hits/misses, and WAL summary stats.
+(define (tiered-stats t)
+  (let ((wal (tiered-wal t))
+        (rh  (tiered-readahead t))
+        (os  (tiered-obj-store t))
+        (lfs (tiered-local-fs t))
+        (m   (tiered-metrics t)))
+    (list
+      (cons 'wal-len            (wal-len wal))
+      (cons 'wal-lsn-max        (wal-lsn-max wal))
+      (cons 'wal-hot-bytes      (wal-hot-bytes wal))
+      (cons 'wal-sealed-bytes   (wal-sealed-bytes wal))
+      (cons 'wal-segments       (length-list (wal-segments wal)))
+      (cons 'readahead-count    (readahead-count rh))
+      (cons 'readahead-hits     (readahead-hits rh))
+      (cons 'readahead-misses   (readahead-misses rh))
+      (cons 'object-store-count (object-store-count os))
+      (cons 'local-fs-count     (local-fs-count lfs))
+      (cons 'cache-hits         (cache-metrics-hits m))
+      (cons 'cache-misses       (cache-metrics-misses m)))))
+
+;; length-list: portable length over a proper list.
+(define (length-list lst)
+  (cond
+    ((null? lst) 0)
+    (else (+ 1 (length-list (cdr lst))))))

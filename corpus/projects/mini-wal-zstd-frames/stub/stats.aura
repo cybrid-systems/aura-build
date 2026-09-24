@@ -1,0 +1,37 @@
+;; stats.aura — Frame compression statistics.
+;;
+;; Tracks cumulative raw bytes seen and compressed bytes stored across
+;; frames, plus a frame count. Exposes:
+;;   (stats-new)              -> fresh stats record
+;;   (stats-on-frame! st raw stored)  -> register one frame's sizes
+;;   (stats-dump st)          -> alist of (key . value) for reporting
+;;   (stats-ratio st)         -> compressed/raw ratio (as a real number, or 0)
+
+(define (stats-new)
+  ;; Stats record is a list of mutable cells:
+  ;;   (cons frames (cons raw (cons stored 0)))
+  (cons 0 (cons 0 (cons 0 0))))
+
+(define (stats-frames st)  (car st))
+(define (stats-raw st)    (car (cdr st)))
+(define (stats-stored st) (car (cdr (cdr st))))
+
+(define (stats-on-frame! st raw stored)
+  (set-car! st (+ (stats-frames st) 1))
+  (set-car! (cdr st) (+ (stats-raw st) raw))
+  (set-car! (cdr (cdr st)) (+ (stats-stored st) stored))
+  st)
+
+(define (stats-ratio st)
+  (let ((r (stats-raw st))
+        (s (stats-stored st)))
+    (if (= r 0)
+        0
+        (/ s r))))
+
+(define (stats-dump st)
+  (list
+    (cons 'frames  (stats-frames st))
+    (cons 'raw     (stats-raw st))
+    (cons 'stored  (stats-stored st))
+    (cons 'ratio   (stats-ratio st))))

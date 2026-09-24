@@ -1,0 +1,30 @@
+;; report.aura — Reporting helpers for mini-wal-zstd-frames
+;;
+;; Provides small adapters that turn WAL state and statistics into key/value
+;; pairs and formatted lines suitable for the program's stdout contract.
+;;
+;; Exports:
+;;   report-wal wal st     -> list of (key . value) pairs summarizing the WAL
+;;   report-key-first k    -> formatted "KEY_FIRST=<k>" string
+;;   report-key-last  k    -> formatted "KEY_LAST=<k>"  string
+
+;; Build a list of (key-string . value) pairs describing the WAL run.
+;; Each pair is intended to be flattened via logfmt into the final output.
+(define (report-wal wal st)
+  (list
+    (cons "RECORDS"      (wal-records wal))
+    (cons "FRAMES"       (wal-frames wal))
+    (cons "RAW_BYTES"    (wal-raw-bytes wal))
+    (cons "STORED_BYTES" (wal-stored-bytes wal))
+    (cons "RATIO"        (stats-ratio st))
+    (cons "KEY_COUNT"    (key-count wal))
+    (cons "KEY_FIRST"    (key-first wal))
+    (cons "KEY_LAST"     (key-last wal))))
+
+;; Format a single key/value line: "KEY_FIRST=1001\n"
+(define (report-key-first k)
+  (logfmt-line "KEY_FIRST" k))
+
+;; Format a single key/value line: "KEY_LAST=1042\n"
+(define (report-key-last k)
+  (logfmt-line "KEY_LAST" k))

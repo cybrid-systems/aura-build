@@ -1,0 +1,50 @@
+;; dict.aura — Rolling-window dictionary for mini-zstd-style compression.
+;;
+;; A dictionary holds the most recent `capacity` byte literals seen during
+;; training. The dictionary id is a CRC32 over the current window, making it
+;; stable and reproducible given the same training sequence. Callers feed the
+;; dictionary literal bytes via `dict-train!`; the window slides forward,
+;; discarding oldest literals once full.
+;;
+;; No symbol tables / hash maps — we just keep the literal byte list (the
+;; "raw window") and let codec.aura do substring searches on it.
+
+(define (dict-init capacity)
+  ;; Dictionary is a pair:
+  ;;   car = mutable window pair  (cons '() 0)   ; literal list . count
+  ;;   cdr = capacity (integer, immutable)
+  (cons (cons '() 0) capacity))
+
+(define (dict-window-pair d) (car d))
+(define (dict-window-literals d) (car (dict-window-pair d)))
+(define (dict-window-len d) (cdr (dict-window-pair d)))
+(define (dict-capacity d) (cdr d))
+
+(define (dict-window d)
+  ;; Public accessor: return a plain list of the bytes currently in the window.
+  (dict-window-literals d))
+
+(define (dict-id d)
+  ;; Stable id = CRC32 over the current window contents.
+  (crc32 (dict-window-literals d)))
+
+(define (dict-train! d literals)
+  ;; Append literals, then trim to capacity, preserving newest entries.
+  (let ((wp (dict-window-pair d))
+        (cap (dict-capacity d)))
+    (let ((combined (append (car wp) literals)))
+      (let ((n (length combined)))
+        (if (<= n cap)
+            (begin
+              (set-car! wp combined)
+              (set-cdr! wp n))
+            (begin
+              ;; Drop the oldest (n - cap) bytes by recursively rebuilding.
+              (let ((drop (- n cap)))
+                (define (trim xs k)
+                  (if (= k 0)
+                      xs
+                      (trim (cdr xs) (- k 1))))
+                (set-car! wp (trim combined drop))
+                (set-cdr! wp cap)))))))
+  d)

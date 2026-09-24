@@ -1,0 +1,151 @@
+(driver.aura)
+
+(provide 'driver)
+
+;; The driver orchestrates the full tiered-WAL scenario:
+;;   1. Seed a fresh WAL with the standard config.
+;;   2. Append RECORDS_WRITTEN records (payloads "p0" .. "p{N-1}").
+;;   3. Force rotation of the hot buffer into cold segments.
+;;   4. Hand off the cold segment(s) to object store + local FS.
+;;   5. Prefetch cold segments through the readahead cache.
+;;   6. Read every LSN back and verify payloads.
+;;   7. Collect cache hits/misses, total bytes, segment count, etc.
+;;   8. Return an alist of KEY . value strings for main.aura to print.
+;;
+;; The driver does not print anything itself — main.aura owns stdout.
+;; All values in the returned alist are strings (ready for display).
+
+(define CAPACITY           100)   ; hot ring capacity before rotation
+(define RECORDS_PER_SEG    60)    ; seal threshold for cold segments
+(define RECORDS_WRITTEN    120)   ; total appends (yields LSN 0..119)
+
+;; ---------------------------------------------------------------------------
+;; Helpers — kept local to driver.aura. They use the public APIs only.
+;; ---------------------------------------------------------------------------
+
+(define (seg-id->int seg)
+  ;; Cold segments store their id somewhere; expose it as an integer.
+  ;; We rely on the cold_segment API having seg-id; if not, fall back.
+  (let ((probe seg))
+    (cond
+      ((number? probe) probe)
+      ((pair? probe)
+       ;; Try the explicit accessor first.
+       (let ((v (cold-segment-find seg -1)))
+         ;; Fallback: just take car and check if it's an int.
+         (let ((h (car probe)))
+           (if (number? h) h 0))))
+      (else 0))))
+
+(define (roundtrip-pass? wal total)
+  ;; Verify every LSN 0..total-1 reads back with its expected payload.
+  (let loop ((i 0) (ok #t))
+    (cond
+      ((not ok) #f)
+      ((= i total) #t)
+      (else
+       (let ((rec (wal-read wal i)))
+         (if (and (pair? rec)
+                  (string=? (record-payload rec) (fmt-int i)))
+             (loop (+ i 1) #t)
+             (loop (+ i 1) #f)))))))
+
+(define (avg-appends-per-call wal threshold)
+  ;; WAL tracks append count and a synthetic "append call count"
+  ;; internally. We only need a yes/no answer for the contract.
+  (wal-avg-append-latency wal threshold))
+
+;; ---------------------------------------------------------------------------
+;; Main scenario entry point.
+;; ---------------------------------------------------------------------------
+
+(define (run-scenario)
+  (let* ((wal          (make-wal CAPACITY RECORDS_PER_SEG))
+         (readahead    (make-readahead 8))
+         (object-store (make-object-store "mini-os"))
+         (local-fs     (make-local-fs "mini-fs"))
+         (metrics      (make-cache-metrics))
+         (rotator      (make-rotator))
+         (tiered       (make-tiered wal readahead object-store local-fs metrics)))
+
+    ;; 1. Seed records through tiered-write! (which calls wal-append! +
+    ;;    drives rotation when capacity is reached).
+    (let seed-loop ((i 0))
+      (if (< i RECORDS_WRITTEN)
+          (begin
+            (tiered-write! tiered (fmt-int i))
+            (seed-loop (+ i 1)))
+            '()))
+
+    ;; 2. Force any remaining hot-tail into a cold segment.
+    (wal-force-rotate! wal)
+
+    ;; 3. Hand off every cold segment to the object store and the local FS,
+    ;;    using the tiered helper.
+    (let hand-loop ((segs (wal-segments wal)))
+      (cond
+        ((null? segs) '())
+        (else
+         (let ((seg (car segs)))
+           (object-store-handoff! object-store seg)
+           (local-fs-handoff! local-fs seg)
+           (hand-loop (cdr segs))))))
+
+    ;; 4. Prefetch all sealed cold segments through the readahead cache
+    ;;    (driving both hits and misses for downstream metrics).
+    (let prefetch-loop ((segs (wal-segments wal)) (first? #t))
+      (cond
+        ((null? segs) '())
+        (else
+         (tiered-prefetch-segment! tiered (car segs))
+         (prefetch-loop (cdr segs) #f))))
+
+    ;; 5. Touch every LSN through the tiered read path. The first read
+    ;;    of each cold segment will be a cache miss; subsequent reads
+    ;;    become hits. The hot ring still holds the most-recent tail.
+    (let read-loop ((i 0))
+      (if (< i RECORDS_WRITTEN)
+          (begin
+            (tiered-read tiered i)
+            (read-loop (+ i 1)))
+            '()))
+
+    ;; 6. Tick the rotator once so its "seals" counter converges.
+    (rotator-tick! rotator wal)
+
+    ;; -------------------------------------------------------------------------
+    ;; Gather everything the verifier expects into a single alist.
+    ;; All values are converted to strings.
+    ;; -------------------------------------------------------------------------
+    (let* ((rt-ok?  (verify-roundtrip wal))
+           (lat-ok? (verify-append-latency wal 50))
+           (final-lsn (wal-lsn-max wal))
+           (hot-len   (wal-hot-bytes wal))    ; bytes resident in hot ring
+           (sealed    (wal-sealed-bytes wal)) ; bytes in cold segments
+           (total     (+ hot-len sealed))
+           (seg-count (length (wal-segments wal)))
+           (os-count  (object-store-count object-store))
+           (fs-count  (local-fs-count local-fs))
+           (rh-hits   (readahead-hits readahead))
+           (rh-miss   (readahead-misses readahead))
+           (rh-total  (readahead-count readahead))
+           (cm-hits   (cache-metrics-hits metrics))
+           (cm-miss   (cache-metrics-misses metrics))
+           (rot-seals (rotator-seals rotator))
+           (avg-lat   (avg-appends-per-call wal 50)))
+      (list
+       (cons "RECORDS_WRITTEN"     (number->string RECORDS_WRITTEN))
+       (cons "WAL_FINAL_LSN"       (number->string final-lsn))
+       (cons "SEGMENTS_SEALED"     (number->string seg-count))
+       (cons "HOT_BYTES"           (number->string hot-len))
+       (cons "COLD_BYTES"          (number->string sealed))
+       (cons "TOTAL_BYTES"         (number->string total))
+       (cons "OBJECT_STORE_COUNT"  (number->string os-count))
+       (cons "LOCAL_FS_COUNT"      (number->string fs-count))
+       (cons "READAHEAD_HITS"      (number->string rh-hits))
+       (cons "READAHEAD_MISSES"    (number->string rh-miss))
+       (cons "READAHEAD_TOTAL"     (number->string rh-total))
+       (cons "CACHE_METRICS_HITS"  (number->string cm-hits))
+       (cons "CACHE_METRICS_MISS"  (number->string cm-miss))
+       (cons "ROUNDTRIP_OK"        (if rt-ok? "yes" "no"))
+       (cons "APPEND_LATENCY_OK"   (if lat-ok? "yes" "no"))))))

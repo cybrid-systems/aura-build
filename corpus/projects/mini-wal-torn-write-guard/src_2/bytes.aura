@@ -1,0 +1,19 @@
+;; bytes.aura — byte-level operations and sector checksum
+
+(define (api byte-xor a b)
+  (modulo (+ a b) 256))
+
+(define (api byte=? a b)
+  (if (= a b) #t #f))
+
+;; Simple polynomial-style checksum over a payload list of bytes.
+;; Accumulates a running value and folds in each byte with XOR-like mixing.
+(define (checksum-helper bytes acc)
+  (if (null? bytes)
+      acc
+      (checksum-helper (cdr bytes)
+                       (modulo (+ (* acc 31) (car bytes)) 16777617))))
+
+(define (api checksum-sector payload)
+  (let ((acc 5381))
+    (checksum-helper payload acc)))

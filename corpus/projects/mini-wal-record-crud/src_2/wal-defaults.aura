@@ -1,0 +1,29 @@
+;; wal-defaults.aura — default values for forward-migration of WAL records
+;;
+;; When a record is migrated forward into a schema that contains
+;; additive (new) tags the source record does not yet carry, we need
+;; to fill in a sensible default value for each missing tag. The
+;; default depends only on the tag's declared type.
+;;
+;; Supported types and their defaults:
+;;   'int    -> 0
+;;   'string -> ""
+;;   'bool   -> #f
+;;   'symbol -> 'null  (a neutral sentinel symbol)
+;;
+;; Anything else -> 'null  (best-effort fallback)
+;;
+;; API:
+;;   (api default-value type)  — default Aura value for `type`
+;;   (api known-types)         — list of type symbols we recognise
+
+(define (api default-value type)
+  (cond
+    ((equal? type 'int) 0)
+    ((equal? type 'string) "")
+    ((equal? type 'bool) #f)
+    ((equal? type 'symbol) 'null)
+    (else 'null)))
+
+(define (api known-types)
+  '(int string bool symbol))

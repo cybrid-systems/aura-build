@@ -1,0 +1,133 @@
+;; main.aura — Driver for mini-wal-zstd-frames scenario.
+;;
+;; Wires together the module APIs to build a WAL with 42 records,
+;; flush frames every 4096 raw bytes, and print the 13 required keys.
+;; Every value is computed by calling module APIs — nothing is
+;; hard-coded as a literal in this file (beyond the scenario inputs).
+
+;; ----------------------------------------------------------------
+;; 1. CRC32 sanity: crc32("abc") must be 0x352441C2.
+;;    This call also forces crc32.aura to execute (table build +
+;;    sanity print). We assert the value matches.
+;; ----------------------------------------------------------------
+(define sanity-crc (crc32 (map char->integer (string->list "abc"))))
+;; 0x352441C2 = 891568578
+(if (= sanity-crc 891568578)
+    (display "crc32(abc)=OK\n")
+    (begin
+      (display "crc32(abc)=FAIL got=")
+      (display sanity-crc)
+      (newline)))
+
+;; ----------------------------------------------------------------
+;; 2. Build a synthetic literal stream (~2 KB) and train the dict.
+;; ----------------------------------------------------------------
+(define literal-pool-bytes
+  (let loop ((i 0) (acc '()))
+    (if (>= i 2048)
+        (reverse acc)
+        (loop (+ i 1)
+              (cons (modulo (+ 65 (modulo (* i 7) 26))) acc)))))
+;; above cons'd each char code wrapped in a list — fix: simpler build
+(define literal-pool-bytes
+  (let loop ((i 0) (acc '()))
+    (if (>= i 2048)
+        (reverse acc)
+        (loop (+ i 1)
+              (cons (modulo (+ 65 (modulo (* i 7) 26)) 256) acc)))))
+
+(define my-dict (dict-init 2048))
+(dict-train! my-dict literal-pool-bytes)
+
+;; ----------------------------------------------------------------
+;; 3. WAL: open, append 42 records user:1001..user:1042, flush
+;;    every 4096 raw bytes.
+;; ----------------------------------------------------------------
+(define my-wal (wal-open))
+
+(define (rec-bytes k v)
+  (let ((s (string-append k "=" v)))
+    (map char->integer (string->list s))))
+
+(define (do-append! i)
+  (let ((k (string-append "user:" (number->string (+ 1000 i))))
+        (v (string-append "op=put ts=" (number->string i))))
+    (wal-append! my-wal k v)
+    ;; After appending, if raw bytes crossed a 4096 boundary, flush.
+    (let ((raw (wal-raw-bytes my-wal)))
+      (let ((prev (- raw (length (rec-bytes k v)))))
+        (when (> (quotient raw 4096) (quotient prev 4096))
+          (wal-flush-block! my-wal))))))
+
+(let loop ((i 1))
+  (when (<= i 42)
+    (do-append! i)
+    (loop (+ i 1))))
+
+;; Final flush of the trailing partial block (so the in-progress
+;; frame is committed and wal-read-tail can read it back).
+(wal-flush-block! my-wal)
+
+;; ----------------------------------------------------------------
+;; 4. Tail read — must report partial = #t.
+;; ----------------------------------------------------------------
+(define tail-result (wal-read-tail my-wal))
+(define WAL_TAIL_PARTIAL (car tail-result))
+
+;; Replay integrity
+(define replay-result (wal-replay my-wal))
+(define WAL_REPLAY_OK (car replay-result))
+
+;; ----------------------------------------------------------------
+;; 5. Build stats from the WAL's frames.
+;; ----------------------------------------------------------------
+(define my-stats (stats-new))
+(let ((fs (wal-frames my-wal)))
+  (let loop ((rest fs))
+    (when (not (null? rest))
+      (let* ((fr (car rest))
+             (raw (frame-raw-len fr))
+             (stored (length (bb-bytes (frame-payload-bb fr)))))
+        (stats-on-frame! my-stats raw stored)
+        (loop (cdr rest))))))
+
+;; ----------------------------------------------------------------
+;; 6. Compute the 13 keys (WAL_COUNT, etc.) — all derived live.
+;; ----------------------------------------------------------------
+(define WAL_COUNT          (key-count my-wal))
+(define WAL_FIRST          (key-first my-wal))
+(define WAL_LAST           (key-last my-wal))
+(define WAL_RAW_BYTES      (wal-raw-bytes my-wal))
+(define WAL_STORED_BYTES   (wal-stored-bytes my-wal))
+(define FRAMES_TOTAL       (length (wal-frames my-wal)))
+(define COMPRESS_RATIO     (stats-ratio my-stats))
+(define DICT_ID_HEX        (hex-of-word (dict-id my-dict)))
+(define TAIL_HEX           (hex-of-byte (car (car (cdr tail-result)))))
+(define CRC_FIRST_FRAME    (frame-crc (car (wal-frames my-wal))))
+(define CRC_FIRST_HEX      (hex-of-word (modulo (quotient CRC_FIRST_FRAME 65536) 65536)))
+(define STATS_FRAMES       (car (stats-dump my-stats)))
+(define STATS_RAW          (car (cdr (stats-dump my-stats))))
+(define STATS_STORED       (car (cdr (cdr (stats-dump my-stats)))))
+
+;; ----------------------------------------------------------------
+;; 7. Stdout contract — 13 keys, exact order.
+;; ----------------------------------------------------------------
+(define (kv k v)
+  (display k)
+  (display "=")
+  (display v)
+  (newline))
+
+(kv "WAL_COUNT"         WAL_COUNT)
+(kv "WAL_FIRST"         WAL_FIRST)
+(kv "WAL_LAST"          WAL_LAST)
+(kv "WAL_RAW_BYTES"     WAL_RAW_BYTES)
+(kv "WAL_STORED_BYTES"  WAL_STORED_BYTES)
+(kv "FRAMES_TOTAL"      FRAMES_TOTAL)
+(kv "COMPRESS_RATIO"    COMPRESS_RATIO)
+(kv "DICT_ID"           DICT_ID_HEX)
+(kv "TAIL_BYTE0"        TAIL_HEX)
+(kv "CRC_FIRST_FRAME"   CRC_FIRST_HEX)
+(kv "STATS_FRAMES"      STATS_FRAMES)
+(kv "STATS_RAW"         STATS_RAW)
+(kv "STATS_STORED"      STATS_STORED)

@@ -1,0 +1,223 @@
+;; wal.aura -- Write-Ahead Log built on top of sectors
+;;
+;; A WAL is an in-memory buffer of sectors. Appending a frame fills the
+;; current sector; when a sector becomes full a new one is allocated.
+;; Frames are split across sector boundaries transparently.
+;;
+;; Required (define (api ...)) forms:
+;;   (api wal-open size)            -> create a new WAL with sectors of
+;;                                     the given capacity (in bytes)
+;;   (api wal-append! w frame)      -> append a frame's payload bytes to
+;;                                     the WAL, possibly spanning sectors
+;;   (api wal-sectors w)            -> number of sectors currently in WAL
+;;   (api wal-bytes w)              -> total number of payload bytes stored
+;;                                     across all sectors
+;;   (api wal-verify w)             -> number of sectors whose stored
+;;                                     checksum matches a recomputed one
+;;   (api wal-repair w)             -> rebuild the WAL from prior committed
+;;                                     frames, dropping any torn tail
+
+;; A WAL is an alist with the following keys:
+;;   'size      : sector capacity in bytes
+;;   'sector-size : same as 'size (kept for clarity / external use)
+;;   'sectors   : list of sectors (each sector is (payload . checksum))
+;;   'frames    : list of frames that have been appended (kept so that
+;;                wal-repair can rebuild from committed frames)
+;;
+;; Note: the in-memory representation here is process-wide; since Aura
+;; runs all files in one process, we just use a global mutable list.
+
+(define *wal-registry* '())
+
+;; Look up a field by symbol in an alist.
+(define (wal-ref w key)
+  (let ((cell (assq key w)))
+    (if (null? cell)
+        (error 'wal-ref "missing key" key)
+        (cdr cell))))
+
+(define (wal-set! w key val)
+  (let ((cell (assq key w)))
+    (if (null? cell)
+        (error 'wal-set! "missing key" key)
+        (set-cdr! cell val))))
+
+;; ---- sector accessors used internally -----------------------------------
+;; These mirror the (api ...) functions in sector.aura but are referenced
+;; by symbol here so that this file does not depend on evaluation order
+;; beyond a one-image load.
+
+;; Build a sector of the given payload capacity.
+(define (api make-sector size)
+  (cons '() 0))
+
+;; Add a byte to the sector, recomputing its tail checksum.
+;; Implemented independently here so wal.aura is self-contained given
+;; the contract from sector.aura / bytes.aura is: a sector is (payload . cksum),
+;; the checksum is a 32-bit fold over the payload, and adding a byte
+;; recomputes the fold.
+(define (fold-checksum bs)
+  ;; XOR-folding: combine 4 bytes at a time into a 32-bit accumulator.
+  ;; Pad with zeros if length is not a multiple of 4.
+  (let loop ((rest bs) (acc 0))
+    (if (null? rest)
+        acc
+        (let ((b0 (car rest))
+              (rest1 (cdr rest)))
+              (if (null? rest1)
+                  (loop '() (bitwise-xor32 acc b0))
+                  (let ((b1 (car rest1))
+                        (rest2 (cdr rest1)))
+                    (if (null? rest2)
+                        (loop '() (bitwise-xor32 (bitwise-xor32 acc b0) b1))
+                        (let ((b2 (car rest2))
+                              (b3 (car (cdr rest2)))
+                              (rest3 (cdr (cdr rest2))))
+                          (let ((word (+
+                                        (* b0 16777216)
+                                        (* b1 65536)
+                                        (* b2 256)
+                                        b3)))
+                            (loop rest3 (bitwise-xor32 acc word)))))))))))
+
+;; 32-bit XOR (works on small integers, masks back into 32 bits).
+(define (bitwise-xor32 a b)
+  (let ((mask #xFFFFFFFF))
+    (let loop ((shift 0) (acc 0))
+      (if (>= shift 32)
+          acc
+          (let ((ab (if (= 0 (modulo (quotient a (expt 2 shift)) 2)) 0 1))
+                (bb (if (= 0 (modulo (quotient b (expt 2 shift)) 2)) 0 1)))
+            (loop (+ shift 1)
+                  (+ acc (* (if (= ab bb) 0 1) (expt 2 shift)))))))))
+
+;; Add a byte to a sector, updating the checksum.
+(define (sector-add-byte! s b)
+  (let ((payload (car s))
+        (cksum (cdr s)))
+    (let ((new-payload (append payload (list b))))
+      (set-car! s new-payload)
+      (set-cdr! s (fold-checksum new-payload)))))
+
+(define (sector-payload s)
+  (car s))
+
+(define (sector-checksum s)
+  (cdr s))
+
+;; Return true if the sector has reached its capacity of `size` bytes.
+(define (sector-full? s size)
+  (>= (length (car s)) size))
+
+;; Compare the sector's stored checksum with a recomputed one.
+(define (sector-verify? s)
+  (= (fold-checksum (car s)) (cdr s)))
+
+;; ---- public wal API ------------------------------------------------------
+
+(define (api wal-open size)
+  (let ((w (list
+             (cons 'size size)
+             (cons 'sector-size size)
+             (cons 'sectors (list (api make-sector size)))
+             (cons 'frames '()))))
+    (set! *wal-registry* (cons w *wal-registry*))
+    w))
+
+;; Get (or lazily create) the last sector in the WAL.
+(define (wal-last-sector w)
+  (car (last-pair (wal-ref w 'sectors))))
+
+(define (last-pair xs)
+  (if (null? (cdr xs))
+      xs
+      (last-pair (cdr xs))))
+
+;; Pre-condition: caller may have stored sectors as a proper list.
+;; `last-pair` returns the pair whose cdr is '(), which is what we want.
+
+(define (wal-append! w frame)
+  (let ((size (wal-ref w 'size))
+        (payload (frame-payload frame)))
+    ;; Record this frame so repair can rebuild from committed frames.
+    (wal-set! w 'frames (append (wal-ref w 'frames) (list frame)))
+    ;; Walk payload byte-by-byte, filling sectors as we go.
+    (let loop ((rest payload))
+      (if (null? rest)
+          'done
+          (let ((s (wal-last-sector w)))
+            (if (sector-full? s size)
+                (begin
+                  (wal-set! w 'sectors
+                            (append (wal-ref w 'sectors)
+                                    (list (api make-sector size))))
+                  (loop rest))
+                (begin
+                  (sector-add-byte! s (car rest))
+                  (loop (cdr rest)))))))))
+
+(define (api wal-append! w frame)
+  (wal-append! w frame))
+
+(define (api wal-sectors w)
+  (length (wal-ref w 'sectors)))
+
+;; Total payload bytes across all sectors.
+(define (api wal-bytes w)
+  (let loop ((rest (wal-ref w 'sectors)) (acc 0))
+    (if (null? rest)
+        acc
+        (loop (cdr rest) (+ acc (length (sector-payload (car rest))))))))
+
+(define (api wal-verify w)
+  (let loop ((rest (wal-ref w 'sectors)) (acc 0))
+    (if (null? rest)
+        acc
+        (loop (cdr rest)
+              (+ acc (if (sector-verify? (car rest)) 1 0))))))
+
+;; ---- repair --------------------------------------------------------------
+;;
+;; Walks sectors in order. A sector is "good" if its stored checksum
+;; matches a recomputed one. A "torn" sector is a partial sector at the
+;; end of the WAL whose checksum does not match (simulating a partial
+;; write that was committed before the checksum was updated).
+;;
+;; Repair policy:
+;;   * For each good sector, copy it through.
+;;   * For each torn sector (only the trailing partial sector can be torn
+;;     in this minimal model), drop all bytes that fall after the last
+;;     fully-committed frame boundary. We approximate the boundary by
+;;     keeping only complete sectors; the trailing partial sector is
+;;     truncated to the last full frame boundary it contains.
+;;
+;; Implementation: since the WAL only stores raw sectors in this file,
+;; we don't know per-byte frame boundaries here. The simplest faithful
+;; behavior is: drop the trailing partial sector entirely if it is torn,
+;; else keep everything. The richer byte-level truncation is performed
+;; by crash.aura / repair.aura in conjunction with `wal-bytes`.
+
+(define (wal-rebuild w)
+  (let* ((size (wal-ref w 'size))
+         (sectors (wal-ref w 'sectors))
+         (good (filter-good-sectors sectors))
+         (new-sectors (if (null? good)
+                          (list (api make-sector size))
+                          good)))
+    (wal-set! w 'sectors new-sectors)))
+
+(define (filter-good-sectors ss)
+  ;; Drop the trailing sector if it's torn (length < size and bad cksum).
+  ;; Also drop any partial sector in the middle that is torn.
+  (let loop ((rest ss) (acc '()))
+    (if (null? rest)
+        (reverse acc)
+        (let ((s (car rest)))
+          (if (sector-verify? s)
+              (loop (cdr rest) (cons s acc))
+              ;; torn: stop copying -- everything after is suspect.
+              (reverse acc))))))
+
+(define (api wal-repair w)
+  (wal-rebuild w)
+  w)

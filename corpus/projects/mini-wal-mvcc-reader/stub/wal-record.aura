@@ -1,0 +1,45 @@
+;; wal-record.aura
+;; A WAL record represents a single append-only mutation entry.
+;; It carries the txn id, the operation tag, the key, the value,
+;; and a prev-version pointer (index into the WAL, or 'no-prev).
+
+;; We use a plain list for the record. Accessors are positional
+;; and use car/cdr so they are cheap and total.
+
+(define (wal-record-make txn-id op key value prev-version)
+  (list txn-id op key value prev-version))
+
+(define (wal-record-txn rec)
+  (car rec))
+
+(define (wal-record-op rec)
+  (car (cdr rec)))
+
+(define (wal-record-key rec)
+  (car (cdr (cdr rec))))
+
+(define (wal-record-value rec)
+  (car (cdr (cdr (cdr rec)))))
+
+(define (wal-record-prev rec)
+  (car (cdr (cdr (cdr (cdr rec))))))
+
+;; Sentinel for "no previous version". Using the symbol 'no-prev
+;; keeps it distinguishable from a valid 0-based WAL index while
+;; remaining a simple, total Atom.
+(define wal-record-no-prev 'no-prev)
+
+;; Convenience predicate: is this record an abort marker?
+;; We treat op == 'abort specially in the txn table layer.
+(define (wal-record-is-abort? rec)
+  (equal? (wal-record-op rec) 'abort))
+
+;; Basic well-formedness check used by wal-bytes.aura.
+(define (wal-record-valid? rec)
+  (and (pair? rec)
+       (pair? (cdr rec))
+       (pair? (cdr (cdr rec)))
+       (pair? (cdr (cdr (cdr rec))))
+       (pair? (cdr (cdr (cdr (cdr rec)))))
+       (number? (wal-record-txn rec))
+       (symbol? (wal-record-op rec))))

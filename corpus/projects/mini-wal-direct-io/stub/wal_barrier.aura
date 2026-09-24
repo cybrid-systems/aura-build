@@ -1,0 +1,49 @@
+;; wal_barrier.aura
+;; Per-transaction write barrier accounting.
+;;
+;; In a real Direct-IO WAL, a "barrier" is an fsync / write-fence operation:
+;; once a barrier completes, the kernel guarantees that every byte appended
+;; *before* the barrier has reached stable storage. Here we model the
+;; barrier purely as a counter object: it tracks how many barriers have been
+;; issued during the lifetime of a writer and how many total bytes were
+;; covered by those barriers.
+;;
+;; A barrier is an alist:
+;;   'count  -> integer number of barriers issued so far
+;;   'bytes  -> integer total bytes protected by all barriers issued
+;;
+;; The barrier is intentionally minimal: it does not store per-barrier
+;; ranges, only running totals. This matches the way the GOAL scenario
+;; verifies that barriered-byte accounting equals record-len totals.
+
+;; Build a fresh barrier with zero issued barriers and zero covered bytes.
+(define (barrier-new)
+  (list (cons 'count 0)
+        (cons 'bytes 0)))
+
+;; Issue a barrier covering `bytes` more bytes.
+;; Returns a NEW barrier object (we use set! for in-place mutation; see below).
+;; Bumps 'count by 1 and adds `bytes` to 'bytes.
+;;
+;; We use set! to mutate the existing barrier in place rather than allocate
+;; a new one, so callers can hold the same barrier reference and see updated
+;; totals. (wal_writer.aura's writer-barrier! expects this behavior.)
+(define (barrier-issue br bytes)
+  (set! br (mutate-barrier-issue br bytes))
+  br)
+
+;; Helper that performs the actual mutation and returns the barrier.
+(define (mutate-barrier-issue br bytes)
+  (let ((cell-count (assq 'count br))
+        (cell-bytes (assq 'bytes br)))
+    (set-cdr! cell-count (+ (cdr cell-count) 1))
+    (set-cdr! cell-bytes (+ (cdr cell-bytes) bytes))
+    br))
+
+;; Number of barriers issued so far.
+(define (barrier-count br)
+  (cdr (assq 'count br)))
+
+;; Total bytes covered by all barriers issued so far.
+(define (barrier-bytes br)
+  (cdr (assq 'bytes br)))

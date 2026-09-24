@@ -1,0 +1,36 @@
+;; wal.aura
+;; High-level facade for the Write-Ahead Log. Combines wal-store.aura and
+;; wal-bytes.aura so the rest of the system can deal in wal-record structures
+;; rather than raw byte lists.
+;;
+;; The "store" value passed in here is the pair produced by `(wal-store-init)`
+;; in wal-store.aura: (bytes . len). We treat it as opaque here and delegate
+;; length / ref / bytes access to the wal-store APIs.
+
+(define (wal-bytes-len bs)
+  ;; Count elements in a byte-list (a list of integers).
+  (if (null? bs) 0 (+ 1 (wal-bytes-len (cdr bs)))))
+
+;; Append a wal-record to the store: encode it to bytes, then append those
+;; bytes to the underlying byte-blob list and bump the entry count.
+(define (api wal-append-record! store rec)
+  (let ((bs (wal-bytes-encode rec)))
+    ;; wal-store-append takes (store bytes) and returns a new store value.
+    (wal-store-append store bs)))
+
+;; Read a wal-record back out of the store by its 0-based index. Returns the
+;; decoded record (a tagged list as produced by wal-record-make), or '() if
+;; the index is out of range.
+(define (api wal-read-record store idx)
+  (let ((n (wal-store-len store)))
+    (if (or (< idx 0) (>= idx n))
+        '()
+        (let ((bs (wal-store-ref store idx)))
+          (wal-bytes-decode bs)))))
+
+;; Total number of bytes written to the store so far. This is the sum of the
+;; lengths of every encoded byte-block currently in the store, as reported by
+;; (wal-store-bytes ...).
+(define (api wal-total-bytes store)
+  (let ((blocks (wal-store-bytes store)))
+    (wal-bytes-len blocks)))

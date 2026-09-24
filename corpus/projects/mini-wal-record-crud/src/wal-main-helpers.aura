@@ -1,0 +1,141 @@
+;; wal-main-helpers.aura — High-level orchestration helpers for the WAL demo.
+;;
+;; These helpers tie the small per-module APIs together so that main.aura
+;; can drive the scenario with readable, top-level operations:
+;;
+;;   setup-schemas        — register the demo schemas in the schema table.
+;;   build-sample-records — construct sample records across schema versions.
+;;   run-roundtrip        — encode+decode every record and confirm equality.
+;;   count-migrations     — count how many records would migrate between
+;;                          given schema ids (forward vs. backward).
+;;   collect-stats        — build a stats alist summarizing the run.
+;;   format-stats         — turn a stats alist into a list of KEY=value strings.
+
+;; Counters / mutable state local to this orchestration layer.
+(define migration-count 0)
+(define roundtrip-ok-count 0)
+
+;; ---- setup-schemas ----
+;; Registers three schemas in order, returning the latest schema id.
+;;   v1:  (id name)
+;;   v2:  (id name email)
+;;   v3:  (id name email active)
+;; Forward additions: v1→v2 adds 'email', v2→v3 adds 'active'.
+;; Backward deletions: v3→v2 drops 'active', v2→v1 drops 'email' & 'active'.
+(define (setup-schemas)
+  (define-schema 'v1 '((id int) (name string)))
+  (define-schema 'v2 '((id int) (name string) (email string)))
+  (define-schema 'v3 '((id int) (name string) (email string) (active bool)))
+  (latest-schema-id))
+
+;; ---- build-sample-records ----
+;; Returns a list of sample records, one per schema version, using
+;; (make-record sid fields). Fields are lists of (name type . value)
+;; triples — we use make-tag for each field so the record shape is
+;; exactly what the codec expects.
+(define (build-sample-records)
+  (list
+   (make-record 'v1
+                (list (make-tag 'id     'int    1)
+                      (make-tag 'name   'string "alice")))
+   (make-record 'v2
+                (list (make-tag 'id     'int    2)
+                      (make-tag 'name   'string "bob")
+                      (make-tag 'email  'string "bob@example.com")))
+   (make-record 'v3
+                (list (make-tag 'id     'int    3)
+                      (make-tag 'name   'string "carol")
+                      (make-tag 'email  'string "carol@example.com")
+                      (make-tag 'active 'bool   #t)))))
+
+;; ---- run-roundtrip ----
+;; For every record r in the global store: encode r, decode the result,
+;; and confirm the decoded record is structurally equal to the original.
+;; Returns the number of successful roundtrips.
+(define (run-roundtrip)
+  (set! roundtrip-ok-count 0)
+  (define (aux xs)
+    (cond ((null? xs) #t)
+          (else
+           (let ((r (car xs)))
+             (let ((enc (encode-record r))
+                   (dec (decode-record (encode-record r))))
+               (when (equal-record? r dec)
+                 (set! roundtrip-ok-count (+ roundtrip-ok-count 1))))
+             (aux (cdr xs)))))
+  (aux (store-all))
+  roundtrip-ok-count)
+
+;; ---- equal-record? ----
+;; Structural equality for records: same schema-id and same fields list
+;; where each (name type . value) triple compares equal pairwise.
+(define (equal-record? a b)
+  (cond ((not (equal? (record-schema-id a) (record-schema-id b))) #f)
+        (else
+         (let ((fa (record-fields a))
+               (fb (record-fields b)))
+           (equal-fields? fa fb)))))
+
+(define (equal-fields? fa fb)
+  (cond ((and (null? fa) (null? fb)) #t)
+        ((or (null? fa) (null? fb)) #f)
+        ((equal-tag? (car fa) (car fb)) (equal-fields? (cdr fa) (cdr fb)))
+        (else #f)))
+
+(define (equal-tag? a b)
+  (and (equal? (tag-name a) (tag-name b))
+       (equal? (tag-type a) (tag-type b))
+       (equal? (tag-value a) (tag-value b))))
+
+;; ---- count-migrations ----
+;; Walk the store and count records whose schema-id differs from the
+;; given target. Useful as a quick "would-migrate" counter; this is
+;; purely structural — it does not actually mutate records.
+(define (count-migrations to-id)
+  (set! migration-count 0)
+  (define (aux xs)
+    (cond ((null? xs) migration-count)
+          (else
+           (when (not (equal? (record-schema-id (car xs)) to-id))
+             (set! migration-count (+ migration-count 1)))
+           (aux (cdr xs)))))
+  (aux (store-all)))
+
+;; ---- collect-stats ----
+;; Build a stats alist summarizing the current store / roundtrip state.
+;; Keys:
+;;   "store_count"   — number of records in the store
+;;   "roundtrip_ok"  — count of records that roundtripped cleanly
+;;   "migrations"    — last count of records differing from target
+;;   "schemas"       — number of registered schemas
+;;   "latest"        — the latest schema id (as a string)
+(define (collect-stats)
+  (list
+   (cons "store_count"  (store-count))
+   (cons "roundtrip_ok" roundtrip-ok-count)
+   (cons "migrations"   migration-count)
+   (cons "schemas"      (length (all-schemas)))
+   (cons "latest"       (symbol->string (latest-schema-id)))))
+
+;; ---- format-stats ----
+;; Turn a stats alist into a list of "KEY=value" strings, preserving
+;; alist order. Each value is rendered via display semantics so numbers
+;; print unquoted and strings print with quotes (matching the reference).
+(define (format-stats alist)
+  (define (fmt-pair p)
+    (let ((k (car p))
+          (v (cdr p)))
+      (string-append (string-append k "=") (value->string v))))
+  (define (aux xs)
+    (cond ((null? xs) '())
+          (else (cons (fmt-pair (car xs)) (aux (cdr xs))))))
+  (aux alist))
+
+;; ---- internal: render a stats value as a string ----
+(define (value->string v)
+  (cond ((number? v) (number->string v))
+        ((string? v) v)
+        ((symbol? v) (symbol->string v))
+        ((equal? v #t) "true")
+        ((equal? v #f) "false")
+        (else (symbol->string v))))

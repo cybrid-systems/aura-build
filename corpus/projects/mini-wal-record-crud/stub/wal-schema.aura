@@ -1,0 +1,46 @@
+;; wal-schema.aura — Schema registry: maps schema-id to ordered field list.
+
+;; Internal mutable state: a list of (schema-id . field-list) entries.
+(define wal-schemas '())
+
+;; Define a schema: id is a symbol, fields is a list of (name . type) pairs.
+;; Replaces any existing schema with the same id.
+(define (define-schema id fields)
+  (set! wal-schemas
+        (cons (cons id fields)
+              (filter (lambda (e) (not (equal? (car e) id))) wal-schemas))))
+
+;; Check if a schema-id is registered.
+(define (schema-exists? id)
+  (cond ((null? wal-schemas) #f)
+        ((equal? (car (car wal-schemas)) id) #t)
+        (else (schema-exists? id (cdr wal-schemas)))))
+
+(define (schema-exists? id rest)
+  (cond ((null? rest) #f)
+        ((equal? (car (car rest)) id) #t)
+        (else (schema-exists? id (cdr rest)))))
+
+;; Look up the full field list for a schema-id.
+(define (schema-fields id)
+  (let ((entry (assq id wal-schemas)))
+    (if entry (cdr entry) '())))
+
+;; Look up the declared type of a single tag within a schema.
+;; Returns the type symbol, or #f if the tag is not in the schema.
+(define (schema-type id tag)
+  (let ((fields (schema-fields id)))
+    (let ((loop (lambda (fs)
+                  (cond ((null? fs) #f)
+                        ((equal? (car (car fs)) tag) (cdr (car fs)))
+                        (else (loop (cdr fs)))))))
+      (loop fields))))
+
+;; Return all registered schemas as an alist.
+(define (all-schemas) wal-schemas)
+
+;; Return the latest registered schema-id (last one defined).
+(define (latest-schema-id)
+  (if (null? wal-schemas)
+      #f
+      (car (car (reverse wal-schemas)))))

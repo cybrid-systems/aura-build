@@ -1,0 +1,68 @@
+;; bytebuf.aura — simple growable in-memory byte buffer
+;; Exports: make-bytebuf, bb-put!, bb-get!, bb-pos, bb-slice, bb-len, bb-bytes
+
+(define (make-bytebuf)
+  (let ((bb (list 'bytebuf 0 '() 0 16)))  ;; tag, pos, chunks (list of lists, newest last), total-len, capacity-hint
+    bb))
+
+;; Helper: append a byte (as integer 0..255) to the buffer
+(define (bb-put! bb b)
+  (let ((pos (cadr bb))
+        (chunks (caddr bb))
+        (total (cadddr bb)))
+    (set-car! (cdr bb) (+ pos 1))
+    (set-car! (cdddr bb) (+ total 1))
+    (if (null? chunks)
+        (begin
+          (set-car! (cddr bb) (list b))
+          bb)
+        (let ((last-chunk (car (reverse chunks))))
+          (if (>= (length last-chunk) 4096)
+              (begin
+                (set-car! (cddr bb) (append chunks (list (list b))))
+                bb)
+              (begin
+                (set-car! (reverse chunks) (append last-chunk (list b)))
+                bb))))))
+
+;; Helper: read byte at current pos, advance pos by 1; return the byte, or #f if exhausted
+(define (bb-get! bb)
+  (let ((pos (cadr bb))
+        (chunks (caddr bb)))
+    (if (>= pos (cadddr bb))
+        #f
+        (let loop ((cfs chunks) (offset 0))
+          (let ((cf (car cfs)))
+            (if (< offset (- (length cf) 1))
+                (let ((b (list-ref cf offset)))
+                  (set-car! (cdr bb) (+ pos 1))
+                  b)
+                (loop (cdr cfs) (- offset (length cf)))))))))
+
+;; Current read/write position
+(define (bb-pos bb)
+  (cadr bb))
+
+;; Take next n bytes as a list (consuming them), or as many as remain if fewer than n.
+(define (bb-slice bb n)
+  (let loop ((i 0) (acc '()))
+    (if (>= i n)
+        (reverse acc)
+        (let ((b (bb-get! bb)))
+          (if (eq? b #f)
+              (reverse acc)
+              (loop (+ i 1) (cons b acc)))))))
+
+;; Total bytes currently stored in the buffer
+(define (bb-len bb)
+  (cadddr bb))
+
+;; Return the whole buffer contents as a flat list of bytes (without consuming).
+(define (bb-bytes bb)
+  (let ((chunks (caddr bb)))
+    (if (null? chunks)
+        '()
+        (let loop ((cfs chunks) (acc '()))
+          (if (null? cfs)
+              (reverse acc)
+              (loop (cdr cfs) (append (reverse (car cfs)) acc)))))))

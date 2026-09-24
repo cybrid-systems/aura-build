@@ -1,0 +1,45 @@
+;; wal-store.aura
+;; An in-memory append-only WAL store.
+;;
+;; A store is a single mutable list of byte-blocks (each byte-block is itself a
+;; list of integers, as produced/consumed by wal-bytes.aura). New records are
+;; appended to the tail; previously written bytes are never mutated.
+;;
+;; The store also tracks a length counter and a running byte total for
+;; statistics. Indices are 0-based into the store's append history.
+
+;; Internal layout: a store is the pair (bytes . len)
+;; where `bytes` is a list of byte-blocks (each a list of integers) and
+;; `len` is the number of appended entries.
+
+(define (wal-store-make-bytes) '())
+(define (wal-store-make-len) 0)
+
+(define (api wal-store-init)
+  (cons (wal-store-make-bytes) (wal-store-make-len)))
+
+(define (wal-store-bytes-list store) (car store))
+(define (wal-store-len-val store) (cdr store))
+
+(define (api wal-store-append store bytes)
+  ;; Append a byte-block to the store. Returns the index assigned to it.
+  (let ((idx (wal-store-len-val store))
+        (old-bytes (wal-store-bytes-list store)))
+    (set-car! store (append old-bytes (list bytes)))
+    (set-cdr! store (+ idx 1))
+    idx))
+
+(define (api wal-store-len store)
+  (wal-store-len-val store))
+
+(define (api wal-store-ref store idx)
+  ;; Return the byte-block at the given index, or '() if out of range.
+  (let ((bs (wal-store-bytes-list store))
+        (n (wal-store-len-val store)))
+    (if (or (< idx 0) (>= idx n))
+        '()
+        (list-ref bs idx))))
+
+(define (api wal-store-bytes store)
+  ;; Return the full list of appended byte-blocks.
+  (wal-store-bytes-list store))

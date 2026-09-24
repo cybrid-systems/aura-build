@@ -1,0 +1,48 @@
+;; hex.aura — Hex formatting helpers for mini-wal-zstd-frames
+;;
+;; Converts byte values (0..255) and 16-bit words to their lowercase
+;; hexadecimal string representation, with zero-padding.
+;;
+;; Exports:
+;;   hex-of-byte b   -> 2-character lowercase hex string for byte b
+;;   hex-of-word n   -> 4-character lowercase hex string for word n (mod 65536)
+
+;; Single hex digit lookup table
+(define HEX-DIGITS
+  '("0" "1" "2" "3" "4" "5" "6" "7"
+    "8" "9" "a" "b" "c" "d" "e" "f"))
+
+;; Internal: convert a non-negative integer (< 16) to its hex digit string.
+(define (hex-digit n)
+  (if (and (>= n 0) (< n 16))
+      (list-ref HEX-DIGITS n)
+      "0"))
+
+;; Internal: pad a string on the left with "0" characters to a target length.
+(define (pad-left s width)
+  (let ((diff (- width (string-length s))))
+    (if (<= diff 0)
+        s
+        (begin
+          ;; build diff copies of "0" then concat
+          (define zeros (make-list diff "0"))
+          (string-append (apply string-append zeros) s)))))
+
+;; Internal: convert a non-negative integer to its lowercase hex string (no padding).
+(define (hex-string n)
+  (if (< n 16)
+      (hex-digit n)
+      (string-append (hex-string (quotient n 16))
+                     (hex-digit (modulo n 16)))))
+
+;; Convert a single byte (0..255) to a 2-character lowercase hex string.
+;; Negative or out-of-range values are masked to a byte.
+(define (hex-of-byte b)
+  (let ((bv (modulo (if (negative? b) (+ b 256) b) 256)))
+    (pad-left (hex-string bv) 2)))
+
+;; Convert a 16-bit word to a 4-character lowercase hex string.
+;; Values are masked to 0..65535 first.
+(define (hex-of-word n)
+  (let ((wv (modulo (if (negative? n) (+ n 65536) n) 65536)))
+    (pad-left (hex-string wv) 4)))

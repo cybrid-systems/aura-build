@@ -1,0 +1,187 @@
+;; wal-bytes.aura
+;; Encode/decode a wal-record to/from a byte-like list.
+;;
+;; We don't have real byte buffers in this toy environment, so we
+;; represent an encoded record as a plain list of integers (one per
+;; field). This lets the rest of the system treat "bytes" as opaque
+;; blobs while still being inspectable for tests and stats.
+;;
+;; Layout (in order):
+;;   txn-id        (non-negative integer)
+;;   op            (integer tag: 1 = put, 2 = delete)
+;;   key-len       (number of chars in key)
+;;   key-chars...  (one integer per char code)
+;;   val-len       (number of chars in value)
+;;   val-chars...  (one integer per char code; 0-length for delete)
+;;   prev-version  (non-negative integer index, or -1 sentinel for none)
+;;
+;; Records are framed with simple sentinels for sanity:
+;;   start-marker = 0xA1
+;;   end-marker   = 0xA2
+
+(define wal-bytes-start-marker 161)  ;; 0xA1
+(define wal-bytes-end-marker   162)  ;; 0xA2
+(define wal-bytes-no-prev      -1)
+
+;; ---------- char <-> code helpers ----------
+
+(define (wal-bytes-char->code ch)
+  ;; Return the integer code of a character. Aura doesn't have a
+  ;; built-in char->integer, so we walk a small mapping built from
+  ;; string->list semantics. We accept a 1-character string and use
+  ;; a hand-rolled lookup table covering printable ASCII.
+  (let ((table (wal-bytes-ascii-table)))
+    (let loop ((i 0))
+      (cond
+        ((null? table)
+         (error "wal-bytes: unsupported character"))
+        ((string=? (car (car table)) ch)
+         (cdr (car table)))
+        (else
+         (loop (+ i 1)))))))
+
+(define (wal-bytes-code->char code)
+  (let ((table (wal-bytes-ascii-table)))
+    (let loop ((i 0))
+      (cond
+        ((null? table)
+         (error "wal-bytes: unsupported code"))
+        ((= (cdr (car table)) code)
+         (car (car table)))
+        (else
+         (loop (+ i 1)))))))
+
+(define (wal-bytes-ascii-table)
+  ;; Alist mapping single-character strings to their ASCII codes.
+  ;; Covers letters, digits, and a small set of punctuation commonly
+  ;; used in keys/values.
+  (list
+    (cons "a" 97)  (cons "b" 98)  (cons "c" 99)  (cons "d" 100)
+    (cons "e" 101) (cons "f" 102) (cons "g" 103) (cons "h" 104)
+    (cons "i" 105) (cons "j" 106) (cons "k" 107) (cons "l" 108)
+    (cons "m" 109) (cons "n" 110) (cons "o" 111) (cons "p" 112)
+    (cons "q" 113) (cons "r" 114) (cons "s" 115) (cons "t" 116)
+    (cons "u" 117) (cons "v" 118) (cons "w" 119) (cons "x" 120)
+    (cons "y" 121) (cons "z" 122)
+    (cons "A" 65)  (cons "B" 66)  (cons "C" 67)  (cons "D" 68)
+    (cons "E" 69)  (cons "F" 70)  (cons "G" 71)  (cons "H" 72)
+    (cons "I" 73)  (cons "J" 74)  (cons "K" 75)  (cons "L" 76)
+    (cons "M" 77)  (cons "N" 78)  (cons "O" 79)  (cons "P" 80)
+    (cons "Q" 81)  (cons "R" 82)  (cons "S" 83)  (cons "T" 84)
+    (cons "U" 85)  (cons "V" 86)  (cons "W" 87)  (cons "X" 88)
+    (cons "Y" 89)  (cons "Z" 90)
+    (cons "0" 48)  (cons "1" 49)  (cons "2" 50)  (cons "3" 51)
+    (cons "4" 52)  (cons "5" 53)  (cons "6" 54)  (cons "7" 55)
+    (cons "8" 56)  (cons "9" 57)
+    (cons "-" 45)  (cons "_" 95)  (cons "." 46)  (cons ":" 58)
+    (cons "/" 47)  (cons " " 32)))
+
+;; ---------- string <-> code-list helpers ----------
+
+(define (wal-bytes-string->codes s)
+  ;; Convert a string to a list of integer codes.
+  (let loop ((chars (string->list s)) (acc '()))
+    (if (null? chars)
+        (reverse acc)
+        (loop (cdr chars)
+              (cons (wal-bytes-char->code (car chars)) acc)))))
+
+(define (wal-bytes-codes->string codes)
+  ;; Convert a list of integer codes back to a string.
+  (let loop ((cs codes) (acc '()))
+    (if (null? cs)
+        (list->string (reverse acc))
+        (loop (cdr cs)
+              (cons (wal-bytes-code->char (car cs)) acc)))))
+
+;; ---------- encode / decode ----------
+
+(define (wal-bytes-encode rec)
+  ;; rec: a wal-record list
+  ;;   (txn-id op key value prev-version)
+  ;; Return: a flat list of integers (a "byte" buffer), framed with
+  ;; start/end markers and length-prefixed key and value.
+  (let ((txn    (wal-record-txn rec))
+        (op     (wal-record-op rec))
+        (key    (wal-record-key rec))
+        (val    (wal-record-value rec))
+        (prev   (wal-record-prev rec))
+        (key-cs (wal-bytes-string->codes (wal-record-key rec)))
+        (val-cs (wal-bytes-string->codes (wal-record-value rec)))
+        (prev-code
+          (if (eq? prev 'no-prev)
+              wal-bytes-no-prev
+              prev)))
+    (append
+      (list wal-bytes-start-marker)
+      (list txn)
+      (list op)
+      (list (length key-cs))
+      key-cs
+      (list (length val-cs))
+      val-cs
+      (list prev-code)
+      (list wal-bytes-end-marker))))
+
+(define (wal-bytes-decode bytes)
+  ;; bytes: flat list of integers produced by wal-bytes-encode.
+  ;; Return: a wal-record list
+  ;;   (txn-id op key value prev-version)
+  ;;
+  ;; We tolerate a leading/trailing marker but don't require them
+  ;; to be present in every slot — we read positionally.
+  (let ((body (wal-bytes-strip-markers bytes)))
+    (let ((pos 0))
+      (let ((txn (list-ref body 0)))
+        (set! pos (+ pos 1))
+        (let ((op (list-ref body pos)))
+          (set! pos (+ pos 1))
+          (let ((klen (list-ref body pos)))
+            (set! pos (+ pos 1))
+            (let ((key-codes (wal-bytes-take body pos klen)))
+              (set! pos (+ pos klen))
+              (let ((vlen (list-ref body pos)))
+                (set! pos (+ pos 1))
+                (let ((val-codes (wal-bytes-take body pos vlen)))
+                  (set! pos (+ pos vlen))
+                  (let ((prev-code (list-ref body pos)))
+                    (let ((key
+                            (if (= klen 0)
+                                ""
+                                (wal-bytes-codes->string key-codes)))
+                          (val
+                            (if (= vlen 0)
+                                ""
+                                (wal-bytes-codes->string val-codes)))
+                          (prev
+                            (if (= prev-code wal-bytes-no-prev)
+                                'no-prev
+                                prev-code)))
+                      (wal-record-make txn op key val prev))))))))))))
+
+(define (wal-bytes-strip-markers bytes)
+  ;; Remove the leading start-marker (if present) and trailing
+  ;; end-marker (if present). Returns the inner payload list.
+  (let ((len (length bytes)))
+    (cond
+      ((= len 0)
+       '())
+      ((and (>= len 2)
+            (= (car bytes) wal-bytes-start-marker)
+            (= (list-ref bytes (- len 1)) wal-bytes-end-marker))
+       (wal-bytes-take bytes 1 (- len 2)))
+      (else
+       bytes))))
+
+(define (wal-bytes-take lst n)
+  ;; Return the first n elements of lst as a list.
+  (let loop ((i 0) (xs lst) (acc '()))
+    (if (= i n)
+        (reverse acc)
+        (loop (+ i 1) (cdr xs) (cons (car xs) acc)))))
+
+;; ---------- public API ----------
+
+(api wal-bytes-encode rec)
+
+(api wal-bytes-decode bytes)

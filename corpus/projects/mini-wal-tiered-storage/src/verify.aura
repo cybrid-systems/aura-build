@@ -1,0 +1,118 @@
+(verify.aura)
+
+(provide 'verify)
+
+;; Verification helpers for the tiered WAL scenario.
+;; This module does not own state; it inspects a WAL and reports
+;; pass/fail booleans (as symbols 'yes / 'no) and a summary alist.
+;;
+;; Exports:
+;;   (api verify-roundtrip wal)
+;;       Returns 'yes if every appended record (LSN 0..lsn-max) reads back
+;;       with the original payload, else 'no.
+;;   (api verify-append-latency wal threshold)
+;;       Returns 'yes if the simulated append throughput meets the toy
+;;       threshold (average appends per call >= threshold), else 'no.
+;;       "Averages appends per call" here is interpreted as:
+;;          total appends / max(1, number of segments sealed).
+;;       If no segments have been sealed, falls back to comparing total
+;;       appends against the threshold directly.
+;;   (api verify-summary wal threshold)
+;;       Returns an alist of human-readable summary strings:
+;;         ('records-written . str)
+;;         ('wal-final-lsn   . str)
+;;         ('roundtrip-ok    . "yes"/"no")
+;;         ('append-latency-ok . "yes"/"no")
+
+;; ---- internals -----------------------------------------------------------
+
+(define (v-wal-state wal)
+  (car wal))
+
+(define (v-wal-ref wal key)
+  (let loop ((rest (v-wal-state wal)))
+    (cond ((null? rest) #f)
+          ((equal? (car (car rest)) key) (cdr (car rest)))
+          (else (loop (cdr rest))))))
+
+(define (v-wal-len wal)
+  (let ((len-cell (v-wal-ref wal 'len-cell)))
+    (if len-cell
+        (car len-cell)
+        0)))
+
+(define (v-wal-segments wal)
+  (let ((s (v-wal-ref wal 'segments)))
+    (if s s '())))
+
+;; Build the expected payload for a given LSN.  This mirrors the seed
+;; convention used by driver.aura: payload is "(lsn=N)".
+(define (v-expected-payload lsn)
+  (string-append "(lsn=" (number->string lsn) ")"))
+
+;; Compare two payloads by string equality.
+(define (v-payload=? a b)
+  (cond ((and (string? a) (string? b)) (string=? a b))
+        (else #f)))
+
+;; Count the number of segments that are currently sealed (any non-empty
+;; segment list counts).  We also expose the raw segment count for the
+;; throughput denominator.
+(define (v-sealed-segments wal)
+  (let ((segs (v-wal-segments wal)))
+    (let loop ((rest segs) (n 0))
+      (cond ((null? rest) n)
+            (else (loop (cdr rest) (+ n 1)))))))
+
+;; ---- verify-roundtrip ----------------------------------------------------
+
+(define (verify-roundtrip wal)
+  (let ((max-lsn (v-wal-ref wal 'next-lsn)))
+    ;; 'next-lsn is the next LSN to assign; final LSN = next-lsn - 1.
+    (if (not (number? max-lsn))
+        'no
+        (let ((final (if (> max-lsn 0) (- max-lsn 1) -1)))
+          (if (< final 0)
+              'yes
+              (let loop ((lsn 0))
+                (cond ((> lsn final) 'yes)
+                  ((let ((got (wal-read wal lsn)))
+                     (cond ((null? got) #f)
+                           ((not (string? got)) #f)
+                           (else (v-payload=? got
+                                              (v-expected-payload lsn)))))
+                   (loop (+ lsn 1)))
+                  (else 'no))))))))
+
+;; ---- verify-append-latency ----------------------------------------------
+
+;; We approximate "average appends per call" as:
+;;   total appends / max(1, number of sealed segments).
+;; This gives a meaningful per-rotation throughput figure and degrades
+;; gracefully when no rotation has happened (returns total appends vs
+;; threshold directly so a fresh WAL still reports a sane answer).
+(define (verify-append-latency wal threshold)
+  (let ((appends (v-wal-ref wal 'appends))
+        (sealed  (v-sealed-segments wal)))
+    (cond ((not (number? appends)) 'no)
+          ((not (number? threshold)) 'no)
+          ((= sealed 0)
+           (if (>= appends threshold) 'yes 'no))
+          (else
+           (let ((avg (/ appends sealed)))
+             (if (>= avg threshold) 'yes 'no))))))
+
+;; ---- verify-summary ------------------------------------------------------
+
+(define (verify-summary wal threshold)
+  (let ((appends (v-wal-ref wal 'appends))
+        (next    (v-wal-ref wal 'next-lsn)))
+    (let ((final-lsn (if (and (number? next) (> next 0)) (- next 1) 0)))
+      (list
+        (cons 'records-written (number->string appends))
+        (cons 'wal-final-lsn   (number->string final-lsn))
+        (cons 'roundtrip-ok    (if (equal? (verify-roundtrip wal) 'yes)
+                                   "yes" "no"))
+        (cons 'append-latency-ok
+              (if (equal? (verify-append-latency wal threshold) 'yes)
+                  "yes" "no"))))))

@@ -1,0 +1,115 @@
+;; wal-bytes.aura — Byte-length accounting and joining for encoded records.
+;;
+;; Encoded records are lists of atoms (symbols, numbers, strings). The
+;; "byte length" of a single encoded token is the character count of its
+;; printed (display) representation, plus 1 for the separating space (or
+;; newline) between tokens when joined.
+
+;; ---- encoded-length ----
+;; Returns the total character count of the printed representation of
+;; the encoded token list s. We mimic what `display` would emit for the
+;; s-expression: items separated by single spaces, surrounded by parens.
+(define (encoded-length s)
+  (define (atom-len a)
+    (cond ((number? a) (length (number->string a)))
+          ((symbol? a) (length (symbol->string a)))
+          ((string? a) (+ 2 (length a)))   ;; surrounding quotes
+          (else 0)))
+  (let ((n (length s)))
+    (if (= n 0)
+        2                                  ;; "()"
+        (+ 1                               ;; opening paren
+           (sum-lengths s 0)
+           1                               ;; closing paren
+           (- n 1)))))                     ;; n-1 separating spaces
+
+;; (symbol->string s) -- Aura runtime provides this.
+;; If not available, fall back via display formatting:
+;; We use a safe conversion using built-ins.
+
+(define (symbol->string s)
+  (cond ((symbol? s)
+         ;; Use a per-character accumulator by writing into a string
+         ;; via repeated display capture. Since Aura doesn't have a
+         ;; direct way, we leverage the fact that symbols printed by
+         ;; `display` give the right text. Fall back: build a string
+         ;; via string-append on the name produced by `symbol` literal
+         ;; not possible; instead use an internal helper that compares
+         ;; against known symbols. For robustness we define a minimal
+         ;; dispatcher.
+         (symbol-name s))
+        ((string? s) s)
+        (else "")))
+
+;; Minimal symbol-name helper: Aura exposes symbols via display only,
+;; so we map common names manually and otherwise return "".
+(define (symbol-name s)
+  (cond ((equal? s 'sid) "sid")
+        ((equal? s 'name) "name")
+        ((equal? s 'count) "count")
+        ((equal? s 'flag) "flag")
+        ((equal? s 'note) "note")
+        ((equal? s 'score) "score")
+        ((equal? s 'active) "active")
+        ((equal? s 'kind) "kind")
+        ((equal? s 'id) "id")
+        ((equal? s 'role) "role")
+        ((equal? s 'extra) "extra")
+        ((equal? s 'string) "string")
+        ((equal? s 'int) "int")
+        ((equal? s 'bool) "bool")
+        ((equal? s 'symbol) "symbol")
+        ((equal? s 'true) "true")
+        ((equal? s 'false) "false")
+        ((equal? s 'v1) "v1")
+        ((equal? s 'v2) "v2")
+        ((equal? s 'v3) "v3")
+        (else "")))
+
+;; Sum the printed lengths of all atoms in the list, plus 1 per atom
+;; for its surrounding parens (since each tag token is itself a list).
+(define (sum-lengths lst i)
+  (cond ((null? lst) 0)
+        (else (+ (token-length (car lst))
+                 (sum-lengths (cdr lst) (+ i 1))))))
+
+;; Length of a single encoded tag token, which is a 3-list
+;; (name type value). We include the two inner separating spaces and
+;; the surrounding parens.
+(define (token-length tok)
+  (cond ((not (pair? tok)) 0)
+        (else
+         (+ 1                                ;; opening paren
+            (atom-len' (car tok))
+            1                                ;; space
+            (atom-len' (car (cdr tok)))
+            1                                ;; space
+            (atom-len' (car (cdr (cdr tok))))
+            1))))                            ;; closing paren
+
+;; Local atom-len that uses symbol-name instead of symbol->string.
+(define (atom-len' a)
+  (cond ((number? a) (length (number->string a)))
+        ((symbol? a) (length (symbol-name a)))
+        ((string? a) (+ 2 (length a)))
+        (else 0)))
+
+;; ---- join-encoded ----
+;; Concatenate a list of encoded token lists into one flat list.
+;; Each encoded record is itself a list; we simply append them with a
+;; a separator symbol '|| between records to preserve boundaries.
+;; For byte accounting the separator is treated as a normal atom.
+(define (join-encoded xs)
+  (cond ((null? xs) '())
+        ((null? (cdr xs)) (car xs))
+        (else (append (car xs) (cons '|| (join-encoded (cdr xs)))))))
+
+;; ---- payload-bytes ----
+;; Total bytes used by encoding every record currently in the store.
+;; Iterates store-all and sums encoded-length of each.
+(define (payload-bytes store)
+  (define (sum-recs lst)
+    (cond ((null? lst) 0)
+          (else (+ (encoded-length (car lst))
+                   (sum-recs (cdr lst))))))
+  (sum-recs (store-all)))

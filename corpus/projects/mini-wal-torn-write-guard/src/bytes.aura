@@ -1,0 +1,70 @@
+;; bytes.aura -- byte-level utilities and sector checksum
+;;
+;; Provides:
+;;   (api byte-xor a b)         -- XOR of two bytes (0..255)
+;;   (api byte=? a b)           -- equality on bytes
+;;   (api checksum-sector p)    -- 32-bit XOR-folding checksum over a byte list
+
+(define (api byte-xor a b)
+  ;; Both a and b are small integers in 0..255.
+  ;; We compute a bitwise XOR while keeping the result in 0..255.
+  (let ((mask 255))
+    (let loop ((shift 0) (acc 0))
+      (if (>= shift 8)
+          acc
+          (let ((ab (bitwise-bit a shift))
+                (bb (bitwise-bit b shift)))
+            (loop (+ shift 1)
+                  (+ acc (* (bitwise-xor-bits ab bb) (expt 2 shift)))))))))
+
+;; Helper: extract bit n of x (0 or 1)
+(define (bitwise-bit x n)
+  (if (= 0 (modulo (quotient x (expt 2 n)) 2)) 0 1))
+
+;; Helper: XOR of two bits
+(define (bitwise-xor-bits a b)
+  (if (= a b) 0 1))
+
+(define (api byte=? a b)
+  (= a b))
+
+;; 32-bit checksum over a payload (list of bytes 0..255).
+;; Algorithm: four 8-bit accumulators XOR-fold the bytes cyclically.
+;; This is NOT a real CRC; it is a simple polynomial-style checksum
+;; suitable for detecting torn writes in this toy WAL.
+(define (api checksum-sector payload)
+  (let ((init '(0 0 0 0)))
+    (let loop ((xs payload) (acc init))
+      (if (null? xs)
+          (let ((a0 (car acc))
+                (a1 (car (cdr acc)))
+                (a2 (car (cdr (cdr acc))))
+                (a3 (car (cdr (cdr (cdr acc))))))
+            ;; Pack the four accumulators into a single 32-bit value:
+            ;; result = a0 | (a1 << 8) | (a2 << 16) | (a3 << 24)
+            (+ a0
+               (* a1 256)
+               (* a2 65536)
+               (* a3 16777216)))
+          (let ((b (car xs))
+                (c0 (car acc))
+                (c1 (car (cdr acc)))
+                (c2 (car (cdr (cdr acc))))
+                (c3 (car (cdr (cdr (cdr acc))))))
+            ;; Rotate which accumulator gets the byte: 0,1,2,3,0,1,...
+            ;; Implemented by shifting the head accumulator each step.
+            (let ((new-c0 (byte-xor c0 b))
+                  (new-c1 (byte-xor c1 b))
+                  (new-c2 (byte-xor c2 b))
+                  (new-c3 (byte-xor c3 b)))
+              ;; Drop the oldest, prepend the newest so the "head"
+              ;; accumulator advances each byte.
+              (loop (cdr xs)
+                    (list new-c0 new-c1 new-c2 new-c3))))))))
+
+;; Convenience: fold the per-byte XOR checksum (for tests / debugging).
+;; Not part of the required API but handy internally.
+(define (fold-xor xs)
+  (if (null? xs)
+      0
+      (byte-xor (car xs) (fold-xor (cdr xs)))))

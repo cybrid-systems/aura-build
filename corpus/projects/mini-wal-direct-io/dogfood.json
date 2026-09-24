@@ -1,0 +1,63 @@
+{
+  "label": "mini-wal-direct-io",
+  "files": [
+    "wal_types.aura",
+    "wal_alloc.aura",
+    "wal_record.aura",
+    "wal_crc.aura",
+    "wal_align.aura",
+    "wal_buffer.aura",
+    "wal_barrier.aura",
+    "wal_writer.aura",
+    "wal_replay.aura",
+    "wal_crash.aura",
+    "wal_report.aura",
+    "main.aura"
+  ],
+  "entry": "main.aura",
+  "run_mode": "cli_multi",
+  "expect": "WAL_VERSION=1\nSECTOR_SIZE=4096\nDIRECT_ALIGNED=true\nRECORD_SLOTS=64\nALLOCATOR_FREE=44\nAPPENDED_RECORDS=20\nBARRIERS_ISSUED=5\nBARRIERED_BYTES=140\nTAIL_OFFSET=81920\nCRC_MISMATCHES=1\nREPLAYED_RECORDS=20\nRECOVERY_TAIL=81920",
+  "expect_res": [
+    "WAL_VERSION\\s*=\\s*1",
+    "SECTOR_SIZE\\s*=\\s*4096",
+    "DIRECT_ALIGNED\\s*=\\s*true",
+    "RECORD_SLOTS\\s*=\\s*64",
+    "ALLOCATOR_FREE\\s*=\\s*44",
+    "APPENDED_RECORDS\\s*=\\s*20",
+    "BARRIERS_ISSUED\\s*=\\s*5",
+    "BARRIERED_BYTES\\s*=\\s*140",
+    "TAIL_OFFSET\\s*=\\s*81920",
+    "CRC_MISMATCHES\\s*=\\s*1",
+    "REPLAYED_RECORDS\\s*=\\s*20",
+    "RECOVERY_TAIL\\s*=\\s*81920"
+  ],
+  "source_res": [
+    "\\(define\\s+\\(wal-make-config\\b",
+    "\\(define\\s+\\(allocator-new\\b",
+    "\\(define\\s+\\(record-make\\b",
+    "\\(define\\s+\\(crc32\\b",
+    "\\(define\\s+\\(align-up\\b",
+    "\\(define\\s+\\(buffer-new\\b",
+    "\\(define\\s+\\(barrier-new\\b",
+    "\\(define\\s+\\(writer-open\\b",
+    "\\(define\\s+\\(replay-open\\b",
+    "\\(define\\s+\\(crash-inject-bad-crc\\b",
+    "\\(define\\s+\\(report-build\\b"
+  ],
+  "expect_keys": [
+    "WAL_VERSION",
+    "SECTOR_SIZE",
+    "DIRECT_ALIGNED",
+    "RECORD_SLOTS",
+    "ALLOCATOR_FREE",
+    "APPENDED_RECORDS",
+    "BARRIERS_ISSUED",
+    "BARRIERED_BYTES",
+    "TAIL_OFFSET",
+    "CRC_MISMATCHES",
+    "REPLAYED_RECORDS",
+    "RECOVERY_TAIL"
+  ],
+  "seed_from_stub": true,
+  "user_extra": "Multi-file project mini-wal-direct-io; implement GOAL.md APIs; print KEY=value via main.aura using module calls."
+}

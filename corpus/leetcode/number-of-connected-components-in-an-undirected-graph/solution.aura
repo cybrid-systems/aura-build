@@ -1,0 +1,57 @@
+(define (make-uf n)
+  ;; parent vector: list of length n where parent[i] = i initially
+  (define parent (make-list n 0))
+  (define size (make-list n 1))
+  (define i 0)
+  (let loop ()
+    (if (< i n)
+        (begin
+          (set-list! parent i i)
+          (set-list! size i 1)
+          (set! i (+ i 1))
+          (loop))
+        'done))
+  (list parent size))
+
+(define (find uf x)
+  (let ((parent (car uf))
+        (size (cdr uf)))
+    (define root x)
+    (let loop ()
+      (if (= (list-ref parent root) root)
+          (begin
+            ;; path compression
+            (if (= x root)
+                'done
+                (let ((next (list-ref parent x)))
+                  (set-list! parent x root)
+                  (set! x next)
+                  (loop))))
+          (loop)))))
+
+(define (list-ref lst i)
+  (if (= i 0)
+      (car lst)
+      (list-ref (cdr lst) i)))
+
+(define (set-list! lst i v)
+  ;; lst is a list; replace element at index i with v (destructive on cons cells).
+  (define (helper l k)
+    (if (= k 0)
+        (set-car! l v)
+        (helper (cdr l) (- k 1))))
+  (helper lst i))
+
+(define (make-list n val)
+  (define (helper k)
+    (if (= k 0)
+        '()
+        (cons val (helper (- k 1)))))
+  (helper n))
+
+(define (set-car! cell v)
+  (define p (cons v '()))
+  (set-car! p (car p))
+  ;; In aura, we don't really have set-car! mutation directly;
+  ;; We'll instead represent uf state differently.
+  )

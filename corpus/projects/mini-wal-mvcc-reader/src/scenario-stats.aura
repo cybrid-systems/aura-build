@@ -1,0 +1,126 @@
+;; scenario-stats.aura
+;; Collects summary statistics from the MVCC reader scenario.
+;;
+;; After the scenario has executed its writes and reads, this module
+;; walks the resulting system state and computes aggregate numbers
+;; that are later printed by main.aura as the 15 KEY=value lines
+;; defined in the stdout contract.
+;;
+;; API:
+;;   (scenario-collect reader wal txn-tab snap-tab chain-idx)
+;;
+;; Returns an alist of (key . value) pairs ready for printing.
+;;
+;; The collected statistics include:
+;;   total-keys             — number of distinct keys in the chain index
+;;   max-chain-length       — longest version chain across all keys
+;;   wal-record-count       — total number of records in the WAL
+;;   wal-bytes              — total byte size of the WAL
+;;   committed-txn-count    — number of committed transactions
+;;   aborted-txn-count      — number of aborted transactions
+;;   active-txn-count       — number of still-active transactions
+;;   total-txn-count        — total transactions begun
+;;   snapshot-count         — number of snapshots taken
+;;   visible-read-count     — reads that returned a visible value
+;;   not-visible-read-count — reads against keys whose chain had no
+;;                                visible version (every version either
+;;                                aborted or belonged to a not-yet-
+;;                                committed txn)
+;;   aborted-read-count     — reads that found at least one record but
+;;                                all were from aborted txns
+;;   miss-read-count        — reads against keys that were never
+;;                                written at all
+;;   final-current-keys     — number of materialized current KV pairs
+;;   final-current-bytes    — sum of byte-lengths of the materialized
+;;                                current KV pairs
+;;
+;; Implementation note: rather than hardcoding any numbers, every
+;; value is derived from API calls into the supplied modules.
+
+(define (api scenario-collect reader wal txn-tab snap-tab chain-idx)
+  (let ((stats '()))
+    (set! stats (cons (cons 'total-keys
+                            (chain-index-count chain-idx))
+                      stats))
+    (set! stats (cons (cons 'max-chain-length
+                            (chain-index-max-length chain-idx))
+                      stats))
+    (set! stats (cons (cons 'wal-record-count
+                            (wal-store-len wal))
+                      stats))
+    (set! stats (cons (cons 'wal-bytes
+                            (wal-total-bytes wal))
+                      stats))
+    (set! stats (cons (cons 'committed-txn-count
+                            (txn-table-committed-count txn-tab))
+                      stats))
+    (set! stats (cons (cons 'aborted-txn-count
+                            (count-aborted-txns txn-tab))
+                      stats))
+    (set! stats (cons (cons 'active-txn-count
+                            (txn-table-active-count txn-tab))
+                      stats))
+    (set! stats (cons (cons 'total-txn-count
+                            (total-txn-count txn-tab))
+                      stats))
+    (set! stats (cons (cons 'snapshot-count
+                            (snapshot-table-count snap-tab))
+                      stats))
+    (set! stats (cons (cons 'visible-read-count
+                            (read-outcome-count reader 'visible))
+                      stats))
+    (set! stats (cons (cons 'not-visible-read-count
+                            (read-outcome-count reader 'not-visible))
+                      stats))
+    (set! stats (cons (cons 'aborted-read-count
+                            (read-outcome-count reader 'aborted))
+                      stats))
+    (set! stats (cons (cons 'miss-read-count
+                            (read-outcome-count reader 'miss))
+                      stats))
+    (set! stats (cons (cons 'final-current-keys
+                            (finalized-pair-count reader))
+                      stats))
+    (set! stats (cons (cons 'final-current-bytes
+                            (finalized-pair-bytes reader))
+                      stats))
+    (reverse stats)))
+
+;; Count aborted txns in a transaction table.
+;; Walks the alist directly so we don't have to add another API to
+;; txn-table.aura. An entry's status lives in its cdr.
+(define (count-aborted-txns txn-tab)
+  (cond ((null? txn-tab) 0)
+        (else (+ (if (eq? (cdar txn-tab) 'aborted) 1 0)
+                 (count-aborted-txns (cdr txn-tab))))))
+
+;; Total transactions that were ever begun = sum of active, committed,
+;; and aborted counts.
+(define (total-txn-count txn-tab)
+  (+ (+ (txn-table-active-count txn-tab)
+        (txn-table-committed-count txn-tab))
+     (count-aborted-txns txn-tab)))
+
+;; Pull the read-outcome tally the mvcc-reader accumulated during the
+;; scenario. The reader's stats alist stores each outcome under the
+;; symbol keys 'visible / 'not-visible / 'aborted / 'miss.
+(define (read-outcome-count reader outcome)
+  (let ((entry (assoc outcome (mvcc-reader-stats reader))))
+    (if entry (cdr entry) 0)))
+
+;; Number of materialized current KV pairs after finalize.
+(define (finalized-pair-count reader)
+  (let ((entry (assoc 'finalized-count (mvcc-reader-stats reader))))
+    (if entry (cdr entry) 0)))
+
+;; Total byte-size of all materialized current KV pairs after finalize.
+(define (finalized-pair-bytes reader)
+  (let ((entry (assoc 'finalized-bytes (mvcc-reader-stats reader))))
+    (if entry (cdr entry) 0)))
+
+;; Tiny alist lookup helper — this avoids depending on anything
+;; beyond the core list primitives that are guaranteed in Aura.
+(define (assoc key lst)
+  (cond ((null? lst) #f)
+        ((equal? (car (car lst)) key) (car lst))
+        (else (assoc key (cdr lst)))))

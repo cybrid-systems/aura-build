@@ -1,0 +1,86 @@
+;; wal_barrier.aura — write barrier accounting
+;;
+;; A "barrier" tracks how many fsync-equivalent operations have been issued
+;; and how many bytes were covered by each barrier.  In a real WAL the
+;; barrier is what guarantees that once a transaction's COMMIT record and
+;; all of its preceding data records have been flushed to stable storage,
+;; the transaction is considered durable.
+;;
+;; In this simulation the barrier is purely an accounting object — it does
+;; not actually flush anything.  The writer calls (writer-barrier! w br)
+;; to consult the barrier and stamp its current count/bytes onto the
+;; writer, which is what the scenario uses to verify that every barrier
+;; covers exactly the records appended since the previous barrier.
+;;
+;; Internal representation
+;; -----------------------
+;; A barrier is a 3-element list:
+;;   (count bytes-across-all-barriers pending-bytes)
+;; where:
+;;   count               — integer, number of barriers issued so far
+;;   bytes-across-all    — integer, cumulative byte count of every barrier
+;;   pending-bytes       — integer, bytes accumulated since the last issue;
+;;                          reset to 0 each time barrier-issue is called.
+;;
+;; We keep `pending-bytes` so that callers may pre-account bytes that will
+;; be flushed by the *next* barrier if they so desire, but the standard
+;; usage (and what the scenario uses) is:
+;;
+;;     (set! br (barrier-issue br (record-len rec)))   ; for each record
+;;     (writer-barrier! w br)                          ; at barrier point
+;;
+;; — which means the "bytes" argument to barrier-issue is simply added to
+;; the pending tally.  When barrier-issue is invoked we commit the pending
+;; tally into the cumulative total and increment the barrier count.
+
+(define (barrier-new)
+  (list 0 0 0))
+
+;; Issue a barrier, accounting for `bytes` additional bytes that the
+;; barrier will durably flush.  Returns a NEW barrier value (the input is
+;; not mutated).
+;;
+;; Semantics:
+;;   pending' = 0
+;;   count'   = count + 1
+;;   bytes'   = bytes-across-all + pending + bytes
+;;
+;; Returns: updated barrier list.
+(define (barrier-issue br bytes)
+  (let ((count (car br))
+        (cum   (cadr br))
+        (pend  (caddr br)))
+    (let ((b (if (number? bytes) bytes 0)))
+      (list (+ count 1)
+            (+ cum pend b)
+            0))))
+
+;; Number of barriers that have been issued so far.  Always a non-negative
+;; integer.
+(define (barrier-count br)
+  (car br))
+
+;; Total bytes covered by all barriers issued so far.  Always a non-
+;; negative integer.  This is what the scenario compares against the
+;; sum of record lengths that were appended between barrier points.
+(define (barrier-bytes br)
+  (cadr br))
+
+;; Pending bytes that have been accumulated but not yet committed by a
+;; barrier.  Exposed for completeness; not used directly by the scenario.
+(define (barrier-pending br)
+  (caddr br))
+
+;; Add bytes to the barrier's pending tally without issuing a barrier.
+;; Returns an updated barrier.  This lets callers stage byte accounting
+;; across multiple appends and then issue a single barrier that covers
+;; them all — which is exactly the "every 4 appends" pattern used by the
+;; scenario (after each of the 4 appends the record length is added to
+;; the pending tally via barrier-stage, then barrier-issue flushes the
+;; tally and increments count).
+(define (barrier-stage br bytes)
+  (let ((count (car br))
+        (cum   (cadr br))
+        (pend  (caddr br)))
+    (let ((b (if (number? bytes) bytes 0)))
+      (list count cum (+ pend b)))))

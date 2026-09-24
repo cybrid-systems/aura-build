@@ -1,0 +1,56 @@
+(define (bit-and-range m n)
+  (let loop ((shift 0))
+    (if (= m n)
+        (begin
+          (if (> shift 0)
+              (* m (arithmetic-shift-left 1 shift))
+              m))
+        (begin
+          (set! m (arithmetic-shift-right m 1))
+          (set! n (arithmetic-shift-right n 1))
+          (set! shift (+ shift 1))
+          (loop shift)))))
+
+(define (solve args)
+  (let ((m (vector-ref args 0))
+        (n (vector-ref args 1)))
+    (bit-and-range m n)))
+
+(define (display-list lst)
+  (display "(")
+  (let loop ((l lst) (first #t))
+    (cond ((null? l) #f)
+          (else
+           (if first
+               (set! first #f)
+               (display " "))
+           (display (car l))
+           (loop (cdr l) #f))))
+  (display ")"))
+
+(define (display-case i result)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display result)
+  (newline))
+
+(let ((inputs
+       (list
+        (list 5 7)
+        (list 0 0)
+        (list 1 1)
+        (list 0 2147483647)
+        (list 2147483647 2147483647)
+        (list 1 2147483647)
+        (list 12 15)
+        (list 600000000 2147483647))))
+  (let loop ((cases inputs) (i 0))
+    (cond ((null? cases) #f)
+          (else
+           (let* ((c (car cases))
+                  (m (car c))
+                  (n (car (cdr c)))
+                  (result (solve (vector m n))))
+             (display-case i result))
+           (loop (cdr cases) (+ i 1))))))

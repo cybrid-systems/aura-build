@@ -1,0 +1,184 @@
+;; wal_replay.aura
+;; WAL replay iterator for the Direct-IO WAL.
+;;
+;; After the writer appends records to the buffer, the recovery code
+;; needs to walk the buffer from the beginning and decode records one at
+;; a time. Because the buffer is stored with newest bytes at the head,
+;; and `direct-append` further prepends padded bytes, we must reverse the
+;; buffer to recover the on-disk byte order (oldest first) before slicing
+;; into fixed-size sector images.
+;;
+;; The replay object is therefore an alist:
+;;   'buf          -> the original buffer alist (head = newest)
+;;   'bytes        -> the reversed byte list (head = oldest), cached so we
+;;                    don't pay reversal cost per (replay-next) call
+;;   'sector-size  -> integer sector size used by the writer
+;;   'cursor       -> current byte offset into `bytes` (head-of-list index)
+;;   'count        -> number of records successfully replayed so far
+;;   'tail         -> highest offset at which a record started (= cursor
+;;                    after the most recent successful decode)
+;;
+;; Notes:
+;;   - Each record occupies exactly one sector image (sector-size bytes),
+;;     because `direct-append` pads every record up to a sector boundary.
+;;     The record's serialized length is encoded inside the first sector
+;;     image (we use the same layout as wal_record.aura: magic+txid+kind+
+;;     len+payload+crc). The actual *stored* size on the buffer is the
+;;     aligned (sector-rounded) size, but `record-len` reflects the
+;;     logical, unpadded length.
+;;   - `replay-next` decodes the next sector image starting at 'cursor,
+;;     extracts txid/kind/payload bytes using the record layout, and
+;;     computes a CRC to verify integrity. It advances 'cursor by the
+;;     sector image size on success and increments 'count.
+;;   - We do NOT mutate the buffer itself: replay is read-only. This
+;;     matches the contract that `replay-open` takes ownership of a
+;;     buffer reference but does not destroy it.
+
+;; --- helpers --------------------------------------------------------------
+
+;; Number of elements in a list.
+(define (replay-len xs)
+  (if (null? xs) 0 (+ 1 (replay-len (cdr xs)))))
+
+;; Reverse a list.
+(define (replay-reverse xs)
+  (define (rev acc rest)
+    (if (null? rest) acc (rev (cons (car rest) acc) (cdr rest))))
+  (rev '() xs))
+
+;; Take the first n elements of xs as a list (head = first element).
+(define (replay-take n xs)
+  (if (= n 0)
+      '()
+      (cons (car xs) (replay-take (- n 1) (cdr xs)))))
+
+;; Drop the first n elements of xs, return the rest.
+(define (replay-drop n xs)
+  (if (= n 0)
+      xs
+      (replay-drop (- n 1) (cdr xs))))
+
+;; Extract a 4-byte little-endian integer starting at index `off` in `xs`.
+(define (replay-u32 xs off)
+  (define b0 (car (replay-drop off xs)))
+  (define b1 (car (replay-drop (+ off 1) xs)))
+  (define b2 (car (replay-drop (+ off 2) xs)))
+  (define b3 (car (replay-drop (+ off 3) xs)))
+  (+ (* b0 256 256 256)
+     (* b1 256 256)
+     (* b2 256)
+     b3))
+
+;; Extract a 1-byte integer at index `off` in `xs`.
+(define (replay-u8 xs off)
+  (car (replay-drop off xs)))
+
+;; Extract a 2-byte little-endian integer starting at index `off` in `xs`.
+(define (replay-u16 xs off)
+  (define b0 (car (replay-drop off xs)))
+  (define b1 (car (replay-drop (+ off 1) xs)))
+  (+ (* b0 256) b1))
+
+;; Lookup key in alist (returns the cdr of the first matching pair).
+(define (replay-assq key alist)
+  (cond ((null? alist) #f)
+        ((equal? (car (car alist)) key) (cdr (car alist)))
+        (else (replay-assq key (cdr alist)))))
+
+;; Mutating assq: set key->value in alist (replace if present, else cons).
+(define (replay-assq-set! alist key value)
+  (cond ((null? alist)
+         (cons (cons key value) '()))
+        ((equal? (car (car alist)) key)
+         (set-car! (car alist) key)
+         (set-cdr! (car alist) value)
+         alist)
+        (else
+         (replay-assq-set! (cdr alist) key value))))
+
+;; --- exported API ----------------------------------------------------------
+
+;; Open a replay iterator over the given buffer.
+;; buf: buffer alist as produced by wal_buffer.aura (head = newest byte).
+;; sector-size: integer sector size the writer used (records are stored
+;;               padded to multiples of this).
+;; Returns a replay alist positioned at byte offset 0.
+(define (replay-open buf sector-size)
+  (define reversed-bytes (replay-reverse (replay-assq 'bytes buf)))
+  (list (cons 'buf buf)
+        (cons 'bytes reversed-bytes)
+        (cons 'sector-size sector-size)
+        (cons 'cursor 0)
+        (cons 'count 0)
+        (cons 'tail 0)))
+
+;; Decode and consume the next record from the replay iterator.
+;; Returns:
+;;   - a record alist on success (matches the shape produced by record-make),
+;;   - the symbol 'eof if no full sector image remains,
+;;   - the symbol 'bad-crc if a record was found but its stored CRC does
+;;     not match the recomputed CRC (the caller may choose to abort replay).
+;;
+;; The decoder understands the layout from wal_record.aura:
+;;   offset 0..3   : magic (4 bytes) -- currently expected to be 0x57414C21
+;;   offset 4..7   : txid (4 bytes, little-endian)
+;;   offset 8      : kind  (1 byte)
+;;   offset 9..10  : len   (2 bytes, little-endian) -- payload length
+;;   offset 11..   : payload bytes (len of them)
+;;   followed by  : crc   (4 bytes, little-endian)
+;; Padding bytes after the CRC (up to sector-size) are ignored.
+(define (replay-next rep)
+  (define sector-size (replay-assq 'sector-size rep))
+  (define cursor (replay-assq 'cursor rep))
+  (define bytes (replay-assq 'bytes rep))
+  (define total-bytes (replay-len bytes))
+  (if (< (- total-bytes cursor) sector-size)
+      'eof
+      (let* ((image (replay-take sector-size (replay-drop cursor bytes)))
+             (magic (replay-u32 image 0)))
+        ;; Magic mismatch -> corrupt / partial image at end of buffer.
+        ;; We treat it as eof rather than a hard error so that a normal
+        ;; tail-truncation in wal_writer leaves a clean stop here.
+        (if (= magic 1482181665) ; 0x57414C21 "WAL!"
+            (let* ((txid (replay-u32 image 4))
+                   (kind  (replay-u8 image 8))
+                   (plen  (replay-u16 image 9))
+                   (payload-start 11)
+                   (payload-end (+ payload-start plen))
+                   (payload (replay-take plen (replay-drop payload-start image)))
+                   (stored-crc (replay-u32 image payload-end))
+                   (header-bytes (cons 0 (cons 0 (cons 0 (cons 0 '()))))))
+              ;; Recompute the CRC over txid || kind || payload. The
+              ;; magic field is excluded because crc32 in wal_record
+              ;; covers only the post-magic bytes. We also exclude the
+              // stored crc itself (it's at the tail of the payload block).
+              ;; Build the byte sequence for the CRC: 4-byte txid, 1-byte
+              ;; kind, then payload bytes.
+              (define crc-input
+                (append (replay-take 4 (replay-drop 4 image))
+                        (replay-take plen (replay-drop 11 image))))
+              (define computed-crc (crc32 crc-input))
+              (if (not (= stored-crc computed-crc))
+                  'bad-crc
+                  (let ((new-cursor (+ cursor sector-size))
+                        (new-count (+ (replay-assq 'count rep) 1)))
+                    (begin
+                      (replay-assq-set! rep 'cursor new-cursor)
+                      (replay-assq-set! rep 'tail new-cursor)
+                      (replay-assq-set! rep 'count new-count)
+                      (list (cons 'txid txid)
+                            (cons 'kind kind)
+                            (cons 'payload payload)
+                            (cons 'len (+ 15 plen))
+                            (cons 'crc stored-crc))))))
+            'eof))))
+
+;; Number of records successfully replayed so far.
+(define (replay-count rep)
+  (replay-assq 'count rep))
+
+;; Highest byte offset that has been replayed (i.e. cursor after the
+;; last successful decode). Before any decode it is 0; after a partial
+;; read past the end it stays at the last good boundary.
+(define (replay-tail rep)
+  (replay-assq 'tail rep))

@@ -1,0 +1,25 @@
+;; wal-defaults.aura — Default values for known field types.
+;;
+;; Provides sensible defaults when migrating forward to a schema that
+;; declares new fields, and exposes the list of known type names so
+;; other modules can validate.
+
+;; ---- known-types ----
+;; Returns the list of type symbols that the codec understands.
+;; Order matters for deterministic iteration; listed in declaration order.
+(define (known-types)
+  '(string int bool symbol))
+
+;; ---- default-value ----
+;; Returns a sensible default value for the given type symbol.
+;;   'string  -> ""
+;;   'int     -> 0
+;;   'bool    -> #f
+;;   'symbol  -> 'undefined (or similar sentinel)
+;; For unknown types, returns the symbol 'undefined.
+(define (default-value type)
+  (cond ((equal? type 'string) "")
+        ((equal? type 'int) 0)
+        ((equal? type 'bool) #f)
+        ((equal? type 'symbol) 'undefined)
+        (else 'undefined)))

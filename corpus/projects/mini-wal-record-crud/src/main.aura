@@ -1,0 +1,36 @@
+;; main.aura — Entry point for the WAL Record CRUD scenario.
+;;
+;; Orchestrates setup, sample building, roundtrip, migration, stats
+;; collection, and prints the required KEY=value lines.
+
+;; ---- run the scenario ----
+(define (run-scenario)
+  ;; Reset the store to a clean state.
+  (store-clear)
+  ;; Define schemas (multiple versions of the WAL record shape).
+  (setup-schemas)
+  ;; Build and append a representative set of sample records.
+  (build-sample-records)
+  ;; Encode then decode every record and verify identity.
+  (run-roundtrip)
+  ;; Count migrations performed during the scenario.
+  (define mig-count (count-migrations))
+  ;; Collect stats as an alist of (key . value) pairs.
+  (define stats-alist (collect-stats))
+  ;; Format the stats alist into a printable string.
+  (define stats-str (format-stats stats-alist))
+  ;; ---- emit the 11 KEY=value lines ----
+  (display "RECORD_COUNT=") (display (store-count)) (newline)
+  (display "SCHEMA_COUNT=") (display (length (all-schemas))) (newline)
+  (display "LATEST_SCHEMA=") (display (latest-schema-id)) (newline)
+  (display "ROUNDTRIP_OK=") (display (stat-get stats-alist 'roundtrip_ok)) (newline)
+  (display "MIGRATION_COUNT=") (display mig-count) (newline)
+  (display "FORWARD_FILLS=") (display (stat-get stats-alist 'forward_fills)) (newline)
+  (display "BACKWARD_STRIPS=") (display (stat-get stats-alist 'backward_strips)) (newline)
+  (display "TOTAL_FIELDS=") (display (stat-get stats-alist 'total_fields)) (newline)
+  (display "ENCODED_BYTES=") (display (payload-bytes (store-all))) (newline)
+  (display "KNOWN_TYPES=") (display (length (known-types))) (newline)
+  (display "STATS=") (display stats-str) (newline))
+
+;; ---- go ----
+(run-scenario)

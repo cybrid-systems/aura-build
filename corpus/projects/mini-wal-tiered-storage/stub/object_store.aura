@@ -1,0 +1,56 @@
+(object_store.aura)
+
+(provide 'object_store)
+
+;; A simple in-memory object-store simulation.  We can't actually push bytes
+;; to S3, so we model the object-store as a growing alist of sealed cold
+;; segments keyed by their segment id.  The "handoff" simply archives the
+;; segment (incrementing an internal counter and recording the segment in
+;; the listing).  Subsequent handoffs of the same segment id are idempotent
+;; (we don't double-count, but we keep the latest copy).
+;;
+;; Object-store representation (a single mutable cons cell):
+;;   os = (cons listing . (name . count-cell))
+;;   listing    : alist of (seg-id . segment) pairs, in handoff order
+;;   name       : human-readable name for diagnostics
+;;   count-cell : mutable cons holding the integer count of distinct segments
+
+(define (make-object-store name)
+  (cons '() (cons name (cons 0 '()))))
+
+(define (os-listing os)      (car os))
+(define (os-tail os)         (cdr os))
+(define (os-name os)         (car (os-tail os)))
+(define (os-count-cell os)   (cdr (os-tail os)))
+(define (os-count-ref os)    (car (os-count-cell os)))
+
+(define (os-find os seg-id)
+  ;; Return the (seg-id . segment) pair or #f.
+  (cond ((null? os) #f)
+        ((= (car (car os)) seg-id) (car os))
+        (else (os-find (cdr os) seg-id))))
+
+(define (os-set-count! os n)
+  (set-car! (os-count-cell os) n))
+
+(define (object-store-handoff! os seg)
+  ;; Hand off a cold segment to the object store.  If a segment with the
+  ;; same id is already archived, we update it in place (idempotent) and
+  ;; don't bump the count.  Otherwise prepend the new segment and bump.
+  (let ((existing (os-find (os-listing os) (car seg))))
+    (cond (existing
+           ;; Replace the cdr (segment value) but keep the original pair
+           ;; at its position to preserve handoff order.
+           (set-cdr! existing seg))
+          (else
+           (set-car! os (cons (cons (car seg) seg) (os-listing os)))
+           (os-set-count! os (+ (os-count-ref os) 1))))))
+
+(define (object-store-count os)
+  (os-count-ref os))
+
+(define (object-store-list os)
+  ;; Return a fresh list of archived segments (the segment values, not the
+  ;; (id . seg) pairs).  In handoff order, oldest first — we reverse the
+  ;; head-prepended listing so callers see chronological order.
+  (reverse (map cdr (os-listing os))))

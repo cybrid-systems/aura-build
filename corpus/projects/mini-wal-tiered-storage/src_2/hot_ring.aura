@@ -1,0 +1,106 @@
+; hot_ring.aura — hot ring buffer for the mini-wal-tiered-storage
+;
+; The hot ring buffer holds the most recently appended records in memory.
+; It is implemented as a plain association list of records, capped at a
+; configurable capacity. When new records are pushed past the capacity,
+; the oldest record is dropped (FIFO eviction) and the byte budget is
+; updated. A snapshot returns a fresh, independent list so callers can
+; seal the contents into a cold segment without aliasing internal state.
+;
+; Records are produced by `record.aura` and are expected to be alists of
+; the form (('lsn . N) ('payload . P) ('bytes . B)).
+;
+; Required exported APIs:
+;   (api make-hot-ring capacity)
+;   (api hot-ring-push! ring lsn payload)
+;   (api hot-ring-len ring)
+;   (api hot-ring-capacity ring)
+;   (api hot-ring-bytes ring)
+;   (api hot-ring-snapshot ring)
+
+; --- record construction (local copies of the record API so this file
+; can be reasoned about in isolation; the runtime shares the top-level
+; so the canonical definitions from record.aura remain authoritative).
+
+; Create a record from an LSN and a payload. Byte count is computed
+; deterministically from the payload: string length when available, else
+; a small fixed size.
+(define (hr-make-record lsn payload)
+  (let ((bytes (cond
+                 ((string? payload) (string-length payload))
+                 (else 16))))
+    (list (cons 'lsn lsn)
+          (cons 'payload payload)
+          (cons 'bytes bytes))))
+
+(define (hr-record-lsn r) (alist-ref r 'lsn))
+(define (hr-record-payload r) (alist-ref r 'payload))
+(define (hr-record-bytes r) (alist-ref r 'bytes))
+
+; --- ring construction --------------------------------------------------
+;
+; A ring is an alist:
+;   (('capacity . N) ('entries . (r1 r2 ...)) ('bytes . B))
+;
+; `entries` is a list of records in insertion order (oldest first). When
+; the ring is full, pushing a new record drops the oldest one from the
+; head of the list.
+(define (make-hot-ring capacity)
+  (list (cons 'capacity capacity)
+        (cons 'entries '())
+        (cons 'bytes 0)))
+
+(define (hr-capacity ring)
+  (alist-ref ring 'capacity))
+
+(define (hr-entries ring)
+  (alist-ref ring 'entries))
+
+(define (hr-set-entries! ring entries)
+  (alist-set! ring 'entries entries))
+
+(define (hr-bytes ring)
+  (alist-ref ring 'bytes))
+
+(define (hr-set-bytes! ring b)
+  (alist-set! ring 'bytes b))
+
+; --- ring operations ----------------------------------------------------
+
+; Number of records currently held by the ring.
+(define (hot-ring-len ring)
+  (length (hr-entries ring)))
+
+; Maximum number of records the ring can hold.
+(define (hot-ring-capacity ring)
+  (hr-capacity ring))
+
+; Sum of byte counts for every record in the ring.
+(define (hot-ring-bytes ring)
+  (let loop ((es (hr-entries ring))
+             (acc 0))
+    (if (null? es)
+        acc
+        (loop (cdr es) (+ acc (hr-record-bytes (car es)))))))
+
+; Push a new record (LSN, payload) into the ring. If the ring is at
+; capacity, the oldest record is evicted first. Byte accounting is kept
+; consistent so that `hot-ring-bytes` always reflects the live contents.
+(define (hot-ring-push! ring lsn payload)
+  (let ((rec (hr-make-record lsn payload))
+        (cap (hr-capacity ring))
+        (es  (hr-entries ring)))
+    (let ((new-es (cond
+                    ((< (length es) cap)
+                     (append es (list rec)))
+                    (else
+                     ; Evict oldest (head) and append the new one.
+                     (append (cdr es) (list rec))))))
+      (hr-set-entries! ring new-es)
+      ring)))
+
+; Return a fresh copy of the current entries. The list is reversed so
+; that callers (cold segments) see records in ascending LSN order, which
+; is the conventional direction for sealed segments.
+(define (hot-ring-snapshot ring)
+  (reverse (hr-entries ring)))

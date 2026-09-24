@@ -1,0 +1,27 @@
+;; wal-store.aura — In-memory store of WAL records.
+
+;; Internal mutable state: a list of records in append order.
+(define wal-store '())
+
+;; Clear all records from the store.
+(define (store-clear)
+  (set! wal-store '()))
+
+;; Append a record to the store.
+(define (store-append r)
+  (set! wal-store (append wal-store (list r))))
+
+;; Return all records in append order.
+(define (store-all) wal-store)
+
+;; Return the number of records currently in the store.
+(define (store-count) (length wal-store))
+
+;; Return the i-th record (0-indexed) from the store.
+;; Returns '() if out of range.
+(define (store-nth i)
+  (define (nth-aux lst n)
+    (cond ((null? lst) '())
+          ((= n 0) (car lst))
+          (else (nth-aux (cdr lst) (- n 1)))))
+  (nth-aux wal-store i))

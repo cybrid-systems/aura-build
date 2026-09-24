@@ -1,0 +1,136 @@
+;; frame.aura — Frame encoding/decoding for mini-wal-zstd-frames
+;;
+;; Frame format (header is 12 bytes, followed by the framed payload):
+;;   [MAGIC(2) | VER(1) | FLAGS(1) | CRC32(4) | DICT_ID(2) | RAW_LEN(2) | COMP_LEN(2) | PAYLOAD]
+;;
+;; CRC32 is computed over the *decompressed* (raw) payload.
+;; The payload itself is the bytes produced by `codec-compress`.
+;;
+;; Exports:
+;;   frame-magic        -> integer constant 0xA5C3
+;;   frame-version      -> integer constant 1
+;;   frame-encode dict payload -> framed bytes (list of byte integers)
+;;   frame-decode dict framed -> raw payload bytes (list of byte integers)
+;;   frame-crc   framed        -> CRC32 over raw payload
+;;   frame-raw-len framed      -> raw payload length
+
+;; --- Header layout constants ---
+(define FRAME-MAGIC     42435)   ;; 0xA5C3
+(define FRAME-VERSION   1)
+(define HEADER-SIZE     12)      ;; 2 + 1 + 1 + 4 + 2 + 2 + 2
+(define MAGIC-HI-OFF    0)
+(define MAGIC-LO-OFF    1)
+(define VER-OFF         2)
+(define FLAGS-OFF       3)
+(define CRC-OFF         4)       ;; 4 bytes
+(define DICT-ID-OFF     8)       ;; 2 bytes
+(define RAW-LEN-OFF     10)      ;; 2 bytes
+(define COMP-LEN-OFF    12)      ;; 2 bytes (header size = 14? actually keep HEADER-SIZE 12+2=14)
+;; Recompute: 2+1+1+4+2+2+2 = 14 bytes. Update HEADER-SIZE.
+(set! HEADER-SIZE 14)
+
+;; Public accessors
+(define (frame-magic) FRAME-MAGIC)
+(define (frame-version) FRAME-VERSION)
+
+;; --- Byte helpers ---
+(define (hi-byte n) (bit-and (arithmetic-shift n -8) 255))
+(define (lo-byte n) (bit-and n 255)))
+
+;; Build a list of 4 bytes (big-endian) from a 32-bit unsigned integer
+(define (word->bytes4 n)
+  (list (bit-and (arithmetic-shift n -24) 255)
+        (bit-and (arithmetic-shift n -16) 255)
+        (bit-and (arithmetic-shift n -8) 255)
+        (bit-and n 255)))
+
+;; Read 4 bytes (big-endian) as a 32-bit unsigned integer
+(define (bytes4->word b0 b1 b2 b3)
+  (+ (arithmetic-shift (bit-and b0 255) 24)
+     (arithmetic-shift (bit-and b1 255) 16)
+     (arithmetic-shift (bit-and b2 255) 8)
+     (bit-and b3 255)))
+
+;; Build a list of 2 bytes (big-endian) from a 16-bit unsigned integer
+(define (word->bytes2 n)
+  (list (hi-byte n) (lo-byte n)))
+
+;; Read 2 bytes (big-endian) as a 16-bit unsigned integer
+(define (bytes2->word b0 b1)
+  (+ (arithmetic-shift (bit-and b0 255) 8) (bit-and b1 255)))
+
+;; --- Encode a frame ---
+;; `dict` is the dictionary object (used only to fetch dict-id for the header).
+;; `payload` is the raw payload bytes (a list of byte integers, 0..255).
+;; Returns a list of bytes representing the full frame (header + framed payload).
+(define (frame-encode dict payload)
+  ;; Compress the payload through the codec to obtain the framed bytes
+  (let ((framed (codec-compress dict payload)))
+    ;; Compute CRC32 over the *raw* (decompressed) payload
+    (let ((crc (crc32 payload)))
+      ;; Fetch the dict id (2 bytes, big-endian)
+      (let ((did (dict-id dict)))
+        (let ((raw-len (length payload))
+              (comp-len (length framed)))
+          ;; Build the header (14 bytes)
+          (let ((header
+                  (append (list (hi-byte FRAME-MAGIC) (lo-byte FRAME-MAGIC))
+                          (list FRAME-VERSION)
+                          (list 0)                              ;; FLAGS (reserved)
+                          (word->bytes4 crc)
+                          (word->bytes2 did)
+                          (word->bytes2 raw-len)
+                          (word->bytes2 comp-len))))
+            ;; Concatenate header + framed payload
+            (append header framed)))))))
+
+;; --- Decode a frame ---
+;; `dict` is the dictionary used to compress (must match encoder's dict id).
+;; `framed` is the full frame bytes (header + payload).
+;; Returns the raw payload bytes (a list of byte integers).
+(define (frame-decode dict framed)
+  ;; Slice the framed payload out of the header (everything after HEADER-SIZE bytes)
+  (let loop ((src framed) (i 0) (acc '()))
+    (cond
+      ((null? src)
+       ;; Should never happen — caller must have passed at least HEADER-SIZE bytes
+       (reverse acc))
+      ((< i HEADER-SIZE)
+       (loop (cdr src) (+ i 1) acc))
+      (else
+       (let ((comp-bytes (append (reverse acc) src)))
+         ;; Decompress using the codec
+         (codec-decompress dict comp-bytes))))))
+
+;; --- Read CRC32 from a framed byte sequence ---
+(define (frame-crc framed)
+  (if (or (null? framed)
+          (< (length framed) HEADER-SIZE))
+      0
+      (bytes4->word (list-ref framed (+ CRC-OFF 0))
+                    (list-ref framed (+ CRC-OFF 1))
+                    (list-ref framed (+ CRC-OFF 2))
+                    (list-ref framed (+ CRC-OFF 3)))))
+
+;; --- Read raw payload length from the frame header ---
+(define (frame-raw-len framed)
+  (if (or (null? framed)
+          (< (length framed) HEADER-SIZE))
+      0
+      (bytes2->word (list-ref framed (+ RAW-LEN-OFF 0))
+                    (list-ref framed (+ RAW-LEN-OFF 1)))))
+
+;; --- Read dict id from the frame header ---
+(define (frame-dict-id framed)
+  (if (or (null? framed)
+          (< (length framed) HEADER-SIZE))
+      0
+      (bytes2->word (list-ref framed (+ DICT-ID-OFF 0))
+                    (list-ref framed (+ DICT-ID-OFF 1)))))
+
+;; --- Read magic / version from frame header (for sanity checking) ---
+(define (frame-check-magic framed)
+  (and (>= (length framed) 3)
+       (= (list-ref framed MAGIC-HI-OFF) (hi-byte FRAME-MAGIC))
+       (= (list-ref framed MAGIC-LO-OFF) (lo-byte FRAME-MAGIC))
+       (= (list-ref framed VER-OFF) FRAME-VERSION)))

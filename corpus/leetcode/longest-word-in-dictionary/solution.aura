@@ -1,0 +1,274 @@
+;; Build a trie node as a pair: (complete? children-list)
+;; children-list is a list of (char . node) pairs
+;; We use association lists for children to keep code simple.
+
+(define (make-node)
+  (cons #f '()))
+
+(define (node-complete? node) (car node))
+(define (node-children node) (cdr node))
+(define (set-node-complete! node)
+  (set-car! node #t))
+
+(define (find-child node ch)
+  (let loop ((children (node-children node)))
+    (cond ((null? children) #f)
+          ((char=? (caar children) ch) (car children))
+          (else (loop (cdr children))))))
+
+(define (add-child node ch)
+  (let ((new-node (make-node)))
+    (set-cdr! node (cons (cons ch new-node) (cdr node)))
+    new-node))
+
+(define (insert word root)
+  (let loop ((node root) (w word))
+    (cond ((string=? w "")
+           (set-node-complete! node))
+          (else
+           (let* ((ch (string-ref w 0))
+                  (rest (substring w 1 (string-length w)))
+                  (child (find-child node ch)))
+             (if child
+                 (loop child rest)
+                 (loop (add-child node ch) rest)))))))
+
+(define (build-trie words)
+  (let ((root (make-node)))
+    (let loop ((ws words))
+      (if (null? ws)
+          root
+          (begin
+            (insert (car ws) root)
+            (loop (cdr ws)))))))
+
+;; Check if every prefix of word is in the trie as a complete word
+(define (valid? word root)
+  (let loop ((node root) (w word))
+    (cond ((string=? w "")
+           #t)
+          (else
+           (let ((ch (string-ref w 0)))
+             (let ((child (find-child node ch)))
+               (if child
+                   (if (node-complete? child)
+                       (loop child (substring w 1 (string-length w)))
+                       #f)
+                   #f)))))))
+
+(define (solve words)
+  ;; Deduplicate words to a list of unique strings (preserve first occurrence)
+  (let ((uniq '()))
+    (let collect ((ws words))
+      (if (null? ws)
+          (set! uniq '())
+          (begin
+            (set! uniq (cons (car ws) uniq))
+            (collect (cdr ws)))))
+    ;; Now uniq is reversed list with duplicates. Let's dedupe properly:
+    (set! uniq '())
+    (let dedupe ((ws words))
+      (if (null? ws)
+          '()
+          (if (member (car ws) uniq)
+              (dedupe (cdr ws))
+              (begin
+                (set! uniq (cons (car ws) uniq))
+                (dedupe (cdr ws))))))
+    (set! words uniq)
+    ;; Sort words by length ascending, then lexicographically
+    (set! words
+          (sort-words words))
+    (let ((root (build-trie words)))
+      (let ((best ""))
+        (let scan ((ws words))
+          (if (null? ws)
+              best
+              (let ((w (car ws)))
+                (if (valid? w root)
+                    (begin
+                      (when (or (string>? w best)
+                                (and (string=? (string-length-as-string w) (string-length-as-string best))
+                                     (string<? w best)))
+                        (set! best w))
+                      (scan (cdr ws)))
+                    (scan (cdr ws))))))))))
+
+;; Helpers needed
+(define (string-length-as-string s)
+  (number->string (string-length s)))
+
+;; We need a proper sort by length ascending then lexicographic ascending.
+(define (sort-words words)
+  ;; Use insertion sort (small inputs ok)
+  (let loop ((remaining words) (acc '()))
+    (if (null? remaining)
+        acc
+        (let insert ((xs acc) (w (car remaining)))
+          (cond ((null? xs) (cons w '()))
+                ((or (< (string-length w) (string-length (car xs)))
+                     (and (= (string-length w) (string-length (car xs)))
+                          (string<? w (car xs))))
+                 (cons w xs))
+                (else (cons (car xs) (insert (cdr xs) w))))
+            (loop (cdr remaining) (insert acc (car remaining)))))))
+
+;; This implementation has bugs from mixing set! and let sequencing. Let's rewrite cleanly.
+
+;; ===== Clean rewrite =====
+
+(define (solve words)
+  ;; Deduplicate
+  (let dedupe ((ws words) (acc '()))
+    (if (null? ws)
+        (let ((uniq (reverse acc)))
+          (solve-clean uniq))
+        (if (member (car ws) acc)
+            (dedupe (cdr ws) acc)
+            (dedupe (cdr ws) (cons (car ws) acc))))))
+
+(define (solve-clean words)
+  (let* ((sorted (sort-words-clean words))
+         (root (make-node)))
+    ;; Build trie
+    (let build ((ws sorted))
+      (if (null? ws)
+          'done
+          (begin
+            (insert-clean (car ws) root)
+            (build (cdr ws)))))
+    ;; Find longest valid word; tie-break lexicographically smallest
+    (let ((best ""))
+      (let scan ((ws sorted))
+        (if (null? ws)
+            best
+            (let ((w (car ws)))
+              (if (and (valid?-clean w root)
+                       (or (< (string-length best) (string-length w))
+                           (and (= (string-length best) (string-length w))
+                                (string<? w best))))
+                  (scan (cdr ws))  ;; wait: we want to update best
+                  (scan (cdr ws)))))))
+    ;; Re-do scan properly with mutation
+    (let ((best ""))
+      (let scan2 ((ws sorted))
+        (if (null? ws)
+            best
+            (let ((w (car ws)))
+              (when (valid?-clean w root)
+                (when (or (< (string-length best) (string-length w))
+                          (and (= (string-length best) (string-length w))
+                               (string>? w best)))
+                  ;; wait we want smallest lex when length ties
+                  #f))
+              (scan2 (cdr ws))))))))
+
+;; The above is getting convoluted. Let me write a final clean version directly.
+
+;; ===== FINAL =====
+
+(define (solve words)
+  (let* ((root (make-node))
+         (sorted (sort-words-words words))
+         (best ""))
+    ;; Build trie of all words
+    (let ((all (build-list-of-words words)))
+      (let b ((ws all))
+        (if (null? ws)
+            '()
+            (begin
+              (insert (car ws) root)
+              (b (cdr ws))))))
+    ;; Iterate sorted, track best
+    (let s ((ws sorted))
+      (cond ((null? ws) best)
+            (else
+             (let ((w (car ws)))
+               (if (valid? w root)
+                   (if (or (< (string-length best) (string-length w))
+                           (and (= (string-length best) (string-length w))
+                                (string<? w best)))
+                       (s (cdr ws))
+                       ;; Hmm we need to update best. Let me restructure.
+                       best))))))))
+
+;; I keep stumbling. Let me write very simply using set!.
+
+(define (solve words)
+  (let ((root (make-node)))
+    ;; Insert all words into trie
+    (let ((ws1 words))
+      (let loop ((xs ws1))
+        (if (null? xs)
+            '()
+            (begin
+              (insert (car xs) root)
+              (loop (cdr xs))))))
+    ;; Deduplicate by scanning unique list
+    (let ((unique '()))
+      (let loop ((xs words))
+        (if (null? xs)
+            '()
+            (if (member (car xs) unique)
+                (loop (cdr xs))
+                (begin
+                  (set! unique (cons (car xs) unique))
+                  (loop (cdr xs)))))))
+    ;; Sort unique by (length ascending, then lexicographic ascending)
+    (set! unique (sort-unique unique))
+    ;; Find best
+    (let ((best ""))
+      (let loop ((xs unique))
+        (if (null? xs)
+            best
+            (begin
+              (when (valid? (car xs) root)
+                (when (or (< (string-length best) (string-length (car xs)))
+                          (and (= (string-length best) (string-length (car xs)))
+                               (string<? (car xs) best)))
+                  (set! best (car xs))))
+              (loop (cdr xs)))))))
+
+(define (sort-unique lst)
+  ;; insertion sort: shorter first, then lexicographic
+  (let loop ((remaining lst) (acc '()))
+    (if (null? remaining)
+        acc
+        (let* ((w (car remaining))
+               (ins (let inner ((xs acc))
+                      (cond ((null? xs) (cons w '()))
+                            ((or (< (string-length w) (string-length (car xs)))
+                                 (and (= (string-length w) (string-length (car xs)))
+                                      (string<? w (car xs))))
+                             (cons w xs))
+                            (else (cons (car xs) (inner (cdr xs))))))))
+          (loop (cdr remaining) ins)))))
+
+;; Unused helper placeholders so earlier definitions don't error:
+(define (sort-words w) w)
+(define (sort-words-clean w) w)
+(define (sort-words-words w) w)
+(define (build-list-of-words w) w)
+(define (insert-clean w r) (insert w r))
+(define (valid?-clean w r) (valid? w r))
+
+;; ===== Test harness =====
+
+(define (display-string s)
+  (display s))
+
+(define (run-case i words)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display-string (solve words))
+  (newline))
+
+(run-case 0 '("w" "wo" "wor" "worl" "world"))
+(run-case 1 '("a" "banana" "app" "appl" "ap" "apply" "apple"))
+(run-case 2 '("a"))
+(run-case 3 '("b" "a" "ab"))
+(run-case 4 '("abc" "ab" "a"))
+(run-case 5 '("a" "b" "c" "d"))
+(run-case 6 '("abcd" "abc" "ab" "a" "abce" "abcf"))
+(run-case 7 '("apple" "apply" "appl" "ap" "a"))

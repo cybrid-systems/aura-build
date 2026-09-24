@@ -1,0 +1,32 @@
+;; sector.aura — sector representation with payload and tail checksum
+
+(define (api make-sector size)
+  (list size '() 5381))
+
+(define (api sector-size s)
+  (car s))
+
+(define (api sector-payload s)
+  (cadr s))
+
+(define (api sector-checksum s)
+  (caddr s))
+
+(define (api sector-add-byte! s b)
+  (let ((new-payload (cons b (sector-payload s)))
+        (new-checksum (modulo (+ (* (sector-checksum s) 31) b) 16777617)))
+    ;; rebuild cons structure: replace payload and checksum in place
+    (set-car! (cdr s) new-payload)
+    (set-car! (cddr s) new-checksum)))
+
+(define (api sector-full? s)
+  (= (length (sector-payload s)) (sector-size s)))
+
+(define (api sector-verify? s)
+  (if (= (sector-checksum s) (checksum-sector (sector-payload s)))
+      #t #f))
+
+(define (api sector-clone s)
+  (list (sector-size s)
+        (sector-payload s)
+        (sector-checksum s)))

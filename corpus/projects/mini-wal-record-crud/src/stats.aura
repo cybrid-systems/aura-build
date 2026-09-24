@@ -1,0 +1,40 @@
+;; stats.aura — Tiny alist-based statistics accumulator used by main.aura.
+;;
+;; Stats are stored as a plain association list of (key . value) pairs.
+;; Keys are symbols; values are arbitrary atoms (numbers, strings,
+;; symbols, booleans). Order of insertion is preserved.
+
+;; ---- stat-new ----
+;; Build a fresh, empty stats alist with one initial (k . v) entry.
+(define (stat-new k v)
+  (list (cons k v)))
+
+;; ---- stat-set! ----
+;; Return a new alist with the value for key k set to v. If the key
+;; already exists, its existing entry is replaced; otherwise a new
+;; entry is appended at the end. The input alist is not mutated.
+(define (stat-set! alist k v)
+  (define (replace-or-append xs)
+    (cond ((null? xs)
+           (list (cons k v)))
+          ((equal? (car (car xs)) k)
+           (cons (cons k v) (cdr xs)))
+          (else
+           (cons (car xs) (replace-or-append (cdr xs))))))
+  (replace-or-append alist))
+
+;; ---- stat-get ----
+;; Look up the value associated with key k in alist. Returns #f if
+;; the key is not present.
+(define (stat-get alist k)
+  (cond ((null? alist) #f)
+        ((equal? (car (car alist)) k) (cdr (car alist)))
+        (else (stat-get (cdr alist) k))))
+
+;; ---- stat-keys ----
+;; Return the list of keys (symbols) in the alist, in insertion order.
+(define (stat-keys alist)
+  (define (collect-keys xs)
+    (cond ((null? xs) '())
+          (else (cons (car (car xs)) (collect-keys (cdr xs))))))
+  (collect-keys alist))

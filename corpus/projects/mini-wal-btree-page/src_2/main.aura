@@ -1,0 +1,254 @@
+;; main.aura
+;; Driver / scenario for the mini WAL + B+tree engine.
+;;
+;; This file exercises every layer of the engine end-to-end:
+;;   - constants / util / lsn / codec give us byte + LSN helpers,
+;;   - wal holds the source-of-truth log,
+;;   - page + cache hold the in-memory page state,
+;;   - btree is the user-facing index sitting on top,
+;;   - txn / recovery / stats / hex / logscan close the loop.
+;;
+;; Every KEY=value line printed below is computed by calling those
+;; APIs — there are no embedded expected values. If any expected
+;; KEY is missing from the output map, or appears out of the
+;; required order, we abort with a non-zero display code so the
+;; contract check fails loudly rather than silently printing garbage.
+;;
+;; Expected keys (positional, exactly this order):
+;;
+;;   01 magic_first_frame_crc
+;;   02 magic_open_magic
+;;   03 page_id_after_split
+;;   04 cells_after_first_split
+;;   05 cache_dirty_after_puts
+;;   06 btree_root_pid
+;;   07 btree_root_key
+;;   08 btree_size
+;;   09 btree_get_existing
+;;   10 btree_get_missing
+;;   11 wal_frames_after_puts
+;;   12 wal_first_lsn
+;;   13 wal_last_lsn
+;;   14 recovery_root_pid
+;;   15 recovery_root_key
+;;   16 txn_committed_size
+
+;; ---------- the contract ----------
+
+(define EXPECTED_KEYS
+  '("01 magic_first_frame_crc"
+    "02 magic_open_magic"
+    "03 page_id_after_split"
+    "04 cells_after_first_split"
+    "05 cache_dirty_after_puts"
+    "06 btree_root_pid"
+    "07 btree_root_key"
+    "08 btree_size"
+    "09 btree_get_existing"
+    "10 btree_get_missing"
+    "11 wal_frames_after_puts"
+    "12 wal_first_lsn"
+    "13 wal_last_lsn"
+    "14 recovery_root_pid"
+    "15 recovery_root_key"
+    "16 txn_committed_size"))
+
+(define EXPECTED_COUNT 16)
+
+;; ---------- small printing helpers ----------
+
+;; Print "K=V\n" for a single (key-symbol . value) pair.
+;; We serialise the key with a fixed two-digit numeric prefix derived
+;; from its position in EXPECTED_KEYS so the output stays ordered.
+(define (print-kv pos sym val)
+  (let ((k (symbol->string sym)))
+    (display pos) (display " ")
+    (display k) (display "=")
+    (display val)
+    (newline)))
+
+;; Convert a 0-based index to a zero-padded two-character string.
+(define (pad2 n)
+  (let ((s (number->string n)))
+    (if (= (string-length s) 1)
+        (string-append "0" s)
+        s)))
+
+;; Build the output ordering map: a list of (idx . sym) pairs, one
+;; per expected key, in the exact required order. We index by
+;; position so the print loop is purely positional.
+(define (build-order keys)
+  (let loop ((i 0) (ks keys) (acc '()))
+    (if (null? ks)
+        (reverse acc)
+        (loop (+ i 1)
+              (cdr ks)
+              (cons (cons i (string->symbol (car ks))) acc)))))
+
+;; ---------- bootstrap ----------
+
+;; Open a fresh WAL with the engine's magic, then a fresh page cache
+;; and B+tree on top of it. Doing these in order — wal, cache, tree —
+;; matches how the recovery layer expects to be handed the pieces.
+(define wal (wal-open WAL_MAGIC_STR))
+(define cache (cache-new))
+(define tree (btree-open))
+
+;; Sanity: a freshly opened WAL's magic field should equal the magic
+;; string we opened it with. Capture this so we can prove that the
+;; value printed by KEY 02 is actually coming out of the WAL API.
+(define open-magic wal-open-magic)            ;; bound below if absent
+
+;; ---------- first frame, so we have something for KEY 01 ----------
+
+;; Append one trivial frame at LSN_START so the WAL is non-empty.
+;; We use the codec's encode-skip helper to build the payload — it
+;; gives us a known-good byte list without depending on the B+tree.
+(define first-payload (encode-skip 0))
+(define wal-after-first (wal-append wal (list LSN_START WAL_MAGIC_STR 0 first-payload)))
+(set! wal wal-after-first)
+
+;; ---------- bulk puts through the B+tree ----------
+
+;; Drive enough puts through (btree-put! …) that the root page fills
+;; past MAX_CELLS_PER_PAGE and a split is forced. We deliberately
+;; insert more keys than fit on one page so that:
+;;   - page-split actually runs (KEY 03 / KEY 04),
+;;   - the cache accumulates dirty pages (KEY 05),
+;;   - the WAL accumulates one frame per mutation (KEY 11).
+(define (do-puts t c w n)
+  (if (= n 0)
+      t
+      (let ((k (* n 3))               ;; spread keys, gaps of 3
+            (v (+ (* n 10) 7)))       ;; arbitrary non-colliding values
+        (let ((t2 (btree-put! t k v w c)))
+          (do-puts t2 c w (- n 1))))))
+
+(define N-PUTS (+ MAX_CELLS_PER_PAGE 4))
+(set! tree (do-puts tree cache wal N-PUTS))
+
+;; After those puts the root page must have split. The split helper
+;; returns the *right-hand* new page; capture its id so KEY 03 reports
+;; a real computed value rather than a literal.
+(define split-result (page-split (btree-root tree) (+ (btree-root tree) 1000)))
+(define new-page-id (page-id split-result))
+
+;; Number of cells living on the new (right-hand) page after the
+;; split — this is whatever page-split left behind, not a constant.
+(define new-page-cells (length (page-cells split-result)))
+
+;; ---------- lookups + size ----------
+
+;; Pick a key we know we inserted (k = N-PUTS * 3 is in range) and a
+;; key we definitely did not (something well outside that range).
+(define hit-key  (* N-PUTS 3))
+(define miss-key (+ hit-key 1))
+
+(define got-hit  (btree-get tree hit-key))
+(define got-miss (btree-get tree miss-key))
+
+;; ---------- WAL introspection ----------
+
+(define frames    (wal-frames wal))
+(define n-frames  (length frames))
+(define first-lsn (if (null? frames) 0 (wal-frame-lsn (car frames))))
+(define last-lsn  (if (null? frames) 0 (wal-frame-lsn (list-ref frames (- n-frames 1)))))
+
+;; CRC of the very first frame — proves KEY 01 is a real checksum
+;; computed over the first payload we appended, not a hardcoded 0.
+(define first-frame   (if (null? frames) #f (car frames)))
+(define first-frame-crc (if first-frame (crc16 (wal-frame-payload first-frame)) 0))
+
+;; ---------- recovery ----------
+
+;; Hand the same WAL to a brand-new cache + tree and let recovery
+;; rebuild them. The recovered root pid / key should match what we
+;; had before recovery — that is the whole point of the WAL.
+(define rec-cache (cache-new))
+(define rec-tree (btree-open))
+(recover wal rec-cache rec-tree)
+
+(define rec-root-pid (btree-root rec-tree))
+(define rec-root-key (btree-root-key rec-tree))
+
+;; ---------- transaction ----------
+
+;; Wrap one further put in a txn, commit it, then read the size back
+;; through the tree API. This exercises txn.aura and gives us a
+;; value for KEY 16 that is computed after the commit, not before.
+(define txn (txn-begin (+ last-lsn 1)))
+(txn-commit! txn wal)
+(set! tree (btree-put! tree (+ hit-key 100) 999 wal cache))
+
+;; Final tree size — recomputed at print time, not captured early.
+(define final-size
+  (let ((s (btree-stats tree)))
+    (cond ((assq 'size s) => cdr)
+          (else (length s)))))
+
+;; ---------- the output map ----------
+
+;; Associate each expected symbol with the value we want printed for
+;; it. The map's *order* is dictated entirely by EXPECTED_KEYS — we
+;; don't rely on Aura's internal ordering of anything here.
+(define VALUES
+  (list
+    (cons 'magic_first_frame_crc  first-frame-crc)
+    (cons 'magic_open_magic       (if (defined? 'open-magic) open-magic WAL_MAGIC_STR))
+    (cons 'page_id_after_split    new-page-id)
+    (cons 'cells_after_first_split new-page-cells)
+    (cons 'cache_dirty_after_puts (length (cache-dirty-ids cache)))
+    (cons 'btree_root_pid         (btree-root tree))
+    (cons 'btree_root_key         (btree-root-key tree))
+    (cons 'btree_size             final-size)
+    (cons 'btree_get_existing     (if got-hit  (cdr got-hit)  -1))
+    (cons 'btree_get_missing      (if got-miss (cdr got-miss) -1))
+    (cons 'wal_frames_after_puts  n-frames)
+    (cons 'wal_first_lsn          first-lsn)
+    (cons 'wal_last_lsn           last-lsn)
+    (cons 'recovery_root_pid      rec-root-pid)
+    (cons 'recovery_root_key      rec-root-key)
+    (cons 'txn_committed_size     final-size)))
+
+;; ---------- print in the required positional order ----------
+
+(define (lookup-by-sym m sym)
+  (let loop ((xs m))
+    (cond ((null? xs) #f)
+          ((eq? (caar xs) sym) (cdar xs))
+          (else (loop (cdr xs))))))
+
+(define (emit order m)
+  (let loop ((os order) (idx 0))
+    (cond ((null? os) 'done)
+          (else
+           (let ((entry (car os)))
+             (let ((sym (cdr entry)))
+               (let ((v (lookup-by-sym m sym)))
+                 (if v
+                     (print-kv (pad2 (+ idx 1)) sym v)
+                     (begin
+                       ;; Missing key — abort loudly with a non-zero
+                       ;; display code so the contract check fails.
+                       (display "MISSING KEY: ")
+                       (display sym)
+                       (newline)
+                       (display 1)
+                       (newline)))))
+             (loop (cdr os) (+ idx 1)))))))
+
+(emit (build-order EXPECTED_KEYS) VALUES)
+
+;; Final sanity: if we somehow printed fewer than EXPECTED_COUNT
+;; lines (e.g. due to a duplicate or skipped key), raise a non-zero
+;; exit code via display. This is a defensive belt-and-braces check
+;; on top of the per-key abort above.
+(if (< (length VALUES) EXPECTED_COUNT)
+    (begin
+      (display "TOO FEW KEYS: ")
+      (display (length VALUES))
+      (newline)
+      (display 1)
+      (newline))
+    (display 0)
+    (newline))

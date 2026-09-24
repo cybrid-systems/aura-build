@@ -1,0 +1,64 @@
+(cold_segment.aura)
+
+(provide 'cold_segment)
+
+;; A cold segment is an immutable, sealed collection of records.
+;; Once sealed, records are append-only and identified by a segment id.
+;; Cold segments are the persisted form: handed off to object store / local FS.
+;;
+;; Segment representation:
+;;   seg = (cons seg-id . (records . bytes))
+;; where:
+;;   seg-id   : unique integer id for the segment
+;;   records  : list of record structures (most-recent last appended first
+;;              so the head is the oldest; consumers can take whatever order
+;;              they prefer — cold-segment-find uses member?-style scan)
+;;   bytes    : running total byte size of all records contained
+
+(define (make-cold-segment seg-id)
+  (cons seg-id (cons '() 0)))
+
+(define (seg-id s) (car s))
+(define (seg-records s) (car (cdr s)))
+(define (seg-bytes s) (cdr (cdr s)))
+
+(define (cold-segment-add! seg record)
+  ;; Append a record onto the cold segment. Cold segments are conceptually
+  ;; append-only, but we allow mutation via set! on the contained cells so
+  ;; the rotator can finalize a freshly-sealed segment cheaply.
+  (let ((cur-recs (seg-records seg))
+        (cur-bytes (seg-bytes seg))
+        (rbytes (record-bytes record)))
+    (set-car! (cdr seg) (cons record cur-recs))
+    (set-cdr! (cdr seg) (+ cur-bytes rbytes))))
+
+(define (cold-segment-len seg)
+  ;; Number of records currently held in the cold segment.
+  (length (seg-records seg)))
+
+(define (cold-segment-bytes seg)
+  (seg-bytes seg))
+
+(define (cold-segment-records seg)
+  ;; Public accessor: return the list of records contained.
+  ;; Records are stored newest-first internally; expose them in their
+  ;; internal order (consumers like readahead don't need a specific order).
+  (seg-records seg))
+
+(define (cold-segment-find seg lsn)
+  ;; Linear scan for the record with the given LSN.
+  ;; Returns the record (list of lsn/payload/bytes) or #f if absent.
+  (let loop ((rs (seg-records seg)))
+    (cond ((null? rs) #f)
+          ((= (record-lsn (car rs)) lsn) (car rs))
+          (else (loop (cdr rs))))))
+
+;; Local helpers — guarded by provide so they don't leak if re-exported.
+;; (Aura has no separate internal namespace; these names are prefixed to
+;; avoid clashing with other modules.)
+
+(define (seg-records-set! seg rs)
+  (set-car! (cdr seg) rs))
+
+(define (seg-bytes-set! seg b)
+  (set-cdr! (cdr seg) b))

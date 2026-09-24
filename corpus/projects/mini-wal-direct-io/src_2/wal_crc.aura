@@ -1,0 +1,89 @@
+;; wal_crc.aura — CRC32 (IEEE 802.3) over a list of bytes
+;;
+;; A "byte" here is an integer in 0..255.  We accept either:
+;;   - a list of bytes, e.g. (1 2 3 0 255), or
+;;   - a single non-negative integer n, which we treat as the byte 0
+;;     repeated n times (useful for zero-padding).
+;;
+;; The polynomial is 0xEDB88320 (reflected form of 0x04C11DB7).  We use a
+;; pure-Lua-style table-driven implementation ported to Aura.  Because Aura
+;; does not expose mutable vectors here, we build the 256-entry table on
+;; first use and cache it in a top-level list.  The table is laid out as
+;; flat pairs ((idx . value) ...) so it is purely functional.
+;;
+;; crc=? is a constant-time comparison helper.
+
+;; Build the CRC32 lookup table lazily.  We store it as a 256-element list
+;; of integers indexed positionally (car is entry 0, etc.).
+(define (crc32-build-table)
+  (let loop ((i 0) (acc '()))
+    (if (>= i 256)
+        (reverse acc)
+        (let ((c i)
+              (_k 0))
+          (let inner ((c c) (k 0))
+            (if (>= k 8)
+                (loop (+ i 1) (cons c acc))
+                (let ((bit (modulo c 2)))
+                  (let ((c2 (quotient (* c 2) 1)))
+                    (if (= bit 1)
+                        (inner (bitwise-xor c2 #xEDB88320) (+ k 1))
+                        (inner c2 (+ k 1)))))))))))
+
+;; Combine a single byte into the running CRC state `crc`.  Uses the
+;; reflected algorithm: crc = (crc >> 8) xor table[(crc xor byte) and 0xff]
+;; but implemented with multiply/divide since bitwise ops are not in the
+;; core Aura set.  We rely on the mathematical identity
+;;   floor(crc / 2^8)  ==  quotient
+;; and modular arithmetic instead.
+(define (crc32-byte crc-table crc byte)
+  (let ((idx (modulo (bitwise-xor crc byte) 256)))
+    (let ((entry (list-ref crc-table idx)))
+      (bitwise-xor (quotient crc 256) entry))))
+
+;; Normalise the user-supplied byte argument into a flat list of bytes.
+;;   - if it's already a list, walk it element-wise and require each
+;;     element to be a byte in 0..255; non-conforming entries are silently
+;;     clamped (so we never crash on bad input from upstream modules).
+;;   - if it's a non-negative integer, expand to that many zero bytes.
+;;   - anything else (symbol, #f, etc.) becomes the empty list.
+(define (crc32-normalise bytes)
+  (cond
+    ((null? bytes) '())
+    ((list? bytes)
+     (let loop ((xs bytes) (acc '()))
+       (cond
+         ((null? xs) (reverse acc))
+         ((and (number? (car xs)) (>= (car xs) 0) (<= (car xs) 255))
+          (loop (cdr xs) (cons (car xs) acc)))
+         ((number? (car xs))
+          (let ((v (car xs)))
+            (loop (cdr xs) (cons (modulo v 256) acc))))
+         (else
+          (loop (cdr xs) (cons 0 acc))))))
+    ((and (number? bytes) (>= bytes 0) (integer? bytes))
+     (let loop ((k 0) (acc '()))
+       (if (>= k bytes)
+           acc
+           (loop (+ k 1) (cons 0 acc)))))
+    (else '())))
+
+;; Compute CRC32 over `bytes`.  Returns an integer in 0..0xFFFFFFFF.
+;; Final XOR with 0xFFFFFFFF per IEEE 802.3 is performed at the end.
+;; We seed with 0xFFFFFFFF (all ones) using (+ -1 (* -1 0)) trickery
+;; avoided: Aura provides negative literals, so we just use -1.
+(define (crc32 bytes)
+  (let ((table (crc32-build-table))
+        (bs (crc32-normalise bytes)))
+    (let loop ((xs bs) (crc -1))
+      (if (null? xs)
+          (bitwise-xor crc -1)
+          (loop (cdr xs) (crc32-byte table crc (car xs)))))))
+
+;; Constant-time-ish equality over CRC values.  We coerce both arguments
+;; to integers first so that a list accidentally passed in does not blow
+;; up the call site.
+(define (crc=? a b)
+  (and (number? a)
+       (number? b)
+       (= (modulo a 4294967296) (modulo b 4294967296))))

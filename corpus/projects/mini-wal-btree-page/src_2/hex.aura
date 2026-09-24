@@ -1,0 +1,117 @@
+;; hex.aura
+;; Hex encoding and decoding helpers for byte sequences.
+;;
+;; The WAL and page payloads are modeled as lists of small integers
+;; (each integer is one byte in the range 0..255). For debug output,
+;; and for stable textual snapshots of the WAL / page cache, it is
+;; convenient to render those bytes as a lowercase hexadecimal string
+;; and to parse such a string back into a byte list.
+;;
+;; This module exposes two pure helpers:
+;;
+;;   * hex-encode  -- list-of-bytes -> hex string
+;;   * hex-decode  -- hex string    -> list-of-bytes
+;;
+;; Both are written in terms of `u16` and `u8` from util.aura so that
+;; the byte-level operations stay in one place, and so that they
+;; cooperate with the existing little-endian codec conventions used
+;; elsewhere in the engine.
+;;
+;; The output of `hex-encode` is always lowercase and emits no
+;; separators, so round-tripping through `hex-decode` reproduces the
+;; exact original byte list (modulo #f on malformed input).
+
+;; ----------------------------
+;; Internal: a digit -> its hex character (lowercase).
+;; ----------------------------
+(define (hex-digit d)
+  (cond ((< d 10) (string-append "" (number->string d)))
+        ((= d 10) "a")
+        ((= d 11) "b")
+        ((= d 12) "c")
+        ((= d 13) "d")
+        ((= d 14) "e")
+        ((= d 15) "f")
+        (else "?")))
+
+;; ----------------------------
+;; Internal: a hex character -> its numeric value, or #f if invalid.
+;; ----------------------------
+(define (hex-value c)
+  (cond ((string=? c "0") 0)
+        ((string=? c "1") 1)
+        ((string=? c "2") 2)
+        ((string=? c "3") 3)
+        ((string=? c "4") 4)
+        ((string=? c "5") 5)
+        ((string=? c "6") 6)
+        ((string=? c "7") 7)
+        ((string=? c "8") 8)
+        ((string=? c "9") 9)
+        ((string=? c "a") 10)
+        ((string=? c "b") 11)
+        ((string=? c "c") 12)
+        ((string=? c "d") 13)
+        ((string=? c "e") 14)
+        ((string=? c "f") 15)
+        ((string=? c "A") 10)
+        ((string=? c "B") 11)
+        ((string=? c "C") 12)
+        ((string=? c "D") 13)
+        ((string=? c "E") 14)
+        ((string=? c "F") 15)
+        (else #f)))
+
+;; ----------------------------
+;; Convert a single byte (0..255) into a two-character lowercase hex
+;; string, using the `u8` helper to split the byte into nibbles.
+;; ----------------------------
+(define (hex-byte b)
+  (let ((hi (u8 b 0))
+        (lo (u8 b 1)))
+    (string-append (hex-digit hi) (hex-digit lo))))
+
+;; ----------------------------
+;; Encode a list of bytes as a contiguous lowercase hex string.
+;; An empty list produces an empty string.
+;; ----------------------------
+(define (hex-encode xs)
+  (define (loop rest acc)
+    (if (null? rest)
+        (apply string-append (reverse acc))
+        (loop (cdr rest)
+              (cons (hex-byte (car rest)) acc))))
+  (loop xs '()))
+
+;; ----------------------------
+;; Internal: split a string into a list of single-character strings.
+;; ----------------------------
+(define (hex-chars s)
+  (define (loop i acc)
+      (if (< i 0)
+          acc
+          (loop (- i 1)
+                (cons (substring s i (+ i 1)) acc))))
+  (loop (- (string-length s) 1) '()))
+
+;; ----------------------------
+;; Decode a hex string into a list of bytes. Pairs of hex digits
+;; are folded back into a single byte using `u16` so the inverse of
+;; `hex-encode` is well-defined. Returns '() for an empty string.
+;; Returns #f on any malformed input (odd length or non-hex char).
+;; ----------------------------
+(define (hex-decode s)
+  (let ((cs (hex-chars s)))
+    (define (loop rest acc)
+      (cond ((null? rest)
+             (reverse acc))
+            ((null? (cdr rest))
+             #f)
+            (else
+             (let ((hi (hex-value (car rest)))
+                   (lo (hex-value (cadr rest))))
+               (if (or (eq? hi #f) (eq? lo #f))
+                   #f
+                   (loop (cddr rest)
+                         (cons (u16 hi lo) acc)))))))
+    (loop cs '())))

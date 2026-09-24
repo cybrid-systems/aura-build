@@ -1,0 +1,33 @@
+(cache_metrics.aura)
+
+(provide 'cache_metrics)
+
+;; A tiny metrics counter for the readahead cache layer.
+;; Tracks hits and misses across lookups so the driver can report
+;; cache effectiveness without coupling to the readahead module's
+;; internal counters.
+;;
+;; Representation (single mutable cons cell):
+;;   m = (cons hits . misses)
+;;   hits   : mutable cons holding the integer hit count
+;;   misses : mutable cons holding the integer miss count
+
+(define (make-cache-metrics)
+  (cons (cons 0 '()) (cons 0 '())))
+
+(define (cm-hits-cell m)   (car m))
+(define (cm-misses-cell m) (cdr m))
+
+(define (cache-metrics-record-hit! m)
+  (set-car! (cm-hits-cell m)
+            (+ (car (cm-hits-cell m)) 1)))
+
+(define (cache-metrics-record-miss! m)
+  (set-car! (cm-misses-cell m)
+            (+ (car (cm-misses-cell m)) 1)))
+
+(define (cache-metrics-hits m)
+  (car (cm-hits-cell m)))
+
+(define (cache-metrics-misses m)
+  (car (cm-misses-cell m)))

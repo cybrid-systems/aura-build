@@ -1,0 +1,52 @@
+;; wal_alloc.aura — simple free-list / bump allocator
+;;
+;; An allocator is represented as a list:
+;;   (cons free-count free-list)
+;; where free-list is a list of slot indices that are still available.
+;; Slots are numbered 0 .. (n-1) from allocator-new.
+
+;; Build a new allocator with `slots` slots.  All slots start free.
+;; Returns: (cons <free-count> <free-list>)
+(define (allocator-new slots)
+  (let ((n (if (and (number? slots) (>= slots 0)) slots 0)))
+    (let loop ((i 0) (xs '()))
+      (if (>= i n)
+          (cons n xs)
+          (loop (+ i 1) (cons i xs))))))
+
+;; Take the lowest-numbered free slot.
+;; Returns: (cons new-allocator slot-index)
+;;          or (cons allocator #f) if no slots are free.
+(define (allocator-take alloc)
+  (let ((n (car alloc))
+        (xs (cdr alloc)))
+    (cond
+      ((null? xs) (cons alloc #f))
+      (else
+       (let ((slot (car xs))
+             (rest (cdr xs)))
+         (cons (cons (- n 1) rest) slot))))))
+
+;; Return a slot to the free list (no coalescing, no ordering guarantee).
+;; Returns: a new allocator state.
+(define (allocator-free alloc slot)
+  (let ((n (car alloc))
+        (xs (cdr alloc)))
+    (if (member slot xs)
+        alloc                       ;; already free — no-op
+        (cons (+ n 1) (cons slot xs)))))
+
+;; Reset the allocator to its original full state by rebuilding from
+;; the current free-list size.  We use the free-count as the slots count.
+;; (This is a "bump-reset": free count is restored to the number of
+;;  originally-allocated slots inferred from the free list length.)
+(define (allocator-reset alloc)
+  (let ((n (car alloc))
+        (xs (cdr alloc)))
+    ;; Rebuild indices 0..(n + len(xs))-1 — i.e. re-include any slots
+    ;; that were previously taken.  Total slots = free + taken.
+    (let ((total (+ n (length xs))))
+      (let loop ((i 0) (out '()))
+        (if (>= i total)
+            (cons total out)
+            (loop (+ i 1) (cons i out)))))))

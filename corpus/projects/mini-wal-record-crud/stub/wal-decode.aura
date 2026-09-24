@@ -1,0 +1,33 @@
+;; wal-decode.aura — Decode WAL records from portable s-expression form.
+;;
+;; Inverse of wal-encode.aura. A record token list has the shape:
+;;   (sid tag1-enc tag2-enc ...)
+;; where each tag token is (tag-name tag-type encoded-value).
+;;
+;; The decoded record is (schema-id . fields) where fields is a list of
+;; tag triples (name type . value) as built by make-tag.
+
+;; ---- decode a single value given its declared type ----
+;; tok is a bare atom: string, number, symbol, or boolean symbol.
+(define (decode-value tok type)
+  (cond ((equal? type 'string) tok)
+        ((equal? type 'int) tok)
+        ((equal? type 'bool)
+         (cond ((equal? tok 'true) #t)
+               ((equal? tok 'false) #f)
+               (else #f)))
+        ((equal? type 'symbol) tok)
+        (else tok)))
+
+;; ---- decode a single field token: (name type encoded-value) ----
+(define (decode-field tok)
+  (let ((name (car tok))
+        (type (car (cdr tok)))
+        (val  (cdr (cdr tok))))
+    (make-tag name type (decode-value val type))))
+
+;; ---- decode a full record token list: (sid field ...) ----
+(define (decode-record s)
+  (let ((sid (car s))
+        (flds (cdr s)))
+    (make-record sid (map decode-field flds))))

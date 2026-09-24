@@ -1,0 +1,105 @@
+;; wal_align.aura
+;; Alignment helpers + a "direct append" that pads a record up to the
+;; next sector boundary and appends it to a byte buffer.
+;;
+;; In a real O_DIRECT WAL writer, every write must be aligned to the
+;; device's sector size (typically 4 KiB) and must be a multiple of
+;; that sector size. Since records are smaller than a sector, the writer
+;; pads each record out to a whole-sector image. This file models that.
+;;
+;; Conventions:
+;;   - "bytes" are integers in 0..255.
+;;   - "buffer" is a list of bytes (head = oldest byte, tail = newest byte)
+;;     i.e. (cons newest (cons ... (cons oldest '()))). This matches
+;;     buffer-new in wal_buffer.aura (which conses new bytes on the front).
+;;   - A "record" is the alist produced by record-make; its serialized
+;;     byte length is (record-len rec).
+
+;; Round n up to the nearest multiple of base.
+;; base must be > 0. If n is already aligned, returns n unchanged.
+(define (align-up n base)
+  (let ((r (modulo n base)))
+    (if (= r 0)
+        n
+        (+ n (- base r)))))
+
+;; Check that n is a positive multiple of base.
+;; Returns #t if aligned, #f otherwise.
+(define (align-check n base)
+  (if (and (> n 0) (= (modulo n base) 0))
+      #t
+      #f))
+
+;; Build a list of `count` zero bytes (0x00).
+;; Used as padding to round a record up to a sector boundary.
+(define (make-padding count)
+  (let loop ((i 0) (acc '()))
+    (if (>= i count)
+        acc
+        (loop (+ i 1) (cons 0 acc)))))
+
+;; Serialize a WAL record into a flat list of bytes.
+;; Layout (matches record-len in wal_record.aura):
+;;   [ magic 4 ] [ txid 4 ] [ kind 1 ] [ len 2 ] [ payload bytes ] [ crc 4 ]
+;; The "magic" constant is 0x77 0x61 0x6C 0x21 ("wal!") so that recovery
+;; can resync after corruption.
+;;
+;; To stay independent of wal_record internals we just rebuild the same
+;; bytes from the record's accessors. We do assume record-len matches
+;; the header + payload length (which record-make guarantees).
+(define (record-bytes rec)
+  (let* ((txid   (record-txid rec))
+         (kind   (car (cdr (assq 'kind rec))))
+         (payload (cdr (assq 'payload rec)))
+         (crc    (record-crc rec))
+         (plen   (length payload))
+         ;; magic = 'wal!' = 0x77 0x61 0x6C 0x21
+         (magic '(119 97 108 33))
+         (txid-bytes (u32-bytes txid))
+         (kind-bytes (list (modulo kind 256)))
+         (len-bytes  (u16-bytes plen))
+         (crc-bytes  (u32-bytes crc)))
+    (append magic txid-bytes kind-bytes len-bytes payload crc-bytes)))
+
+;; Encode a non-negative integer as a little-endian 4-byte list.
+(define (u32-bytes n)
+  (list (modulo n 256)
+        (modulo (quotient n 256) 256)
+        (modulo (quotient n 65536) 256)
+        (modulo (quotient n 16777216) 256)))
+
+;; Encode a non-negative integer as a little-endian 2-byte list.
+(define (u16-bytes n)
+  (list (modulo n 256)
+        (modulo (quotient n 256) 256)))
+
+;; Direct append: take `buf` (a list of bytes, head = newest), append the
+;; serialized record padded up to the next multiple of `sector-size`,
+;; and return the new buffer.
+;;
+;; The padded record is exactly (align-up (record-len rec) sector-size)
+;; bytes long. We never write a partial sector: that's the whole point
+;; of O_DIRECT.
+;;
+;; Pre-condition: (record-len rec) > 0 and sector-size > 0.
+;; Post-condition: the returned buffer's length grew by exactly the
+;; padded size in bytes.
+(define (direct-append buf record sector-size)
+  (let* ((rlen (record-len record))
+         (padded (align-up rlen sector-size))
+         (pad-bytes (make-padding (- padded rlen)))
+         (serialized (record-bytes record)))
+    ;; Buffer convention: cons new bytes on the front so the tail of
+    ;; the list (= car after reversing) is the latest write. Appending
+    ;; therefore means prepending each byte in order. To keep things
+    ;; readable we just append-pad-serialize at the "front" in reverse,
+    ;; but because (cons x buf) puts x at the head we must push the
+    ;; bytes on in reverse order. The simplest correct approach is:
+    ;;   (fold-right cons buf (append serialized pad-bytes))
+    ;; where serialized is written first (deepest), and pad-bytes land
+    ;; on top of it (newest = end of sector image).
+    (let ((image (append serialized pad-bytes)))
+      (let loop ((rest image) (acc buf))
+        (if (null? rest)
+            acc
+            (loop (cdr rest) (cons (car rest) acc)))))))

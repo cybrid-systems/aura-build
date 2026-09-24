@@ -1,0 +1,33 @@
+;; crash.aura — crash injection utilities
+
+;; Truncate the last sector's payload to a prefix simulating a torn write.
+;; Removes the last 4 bytes from the final sector's payload (mid-frame cut).
+(define (api crash-truncate-last-sector! w)
+  (let ((sectors (wal-sectors-list w)))
+    (if (null? sectors)
+        '()
+        (let ((last (list-ref sectors (- (length sectors) 1))))
+          (let ((payload (sector-payload last)))
+            (if (< (length payload) 4)
+                '()
+                (let ((keep (take-bytes payload (- (length payload) 4))))
+                  (set-car! (cdr last) keep)
+                  '())))))))
+
+;; Clear checksums on the last 2 sectors to force verification mismatch.
+(define (api crash-clear-checksums! w)
+  (let ((sectors (wal-sectors-list w)))
+    (let ((n (length sectors)))
+      (let ((start (if (< n 2) 0 (- n 2))))
+        (let loop ((i start))
+          (if (= i n)
+              '()
+              (begin
+                (set-car! (cddr (list-ref sectors i)) 0)
+                (loop (+ i 1)))))))))
+
+;; Take first n bytes of a list.
+(define (take-bytes lst n)
+  (if (= n 0)
+      '()
+      (cons (car lst) (take-bytes (cdr lst) (- n 1)))))

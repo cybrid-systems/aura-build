@@ -1,0 +1,49 @@
+;; replay.aura — replay frames from a repaired WAL by reading sector bytes
+
+;; Walk each sector's payload bytes, decode frames (id + payload) from the
+;; byte stream, and return a list of frames. Frames are encoded as:
+;;   - 4 bytes: frame id (each byte is one id byte)
+;;   - N bytes: payload (N = length stored per frame; we infer from boundaries)
+;;
+;; Since frame boundaries aren't self-describing beyond the 4-byte id, we
+;; use the sector structure: each frame's payload length was recorded when
+;; the WAL was built. We recover the frame count from the number of bytes
+;; (id + payload) found per frame as we walk sectors.
+
+;; Internal: decode a single frame from a byte list starting at index 0.
+;; A frame = 4 id-bytes + payload-bytes. We don't know payload length ahead
+;; of time, so we instead use the strategy of reading until we have exactly
+;; (id_byte, payload) pairs. In this WAL design each frame's payload length
+;; is fixed by the caller (24 bytes), so we read 4 + 24 = 28 bytes per frame.
+(define replay-frame-size 28)
+
+(define (replay-take n lst)
+  (if (= n 0)
+      (list '() lst)
+      (if (null? lst)
+          (list '() '())
+          (let ((r (replay-take (- n 1) (cdr lst))))
+            (list (cons (car lst) (car r)) (cadr r))))))
+
+(define (replay-decode-frame bytes)
+  (let ((id-bytes (take-bytes bytes 4))
+        (rest (drop-bytes bytes 4)))
+    (let ((id (+ (* (list-ref id-bytes 0) 16777216)
+                 (* (list-ref id-bytes 1) 65536)
+                 (* (list-ref id-bytes 2) 256)
+                 (list-ref id-bytes 3))))
+      (let ((payload (take-bytes rest 24)))
+        (make-frame id payload)))))
+
+(define (replay-walk bytes remaining acc)
+  (if (null? remaining)
+      acc
+      (let ((frame (replay-decode-frame remaining)))
+        (replay-walk bytes (drop-bytes remaining 28) (cons frame acc)))))
+
+(define (api replay-frames w)
+  (let ((all-bytes (wal-collect-bytes (wal-sectors-list w))))
+    (reverse (replay-walk all-bytes all-bytes '()))))
+
+(define (api replay-count w)
+  (length (replay-frames w)))

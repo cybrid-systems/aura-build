@@ -1,0 +1,49 @@
+;; snapshot-table.aura
+;; Snapshot table for the MVCC reader.
+;;
+;; A snapshot represents a point-in-time read view over the WAL.
+;; Each snapshot is identified by a snap-id (an arbitrary non-negative
+;; integer chosen by the caller) and remembers the "watermark"
+;; txn-id it was taken at. Visibility checks later compare a record's
+;; txn-id against this watermark: a record is visible iff its txn-id
+;; <= snap-txn-id AND the txn is committed.
+;;
+;; The table is a pure-functional alist keyed by snap-id; "mutation"
+;; goes through producing a new alist that the caller threads back
+;; via set!. If the same snap-id is taken twice, the latest call wins.
+;;
+;; API:
+;;   (snapshot-table-init)                         -> fresh empty table
+;;   (snapshot-table-take!  table snap-id at-txn)  -> table with snap registered
+;;   (snapshot-table-snap-txn table snap-id)       -> watermark txn-id for snap
+;;   (snapshot-table-count   table)                -> number of registered snaps
+
+;; Constructor: an empty alist. Nothing to seed.
+(define (snapshot-table-init)
+  '())
+
+;; Helper: replace the entry for snap-id in an alist, or cons a new
+;; one if the key isn't present. This is a standard alist update.
+(define (snapshot-alist-set alist snap-id at-txn)
+  (cons (cons snap-id at-txn) alist))
+
+;; Take a snapshot: register (snap-id . at-txn-id) in the table.
+;; If snap-id already exists, the new watermark overwrites the old.
+(define (snapshot-table-take! table snap-id at-txn-id)
+  (snapshot-alist-set table snap-id at-txn-id))
+
+;; Look up the watermark txn-id for a given snap-id.
+;; Returns 'no-snapshot if the snap-id isn't registered.
+;; Callers are expected to have taken the snapshot first; if they
+;; didn't, the sentinel makes the mistake obvious.
+(define (snapshot-table-snap-txn table snap-id)
+  (if (null? table)
+      'no-snapshot
+      (let ((head (car table)))
+        (if (equal? (car head) snap-id)
+            (cdr head)
+            (snapshot-table-snap-txn (cdr table) snap-id)))))
+
+;; Number of snapshots currently registered. Simple list length.
+(define (snapshot-table-count table)
+  (length table))

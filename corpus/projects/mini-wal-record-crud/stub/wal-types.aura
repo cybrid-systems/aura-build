@@ -1,0 +1,40 @@
+;; wal-types.aura — Core data types for WAL records and tagged fields.
+
+;; Library version for the WAL codec.
+(define (wal-version) 1)
+
+;; Make a tagged field: (tag-name . value) paired with its declared type.
+(define (make-tag name type value)
+  (cons name (cons type value)))
+
+;; Predicate for a tag triple.
+(define (tag? t)
+  (and (pair? t)
+       (symbol? (car t))
+       (pair? (cdr t))
+       (symbol? (car (cdr t)))))
+
+;; Extract the tag name (symbol) from a tag triple.
+(define (tag-name t) (car t))
+
+;; Extract the declared type (symbol) from a tag triple.
+(define (tag-type t) (car (cdr t)))
+
+;; Extract the raw value from a tag triple.
+(define (tag-value t) (cdr (cdr t)))
+
+;; Make a WAL record: (schema-id . (field-tag ...)).
+(define (make-record sid fields)
+  (cons sid fields))
+
+;; Predicate for a record.
+(define (record? r)
+  (and (pair? r)
+       (number? (car r))
+       (list? (cdr r))))
+
+;; Extract schema-id from a record.
+(define (record-schema-id r) (car r))
+
+;; Extract the list of field tags from a record.
+(define (record-fields r) (cdr r))

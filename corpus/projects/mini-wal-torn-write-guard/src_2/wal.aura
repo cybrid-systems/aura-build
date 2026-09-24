@@ -1,0 +1,20 @@
+;; wal.aura — write-ahead log over sectors
+
+(define (api wal-open size)
+  (list size (list (make-sector size)) 0 '()))
+
+;; Internal accessors (not api):
+(define wal-sector-size car)
+(define wal-sectors-list cadr)
+(define wal-bytes-count caddr)
+(define wal-frame-regions cadddr)
+
+;; Helper: append byte to current (last) sector, possibly growing sectors list
+(define (wal-append-byte! w b)
+  (let ((sectors (wal-sectors-list w))
+        (last (car (last-pair sectors))))
+    (sector-add-byte! last b)
+    (set! ...) ;; increment bytes - but we don't have set! on caddr easily
+    ))
+
+;; Hmm, I need to be more careful with mutable structure.

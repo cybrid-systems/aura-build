@@ -1,0 +1,47 @@
+;; wal-store.aura
+;; A simple append-only WAL store backed by a plain list.
+;;
+;; The store keeps every appended "bytes" blob in order, indexed by
+;; its position in the list (0-based). Records are never mutated or
+;; removed once appended — that's the whole point of a WAL.
+;;
+;; API:
+;;   (wal-store-init)                          -> fresh empty store
+;;   (wal-store-append store bytes)            -> new store with bytes appended
+;;   (wal-store-len   store)                   -> number of appended records
+;;   (wal-store-ref   store idx)               -> bytes at index idx
+;;   (wal-store-bytes store)                   -> underlying list of blobs
+
+;; Constructor: just an empty list. Nothing to seed.
+(define (wal-store-init)
+  '())
+
+;; Append is pure-functional: produce a new store by consing the
+;; new bytes onto the front (so car is the most recent write) and
+;; returning the result. The "store" is immutable from the caller's
+;; perspective; whoever holds the latest binding keeps appending.
+(define (wal-store-append store bytes)
+  (cons bytes store))
+
+;; Length: plain list length.
+(define (wal-store-len store)
+  (length store))
+
+;; Index lookup. We store most-recent-first (cons on append), so the
+;; logical index 0 == oldest record == last element of the list.
+;; We walk down the list until we've skipped (len - 1 - idx) cells,
+;; then return the car.
+(define (wal-store-ref store idx)
+  (let ((n (wal-store-len store)))
+    (if (or (< idx 0) (>= idx n))
+        'out-of-bounds
+        (let ((skip (- n 1 idx)))
+          (let loop ((s store) (k skip))
+            (if (= k 0)
+                (car s)
+                (loop (cdr s) (- k 1))))))))
+
+;; Expose the raw list. Useful for stats / hashing / debugging.
+;; Callers must not mutate it.
+(define (wal-store-bytes store)
+  store)

@@ -1,0 +1,48 @@
+;; stats.aura — Statistics aggregator for the mini-wal-zstd-frames WAL.
+;;
+;; Tracks per-frame compression statistics: raw bytes in, stored bytes out,
+;; total frames counted, and overall compression ratio.
+;;
+;; A stats record is a plain list:
+;;   (stats frames raw-bytes stored-bytes)
+;;   - frames:       number of frames recorded so far
+;;   - raw-bytes:    total raw (decompressed) payload bytes across all frames
+;;   - stored-bytes: total stored (compressed + framed) bytes across all frames
+;;   - ratio:        stored-bytes / raw-bytes (a number; 0 if no raw bytes yet)
+;;
+;; Exports:
+;;   stats-new              -> a fresh stats record
+;;   stats-on-frame! st raw stored   -> mutate st to record one frame
+;;   stats-dump st          -> list of (key . value) pairs for reporting
+;;   stats-ratio st         -> current compression ratio (stored / raw)
+
+(define (stats-new)
+  (list 'stats 0 0 0 0.0))
+
+;; Record one frame's contribution to the totals.
+(define (stats-on-frame! st raw stored)
+  (set-car! (cdr st)        (+ (cadr  st) 1))
+  (set-car! (cddr st)       (+ (caddr st) raw))
+  (set-car! (cdddr st)      (+ (cadddr st) stored))
+  (set-car! (cddddr st)
+            (let ((r (caddr st)))
+              (if (= r 0)
+                  0.0
+                  (/ (cadddr st) r))))
+  st)
+
+;; Dump stats as an association list suitable for logfmt / reporting.
+(define (stats-dump st)
+  (let ((frames       (cadr  st))
+        (raw-bytes    (caddr st))
+        (stored-bytes (cadddr st))
+        (ratio        (car (cddddr st))))
+    (list
+      (cons 'stats_frames       frames)
+      (cons 'stats_raw_bytes    raw-bytes)
+      (cons 'stats_stored_bytes stored-bytes)
+      (cons 'stats_ratio        ratio))))
+
+;; Current compression ratio (stored / raw). Returns 0.0 when there are no raw bytes.
+(define (stats-ratio st)
+  (car (cddddr st)))

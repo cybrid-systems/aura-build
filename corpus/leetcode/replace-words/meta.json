@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:18:36Z",
+      "ts_local": "2026-09-24 23:18:36 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2068,
+        "total_characters": 0,
+        "prompt_tokens": 1210,
+        "completion_tokens": 858,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.037,
+      "tests_passed": 1,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=\nCASE1=\nCASE2=\nCASE3=\nCASE4=\nCASE5=\nCASE6=\nCASE7=\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:18:53Z",
+      "ts_local": "2026-09-24 23:18:53 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 5210,
+        "total_characters": 0,
+        "prompt_tokens": 1210,
+        "completion_tokens": 4000,
+        "prompt_tokens_details": {
+          "cached_tokens": 1209
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.047,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 8:6: unbound variable: else\n  did you mean 'solve'?\n   |\n  8 |     (else\n   |      ^^^^\n",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "replace-words",
+  "title": "Replace Words",
+  "category": "tries",
+  "updated_at": "2026-09-24T15:18:53Z",
+  "updated_at_local": "2026-09-24 23:18:53 CST"
+}

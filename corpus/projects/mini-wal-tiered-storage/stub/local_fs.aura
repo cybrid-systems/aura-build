@@ -1,0 +1,38 @@
+(local_fs.aura)
+
+(provide 'local_fs)
+
+;; A simulated local filesystem sink for archived cold segments.
+;; Mirrors the object-store: a single mutable cons cell holding an alist
+;; of segments keyed by seg-id, plus a name and a count cell.
+;;
+;; Representation:
+;;   lfs = (cons listing . (name . count-cell))
+;;   listing    : alist of (seg-id . segment) pairs, in handoff order
+;;   name       : human-readable name for diagnostics
+;;   count-cell : mutable cons holding the integer count of distinct segments
+
+(define (make-local-fs name)
+  (cons '() (cons name (cons 0 '()))))
+
+(define (lfs-listing lfs)   (car lfs))
+(define (lfs-meta lfs)      (cdr lfs))
+(define (lfs-name lfs)      (car (lfs-meta lfs)))
+(define (lfs-count-cell lfs) (cdr (lfs-meta lfs)))
+
+(define (local-fs-handoff! lfs seg)
+  (let ((seg-id (car seg))
+        (existing (alist-ref (lfs-listing lfs) seg-id)))
+    (if existing
+        ;; Idempotent re-handoff: keep latest copy, do not bump count.
+        (set-car! lfs (alist-set! (lfs-listing lfs) seg-id seg))
+        (begin
+          (set-car! lfs (acons seg-id seg (lfs-listing lfs)))
+          (set-car! (lfs-count-cell lfs)
+                    (+ (car (lfs-count-cell lfs)) 1))))))
+
+(define (local-fs-count lfs)
+  (car (lfs-count-cell lfs)))
+
+(define (local-fs-list lfs)
+  (lfs-listing lfs))

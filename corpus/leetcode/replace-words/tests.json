@@ -1,0 +1,111 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "roots": [
+        "a",
+        "al",
+        "ali",
+        "alice",
+        "b",
+        "br",
+        "bre",
+        "brea",
+        "break",
+        "breaki",
+        "breakin",
+        "breakinc",
+        "breaking",
+        "c"
+      ],
+      "sentence": "alice is breaking the cable"
+    },
+    "expected": "\"a is b the c\""
+  },
+  {
+    "id": 1,
+    "input": {
+      "roots": [
+        "cat",
+        "bat",
+        "rat"
+      ],
+      "sentence": "dog pig cow"
+    },
+    "expected": "\"dog pig cow\""
+  },
+  {
+    "id": 2,
+    "input": {
+      "roots": [
+        "a",
+        "an",
+        "ant",
+        "ants",
+        "anther"
+      ],
+      "sentence": "ants are animals"
+    },
+    "expected": "\"a a a\""
+  },
+  {
+    "id": 3,
+    "input": {
+      "roots": [],
+      "sentence": "hello world"
+    },
+    "expected": "\"hello world\""
+  },
+  {
+    "id": 4,
+    "input": {
+      "roots": [
+        "a",
+        "b"
+      ],
+      "sentence": ""
+    },
+    "expected": "\"\""
+  },
+  {
+    "id": 5,
+    "input": {
+      "roots": [
+        "the",
+        "quick",
+        "fox"
+      ],
+      "sentence": "the quick brown fox"
+    },
+    "expected": "\"the quick brown fox\""
+  },
+  {
+    "id": 6,
+    "input": {
+      "roots": [
+        "a",
+        "b",
+        "c",
+        "d"
+      ],
+      "sentence": "apple banana cherry date"
+    },
+    "expected": "\"a b c d\""
+  },
+  {
+    "id": 7,
+    "input": {
+      "roots": [
+        "t",
+        "te",
+        "tes",
+        "test",
+        "testi",
+        "testin",
+        "testing"
+      ],
+      "sentence": "testing tests tested"
+    },
+    "expected": "\"t t t\""
+  }
+]

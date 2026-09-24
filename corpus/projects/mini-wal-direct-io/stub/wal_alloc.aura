@@ -1,0 +1,64 @@
+;; wal_alloc.aura
+;; A simple bump allocator (free-list style) used to hand out slot indices
+;; for WAL records. The allocator tracks a list of available slot numbers
+;; (the "free list") and a counter of how many slots are currently free.
+;;
+;; An allocator is represented as an alist:
+;;   'slots  -> total number of slots it was created with
+;;   'free   -> integer count of slots currently free
+;;   'stack  -> list of currently free slot indices (newest first)
+;;
+;; slot indices are 0-based.
+
+;; Build a new allocator with N slots.
+;; Returns an alist representing the allocator state.
+(define (allocator-new slots)
+  (let ((stack (let loop ((i (- slots 1)) (acc '()))
+                 (if (< i 0)
+                     acc
+                     (loop (- i 1) (cons i acc))))))
+    (list (cons 'slots slots)
+          (cons 'free slots)
+          (cons 'stack stack))))
+
+;; Internal: fetch a field from the allocator alist.
+(define (alloc-get alloc key)
+  (cdr (assq key alloc)))
+
+;; Take (pop) one slot from the allocator.
+;; Returns two values conceptually: the slot index and the updated allocator.
+;; Since Aura does not natively support multi-value returns, we return a pair
+;; (cons slot updated-alloc). On exhaustion returns (cons #f alloc).
+(define (allocator-take alloc)
+  (let ((stack (alloc-get alloc 'stack))
+        (free  (alloc-get alloc 'free)))
+    (if (null? stack)
+        (cons #f alloc)
+        (let ((slot (car stack))
+              (new-stack (cdr stack)))
+          (set! alloc (list (cons 'slots (alloc-get alloc 'slots))
+                            (cons 'free (- free 1))
+                            (cons 'stack new-stack))
+          (cons slot alloc)))))
+
+;; Return one slot to the allocator (push it back onto the free stack).
+(define (allocator-free alloc slot)
+  (let ((new-stack (cons slot (alloc-get alloc 'stack)))
+        (free (+ (alloc-get alloc 'free) 1)))
+    (set! alloc (list (cons 'slots (alloc-get alloc 'slots))
+                      (cons 'free free)
+                      (cons 'stack new-stack)))
+    alloc))
+
+;; Reset the allocator back to its initial state (all slots free).
+;; Uses the stored 'slots to rebuild the free list deterministically.
+(define (allocator-reset alloc)
+  (let ((slots (alloc-get alloc 'slots))
+        (stack (let loop ((i (- slots 1)) (acc '()))
+                 (if (< i 0)
+                     acc
+                     (loop (- i 1) (cons i acc))))))
+    (set! alloc (list (cons 'slots slots)
+                      (cons 'free slots)
+                      (cons 'stack stack)))
+    alloc))

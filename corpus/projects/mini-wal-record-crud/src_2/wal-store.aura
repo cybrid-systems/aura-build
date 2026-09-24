@@ -1,0 +1,42 @@
+;; wal-store.aura — in-memory append-only store for WAL records
+;;
+;; A tiny "store" that holds records in a list. We keep it as a single
+;; top-level mutable list `*store*` and provide a small API to append,
+;; clear, and inspect it.
+;;
+;; Records here are the same (sid . fields) pairs produced by
+;; (api make-record) — see wal-types.aura. No encoding/decoding is
+;; done in this module; this is just the in-memory list.
+;;
+;; API:
+;;   (api store-clear)    — remove all records from the store
+;;   (api store-append r) — append record `r` to the store
+;;   (api store-all)      — return the current list of records (newest last)
+;;   (api store-count)    — number of records currently in the store
+;;   (api store-nth i)    — 0-based index lookup; #f if out of range
+
+(define *store* '())
+
+(define (api store-clear)
+  (set! *store* '()))
+
+(define (api store-append r)
+  (set! *store* (append *store* (list r))))
+
+(define (api store-all)
+  *store*)
+
+(define (api store-count)
+  (length *store*))
+
+;; (api store-nth i) — return the i-th record (0-based), or #f if i is
+;; out of range. We walk the list manually rather than using list-ref
+;; to keep the dependency surface minimal and to handle the
+;; out-of-range case explicitly.
+(define (api store-nth i)
+  (define (walk n rest)
+    (cond
+      ((null? rest) #f)
+      ((= n 0) (car rest))
+      (else (walk (- n 1) (cdr rest)))))
+  (walk i *store*))

@@ -1,0 +1,101 @@
+;; Aura solution: WordDictionary using a trie
+;; Operations are encoded as lists: (1 . word) for search, (0 . word) for add
+;; Returns a list of 0/1 results for search operations, in order.
+
+(define (make-node)
+  (list #f (make-vector 26 #f)))
+
+(define (node-end? node) (car node))
+(define (node-children node) (cadr node))
+
+(define (set-end! node v) (set-car! node v))
+
+(define (get-child node c)
+  (vector-ref (node-children node) c))
+
+(define (set-child! node c child)
+  (vector-set! (node-children node) c child))
+
+(define (char->idx c)
+  (- (char->integer c) (char->integer #\a)))
+
+(define (add-word root word)
+  (let loop ((node root) (w word))
+    (if (null? w)
+        (set-end! node #t)
+        (let ((idx (char->idx (car w))))
+          (let ((child (get-child node idx)))
+            (if child
+                (loop child (cdr w))
+                (let ((new (make-node)))
+                  (set-child! node idx new)
+                  (loop new (cdr w)))))))))
+
+(define (search-helper node w)
+  (cond
+    ((null? node) #f)
+    ((null? w) (if (node-end? node) #t #f))
+    ((char=? (car w) #\.)
+     (let loop ((i 0) (acc #f))
+       (if (or acc (= i 26))
+           acc
+           (let ((child (get-child node i)))
+             (if child
+                 (loop (+ i 1) (or acc (search-helper child (cdr w))))
+                 (loop (+ i 1) acc))))))
+    (else
+     (let ((idx (char->idx (car w))))
+       (search-helper (get-child node idx) (cdr w))))))
+
+(define (search-word root word)
+  (if (search-helper root word) 1 0))
+
+(define (solve n ops)
+  (let ((root (make-node)))
+    (let loop ((rest ops) (acc '()))
+      (if (null? rest)
+          (reverse acc)
+          (let ((op (car rest)))
+            (let ((kind (car op)) (word (cdr op)))
+              (if (= kind 1)
+                  (loop (cdr rest) (cons (search-word root word) acc))
+                  (begin
+                    (add-word root word)
+                    (loop (cdr rest) acc)))))))))
+
+;; ---- Embedded test cases ----
+(define (run-case i n ops)
+  (let ((result (solve n ops)))
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display result)
+    (newline)))
+
+;; CASE0
+(run-case 0 5
+  '((0 . "bad") (0 . "dad") (0 . "mad") (1 . "pad") (1 . "bad")))
+
+;; CASE1
+(run-case 1 4
+  '((0 . "a") (1 . "a") (1 . "b") (1 . ".")))
+
+;; CASE2
+(run-case 2 6
+  '((0 . "at") (0 . "and") (0 . "an") (0 . "add") (1 . "a") (1 . "a.")))
+
+;; CASE3
+(run-case 3 5
+  '((0 . "hello") (0 . "hell") (1 . "hello") (1 . "hell") (1 . "....")))
+
+;; CASE4
+(run-case 4 7
+  '((1 . ".") (0 . "a") (1 . ".") (1 . "b") (0 . "ab") (1 . "..") (1 . "a.")))
+
+;; CASE5
+(run-case 5 3
+  '((0 . "abc") (0 . "abd") (1 . "ab.")))
+
+;; CASE6
+(run-case 6 4
+  '((0 . "test") (1 . "....") (1 . ".....") (1 . "t..t")))

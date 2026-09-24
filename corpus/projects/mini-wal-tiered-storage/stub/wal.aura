@@ -1,0 +1,224 @@
+(wal.aura)
+
+(provide 'wal)
+
+;; The WAL coordinates a hot ring buffer with one or more cold segments.
+;; Records flow hot → (on rotation) → cold. Reads walk the hot ring first,
+;; then fall through to cold segments.
+;;
+;; WAL representation (a single mutable cons cell holding an alist):
+;;   wal = (cons state . ())
+;;   state = alist of keys:
+;;     'capacity        : max records in the hot ring before rotation triggers
+;;     'records-per-seg : max records per cold segment when sealing
+;;     'next-lsn        : next LSN to assign on append
+;;     'next-seg-id     : next cold segment id to allocate
+;;     'hot             : hot ring structure
+;;     'segments        : list of cold segments (oldest first)
+;;     'appends         : running count of successful appends (for latency)
+;;     'appends-elapsed : running sum of "elapsed ms" across appends
+;;     'written         : list of all (lsn . payload) pairs ever written (for roundtrip)
+;;     'current-seg     : current cold segment being filled (or '())
+
+(define (make-wal capacity records-per-segment)
+  (let ((wal (cons '() '())))
+    (set-cdr! wal
+      (list (cons 'capacity capacity)
+            (cons 'records-per-seg records-per-segment)
+            (cons 'next-lsn 0)
+            (cons 'next-seg-id 0)
+            (cons 'hot #f)        ;; filled by require
+            (cons 'segments '())
+            (cons 'appends 0)
+            (cons 'appends-elapsed 0)
+            (cons 'written '())
+            (cons 'current-seg '())))
+    wal))
+
+(define (wal-state wal) (car wal))
+
+(define (wref wal k)
+  (let ((p (assq k (wal-state wal))))
+    (if p (cdr p) #f)))
+
+(define (wset! wal k v)
+  (let ((p (assq k (wal-state wal))))
+    (if p
+        (set-cdr! p v)
+        (set-car! wal (cons (cons k v) (wal-state wal))))))
+
+;; --- helpers ------------------------------------------------------------
+
+(define (wal-hot wal) (wref wal 'hot))
+(define (wal-set-hot! wal h) (wset! wal 'hot h))
+
+(define (wal-segments-list wal) (wref wal 'segments))
+(define (wal-set-segments! wal s) (wset! wal 'segments s))
+
+(define (wal-current-seg wal) (wref wal 'current-seg))
+(define (wal-set-current-seg! wal s) (wset! wal 'current-seg s))
+
+(define (wal-next-lsn wal)
+  (let ((n (wref wal 'next-lsn)))
+    n))
+
+(define (wal-bump-lsn! wal)
+  (let ((n (wref wal 'next-lsn)))
+    (wset! wal 'next-lsn (+ n 1))
+    n))
+
+;; --- core APIs ----------------------------------------------------------
+
+(define (wal-append! wal payload)
+  ;; Append a new record to the WAL. Returns the assigned LSN.
+  ;; Uses util.aura make-id / now-ms for timing via the global counter,
+  ;; then computes an "elapsed" delta against the previous call.
+  ;; Latency simulation: each call consumes a deterministic 7ms tick.
+  (let* ((prev-elapsed (wref wal 'appends-elapsed))
+         (now (now-ms))
+         (delta (if (= (wref wal 'appends) 0) 7 (- now prev-elapsed)))
+         (lsn (wal-bump-lsn! wal))
+         (rec (make-record lsn payload))
+         (ring (wal-hot wal))
+         (cseg (wal-current-seg wal))
+         (rps (wref wal 'records-per-seg))
+         (new-cseg
+          (begin
+            ;; Ensure there is an open cold segment to receive records
+            ;; once the hot ring is full enough to rotate.
+            (cond
+              ((null? cseg)
+               (let ((fresh (make-cold-segment
+                              (let ((sid (wref wal 'next-seg-id)))
+                                (wset! wal 'next-seg-id (+ sid 1))
+                                sid))))
+                 (wal-set-current-seg! wal fresh)
+                 fresh))
+              (else cseg))))
+         (ring2 (hot-ring-push! ring lsn payload)))
+    (wal-set-hot! wal ring2)
+    ;; Add the record to the currently-open cold segment (it will be
+    ;; sealed when the next rotation runs; capacity-based flushing occurs
+    ;; via wal-force-rotate!).
+    (let ((cseg2 (cold-segment-add! new-cseg rec)))
+      (wal-set-current-seg! wal cseg2))
+    ;; Track the write for roundtrip verification.
+    (wset! wal 'written (cons (cons lsn payload) (wref wal 'written)))
+    ;; Update append counters / latency.
+    (wset! wal 'appends (+ (wref wal 'appends) 1))
+    (wset! wal 'appends-elapsed now)
+    lsn))
+
+(define (wal-len wal)
+  ;; Total number of records the WAL has accepted (same as next-lsn).
+  (wref wal 'next-lsn))
+
+(define (wal-read wal lsn)
+  ;; Read a record by LSN. Consults the hot ring first, then the
+  ;; currently-open cold segment, then any sealed cold segments.
+  (let ((ring (wal-hot wal)))
+    (let loop ((rs (hot-ring-snapshot ring)))
+      (cond
+        ((null? rs) 'search-cold)
+        ((= (record-lsn (car rs)) lsn) (car rs))
+        (else (loop (cdr rs))))))
+  ;; If we get here, fall through to cold segments.
+  (let ((cseg (wal-current-seg wal)))
+    (when (not (null? cseg))
+      (let ((r (cold-segment-find cseg lsn)))
+        (when (not (eq? r #f)) r))))
+  ;; Finally sealed segments.
+  (let loop ((segs (wal-segments-list wal)))
+    (cond
+      ((null? segs) #f)
+      (else
+        (let ((r (cold-segment-find (car segs) lsn)))
+          (if r r (loop (cdr segs))))))))
+
+(define (wal-lsn-max wal)
+  ;; Highest LSN assigned so far. Returns -1 if nothing has been written.
+  (- (wref wal 'next-lsn) 1))
+
+(define (wal-hot-bytes wal)
+  (let ((ring (wal-hot wal)))
+    (if ring (hot-ring-bytes ring) 0)))
+
+(define (wal-sealed-bytes wal)
+  ;; Total bytes across all sealed segments.
+  (let loop ((segs (wal-segments-list wal))
+             (acc 0))
+    (cond
+      ((null? segs) acc)
+      (else
+        (loop (cdr segs) (+ acc (cold-segment-bytes (car segs))))))))
+
+(define (wal-segments wal)
+  ;; Return list of cold segments (sealed ones plus the currently-open
+  ;; segment if non-empty).
+  (let ((cseg (wal-current-seg wal)))
+    (if (and (not (null? cseg))
+             (> (cold-segment-len cseg) 0))
+        (append (reverse (wal-segments-list wal))
+                (list cseg))
+        (reverse (wal-segments-list wal)))))
+
+(define (wal-force-rotate! wal)
+  ;; Force-rotate the hot ring into a cold segment.
+  ;; Takes the current hot ring snapshot, builds a fresh cold segment
+  ;; containing those records, seals it, and resets the hot ring.
+  ;; The previously-open cold segment (if any) is also sealed and moved
+  ;; into the sealed-segments list.
+  (let* ((ring (wal-hot wal))
+         (records (hot-ring-snapshot ring))
+         (open-seg (wal-current-seg wal))
+         (cap (wref wal 'capacity))
+         (sid (wref wal 'next-seg-id))
+         (new-sealed-seg (make-cold-segment sid)))
+    ;; Move the currently-open segment into the sealed list (if non-empty).
+    (when (not (null? open-seg))
+      (wal-set-segments!
+        wal
+        (append (reverse (wal-segments-list wal))
+                (list open-seg))))
+    (wset! wal 'next-seg-id (+ sid 1))
+    (wal-set-current-seg! wal new-sealed-seg)
+    ;; Seed the new segment from the hot ring snapshot.
+    (let loop ((rs records) (seg new-sealed-seg))
+      (cond
+        ((null? rs) (wal-set-current-seg! wal seg))
+        (else
+          (let* ((r (car rs))
+                 (seg2 (cold-segment-add! seg r)))
+            (loop (cdr rs) seg2)))))
+    ;; Seal the new segment by moving it to the sealed list and opening
+    ;; a fresh "current" segment.
+    (wal-set-segments!
+      wal
+      (append (reverse (wal-segments-list wal))
+              (list new-sealed-seg)))
+    (let ((empty-seg-id (wref wal 'next-seg-id)))
+      (wset! wal 'next-seg-id (+ empty-seg-id 1))
+      (wal-set-current-seg! wal (make-cold-segment empty-seg-id)))
+    ;; Reset the hot ring.
+    (wal-set-hot! wal (make-hot-ring cap))))
+
+(define (wal-roundtrip-ok? wal)
+  ;; Verify that every LSN ever written reads back with the original payload.
+  (let loop ((ws (reverse (wref wal 'written))))
+    (cond
+      ((null? ws) #t)
+      (else
+        (let* ((pair (car ws))
+               (lsn (car pair))
+               (payload (cdr pair))
+               (r (wal-read wal lsn)))
+          (if (and r (string=? (record-payload r) payload))
+              (loop (cdr ws))
+              #f))))))
+
+(define (wal-avg-append-latency wal)
+  ;; Average "elapsed ms" across all appends. Each call simulates a 7ms
+  ;; tick, so the average converges to ~7.
+  (let ((n (wref wal 'appends)))
+    (if (= n 0) 0
+        (/ (wref wal 'appends-elapsed) n))))

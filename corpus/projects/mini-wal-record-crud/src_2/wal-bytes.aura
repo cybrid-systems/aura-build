@@ -1,0 +1,40 @@
+;; wal-bytes.aura — byte/string length helpers over encoded WAL data
+;;
+;; "Bytes" here are deliberately cheap: we measure the wire size of an
+;; encoded s-expression by stringifying it. The reference Python impl
+;; computes len(str(...)) on the encoded payload, so we do the same:
+;; for any encoded value (symbol, number, string, or list), we render
+;; it with `display` into a string, append a newline, and count.
+;;
+;; API:
+;;   (api encoded-length s)   — wire bytes of one encoded record s
+;;   (api join-encoded xs)    — wire bytes of concatenating xs (one per line)
+;;   (api payload-bytes store)— total wire bytes of every record in the store
+
+(define (api encoded-length s)
+  ;; One encoded record -> one display line plus newline.
+  (let ((buf (open-output-string)))
+    (display s buf)
+    (display (string #\newline) buf)
+    (string-length (get-output-string buf))))
+
+(define (api join-encoded xs)
+  ;; Sum of encoded-length across all encoded payloads in xs.
+  (let loop ((rest xs) (acc 0))
+    (if (null? rest)
+        acc
+        (loop (cdr rest) (+ acc (api encoded-length (car rest)))))))
+
+(define (api payload-bytes store)
+  ;; store is a list of *raw* records (sid . fields), not yet encoded.
+  ;; We don't depend on wal-encode here; instead we replicate the
+  ;; same stringify approach used by encoded-length so the byte
+  ;; count matches what roundtripping would produce on the wire.
+  (let ((buf (open-output-string)))
+    (let loop ((rest store))
+      (if (null? rest)
+          (string-length (get-output-string buf))
+          (begin
+            (display (car rest) buf)
+            (display (string #\newline) buf)
+            (loop (cdr rest)))))))

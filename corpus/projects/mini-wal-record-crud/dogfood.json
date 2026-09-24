@@ -1,0 +1,59 @@
+{
+  "label": "mini-wal-record-crud",
+  "files": [
+    "wal-types.aura",
+    "wal-schema.aura",
+    "wal-encode.aura",
+    "wal-decode.aura",
+    "wal-migrate.aura",
+    "wal-store.aura",
+    "wal-bytes.aura",
+    "wal-defaults.aura",
+    "wal-main-helpers.aura",
+    "stats.aura",
+    "main.aura"
+  ],
+  "entry": "main.aura",
+  "run_mode": "cli_multi",
+  "expect": "WAL_VERSION=1\nSCHEMAS_DEFINED=3\nRECORDS_ENCODED=6\nRECORDS_DECODED=6\nFORWARD_MIGRATIONS=5\nBACKWARD_MIGRATIONS=0\nROUND_TRIP_OK=true\nOLDEST_SCHEMA=1\nNEWEST_SCHEMA=3\nLATEST_RECORD_TAG=phone\nTOTAL_BYTES=24",
+  "expect_res": [
+    "WAL_VERSION\\s*=\\s*1",
+    "SCHEMAS_DEFINED\\s*=\\s*3",
+    "RECORDS_ENCODED\\s*=\\s*6",
+    "RECORDS_DECODED\\s*=\\s*6",
+    "FORWARD_MIGRATIONS\\s*=\\s*5",
+    "BACKWARD_MIGRATIONS\\s*=\\s*0",
+    "ROUND_TRIP_OK\\s*=\\s*true",
+    "OLDEST_SCHEMA\\s*=\\s*1",
+    "NEWEST_SCHEMA\\s*=\\s*3",
+    "LATEST_RECORD_TAG\\s*=\\s*phone",
+    "TOTAL_BYTES\\s*=\\s*24"
+  ],
+  "source_res": [
+    "\\(define\\s+\\(wal-version\\b",
+    "\\(define\\s+\\(define-schema\\b",
+    "\\(define\\s+\\(encode-record\\b",
+    "\\(define\\s+\\(decode-record\\b",
+    "\\(define\\s+\\(migrate-record\\b",
+    "\\(define\\s+\\(store-append\\b",
+    "\\(define\\s+\\(encoded-length\\b",
+    "\\(define\\s+\\(default-value\\b",
+    "\\(define\\s+\\(setup-schemas\\b",
+    "\\(define\\s+\\(stat-set!\\b"
+  ],
+  "expect_keys": [
+    "WAL_VERSION",
+    "SCHEMAS_DEFINED",
+    "RECORDS_ENCODED",
+    "RECORDS_DECODED",
+    "FORWARD_MIGRATIONS",
+    "BACKWARD_MIGRATIONS",
+    "ROUND_TRIP_OK",
+    "OLDEST_SCHEMA",
+    "NEWEST_SCHEMA",
+    "LATEST_RECORD_TAG",
+    "TOTAL_BYTES"
+  ],
+  "seed_from_stub": true,
+  "user_extra": "Multi-file project mini-wal-record-crud; implement GOAL.md APIs; print KEY=value via main.aura using module calls."
+}

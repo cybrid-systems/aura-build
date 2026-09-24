@@ -1,0 +1,107 @@
+;; txn-table.aura
+;; Transaction table for the MVCC reader.
+;;
+;; Tracks the lifecycle of every transaction that the reader has
+;; begun: which txns are active, which have committed, and which
+;; have aborted. The table is a pure-functional alist keyed by
+;; txn-id; "mutation" goes through producing a new alist that the
+;; caller threads back via set!.
+;;
+;; A txn can be in one of three states:
+;;   'active    -> begun, not yet finalized
+;;   'committed -> finalized successfully, its writes are visible
+;;   'aborted   -> finalized unsuccessfully, its writes are not visible
+;;
+;; API:
+;;   (txn-table-init)                          -> fresh empty table
+;;   (txn-table-begin!    table txn-id)        -> table with txn-id active
+;;   (txn-table-commit!   table txn-id)        -> table with txn-id committed
+;;   (txn-table-abort!    table txn-id)        -> table with txn-id aborted
+;;   (txn-table-status    table txn-id)        -> 'active/'committed/'aborted/#f
+;;   (txn-table-active-count    table)         -> count of active txns
+;;   (txn-table-committed-count table)         -> count of committed txns
+
+;; Constructor: an empty alist. '() plays the role of both "no entries"
+;; and the terminator in our association-list walks.
+(define (txn-table-init)
+  '())
+
+;; Helper: look up txn-id in the alist, returning its status symbol
+;; or #f if absent.
+(define (txn-table-lookup table txn-id)
+  (cond
+    ((null? table) #f)
+    ((= txn-id (car (car table)))
+     (cdr (car table)))
+    (else
+     (txn-table-lookup (cdr table) txn-id))))
+
+;; Helper: whether an entry already exists for txn-id in the alist.
+(define (txn-table-has? table txn-id)
+  (cond
+    ((null? table) #f)
+    ((= txn-id (car (car table))) #t)
+    (else
+     (txn-table-has? (cdr table) txn-id))))
+
+;; Helper: replace the status of an existing entry, preserving order.
+;; Caller guarantees the key exists.
+(define (txn-table-replace table txn-id new-status)
+  (cond
+    ((null? table) '())
+    ((= txn-id (car (car table)))
+     (cons (cons txn-id new-status) (cdr table)))
+    (else
+     (cons (car table)
+           (txn-table-replace (cdr table) txn-id new-status)))))
+
+;; Helper: prepend a new entry to the alist.
+(define (txn-table-prepend table txn-id status)
+  (cons (cons txn-id status) table))
+
+;; Begin a transaction: mark txn-id as 'active. If the txn was already
+;; present (e.g. accidentally begun twice), we leave its existing
+;; status alone rather than overwriting a committed/aborted entry —
+;; that's almost certainly a logic error in the caller.
+(define (txn-table-begin! table txn-id)
+  (if (txn-table-has? table txn-id)
+      table
+      (txn-table-prepend table txn-id 'active)))
+
+;; Commit a transaction: transition 'active -> 'committed.
+;; If the txn isn't currently active (either absent or already
+;; finalized), we leave the table unchanged. This matches typical
+;; WAL semantics where commit is only valid on an in-flight txn.
+(define (txn-table-commit! table txn-id)
+  (if (= 'active (txn-table-lookup table txn-id))
+      (txn-table-replace table txn-id 'committed)
+      table))
+
+;; Abort a transaction: transition 'active -> 'aborted.
+;; Same guard as commit: only an active txn can be aborted.
+(define (txn-table-abort! table txn-id)
+  (if (= 'active (txn-table-lookup table txn-id))
+      (txn-table-replace table txn-id 'aborted)
+      table))
+
+;; Look up the current status of a txn-id.
+;; Returns 'active, 'committed, 'aborted, or #f if unknown.
+(define (txn-table-status table txn-id)
+  (txn-table-lookup table txn-id))
+
+;; Helper: count entries whose status matches the given symbol.
+(define (txn-table-count-where table status)
+  (cond
+    ((null? table) 0)
+    ((equal? status (cdr (car table)))
+     (+ 1 (txn-table-count-where (cdr table) status)))
+    (else
+     (txn-table-count-where (cdr table) status))))
+
+;; Number of currently-active txns.
+(define (txn-table-active-count table)
+  (txn-table-count-where table 'active))
+
+;; Number of committed txns.
+(define (txn-table-committed-count table)
+  (txn-table-count-where table 'committed))

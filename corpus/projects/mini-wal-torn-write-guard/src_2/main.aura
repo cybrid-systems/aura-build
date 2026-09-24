@@ -1,0 +1,54 @@
+;; main.aura — orchestrate the scenario and print results
+
+(define SECTOR-SIZE 64)
+
+;; Build a 24-byte payload derived from frame id (deterministic, not literal)
+(define (make-payload id)
+  (let loop ((i 0) (acc '()))
+    (if (= i 24)
+        (reverse acc)
+        (loop (+ i 1)
+              (cons (modulo (+ (* id 31) (* i 7)) 256) acc)))))
+
+(define w (wal-open SECTOR-SIZE))
+
+;; Append 8 frames
+(set! w (wal-append! w (make-frame 0 (make-payload 0))))
+(set! w (wal-append! w (make-frame 1 (make-payload 1))))
+(set! w (wal-append! w (make-frame 2 (make-payload 2))))
+(set! w (wal-append! w (make-frame 3 (make-payload 3))))
+(set! w (wal-append! w (make-frame 4 (make-payload 4))))
+(set! w (wal-append! w (make-frame 5 (make-payload 5))))
+(set! w (wal-append! w (make-frame 6 (make-payload 6))))
+(set! w (wal-append! w (make-frame 7 (make-payload 7))))
+
+;; Pre-crash snapshot
+(define PRE_BYTES (wal-bytes w))
+(define PRE_VERIFY (wal-verify w))
+
+;; Inject torn write
+(set! w (crash-truncate-last-sector! w))
+(set! w (crash-clear-checksums! w))
+
+;; Build report after repair scan
+(define r (report-build w))
+
+(define TORN_SECTORS  (report-get r "TORN_SECTORS"))
+(define REPAIRED      (report-get r "REPAIRED"))
+(define TRUNCATED     (report-get r "TRUNCATED"))
+
+;; Run recovery (re-open + replay)
+(define recovered (recovery-run w))
+(define REPLAYED   (replay-count w))
+(define FINAL_BYTES (wal-bytes w))
+
+(define STATUS (report-get r "STATUS"))
+
+(display "PRE_BYTES=")        (display PRE_BYTES)       (newline)
+(display "PRE_VERIFY=")       (display PRE_VERIFY)      (newline)
+(display "TORN_SECTORS=")     (display TORN_SECTORS)    (newline)
+(display "REPAIRED=")         (display REPAIRED)        (newline)
+(display "TRUNCATED=")        (display TRUNCATED)       (newline)
+(display "REPLAYED=")         (display REPLAYED)        (newline)
+(display "FINAL_BYTES=")      (display FINAL_BYTES)     (newline)
+(display "STATUS=")           (display STATUS)          (newline)

@@ -1,0 +1,84 @@
+;; wal_buffer.aura — simulated O_DIRECT-aligned byte buffer
+;;
+;; A "buffer" is the in-memory backing store for the WAL.  Internally we
+;; model it as a list of bytes, paired with a logical capacity.  The
+;; capacity is purely advisory; we never throw a buffer-full error in
+;; this simulation.  The list grows by consing new bytes onto the head,
+;; so the logical "tail" of the buffer is the end of the reversed list —
+;; i.e. (car (reverse buf)) is the last byte written.  For convenience
+;; we keep the buffer as a list ordered from oldest byte (head) to newest
+;; byte (tail) so that buffer-slice can return a contiguous range with
+;; straight list-ref.
+;;
+;; API:
+;;   (buffer-new size)            -> buffer
+;;   (buffer-tail buf)            -> non-negative integer (current length)
+;;   (buffer-slice buf s e)       -> list of bytes [s, e)
+;;   (buffer-truncate buf offset) -> new buffer truncated to `offset` bytes
+;;
+;; Conventions:
+;;   - Offsets are 0-based, half-open [start, end).
+;;   - Truncating to 0 yields an empty buffer.
+;;   - Slicing with start >= end yields '().
+;;   - Truncating to an offset beyond the current tail is a no-op (returns
+;;     the buffer unchanged); truncating to a negative offset is clamped
+;;     to 0.  This mirrors a real ftruncate() that only shrinks.
+
+;; Build a new buffer with the given (advisory) capacity.
+;; The actual byte list starts empty.  We keep capacity as a pair so
+;; future versions can pre-reserve sectors if desired.
+(define (buffer-new size)
+  (let ((n (if (and (number? size) (>= size 0)) size 0)))
+    (cons n '())))
+
+;; Internal: get the byte list out of a buffer value.
+(define (buffer-bytes buf)
+  (cdr buf))
+
+;; Internal: rebuild a buffer value with the same capacity but new bytes.
+(define (buffer-with-bytes buf bs)
+  (cons (car buf) bs))
+
+;; Current write position (== number of bytes present).
+(define (buffer-tail buf)
+  (length (buffer-bytes buf)))
+
+;; Extract the byte range [start, end) from a buffer.
+;; Out-of-range requests are clamped:
+;;   - start < 0           -> 0
+;;   - end   > tail        -> tail
+;;   - start > end         -> '()
+;; The returned list is in the same oldest->newest order as the buffer.
+(define (buffer-slice buf start end)
+  (let* ((bs    (buffer-bytes buf))
+         (tail  (length bs))
+         (s     (if (and (number? start) (>= start 0)) start 0))
+         (e     (if (and (number? end)   (>= end   0)) end   tail)))
+    (let ((s2 (if (> s tail) tail s))
+          (e2 (if (> e tail) tail e)))
+      (if (>= s2 e2)
+          '()
+          (let loop ((i 0) (xs bs) (out '()))
+            (cond
+              ((null? xs) (reverse out))
+              ((>= i e2)  (reverse out))
+              ((< i s2)   (loop (+ i 1) (cdr xs) out))
+              (else       (loop (+ i 1) (cdr xs) (cons (car xs) out))))))))
+
+;; Truncate the buffer to `offset` bytes.  Returns a NEW buffer value.
+;;   - offset <= 0  -> empty buffer (capacity preserved)
+;;   - offset >= tail -> identical contents (no-op)
+;;   - otherwise -> drop everything past `offset`
+(define (buffer-truncate buf offset)
+  (let* ((bs    (buffer-bytes buf))
+         (tail  (length bs))
+         (off   (cond
+                  ((not (number? offset)) 0)
+                  ((< offset 0)           0)
+                  ((> offset tail)        tail)
+                  (else                   offset))))
+    (let loop ((i 0) (xs bs) (acc '()))
+      (cond
+        ((null? xs)            (buffer-with-bytes buf (reverse acc)))
+        ((>= i off)            (buffer-with-bytes buf (reverse acc)))
+        (else                  (loop (+ i 1) (cdr xs) (cons (car xs) acc)))))))

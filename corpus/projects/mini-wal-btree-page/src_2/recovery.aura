@@ -1,0 +1,254 @@
+;; recovery.aura
+;; Recovery machinery for the mini WAL + B+tree engine.
+;;
+;; After a crash (or, in our case, after an explicit unclean shutdown
+;; signalled by truncating the WAL) the in-memory state is empty and
+;; the only authoritative source is the WAL itself. Recovery has to
+;; walk the WAL from the oldest surviving frame to the newest, redo
+;; every committed change against the page cache, and — for any
+;; transaction that did *not* commit — undo its effects so the cache
+;; reflects exactly the set of committed state at the chosen LSN.
+;;
+;; We split recovery into three small entry points so they can also
+;; be exercised individually from main.aura (and so each one has a
+;; clear, testable responsibility):
+;;
+;;     recover             -- full pass: redo then undo-to-target
+;;     redo-wal-into!      -- play WAL frames forward through cache
+;;     undo-before!        -- walk an undo-chain before a target LSN
+;;     redo-scan           -- derive the set of committed txns seen
+;;
+;; The cache binding is updated with `set!` so the mutations are
+;; visible to callers; the WAL itself is treated as read-only here
+;; (only `wal-truncate-before` may run afterwards, and it's invoked
+;; by the engine driver, not by recovery itself).
+
+;; ------------------------------------------------------------------
+;; Redo pass: replay every WAL frame in LSN order into the cache.
+;;
+;; For each frame we extract its payload and apply it to the page
+;; identified by the payload header (see codec.aura for the layout).
+;; If the cache doesn't yet hold that page we materialise an empty
+;; one with the right pid and the frame's LSN as its first-touched
+;; mark; otherwise we only overwrite it when the new LSN is strictly
+;; greater than the page's current page-lsn, preserving write-ahead
+;; ordering.
+;;
+;; Returns the (possibly enriched) cache so callers can chain.
+;; ------------------------------------------------------------------
+(define (redo-wal-into! wal cache)
+  (let loop ((frames (wal-frames wal))
+             (c      cache))
+    (if (null? frames)
+        c
+        (let* ((f          (car frames))
+               (lsn        (wal-frame-lsn f))
+               (payload    (wal-frame-payload f))
+               (pid        (car payload))
+               (new-cells  (cdr payload))
+               (existing   (cache-get c pid)))
+          (let ((c2
+                  (if (null? existing)
+                      ;; Cold page: install it with this LSN as the
+                      ;; first-touched mark.
+                      (cache-put! c pid
+                        (list 'PAGE pid lsn new-cells #f))
+                      ;; Warm page: only overwrite if LSN advances.
+                      (let ((p  (car existing))
+                            (rs (cdr existing)))
+                        (if (lsn<? (page-lsn p) lsn)
+                            (cache-put! c pid
+                              (list 'PAGE pid lsn new-cells #f))
+                            c)))))
+            (loop (cdr frames) c2))))))
+
+;; ------------------------------------------------------------------
+;; Undo-before: walk an undo chain backwards from a target LSN.
+;;
+;; A transaction's WAL frames are tagged with the txn id and the
+;; LSN of the inverse frame (the "previous-pointer"). Starting at the
+;; target LSN we follow previous-pointers until we run off the end,
+;; restoring each prior page state as we go. This is how we abort a
+;; transaction that never committed, and also how recovery unrolls
+;; any txns that were in-flight at crash time.
+;;
+;; For each frame we re-apply its *prior* cell list to the cache in
+;; the same way `redo-wal-into!` does, but moving the page's LSN back
+;; to the inverse LSN so further recovery passes see the right
+;; ordering.
+;;
+;; `target` is the LSN we start unrolling from (i.e. the txn's commit
+;; or last-write LSN); we stop when we reach LSN_START (no more prior
+;; frames).
+;; ------------------------------------------------------------------
+(define (undo-before! wal target cache)
+  (let loop ((cur   target)
+             (c     cache))
+    (if (< cur LSN_START)
+        c
+        (let ((maybe-frame (lookup-frame wal cur)))
+          (if (null? maybe-frame)
+              c
+              (let* ((f          (car maybe-frame))
+                     (lsn        (wal-frame-lsn f))
+                     (payload    (wal-frame-payload f))
+                     (pid        (car payload))
+                     (new-cells  (cdr payload))
+                     (prev       (inverse-lsn payload))
+                     (existing   (cache-get c pid)))
+                (let ((c2
+                        (if (null? existing)
+                            (cache-put! c pid
+                              (list 'PAGE pid lsn new-cells #f))
+                            (let ((p  (car existing))
+                                  (rs (cdr existing)))
+                              (if (lsn<? (page-lsn p) lsn)
+                                  (cache-put! c pid
+                                    (list 'PAGE pid lsn new-cells #f))
+                                  c)))))
+                  (loop prev c2))))))))
+
+;; helper: find the frame in the WAL whose LSN matches `target`.
+;; Returns '() if not found.
+(define (lookup-frame wal target)
+  (let loop ((fs (wal-frames wal)))
+    (cond ((null? fs) '())
+          ((= (wal-frame-lsn (car fs)) target)
+           (cons (car fs) '()))   ;; wrap so we can tell "not found"
+          (else (loop (cdr fs))))))
+
+;; helper: pull the inverse-LSN slot out of a payload.
+;; The codec stores it as the second-to-last cell-ish element when
+;; the frame is part of an undo chain; absent (0) when not.
+;; We default to 0 (= LSN before start) so loop terminates.
+(define (inverse-lsn payload)
+  (cond ((null? payload)                0)
+        ((null? (cdr payload))          0)
+        ((null? (cddr payload))         0)
+        ((null? (cdddr payload))        0)
+        ((null? (cddddr payload))       0)
+        ((null? (cdr (cddddr payload))) 0)
+        (else (car (cdr (cddddr payload))))))
+
+;; ------------------------------------------------------------------
+;; redo-scan: walk the WAL and return the list of txn ids that have a
+;; matching commit frame at or after every write frame we saw.
+;;
+;; This is the pure-recovery introspection helper: it doesn't touch
+;; the cache at all, just tells the caller which transactions
+;; actually committed (and therefore which ones' writes we should
+;; *keep* during a full recover).
+;; ------------------------------------------------------------------
+(define (redo-scan wal)
+  ;; First pass: collect every txn id that appears with a commit
+  ;; marker (encoded as the symbol 'COMMIT on the frame tag, or
+  ;; simply by being the last frame for that txn).
+  (let loop ((fs      (wal-frames wal))
+             (commits '()))
+    (cond ((null? fs)
+           ;; nothing to do — return commits as a list
+           (reverse commits))
+          (else
+           (let* ((f       (car fs))
+                  (payload (wal-frame-payload f))
+                  (tag     (and (not (null? payload))
+                                (car payload))))
+             (loop (cdr fs)
+                   (if (eq? tag 'COMMIT)
+                       (cons
+                         (if (and (not (null? (cdr payload)))
+                                  (not (null? (cddr payload))))
+                             (car (cdr payload))
+                             'unknown)
+                         commits)
+                       commits)))))))
+
+;; ------------------------------------------------------------------
+;; recover: full recovery pass.
+;;
+;;     1. Redo every WAL frame into the cache (LSN-ordered).
+;;     2. Determine which transactions committed.
+;;     3. For every transaction that did NOT commit, unroll its
+;;        writes via `undo-before!` starting at its last LSN.
+;;     4. Hand the (now consistent) cache back to the caller, who
+;;        can use it to rebuild the B+tree root.
+;;
+;; The tree argument is currently read-only here (used to validate
+;; root id expectations in callers); we don't mutate it because
+;; main.aura re-opens the tree with `btree-open` after recovery.
+;; ------------------------------------------------------------------
+(define (recover wal cache tree)
+  ;; Step 1: redo.
+  (let* ((c-after-redo (redo-wal-into! wal cache))
+         ;; Step 2: figure out which txns committed.
+         (committed    (redo-scan wal))
+         ;; Step 3: build the list of "in-flight" txn ids — those
+         ;; that wrote frames but never got a COMMIT marker.
+         ;; For this small engine every frame implicitly belongs to
+         ;; some txn; we approximate by saying: any payload whose
+         ;; first element is 'COMMIT counts as the commit, anything
+         ;; else is "still in flight" if its txn id is not in
+         ;; `committed`.
+         (txn-ids      (collect-txn-ids wal))
+         (in-flight    (filter-not
+                         (lambda (id)
+                           (member id committed))
+                         txn-ids)))
+    ;; Step 3 (cont): undo each in-flight txn from its tail LSN.
+    (let loop ((tixs in-flight)
+               (c    c-after-redo))
+      (if (null? tixs)
+          ;; Step 4: return the recovered cache. The btree will be
+          ;; re-opened by the caller using the cache contents.
+          c
+          (let* ((tid      (car tixs))
+                 (tail-lsn (last-lsn-for-txn wal tid)))
+            (loop (cdr tixs)
+                  (undo-before! wal tail-lsn c)))))))
+
+;; helper: collect every distinct txn id that appears in the WAL.
+(define (collect-txn-ids wal)
+  (let loop ((fs (wal-frames wal))
+             (acc '()))
+    (cond ((null? fs) (reverse acc))
+          (else
+           (let* ((f       (car fs))
+                  (payload (wal-frame-payload f))
+                  (tag     (and (not (null? payload))
+                                (car payload))))
+             (cond ((or (eq? tag 'COMMIT) (eq? tag 'ABORT))
+                    (loop (cdr fs) acc))
+                   ((null? payload)
+                    (loop (cdr fs) acc))
+                   (else
+                    (let ((tid (car payload)))
+                      (loop (cdr fs)
+                            (if (member tid acc)
+                                acc
+                                (cons tid acc)))))))))))
+
+;; helper: filter-out, written without SRFI extras.
+(define (filter-not pred xs)
+  (cond ((null? xs) '())
+        ((pred (car xs)) (filter-not pred (cdr xs)))
+        (else (cons (car xs) (filter-not pred (cdr xs))))))
+
+;; helper: find the highest LSN in `wal` whose frame carries txn id
+;; `tid`. Used by recover to know where to start unrolling.
+(define (last-lsn-for-txn wal tid)
+  (let loop ((fs   (wal-frames wal))
+             (best 0))
+    (cond ((null? fs) best)
+          (else
+           (let* ((f       (car fs))
+                  (lsn     (wal-frame-lsn f))
+                  (payload (wal-frame-payload f))
+                  (tag     (and (not (null? payload))
+                                (car payload))))
+             (cond ((or (eq? tag 'COMMIT) (eq? tag 'ABORT))
+                    (loop (cdr fs) best))
+                   ((null? payload)
+                    (loop (cdr fs) best))
+                   ((= (car payload) tid)
+                    (loop (cdr fs) (lsn-max best lsn)))
+                   (else (loop (cdr fs) best))))))))

@@ -1,0 +1,111 @@
+;; Trie-based solution for Design Add and Search Words Data Structure
+
+(define (make-node)
+  (let ((v (vector 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+    (cons v #f)))
+
+(define (node-children n) (car n))
+(define (node-end n) (cdr n))
+
+(define (char->idx c)
+  (- (char->integer c) (char->integer #\a)))
+
+(define (add-word root word)
+  (let loop ((node root) (w word))
+    (if (null? w)
+        (set-cdr! node #t)
+        (let ((idx (char->idx (car w)))
+              (children (node-children node)))
+          (let ((child (vector-ref children idx)))
+            (if (= child 0)
+                (let ((nc (make-node)))
+                  (vector-set! children idx nc)
+                  (loop nc (cdr w))))
+                (loop child (cdr w))))))))
+
+(define (search-helper node w)
+  (cond
+    ((null? w) (and (node-end node) #t))
+    ((null? node) #f)
+    ((char=? (car w) #\.)
+     (let ((children (node-children node)))
+       (let loop ((i 0))
+         (cond
+           ((>= i 26) #f)
+           (else
+             (let ((child (vector-ref children i)))
+               (if (= child 0)
+                   (loop (+ i 1))
+                   (if (search-helper child (cdr w))
+                       #t
+                       (loop (+ i 1))))))))))
+    (else
+     (let ((idx (char->idx (car w)))
+           (children (node-children node)))
+       (let ((child (vector-ref children idx)))
+         (if (= child 0)
+             #f
+             (search-helper child (cdr w))))))))
+
+(define (search-word root word)
+  (search-helper root word))
+
+(define (solve n ops)
+  (let ((root (make-node))
+        (result '()))
+    (define (process-op op)
+      (let ((kind (car op))
+            (w (cdr op)))
+        (if (eq? kind 'add)
+            (add-word root w)
+            (let ((found (search-word root w)))
+              (set! result (cons (if found 1 0) result))))))
+    (define (process-all lst)
+      (if (null? lst)
+          '()
+          (begin
+            (process-op (car lst))
+            (process-all (cdr lst)))))
+    (process-all ops)
+    (reverse result)))
+
+;; Display helper for a list of numbers
+(define (display-list lst)
+  (display "[")
+  (let loop ((l lst) (first #t))
+    (cond
+      ((null? l) (display "]"))
+      (else
+       (if first
+           (begin (display (car l)) (loop (cdr l) #f))
+           (begin (display ",") (display (car l)) (loop (cdr l) #f)))))))
+
+;; Test cases
+(define CASE0_OPS '(("add" . "bad") ("add" . "dad") ("add" . "mad") ("search" . "pad") ("search" . "bad")))
+(define CASE0_OUT (solve 5 CASE0_OPS))
+
+(define CASE1_OPS '(("add" . "a") ("search" . "a") ("search" . "b") ("search" . ".")))
+(define CASE1_OUT (solve 4 CASE1_OPS))
+
+(define CASE2_OPS '(("add" . "at") ("add" . "and") ("add" . "an") ("add" . "add") ("search" . "a") ("search" . "a.")))
+(define CASE2_OUT (solve 6 CASE2_OPS))
+
+(define CASE3_OPS '(("add" . "hello") ("add" . "hell") ("search" . "hello") ("search" . "hell") ("search" . "....")))
+(define CASE3_OUT (solve 5 CASE3_OPS))
+
+(define CASE4_OPS '(("search" . ".") ("add" . "a") ("search" . ".") ("search" . "b") ("add" . "ab") ("search" . "..") ("search" . "a.")))
+(define CASE4_OUT (solve 7 CASE4_OPS))
+
+(define CASE5_OPS '(("add" . "abc") ("add" . "abd") ("search" . "ab.")))
+(define CASE5_OUT (solve 3 CASE5_OPS))
+
+(define CASE6_OPS '(("add" . "test") ("search" . "....") ("search" . ".....") ("search" . "t..t")))
+(define CASE6_OUT (solve 4 CASE6_OPS))
+
+(display "CASE0=") (display-list CASE0_OUT) (newline)
+(display "CASE1=") (display-list CASE1_OUT) (newline)
+(display "CASE2=") (display-list CASE2_OUT) (newline)
+(display "CASE3=") (display-list CASE3_OUT) (newline)
+(display "CASE4=") (display-list CASE4_OUT) (newline)
+(display "CASE5=") (display-list CASE5_OUT) (newline)
+(display "CASE6=") (display-list CASE6_OUT) (newline)

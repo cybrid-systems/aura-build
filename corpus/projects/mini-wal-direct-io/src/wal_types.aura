@@ -1,0 +1,22 @@
+;; wal_types.aura
+;; Configuration record for the Direct-IO Write-Ahead Log simulator.
+;; The "config" is a plain association list (alist) since Aura does not
+;; provide records/structs. Keys: 'version, 'sector-size, 'direct?.
+
+;; Build a WAL configuration.
+;; - version: integer protocol version (e.g. 1)
+;; - sector-size: integer, alignment granularity in bytes (e.g. 4096)
+;; - direct?: boolean, whether O_DIRECT-style semantics are enabled
+(define (wal-make-config version sector-size direct?)
+  (list (cons 'version version)
+        (cons 'sector-size sector-size)
+        (cons 'direct? direct?)))
+
+(define (wal-version cfg)
+  (cdr (assq 'version cfg)))
+
+(define (wal-sector-size cfg)
+  (cdr (assq 'sector-size cfg)))
+
+(define (wal-direct? cfg)
+  (cdr (assq 'direct? cfg)))

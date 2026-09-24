@@ -1,0 +1,96 @@
+;; wal_buffer.aura
+;; Simulated "disk" byte buffer for the Direct-IO WAL.
+;;
+;; The buffer is a list-backed sequence of bytes. We choose a representation
+;; where cons puts new bytes at the HEAD of the list, so:
+;;   - (buffer-tail buf) returns the total byte count (i.e. the append offset),
+;;   - (buffer-slice buf start end) returns a sub-list of the buffer,
+;;   - (buffer-truncate buf offset) drops bytes past `offset` from the end.
+;;
+;; Representation (alist):
+;;   'size    -> integer, total number of bytes currently stored
+;;   'bytes   -> list of bytes (head = newest, tail = oldest), each 0..255
+;;
+;; Note: this matches the convention used by wal_align.aura's direct-append,
+;; which conses the padded payload bytes onto the front of the buffer.
+
+;; Build a new empty buffer with a given capacity hint (the capacity is
+;; purely informational; the buffer can grow without bound). We still keep
+;; it on the structure so callers can inspect it if desired.
+(define (buffer-new size)
+  (list (cons 'size 0)
+        (cons 'bytes '())
+        (cons 'capacity size)))
+
+;; Return the current tail offset of the buffer (i.e. number of bytes
+;; appended so far). This is the position where the next direct-append
+;; would write.
+(define (buffer-tail buf)
+  (cdr (assq 'size buf)))
+
+;; Internal helper: return the byte at logical offset `i` from the START
+;; of the buffer (i.e. the oldest byte is offset 0, newest byte is offset
+;; size-1). Walks the bytes list from newest to oldest, skipping `i` items.
+(define (buffer-byte-at offset n)
+  (let loop ((bs (cdr (assq 'bytes offset)))
+             (i n))
+    (if (= i 0)
+        (car bs)
+        (loop (cdr bs) (- i 1)))))
+
+;; Internal helper: collect the first `n` bytes (from the start / oldest end)
+;; into a list (head = oldest, matching the layout of the bytes list reversed).
+;; Used by buffer-slice.
+(define (buffer-take-prefix buf n)
+  (let ((sz (cdr (assq 'size buf))))
+    (let loop ((i 0) (acc '()))
+      (if (= i n)
+          acc
+          (let ((b (buffer-byte-at buf i)))
+            (loop (+ i 1) (append acc (list b))))))))
+
+;; Internal helper: collect bytes from offset `start` (inclusive) to `end`
+;; (exclusive) of the buffer, returning them as a list (head = byte at start).
+(define (buffer-take-range buf start end)
+  (let loop ((i start) (acc '()))
+    (if (>= i end)
+        acc
+        (let ((b (buffer-byte-at buf i)))
+          (loop (+ i 1) (append acc (list b)))))))
+
+;; Return a sub-list of the buffer covering logical offsets [start, end).
+;; Out-of-range indices are clamped to the buffer's current size. The
+;; returned list has the byte at `start` as its head and the byte just
+;; before `end` as its last element.
+(define (buffer-slice buf start end)
+  (let ((sz (cdr (assq 'size buf))))
+    (let ((s (if (< start 0) 0 start))
+          (e (if (> end sz) sz end)))
+      (cond ((>= s e) '())
+            (else (buffer-take-range buf s e))))))
+
+;; Truncate the buffer to at most `offset` bytes. Bytes past `offset` (i.e.
+;; the newest ones, since newer bytes are stored at the head of the bytes
+;; list) are discarded. If `offset` >= current size this is a no-op. If
+;; `offset` < 0, the buffer is emptied. This mirrors a crash-safe tail
+;; truncation: drop the partial trailing sector.
+(define (buffer-truncate buf offset)
+  (let* ((sz (cdr (assq 'size buf)))
+         (new-size (cond ((< offset 0) 0)
+                         ((> offset sz) sz)
+                         (else offset))))
+    ;; Walk the bytes list (newest -> oldest) and keep only the LAST
+    ;; `new-size` bytes, i.e. the oldest `new-size` bytes. Equivalently,
+    ;; drop (sz - new-size) bytes from the head of the bytes list.
+    (let ((drop (- sz new-size)))
+      (let loop ((bs (cdr (assq 'bytes buf)))
+                 (k 0)
+                 (acc '()))
+        (cond ((null? bs)
+               (set-cdr! (assq 'size buf) new-size)
+               (set-cdr! (assq 'bytes buf) (reverse acc)))
+              ((< k drop)
+               (loop (cdr bs) (+ k 1) acc))
+              (else
+               (loop (cdr bs) (+ k 1) (cons (car bs) acc))))))
+    buf))

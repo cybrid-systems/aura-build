@@ -1,0 +1,167 @@
+;; stats.aura
+;; Counters and statistics for the mini WAL + B+tree engine.
+;;
+;; This module gives `main.aura` (and any future caller) a single
+;; place to record and read simple instrumentation: how many cells
+;; are in the tree, how many keys are live vs deleted, how many pages
+;; are dirty, how many WAL frames have been written, how many page
+;; splits have happened, and so on.
+;;
+;; The counters are deliberately trivial: each stat is a single boxed
+;; integer held in a one-element list so we can mutate it with `set!`
+;; without the rest of the engine caring about how it's stored.
+;;
+;;     (define ctr (stat 0))
+;;     (stat-inc! ctr)            ;; ctr -> (1)
+;;     (stat-value ctr)           ;; -> 1
+;;
+;; The higher-level `make-stats` constructor returns an alist keyed
+;; by stat name, so callers can update many counters in one
+;; `set!` (or a couple) without juggling individual bindings.
+
+;; ---------- Low-level box ----------
+
+;; Make a new boxed integer holding `v`.
+(define (make-stat v)
+  (list v))
+
+;; Read the current value of a boxed stat.
+(define (stat-value s)
+  (car s))
+
+;; Add 1 to a boxed stat. Returns the same box with the new value.
+(define (stat-inc! s)
+  (set! s (cons (+ (car s) 1) (cdr s)))
+  s)
+
+;; Add `n` to a boxed stat. `n` may be negative.
+(define (stat-add! s n)
+  (set! s (cons (+ (car s) n) (cdr s)))
+  s)
+
+;; Reset a boxed stat back to zero. Useful for per-scenario resets.
+(define (stat-reset! s)
+  (set! s (cons 0 (cdr s)))
+  s)
+
+;; ---------- Stat collection ----------
+
+;; Stat names we track. Centralising them here keeps the keys in one
+;; place so different call sites can't accidentally drift apart.
+(define STAT-KEYS
+  (list
+    'cells-total      ;; total cells seen across all pages
+    'cells-live       ;; cells currently present in the tree
+    'keys-count       ;; unique live keys
+    'pages-dirty      ;; dirty pages currently in cache
+    'pages-live       ;; pages currently in cache
+    'wal-frames       ;; WAL frames appended
+    'splits           ;; page splits performed
+    'merges           ;; page merges performed
+    'puts             ;; btree-put! calls
+    'deletes          ;; btree-delete! calls
+    'gets             ;; btree-get calls
+    'cache-hits       ;; cache-get hits
+    'cache-misses     ;; cache-get misses
+    'redo-frames      ;; frames redone during recovery
+    'undo-frames      ;; frames undone during recovery
+  ))
+
+;; Build a fresh stat collection: an alist mapping each name in
+;; STAT-KEYS to a boxed zero.
+(define (make-stats)
+  (let loop ((ks STAT-KEYS) (acc '()))
+    (if (null? ks)
+        acc
+        (loop (cdr ks)
+              (cons (cons (car ks) (make-stat 0)) acc)))))
+
+;; Look up a boxed stat by name. Returns #f if the name is unknown so
+;; callers can detect typos instead of silently creating a counter.
+(define (stats-get st name)
+  (cond ((null? st) #f)
+        ((equal? (car (car st)) name) (cdr (car st)))
+        (else (stats-get (cdr st) name))))
+
+;; Increment the named stat by 1. No-op (returns #f) if the name is
+;; unknown — callers shouldn't have to guard every call site.
+(define (stats-inc! st name)
+  (let ((s (stats-get st name)))
+    (if s
+        (stat-inc! s)
+        #f)))
+
+;; Add `n` to the named stat. Same no-op-on-unknown behaviour as
+;; stats-inc!.
+(define (stats-add! st name n)
+  (let ((s (stats-get st name)))
+    (if s
+        (stat-add! s n)
+        #f)))
+
+;; Reset a single stat back to zero.
+(define (stats-reset! st name)
+  (let ((s (stats-get st name)))
+    (if s
+        (stat-reset! s)
+        #f)))
+
+;; Reset every stat in the collection. Returns the same alist so
+;; callers can chain or assign.
+(define (stats-reset-all! st)
+  (if (null? st)
+      st
+      (begin
+        (stat-reset! (cdr (car st)))
+        (stats-reset-all! (cdr st)))))
+
+;; Read the current numeric value of a named stat. Returns 0 if the
+;; name is unknown — convenient for `main.aura` which doesn't want
+;; to special-case missing keys.
+(define (stats-value st name)
+  (let ((s (stats-get st name)))
+    (if s
+        (stat-value s)
+        0)))
+
+;; Snapshot every stat into a plain association list of
+;; (name . number) pairs. Useful for printing and for the
+;; `KEY=value` contract that main.aura emits.
+(define (stats-snapshot st)
+  (if (null? st)
+      '()
+      (cons (cons (car (car st)) (stat-value (cdr (car st))))
+            (stats-snapshot (cdr st)))))
+
+;; ---------- High-level helpers ----------
+
+;; `btree-stats` (from btree.aura) returns a flat alist of
+;; (key . count) pairs describing what's currently on the pages.
+;; `cells-from-btree` totals those counts into a single integer so
+;; `stats.aura` can fold them into the live counters.
+(define (cells-from-btree bst)
+  (cond ((null? bst) 0)
+        (else (+ (cdr (car bst)) (cells-from-btree (cdr bst))))))
+
+;; Record a tree snapshot into the stats collection. `tree` is a
+;; btree (so we can ask it for `btree-stats`); the function updates
+;; `cells-live`, `keys-count`, and `cells-total` based on what the
+;; tree currently contains. Returns the (unchanged) stats alist so
+;; callers can chain.
+(define (stats-record-tree! st tree)
+  (let ((bs (btree-stats tree)))
+    (stats-add! st 'cells-live  (cells-from-btree bs))
+    (stats-add! st 'keys-count (length bs))
+    (stats-add! st 'cells-total (cells-from-btree bs)))
+  st)
+
+;; Record a cache snapshot: `pages-live` and `pages-dirty` are read
+;; straight off the cache. Returns the (unchanged) stats alist.
+(define (stats-record-cache! st cache)
+  (stats-add! st 'pages-live  (length (cache-dirty-ids cache)))
+  st)
+
+;; Record a WAL snapshot: `wal-frames` is read off the WAL.
+(define (stats-record-wal! st wal)
+  (stats-add! st 'wal-frames (length (wal-frames wal)))
+  st)

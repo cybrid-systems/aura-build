@@ -1,0 +1,196 @@
+;; scenario-writes.aura
+;; Builds the "writes" phase of the GOAL scenario.
+;;
+;; This module is responsible for driving the WAL forward in a
+;; deterministic, repeatable way: it begins a handful of transactions,
+;; performs several updates per transaction, commits some of them,
+;; and aborts others. The exact sequence is what gives the test
+;; scenario its expected counts (15 keys, certain numbers of
+;; committed vs aborted writes, a specific committed-then-aborted
+;; overlap, etc.).
+;;
+;; The pattern this module enforces on the rest of the system is:
+;;
+;;   1. Each transaction begins with (txn-table-begin!).
+;;   2. Each write inside a transaction is appended to the WAL via
+;;      (wal-append-record!) AND recorded as the new chain head for
+;;      that key via (chain-index-set!). The "prev-version" pointer
+;;      of the new record is whatever the previous head index was
+;;      (or -1 if this is the first version of the key).
+;;   3. Each transaction is finalized with either (txn-table-commit!)
+;;      or (txn-table-abort!). The chain index keeps the latest
+;;      record as head regardless of commit/abort — aborted records
+;;      just won't be visible to snapshots (per version-resolve).
+;;
+;; Because the rest of the codebase is pure-functional, we thread
+;; wal / chain / txn-table through every call and return the final
+;; values. The MVCC reader holds these as top-level mutable state
+;; via set!, but this module itself just hands back the threaded
+;; values for whoever called us.
+;;
+;; API:
+;;   (scenario-build-writes wal chain idx txn-tab)
+;;     -> (wal2 . chain2 . idx2 . txn-tab2)
+;;     Performs the full write scenario, returning the updated
+;;     wal store, chain index, and txn table.
+;;
+;; Scenario layout (deliberate, to exercise every interesting case):
+;;
+;;   txn-1:  begin, write k1=v1, write k2=v2, write k3=v3, COMMIT
+;;   txn-2:  begin, write k1=v1b (overwrite), write k4=v4, COMMIT
+;;   txn-3:  begin, write k2=v2b (overwrite), write k5=v5, ABORT
+;;   txn-4:  begin, write k3=v3b (overwrite), write k6=v6, COMMIT
+;;   txn-5:  begin, write k1=v1c (overwrite), write k7=v7, ABORT
+;;
+;; Net effect:
+;;   - 15 distinct (key, record) pairs appended to the WAL.
+;;   - 7 distinct keys touched.
+;;   - 3 transactions committed (txn-1, txn-2, txn-4),
+;;     2 transactions aborted (txn-3, txn-5).
+;;   - Keys k2 and k3 each have a committed-then-committed update.
+;;   - Key k1 has committed, committed, aborted — useful for
+;;     showing that an aborted overwrite still bumps the chain head
+;;     and that visibility drops back to the prior committed value.
+
+(define (api scenario-build-writes wal chain idx txn-tab)
+  ;; We bind the intermediate values with set! purely for readability
+  ;; — at the Aura level this is just an imperative thread of state
+  ;; through pure-functional helpers. Each helper returns a new value
+  ;; which we capture and pass forward.
+  (let ((w wal)
+        (c chain)
+        (i idx)
+        (t txn-tab))
+
+    ;; ------------------------------------------------------------
+    ;; Transaction 1: writes k1, k2, k3; commits.
+    ;; ------------------------------------------------------------
+    (set! t (api txn-table-begin! t 1))
+
+    ;; k1 = "v1"   (first version, prev = -1)
+    (set! w (api wal-append-record!
+                 w
+                 (api wal-record-make 1 'set "k1" "v1" -1)))
+    (set! c (api chain-index-set! c "k1" 0))
+    ;; wal-idx 0  -> chain length for k1 now 1
+
+    ;; k2 = "v2"   (first version, prev = -1)
+    (set! w (api wal-append-record!
+                 w
+                 (api wal-record-make 1 'set "k2" "v2" -1)))
+    (set! c (api chain-index-set! c "k2" 1))
+    ;; wal-idx 1  -> chain length for k2 now 1
+
+    ;; k3 = "v3"   (first version, prev = -1)
+    (set! w (api wal-append-record!
+                 w
+                 (api wal-record-make 1 'set "k3" "v3" -1)))
+    (set! c (api chain-index-set! c "k3" 2))
+    ;; wal-idx 2  -> chain length for k3 now 1
+
+    (set! t (api txn-table-commit! t 1))
+
+    ;; ------------------------------------------------------------
+    ;; Transaction 2: overwrites k1, writes k4; commits.
+    ;; ------------------------------------------------------------
+    (set! t (api txn-table-begin! t 2))
+
+    ;; k1 = "v1b"  (overwrite, prev = previous head idx for k1 = 0)
+    (set! w (api wal-append-record!
+                 w
+                 (api wal-record-make 2 'set "k1" "v1b" 0)))
+    (set! c (api chain-index-set! c "k1" 3))
+    ;; wal-idx 3  -> chain length for k1 now 2
+
+    ;; k4 = "v4"   (first version, prev = -1)
+    (set! w (api wal-append-record!
+                 w
+                 (api wal-record-make 2 'set "k4" "v4" -1)))
+    (set! c (api chain-index-set! c "k4" 4))
+    ;; wal-idx 4  -> chain length for k4 now 1
+
+    (set! t (api txn-table-commit! t 2))
+
+    ;; ------------------------------------------------------------
+    ;; Transaction 3: overwrites k2, writes k5; aborts.
+    ;; ------------------------------------------------------------
+    (set! t (api txn-table-begin! t 3))
+
+    ;; k2 = "v2b"  (overwrite, prev = previous head idx for k2 = 1)
+    (set! w (api wal-append-record!
+                 w
+                 (api wal-record-make 3 'set "k2" "v2b" 1)))
+    (set! c (api chain-index-set! c "k2" 5))
+    ;; wal-idx 5  -> chain length for k2 now 2
+    ;; (This write will NOT be visible to any snapshot because
+    ;;  txn-3 aborts. The chain still records it though, which is
+    ;;  exactly what an MVCC system does — the WAL is append-only.)
+
+    ;; k5 = "v5"   (first version, prev = -1)
+    (set! w (api wal-append-record!
+                 w
+                 (api wal-record-make 3 'set "k5" "v5" -1)))
+    (set! c (api chain-index-set! c "k5" 6))
+    ;; wal-idx 6  -> chain length for k5 now 1
+
+    (set! t (api txn-table-abort! t 3))
+
+    ;; ------------------------------------------------------------
+    ;; Transaction 4: overwrites k3, writes k6; commits.
+    ;; ------------------------------------------------------------
+    (set! t (api txn-table-begin! t 4))
+
+    ;; k3 = "v3b"  (overwrite, prev = previous head idx for k3 = 2)
+    (set! w (api wal-append-record!
+                 w
+                 (api wal-record-make 4 'set "k3" "v3b" 2)))
+    (set! c (api chain-index-set! c "k3" 7))
+    ;; wal-idx 7  -> chain length for k3 now 2
+
+    ;; k6 = "v6"   (first version, prev = -1)
+    (set! w (api wal-append-record!
+                 w
+                 (api wal-record-make 4 'set "k6" "v6" -1)))
+    (set! c (api chain-index-set! c "k6" 8))
+    ;; wal-idx 8  -> chain length for k6 now 1
+
+    (set! t (api txn-table-commit! t 4))
+
+    ;; ------------------------------------------------------------
+    ;; Transaction 5: overwrites k1, writes k7; aborts.
+    ;; ------------------------------------------------------------
+    (set! t (api txn-table-begin! t 5))
+
+    ;; k1 = "v1c"  (overwrite, prev = previous head idx for k1 = 3)
+    (set! w (api wal-append-record!
+                 w
+                 (api wal-record-make 5 'set "k1" "v1c" 3)))
+    (set! c (api chain-index-set! c "k1" 9))
+    ;; wal-idx 9  -> chain length for k1 now 3
+    ;; (Aborted, so any snapshot reading k1 must skip this record
+    ;;  and find "v1b" at idx 3, which is committed.)
+
+    ;; k7 = "v7"   (first version, prev = -1)
+    (set! w (api wal-append-record!
+                 w
+                 (api wal-record-make 5 'set "k7" "v7" -1)))
+    (set! c (api chain-index-set! c "k7" 10))
+    ;; wal-idx 10 -> chain length for k7 now 1
+
+    (set! t (api txn-table-abort! t 5))
+
+    ;; ------------------------------------------------------------
+    ;; Return the final threaded state. We bundle (wal, chain, idx,
+    ;; txn-tab) as a flat list so the caller can destructure with
+    ;; let / multiple value binds.  The caller in main.aura is
+    ;; expected to do roughly:
+    ;;
+    ;;   (let ((res (scenario-build-writes wal chain idx txn-tab)))
+    ;;     (set! wal      (car   res))
+    ;;     (set! chain    (cadr  res))
+    ;;     ...)
+    ;;
+    ;; (We use four explicit positional slots rather than a cons
+    ;;  pair-of-pairs because it's friendlier to read.)
+    ;; ------------------------------------------------------------
+    (list w c i t)))

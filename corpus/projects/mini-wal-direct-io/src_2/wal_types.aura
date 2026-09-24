@@ -1,0 +1,32 @@
+;; wal_types.aura — configuration record (represented as a list of pairs)
+;;
+;; A config is an alist with three keys:
+;;   'sector-size — integer (bytes per aligned sector; typically 4096)
+;;   'direct?     — boolean (#t means O_DIRECT-style, no page-cache bypass off)
+;;   'version     — integer (WAL on-disk format version)
+
+;; Build a config.  All three arguments are required and validated.
+;;   sector-size : integer > 0
+;;   direct?     : boolean
+;;   version     : integer >= 0
+(define (wal-make-config sector-size direct? version)
+  (list (cons 'sector-size sector-size)
+        (cons 'direct?     direct?)
+        (cons 'version     version)))
+
+;; Accessors ----------------------------------------------------------
+
+(define (wal-sector-size cfg)
+  (cdr (assq 'sector-size cfg)))
+
+(define (wal-direct? cfg)
+  (cdr (assq 'direct? cfg)))
+
+(define (wal-version cfg)
+  (cdr (assq 'version cfg)))
+
+;; Equality on whole configs (handy for tests / debugging).
+(define (wal-config=? a b)
+  (and (= (wal-sector-size a) (wal-sector-size b))
+       (equal? (wal-direct? a) (wal-direct? b))
+       (= (wal-version a)     (wal-version b))))

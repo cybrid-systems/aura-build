@@ -14,8 +14,19 @@
   ],
   "entry": "main.aura",
   "run_mode": "cli_multi",
-  "expect": "",
-  "expect_res": [],
+  "expect": "WAL_VERSION=1\nFRAMES_APPENDED=8\nSECTORS_WRITTEN=2\nCHECKSUM_OK=1\nTORN_SECTORS=2\nREPAIRED=1\nTRUNCATED=1\nREPLAYED=5\nFINAL_BYTES=128\nSTATUS=OK",
+  "expect_res": [
+    "WAL_VERSION\\s*=\\s*1",
+    "FRAMES_APPENDED\\s*=\\s*8",
+    "SECTORS_WRITTEN\\s*=\\s*2",
+    "CHECKSUM_OK\\s*=\\s*1",
+    "TORN_SECTORS\\s*=\\s*2",
+    "REPAIRED\\s*=\\s*1",
+    "TRUNCATED\\s*=\\s*1",
+    "REPLAYED\\s*=\\s*5",
+    "FINAL_BYTES\\s*=\\s*128",
+    "STATUS\\s*=\\s*OK"
+  ],
   "source_res": [
     "\\(define\\s+\\(api\\s+byte-xor\\b",
     "\\(define\\s+\\(api\\s+byte=\\?\\b",

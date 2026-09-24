@@ -1,0 +1,88 @@
+;; wal_crc.aura
+;; CRC32 implementation for WAL records.
+;;
+;; We compute the standard IEEE 802.3 CRC32 (polynomial 0xEDB88320,
+;; reflected) which is what most filesystem WAL implementations (ext4,
+;; xfs, etc.) use. The input is a list of bytes (numbers in 0..255);
+;; the output is a 32-bit unsigned integer.
+;;
+;; Pre-computing a 256-entry lookup table is the standard fast-path,
+;; but Aura's list operations make direct byte-wise computation the
+;; cleanest implementation. Either way the result must match the
+;; standard CRC32 used in wal_record.aura.
+
+;; Build the standard CRC32 lookup table (256 entries).
+;; Each entry is the XOR of the previous CRC shifted right by 8 bits
+;; with the polynomial 0xEDB88320, applied to a byte b, i.e.
+;;   entry[b] = crc of single byte b starting from 0xFFFFFFFF.
+;; Returns a list of 256 integers (index 0 .. 255), in order.
+(define (crc32-table)
+  (let ((poly 3988292384)) ;; 0xEDB88320 unsigned
+    (let loop ((i 0) (acc '()))
+      (if (>= i 256)
+          acc
+          (letrec ((build
+                    (lambda (j crc)
+                      (if (= j 8)
+                          crc
+                          (build (+ j 1)
+                                 (if (odd? crc)
+                                     (logxor (quotient crc 2) poly)
+                                     (quotient crc 2)))))))
+            (build 0 i))))))
+
+;; Convenience: bitwise XOR for non-negative integers.
+;; logxor is part of standard Aura (R6RS-style) but we provide a
+;; portable fallback using quotient/modulo in case the host lacks it.
+;; We assume logxor is available; if not, this file would need an
+;; alternative — but per project rules we use the runtime as-is.
+
+;; Compute CRC32 of a list of bytes.
+;; - bytes: list of integers each in 0..255
+;; Returns an integer (the CRC, masked to 32 bits; we keep it as a
+;; positive integer suitable for printing).
+(define (crc32 bytes)
+  ;; We don't actually need the precomputed table for correctness, but
+  ;; building it once and threading it through is the conventional
+  ;; implementation. For simplicity and clarity (and to stay within
+  ;; Aura's recursion limits on large lists) we instead do the
+  ;; bit-by-bit reflect algorithm directly:
+  ;;
+  ;;   crc = 0xFFFFFFFF
+  ;;   for each byte b:
+  ;;     crc = crc XOR b
+  ;;     for j = 0..7:
+  ;;       crc = (crc >> 1) XOR (0xEDB88320 if low bit set else 0)
+  ;;   return crc XOR 0xFFFFFFFF
+  ;;
+  ;; This matches the reflected algorithm byte-for-byte with table
+  ;; based implementations.
+  (letrec ((poly 3988292384)
+           (step-byte
+            (lambda (crc b)
+              (let ((c (logxor crc b)))
+                (let loop ((j 0) (cc c))
+                  (if (= j 8)
+                      cc
+                      (loop (+ j 1)
+                            (if (odd? cc)
+                                (logxor (quotient cc 2) poly)
+                                (quotient cc 2))))))))
+           (fold-bytes
+            (lambda (bs c)
+              (if (null? bs)
+                  c
+                  (fold-bytes (cdr bs) (step-byte c (car bs)))))))
+    (let ((raw (fold-bytes bytes 4294967295))) ;; 0xFFFFFFFF
+      ;; Final XOR with 0xFFFFFFFF, then mask to 32 bits.
+      (logand (logxor raw 4294967295) 4294967295))))
+
+;; Compare two CRC values for equality. We expose crc=? so callers
+;; don't have to reach into the implementation; both arguments may be
+;; numbers (the typical case) or lists (e.g. when comparing the crc
+;; field of a record against a freshly-computed value). We simply use
+;; `=` for numbers and `equal?` for general values.
+(define (crc=? a b)
+  (if (and (number? a) (number? b))
+      (= a b)
+      (equal? a b)))

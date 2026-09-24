@@ -1,0 +1,13 @@
+;; frame.aura — frame representation (id + payload bytes)
+
+(define (api make-frame id payload)
+  (list id payload))
+
+(define (api frame-id f)
+  (car f))
+
+(define (api frame-payload f)
+  (cadr f))
+
+(define (api frame-bytes f)
+  (+ 4 (length (frame-payload f))))

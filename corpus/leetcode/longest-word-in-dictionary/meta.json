@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:18:44Z",
+      "ts_local": "2026-09-24 23:18:44 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 3611,
+        "total_characters": 0,
+        "prompt_tokens": 1279,
+        "completion_tokens": 2332,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.146,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "warning: unbalanced parentheses in input\n⚠ program returned an uncalled function\n",
+      "stdout_snippet": "#<procedure>\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:18:49Z",
+      "ts_local": "2026-09-24 23:18:49 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2293,
+        "total_characters": 0,
+        "prompt_tokens": 1279,
+        "completion_tokens": 1014,
+        "prompt_tokens_details": {
+          "cached_tokens": 1278
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.096,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 2:41: unbound variable: a\n  did you mean 'c'?\nerror: invalid closure: eval_flat: invalid closure\nerror: invalid closure: eval_flat: invalid closure\nerror: invalid closure: eval_flat: invalid closure\nerror: invalid closure: eval_flat: invalid closure\nerror: invalid closure: eval_flat: invalid closure\nerror: invalid closure: eval_flat: invalid closure\nerror: invalid closure: eval_flat: invalid closure\n",
+      "stdout_snippet": "CASE0=CASE0=CASE1=CASE2=CASE3=CASE4=CASE5=CASE6=CASE7="
+    }
+  ],
+  "slug": "longest-word-in-dictionary",
+  "title": "Longest Word in Dictionary",
+  "category": "tries",
+  "updated_at": "2026-09-24T15:18:49Z",
+  "updated_at_local": "2026-09-24 23:18:49 CST"
+}

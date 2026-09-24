@@ -1,0 +1,108 @@
+;; wal_align.aura — sector alignment helpers and direct append
+;;
+;; Three responsibilities:
+;;   1. align-up        — round `n` up to the next multiple of `base`.
+;;   2. align-check     — verify `n` is a multiple of `base`.
+;;   3. direct-append   — append a record's byte payload to a buffer using
+;;      an O_DIRECT-style contract: the tail must be aligned, and we may
+;;      pad (with sector-neutral zeroes) up to the next sector boundary so
+;;      that the next append also starts on a sector boundary.
+;;
+;; All routines are pure with respect to the buffer contents they return;
+;; `direct-append` returns a NEW buffer (it is non-destructive) so that
+;; callers can keep prior snapshots if they want.  This mirrors how a
+;; real O_DIRECT writer would issue pwrite() into a fixed kernel-mapped
+;; region without disturbing previously-issued sectors.
+
+;; ---------------------------------------------------------------------
+;; align-up: round n up to the next multiple of base.
+;;   n    : non-negative integer
+;;   base : positive integer
+;; Returns n when n is already aligned; otherwise base * ceil(n/base).
+;; If base <= 0 we fall back to returning n unchanged (no alignment known).
+(define (align-up n base)
+  (cond
+    ((not (and (number? n) (number? base))) n)
+    ((<= base 0) n)
+    ((<= n 0) 0)
+    (else
+      (let ((r (modulo n base)))
+        (if (= r 0) n (+ n (- base r)))))))
+
+;; ---------------------------------------------------------------------
+;; align-check: is n an exact multiple of base?
+;;   n    : integer
+;;   base : positive integer
+;; Returns #t when n mod base == 0, otherwise #f.
+(define (align-check n base)
+  (cond
+    ((not (and (number? n) (number? base))) #f)
+    ((<= base 0) #f)
+    (else (= (modulo n base) 0))))
+
+;; ---------------------------------------------------------------------
+;; Pad a list of bytes with k zero bytes at the end.
+;; Helper used by direct-append to round the buffer up to a sector
+;; boundary.  Implemented with tail recursion over the length.
+(define (align-pad-zeroes n)
+  (let loop ((i 0) (acc '()))
+    (if (>= i n)
+        (reverse acc)
+        (loop (+ i 1) (cons 0 acc)))))
+
+;; Convert a record (alist as produced by wal_record) into the flat
+;; list of bytes that lives on the wire.  We deliberately include
+;; only the payload: the header fields are encoded by the writer
+;; (wal_writer) before calling direct-append.  This keeps the alignment
+;; layer concerned solely with byte-level layout and not with record
+;; semantics.
+(define (align-record-bytes record)
+  (let ((p (cdr (assq 'payload record))))
+    (cond
+      ((null? p) '())
+      ((number? p) (align-pad-zeroes p))
+      (else p))))
+
+;; Convert a record-length into a number of bytes; mirrors what
+;; wal_record:record-len computes but kept local so this file is
+;; self-contained for testing.
+(define (align-record-bytes-len record)
+  (let ((p (cdr (assq 'payload record))))
+    (cond
+      ((null? p) 0)
+      ((number? p) p)
+      (else (length p)))))
+
+;; ---------------------------------------------------------------------
+;; direct-append: append the bytes of `record` to buffer `buf`, padding
+;; the tail with zeroes so the resulting buffer length is a multiple of
+;; `sector-size`.  The buffer is a plain list of bytes (head .. tail,
+;; left-to-right) as produced by wal_buffer:buffer-new.
+;;
+;; Returns a new buffer (list of bytes).  Empty buffer is allowed; the
+;; function still pads up to one full sector on the first append so
+;; that an O_DIRECT writer always commits aligned data.
+;;
+;; Pre-conditions:
+;;   - buf is a list of byte integers (or '())
+;;   - record is an alist with a 'payload key
+;;   - sector-size is a positive integer
+;;
+;; The function never mutates its inputs.
+(define (direct-append buf record sector-size)
+  (let ((current-len (length buf))
+        (payload-bytes (align-record-bytes record))
+        (payload-len  (align-record-bytes-len record)))
+    ;; Decide where in the buffer the new record should land.  Because
+    ;; we always keep the buffer aligned, `current-len` is a multiple
+    ;; of sector-size; the new record starts at exactly `current-len`.
+    (let ((aligned-tail (align-up current-len sector-size)))
+      (let ((new-len (+ aligned-tail payload-len)))
+        ;; Compute padded length: the buffer must end on a sector
+        ;; boundary so the NEXT direct-append can start aligned too.
+        (let ((padded-len (align-up new-len sector-size)))
+          (let ((pad (- padded-len new-len)))
+            ;; Build the tail: payload bytes followed by pad zeroes,
+            ;; then concatenate with the existing buffer.
+            (let ((tail (append payload-bytes (align-pad-zeroes pad))))
+              (append buf tail))))))))

@@ -1,0 +1,98 @@
+;; main.aura -- scenario orchestrator for the mini-WAL torn-write demo.
+;;
+;; This is the only file that calls (display ...). It runs the GOAL
+;; scenario step by step, pulling values through the module APIs:
+;;   bytes.aura -> sector.aura -> frame.aura -> wal.aura ->
+;;   crash.aura -> repair.aura -> replay.aura -> recovery.aura ->
+;;   report.aura
+;;
+;; Stdout contract: print each KEY=value line in the order listed in
+;; GOAL.md, computed from real API calls (no hardcoded expected values).
+
+;; ---------------------------------------------------------------------------
+;; Helpers
+;; ---------------------------------------------------------------------------
+
+;; Build a 24-byte payload list derived from the frame id.
+;; Bytes pattern: b0=id, b1=id+1, b2=id+2, ..., b23=id+23 (mod 256).
+;; This guarantees the payload depends on the id, not a literal string.
+(define (payload-for id)
+  (let loop ((k 0) (acc '()))
+    (if (= k 24)
+        (reverse acc)
+        (loop (+ k 1)
+              (cons (modulo (+ id k) 256) acc)))))
+
+;; Print a single KEY=value line followed by a newline.
+(define (kv key value)
+  (display key)
+  (display "=")
+  (display value)
+  (newline))
+
+;; ---------------------------------------------------------------------------
+;; Scenario
+;; ---------------------------------------------------------------------------
+
+;; Step 1: open a WAL with 64-byte sectors.
+(define w (wal-open 64))
+
+;; Step 2: append 8 frames (each with 24 payload bytes).
+(define (append-all w)
+  (let loop ((i 0))
+    (if (= i 8)
+        'done
+        (begin
+          (wal-append! w (make-frame i (payload-for i)))
+          (loop (+ i 1))))))
+(append-all w)
+
+;; Step 3: record pre-crash byte count and verify status.
+(define PRE_BYTES (wal-bytes w))
+(define PRE_VERIFY (if (wal-verify w) 1 0))
+
+;; Step 4: inject a torn write.
+;; First truncate the last sector mid-frame, then clear checksums on
+;; the affected tail sectors (per crash.aura contract: up to 2).
+(crash-truncate-last-sector! w)
+(crash-clear-checksums! w)
+
+;; Step 5: scan-and-repair pass.
+(repair-scan w)
+(define TORN_SECTORS (repair-count-torn w))
+(define REPAIRED     (repair-count-fixed w))
+
+;; The GOAL output also wants TRUNCATED; the repair report itself does
+;; not expose this directly, so we derive it by replaying the report.
+;; repair-scan returns a report alist with keys 'torn 'fixed 'truncated 'ok
+;; and the report module is the canonical accessor; we ask the report
+;; module which has access to whatever the repair pass attached.
+(define _report (report-build w))
+(define TRUNCATED (report-get _report 'truncated))
+
+;; Step 6: full restart recovery.
+(define RECOVER_OK (if (recovery-run w) 1 0))
+
+;; Step 7: replay + final byte count.
+(define REPLAYED   (replay-count w))
+(define FINAL_BYTES (wal-bytes w))
+
+;; Step 8: assemble STATUS.
+;; STATUS = "OK" only when nothing errored during recovery and the
+;; recovered replay count matches the 8 frames we appended.
+(define STATUS_STR (if (and (= RECOVER_OK 1) (= REPLAYED 8)) "OK" "ERR"))
+
+;; ---------------------------------------------------------------------------
+;; Stdout: one KEY=value line per key, in contract order.
+;; ---------------------------------------------------------------------------
+
+;; SECTORS: number of sectors after the run (post-repair).
+(kv "SECTORS"          (wal-sectors w))
+(kv "PRE_BYTES"        PRE_BYTES)
+(kv "PRE_VERIFY"       PRE_VERIFY)
+(kv "TORN_SECTORS"     TORN_SECTORS)
+(kv "REPAIRED"         REPAIRED)
+(kv "TRUNCATED"        TRUNCATED)
+(kv "REPLAYED"         REPLAYED)
+(kv "FINAL_BYTES"      FINAL_BYTES)
+(kv "STATUS"           STATUS_STR)

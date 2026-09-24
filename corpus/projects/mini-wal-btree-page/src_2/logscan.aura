@@ -1,0 +1,156 @@
+;; logscan.aura
+;; WAL frame scanning utilities for the mini WAL + B+tree engine.
+;;
+;; A "scan" is a non-mutating pass over an in-memory WAL that produces
+;; a stream of frames together with the derived view of what the cache
+;; would look like at each LSN. It is the lightweight sibling of the
+;; heavy `recover` routine in recovery.aura: where `recover` mutates
+;; the cache to bring the tree up to date, `logscan` only *observes*
+;; the WAL and reports what it sees.
+;;
+;; Two related facilities live here:
+;;
+;;   * `wal-scan`        -- iterate the WAL frame by frame, returning a
+;;                          list of (lsn . payload) pairs in LSN order.
+;;   * `wal-scan-stats`  -- summarise a scan: counts of frames, payload
+;;                          byte totals, first / last LSN, and the set
+;;                          of distinct page ids that were touched.
+;;
+;; Everything is built on top of the public WAL API (wal-frames,
+;; wal-frame-lsn, wal-frame-payload). We deliberately do not peek at
+;; the internal frame layout -- the scanner is just a consumer.
+;;
+;; The scanner is also the place where we check that the WAL is
+;; well-formed in the LSN dimension: every frame's LSN must be strictly
+;; greater than the previous one. We surface that as a boolean so the
+;; caller can decide what to do (recovery.aura uses this when it has
+;; to choose between fast and slow paths).
+
+;; Take the first n elements of xs. Defined locally so this file does
+;; not depend on the order in which util.aura and logscan.aura are
+;; loaded in the CLI.
+(define (ls-take n xs)
+  (if (or (= n 0) (null? xs))
+      '()
+      (cons (car xs) (ls-take (- n 1) (cdr xs)))))
+
+;; Walk an integer-keyed association list looking up k. Returns the
+;; associated value or #f if k is absent. We use assq's "first wins"
+;; semantics on purpose: a scan may legitimately encounter a frame
+;; whose page id already appears earlier in the WAL.
+(define (ls-assq k xs)
+  (cond
+    ((null? xs) #f)
+    ((= (car (car xs)) k) (cdr (car xs)))
+    (else (ls-assq k (cdr xs)))))
+
+;; Check that every LSN in `lsns` is strictly greater than its
+;; predecessor. `lsns` must be in ascending order for this to mean
+;; anything; wal-scan always produces ascending order, so callers do
+;; not have to sort.
+(define (ls-strictly-increasing? lsns)
+  (cond
+    ((null? lsns) #t)
+    ((null? (cdr lsns)) #t)
+    ((< (car (cdr lsns)) (car lsns)) #f)
+    (else (ls-strictly-increasing? (cdr lsns)))))
+
+;; Collect the set of page ids touched by a list of decoded payloads.
+;; A "touched" page is one that appears as the first byte of a payload
+;; (we follow the convention from codec.aura / page.aura that every
+;; payload leads with the affected page id). The result is a list of
+;; distinct pids, in the order in which they are first seen.
+;;
+;; We deliberately keep this dumb: the scanner does not try to parse
+;; every payload format, only to report which pages the WAL mentions.
+(define (ls-collect-pids payloads)
+  (let loop ((ps payloads) (acc '()))
+    (cond
+      ((null? ps) (reverse acc))
+      ((null? (car ps))
+       ;; Empty payload — no page id to be had. Skip it.
+       (loop (cdr ps) acc))
+      ((member (car (car ps)) acc)
+       ;; Already seen this pid.
+       (loop (cdr ps) acc))
+      (else
+       (loop (cdr ps) (cons (car (car ps)) acc))))))
+
+;; Sum the byte lengths of every payload in `payloads`.
+(define (ls-payload-bytes payloads)
+  (let loop ((ps payloads) (n 0))
+    (if (null? ps)
+        n
+        (loop (cdr ps) (+ n (length (car ps)))))))
+
+;; Public: walk an in-memory WAL and return a list of (lsn . payload)
+;; pairs, in ascending LSN order. The list is built by folding over
+;; the frames returned by (wal-frames wal); we sort on the way out so
+;; that a WAL whose underlying storage happens to be unordered is
+;; still presented in LSN order to the caller.
+;;
+;; Insertion-sort by LSN. The WAL is small (the engine deliberately
+;; keeps the working set tiny) so an O(n^2) sort is fine here.
+(define (ls-sort-by-lsn pairs)
+  (let insert ((xs pairs) (acc '()))
+    (if (null? xs)
+        acc
+        (letrec ((ins
+                   (lambda (x ys)
+                     (cond
+                       ((null? ys) (list x))
+                       ((< (car x) (car (car ys)))
+                        (cons x ys))
+                       (else (cons (car ys) (ins x (cdr ys))))))))
+          (insert (cdr xs) (ins (car xs) acc))))))
+
+(define (wal-scan wal)
+  (let ((frames (wal-frames wal)))
+    (let loop ((fs frames) (acc '()))
+      (if (null? fs)
+          (ls-sort-by-lsn acc)
+          (let ((f (car fs)))
+            (loop (cdr fs)
+                  (cons (cons (wal-frame-lsn f)
+                              (wal-frame-payload f))
+                        acc)))))))
+
+;; Public: summarise a scan of `wal`. Returns an association list
+;; with the following keys:
+;;
+;;   (count . n)            -- number of frames in the WAL
+;;   (bytes . b)            -- total payload bytes across all frames
+;;   (first . lsn)          -- smallest LSN, or #f if the WAL is empty
+;;   (last  . lsn)          -- largest  LSN, or #f if the WAL is empty
+;;   (ordered . #t/#f)      -- whether the LSNs are strictly ascending
+;;   (pages  . (p1 p2 ...)) -- distinct page ids touched, in order
+;;
+;; All numbers are computed by walking (wal-frames wal); nothing is
+;; hard-coded.
+(define (wal-scan-stats wal)
+  (let ((scanned (wal-scan wal)))
+    (let ((lsns (map car scanned))
+          (payloads (map cdr scanned)))
+      (let ((n (length scanned))
+            (b (ls-payload-bytes payloads))
+            (first (if (null? lsns) #f (car lsns)))
+            (last  (if (null? lsns) #f
+                       (let loop ((xs lsns))
+                         (if (null? (cdr xs))
+                             (car xs)
+                             (loop (cdr xs))))))
+            (ordered (ls-strictly-increasing? lsns))
+            (pages (ls-collect-pids payloads)))
+        (list
+          (cons 'count n)
+          (cons 'bytes b)
+          (cons 'first first)
+          (cons 'last last)
+          (cons 'ordered ordered)
+          (cons 'pages pages))))))
+
+;; Convenience: pull a single named field out of the alist returned
+;; by wal-scan-stats. Returns #f if the key is absent (mirroring the
+;; behaviour of assq on plain association lists).
+(define (scan-stat stats key)
+  (ls-assq key stats))

@@ -1,0 +1,97 @@
+;; txn.aura
+;; Transaction layer for the mini WAL + B+tree engine.
+;;
+;; A transaction is the user-facing unit of work that bundles a series
+;; of B+tree mutations with the WAL frames those mutations produce.
+;; The transaction keeps track of three things:
+;;
+;;   * the begin LSN (the LSN at which this transaction started),
+;;     used by recovery to decide undo eligibility;
+;;   * a list of (LSN . payload) frames that have been appended to the
+;;     WAL on behalf of this transaction, in append order;
+;;   * a "state" tag that is one of 'open, 'committed, or 'aborted.
+;;
+;; The commit/abort transitions simply stamp the state; the actual WAL
+;; records have already been written at append time, so commit just
+;; records that the work is durable, and abort marks the transaction
+;; as one that recovery will need to undo.
+;;
+;; redo/undo are pure walkers over the transaction's frame list:
+;;   * redo replays each frame's payload in LSN order, producing the
+;;     list of (LSN . payload) pairs in the order they were recorded;
+;;   * undo emits the inverse actions (for our purposes: 'skip for
+;;     puts, and a delete marker for deletes) so that recovery can
+;;     walk the frames backwards and reverse each one.
+;;
+;; Like the rest of the engine, transactions are represented as
+;; association-list-style tagged lists — no structs, no records.
+
+;; (define (txn-begin lsn) ...) -> txn
+;; Build a fresh transaction that begins at LSN `lsn`.
+;; The frame list starts empty and the state is 'open.
+(define (txn-begin lsn)
+  (list 'TXN lsn '() 'open))
+
+;; Field accessors. We expose them as small helpers rather than rely on
+;; positional car/cdr chains at every call site so that future layout
+;; changes only need to touch this file.
+(define (txn-state txn) (list-ref txn 3))
+(define (txn-begin-lsn txn) (list-ref txn 1))
+(define (txn-frames-of txn) (list-ref txn 2))
+
+;; Set a field by index. Returns a fresh list with the slot replaced.
+(define (txn-set-slot txn idx v)
+  (cond ((= idx 0) (cons v (cdr txn)))
+        ((= idx 1) (list (car txn) v (car (cdr (cdr txn))) (car (cdr (cdr (cdr txn))))))
+        ((= idx 2) (list (car txn) (car (cdr txn)) v (car (cdr (cdr (cdr txn))))))
+        ((= idx 3) (list (car txn) (car (cdr txn)) (car (cdr (cdr txn))) v))
+        (else txn)))
+
+;; (define (txn-commit! txn wal) ...) -> txn
+;; Mark the transaction as committed. We also append a commit marker
+;; frame to the WAL so that recovery can see a clean boundary; the
+;; marker carries the transaction's begin LSN as its payload so the
+;; recovery walk knows which transactions finished cleanly.
+;; We mutate the txn in place via set! since txn is bound by the caller.
+(define (txn-commit! txn wal)
+  (set! txn (txn-set-slot txn 3 'committed))
+  ;; Record the commit boundary in the WAL. The payload is just a
+  ;; single-element list containing the begin LSN — enough for
+  ;; recovery to identify the end of this transaction's frames.
+  (wal-append wal (list (lsn-next (car (cdr (cdr (cdr txn))))) (wal-magic wal) 0 (list (txn-begin-lsn txn))))
+  txn)
+
+;; (define (txn-abort! txn wal) ...) -> txn
+;; Mark the transaction as aborted. We append an abort marker so the
+;; WAL records the intent to undo; recovery will see this and walk the
+;; transaction's frame list backwards applying inverse operations.
+(define (txn-abort! txn wal)
+  (set! txn (txn-set-slot txn 3 'aborted))
+  (wal-append wal (list (lsn-next (car (cdr (cdr (cdr txn))))) (wal-magic wal) 0 (list 'abort (txn-begin-lsn txn))))
+  txn)
+
+;; (define (txn-redo txn) ...) -> list
+;; Produce the list of (LSN . payload) pairs that should be redone,
+;; in append order. Recovery walks this list and replays each
+;; payload into the page cache.
+(define (txn-redo txn)
+  (txn-frames-of txn))
+
+;; (define (txn-undo txn) ...) -> list
+;; Produce the inverse actions for each frame, in REVERSE order so
+;; that recovery can apply them strictly last-in-first-out. For each
+;; original frame we emit either:
+;;   * ('skip key)         for a put frame  (encoding 'put key val)
+;;   * ('delete key)       for a delete frame
+;; The caller is expected to interpret these tags and apply them.
+(define (txn-undo txn)
+  (define (inverse-one f)
+    (let ((payload (wal-frame-payload f)))
+      (cond ((null? payload) '())
+            ;; First byte is the op tag: 0 = put, 1 = delete.
+            ((= (car payload) 0)
+             (list 'skip (car (cdr payload))))
+            ((= (car payload) 1)
+             (list 'delete (car (cdr payload))))
+            (else '()))))
+  (reverse (map inverse-one (txn-frames-of txn))))

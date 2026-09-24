@@ -1,0 +1,115 @@
+;; wal-migrate.aura — schema-version migration for the WAL codec
+;;
+;; Two directions of migration:
+;;
+;;   forward  (from-id < to-id):
+;;       The target schema may contain ADDITIVE columns (new tags) that
+;;       the source record does not yet carry. We keep every existing
+;;       field whose tag-name is still in the target schema, and we
+;;       fill in defaults for any new tag the target declares.
+;;
+;;   backward (from-id > to-id):
+;;       The target schema is older / smaller and does not know about
+;;       some of the tags present in the record. We drop unknown
+;;       fields; existing fields whose tag is still known are kept as-is.
+;;
+;; A special case: from-id = 0 means "decoded record predates the
+;; schema registry entirely". In that case we cannot know which
+;; fields belong to which schema, so forward-fill only fills tags that
+;; are NOT already present in the record; backward-strip from 0 is a
+;; no-op (we have no schema to strip against).
+;;
+;; Likewise, to-id = 0 means "the target has no schema registered" —
+;; forward-fill returns the record unchanged and backward-strip
+;; returns an empty-fields record under schema 0.
+
+(define (api migrate-record r from-id to-id)
+  (cond
+    ((= from-id to-id) r)
+    ((< from-id to-id) (api forward-fill r from-id to-id))
+    (else              (api backward-strip r from-id to-id))))
+
+;; --- helpers --------------------------------------------------------------
+
+;; Look up a field's value in a record by tag-name.
+;; Returns the value if found, or #f if not present.
+(define (field-value fields name)
+  (cond
+    ((null? fields) #f)
+    ((equal? (tag-name (car fields)) name)
+     (cdr (car fields)))
+    (else (field-value (cdr fields) name))))
+
+;; Build the migrated field list for forward-fill.
+;; `target-tags` is the list of (name . type) tags from the target schema.
+;; `existing` is the source record's fields list.
+;; Returns a new list of (tag . value) pairs.
+(define (forward-fields target-tags existing)
+  (if (null? target-tags)
+      '()
+    (let* ((t (car target-tags))
+           (name (tag-name t))
+           (type (tag-type t))
+           (v (field-value existing name)))
+      (cons (cons name
+                  (if (equal? v #f)
+                      ;; not present -> use the type's default
+                      (default-value type)
+                      v))
+            (forward-fields (cdr target-tags) existing)))))
+
+;; --- forward-fill ---------------------------------------------------------
+
+(define (api forward-fill r from-id to-id)
+  ;; from-id == 0: decoded record predates the schema registry.
+  ;; We have no authoritative source schema, so we only fill defaults
+  ;; for tags absent from the record itself.
+  (cond
+    ((= to-id 0) r)
+    (else
+     (let ((target-tags (schema-fields to-id)))
+       (if (or (= from-id 0)
+               (= from-id to-id))
+           ;; Either no source schema info, or we already had the same
+           ;; tags. Just rebuild against target-tags, defaulting anything
+           ;; that is missing.
+           (make-record to-id
+                        (forward-fields target-tags (record-fields r)))
+           ;; from-id is known and differs from to-id: walk target
+           ;; schema, keep existing values where present, default the rest.
+           (make-record to-id
+                        (forward-fields target-tags (record-fields r))))))))
+
+;; --- backward-strip -------------------------------------------------------
+
+;; Keep only those fields whose tag-name is in `kept`, an alist
+;; of (name . type) entries.
+(define (keep-fields fields kept)
+  (cond
+    ((null? fields) '())
+    ((let ((nm (tag-name (car fields))))
+       (if (equal? (schema-type 0 nm) #f)
+           ;; schema-type on id 0 always returns #f, so we cannot rely
+           ;; on it — instead walk `kept` directly.
+           #f
+           #f))
+     '())
+    (else
+     (let* ((f (car fields))
+            (nm (tag-name f)))
+       (if (member nm (map tag-name kept))
+           (cons f (keep-fields (cdr fields) kept))
+           (keep-fields (cdr fields) kept))))))
+
+(define (api backward-strip r from-id to-id)
+  (cond
+    ;; Decoded-from-no-schema -> cannot know what to strip, leave alone.
+    ((= from-id 0) r)
+    ;; Stripping to "no schema" id 0 means dropping everything.
+    ((= to-id 0)   (make-record 0 '()))
+    ;; from-id == to-id is already handled by migrate-record, but be safe.
+    ((= from-id to-id) r)
+    (else
+     (let ((target-tags (schema-fields to-id)))
+       (make-record to-id
+                    (keep-fields (record-fields r) target-tags))))))

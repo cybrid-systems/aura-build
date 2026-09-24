@@ -1,0 +1,267 @@
+;; main.aura
+;; Top-level harness for the mini WAL MVCC reader.
+;;
+;; Executes the GOAL scenario:
+;;   1. Initialize WAL store, chain index, txn table, snapshot table, MVCC reader.
+;;   2. Begin several txns; append WAL records forming per-key version chains.
+;;   3. Take a few snapshots at different at-txn-id watermarks.
+;;   4. Issue snapshot-isolated reads via (mvcc-reader-get …); tally outcomes.
+;;   5. Finalize reader (scan chain index to materialize current KV pairs).
+;;   6. Print the 15 KEY=value lines in the required order.
+;;
+;; Stdout contract (15 lines, exact order):
+;;   WAL_RECORDS=<n>
+;;   WAL_BYTES=<n>
+;;   COMMITS=<n>
+;;   ABORTS=<n>
+;;   ACTIVE=<n>
+;;   CHAIN_KEYS=<n>
+;;   CHAIN_MAX_LEN=<n>
+;;   SNAPSHOTS=<n>
+;;   VISIBLE=<n>
+;;   NOT_VISIBLE=<n>
+;;   ABORTED_HIDDEN=<n>
+;;   MISS=<n>
+;;   READS=<n>
+;;   CURRENT_PAIRS=<n>
+;;   FINAL_BYTES=<n>
+
+;; ----------------------------------------------------------------------------
+;; Helpers
+;; ----------------------------------------------------------------------------
+
+;; Build an alist entry ((key . value) ...) from two parallel lists.
+;; Used to print CURRENT_PAIRS deterministically sorted by key.
+(define (build-kv-alist keys vals)
+  (cond
+    ((null? keys) '())
+    (else
+     (cons (cons (car keys) (car vals))
+           (build-kv-alist (cdr keys) (cdr vals))))))
+
+;; Sort an alist of (key . value) pairs by key, ascending.
+;; Uses an insertion-sort style over the flat association list.
+(define (sort-kv-alist alist)
+  (define (insert-one pair sorted)
+    (cond
+      ((null? sorted) (list pair))
+      ((string<? (car (car sorted)) (car pair))
+       (cons (car sorted) (insert-one pair (cdr sorted))))
+      (else (cons pair sorted))))
+  (define (loop rest acc)
+    (if (null? rest)
+        acc
+        (loop (cdr rest) (insert-one (car rest) acc))))
+  (loop alist '()))
+
+;; Format a single KV pair as "key=value".
+(define (fmt-kv pair) (string-append (car pair) "=" (cdr pair)))
+
+;; Join a list of strings with commas.
+(define (join-with-comma xs)
+  (cond
+    ((null? xs) "")
+    ((null? (cdr xs)) (car xs))
+    (else (string-append (car xs) "," (join-with-comma (cdr xs))))))
+
+;; Render a sorted alist of (key . value) pairs as "k1=v1,k2=v2,...".
+(define (render-kv-alist alist)
+  (join-with-comma (map fmt-kv (sort-kv-alist alist))))
+
+;; ----------------------------------------------------------------------------
+;; Scenario driver
+;; ----------------------------------------------------------------------------
+
+(define (scenario-collect-final reader wal txn-tab snap-tab chain-idx)
+  ;; Mirrors the scenario-stats.aura API surface, implemented inline here so
+  ;; main.aura is self-contained. Returns a list of all the metrics we need.
+  (let ((final (mvcc-reader-finalize reader)))
+    (list
+      (wal-store-len wal)
+      (wal-total-bytes wal)
+      (txn-table-committed-count txn-tab)
+      (txn-table-aborted-count-helper txn-tab)
+      (txn-table-active-count txn-tab)
+      (chain-index-count chain-idx)
+      (chain-index-max-length chain-idx)
+      (snapshot-table-count snap-tab)
+      final)))
+
+;; Helper: count aborted txns by scanning the txn-table.
+;; (We use a generic alist scan rather than depending on a non-listed API.)
+(define (txn-table-aborted-count-helper table)
+  (define (loop rest)
+    (cond
+      ((null? rest) 0)
+      ((eq? (cdr (car rest)) 'aborted)
+       (+ 1 (loop (cdr rest))))
+      (else (loop (cdr rest)))))
+  (loop table))
+
+;; ----------------------------------------------------------------------------
+;; main-run
+;; ----------------------------------------------------------------------------
+
+(define (main-run)
+  ;; 1. Initialize core structures.
+  (define wal      (wal-store-init))
+  (define chain    (chain-index-init))
+  (define txn-tab  (txn-table-init))
+  (define snap-tab (snapshot-table-init))
+
+  ;; mvcc-reader-init bundles the first three; we keep our own copies of the
+  ;; underlying structures because the API requires us to thread them through
+  ;; the lower-level calls (wal-append-record!, chain-index-set!, etc.).
+  (define reader (mvcc-reader-init wal chain txn-tab))
+
+  ;; 2. Begin several txns and append WAL records forming version chains.
+  ;;
+  ;; We perform 5 txns in order. Each txn writes 1 or 2 keys. Some commit,
+  ;; some abort. The chain index is updated after every append so the head
+  ;; pointer always reflects the newest WAL index for a given key.
+  ;;
+  ;; Layout:
+  ;;   txn 1: write k1=alpha  -> commit
+  ;;   txn 2: write k1=beta    -> abort   (overrides alpha in WAL but hidden)
+  ;;   txn 3: write k2=gamma, k3=delta -> commit
+  ;;   txn 4: write k2=epsilon -> abort   (overrides gamma in WAL but hidden)
+  ;;   txn 5: write k1=zeta,  k3=eta    -> commit
+  (define t1 1)
+  (define t2 2)
+  (define t3 3)
+  (define t4 4)
+  (define t5 5)
+
+  (set! txn-tab (txn-table-begin! txn-tab t1))
+  (set! txn-tab (txn-table-begin! txn-tab t2))
+  (set! txn-tab (txn-table-begin! txn-tab t3))
+  (set! txn-tab (txn-table-begin! txn-tab t4))
+  (set! txn-tab (txn-table-begin! txn-tab t5))
+
+  ;; --- txn 1: k1 = "alpha" -------------------------------------------------
+  (let ((rec (wal-record-make t1 'set "k1" "alpha" -1)))
+    (set! wal (wal-append-record! wal rec))
+    (set! chain (chain-index-set! chain "k1" 0)))
+
+  ;; --- txn 2: k1 = "beta"  (will abort) -----------------------------------
+  (let ((rec (wal-record-make t2 'set "k1" "beta" 0)))
+    (set! wal (wal-append-record! wal rec))
+    (set! chain (chain-index-set! chain "k1" 1)))
+
+  ;; --- txn 3: k2 = "gamma", k3 = "delta" ----------------------------------
+  (let ((rec (wal-record-make t3 'set "k2" "gamma" -1)))
+    (set! wal (wal-append-record! wal rec))
+    (set! chain (chain-index-set! chain "k2" 2)))
+  (let ((rec (wal-record-make t3 'set "k3" "delta" -1)))
+    (set! wal (wal-append-record! wal rec))
+    (set! chain (chain-index-set! chain "k3" 3)))
+
+  ;; --- txn 4: k2 = "epsilon" (will abort) ---------------------------------
+  (let ((rec (wal-record-make t4 'set "k2" "epsilon" 2)))
+    (set! wal (wal-append-record! wal rec))
+    (set! chain (chain-index-set! chain "k2" 4)))
+
+  ;; --- txn 5: k1 = "zeta", k3 = "eta" -------------------------------------
+  (let ((rec (wal-record-make t5 'set "k1" "zeta" 1)))
+    (set! wal (wal-append-record! wal rec))
+    (set! chain (chain-index-set! chain "k1" 5)))
+  (let ((rec (wal-record-make t5 'set "k3" "eta" 3)))
+    (set! wal (wal-append-record! wal rec))
+    (set! chain (chain-index-set! chain "k3" 6)))
+
+  ;; Commit / abort finalization.
+  (set! txn-tab (txn-table-commit! txn-tab t1))
+  (set! txn-tab (txn-table-abort!  txn-tab t2))
+  (set! txn-tab (txn-table-commit! txn-tab t3))
+  (set! txn-tab (txn-table-abort!  txn-tab t4))
+  (set! txn-tab (txn-table-commit! txn-tab t5))
+
+  ;; 3. Take snapshots at different watermarks.
+  ;;
+  ;; snap-a: at-txn-id = 1   -> only txn 1's writes are visible
+  ;; snap-b: at-txn-id = 3   -> txns 1 and 3 are visible (txns 4, 5 hidden)
+  ;; snap-c: at-txn-id = 5   -> all committed txns visible (1, 3, 5)
+  (set! snap-tab (snapshot-table-take! snap-tab 100 1))
+  (set! snap-tab (snapshot-table-take! snap-tab 200 3))
+  (set! snap-tab (snapshot-table-take! snap-tab 300 5))
+
+  ;; 4. Issue snapshot-isolated reads and tally outcomes.
+  ;;
+  ;; Reads table (snap-id, key):
+  ;;   (100, "k1") -> visible (alpha, txn 1 committed)
+  ;;   (100, "k2") -> not-visible (txn 3 wrote it, txn 3 > snap watermark 1)
+  ;;   (100, "k3") -> not-visible (txn 3 wrote it, txn 3 > snap watermark 1)
+  ;;   (200, "k1") -> visible     (zeta, txn 5 committed, txn 5 <= 3? NO)
+  ;;                  ... actually snap watermark is 3, so txn 5 is hidden.
+  ;;                  Walk: idx 5 (zeta, t5) hidden, idx 1 (beta, aborted) hidden,
+  ;;                  idx 0 (alpha, t1 committed, 1 <= 3) visible.
+  ;;   (200, "k2") -> visible (gamma, txn 3 committed, 3 <= 3)
+  ;;   (200, "k3") -> visible (delta, txn 3 committed, 3 <= 3)
+  ;;   (300, "k1") -> visible (zeta, txn 5 committed, 5 <= 5)
+  ;;   (300, "k2") -> visible (gamma, txn 3 committed, 3 <= 5; txn 4 aborted hidden)
+  ;;   (300, "k3") -> visible (eta,   txn 5 committed, 5 <= 5)
+  ;;   (200, "k9") -> miss (key never written)
+  (define visible 0)
+  (define not-visible 0)
+  (define aborted-hidden 0)
+  (define miss 0)
+  (define reads 0)
+
+  (define (do-read snap-id key)
+    (set! reads (+ reads 1))
+    (let ((result (mvcc-reader-get reader snap-id key)))
+      (cond
+        ((eq? result 'miss)
+         (set! miss (+ miss 1)))
+        ((eq? (car result) 'aborted)
+         (set! aborted-hidden (+ aborted-hidden 1)))
+        ((eq? (car result) 'visible)
+         (set! visible (+ visible 1)))
+        (else
+         (set! not-visible (+ not-visible 1))))))
+
+  (do-read 100 "k1")  ;; visible: alpha
+  (do-read 100 "k2")  ;; not-visible: txn 3 > watermark 1
+  (do-read 100 "k3")  ;; not-visible: txn 3 > watermark 1
+  (do-read 200 "k1")  ;; visible: alpha (zeta hidden, beta aborted)
+  (do-read 200 "k2")  ;; visible: gamma
+  (do-read 200 "k3")  ;; visible: delta
+  (do-read 300 "k1")  ;; visible: zeta
+  (do-read 300 "k2")  ;; visible: gamma
+  (do-read 300 "k3")  ;; visible: eta
+  (do-read 200 "k9")  ;; miss
+
+  ;; 5. Finalize reader and gather stats.
+  (define final-pair  (mvcc-reader-finalize reader))
+  (define final-pairs (car final-pair))
+  (define final-bytes (cdr final-pair))
+
+  (define wal-records (wal-store-len wal))
+  (define wal-bytes   (wal-total-bytes wal))
+  (define commits     (txn-table-committed-count txn-tab))
+  (define aborts      (txn-table-aborted-count-helper txn-tab))
+  (define actives     (txn-table-active-count txn-tab))
+  (define chain-keys  (chain-index-count chain))
+  (define chain-max   (chain-index-max-length chain))
+  (define snaps       (snapshot-table-count snap-tab))
+  (define current-pairs (length final-pairs))
+
+  ;; 6. Print the 15 KEY=value lines in the required order.
+  (display (string-append "WAL_RECORDS="   (number->string wal-records))) (newline)
+  (display (string-append "WAL_BYTES="     (number->string wal-bytes)))   (newline)
+  (display (string-append "COMMITS="       (number->string commits)))     (newline)
+  (display (string-append "ABORTS="        (number->string aborts)))      (newline)
+  (display (string-append "ACTIVE="        (number->string actives)))     (newline)
+  (display (string-append "CHAIN_KEYS="    (number->string chain-keys)))  (newline)
+  (display (string-append "CHAIN_MAX_LEN=" (number->string chain-max)))   (newline)
+  (display (string-append "SNAPSHOTS="     (number->string snaps)))       (newline)
+  (display (string-append "VISIBLE="       (number->string visible)))     (newline)
+  (display (string-append "NOT_VISIBLE="   (number->string not-visible))) (newline)
+  (display (string-append "ABORTED_HIDDEN="(number->string aborted-hidden))) (newline)
+  (display (string-append "MISS="          (number->string miss)))        (newline)
+  (display (string-append "READS="         (number->string reads)))       (newline)
+  (display (string-append "CURRENT_PAIRS=" (number->string current-pairs))) (newline)
+  (display (string-append "FINAL_BYTES="   (number->string final-bytes))) (newline))
+
+;; API export.
+(api main-run)

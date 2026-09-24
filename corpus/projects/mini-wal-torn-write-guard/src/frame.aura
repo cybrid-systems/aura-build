@@ -1,0 +1,44 @@
+;; frame.aura -- WAL frame abstraction
+;;
+;; A frame is a logical record that the WAL appends to the sector buffer.
+;; Conceptually each frame carries:
+;;   - a numeric id (small integer, used to identify committed frames)
+;;   - a payload (list of bytes 0..255)
+;; Internally a frame is represented as an alist so we can look fields up
+;; by symbol without introducing record types (which Aura does not have).
+;;
+;; Required (define (api ...)) forms:
+;;   (api make-frame id payload)   -> builds a frame from id + payload bytes
+;;   (api frame-id f)              -> returns the frame's numeric id
+;;   (api frame-payload f)         -> returns the frame's payload byte list
+;;   (api frame-bytes f)           -> total length in bytes of the frame
+;;                                    on the wire (id + payload)
+
+;; Helper: return the value associated with key k in alist a, or '()
+(define (alist-ref a k)
+  (cond ((null? a) '())
+        ((equal? (car (car a)) k) (cdr (car a)))
+        (else (alist-ref (cdr a) k))))
+
+;; Build a frame from a numeric id and a payload byte list.
+;; The frame is stored as the alist: ((id . <id>) (payload . <bytes>))
+;; We do NOT prefix the id as bytes here; frame-bytes reports the logical
+;; wire size (id bytes + payload bytes) for downstream accounting.
+(define (api make-frame id payload)
+  (cons (cons 'id id)
+        (cons (cons 'payload payload) '())))
+
+;; Accessors ---------------------------------------------------------------
+
+(define (api frame-id f)
+  (alist-ref f 'id))
+
+(define (api frame-payload f)
+  (alist-ref f 'payload))
+
+;; Total on-wire byte count for the frame.
+;; We treat the id as a single byte for accounting purposes (it is a small
+;; integer identifier; the scenario only uses single-digit ids). This keeps
+;; the byte budget predictable for the WAL layer.
+(define (api frame-bytes f)
+  (+ 1 (length (api frame-payload f))))

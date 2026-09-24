@@ -1,0 +1,160 @@
+;; frame.aura — WAL frame encoder/decoder for mini-wal-zstd-frames.
+;;
+;; Frame format (on-the-wire):
+;;   [MAGIC(2) | VER(1) | FLAGS(1) | CRC32(4) | DICT_ID(2) | RAW_LEN(2) | COMP_LEN(2) | PAYLOAD]
+;;
+;; All integers are big-endian, unsigned, packed one byte per slot of a byte list.
+;; MAGIC = 0x5A57 ("ZW").  VER = 1.  FLAGS = 0x00 (reserved).
+;; CRC32 is computed over the DECOMPRESSED payload (the original record bytes)
+;; so tail frames can be partially inspected without needing to decode the
+;; whole frame: if the frame's raw length is small enough, we can still verify
+;; the first bytes of the decompressed stream.
+;;
+;; Exposes:
+;;   (frame-magic)             -> 2-byte list  '(#x5A #x57)
+;;   (frame-version)           -> 1 (the byte #x01)
+;;   (frame-encode dict payload)  -> framed byte list
+;;   (frame-decode dict framed)   -> decompressed payload byte list
+;;   (frame-crc framed)        -> CRC32 of the decompressed payload (4-byte big-endian)
+;;   (frame-raw-len framed)    -> integer raw length declared in the frame header
+
+;; ---------------------------------------------------------------------------
+;; Byte-level helpers (module-private).
+;; ---------------------------------------------------------------------------
+
+;; Convert an integer in [0, 255] to its 1-byte list (always length 1).
+(define (u8-byte n)
+  (list (modulo n 256)))
+
+;; Big-endian N-byte encoding of n.  N must be >= 1.
+(define (u16-be n) (list (modulo (quotient n 256) 256)
+                         (modulo n 256)))
+
+(define (u32-be n) (list (modulo (quotient n 16777216) 256)
+                         (modulo (quotient n 65536) 256)
+                         (modulo (quotient n 256) 256)
+                         (modulo n 256)))
+
+;; Read a big-endian N-byte integer starting at offset `start` of byte list `bs`.
+(define (be-read bs start n)
+  (let ((acc 0)
+        (i 0))
+    (define (loop)
+      (if (>= i n)
+          acc
+          (let ((b (list-ref bs (+ start i))))
+            (set! acc (+ (* acc 256) b))
+            (set! i (+ i 1))
+            (loop))))
+    (loop)))
+
+;; Take n elements from byte list `bs` starting at offset `start`.
+(define (slice-at bs start n)
+  (let ((out '())
+        (i 0))
+    (define (loop)
+      (if (>= i n)
+          (reverse out)
+          (begin
+            (set! out (cons (list-ref bs (+ start i)) out))
+            (set! i (+ i 1))
+            (loop))))
+    (loop)))
+
+;; Drop the first k elements of a list.
+(define (drop k xs)
+  (if (= k 0)
+      xs
+      (drop (- k 1) (cdr xs))))
+
+;; ---------------------------------------------------------------------------
+;; Public frame constants.
+;; ---------------------------------------------------------------------------
+
+(define (frame-magic)
+  '(#x5A #x57))
+
+(define (frame-version)
+  #x01)
+
+(define (frame-flags)
+  #x00)
+
+;; ---------------------------------------------------------------------------
+;; frame-encode: payload byte list -> framed byte list.
+;; Layout: MAGIC(2) | VER(1) | FLAGS(1) | CRC32(4) | DICT_ID(2) | RAW_LEN(2) | COMP_LEN(2) | PAYLOAD
+;; ---------------------------------------------------------------------------
+
+(define (frame-encode dict payload)
+  (let* ((did (dict-id dict))
+         (comp (codec-compress dict payload))
+         (crc  (crc32 payload))
+         (magic (frame-magic))
+         (ver   (u8-byte (frame-version)))
+         (flgs  (u8-byte (frame-flags)))
+         (crc4  (u32-be crc))
+         (did2  (u16-be did))
+         (rlen2 (u16-be (length payload)))
+         (clen2 (u16-be (length comp))))
+    (append magic
+            ver flgs
+            crc4
+            did2
+            rlen2
+            clen2
+            comp)))
+
+;; ---------------------------------------------------------------------------
+;; Header field offsets.
+;; Total header = 2 + 1 + 1 + 4 + 2 + 2 + 2 = 14 bytes.
+;; ---------------------------------------------------------------------------
+
+(define HDR-MAGIC-START 0)   ; 2 bytes
+(define HDR-VER-OFF     2)   ; 1 byte
+(define HDR-FLAGS-OFF   3)   ; 1 byte
+(define HDR-CRC-START   4)   ; 4 bytes
+(define HDR-DICT-START  8)   ; 2 bytes
+(define HDR-RAW-START   10)  ; 2 bytes
+(define HDR-COMP-START  12)  ; 2 bytes
+(define HDR-LEN         14)
+
+;; ---------------------------------------------------------------------------
+;; frame-crc: return CRC32 of the decompressed payload encoded in `framed`.
+;; This is the value stored in the CRC32 header slot; callers compare it
+;; against (crc32 (frame-decode dict framed)) to verify integrity.
+;; ---------------------------------------------------------------------------
+
+(define (frame-crc framed)
+  (be-read framed HDR-CRC-START 4))
+
+;; ---------------------------------------------------------------------------
+;; frame-raw-len: declared raw (decompressed) payload length.
+;; ---------------------------------------------------------------------------
+
+(define (frame-raw-len framed)
+  (be-read framed HDR-RAW-START 2))
+
+;; ---------------------------------------------------------------------------
+;; frame-comp-len: declared compressed payload length.
+;; ---------------------------------------------------------------------------
+
+(define (frame-comp-len framed)
+  (be-read framed HDR-COMP-START 2))
+
+;; ---------------------------------------------------------------------------
+;; frame-dict-id: declared dictionary id the frame was compressed with.
+;; ---------------------------------------------------------------------------
+
+(define (frame-dict-id framed)
+  (be-read framed HDR-DICT-START 2))
+
+;; ---------------------------------------------------------------------------
+;; frame-decode: framed byte list -> decompressed payload byte list.
+;; Slices the compressed payload out of `framed`, calls codec-decompress,
+;; and returns the resulting literal byte list.
+;; ---------------------------------------------------------------------------
+
+(define (frame-decode dict framed)
+  (let ((clen (frame-comp-len framed)))
+    (let ((comp (slice-at framed HDR-LEN clen)))
+      (codec-decompress dict comp))))

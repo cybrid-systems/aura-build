@@ -1,0 +1,62 @@
+;; wal_record.aura
+;; WAL record construction and accessors.
+;;
+;; A record is the unit of data appended to the WAL. Each record carries:
+;;   - txid  : transaction id (integer)
+;;   - kind  : record kind (integer code)
+;;   - payload : list of bytes (each a number in 0..255)
+;;   - len   : cached length of the serialized record in bytes
+;;   - crc   : cached CRC32 checksum over (txid || kind || payload bytes)
+;;
+;; Serialization layout (conceptual):
+;;   [ magic 4 ] [ txid 4 ] [ kind 1 ] [ len 2 ] [ payload len ] [ crc 4 ]
+;; Total header overhead = 4 + 4 + 1 + 2 + 4 = 15 bytes plus payload.
+;;
+;; Records are immutable alists. The CRC is computed via crc32 from wal_crc.aura
+;; once at construction time.
+
+;; Build a new WAL record.
+;; - txid: integer transaction id
+;; - kind: integer record-kind code
+;; - payload: list of bytes (numbers) - may be empty '()
+;; Returns an alist: 'txid, 'kind, 'payload, 'len, 'crc.
+(define (record-make txid kind payload)
+  (let* ((magic '(0x57 0x41 0x4c 0x31))      ;; "WAL1" magic header
+         (header (append magic
+                         (number->bytes txid 4)
+                         (cons kind (number->bytes (length payload) 2))))
+         (body payload)
+         (crc-input (append header body))
+         (crc (crc32 crc-input)))
+    (list (cons 'txid txid)
+          (cons 'kind kind)
+          (cons 'payload payload)
+          (cons 'len (+ (length header) (length body) 4))
+          (cons 'crc crc))))
+
+;; Return the serialized byte length of a record.
+(define (record-len rec)
+  (cdr (assq 'len rec)))
+
+;; Return the transaction id stored in a record.
+(define (record-txid rec)
+  (cdr (assq 'txid rec)))
+
+;; Return the CRC32 checksum stored in a record.
+(define (record-crc rec)
+  (cdr (assq 'crc rec)))
+
+;; --- internal helpers ---
+
+;; Convert a non-negative integer into a list of N bytes (big-endian).
+;; Pads/truncates to exactly N bytes; values outside the range are taken
+;; modulo 256.
+(define (number->bytes n nbytes)
+  (let loop ((n n)
+             (i nbytes)
+             (acc '()))
+    (if (= i 0)
+        acc
+        (loop (quotient n 256)
+              (- i 1)
+              (cons (modulo n 256) acc)))))

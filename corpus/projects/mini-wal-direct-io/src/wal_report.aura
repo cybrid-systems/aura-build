@@ -1,0 +1,95 @@
+;; wal_report.aura
+;; Build a human-readable status report from the live WAL state.
+;;
+;; The report is a single alist summarizing the state of:
+;;   - writer   : the Direct-IO WAL writer
+;;   - alloc    : the bump allocator used for slot tracking
+;;   - barrier  : the per-transaction barrier accounting object
+;;   - replay   : a replay iterator over the writer's buffer
+;;
+;; Each top-level key holds a sub-alist of named metrics so that callers
+;; (notably main.aura) can pluck any individual value and print it as a
+;; KEY=value line. No new keywords are invented here; everything reported
+;; is already exposed by one of the other modules.
+;;
+;; Reading the report:
+;;
+;;   (report-build writer alloc barrier replay) =>
+;;     '(
+;;       (writer . (
+;;         (direct . #t or #f)
+;;         (sector-size . <int>)
+;;         (version     . <int>)
+;;         (appends . <int>)
+;;         (tail    . <int bytes>)
+;;       ))
+;;       (alloc . (
+;;         (free . <int>)
+;;         (taken . <int>)
+;;         (size . <int>)
+;;       ))
+;;       (barrier . (
+;;         (count . <int>)
+;;         (bytes . <int>)
+;;       ))
+;;       (replay . (
+;;         (records . <int>)
+;;         (tail    . <int bytes>)
+;;       ))
+;;       (tail . <int bytes>)
+;;     )
+;;
+;; The top-level 'tail key is duplicated as a convenience: it is the
+;; canonical "current write offset" of the WAL, equal to both writer-tail
+;; and replay-tail at quiescence.
+
+;; report-build writer alloc barrier replay
+;;   writer   : writer alist from wal_writer.aura
+;;   alloc    : allocator alist from wal_alloc.aura
+;;   barrier  : barrier alist from wal_barrier.aura
+;;   replay   : replay alist from wal_replay.aura
+;; Returns an alist summarizing the WAL's state at this instant.
+(define (report-build writer alloc barrier replay)
+  ;; Pull individual metrics out of each module's alist representation.
+  ;; We do not introspect internals beyond what the documented API
+  ;; exposes: writer-tail, writer-direct?, wal-sector-size, wal-version,
+  ;; allocator-free, allocator-taken, allocator-reset-capacity,
+  ;; barrier-count, barrier-bytes, replay-count, replay-tail.
+  (let ((w-direct    (writer-direct? writer))
+        (w-sector    (wal-sector-size (cdr (assq 'cfg writer))))
+        (w-version   (wal-version (cdr (assq 'cfg writer))))
+        (w-appends   (cdr (assq 'appends writer)))
+        (w-tail      (writer-tail writer))
+        (a-free      (allocator-free alloc))
+        (a-taken     (allocator-taken alloc))
+        (a-size      (allocator-total alloc))
+        (b-count     (barrier-count barrier))
+        (b-bytes     (barrier-bytes barrier))
+        (r-records   (replay-count replay))
+        (r-tail      (replay-tail replay)))
+    ;; The top-level alist. Each value is itself an alist so individual
+    ;; numbers can be plucked by name without colliding between modules.
+    (list
+      (cons 'writer
+            (list
+              (cons 'direct      w-direct)
+              (cons 'sector-size w-sector)
+              (cons 'version     w-version)
+              (cons 'appends     w-appends)
+              (cons 'tail        w-tail)))
+      (cons 'alloc
+            (list
+              (cons 'free   a-free)
+              (cons 'taken  a-taken)
+              (cons 'size   a-size)))
+      (cons 'barrier
+            (list
+              (cons 'count b-count)
+              (cons 'bytes b-bytes)))
+      (cons 'replay
+            (list
+              (cons 'records r-records)
+              (cons 'tail    r-tail)))
+      ;; Convenience duplicate so callers can ask for the canonical
+      ;; WAL tail without first picking 'writer or 'replay.
+      (cons 'tail w-tail))))

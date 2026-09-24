@@ -1,0 +1,22 @@
+(record.aura)
+
+(provide 'record)
+
+;; A record is represented as a 3-element list:
+;;   (lsn payload byte-size)
+;; where byte-size is a deterministic estimate derived from the payload.
+
+(define (make-record lsn payload)
+  ;; Compute a stable byte count: include LSN (8 bytes) + 4 bytes overhead,
+  ;; plus 1 byte per payload character.
+  (let ((plen (string-length payload)))
+    (list lsn payload (+ 12 plen))))
+
+(define (record-lsn r)
+  (car r))
+
+(define (record-payload r)
+  (car (cdr r)))
+
+(define (record-bytes r)
+  (car (cdr (cdr r))))

@@ -1,0 +1,179 @@
+;; scenario-reads.aura
+;;
+;; Build a list of "read" scenarios that exercise the MVCC reader
+;; across multiple snapshots, then run them and classify the results.
+;;
+;; A read scenario is a (snap-id . key) pair: "at this snapshot,
+;; read this key". We run each one through (mvcc-reader-get) and
+;; classify the outcome into one of four buckets:
+;;
+;;   'visible  -> the reader returned a record (committed, visible)
+;;   'aborted  -> the reader walked the chain but the only candidate(s)
+;;                belonged to an aborted txn (no visible version exists)
+;;   'miss     -> the key has never been written (no chain at all)
+;;   'not-visible -> the chain exists but no version was visible to
+;;                   this snapshot (e.g. newer-only versions written
+;;                   by txns beyond the watermark, or the only writers
+;;                   were still active)
+;;
+;; The scenario also tracks, for each scenario, whether the snapshot
+;; used for the read was the latest one taken (used by main.aura's
+;; "latest snapshot" summary line).
+;;
+;; API:
+;;   (scenario-build-reads reader snap-tab)
+;;     -> a scenario bundle: an alist with the following keys:
+;;          'scenarios      : list of (snap-id . key) pairs in order
+;;          'visible-count  : number of scenarios classified 'visible
+;;          'aborted-count  : number classified 'aborted
+;;          'miss-count     : number classified 'miss
+;;          'not-visible-count : number classified 'not-visible
+;;          'visible-pairs  : list of (snap-id key value) triples for
+;;                            scenarios that returned a visible value
+;;          'latest-snap-id : the snap-id of the latest snapshot taken
+;;                            (or #f if no snapshots exist)
+;;          'latest-visible-count : count of scenarios using the latest
+;;                            snap-id that classified 'visible
+;;          'latest-scenario-count : total scenarios using latest snap-id
+;;
+;; The bundle is consumed by main.aura to print the read-result lines.
+
+;; ---------- internals ----------
+
+;; Pick the "latest" snapshot id from a snapshot table.
+;; The snapshot table is an alist of (snap-id . at-txn). We define
+;; "latest" as the snap-id with the largest at-txn watermark; ties
+;; are broken by larger snap-id (so later explicit takes win).
+(define (scenario-latest-snap-id snap-tab)
+  (let ((best '()))
+    (define (better? cand current-best)
+      (cond
+        ((null? current-best) #t)
+        (else
+         (let ((c-watermark (cdr cand))
+               (b-watermark (cdr current-best))
+               (c-id (car cand))
+               (b-id (car current-best)))
+           (if (> c-watermark b-watermark)
+               #t
+               (if (= c-watermark b-watermark)
+                   (> c-id b-id)
+                   #f))))))
+    (let loop ((xs snap-tab))
+      (if (null? xs)
+          (if (null? best) #f (car best))
+          (begin
+            (set! best
+                  (if (better? (car xs) best)
+                      (cons (car (car xs)) (cdr (car xs)))
+                      best))
+            ;; best is a (id . watermark) pair, not a list element.
+            ;; We need to keep our search list separate from `best`.
+            ;; So track best via a local pattern: use a side list.
+            (loop (cdr xs)))))))
+
+;; Build the list of (snap-id . key) scenarios to run.
+;; We iterate over every snapshot in the snap-tab and read a fixed set
+;; of keys: the ones most likely to produce interesting classifications
+;; (visible / aborted / miss / not-visible).
+;;
+;; Keys we probe per snapshot:
+;;     "x"          - always has some committed write (the original set)
+;;     "y"          - ditto
+;;     "z"          - written only by an aborted txn
+;;     "w"          - never written -> always 'miss
+;;     "n"          - written only by a still-active txn -> not-visible
+(define (scenario-make-scenario-list snap-tab)
+  (let ((result '()))
+    (define keys '("x" "y" "z" "w" "n"))
+    (let loop ((snaps snap-tab))
+      (if (null? snaps)
+          (reverse result)
+          (let* ((snap-id (car (car snaps)))
+                 (krest keys))
+            ;; For each key, cons (snap-id . key) onto result.
+            (define (add-all sid ks)
+              (if (null? ks)
+                  '()
+                  (cons (cons sid (car ks))
+                        (add-all sid (cdr ks)))))
+            (set! result
+                  (append (reverse (add-all snap-id krest)) result))
+            (loop (cdr snaps)))))))
+
+;; Classify one read result.
+;;
+;; The MVCC reader returns one of:
+;;   - a record (wal-record)           -> 'visible
+;;   - the symbol 'aborted             -> 'aborted
+;;   - the symbol 'miss                -> 'miss
+;;   - the symbol 'not-visible         -> 'not-visible
+;; (Per the mvcc-reader contract.)
+(define (classify-read result)
+  (cond
+    ((null? result) 'miss)
+    ((equal? result 'miss) 'miss)
+    ((equal? result 'aborted) 'aborted)
+    ((equal? result 'not-visible) 'not-visible)
+    ((pair? result) 'visible)
+    (else 'miss)))
+
+;; ---------- public API ----------
+
+(define (scenario-build-reads reader snap-tab)
+  ;; Pull the snap-tab's underlying list. The snapshot-table API
+  ;; exposes (snapshot-table-count) but we also need to walk it.
+  ;; We rely on the convention that the snap-tab value IS the alist
+  ;; (snapshot-table-init returns '() and take! cons's entries).
+  ;;
+  ;; Build the scenario list.
+  (let* ((scenarios (scenario-make-scenario-list snap-tab))
+         (latest-snap (scenario-latest-snap-id snap-tab))
+         (visible-count 0)
+         (aborted-count 0)
+         (miss-count 0)
+         (not-visible-count 0)
+         (visible-pairs '())
+         (latest-visible-count 0)
+         (latest-scenario-count 0))
+    (define (run-one sc)
+      (let* ((snap-id (car sc))
+             (key (cdr sc))
+             (result (mvcc-reader-get reader snap-id key))
+             (klass (classify-read result)))
+        ;; Tally.
+        (cond
+          ((equal? klass 'visible)
+           (set! visible-count (+ visible-count 1))
+           (set! visible-pairs
+                 (cons (list snap-id key (wal-record-value result))
+                       visible-pairs)))
+          ((equal? klass 'aborted)
+           (set! aborted-count (+ aborted-count 1)))
+          ((equal? klass 'miss)
+           (set! miss-count (+ miss-count 1)))
+          ((equal? klass 'not-visible)
+           (set! not-visible-count (+ not-visible-count 1))))
+        ;; Latest-snapshot tallies.
+        (if (and (number? latest-snap) (= snap-id latest-snap))
+            (begin
+              (set! latest-scenario-count (+ latest-scenario-count 1))
+              (if (equal? klass 'visible)
+                  (set! latest-visible-count (+ latest-visible-count 1)))))))
+    (let loop ((xs scenarios))
+      (if (null? xs)
+          '()
+          (begin
+            (run-one (car xs))
+            (loop (cdr xs)))))
+    ;; Return the bundle as an alist.
+    (list
+      (cons 'scenarios scenarios)
+      (cons 'visible-count visible-count)
+      (cons 'aborted-count aborted-count)
+      (cons 'miss-count miss-count)
+      (cons 'not-visible-count not-visible-count)
+      (cons 'visible-pairs (reverse visible-pairs))
+      (cons 'latest-snap-id latest-snap)
+      (cons 'latest-visible-count latest-visible-count)
+      (cons 'latest-scenario-count latest-scenario-count))))

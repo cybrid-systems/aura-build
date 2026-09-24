@@ -1,0 +1,28 @@
+(main.aura)
+
+(provide 'main)
+
+;; main.aura — entry point for the mini-wal-tiered-storage scenario.
+;;
+;; This file orchestrates the end-to-end demonstration by calling the
+;; driver's run-scenario, which returns an alist of (KEY . value-string)
+;; pairs. We then print each one in the order returned, as KEY=value lines.
+
+;; Bring in the driver — every other module is already loaded by the
+;; top-level invocation before this file runs.
+(load "driver.aura")
+
+(define (main)
+  (let ((results (run-scenario)))
+    (define (print-alist alist)
+      (if (null? alist)
+          'done
+          (begin
+            (display (car (car alist)))
+            (display "=")
+            (display (cdr (car alist)))
+            (newline)
+            (print-alist (cdr alist)))))
+    (print-alist results)))
+
+(main)

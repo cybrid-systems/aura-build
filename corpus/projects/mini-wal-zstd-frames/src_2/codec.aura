@@ -1,0 +1,148 @@
+;; codec.aura — Dictionary compression / decompression codec
+;; Uses the rolling-window dictionary from dict.aura to compress byte sequences
+;; into a stream of tokens (literals or back-references), and decompresses back.
+;;
+;; Frame payload format (after the frame header has been stripped):
+;;   [NLIT(2) | NTOK(2) | literals(NLIT) | tokens...]
+;; Each token is encoded as:
+;;   flag=0 -> literal byte follows (1 byte)
+;;   flag=1 -> offset_hi(1) offset_lo(1) length(1)  -> back-reference into dict window
+;;            offset is a 2-byte big-endian integer, length is 1 byte
+;;
+;; Exports: codec-compress, codec-decompress, codec-bytes-out, codec-bytes-in
+
+;; Counters for bytes-in / bytes-out telemetry (mutable global state)
+(define codec-bytes-in 0)
+(define codec-bytes-out 0)
+
+;; ---------------------------------------------------------------------------
+;; Tokenization helpers
+;; ---------------------------------------------------------------------------
+
+;; Try to find the longest match of `bs` starting at position `start` inside
+;; the dict window. Returns (match-len . match-off) or #f if no match of
+;; length >= 3 exists.
+(define (codec-find-match window start bs)
+  (let ((wlen (length window))
+        (blen (length bs)))
+    (if (< (- blen start) 3)
+        #f
+        (let ((best-len 0)
+              (best-off 0))
+          ;; Scan all possible offsets into the window
+          (let loop ((off 0))
+            (if (>= off wlen)
+                (if (> best-len 0)
+                    (cons best-len best-off)
+                    #f)
+                (begin
+                  ;; Try to extend match at window[off..] against bs[start..]
+                  (let ((mlen 0))
+                    (let inner ((k 0))
+                      (cond
+                        ((>= (+ start k) blen) 0)
+                        ((>= (+ off k) wlen) mlen)
+                        ((= (list-ref bs (+ start k))
+                            (list-ref window (+ off k)))
+                         (set! mlen (+ mlen 1))
+                         (set! k (+ k 1))
+                         mlen)
+                        (else mlen))))
+                  (if (> mlen best-len)
+                      (begin
+                        (set! best-len mlen)
+                        (set! best-off off)))
+                  (loop (+ off 1)))))))))
+
+;; Compress a byte list `bs` using the dictionary `dict`.
+;; Returns the framed byte list (header + tokens), and also updates the
+;; rolling window of `dict` by appending the raw bytes.
+(define (codec-compress dict bs)
+  (let ((window (dict-window dict))
+        (capacity (cadr dict))
+        (out '())
+        (lit '())
+        (ntok 0))
+    ;; Build tokens and collect literals
+    (let loop ((i 0))
+      (if (>= i (length bs))
+          (begin
+            ;; Encode header + literals + tokens
+            (set! codec-bytes-in (+ codec-bytes-in (length bs)))
+            (set! codec-bytes-out (+ codec-bytes-out (+ out (length lit))))
+            ;; NLIT (2 bytes, big-endian), NTOK (2 bytes, big-endian)
+            (let ((nlit (length lit))
+                  (result '()))
+              (set! result (cons (modulo (quotient nlit 256) 256) result))
+              (set! result (cons (modulo nlit 256) result))
+              (set! result (cons (modulo (quotient ntok 256) 256) result))
+              (set! result (cons (modulo ntok 256) result))
+              ;; Literals (in order)
+              (set! result (append (reverse lit) result))
+              ;; Tokens (already in reverse-emit order, so reverse)
+              (set! result (append (reverse out) result))
+              (dict-train! dict bs)
+              result))
+          (let ((m (codec-find-match window i bs)))
+            (if (and m (>= (car m) 3))
+                ;; Emit a back-reference token: flag=1, off_hi, off_lo, len
+                (let ((mlen (car m))
+                      (moff (cdr m)))
+                  (set! ntok (+ ntok 1))
+                  (set! out (cons mlen out))
+                  (set! out (cons (modulo moff 256) out))
+                  (set! out (cons (modulo (quotient moff 256) 256) out))
+                  (set! out (cons 1 out))
+                  (set! loop (+ i mlen)))
+                ;; Emit a literal byte
+                (begin
+                  (set! lit (append lit (list (list-ref bs i))))
+                  (set! loop (+ i 1)))))))))
+
+;; Decompress a framed byte list back into raw bytes using `dict`.
+;; Returns a list of raw bytes.
+(define (codec-decompress dict framed)
+  (let ((blen (length framed)))
+    (let ((idx 0))
+      (define (read-byte)
+        (let ((b (list-ref framed idx)))
+          (set! idx (+ idx 1))
+          b))
+      ;; Header: NLIT(2) NTOK(2)
+      (let ((nlit (+ (* (read-byte) 256) (read-byte)))
+            (ntok (+ (* (read-byte) 256) (read-byte))))
+        ;; Read literals
+        (let ((literals '()))
+          (let lit-loop ((k 0))
+            (if (>= k nlit)
+                (begin
+                  ;; Train dict on these literals (consistent with compress)
+                  (dict-train! dict literals)
+                  ;; Decode tokens
+                  (let ((out literals))
+                    (let tok-loop ((k 0))
+                      (if (>= k ntok)
+                          (begin
+                            (set! codec-bytes-out (+ codec-bytes-out (length out)))
+                            out)
+                          (let ((flag (read-byte)))
+                            (if (= flag 0)
+                                ;; Literal byte
+                                (begin
+                                  (set! out (append out (list (read-byte))))
+                                  (tok-loop (+ k 1)))
+                                ;; Back-reference
+                                (let ((ohi (read-byte))
+                                      (olo (read-byte))
+                                      (tlen (read-byte)))
+                                  (let ((off (+ (* ohi 256) olo))
+                                        (wlen (length (dict-window dict))))
+                                  (let ref-loop ((j 0))
+                                    (if (>= j tlen)
+                                        (tok-loop (+ k 1))
+                                        (begin
+                                          (set! out (append out
+                                                    (list (list-ref (dict-window dict)
+                                                            (modulo (+ off j) wlen)))))
+                                          (ref-loop (+ j 1))))))))))))))
+              (lit-loop 0)))))))

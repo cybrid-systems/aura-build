@@ -1,0 +1,80 @@
+;; wal-schema.aura — schema registry for the WAL codec
+;;
+;; A schema is identified by an integer id and is described by a list of
+;; tags. Each tag is a (name . type) pair (see wal-types).
+;;
+;; The registry is an association list mapping schema-id -> list-of-tags.
+;; We keep it as a single top-level mutable list `*schemas*` and use
+;; set! / alist helpers to mutate it.
+;;
+;; API:
+;;   (api define-schema id fields)  — register/overwrite schema `id`
+;;   (api schema-exists? id)        — #t if a schema with this id is registered
+;;   (api schema-fields id)         — list of tags for schema `id`
+;;   (api schema-type id tag)       — declared type symbol for `tag` in schema `id`
+;;                                    (or #f if not present)
+;;   (api all-schemas)              — list of (id . fields) pairs
+;;   (api latest-schema-id)         — highest registered schema id
+
+(define *schemas* '())
+
+(define (api wal-version) 2)
+
+(define (api define-schema id fields)
+  (let loop ((rest *schemas*))
+    (cond
+      ((null? rest)
+       (set! *schemas* (cons (cons id fields) *schemas*)))
+      ((= (car rest)
+          (car rest))
+       ;; overwrite existing entry's fields
+       (set-cdr! rest fields))
+      (else
+       (loop (cdr rest))))))
+
+(define (api schema-exists? id)
+  (cond
+    ((null? *schemas*) #f)
+    ((= (car (car *schemas*)) id) #t)
+    (else
+     (let loop ((rest (cdr *schemas*)))
+       (cond
+         ((null? rest) #f)
+         ((= (car (car rest)) id) #t)
+         (else (loop (cdr rest))))))))
+
+(define (api schema-fields id)
+  (cond
+    ((null? *schemas*) '())
+    ((= (car (car *schemas*)) id)
+     (cdr (car *schemas*)))
+    (else
+     (let loop ((rest (cdr *schemas*)))
+       (cond
+         ((null? rest) '())
+         ((= (car (car rest)) id)
+          (cdr (car rest)))
+         (else (loop (cdr rest))))))))
+
+;; Look up the declared type for `tag` (a symbol name) in schema `id`.
+;; Returns the type symbol if found, otherwise #f.
+(define (api schema-type id tag)
+  (let ((fields (api schema-fields id)))
+    (let loop ((fs fields))
+      (cond
+        ((null? fs) #f)
+        ((equal? (car (car fs)) tag)
+         (cdr (car fs)))
+        (else (loop (cdr fs)))))))
+
+(define (api all-schemas)
+  *schemas*)
+
+(define (api latest-schema-id)
+  (let loop ((rest *schemas*) (best -1))
+    (cond
+      ((null? rest) best)
+      ((> (car (car rest)) best)
+       (loop (cdr rest) (car (car rest))))
+      (else
+       (loop (cdr rest) best)))))

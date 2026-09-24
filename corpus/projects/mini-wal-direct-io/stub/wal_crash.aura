@@ -1,0 +1,82 @@
+;; wal_crash.aura
+;; Crash injection utilities for the Direct-IO WAL simulator.
+;;
+;; In a real system, "crash" means the process dies between the moment a
+;; record is appended to the page cache and the moment it reaches stable
+;; storage. For our simulated WAL we model one common crash mode:
+;; corruption of a record's CRC at a known offset, which a subsequent
+;; replay pass will detect and stop at.
+;;
+;; The crash API is intentionally minimal:
+;;
+;;   (crash-inject-bad-crc buf offset)
+;;
+;; corrupts the byte at `offset` (0-based from the start of the buffer)
+;; by flipping a single bit. The corrupted record's CRC will then fail to
+;; match the recomputed CRC over its bytes, and replay-next will return
+;; #f when it reaches that record.
+;;
+;; Buffer representation (shared with wal_buffer.aura):
+;;   'size  -> integer number of bytes
+;;   'bytes -> list of bytes (head = newest, tail = oldest)
+;;
+;; So to reach byte at logical offset `offset`, we must walk down the
+;; list `size - 1 - offset` cells from the head.
+
+(define (crash-inject-bad-crc buf offset)
+  ;; Validate inputs. An out-of-range offset is a no-op: a real crash
+  ;; would corrupt whatever happens to be at that disk address.
+  (let ((size (cdr (assq 'size buf)))
+        (bytes (cdr (assq 'bytes buf))))
+    (cond
+      ((not (number? offset)) buf)
+      ((or (< offset 0) (>= offset size)) buf)
+      (else
+       ;; Walk to the cell holding byte at logical offset `offset`.
+       ;; Byte at offset 0 is the TAIL of the bytes list (oldest byte),
+       ;; which is `size - 1` cons-cells deep from the head.
+       (let ((skip (- size 1 offset)))
+         (let ((new-bytes (flip-nth-bit bytes skip)))
+           ;; Preserve the original size; only the bytes list changes.
+           (let ((new-buf (assq 'size buf)))
+             (set-cdr! new-buf new-bytes))))))))
+
+;; Flip one bit in the byte at position `n` (0-based from the head) of
+;; a list of bytes. We flip bit 0 (the LSB) by XOR-ing with 1; this is
+;; guaranteed to change the byte value without ever producing an
+;; out-of-range byte.
+(define (flip-nth-bit xs n)
+  (cond
+    ((null? xs) xs)
+    ((= n 0)
+     (cons (bit-xor-byte (car xs) 1) (cdr xs)))
+    (else
+     (cons (car xs) (flip-nth-bit (cdr xs) (- n 1))))))
+
+;; XOR a byte (0..255) with a mask (0..255). Return a byte still in
+;; 0..255. We implement bitwise XOR without depending on Aura bitwise
+;; primitives (none are guaranteed) by walking bit positions.
+;;
+;; XOR truth table per bit:
+;;   0^0=0, 0^1=1, 1^0=1, 1^1=0
+;;
+;; We extract each bit from a and from b, combine them with the truth
+;; table above, and accumulate the result.
+(define (bit-xor-byte a b)
+  (let loop ((a a) (b b) (bit 1) (acc 0))
+    (cond
+      ((= bit 256) acc)
+      (else
+       (let ((ba (bit-get a bit))
+             (bb (bit-get b bit)))
+         (let ((out (cond
+                      ((and (= ba 0) (= bb 0)) 0)
+                      ((and (= ba 0) (= bb 1)) 1)
+                      ((and (= ba 1) (= bb 0)) 1)
+                      (else 0))))
+           (loop a b (* bit 2) (+ acc (* out bit)))))))))
+
+;; Extract bit at position `bit` (1,2,4,...,128) from byte x.
+;; Returns 0 or 1.
+(define (bit-get x bit)
+  (if (>= (modulo (quotient x bit) 2) 1) 1 0))

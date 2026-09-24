@@ -1,0 +1,118 @@
+;; Maximum XOR of Two Numbers in an Array using a binary trie
+;; Approach: insert each number's bits into a trie (MSB -> LSB), then for each
+;; number greedily traverse to maximize XOR with another number.
+
+(define (make-node)
+  (list (make-node) (make-node) #f))   ;; left = bit 0, right = bit 1, count
+
+;; We need mutable trie nodes; use vectors of length 3 with set!
+(define (new-trie)
+  (let ((node (vector #f #f 0)))
+    node))
+
+(define (trie-get-left n) (vector-ref n 0))
+(define (trie-get-right n) (vector-ref n 1))
+(define (trie-set-left! n v) (vector-set! n 0 v))
+(define (trie-set-right! n v) (vector-set! n 1 v))
+(define (trie-incr! n) (vector-set! n 2 (+ (vector-ref n 2) 1)))
+
+(define (insert-trie root num)
+  (let ((node root)
+        (bit 30))
+    (let loop ((node node) (bit bit))
+      (if (< bit 0)
+          (begin #t)
+          (let ((b (bitwise-and (arithmetic-shift num (- bit)) 1)))
+            (if (= b 0)
+                (let ((child (trie-get-left node)))
+                  (if (not child)
+                      (begin
+                        (set! child (new-trie))
+                        (trie-set-left! node child)))
+                  (trie-incr! child)
+                  (loop child (- bit 1)))
+                (let ((child (trie-get-right node)))
+                  (if (not child)
+                      (begin
+                        (set! child (new-trie))
+                        (trie-set-right! node child)))
+                  (trie-incr! child)
+                  (loop child (- bit 1)))))))))
+
+(define (query-trie root num)
+  (let ((node root)
+        (xor-val 0)
+        (bit 30))
+    (let loop ((node node) (xor-val xor-val) (bit bit))
+      (if (< bit 0)
+          xor-val
+          (let ((b (bitwise-and (arithmetic-shift num (- bit)) 1)))
+            (if (= b 0)
+                ;; prefer opposite (right=1)
+                (let ((opp (trie-get-right node)))
+                  (if opp
+                      (loop opp (+ xor-val (arithmetic-shift 1 bit)) (- bit 1))
+                      (loop (trie-get-left node) xor-val (- bit 1))))
+                (let ((opp (trie-get-left node)))
+                  (if opp
+                      (loop opp (+ xor-val (arithmetic-shift 1 bit)) (- bit 1))
+                      (loop (trie-get-right node) xor-val (- bit 1))))))))))
+
+(define (solve nums)
+  (let ((n (length nums)))
+    (if (< n 2)
+        0
+        (let ((root (new-trie)))
+          ;; Insert all
+          (for-each (lambda (x) (insert-trie root x)) nums)
+          ;; Query each
+          (let loop ((best 0) (rest nums))
+            (if (null? rest)
+                best
+                (let ((candidate (query-trie root (car rest))))
+                  (if (> candidate best)
+                      (loop candidate (cdr rest))
+                      (loop best (cdr rest))))))))))
+
+;; Display helpers
+(define (display-list lst)
+  (display "[")
+  (let loop ((l lst) (first? #t))
+    (cond ((null? l) (display "]"))
+          (else
+           (if (not first?) (display " "))
+           (display (car l))
+           (loop (cdr l) #f)))))
+
+(define (display-result r)
+  (cond ((number? r) (display r))
+        ((boolean? r) (display (if r "#t" "#f")))
+        ((string? r) (display r))
+        ((list? r) (display-list r))
+        (else (display r))))
+
+;; Test cases
+(define cases (list
+  (list 0 (list 4 1 2 3))
+  (list 1 (list 8 10 2))
+  (list 2 (list 0 0))
+  (list 3 (list 5))
+  (list 4 (list))
+  (list 5 (list 1 2 3 4 5 6 7 8))
+  (list 6 (list 0 2147483647))
+  (list 7 (list 1000000000 999999999 1 2))))
+
+(define (run-cases cs)
+  (if (null? cs)
+      (display "")
+      (let ((c (car cs)))
+        (let ((idx (car c)) (nums (car (cdr c)))))
+        (let ((res (solve nums)))
+          (display "CASE")
+          (display idx)
+          (display "=")
+          (display-result res)
+          (newline))
+        (run-cases (cdr cs)))))
+
+(run-cases cases)

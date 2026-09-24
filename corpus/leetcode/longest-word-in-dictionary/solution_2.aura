@@ -1,0 +1,105 @@
+;; Longest Word in Dictionary - solve in Aura
+
+;; Build a trie: each node is a pair (children . is-word)
+;; We represent a node as a list: (is-word . children-alist)
+;; children-alist is a list of (char . node) pairs
+
+(define (make-node)
+  (cons #f '()))
+
+(define (node-children n) (cdr n))
+(define (node-is-word? n) (car n))
+(define (node-set-is-word! n)
+  (set-car! n #t))
+
+(define (char->int c)
+  (- (char->integer c) (char->integer #\a)))
+
+(define (int->char i)
+  (integer->char (+ i (char->integer #\a))))
+
+(define (node-get n idx)
+  (let loop ((cs (node-children n)))
+    (cond ((null? cs) #f)
+          ((= (car (car cs)) idx) (cdr (car cs)))
+          (else (loop (cdr cs))))))
+
+(define (node-put! n idx child)
+  ;; prepend and dedupe
+  (let loop ((cs (node-children n)) (acc '()))
+    (cond ((null? cs)
+           (set-cdr! n (cons (cons idx child) acc)))
+          ((= (car (car cs)) idx)
+           (set-cdr! n (append (reverse acc) (cons (car cs) (cdr cs)))))
+          (else (loop (cdr cs) (cons (car cs) acc))))))
+
+;; Insert word into trie; returns nothing. Marks is-word at end.
+(define (trie-insert! root w)
+  (let loop ((node root) (i 0))
+    (if (= i (string-length w))
+        (node-set-is-word! node)
+        (let ((idx (char->int (string-ref w i)))
+              (child (node-get node idx)))
+          (if child
+              (loop child (+ i 1))
+              (let ((new-child (make-node)))
+                (node-put! node idx new-child)
+                (loop new-child (+ i 1))))))))
+
+;; Check if word is buildable: every prefix (including the full word) must be marked
+(define (trie-has-prefix? root w)
+  (let loop ((node root) (i 0))
+    (cond ((= i (string-length w))
+           (and (node-is-word? node) #t))
+          ((not (node-is-word? node)) #f)
+          (else
+           (let ((child (node-get node (char->int (string-ref w i)))))
+             (if child
+                 (loop child (+ i 1))
+                 #f))))))
+
+(define (solve words)
+  (let ((root (make-node)))
+    ;; insert all words
+    (let loop ((ws words))
+      (if (null? ws)
+          '()
+          (begin
+            (trie-insert! root (car ws))
+            (loop (cdr ws)))))
+    ;; find best
+    (let loop ((ws words) (best "") (best-len 0))
+      (cond ((null? ws) best)
+            (else
+             (let ((w (car ws)))
+               (if (and (trie-has-prefix? root w)
+                        (or (> (string-length w) best-len)
+                            (and (= (string-length w) best-len)
+                                 (string<? w best))))
+                   (loop (cdr ws) w (string-length w))
+                   (loop (cdr ws) best best-len))))))))
+
+;; Display a string (Aura strings are sequence-of-char; we display as is)
+(define (display-string s)
+  (let loop ((i 0))
+    (when (< i (string-length s))
+      (display (string-ref s i))
+      (loop (+ i 1)))))
+
+;; Run cases
+(define (run-case i words)
+  (begin
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display-string (solve words))
+    (newline)))
+
+(run-case 0 '("w" "wo" "wor" "worl" "world"))
+(run-case 1 '("a" "banana" "app" "appl" "ap" "apply" "apple"))
+(run-case 2 '("a"))
+(run-case 3 '("b" "a" "ab"))
+(run-case 4 '("abc" "ab" "a"))
+(run-case 5 '("a" "b" "c" "d"))
+(run-case 6 '("abcd" "abc" "ab" "a" "abce" "abcf"))
+(run-case 7 '("apple" "apply" "appl" "ap" "a"))

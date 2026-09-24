@@ -1,0 +1,51 @@
+;; report.aura -- build a flat KEY->value report from a WAL
+;;
+;; Aggregates results from scan/repair/replay/recovery into a single
+;; alist that main.aura can print one KEY=value per line.
+;;
+;; Required (define (api ...)) forms:
+;;   (api report-build w)   -> build a fresh report alist from the
+;;                             current state of WAL `w` (after scan,
+;;                             repair and recovery have all run).
+;;   (api report-get r k)   -> look up the value associated with key
+;;                             `k` (a symbol) in report `r`. Returns
+;;                             #f if the key is absent.
+;;
+;; The returned report alist contains entries keyed by symbols. main.aura
+;; is responsible for translating these into the final KEY=value lines.
+
+(define (api report-build w)
+  ;; Pull counters from the various subsystem reports. Each subsystem
+  ;; attaches a side-report to `w` under a known key after it runs:
+  ;;   'repair  -> (repair-scan) result
+  ;;   'replay  -> (replay-frames) result
+  ;;   'recovery-> (recovery-run) result
+  (let ((repair-report (cdr (assq 'repair w)))
+        (replay-report (cdr (assq 'replay w)))
+        (recovery-report (cdr (assq 'recovery w))))
+    (list
+      (cons 'torn-sectors
+            (if repair-report (cdr (assq 'torn repair-report)) 0))
+      (cons 'repaired
+            (if repair-report (cdr (assq 'fixed repair-report)) 0))
+      (cons 'truncated
+            (if repair-report (cdr (assq 'truncated repair-report)) 0))
+      (cons 'ok-sectors
+            (if repair-report (cdr (assq 'ok repair-report)) 0))
+      (cons 'replayed
+            (if replay-report (cdr (assq 'count replay-report)) 0))
+      (cons 'final-bytes
+            (api wal-bytes w))
+      (cons 'status
+            (if (and recovery-report (eq? (cdr (assq 'ok recovery-report)) #t))
+                'OK
+                'ERROR)))))
+
+(define (api report-get r key)
+  ;; Look up key (a symbol) in the report alist. Return #f when the
+  ;; key is missing so callers can distinguish "zero" from "absent"
+  ;; if they ever need to.
+  (let ((entry (assq key r)))
+    (if entry
+        (cdr entry)
+        #f)))

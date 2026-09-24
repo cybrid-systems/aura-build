@@ -1,0 +1,44 @@
+; record.aura — record abstraction for mini-wal-tiered-storage
+;
+; A record is represented as an association list:
+;   (('lsn . N) ('payload . P) ('bytes . B))
+;
+; Required exported APIs:
+;   (api make-record lsn payload)
+;   (api record-lsn r)
+;   (api record-payload r)
+;   (api record-bytes r)
+
+; --- byte-length helper -------------------------------------------------
+; Aura strings are the natural carrier for payloads. Compute a byte count
+; that is deterministic and consistent across calls. We use the length of
+; the payload when it is a string; otherwise we fall back to a small
+; fixed-size representation so non-string payloads still produce a stable
+; byte count for accounting purposes.
+(define (record-payload-bytes payload)
+  (cond
+    ((string? payload) (string-length payload))
+    ((number? payload) 16)
+    ((null? payload) 0)
+    (else 32)))
+
+; --- make-record -------------------------------------------------------
+; Build a record from an LSN (non-negative integer) and a payload (string).
+; The byte count is derived from the payload so downstream accounting
+; (hot ring, cold segments, sealed totals) has a consistent measure.
+(api make-record (lambda (lsn payload)
+  (let ((b (record-payload-bytes payload)))
+    (list
+      (cons 'lsn lsn)
+      (cons 'payload payload)
+      (cons 'bytes b)))))
+
+; --- accessors ---------------------------------------------------------
+(api record-lsn (lambda (r)
+  (alist-ref r 'lsn)))
+
+(api record-payload (lambda (r)
+  (alist-ref r 'payload)))
+
+(api record-bytes (lambda (r)
+  (alist-ref r 'bytes)))

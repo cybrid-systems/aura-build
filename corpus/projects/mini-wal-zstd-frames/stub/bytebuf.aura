@@ -1,0 +1,10 @@
+(define (make-bytebuf)
+  (cons '() 0))  ; (data . write-pos)
+
+(define (bb-data bb) (car bb))
+(define (bb-wpos bb) (cdr bb))
+
+(define (bb-put! bb b)
+  (set-car! bb (append (car bb) (list b)))
+  (set-cdr! bb (+ (cdr bb) 1))
+  b)

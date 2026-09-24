@@ -1,0 +1,101 @@
+;; wal-migrate.aura — Migrate records between schema versions.
+;;
+;; Migration is purely structural: it reshapes the (schema-id . fields)
+;; payload to match a target schema's field list, using:
+;;   * forward-fill   — when moving to a NEWER schema, default-fill any
+;;                      fields that the source schema does not declare.
+;;   * backward-strip — when moving to an OLDER schema, drop fields that
+;;                      the target schema does not declare.
+;;
+;; migrate-record dispatches to the appropriate helper based on whether
+;; from-id < to-id (forward) or from-id > to-id (backward), or simply
+;; re-tags the record if from-id = to-id.
+
+;; ---- forward-fill ----
+;; r         : record (cons from-id fields)
+;; from-id   : source schema symbol
+;; to-id     : target schema symbol (newer)
+;; Returns a record tagged with to-id whose fields list matches the
+;; target schema's declared order, default-filling any new fields.
+(define (forward-fill r from-id to-id)
+  (let ((target-fields (schema-fields to-id))
+        (source-fields (record-fields r)))
+    (make-record to-id
+                 (map (lambda (spec)
+                        (let ((name (car spec))
+                              (type (cdr spec)))
+                          (let ((existing (find-tag source-fields name)))
+                            (if existing
+                                existing
+                                (make-tag name type (default-value type))))))
+                      target-fields))))
+
+;; ---- backward-strip ----
+;; r       : record (cons from-id fields)
+;; from-id : source schema symbol (newer)
+;; to-id   : target schema symbol (older)
+;; Returns a record tagged with to-id whose fields are restricted to
+;; the names declared by the target schema, in target-schema order.
+(define (backward-strip r from-id to-id)
+  (let ((target-fields (schema-fields to-id)))
+    (make-record to-id
+                 (filter-by-names (record-fields r)
+                                  (map car target-fields)))))
+
+;; ---- migrate-record ----
+;; r       : record (cons from-id fields)
+;; from-id : source schema symbol
+;; to-id   : target schema symbol
+;; Same id        -> just re-tag (no field change needed).
+;; from < to      -> forward-fill.
+;; from > to      -> backward-strip.
+(define (migrate-record r from-id to-id)
+  (cond ((equal? from-id to-id)
+         (make-record to-id (record-fields r)))
+        ((schema-greater? to-id from-id)
+         (forward-fill r from-id to-id))
+        (else
+         (backward-strip r from-id to-id))))
+
+;; ---- internal: find a tag by name within a fields list ----
+;; Returns the tag triple if found, otherwise #f.
+(define (find-tag fields name)
+  (cond ((null? fields) #f)
+        ((equal? (tag-name (car fields)) name) (car fields))
+        (else (find-tag (cdr fields) name))))
+
+;; ---- internal: filter a fields list, keeping only tags whose name
+;;      appears in the allowed-names list, preserving allowed-names order ----
+(define (filter-by-names fields allowed-names)
+  (map (lambda (nm)
+         (or (find-tag fields nm)
+             (make-tag nm 'string "")))
+       allowed-names))
+
+;; ---- internal: is schema a "greater" (newer) than schema b? ----
+;; Schema ids are symbols like 'v1, 'v2, ... — compare by trailing number.
+;; Falls back to symbol=? if numeric suffix can't be parsed.
+(define (schema-greater? a b)
+  (let ((na (schema-id-number a))
+        (nb (schema-id-number b)))
+    (cond ((and na nb) (> na nb))
+          (else (equal? a b)))))
+
+;; ---- internal: extract trailing integer from a symbol like 'v3 -> 3 ----
+(define (schema-id-number sid)
+  (let ((s (symbol->string sid)))
+    (let ((len (string-length s)))
+      (let loop ((i (- len 1)) (acc 0) (place 1))
+        (cond ((< i 0) acc)
+              ((char-numeric? (string-ref s i))
+               (loop (- i 1)
+                     (+ acc (* place (- (char->int (string-ref s i))
+                                         (char->int #\0))))
+                     (* place 10)))
+              (else acc))))))
+
+;; ---- internal: character helpers (Aura has no char-up/downcase, but
+;;      provides char-numeric? and char->int via the runtime) ----
+(define (char-numeric? c)
+  (and (>= (char->int c) (char->int #\0))
+       (<= (char->int c) (char->int #\9))))

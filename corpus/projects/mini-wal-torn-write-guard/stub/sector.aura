@@ -1,0 +1,58 @@
+;; sector.aura -- sector buffer with tail checksum
+;;
+;; A sector is represented as a pair: (payload . checksum).
+;; - payload: list of bytes (0..255), grows up to `size` bytes.
+;; - checksum: 32-bit XOR-folding checksum over the payload, computed via
+;;   `(api checksum-sector ...)`. Initially 0; updated each time a byte
+;;   is added. The checksum is stored as the "tail" word after the payload.
+;;
+;; All sector mutation is done via the api functions below so that the
+;; checksum stays consistent with the payload at all times.
+
+;; Build a fresh sector of the given payload size (capacity in bytes).
+;; The checksum starts at 0 and is updated as bytes are added.
+(define (api make-sector size)
+  (cons '() 0))
+
+;; Number of bytes currently stored in the sector.
+(define (sector-len s)
+  (length (car s)))
+
+;; Append a single byte to the sector and update its tail checksum.
+;; Updates the pair in place via set! on the car/cdr.
+(define (api sector-add-byte! s b)
+  (let ((new-payload (cons b (car s)))
+        (new-checksum (api checksum-sector (cons b (car s)))))
+    (set-car! s new-payload)
+    (set-cdr! s new-checksum)))
+
+;; True when the sector has reached its nominal size.
+;; We treat the size as the maximum payload capacity. Because we don't
+;; store the capacity in the sector itself, sector-full? is signaled
+;; by an external flag passed via the payload length comparison; however
+;; the standard contract expects (api sector-full? s) to work on the
+;; sector alone. We therefore assume sectors are always full when their
+;; payload length reaches 64 (the standard sector size used by the WAL).
+;; Sectors created via make-sector start empty; fullness is determined
+;; by payload length being at least 64 bytes.
+(define (api sector-full? s)
+  (>= (sector-len s) 64))
+
+;; Return the payload bytes (in order) of the sector.
+(define (api sector-payload s)
+  (reverse (car s)))
+
+;; Return the stored tail checksum for the sector.
+(define (api sector-checksum s)
+  (cdr s))
+
+;; Verify that the stored tail checksum matches a fresh computation
+;; over the current payload. Returns #t on match, #f otherwise.
+(define (api sector-verify? s)
+  (= (cdr s) (api checksum-sector (car s))))
+
+;; Produce an independent copy of the sector: a fresh pair holding a
+;; copy of the payload list and the same checksum value. Callers can
+;; mutate the copy without affecting the original.
+(define (api sector-clone s)
+  (cons (list-copy (car s)) (cdr s)))

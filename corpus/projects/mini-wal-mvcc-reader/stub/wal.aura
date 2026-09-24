@@ -1,0 +1,40 @@
+;; wal.aura
+;; High-level WAL facade. Composes the lower-level modules
+;; (wal-record, wal-bytes, wal-store) into a single API the rest of
+;; the system uses directly.
+;;
+;; API:
+;;   (wal-append-record! store rec) -> new store with rec appended (as bytes)
+;;   (wal-read-record   store idx)  -> decoded wal-record at idx
+;;   (wal-total-bytes   store)      -> sum of (byte length) across all records
+;;
+;; Note on mutability / threading of state:
+;;   The store is an immutable list (see wal-store.aura). All
+;;   "mutation" goes by producing a new store. The caller is expected
+;;   to thread the store value through (typically via set! on a
+;;   top-level binding held by the MVCC reader).
+
+;; Helper: compute the "byte length" of an encoded record.
+;; The encoded form is a flat list of integers; length-of-list is a
+;; perfectly fine proxy for byte count in this toy system.
+(define (wal-bytes-length bytes)
+  (cond ((null? bytes) 0)
+        (else (+ 1 (wal-bytes-length (cdr bytes))))))
+
+;; Append a record by encoding it and pushing the bytes into the store.
+(define (wal-append-record! store rec)
+  (wal-store-append store (wal-bytes-encode rec)))
+
+;; Read a record by index: pull the bytes out of the store and decode.
+(define (wal-read-record store idx)
+  (wal-bytes-decode (wal-store-ref store idx)))
+
+;; Sum byte lengths across every record currently in the store.
+;; We recurse over (wal-store-bytes store) accumulating lengths.
+(define (wal-total-bytes store)
+  (wal-total-bytes-loop (wal-store-bytes store)))
+
+(define (wal-total-bytes-loop blobs)
+  (cond ((null? blobs) 0)
+        (else (+ (wal-bytes-length (car blobs))
+                 (wal-total-bytes-loop (cdr blobs))))))

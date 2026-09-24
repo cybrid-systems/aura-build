@@ -1,0 +1,62 @@
+;; report.aura — Report formatting for the mini-wal-zstd-frames project.
+;;
+;; Exposes:
+;;   (report-wal wal st)    -> alist of key/value pairs summarizing the WAL
+;;   (report-key-first k)   -> string "FIRST_KEY=<k>"
+;;   (report-key-last k)    -> string "LAST_KEY=<k>"
+;;
+;; The alist returned by (report-wal ...) is consumed by logfmt.aura to
+;; produce the stdout contract lines. It must be computed from the WAL
+;; and stats via the public module APIs (wal-records, wal-frames,
+;; wal-raw-bytes, wal-stored-bytes, stats-ratio, key-first, key-last,
+;; key-count) — never hard-coded.
+
+(define (report-num->string n)
+  (number->string n))
+
+(define (report-ratio->string r)
+  ;; Format a ratio as a decimal string with up to 4 fractional digits,
+  ;; trimming trailing zeros so 1.0 prints as "0" (matches the spec
+  ;; showing RATIO=0 for an uncompressible stream).
+  (let* ((scaled (round (* r 10000)))
+         (whole (quotient scaled 10000))
+         (frac  (modulo scaled 10000)))
+    (let ((frac-str (number->string frac)))
+      ;; Pad frac to 4 digits.
+      (let ((pad (- 4 (string-length frac-str))))
+        (let ((zeros (make-string pad #\0)))
+          (let ((padded (string-append zeros frac-str)))
+            ;; Trim trailing zeros from padded fraction.
+            (let loop ((i (string-length padded)))
+              (if (= i 0)
+                  (string-append (number->string whole))
+                  (if (char=? (string-ref padded (- i 1)) #\0)
+                      (loop (- i 1))
+                      (string-append (number->string whole) "."
+                                     (substring padded 0 i)))))))))))
+
+(define (report-wal wal st)
+  ;; Build the alist of reportable metrics. Each entry is (key . string-value).
+  (let* ((records (key-count wal))
+         (frames  (length (wal-frames wal)))
+         (raw     (wal-raw-bytes wal))
+         (stored  (wal-stored-bytes wal))
+         (ratio   (stats-ratio st))
+         (first   (key-first wal))
+         (last    (key-last wal)))
+    (list
+      (cons "WAL_KEYS"        (report-num->string records))
+      (cons "WAL_FRAMES"      (report-num->string frames))
+      (cons "WAL_RAW_BYTES"   (report-num->string raw))
+      (cons "WAL_STORED_BYTES"(report-num->string stored))
+      (cons "WAL_RATIO"       (report-ratio->string ratio))
+      (cons "WAL_FIRST_KEY"   first)
+      (cons "WAL_LAST_KEY"    last))))
+
+(define (report-key-first k)
+  ;; Produce the standalone FIRST_KEY=... line for stdout.
+  (string-append "FIRST_KEY=" k))
+
+(define (report-key-last k)
+  ;; Produce the standalone LAST_KEY=... line for stdout.
+  (string-append "LAST_KEY=" k))

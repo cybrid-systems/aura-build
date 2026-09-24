@@ -1,0 +1,271 @@
+;; wal.aura — Write-Ahead Log with compressed frames.
+;;
+;; A WAL aggregates records (key/value strings) into a block buffer.
+;; When the raw (uncompressed) byte count reaches `block-size`, the
+;; current payload is flushed into a frame via (frame-encode ...) and
+;; the frame is appended to the WAL's frame list.
+;;
+;; The WAL tracks both the raw bytes accumulated per record (so we
+;; know what records are present) and the compressed bytes emitted.
+;;
+;; Records are stored as an association list of (key . value) pairs in
+;; insertion order. Tail reading returns the last (possibly partial)
+;; frame's decoded content so callers can inspect in-progress writes.
+;;
+;; Exposes:
+;;   (wal-open)                         -> fresh WAL
+;;   (wal-append! wal key value)        -> add a record
+;;   (wal-flush-block! wal)             -> flush if block-size reached
+;;   (wal-read-tail wal)                -> (cons partial-flag decoded-tail)
+;;   (wal-replay wal)                   -> list of (key . value) pairs
+;;   (wal-frames wal)                   -> frame byte list (all frames)
+;;   (wal-raw-bytes wal)                -> total raw payload bytes
+;;   (wal-stored-bytes wal)             -> total compressed frame bytes
+;;   (wal-records wal)                   -> list of (key . value) pairs
+;;   (wal-block-size wal)               -> configured block size
+;;   (wal-dict wal)                     -> dictionary in use
+;;   (wal-tail-frame wal)               -> last frame byte list (or '())
+;;   (wal-tail-raw-len wal)             -> raw_len of last frame
+;;   (wal-set-tail-partial! wal flag)   -> set tail partial flag
+
+(define DEFAULT-BLOCK-SIZE 4096)
+(define DEFAULT-DICT-CAP 2048)
+
+;; Internal layout of a WAL record list element:
+;;   (cons key value)
+;; That's all — we keep things simple with alists.
+
+;; Layout of a WAL:
+;;   (cons dict (cons block-size (cons payload-bb (cons frames
+;;         (cons records (cons raw-total (cons stored-total tail-partial)))))))
+;;
+;; Where:
+;;   dict            — dictionary from dict-init
+;;   block-size      — flush threshold in raw bytes
+;;   payload-bb      — (make-bytebuf) holding uncommitted record bytes
+;;   frames          — list of frame byte lists (in order)
+;;   records         — list of (key . value) pairs (in order)
+;;   raw-total       — sum of payload byte counts ever fed to frames
+;;   stored-total    — sum of frame byte counts ever emitted
+;;   tail-partial    — #t if last frame was a tail (partial) frame, else #f
+
+(define (make-wal dict block-size)
+  (cons dict
+        (cons block-size
+              (cons (make-bytebuf)
+                    (cons '()
+                          (cons '()
+                                (cons 0
+                                      (cons 0 #f))))))))
+
+(define (wal-dict w) (car w))
+(define (wal-block-size w) (car (cdr w)))
+(define (wal-payload-bb w) (car (cdr (cdr w))))
+(define (wal-frames- cell w) (car (cdr (cdr (cdr w)))))
+(define (wal-records- cell w) (car (cdr (cdr (cdr (cdr w))))))
+(define (wal-raw-total w) (car (cdr (cdr (cdr (cdr (cdr w)))))))
+(define (wal-stored-total w) (car (cdr (cdr (cdr (cdr (cdr (cdr w))))))))
+(define (wal-tail-partial w) (cdr (cdr (cdr (cdr (cdr (cdr (cdr w))))))))
+
+(define (set-wal-frames! w v) (set-car! (cdr (cdr (cdr w))) v))
+(define (set-wal-records! w v) (set-car! (cdr (cdr (cdr (cdr w)))) v))
+(define (set-wal-raw-total! w v) (set-car! (cdr (cdr (cdr (cdr (cdr w))))) v))
+(define (set-wal-stored-total! w v) (set-car! (cdr (cdr (cdr (cdr (cdr (cdr w))))))) v))
+(define (set-wal-tail-partial! w v) (set-cdr! (cdr (cdr (cdr (cdr (cdr (cdr w))))))) v))
+
+;; Open a new WAL with default block size and dictionary capacity.
+(define (wal-open)
+  (let ((d (dict-init DEFAULT-DICT-CAP)))
+    (make-wal d DEFAULT-BLOCK-SIZE)))
+
+;; Open with explicit block size (used for tests / flexibility).
+(define (wal-open-with block-size dict-cap)
+  (let ((d (dict-init dict-cap)))
+    (make-wal d block-size)))
+
+;; String -> byte list (ASCII, low byte per char).
+(define (string->bytes s)
+  (let ((len (string-length s))
+        (out '())
+        (i 0))
+    (define (loop)
+      (if (>= i len)
+          (reverse out)
+          (begin
+            (set! out (cons (char->byte (string-ref s i)) out))
+            (set! i (+ i 1))
+            (loop))))
+    (loop)))
+
+;; Quick-and-dirty: get ascii byte of a char.
+;; Aura treats strings as sequences; we use the runtime helper if available,
+;; otherwise fall back to a small lookup. We assume ASCII (0..127).
+(define (char->byte c)
+  ;; Most Aura runtimes expose char->integer; if not, this still works for
+  ;; ASCII because the byte value equals the char code for 0..127.
+  (char->integer c))
+
+;; Reverse a byte list.
+(define (rev-bl xs)
+  (let ((acc '()) (rest xs))
+    (define (loop)
+      (if (null? rest)
+          acc
+          (begin
+            (set! acc (cons (car rest) acc))
+            (set! rest (cdr rest))
+            (loop))))
+    (loop))
+
+  acc)
+
+;; Append a byte list to another byte list.
+(define (bl-append a b)
+  (if (null? a)
+      b
+      (cons (car a) (bl-append (cdr a) b))))
+
+;; Length of a byte list.
+(define (bl-length xs)
+  (let ((n 0) (rest xs))
+    (define (loop)
+      (if (null? rest)
+          n
+          (begin
+            (set! n (+ n 1))
+            (set! rest (cdr rest))
+            (loop))))
+    (loop)))
+
+;; Append a record to the WAL. The record bytes are:
+;;   key "=" value "\n"
+;; accumulated into the current payload. Returns the WAL.
+(define (wal-append! wal key value)
+  (let* ((line (string-append key (string-append "=" (string-append value "\n"))))
+         (bytes (string->bytes line))
+         (bb (wal-payload-bb wal))
+         (rest-bytes bytes))
+    (define (put-loop)
+      (if (null? rest-bytes)
+          'done
+          (begin
+            (bb-put! bb (car rest-bytes))
+            (set! rest-bytes (cdr rest-bytes))
+            (put-loop))))
+    (put-loop)
+    ;; Record the (key . value) pair for replay.
+    (set-wal-records! wal (append (wal-records- cell wal) (list (cons key value))))
+    wal))
+
+;; Flush the current payload into a frame, IF raw bytes >= block-size.
+;; Returns the WAL (unchanged if no flush occurred).
+(define (wal-flush-block! wal)
+  (let* ((bb (wal-payload-bb wal))
+         (pos (bb-pos bb))
+         (bs (wal-block-size wal)))
+    (if (< pos bs)
+        wal
+        (begin
+          (wal-do-flush wal #f)
+          wal))))
+
+;; Internal: do the actual flush of the current payload buffer.
+;; `partial?` indicates whether this is the final partial tail flush.
+(define (wal-do-flush wal partial?)
+  (let* ((bb (wal-payload-bb wal))
+         (payload (bb-bytes bb))
+         (dict (wal-dict wal))
+         (framed (frame-encode dict payload)))
+    ;; Append to frames list.
+    (set-wal-frames! wal (append (wal-frames- cell wal) (list framed)))
+    ;; Update totals.
+    (set-wal-raw-total! wal (+ (wal-raw-total wal) (bl-length payload)))
+    (set-wal-stored-total! wal (+ (wal-stored-total wal) (bl-length framed)))
+    ;; Update tail-partial flag.
+    (set-wal-tail-partial! wal partial?)
+    ;; Train dictionary on these literals (the rolled window).
+    (dict-train! dict payload)
+    ;; Reset the payload buffer by replacing it with a fresh one.
+    ;; Since make-bytebuf returned (cons '() 0), we mutate via set-car!/set-cdr!.
+    (set-car! bb '())
+    (set-cdr! bb 0)))
+
+;; Read the tail (last frame, possibly partial).
+;; Returns (cons partial-flag decoded-bytes).
+;; If there are no frames yet, returns (cons #f '()).
+(define (wal-read-tail wal)
+  (let ((fs (wal-frames- cell wal)))
+    (if (null? fs)
+        (cons #f '())
+        (let* ((last-frame (list-ref fs (- (bl-length fs-as-list-length fs) 1)))
+               (dict (wal-dict wal))
+               (decoded (frame-decode dict last-frame))
+               (partial? (wal-tail-partial wal)))
+          (cons partial? decoded)))))
+
+;; Helper: length of a proper list (frames list is a list of byte lists,
+;; so we need length of outer list).
+(define (fs-as-list-length fs)
+  (let ((n 0) (rest fs))
+    (define (loop)
+      (if (null? rest)
+          n
+          (begin
+            (set! n (+ n 1))
+            (set! rest (cdr rest))
+            (loop))))
+    (loop)))
+
+;; Replay all records in order. Returns a list of (key . value) pairs.
+(define (wal-replay wal)
+  (wal-records- cell wal))
+
+;; All frames concatenated (as a single byte list).
+(define (wal-frames wal)
+  (let ((fs (wal-frames- cell wal))
+        (acc '())
+        (rest fs))
+    (define (loop)
+      (if (null? rest)
+          (rev-bl acc)
+          (begin
+            (set! acc (bl-append (car rest) acc))
+            (set! rest (cdr rest))
+            (loop))))
+    (loop)))
+
+;; Total raw payload bytes fed into frames so far.
+(define (wal-raw-bytes wal)
+  (wal-raw-total wal))
+
+;; Total stored (compressed) bytes across all frames.
+(define (wal-stored-bytes wal)
+  (wal-stored-total wal))
+
+;; All records (alias for replay).
+(define (wal-records wal)
+  (wal-records- cell wal))
+
+;; Get the last frame's byte list (or '() if none).
+(define (wal-tail-frame wal)
+  (let ((fs (wal-frames- cell wal)))
+    (if (null? fs)
+        '()
+        (list-ref fs (- (fs-as-list-length fs) 1)))))
+
+;; Get the raw_len of the last frame (0 if none).
+(define (wal-tail-raw-len wal)
+  (let ((tf (wal-tail-frame wal)))
+    (if (null? tf)
+        0
+        (frame-raw-len tf))))
+
+;; Force a final flush of the remaining payload as a partial tail frame.
+;; Returns the WAL.
+(define (wal-finish! wal)
+  (let ((bb (wal-payload-bb wal)))
+    (if (= (bb-pos bb) 0)
+        wal
+        (begin
+          (wal-do-flush wal #t)
+          wal))))

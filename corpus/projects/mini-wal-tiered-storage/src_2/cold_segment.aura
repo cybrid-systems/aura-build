@@ -1,0 +1,101 @@
+; cold_segment.aura — immutable cold segment for mini-wal-tiered-storage
+;
+; A cold segment is a sealed, append-only container for records that have
+; been rotated out of the hot ring buffer. Once a segment has been
+; created it never gains or loses records through the public API:
+; `cold-segment-add!` is only used while the rotator is building the
+; segment in memory before sealing. After handoff the segment is treated
+; as immutable.
+;
+; Internally a segment is an association list:
+;   (
+;     ('seg-id   . <id>)
+;     ('records  . <list-of-record-alists>)
+;     ('bytes    . <accumulated byte count>)
+;     ('len      . <record count>)
+;   )
+;
+; Records themselves are produced by `record.aura` and are alists of the
+; form (('lsn . N) ('payload . P) ('bytes . B)).
+;
+; Required exported APIs:
+;   (api make-cold-segment seg-id)
+;   (api cold-segment-add! seg record)
+;   (api cold-segment-len seg)
+;   (api cold-segment-bytes seg)
+;   (api cold-segment-records seg)
+;   (api cold-segment-find seg lsn)
+;
+; `cold-segment-find` returns the record whose LSN matches, or '() if no
+; such record exists in the segment. Linear search is fine because
+; segments are small and reads against the cold tier go through the
+; readahead cache anyway.
+
+; --- construction ------------------------------------------------------
+
+(define (make-cold-segment seg-id)
+  (list
+    (cons 'seg-id  seg-id)
+    (cons 'records '())
+    (cons 'bytes   0)
+    (cons 'len     0)))
+
+; --- accessors ---------------------------------------------------------
+
+(define (seg-id seg)        (alist-ref seg 'seg-id))
+(define (seg-records seg)   (alist-ref seg 'records))
+(define (seg-bytes seg)     (alist-ref seg 'bytes))
+(define (seg-len seg)       (alist-ref seg 'len))
+
+; --- mutators ----------------------------------------------------------
+
+; Append a record to the segment. Returns the segment with updated
+; `records`, `bytes`, and `len` entries. This is only meant to be called
+; while the segment is being assembled from a hot-ring snapshot; once a
+; segment has been handed off to the object store or local filesystem it
+; should be treated as immutable.
+(define (cold-segment-add! seg record)
+  (let ((new-records (cons record (seg-records seg)))
+        (new-bytes   (+ (seg-bytes seg) (record-bytes record)))
+        (new-len     (+ (seg-len   seg) 1)))
+    (alist-set! (alist-set! (alist-set! seg 'records new-records)
+                            'bytes   new-bytes)
+                'len     new-len)))
+
+; --- queries -----------------------------------------------------------
+
+; How many records are in this segment.
+(define (cold-segment-len seg)
+  (seg-len seg))
+
+; Total byte size of all records in this segment.
+(define (cold-segment-bytes seg)
+  (seg-bytes seg))
+
+; Return the list of records. The list is in reverse insertion order
+; (newest first) because `cold-segment-add!` conses onto the front.
+; Callers that want LSN order should walk from the tail; the public
+; read path (`tiered-read`) does not depend on order — it scans the list
+; looking for an LSN match via `cold-segment-find`.
+(define (cold-segment-records seg)
+  (seg-records seg))
+
+; Find the record with the given LSN in this segment. Linear scan is
+; acceptable: cold segments are bounded by `records-per-segment` and a
+; full read-through is rare. Returns the record alist, or '() if the
+; LSN is not present.
+(define (cold-segment-find seg lsn)
+  (let loop ((rs (seg-records seg)))
+    (cond
+      ((null? rs) '())
+      ((= (record-lsn (car rs)) lsn) (car rs))
+      (else (loop (cdr rs))))))
+
+; --- public API surface -----------------------------------------------
+
+(api make-cold-segment       make-cold-segment)
+(api cold-segment-add!       cold-segment-add!)
+(api cold-segment-len        cold-segment-len)
+(api cold-segment-bytes      cold-segment-bytes)
+(api cold-segment-records    cold-segment-records)
+(api cold-segment-find       cold-segment-find)

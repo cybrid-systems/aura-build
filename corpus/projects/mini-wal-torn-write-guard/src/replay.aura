@@ -1,0 +1,134 @@
+;; replay.aura -- replay committed frames from a repaired WAL
+;;
+;; After repair, the WAL contains only valid committed frames. This module
+;; walks every sector, extracts each frame header (id + payload), and
+;; accumulates a list of replayed frames plus a count.
+;;
+;; Required (define (api ...)) forms:
+;;   (api replay-frames w)   -> list of frame alists recovered from WAL
+;;   (api replay-count w)    -> number of frames recovered
+
+;; Extract the next frame from a byte stream.
+;; A frame on the wire is laid out as:
+;;   id-byte   payload-byte-0   payload-byte-1   ...   payload-byte-(N-1)
+;; The id is a single byte in 0..255; the payload length is not stored
+;; on the wire, so we infer N by checking how many bytes remain in the
+;; stream. For a well-formed WAL every frame's payload length is fixed
+;; (all frames in the scenario have the same payload size), but this
+;; module handles arbitrary lengths by reading until the stream is
+;; exhausted for the current sector.
+;;
+;; We work sector-by-sector, so each sector's payload contributes exactly
+;; one frame's worth of bytes if frames do not span sectors, or splits
+;; across sectors if they do. To keep things simple and predictable, we
+;; read frames by consuming bytes in (1 + payload-size) chunks where
+;; payload-size is the dominant payload length found in the WAL.
+;;
+;; Returns (cons frame rest-bytes) or #f if no full frame can be formed.
+
+(define (frame-from-bytes bytes payload-size)
+  ;; Need at least 1 (id) + payload-size bytes for one frame.
+  (if (< (length bytes) (+ 1 payload-size))
+      #f
+      (let* ((id-byte (car bytes))
+             (rest (cdr bytes))
+             (payload (take-bytes rest payload-size))
+             (remaining (drop-bytes rest payload-size))
+             (frame (list (cons 'id id-byte)
+                          (cons 'payload payload))))
+        (cons frame remaining))))
+
+(define (take-bytes bs n)
+  (if (= n 0)
+      '()
+      (cons (car bs) (take-bytes (cdr bs) (- n 1)))))
+
+(define (drop-bytes bs n)
+  (if (= n 0)
+      bs
+      (drop-bytes (cdr bs) (- n 1))))
+
+;; Determine the payload size used by frames in the WAL by looking at
+;; the stored frame list. Each frame alist has an 'id and a 'payload;
+;; the payload length is the size of the payload list.
+;;
+;; If no frames have been stored, default to 0 (nothing to replay).
+
+(define (infer-payload-size w)
+  (let ((sectors (api wal-sectors-bytes w)))
+    (if (null? sectors)
+        0
+        (let ((first-frame (car sectors)))
+          (if (null? first-frame)
+              0
+              (length (cdr (assq 'payload first-frame))))))))
+
+;; Walk all bytes across all sectors, reconstructing frames.
+;; We rely on the assumption that the WAL, after repair, contains a
+;; contiguous stream of frames where each frame is exactly
+;; (1 + payload-size) bytes long.
+
+(define (api replay-frames w)
+  (let ((payload-size (infer-payload-size w)))
+    (let loop ((remaining-bytes (all-wal-bytes w))
+               (acc '()))
+      (let ((next (frame-from-bytes remaining-bytes payload-size)))
+        (if (or (not next) (= payload-size 0))
+            (reverse acc)
+            (loop (cdr next) (cons (car next) acc)))))))
+
+;; Flatten all sector payloads into a single byte stream.
+;; We need access to the raw byte stream of the WAL. The WAL stores
+;; its sector list; we pull each sector's payload via (api sector-payload)
+;; and concatenate. However, sector-payload is a sector-level api, so
+;; we need the WAL to expose its sectors in a way we can iterate.
+;;
+;; We use (api wal-sectors w) to get the count and then ask for each
+;; sector index. But Aura WAL doesn't expose indexed access directly;
+;; instead we read frames that were previously stored on the WAL via
+;; (api wal-frames w) if available, or we reconstruct from byte stream
+;; by repeatedly pulling sectors.
+;;
+;; To keep replay.aura self-contained and not depend on hidden WAL
+;; internals, we attach replay metadata to the WAL during repair. The
+;; simplest contract: the WAL exposes (api wal-frames w) returning the
+;; list of frames it currently holds. If unavailable, we fall back to
+;; reading the raw sector byte stream.
+
+(define (all-wal-bytes w)
+  ;; Try (api wal-frames w) first; if that doesn't exist, build from
+  ;; sectors via (api wal-sector-at w i).
+  (if (procedure? (api wal-frames))
+      (frames->bytes (api wal-frames w))
+      (sectors->bytes w)))
+
+(define (frames->bytes frames)
+  (let loop ((fs frames) (acc '()))
+    (if (null? fs)
+        (reverse acc)
+        (let* ((f (car fs))
+               (id (cdr (assq 'id f)))
+               (payload (cdr (assq 'payload f))))
+          (loop (cdr fs)
+                (append (reverse acc)
+                        (cons id (reverse payload))))))))
+
+(define (sectors->bytes w)
+  (let ((n (api wal-sectors w)))
+    (let loop ((i 0) (acc '()))
+      (if (= i n)
+          (apply append (reverse acc))
+          (let ((s (api wal-sector-at w i)))
+            (loop (+ i 1)
+                  (cons (api sector-payload s) acc)))))))
+
+;; Count of replayed frames. We cache the result on the WAL so that
+;; subsequent calls are O(1).
+
+(define (api replay-count w)
+  (let ((cached (assq 'replay-count (api wal-meta w))))
+    (if cached
+        (cdr cached)
+        (let ((n (length (api replay-frames w))))
+          (api wal-set-meta! w 'replay-count n)
+          n))))

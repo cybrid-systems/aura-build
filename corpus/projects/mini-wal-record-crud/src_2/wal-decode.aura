@@ -1,0 +1,93 @@
+;; wal-decode.aura — decode s-expressions back into records/fields/values
+;;
+;; The encoded wire format is described in wal-encode.aura:
+;;   - An encoded record is a list: (schema-id (encoded-field ...))
+;;   - An encoded field is a list: (tag-name encoded-value)
+;;   - An encoded value depends on its declared type:
+;;       'int    -> a number
+;;       'string -> a string
+;;       'bool   -> the symbol 'true or 'false
+;;       'symbol -> a symbol
+;;
+;; This module only decodes structurally — it does NOT consult the
+;; schema registry. Validation / migration happen in wal-migrate.aura.
+;;
+;; API:
+;;   (api decode-record s)        — s-expr -> record (sid . fields)
+;;   (api decode-field tok)       — (name . encoded-value) -> (tag . value)
+;;   (api decode-value tok type)  — encoded-value -> typed value
+
+;; decode-value: turn an encoded token into a value of the declared type.
+;;
+;; We handle each known type explicitly. Unknown types are passed through
+;; unchanged (forward-compatible).
+(define (api decode-value tok type)
+  (cond
+    ((equal? type 'int)
+     (if (number? tok)
+         tok
+         0))
+    ((equal? type 'string)
+     (if (string? tok)
+         tok
+         ""))
+    ((equal? type 'bool)
+     (cond
+       ((equal? tok 'true)  #t)
+       ((equal? tok 'false) #f)
+       (else #f)))
+    ((equal? type 'symbol)
+     (if (symbol? tok)
+         tok
+         'unknown))
+    (else
+     ;; Unknown type — pass through whatever we got.
+     tok)))
+
+;; decode-field: a single encoded field is (tag-name encoded-value).
+;; We rebuild it as a (tag . value) pair where tag = (name . type-symbol)
+;; is constructed using make-tag from wal-types.aura.
+;;
+;; NOTE: We don't know the declared type here from the wire format
+;; alone — types live in the schema. So decode-field takes only the
+;; token and emits (tag . raw-token) where tag's type is 'unknown.
+;; The caller (decode-record or migrate) can then re-decode using the
+;; real schema type via decode-value.
+;;
+;; But to be a useful standalone API, we DO try to infer a sensible
+;; type when the token shape is obvious:
+;;   - number  -> tag type 'int
+;;   - string  -> tag type 'string
+;;   - 'true/'false -> tag type 'bool
+;;   - other symbol -> tag type 'symbol
+(define (api decode-field tok)
+  (if (and (pair? tok) (list? tok) (= (length tok) 2))
+      (let ((name (car tok))
+            (val  (car (cdr tok))))
+        (let ((inferred-type
+                (cond
+                  ((number? val)  'int)
+                  ((string? val)  'string)
+                  ((or (equal? val 'true) (equal? val 'false)) 'bool)
+                  ((symbol? val)  'symbol)
+                  (else           'unknown))))
+          (cons (cons name inferred-type) val)))
+      ;; Malformed field — return a sentinel.
+      (cons (cons 'malformed 'unknown) '())))
+
+;; decode-record: an encoded record is (schema-id (field ...)).
+;; We return (sid . fields) where fields is a list of (tag . value)
+;; pairs as produced by decode-field.
+(define (api decode-record s)
+  (if (and (pair? s) (list? s) (>= (length s) 2))
+      (let ((sid (car s))
+            (field-toks (car (cdr s))))
+        (let ((decoded-fields
+                (let loop ((xs field-toks) (acc '()))
+                  (if (null? xs)
+                      (reverse acc)
+                      (loop (cdr xs)
+                            (cons (api decode-field (car xs)) acc))))))
+          (cons sid decoded-fields)))
+      ;; Malformed record — return a sentinel with sid=0 and no fields.
+      (cons 0 '())))

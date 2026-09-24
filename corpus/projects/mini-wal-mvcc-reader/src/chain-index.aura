@@ -1,0 +1,103 @@
+;; chain-index.aura
+;; Per-key version-chain head index for the MVCC reader.
+;;
+;; Each key in the WAL has its own version chain: a linked list of
+;; WAL indices, where each record's prev-version pointer reaches back
+;; to the previous version of the same key. To make reads efficient
+;; we keep a small "head index" mapping:
+;;
+;;     key-string  ->  (wal-idx . length-of-chain)
+;;
+;; where wal-idx is the index of the newest appended record for that
+;; key, and length-of-chain is how many records (committed + aborted)
+;; have ever been appended for that key. The length is maintained
+;; alongside the head pointer so callers can answer
+;; "what's the longest version chain in the system?" without scanning
+;; the entire WAL.
+;;
+;; The index is a pure-functional alist keyed by key-string; all
+;; "mutation" goes through producing a new alist that the caller
+;; threads back via set!.
+;;
+;; API:
+;;   (chain-index-init)                  -> fresh empty index
+;;   (chain-index-set! idx key head-idx) -> idx with key mapped to head-idx
+;;                                          (and length incremented)
+;;   (chain-index-get idx key)            -> head-idx for key, or #f
+;;   (chain-index-keys idx)              -> list of all keys (any order)
+;;   (chain-index-count idx)             -> number of distinct keys tracked
+;;   (chain-index-max-length idx)        -> max chain length across all keys
+;;
+;; An entry in the alist has the shape:
+;;   (key . (head-idx . chain-length))
+
+;; Constructor: an empty alist.
+(define (chain-index-init)
+  '())
+
+;; Internal helper: assoc an entry in the alist by key, returning
+;; the entry (key . value) if found, else #f.
+(define (chain-index-assoc idx key)
+  (assoc key idx))
+
+;; Get the head-idx for a key, or #f if the key is not tracked.
+(define (chain-index-get idx key)
+  (let ((entry (chain-index-assoc idx key)))
+    (if entry
+        (car (cdr entry))
+        #f)))
+
+;; Get the chain length for a key; returns 0 if key is not tracked.
+(define (chain-index-length-of idx key)
+  (let ((entry (chain-index-assoc idx key)))
+    (if entry
+        (cdr (cdr entry))
+        0)))
+
+;; Update the index so that `key`'s head points to `head-idx` and
+;; its chain length is incremented by one. If `key` is new, it is
+;; added with length 1. Pure-functional: returns a new alist.
+;;
+;; We rebuild the entry list so the head pointer is "fresh" and the
+;; length is current. Keys that are not being updated are passed
+;; through unchanged.
+(define (chain-index-set! idx key head-idx)
+  (let ((entry (chain-index-assoc idx key)))
+    (if entry
+        ;; Existing key: bump length, update head, replace entry.
+        (let ((old-len (cdr (cdr entry)))
+              (rest    (assq-remove idx key)))
+          (cons (cons key (cons head-idx (+ old-len 1)))
+                rest))
+        ;; New key: start length at 1.
+        (cons (cons key (cons head-idx 1))
+              idx))))
+
+;; Internal helper: return the alist with the entry for `key`
+;; removed (if present). Order of remaining entries is preserved.
+(define (assq-remove alist key)
+  (cond ((null? alist) '())
+        ((equal? (car (car alist)) key) (cdr alist))
+        (else (cons (car alist)
+                    (assq-remove (cdr alist) key)))))
+
+;; List all keys currently tracked, in arbitrary order.
+(define (chain-index-keys idx)
+  (map (lambda (entry) (car entry)) idx))
+
+;; Number of distinct keys tracked.
+(define (chain-index-count idx)
+  (length idx))
+
+;; Max chain length across all tracked keys. Returns 0 for an empty
+;; index (so callers don't have to special-case the empty case).
+(define (chain-index-max-length idx)
+  (cond ((null? idx) 0)
+        (else
+         (let loop ((rest idx) (best 0))
+           (cond ((null? rest) best)
+                 (else
+                  (let ((this-len (cdr (cdr (car rest)))))
+                    (if (> this-len best)
+                        (loop (cdr rest) this-len)
+                        (loop (cdr rest) best)))))))))

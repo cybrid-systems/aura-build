@@ -1,0 +1,115 @@
+;; wal-bytes.aura
+;; Serialize a wal-record to a flat byte-like list (we use a list of integers,
+;; which serve as our "bytes" in this in-memory toy system).
+;; Wire format (length-prefixed, little-endian style for fields, but we keep
+;; it simple by prefixing strings with a length tag):
+;;
+;;   [magic][txn-id][op-code][key-len][key-bytes...][val-len][val-bytes...][prev-version]
+;;
+;; magic      = single byte 0xAA (170) so we can sanity-check on decode
+;; txn-id     = one byte (we keep txn ids < 256 for the toy)
+;; op-code    = 1 = 'put, 2 = 'del
+;; key-len    = one byte
+;; key-bytes  = char codes of the key string
+;; val-len    = one byte
+;; val-bytes  = char codes of the value string
+;; prev-version = one signed byte stored as 0..255; -1 is encoded as 255.
+;;
+;; Decoding validates the magic byte and returns the original wal-record
+;; via wal-record-make.
+
+(define magic-byte 170)
+
+(define (op->code op)
+  (cond ((eq? op 'put) 1)
+        ((eq? op 'del) 2)
+        (else 0)))
+
+(define (code->op c)
+  (cond ((= c 1) 'put)
+        ((= c 2) 'del)
+        (else 'put)))
+
+(define (signed-byte v)
+  ;; Map a prev-version in [-1, 254] onto an unsigned byte.
+  ;; We pick a small range; toy system never exceeds it.
+  (cond ((< v 0) (+ v 256))
+        (else v)))
+
+(define (unsigned-byte b)
+  (if (>= b 128) (- b 256) b))
+
+(define (string->bytes s)
+  ;; Convert a string into a list of char codes.
+  (define (loop i acc)
+    (if (>= i (string-length s))
+        (reverse acc)
+        (loop (+ i 1)
+              (cons (char->integer (string-ref s i)) acc))))
+  (loop 0 '()))
+
+(define (bytes->string bs)
+  ;; Convert a list of char codes back into a string.
+  (list->string (list->vector (reverse bs))))
+
+(define (api wal-bytes-encode rec)
+  (let ((txn-id   (wal-record-txn rec))
+        (op       (wal-record-op rec))
+        (key      (wal-record-key rec))
+        (value    (wal-record-value rec))
+        (prev     (wal-record-prev rec))
+        (kb       (string->bytes key))
+        (vb       (string->bytes value)))
+    (append (list magic-byte
+                  (remainder txn-id 256)
+                  (op->code op)
+                  (length kb))
+            kb
+            (list (length vb))
+            vb
+            (list (signed-byte prev)))))
+
+(define (api wal-bytes-decode bytes)
+  (define (take-n lst n)
+    ;; Return the first n elements of lst as a list, in order.
+    (define (loop i acc rest)
+      (if (= i n)
+          (reverse acc)
+          (loop (+ i 1)
+                (cons (car rest) acc)
+                (cdr rest))))
+    (loop 0 '() lst))
+
+  (define (drop-n lst n)
+    (define (loop i rest)
+      (if (= i n)
+          rest
+          (loop (+ i 1) (cdr rest))))
+    (loop 0 lst))
+
+  ;; Magic
+  (if (null? bytes)
+      (wal-record-make 0 'put "" "" -1)
+      (let ((m (car bytes)))
+        (if (not (= m magic-byte))
+            (wal-record-make 0 'put "" "" -1)
+            (let* ((bs (cdr bytes))
+                   (txn-id (car bs))
+                   (bs2 (cdr bs))
+                   (op-code (car bs2))
+                   (bs3 (cdr bs2))
+                   (klen (car bs3))
+                   (bs4 (cdr bs3))
+                   (key-bytes (take-n bs4 klen))
+                   (bs5 (drop-n bs4 klen))
+                   (vlen (car bs5))
+                   (bs6 (cdr bs5))
+                   (val-bytes (take-n bs6 vlen))
+                   (bs7 (drop-n bs6 vlen))
+                   (prev-raw (car bs7)))
+              (wal-record-make
+                txn-id
+                (code->op op-code)
+                (bytes->string key-bytes)
+                (bytes->string val-bytes)
+                (unsigned-byte prev-raw)))))))
