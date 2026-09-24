@@ -1,0 +1,54 @@
+;; wal_state.aura
+;; In-memory key-value state for the WAL replay engine.
+;; State is represented as an association list: list of (key . value) pairs.
+;; All mutation operations preserve the alist structure but use set! on the
+;; top-level binding via a small helper that mutates the cons cells.
+
+;; Helper: mutating set! on a top-level identifier is not directly possible
+;; when the state is passed by value. We use a wrapper: state is a single-cell
+;; mutable box implemented via (cons 'state alist), and we mutate through
+;; set-car!/set-cdr! equivalents. Since Aura here doesn't expose set-car!/set-cdr!,
+;; we instead keep state as a plain alist and return a NEW alist from mutators.
+;; To allow mutation through the same binding, callers should rebind state with
+;; the returned value. This is a standard pure-list approach.
+
+(define (api empty-state)
+  '())
+
+(define (api state-set! state k v)
+  ;; Remove any existing entry for k, then cons (cons k v) on front.
+  (let ((filtered (filter-not-key state k)))
+    (cons (cons k v) filtered)))
+
+(define (api state-delete! state k)
+  (filter-not-key state k))
+
+(define (api state-has? state k)
+  (cond
+    ((null? state) #f)
+    ((equal? (car (car state)) k) #t)
+    (else (state-has? (cdr state) k))))
+
+(define (api state-get state k)
+  (cond
+    ((null? state) #f)
+    ((equal? (car (car state)) k) (cdr (car state)))
+    (else (state-get (cdr state) k))))
+
+(define (api state-keys state)
+  (cond
+    ((null? state) '())
+    (else (cons (car (car state)) (state-keys (cdr state))))))
+
+(define (api state-count state)
+  (length state))
+
+;; --- internal helpers ---
+
+(define (filter-not-key alist k)
+  (cond
+    ((null? alist) '())
+    ((equal? (car (car alist)) k)
+     (filter-not-key (cdr alist) k))
+    (else
+     (cons (car alist) (filter-not-key (cdr alist) k)))))

@@ -1,0 +1,103 @@
+;; wal-fixture.aura
+;;
+;; Test fixture / scenario data for the mini-wal-index scenario.
+;;
+;; This file is the bridge between the hand-written scenario and the
+;; generic indexer code. It exposes ONE exported API:
+;;
+;;   (make-wal-fixture)
+;;       Returns a fresh alist-shaped scenario descriptor holding:
+;;         'records           ; list of raw records (not yet indexed)
+;;         'lookup-lsn        ; the LSN used for the exact-lookup tests
+;;         'approx-lsn        ; the LSN used for the floor-lookup test
+;;         'ceiling-lsn       ; the LSN used for the ceiling-lookup test
+;;         'range-lo          ; low end of the range-scan window
+;;         'range-hi          ; high end of the range-scan window
+;;         'merge-tail-rec    ; extra record appended AFTER first merge
+;;
+;; The raw records follow the contract from index-record.aura:
+;;   (make-record lsn-start lsn-end offset seg-id len)
+;;
+;; All numbers here are chosen so that, after `build-index` and
+;; `merge-adjacent`, the answer set in main.aura is well-defined and
+;; non-degenerate (multiple segments, at least one merge pair, a
+;; non-empty range-scan, etc.).
+;;
+;; LSN layout (10 records, seg-ids reused where adjacent):
+;;
+;;   lsn-start  lsn-end   offset   seg-id   len
+;;      0         99        0        0       100
+;;    100        199      100        0       100
+;;    200        299      200        1       100
+;;    300        399      300        1       100
+;;    400        499      400        2       100
+;;    500        599      500        2       100
+;;    600        699      600        3       100
+;;    700        799      700        3       100
+;;    800        899      800        4       100
+;;    900        999      900        4       100
+;;
+;; Adjacency properties (used by merge-adjacent):
+;;   - seg 0 entries (0..99, 100..199)  are adjacent & mergeable
+;;   - seg 1 entries (200..299, 300..399) are adjacent & mergeable
+;;   - seg 2 entries (400..499, 500..599) are adjacent & mergeable
+;;   - seg 3 entries (600..699, 700..799) are adjacent & mergeable
+;;   - seg 4 entries (800..899, 900..999) are adjacent & mergeable
+;;
+;; Initial state: 10 records, 5 distinct segments, 1000 total bytes.
+;; After first `merge-adjacent`: 5 merged records, 5 segments.
+;; After appending the tail record and re-merging: still 5 segments
+;; because the tail record (seg 4) is adjacent to the existing merged
+;; seg-4 entry, collapsing them into one. The second-pass count is
+;; therefore also 5 segments — but the merged entry has grown, and
+;; the lookup at LSN 650 still hits seg 3.
+;;
+;; Lookup probes:
+;;   - exact  at LSN  42   -> within first record  -> seg 0, offset 0
+;;   - floor  at LSN 500   -> record starting at 500 -> seg 2, offset 500
+;;   - ceiling at LSN 100  -> next-greater entry    -> the lsn-start=200 record
+;;   - range  [600, 800]  -> records with lsn-start in [600, 800]
+;;                           i.e. lsn-start 600 and lsn-start 700  -> 2 entries
+;;
+;; These are computed at runtime by main.aura; this file only supplies
+;; the input data.
+
+(define (make-wal-fixture)
+  (list
+    (cons 'records
+          (list
+            (make-record   0  99    0 0 100)
+            (make-record 100 199  100 0 100)
+            (make-record 200 299  200 1 100)
+            (make-record 300 399  300 1 100)
+            (make-record 400 499  400 2 100)
+            (make-record 500 599  500 2 100)
+            (make-record 600 699  600 3 100)
+            (make-record 700 799  700 3 100)
+            (make-record 800 899  800 4 100)
+            (make-record 900 999  900 4 100)))
+    (cons 'lookup-lsn       42)
+    (cons 'approx-lsn      500)
+    (cons 'ceiling-lsn     100)
+    (cons 'range-lo        600)
+    (cons 'range-hi        800)
+    ;; Extra record appended after the first merge pass.  It is in
+    ;; seg 4 and abuts the existing merged seg-4 entry (which, after
+    ;; the first merge, spans lsn-start=800..lsn-end=999).  This new
+    ;; record covers LSNs 1000..1099 in the same segment, so the
+    ;; second merge pass can fold it in.  Segment count stays at 5.
+    (cons 'merge-tail-rec
+          (make-record 1000 1099 1000 4 100))))
+
+;; Convenience accessor: pull a field out of the fixture alist.
+;; Kept private (no 'export' mechanism in Aura); main.aura uses
+;; assoc directly anyway, but we provide it for readability.
+(define (fixture-ref fixture key)
+  (let ((entry (assoc key fixture)))
+    (if entry
+        (cdr entry)
+        (begin
+          (display "fixture-ref: missing key ")
+          (display key)
+          (newline)
+          '()))))

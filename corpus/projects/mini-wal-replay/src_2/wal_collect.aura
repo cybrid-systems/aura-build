@@ -1,0 +1,20 @@
+;; wal_collect.aura
+;; Collection helpers that extract keys and values from the in-memory
+;; state association list. These functions are pure: they take a state
+;; (an alist of (key . value) pairs) and return a plain list.
+
+(define (api collect-keys state)
+  ;; Return a list of all keys currently in state, in alist order.
+  (cond
+    ((null? state) '())
+    (else
+     (cons (car (car state))
+           (api collect-keys (cdr state))))))
+
+(define (api collect-values state)
+  ;; Return a list of all values currently in state, in alist order.
+  (cond
+    ((null? state) '())
+    (else
+     (cons (cdr (car state))
+           (api collect-values (cdr state))))))

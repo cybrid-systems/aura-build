@@ -1,0 +1,43 @@
+;; index-compare.aura
+;; Ordering and geometric predicates on index records.
+;;
+;; All records are 5-element lists produced by `make-record`:
+;;   (lsn-start lsn-end offset seg-id len)
+;;
+;; A "sparse" WAL index is kept sorted by lsn-start (ascending); we
+;; only need a strict-less and an equality test on that primary key.
+;; `overlaps?` / `adjacent?` operate on the LSN ranges of two records
+;; and are used by the merge logic in index-merge.aura.
+
+(define (record<? a b)
+  ;; Strict ordering on the primary key (lsn-start).
+  (< (record-lsn-start a) (record-lsn-start b)))
+
+(define (record=? a b)
+  ;; Records are considered equal iff they share the same primary key.
+  ;; (Two distinct entries with the same lsn-start would be malformed
+  ;;  input; this predicate mirrors that semantics.)
+  (= (record-lsn-start a) (record-lsn-start b)))
+
+(define (overlaps? a b)
+  ;; Two ranges [as, ae] and [bs, be] overlap iff neither ends strictly
+  ;; before the other starts.  Adjacency (ae == bs-1) does NOT count as
+  ;; overlap; see `adjacent?` for that.
+  (let ((as (record-lsn-start a))
+        (ae (record-lsn-end   a))
+        (bs (record-lsn-start b))
+        (be (record-lsn-end   b)))
+    (and (not (> ae bs))
+         (not (> as be)))))
+
+(define (adjacent? a b)
+  ;; Two non-overlapping ranges are "adjacent" iff one ends exactly at
+  ;; (other's start - 1).  The ordering of a/b is irrelevant; either
+  ;; pairing is considered adjacent so merge-adjacent can pair neighbors
+  ;; without caring about left/right.
+  (let ((as (record-lsn-start a))
+        (ae (record-lsn-end   a))
+        (bs (record-lsn-start b))
+        (be (record-lsn-end   b)))
+    (or (= ae (- bs 1))
+        (= be (- as 1)))))

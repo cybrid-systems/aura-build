@@ -1,0 +1,118 @@
+;; wal_segment.aura — A WAL segment holds a bounded sequence of frames.
+;;
+;; A segment is represented as a list of the form:
+;;   (id capacity frames-len frames-list)
+;; where:
+;;   id        : segment identifier (number)
+;;   capacity  : maximum number of frames this segment may hold
+;;   frames-len: current number of frames in this segment
+;;   frames-list: list of wal-frames (in append order, head = oldest)
+;;
+;; All values are immutable from the caller's perspective; "mutation"
+;; is performed by `segment-append` which returns a new segment value
+;; with the frame added at the end of the frames-list. The harness
+;; is responsible for binding the result with set! if it wants to
+;; keep the new value.
+
+;; --- predicate ------------------------------------------------------------
+
+(define (seg-valid? s)
+  ;; A segment is well-formed if it is a 4-list of numbers/lists.
+  (and (pair? s)
+       (pair? (cdr s))
+       (pair? (cdr (cdr s)))
+       (pair? (cdr (cdr (cdr s))))
+       (null? (cdr (cdr (cdr (cdr s)))))
+       (number? (car s))
+       (number? (cadr s))
+       (number? (caddr s))))
+
+(define (api make-segment id cap)
+  ;; Build a fresh empty segment.
+  ;; Preconditions: id and cap are numbers; cap >= 0.
+  (list id cap 0 '()))
+
+;; --- accessors ------------------------------------------------------------
+
+(define (api segment-id seg)
+  (car seg))
+
+(define (seg-capacity seg)
+  (cadr seg))
+
+(define (seg-len seg)
+  (caddr seg))
+
+(define (seg-frames-list seg)
+  ;; Internal accessor — returns the raw frames list (head = oldest).
+  (cadddr seg))
+
+(define (api segment-frames seg)
+  ;; Public accessor — returns the list of frames in append order.
+  (seg-frames-list seg))
+
+;; --- predicates -----------------------------------------------------------
+
+(define (api segment-full? seg)
+  ;; A segment is full when frames-len >= capacity.
+  (>= (seg-len seg) (seg-capacity seg)))
+
+(define (seg-empty? seg)
+  (= (seg-len seg) 0))
+
+;; --- mutator (functional) -------------------------------------------------
+
+(define (api segment-append seg frame)
+  ;; Append a frame to the segment, returning a NEW segment value.
+  ;; If the segment is already full, the frame is dropped and the
+  ;; original segment is returned unchanged (segment is sealed).
+  (if (segment-full? seg)
+      seg
+      (let ((id  (car seg))
+            (cap (cadr seg))
+            (n   (caddr seg))
+            (fs  (cadddr seg)))
+        (list id cap (+ n 1) (append fs (list frame))))))
+
+;; --- convenience ----------------------------------------------------------
+
+(define (segment-remaining seg)
+  ;; How many more frames can fit before this segment is full.
+  (let ((cap (seg-capacity seg))
+        (n   (seg-len seg)))
+    (if (>= n cap) 0 (- cap n))))
+
+(define (segment-fill-ratio seg)
+  ;; Ratio of used capacity, as a number in [0,1]. Returns 0 for cap=0.
+  (let ((cap (seg-capacity seg))
+        (n   (seg-len seg)))
+    (if (= cap 0)
+        0
+        (/ n cap))))
+
+;; Internal helper used by wal_log to drop the oldest frame when a
+;; segment rolls over. Not part of the public API, but useful within
+;; this module and potentially callable by other modules via internal
+;; conventions.
+(define (segment-drop-oldest seg)
+  ;; Returns a new segment with the oldest frame removed.
+  ;; If already empty, returns seg unchanged.
+  (if (seg-empty? seg)
+      seg
+      (let ((id  (car seg))
+            (cap (cadr seg))
+            (n   (caddr seg))
+            (fs  (cadddr seg)))
+        (list id cap (- n 1) (cdr fs)))))
+
+;; Public: total bytes occupied by a segment's frames, treating each
+;; frame's payload length as 1 unit per byte. Provided for reporting
+;; convenience; does not enforce any invariant.
+(define (segment-payload-bytes seg)
+  (let loop ((fs (seg-frames-list seg)) (acc 0))
+    (if (null? fs)
+        acc
+        (let ((f (car fs)))
+          (if (and (pair? f) (pair? (cdr (cdr f))))
+              (loop (cdr fs) (+ acc (length (caddr f))))
+              (loop (cdr fs) acc))))))

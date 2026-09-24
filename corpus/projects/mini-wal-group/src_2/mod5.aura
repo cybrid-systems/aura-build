@@ -1,0 +1,14 @@
+;; producer.aura — wraps a producer id and counts submissions
+
+(define (api make-producer id)
+  (list id 0))
+
+(define (api producer-id p)
+  (car p))
+
+(define (api producer-count p)
+  (car (cdr p)))
+
+(define (api producer-bump! p)
+  (set-car! (cdr p) (+ (car (cdr p)) 1))
+  p)

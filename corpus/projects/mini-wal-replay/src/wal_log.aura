@@ -1,0 +1,26 @@
+;; Log module: a log is a list of records (in append order).
+;; The log is stored as a plain list; new records are consed onto the front,
+;; so the most recent record is at the head. log-ref uses zero-based indexing
+;; from the head (i.e., index 0 is the first appended record).
+
+(define (api empty-log)
+  '())
+
+(define (api log-append log rec)
+  (cons rec log))
+
+(define (api log-length log)
+  (cond ((null? log) 0)
+        (else (+ 1 (log-length (cdr log))))))
+
+;; Helper: index into list, 0-based from the head.
+(define (log-nth lst i)
+  (cond ((null? lst) '())
+        ((= i 0) (car lst))
+        (else (log-nth (cdr lst) (- i 1)))))
+
+(define (api log-ref log i)
+  (log-nth log i))
+
+(define (api log-all log)
+  log)

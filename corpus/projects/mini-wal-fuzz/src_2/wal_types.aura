@@ -1,0 +1,73 @@
+;; wal_types.aura
+;; Core frame and journal type definitions for the WAL subsystem.
+;; Frames are represented as association lists so that the WAL can be
+;; modeled as immutable list snapshots with shadow updates via cons+reverse.
+;; A frame is an alist with keys: 'lsn 'payload 'crc 'txid 'committed
+
+;; ---- Predicates --------------------------------------------------------
+
+;; Return #t if x is a well-formed WAL frame.
+(define (wal-frame? x)
+  (and (pair? x)
+       (assq 'lsn x)
+       (assq 'payload x)
+       (assq 'crc x)
+       (assq 'txid x)
+       (assq 'committed x)))
+
+;; ---- Constructors ------------------------------------------------------
+
+;; Build a frame alist from its raw fields.
+(define (make-frame lsn payload crc txid committed)
+  (list (cons 'lsn lsn)
+        (cons 'payload payload)
+        (cons 'crc crc)
+        (cons 'txid txid)
+        (cons 'committed committed)))
+
+;; Empty journal = no frames.
+(define (wal-empty-journal) '())
+
+;; ---- Accessors ---------------------------------------------------------
+
+(define (wal-frame-lsn f)      (cdr (assq 'lsn f)))
+(define (wal-frame-payload f)  (cdr (assq 'payload f)))
+(define (wal-frame-crc f)      (cdr (assq 'crc f)))
+(define (wal-frame-txid f)     (cdr (assq 'txid f)))
+(define (wal-frame-committed? f)
+  (if (cdr (assq 'committed f)) #t #f))
+
+;; ---- Mutators ----------------------------------------------------------
+;; Aura supports set! on top-level pair cells. We allow in-place mutation
+;; of the 'committed cell so the harness can flip commit flags.
+
+(define (wal-frame-set-committed! f v)
+  (let ((cell (assq 'committed f)))
+    (set! cell (cons 'committed (if v #t #f)))
+    ;; The above set! rebinds the local cell; mutate via side effect by
+    ;; rebuilding the alist in-place through the cdr of the existing entry.
+    ;; Because cons cells are immutable we instead replace the entry by
+    ;; splicing: locate the pair in the spine and rewrite via set-cdr!.
+    ;; Aura has set-cdr!, use it.
+    (wal-frame-set-committed-impl f v)))
+
+(define (wal-frame-set-committed-impl f v)
+  (cond ((null? f) f)
+        ((eq? (car (car f)) 'committed)
+         (set-cdr! (car f) (if v #t #f))
+         f)
+        (else
+         (wal-frame-set-committed-impl (cdr f) v)
+         f)))
+
+;; ---- Exported API ------------------------------------------------------
+;; Re-export under the (api ...) names required by the module table.
+
+(api wal-frame? wal-frame?)
+(api wal-empty-journal wal-empty-journal)
+(api wal-frame-lsn wal-frame-lsn)
+(api wal-frame-payload wal-frame-payload)
+(api wal-frame-crc wal-frame-crc)
+(api wal-frame-txid wal-frame-txid)
+(api wal-frame-committed? wal-frame-committed?)
+(api wal-frame-set-committed! wal-frame-set-committed!)

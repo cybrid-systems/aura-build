@@ -1,0 +1,56 @@
+;; wal-fixture.aura
+;; Test fixture: a deterministic list of WAL sparse index records used by
+;; main.aura to exercise the rest of the index modules.
+;;
+;; The fixture simulates a small Write-Ahead Log that has been grouped
+;; into a few on-disk segments. Each record is a (lsn-start, lsn-end,
+;; offset, seg-id, len) tuple as produced by make-record.
+;;
+;; The shape of the fixture is chosen so that:
+;;   * segments are roughly contiguous but interleaved in the order they
+;;     were flushed to disk;
+;;   * there are a couple of adjacent pairs that can be merged;
+;;   * there is an exact-match entry for LSN 42;
+;;   * there is a clear floor entry for LSN 500 and a clear ceiling
+;;     entry above LSN 100;
+;;   * there are several entries falling inside the [600, 800] scan band.
+;;
+;; Exports:
+;;   (fixture-records)   -> list of record tuples
+;;   (fixture-segments)  -> list of distinct seg-ids referenced by the fixture
+;;   (fixture-merge-extra) -> one extra record to feed into a second merge
+;;                            pass
+
+;; All records in the fixture. The order here is the "on-disk arrival"
+;; order; build-index / insert-record will sort them by lsn-start.
+(define fixture-records
+  (list
+    ;; segment 1: LSNs 1..40, offset 1000
+    (make-record  1  40 1000 1 39)
+    ;; segment 2: LSNs 41..80, offset 2000 (exact hit for LSN 42 lands here)
+    (make-record 41  80 2000 2 39)
+    ;; segment 3: LSNs 81..200, offset 3000
+    (make-record 81 200 3000 3 119)
+    ;; segment 4: LSNs 201..400, offset 4000
+    (make-record 201 400 4000 4 199)
+    ;; segment 5: LSNs 401..600, offset 5000 (contains floor for LSN 500)
+    (make-record 401 600 5000 5 199)
+    ;; segment 6: LSNs 601..800, offset 6000
+    (make-record 601 800 6000 6 199)
+    ;; segment 7: LSNs 801..1000, offset 7000
+    (make-record 801 1000 7000 7 199)
+    ;; segment 8: LSNs 1001..1200, offset 8000
+    (make-record 1001 1200 8000 8 199)))
+
+;; Distinct seg-ids in the order they first appear in fixture-records.
+(define fixture-segments (list 1 2 3 4 5 6 7 8))
+
+;; An extra record used in a second merge pass. It is adjacent to the
+;; 801..1000 / 7000 entry (segment 7) so a merge can collapse them.
+(define fixture-merge-extra
+  (make-record 1001 1200 8000 7 199))
+
+;; Convenience: hand the caller the full sequence of records to feed
+;; into a mutable builder one at a time.
+(define (fixture-stream)
+  fixture-records)

@@ -1,0 +1,58 @@
+{
+  "label": "mini-wal-replay",
+  "files": [
+    "wal_record.aura",
+    "wal_state.aura",
+    "wal_log.aura",
+    "wal_apply.aura",
+    "wal_idempotent.aura",
+    "wal_replay.aura",
+    "wal_checkpoint.aura",
+    "wal_collect.aura",
+    "wal_metrics.aura",
+    "wal_report.aura",
+    "main.aura"
+  ],
+  "entry": "main.aura",
+  "run_mode": "cli_multi",
+  "expect": "WAL_RECORDS_TOTAL=10\nWAL_CHECKPOINT_SEQ=3\nWAL_DISTINCT_KEYS=5\nWAL_FINAL_KEYS=a,d,e,f,g\nWAL_IDEMPOTENT_APPLIES=7\nWAL_REPLAYED=7\nWAL_DROPPED_OLD=3\nWAL_VALUE_SUM=121\nWAL_REPLAY_TIME_TICKS=7\nWAL_DETERMINISTIC=true",
+  "expect_res": [
+    "WAL_RECORDS_TOTAL\\s*=\\s*10",
+    "WAL_CHECKPOINT_SEQ\\s*=\\s*3",
+    "WAL_DISTINCT_KEYS\\s*=\\s*5",
+    "WAL_FINAL_KEYS\\s*=\\s*a,d,e,f,g",
+    "WAL_IDEMPOTENT_APPLIES\\s*=\\s*7",
+    "WAL_REPLAYED\\s*=\\s*7",
+    "WAL_DROPPED_OLD\\s*=\\s*3",
+    "WAL_VALUE_SUM\\s*=\\s*121",
+    "WAL_REPLAY_TIME_TICKS\\s*=\\s*7",
+    "WAL_DETERMINISTIC\\s*=\\s*true"
+  ],
+  "source_res": [
+    "\\(define\\s+\\(api\\s+make-record\\b",
+    "\\(define\\s+\\(api\\s+log-append\\b",
+    "\\(define\\s+\\(api\\s+apply-record\\b",
+    "\\(define\\s+\\(api\\s+already-applied\\?\\b",
+    "\\(define\\s+\\(api\\s+replay-state\\b",
+    "\\(define\\s+\\(api\\s+empty-state\\b",
+    "\\(define\\s+\\(api\\s+state-keys\\b",
+    "\\(define\\s+\\(api\\s+checkpoint\\b",
+    "\\(define\\s+\\(api\\s+collect-values\\b",
+    "\\(define\\s+\\(api\\s+inc-metric!\\b",
+    "\\(define\\s+\\(api\\s+format-stats\\b"
+  ],
+  "expect_keys": [
+    "WAL_RECORDS_TOTAL",
+    "WAL_CHECKPOINT_SEQ",
+    "WAL_DISTINCT_KEYS",
+    "WAL_FINAL_KEYS",
+    "WAL_IDEMPOTENT_APPLIES",
+    "WAL_REPLAYED",
+    "WAL_DROPPED_OLD",
+    "WAL_VALUE_SUM",
+    "WAL_REPLAY_TIME_TICKS",
+    "WAL_DETERMINISTIC"
+  ],
+  "seed_from_stub": true,
+  "user_extra": "Multi-file project mini-wal-replay; implement GOAL.md APIs; print KEY=value via main.aura using module calls."
+}

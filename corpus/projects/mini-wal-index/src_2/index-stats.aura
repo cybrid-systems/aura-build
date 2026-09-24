@@ -1,0 +1,70 @@
+;; index-stats.aura
+;; Aggregate statistics over a sparse WAL index.
+;;
+;; The index is a sorted list of records (ascending by lsn-start).
+;; Each record is a 5-element list (lsn-start lsn-end offset seg-id len)
+;; produced by `make-record` in index-record.aura.
+;;
+;; We expose three statistics:
+;;
+;;   (segment-count idx)
+;;       The number of DISTINCT segments covered by the index.
+;;       Records may share a seg-id (e.g. after appending within the
+;;       same segment), so we deduplicate using an alist-style
+;;       accumulator: walk the index, and for each record, if its
+;;       seg-id is not already in the accumulator, add it.
+;;
+;;   (total-bytes idx)
+;;       The sum of the `len` field across all records.  This is the
+;;       total number of bytes covered by the index, regardless of
+;;       segment.  We use a simple accumulator-based fold.
+;;
+;;   (covering-entries idx lsn)
+;;       The number of entries whose LSN range INCLUDES `lsn`, i.e.
+;;       records with lsn-start <= lsn <= lsn-end.  Because the index
+;;       is sparse and normally non-overlapping, the expected answer
+;;       is 0 or 1, but we count generically to mirror the exact-lookup
+;;       semantics in index-lookup.aura.
+;;
+;; All three helpers rely solely on record accessors from
+;; index-record.aura.
+
+(define (segment-count idx)
+  ;; Internal helper: do we already have `seg` in the seen-alist?
+  (define (seen? seg seen)
+    (cond
+      ((null? seen) #f)
+      ((= (car seen) seg) seen)        ; return the pair to prove it
+      (else (seen? seg (cdr seen)))))
+  ;; Tail-recursive walk that builds a flat list of distinct seg-ids.
+  (define (walk xs seen)
+    (cond
+      ((null? xs) seen)
+      (else
+       (let ((seg (record-seg (car xs))))
+         (if (seen? seg seen)
+             (walk (cdr xs) seen)
+             (walk (cdr xs) (cons seg seen)))))))
+  (length (walk idx '())))
+
+(define (total-bytes idx)
+  ;; Tail-recursive sum of `record-len` across all records.
+  (define (walk xs acc)
+    (cond
+      ((null? xs) acc)
+      (else (walk (cdr xs) (+ acc (record-len (car xs)))))))
+  (walk idx 0))
+
+(define (covering-entries idx lsn)
+  ;; Count records whose inclusive LSN range contains `lsn`.
+  ;; Tail-recursive walk; returns the running counter.
+  (define (walk xs acc)
+    (cond
+      ((null? xs) acc)
+      (else
+       (let ((r (car xs)))
+         (if (and (>= lsn (record-lsn-start r))
+                  (<= lsn (record-lsn-end r)))
+             (walk (cdr xs) (+ acc 1))
+             (walk (cdr xs) acc))))))
+  (walk idx 0))

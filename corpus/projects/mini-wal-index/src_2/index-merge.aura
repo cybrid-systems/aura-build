@@ -1,0 +1,99 @@
+;; index-merge.aura
+;; Merge adjacent / contiguous entries in a sparse WAL index.
+;;
+;; The index is a list of records (lsn-start lsn-end offset seg-id len)
+;; sorted ascending by lsn-start. After many appends it is common for
+;; consecutive records to live in the same on-disk segment and to abut
+;; each other (the LSN range of entry N ends exactly one LSN before
+;; entry N+1's range starts). Merging such neighbours collapses them
+;; into a single record, which keeps the sparse index small and makes
+;; later lookups cheaper.
+;;
+;; Two predicates are provided by index-compare.aura:
+;;
+;;   (adjacent? a b)
+;;       True iff a and b are in the same segment AND a's lsn-end is
+;;       exactly the LSN just before b's lsn-start (i.e. contiguous).
+;;
+;;   (overlaps? a b)
+;;       True iff a's and b's LSN ranges share at least one LSN. We
+;;       only ever call overlaps? defensively; the merge logic is
+;;       driven primarily by `adjacent?` so the merge is lossless.
+;;
+;; Public API (per the module table):
+;;
+;;   (merge-adjacent idx)   -> new index with all run of adjacent
+;;                              same-segment records collapsed into
+;;                              one. The result is still sorted by
+;;                              lsn-start.
+;;
+;;   (merge-pair a b)       -> single merged record iff a and b are
+;;                              adjacent & same-segment; otherwise #f.
+;;
+;; `merge-pair` is exported as a building block so callers (and tests)
+;; can reason about a single pair in isolation. `merge-adjacent` does
+;; a linear sweep, accumulating non-mergeable records and flushing a
+;; group whenever adjacency breaks.
+
+(define (merge-pair a b)
+  ;; Merge exactly two records into one iff they share a segment AND
+  ;; are LSN-contiguous (a's lsn-end is b's lsn-start minus 1).
+  ;; Returns the merged record, or #f if the pair is not mergeable.
+  ;;
+  ;; The merged record keeps:
+  ;;   lsn-start : a's lsn-start  (the lower of the two)
+  ;;   lsn-end   : b's lsn-end    (the higher of the two)
+  ;;   offset    : a's offset     (same segment, start of the run)
+  ;;   seg-id    : shared segment (already guaranteed by adjacency)
+  ;;   len       : a's len + b's len  (sum of byte lengths)
+  ;;
+  ;; We assume `adjacent?` already encapsulates both the same-segment
+  ;; and the contiguous-LSN conditions. A defensive `overlaps?` check
+  ;; is included so that pathological overlapping-but-not-adjacent
+  ;; inputs do not silently produce a nonsensical merge — we treat
+  ;; such inputs as non-mergeable instead.
+  (if (and (adjacent? a b) (not (overlaps? a b)))
+      (let ((ls (record-lsn-start a))
+            (le (record-lsn-end b))
+            (off (record-offset a))
+            (seg (record-seg a))
+            (la (record-len a))
+            (lb (record-len b)))
+        (make-record ls le off seg (+ la lb)))
+      #f))
+
+(define (merge-adjacent idx)
+  ;; Linear sweep: walk the sorted index left-to-right, greedily
+  ;; collapsing runs of mutually-adjacent same-segment records into
+  ;; a single merged record.
+  ;;
+  ;; We use a helper that takes the current "run accumulator" (the
+  ;; record representing the in-progress merged run) and the rest of
+  ;; the index. For each next record:
+  ;;   - if it is adjacent to the accumulator, extend the accumulator
+  ;;     by merging (merge-pair), keep walking.
+  ;;   - otherwise, the run is finished: flush the accumulator to the
+  ;;     output, and start a new run with `next` as its first record.
+  ;;
+  ;; The accumulator + output pattern is iterative-ish via an inner
+  ;; loop, but expressed as a single recursive helper for clarity.
+  (define (sweep current acc-out rest)
+    (cond
+      ((null? rest)
+       ;; No more input: flush whatever run we were building and
+       ;; reverse the output (we consed in reverse order).
+       (reverse (cons current acc-out)))
+      (else
+       (let ((next (car rest)))
+         (let ((merged (merge-pair current next)))
+           (if merged
+               ;; Extend the current run; do not emit anything yet.
+               (sweep merged acc-out (cdr rest))
+               ;; Run broken: emit `current`, start a new run with
+               ;; `next`. We cons `current` onto the output list and
+               ;; recurse with `next` as the new current.
+               (sweep next (cons current acc-out) (cdr rest))))))))
+  (cond
+    ((null? idx) '())
+    ((null? (cdr idx)) idx)               ;; 0 or 1 record: nothing to merge
+    (else (sweep (car idx) '() (cdr idx)))))

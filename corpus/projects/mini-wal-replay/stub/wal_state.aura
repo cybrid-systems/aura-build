@@ -1,0 +1,46 @@
+;; State module: an in-memory key->value store implemented as an association list.
+;; State is a list of (key . value) pairs. We keep it as an alist for simplicity.
+
+;; Lookup helper: returns the value for k in alist, or #f if not found.
+(define (state-lookup alist k)
+  (cond ((null? alist) #f)
+        ((equal? (car (car alist)) k) (cdr (car alist)))
+        (else (state-lookup (cdr alist) k))))
+
+;; Helper to remove a key from the alist (returns new alist).
+(define (state-remove alist k)
+  (cond ((null? alist) '())
+        ((equal? (car (car alist)) k) (cdr alist))
+        (else (cons (car alist) (state-remove (cdr alist) k)))))
+
+;; Helper to add or update a key in the alist.
+(define (state-add alist k v)
+  (cond ((null? alist) (list (cons k v)))
+        ((equal? (car (car alist)) k) (cons (cons k v) (cdr alist)))
+        (else (cons (car alist) (state-add (cdr alist) k v)))))
+
+(define (api empty-state) '())
+
+(define (api state-set! state k v)
+  (state-add state k v))
+
+(define (api state-delete! state k)
+  (state-remove state k))
+
+(define (api state-has? state k)
+  (if (equal? (state-lookup state k) #f)
+      #f
+      #t))
+
+(define (api state-get state k)
+  (state-lookup state k))
+
+(define (api state-keys state)
+  (if (null? state)
+      '()
+      (cons (car (car state)) (api state-keys (cdr state)))))
+
+(define (api state-count state)
+  (if (null? state)
+      0
+      (+ 1 (api state-count (cdr state)))))

@@ -1,0 +1,26 @@
+;; index-insert.aura
+;; Inserts a record into the WAL sparse index while preserving the ordering
+;; defined by index-compare.aura (primary key: lsn-start, tie-breaker: lsn-end).
+;;
+;; The index is represented as a list of records sorted in non-decreasing
+;; order by lsn-start. Insertion is done by walking the list and splicing the
+;; new record in at the appropriate position.
+;;
+;; Exports:
+;;   (insert-record idx rec) -> updated index list containing rec
+;;
+;; insert-record does not mutate idx in place; it returns a new list that
+;; shares structure with idx where possible. Callers are expected to thread
+;; the returned value through their own state (e.g. via set! in index-builder).
+
+(define (insert-record idx rec)
+  ;; Helper: insert rec into the list `xs` (a suffix of idx) which is known
+  ;; to contain only records strictly greater than rec per record<?.
+  (define (splice xs)
+    (cond ((null? xs)
+           (cons rec '()))
+          ((record<? rec (car xs))
+           (cons rec xs))
+          (else
+           (cons (car xs) (splice (cdr xs))))))
+  (splice idx))

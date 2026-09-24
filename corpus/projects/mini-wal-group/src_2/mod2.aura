@@ -1,0 +1,13 @@
+;; record.aura — append-only WAL record (producer, lsn, payload)
+
+(define (api make-record producer payload)
+  (list producer 0 payload))
+
+(define (api record-producer r)
+  (car r))
+
+(define (api record-lsn r)
+  (car (cdr r)))
+
+(define (api record-payload r)
+  (car (cdr (cdr r))))

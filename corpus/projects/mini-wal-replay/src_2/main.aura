@@ -1,0 +1,182 @@
+;; main.aura
+;; Top-level orchestration for the mini-WAL replay engine.
+;; Builds a log of 10 records (with deliberate idempotent duplicates),
+;; sets a checkpoint, replays from the checkpoint, computes derived
+;; statistics via module APIs, and prints 10 KEY=value lines.
+
+;; ---- 1. Reset shared mutable state ---------------------------------
+(define state (api empty-state))
+(define log   (api empty-log))
+
+;; Reset the idempotent applied-list to empty. mark-applied! appends
+;; to a top-level cell; to reset, we just rebuild the binding.
+;; Since wal_idempotent.aura owns the cell internally, we simulate a
+;; reset by reading and re-binding. We use a small trick: append a
+;; noop sentinel then never look at it. But the cleanest approach is
+;; to call the module's reset path. Because no explicit reset API is
+;; exposed, we rely on the fresh-process guarantee: wal-applied-list
+;; starts empty when the file is loaded.
+;; (No explicit reset call needed; the list is empty at load time.)
+
+;; Reset metric store via the explicit API.
+(api reset-metrics!)
+
+;; Reset the replay counter so it reflects only this scenario's
+;; replay work.
+(api reset-replay-count!)
+
+;; ---- 2. Build 10 records ------------------------------------------
+;; Sequence numbers 1..10. Mix of 'insert and 'delete, with two
+;; idempotent duplicates:
+;;   - one re-insert of a key that will already be present
+;;   - one re-delete of a key that will already be absent
+;;
+;; Concretely:
+;;   seq 1  insert  alpha  10
+;;   seq 2  insert  beta   20
+;;   seq 3  insert  gamma  30       <- checkpoint seq = 3
+;;   seq 4  insert  delta  40
+;;   seq 5  delete  alpha          <- alpha now absent
+;;   seq 6  insert  epsilon 50
+;;   seq 7  insert  alpha  10       <- idempotent re-insert (alpha absent? no, deleted -> absent -> applied as new)
+;;   seq 8  delete  zeta           <- idempotent re-delete (never inserted -> already absent)
+;;   seq 9  delete  zeta           <- deliberate idempotent re-delete
+;;   seq 10 insert  beta   25      <- idempotent re-insert (beta present -> no-op)
+;;
+;; After full replay, state contains: gamma=30, delta=40, epsilon=50,
+;; alpha=10 (from seq 7), beta=25.
+
+(set! log (api log-append log (api make-record 'insert 'alpha 10 1)))
+(set! log (api log-append log (api make-record 'insert 'beta  20 2)))
+(set! log (api log-append log (api make-record 'insert 'gamma 30 3)))
+(set! log (api log-append log (api make-record 'insert 'delta 40 4)))
+(set! log (api log-append log (api make-record 'delete 'alpha 0  5)))
+(set! log (api log-append log (api make-record 'insert 'epsilon 50 6)))
+(set! log (api log-append log (api make-record 'insert 'alpha 10 7)))
+(set! log (api log-append log (api make-record 'delete 'zeta  0  8)))
+(set! log (api log-append log (api make-record 'delete 'zeta  0  9)))
+(set! log (api log-append log (api make-record 'insert 'beta 25 10)))
+
+;; ---- 3. Checkpoint at seq = 3 -------------------------------------
+(api checkpoint log 3)
+(define ckpt-seq (api checkpoint-seq log))
+
+;; ---- 4. Replay from checkpoint ------------------------------------
+;; replay-state takes a checkpoint-seek: the 0-based index of the
+;; first record to apply. Records at index < seek are "dropped-old".
+;; We compute the seek position by finding the first record whose seq
+// is strictly greater than ckpt-seq.
+(define (compute-seek log ckpt-seq)
+  (let loop ((i 0) (rest log))
+    (cond
+      ((null? rest) i)
+      ((> (api record-seq (car rest)) ckpt-seq) i)
+      (else (loop (+ i 1) (cdr rest))))))
+
+(define seek (compute-seek log ckpt-seq))
+(set! state (api replay-state state log seek))
+
+;; ---- 5. Distinct keys (lexicographic) ---------------------------
+(define raw-keys (api collect-keys (api state-keys state)))
+(define sorted-keys
+  (let loop ((xs raw-keys) (acc '()))
+    (cond
+      ((null? xs) acc)
+      (else
+       (let insert ((sorted acc) (x (car xs)))
+         (cond
+           ((null? sorted) (cons x '()))
+           ((string<? (symbol->string (car sorted))
+                      (symbol->string x))
+            (append sorted (list x)))
+           (else (cons (car sorted) (insert (cdr sorted) x)))))
+       (loop (cdr xs) acc)))))
+
+;; Count distinct keys
+(define distinct-keys (length sorted-keys))
+
+;; ---- 6. Sum of numeric values in state ---------------------------
+(define (sum-list xs)
+  (cond
+    ((null? xs) 0)
+    (else (+ (car xs) (sum-list (cdr xs))))))
+
+(define sum (sum-list (api collect-values state)))
+
+;; ---- 7. Dropped-old count (records with seq <= ckpt-seq) --------
+(define (count-dropped log ckpt-seq)
+  (let loop ((rest log) (n 0))
+    (cond
+      ((null? rest) n)
+      ((<= (api record-seq (car rest)) ckpt-seq)
+       (loop (cdr rest) (+ n 1)))
+      (else (loop (cdr rest) n)))))
+
+(define dropped (count-dropped log ckpt-seq))
+
+;; ---- 8. Tick-based replay-time via for-each ---------------------
+;; We instrument the metric store with a "ticks" counter that gets
+;; incremented once per replayed record by replay-walk via
+;; inc-metric!. So ticks = the number of records replayed.
+;; To stay faithful to the spec (deterministic for-each loop
+// counter stored through wal_metrics), we also bump WAL_TICKS once
+// per replayed record here at the orchestration level.
+(api reset-metrics!)
+(set! wal-replay-count 0) ;; local shadow; metrics path is canonical
+(let ((replayed-records (- (api log-length log) dropped)))
+  (let tick-loop ((i 0))
+    (cond
+      ((>= i replayed-records) 'done)
+      (else
+       (begin
+         (api inc-metric! 'WAL_TICKS)
+         (tick-loop (+ i 1)))))))
+
+(define ticks (api get-metric 'WAL_TICKS))
+
+;; Re-run replay so the canonical wal-replay-count is correct
+;; (the tick loop above only bumps WAL_TICKS).
+(api reset-replay-count!)
+(set! state (api empty-state))
+(set! state (api replay-state state log seek))
+(define replays (api replay-count))
+
+;; ---- 9. Format & print ------------------------------------------
+(define final-keys (length (api collect-keys state)))
+(define records-total (api log-length log))
+(define applies (api count-applies))
+(define idempotent-hits (api get-metric 'WAL_IDEMPOTENT_APPLIES))
+(define replayed-metric (api get-metric 'WAL_REPLAYED))
+
+(define stats-line
+  (api format-stats
+       applies        ;; counts (uses metric)
+       distinct-keys   ;; distinct-keys
+       final-keys     ; final-keys
+       replays        ; replays
+       dropped        ; dropped
+       idempotent-hits ; idempotent
+       sum            ; sum
+       ticks))        ; ticks
+
+;; Emit 10 KEY=value lines. All values are derived from API calls.
+(display (string-append "WAL_RECORDS_TOTAL=" (number->string records-total)))
+(newline)
+(display (string-append "WAL_CHECKPOINT_SEQ=" (number->string ckpt-seq)))
+(newline)
+(display (string-append "WAL_REPLAYED=" (number->string replays)))
+(newline)
+(display (string-append "WAL_APPLIES=" (number->string applies)))
+(newline)
+(display (string-append "WAL_IDEMPOTENT_HITS=" (number->string idempotent-hits)))
+(newline)
+(display (string-append "WAL_DROPPED_OLD=" (number->string dropped)))
+(newline)
+(display (string-append "WAL_DISTINCT_KEYS=" (number->string distinct-keys)))
+(newline)
+(display (string-append "WAL_FINAL_KEYS=" (number->string final-keys)))
+(newline)
+(display (string-append "WAL_SUM_VALUES=" (number->string sum)))
+(newline)
+(display (string-append "WAL_TICKS=" (number->string ticks)))
+(newline)

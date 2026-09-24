@@ -1,0 +1,53 @@
+;; index-compare.aura
+;; Comparison and relationship predicates for WAL sparse-index records.
+;; Records are alists created by index-record.aura with keys
+;; 'lsn-start, 'lsn-end, 'offset, 'seg-id, 'len.
+
+(define (record-offset r) (cdr (assq 'offset r)))
+(define (record-seg    r) (cdr (assq 'seg-id r)))
+(define (record-len    r) (cdr (assq 'len    r)))
+
+;; Total ordering on records: primary key is lsn-start, tie-breaker is lsn-end.
+(define (record<? a b)
+  (let ((sa (record-lsn-start a))
+        (ea (record-lsn-end   a))
+        (sb (record-lsn-start b))
+        (eb (record-lsn-end   b)))
+    (cond ((< sa sb) #t)
+          ((> sa sb) #f)
+          ((< ea eb) #t)
+          (else      #f))))
+
+;; Equality: same lsn-start and same lsn-end. Other fields are ignored so that
+;; two records describing the same LSN range compare equal regardless of which
+;; segment/offset they live in.
+(define (record=? a b)
+  (and (= (record-lsn-start a) (record-lsn-start b))
+       (= (record-lsn-end   a) (record-lsn-end   b))))
+
+;; Do two records' LSN ranges overlap?
+;; Closed-interval overlap: [sa, ea] ∩ [sb, eb] ≠ ∅
+;;   iff sa <= eb  AND  sb <= ea
+(define (overlaps? a b)
+  (let ((sa (record-lsn-start a))
+        (ea (record-lsn-end   a))
+        (sb (record-lsn-start b))
+        (eb (record-lsn-end   b)))
+    (and (<= sa eb)
+         (<= sb ea))))
+
+;; Are two records "adjacent" — i.e. they share a segment and either their
+;; ranges touch end-to-end (a's end + 1 == b's start) or one is immediately
+;; followed by the other in LSN order. Adjacency is direction-agnostic: a is
+;; adjacent to b iff b is adjacent to a.
+(define (adjacent? a b)
+  (let ((sa (record-lsn-start a))
+        (ea (record-lsn-end   a))
+        (sb (record-lsn-start b))
+        (eb (record-lsn-end   b))
+        (ga (record-seg       a))
+        (gb (record-seg       b)))
+    (if (= ga gb)
+        (or (= ea (+ sb 1))
+            (= eb (+ sa 1)))
+        #f)))

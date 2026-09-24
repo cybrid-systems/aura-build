@@ -1,0 +1,71 @@
+{
+  "expect": "JOB_ID=7\nJOIN_TYPE=inner\nLEFT_REL=orders\nRIGHT_REL=customers\nLEFT_COL=customer_id\nRIGHT_COL=id\nROWS_LEFT=8\nROWS_RIGHT=6\nCHOSEN=index_nested\nBLOCK_SIZE=2\nBUILD_DISTINCT=6\nPROBE_LEN=8\nCOST_NAIVE=48\nCOST_INDEX=20\nCOST_BLOCK=36\nWINNER=C",
+  "lines": [
+    {
+      "key": "JOB_ID",
+      "value": "7"
+    },
+    {
+      "key": "JOIN_TYPE",
+      "value": "inner"
+    },
+    {
+      "key": "LEFT_REL",
+      "value": "orders"
+    },
+    {
+      "key": "RIGHT_REL",
+      "value": "customers"
+    },
+    {
+      "key": "LEFT_COL",
+      "value": "customer_id"
+    },
+    {
+      "key": "RIGHT_COL",
+      "value": "id"
+    },
+    {
+      "key": "ROWS_LEFT",
+      "value": "8"
+    },
+    {
+      "key": "ROWS_RIGHT",
+      "value": "6"
+    },
+    {
+      "key": "CHOSEN",
+      "value": "index_nested"
+    },
+    {
+      "key": "BLOCK_SIZE",
+      "value": "2"
+    },
+    {
+      "key": "BUILD_DISTINCT",
+      "value": "6"
+    },
+    {
+      "key": "PROBE_LEN",
+      "value": "8"
+    },
+    {
+      "key": "COST_NAIVE",
+      "value": "48"
+    },
+    {
+      "key": "COST_INDEX",
+      "value": "20"
+    },
+    {
+      "key": "COST_BLOCK",
+      "value": "36"
+    },
+    {
+      "key": "WINNER",
+      "value": "C"
+    }
+  ],
+  "measured_from": "ref/run_scenarios.py",
+  "ts": "2026-09-24T15:01:58Z"
+}

@@ -1,0 +1,48 @@
+;; wal_types.aura — frame and journal data definitions
+;; Exports constructors, predicates, and accessors for WAL frames
+;; and an empty journal sentinel. Pure list-based, no record types.
+
+(define (api wal-frame? x)
+  ;; A WAL frame is represented as a list of the form:
+  ;;   (lsn txid payload crc committed?)
+  ;; where lsn is a number, txid is a number or #f (no-tx),
+  ;; payload is a list (bytes), crc is a number, and committed? is #t/#f.
+  (if (and (pair? x) (null? (cdr (cdr (cdr (cdr x))))))
+      #t
+      #f))
+
+(define (api wal-empty-journal)
+  ;; The empty journal is the empty list of frames.
+  '())
+
+(define (api wal-frame-lsn f)
+  ;; (car f) = lsn
+  (car f))
+
+(define (api wal-frame-txid f)
+  ;; (cadr f) = txid (#f means frame is not part of a transaction)
+  (cadr f))
+
+(define (api wal-frame-payload f)
+  ;; (caddr f) = payload bytes (a list)
+  (caddr f))
+
+(define (api wal-frame-crc f)
+  ;; (cadddr f) = crc checksum
+  (cadddr f))
+
+(define (api wal-frame-committed? f)
+  ;; (caddr (cdr f)) => the fifth element (car of (cddddr f))
+  (car (cddddr f)))
+
+(define (api wal-frame-set-committed! f v)
+  ;; Mutates the frame in place: sets the committed? flag.
+  ;; Frame layout: (lsn txid payload crc . committed?)
+  ;; We stored committed? as the fifth element via car of (cddddr f),
+  ;; but our cons style puts it as a pair at the tail. Replace by
+  ;; rebuilding the spine with set! on the existing list structure.
+  ;;
+  ;; Layout used here: (lsn txid payload crc committed?)
+  ;; i.e. (car f), (cadr f), (caddr f), (cadddr f), (car (cddddr f))
+  (set-car! (cddddr f) v)
+  v)

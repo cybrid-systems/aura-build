@@ -1,0 +1,35 @@
+;; batch.aura — a batch of records awaiting fsync
+
+(define (api make-batch)
+  '())
+
+(define (api batch-add b r)
+  (append b (list r)))
+
+(define (api batch-size b)
+  (length b))
+
+(define (api batch-records b)
+  b)
+
+(define (api batch-min-lsn b)
+  (if (null? b)
+      0
+      (let loop ((xs b) (m (record-lsn (car b))))
+        (if (null? xs)
+            m
+            (let ((v (record-lsn (car xs))))
+              (if (< v m)
+                  (loop (cdr xs) v)
+                  (loop (cdr xs) m)))))))
+
+(define (api batch-max-lsn b)
+  (if (null? b)
+      0
+      (let loop ((xs b) (m (record-lsn (car b))))
+        (if (null? xs)
+            m
+            (let ((v (record-lsn (car xs))))
+              (if (> v m)
+                  (loop (cdr xs) v)
+                  (loop (cdr xs) m)))))))

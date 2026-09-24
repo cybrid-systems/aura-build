@@ -1,0 +1,18 @@
+;; wal_collect: collects keys and values from the in-memory state.
+;; These are thin adapters over the state APIs that just return
+;; the current snapshot. Sorting/aggregation is the caller's job.
+
+(define (api collect-keys state)
+  (state-keys state))
+
+(define (api collect-values state)
+  ;; Gather every value currently present in state.
+  ;; We walk the alist in key order (as returned by state-keys)
+  ;; and look each up via state-get.
+  (let ((ks (state-keys state)))
+    (collect-values-helper state ks)))
+
+(define (collect-values-helper state ks)
+  (cond ((null? ks) '())
+        (else (cons (state-get state (car ks))
+                    (collect-values-helper state (cdr ks))))))

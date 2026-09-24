@@ -1,0 +1,168 @@
+; node.aura — B-tree internal/leaf node wrapper
+;
+; A node is a discriminated record holding either a leaf payload or an
+; internal payload.  An internal node stores:
+;   (capacity keys children)
+; where `keys` are the separator keys (one fewer than children) and
+; `children` are the child nodes.  The i-th child holds keys strictly
+; less than keys[i], except the last child which holds keys >=
+; keys[last].
+;
+; We delegate leaf storage to leaf.aura so that the same node module
+; can route inserts through leaf-insert! / leaf-split! without the
+; internal node needing to know leaf internals.
+
+(define (make-node leaf? capacity)
+  ;; A node is a list:
+  ;;   (leaf? capacity payload)
+  ;; payload is either a leaf (when leaf? is #t) or
+  ;;   (keys children) when leaf? is #f
+  (if leaf?
+      (list #t capacity (make-leaf capacity))
+      (list #f capacity (list '() '()))))
+
+(define (node-leaf? n)
+  (car n))
+
+(define (node-capacity n)
+  (car (cdr n)))
+
+(define (node-payload n)
+  (car (cdr (cdr n))))
+
+(define (node-keys n)
+  (car (node-payload n)))
+
+(define (node-children n)
+  (car (cdr (node-payload n))))
+
+(define (set-node-payload! n payload)
+  ;; Replace the payload slot of node n in-place.
+  (set-car! (cdr (cdr n)) payload)
+  n)
+
+(define (node-is-leaf? n)
+  (node-leaf? n))
+
+(define (node-count n)
+  ;; Number of keys stored directly in this node (excluding children).
+  (length (node-keys n)))
+
+(define (node-key-at n i)
+  ;; Zero-based access into the separator-keys list.
+  (list-ref (node-keys n) i))
+
+(define (node-find-child n k)
+  ;; Return the child index whose subtree could contain key k.
+  ;; Internal nodes only; calling on a leaf is a logic error.
+  (let ((keys (node-keys n)))
+    (let loop ((idx 0)
+               (ks keys))
+      (cond
+        ((null? ks) idx)
+        ((key<? k (car ks)) idx)
+        (else (loop (+ idx 1) (cdr ks)))))))
+
+(define (node-insert! n k pk v)
+  ;; Insert (k,pk,v) into the subtree rooted at n.
+  ;; Returns either 'split together with a (median-key new-node) pair,
+  ;; or 'ok when no split was needed.
+  (if (node-is-leaf? n)
+      ;; Leaf path: delegate to leaf module.  leaf-insert! returns
+      ;; either 'ok or '(split median new-leaf).
+      (let ((res (leaf-insert! (node-payload n) k pk v)))
+        (cond
+          ((equal? res 'ok) 'ok)
+          (else
+           ;; res = (split median new-leaf)
+           (let ((median (car (cdr res)))
+                 (new-leaf (car (cdr (cdr res)))))
+             (list 'split median new-leaf)))))
+      ;; Internal path: find the right child, recurse, handle split.
+      (let ((idx (node-find-child n k)))
+        (let ((child (list-ref (node-children n) idx)))
+          (let ((res (node-insert! child k pk v)))
+            (cond
+              ((equal? res 'ok) 'ok)
+              (else
+               ;; res = (split median new-child)
+               (let ((median (car (cdr res)))
+                     (new-child (car (cdr (cdr res)))))
+                 (insert-child n idx median new-child)))))))))
+
+(define (insert-child n idx median new-child)
+  ;; Splice a new child into internal node n at position idx with
+  ;; separator key `median`.  If this overflows capacity, perform a
+  ;; split and return '(split median new-node); otherwise return 'ok.
+  (let ((keys (node-keys n))
+        (children (node-children n)))
+    (let* ((new-keys (list-insert keys median idx))
+           (new-children (list-insert children new-child (+ idx 1))))
+      (if (>= (length new-keys) (node-capacity n))
+          (split-internal n new-keys new-children)
+          (begin
+            (set-node-payload! n (list new-keys new-children))
+            'ok)))))
+
+(define (split-internal n keys children)
+  ;; Split an overfull internal node into two halves.  Returns
+  ;; '(split median new-node).
+  (let* ((cap (node-capacity n))
+         (nkeys (length keys))
+         (mid-idx (quotient nkeys 2))
+         (median (list-ref keys mid-idx))
+         (left-keys (list-take keys mid-idx))
+         (right-keys (list-drop keys (+ mid-idx 1)))
+         (left-children (list-take children (+ mid-idx 1)))
+         (right-children (list-drop children (+ mid-idx 1))))
+    (set-node-payload! n (list left-keys left-children))
+    (let ((new-node (make-node #f cap)))
+      (set-node-payload! new-node (list right-keys right-children))
+      (list 'split median new-node))))
+
+(define (node-split! n)
+  ;; Force a split of the top-most leaf reachable through this node
+  ;; (used by the tree to bootstrap the very first split).  We split
+  ;; the leftmost leaf in the subtree as a simple uniform operation.
+  (if (node-is-leaf? n)
+      (leaf-split! (node-payload n))
+      ;; recurse into first child until we hit a leaf
+      (let loop ((cur n))
+          (if (node-is-leaf? cur)
+              (leaf-split! (node-payload cur))
+              (loop (car (node-children cur)))))))
+
+;; ---------------------------------------------------------------------------
+;; Small list helpers used by node-insert! / insert-child / split-internal.
+;; We define them locally so node.aura is self-contained.
+;; ---------------------------------------------------------------------------
+
+(define (list-insert lst val idx)
+  ;; Return a new list with `val` spliced in at position `idx`.
+  (let loop ((i 0)
+             (rest lst)
+             (acc '()))
+    (cond
+      ((= i idx)
+       (append (reverse acc) (cons val rest)))
+      ((null? rest)
+       (append (reverse acc) (list val)))
+      (else (loop (+ i 1) (cdr rest) (cons (car rest) acc))))))
+
+(define (list-take lst n)
+  (let loop ((i 0) (rest lst) (acc '()))
+    (if (or (= i n) (null? rest))
+        (reverse acc)
+        (loop (+ i 1) (cdr rest) (cons (car rest) acc)))))
+
+(define (list-drop lst n)
+  (let loop ((i 0) (rest lst))
+    (if (or (= i n) (null? rest))
+        rest
+        (loop (+ i 1) (cdr rest)))))
+
+(define (list-ref lst i)
+  (let loop ((i i) (rest lst))
+    (if (= i 0)
+        (car rest)
+        (loop (- i 1) (cdr rest)))))

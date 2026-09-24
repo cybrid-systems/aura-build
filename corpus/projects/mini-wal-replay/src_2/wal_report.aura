@@ -1,0 +1,32 @@
+;; wal_report.aura
+;; Reporting helpers for the WAL replay engine.
+;;
+;; The single exported API `format-stats` assembles a human-readable
+;; summary string from the various counts produced during replay.
+;; It performs no I/O and returns a string built with `string-append`
+;; and `number->string` so callers (main.aura) can decide how to
+;; display it.
+;;
+;; Expected positional arguments (per project spec):
+;;   counts        : total number of records appended to the log
+;;   distinct-keys : number of distinct keys remaining in state
+;;   final-keys    : number of keys finally present after replay
+;;   replays       : number of records consumed by replay
+;;   dropped       : number of records skipped due to checkpoint
+;;   idempotent    : number of records that were no-ops (already applied)
+;;   sum           : sum of all numeric values in final state
+;;   ticks         : number of tick iterations in the replay loop
+;;
+;; The output is a single multi-line string, one stat per line, so it
+;; can be inspected in a debugger or printed verbatim by main.aura.
+
+(define (api format-stats counts distinct-keys final-keys replays dropped idempotent sum ticks)
+  (string-append
+   "WAL Records Total: " (number->string counts) "\n"
+   "Distinct Keys Seen: " (number->string distinct-keys) "\n"
+   "Final Keys Count: " (number->string final-keys) "\n"
+   "Replays Executed: " (number->string replays) "\n"
+   "Dropped (pre-checkpoint): " (number->string dropped) "\n"
+   "Idempotent Applies: " (number->string idempotent) "\n"
+   "Value Sum: " (number->string sum) "\n"
+   "Replay Ticks: " (number->string ticks)))

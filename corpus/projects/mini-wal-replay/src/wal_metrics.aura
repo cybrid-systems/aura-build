@@ -1,0 +1,49 @@
+;; wal_metrics: simple named counters for the WAL engine.
+;; Metrics are keyed by symbol (e.g., 'WAL_REPLAYED,
+;; 'WAL_IDEMPOTENT_APPLIES, 'WAL_TICKS, ...). Stored as an alist
+;; of (name . count) pairs. Names are interned by string=? on the
+;; symbol's name so callers can pass either 'WAL_REPLAYED or
+;; "WAL_REPLAYED" interchangeably.
+
+(define metrics-store '())
+
+;; Helper: look up a metric by symbol name. Returns the current
+;; count, or 0 if not present.
+(define (metric-lookup name)
+  (cond ((null? metrics-store) 0)
+        ((string=? (symbol->string (car (car metrics-store)))
+                   (symbol->string name))
+         (cdr (car metrics-store)))
+        (else (metric-lookup-tail name (cdr metrics-store)))))
+
+(define (metric-lookup-tail name lst)
+  (cond ((null? lst) 0)
+        ((string=? (symbol->string (car (car lst)))
+                   (symbol->string name))
+         (cdr (car lst)))
+        (else (metric-lookup-tail name (cdr lst)))))
+
+;; Helper: replace or add a metric entry with a new count.
+(define (metric-set! name new-value)
+  (set! metrics-store (metric-set-helper metrics-store name new-value)))
+
+(define (metric-set-helper lst name new-value)
+  (cond ((null? lst)
+         (cons (cons name new-value) '()))
+        ((string=? (symbol->string (car (car lst)))
+                   (symbol->string name))
+         (cons (cons name new-value) (cdr lst)))
+        (else (cons (car lst)
+                    (metric-set-helper (cdr lst) name new-value)))))
+
+;; inc-metric!: bump a named counter by 1, creating it if absent.
+(define (api inc-metric! name)
+  (metric-set! name (+ (metric-lookup name) 1)))
+
+;; get-metric: return the current value of a named counter (0 if unset).
+(define (api get-metric name)
+  (metric-lookup name))
+
+;; reset-metrics!: wipe all counters back to zero.
+(define (api reset-metrics!)
+  (set! metrics-store '()))

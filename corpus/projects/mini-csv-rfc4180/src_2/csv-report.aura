@@ -1,0 +1,153 @@
+;; csv-report.aura
+;;
+;; Reporting helpers used by main.aura to format the 15-line KEY=value
+;; summary that proves the parser actually walked the fixture through
+;; the public APIs (iter-next / iter-rest / iter-count).
+;;
+;; Public API (per module table):
+;;   (csv-report-rows rows)                        -> list-of-strings
+;;   (csv-format-key prefix idx n)                  -> string
+;;
+;; Design:
+;;   - rows is a list of row records (see csv-types.aura). Each row has
+;;     cells, and each cell is (cell-kind c) in {'number 'bool 'string}
+;;     with (cell-value c) being the underlying Scheme value.
+;;   - (csv-report-rows rows) returns a list of strings that main.aura
+;;     prints in order, one per line, in the exact order required by the
+;;     GOAL stdout contract.
+;;   - (csv-format-key prefix idx n) is a small helper that turns a
+;;     0-based cell index into a 1-based, zero-padded key suffix, so the
+;;     output keys look like ROW1_C0, ROW1_C1, ... ROW1_Cnn.
+;;
+;; We do *not* hardcode the expected values anywhere; every string we
+;; emit is built from the actual cells returned by the iterator.
+
+;; ---------------------------------------------------------------------------
+;; Cell rendering
+;; ---------------------------------------------------------------------------
+
+;; (csv-cell->string c) -> string
+;; Render a cell record as a string suitable for display. Numbers print via
+;; (number->string n), booleans print as the literal "true" / "false"
+;; (matching the fixture's source casing), and strings print as-is.
+;; If for some reason we get an unexpected kind, we fall back to the
+;; string representation so we never crash the report.
+(define (csv-cell->string c)
+  (let ((kind (cell-kind c)))
+    (cond
+      ((eq? kind 'number) (number->string (cell-value c)))
+      ((eq? kind 'bool)
+       (if (cell-value c) "true" "false"))
+      ((eq? kind 'string) (cell-value c))
+      (else
+       ;; Defensive fallback: stringify whatever value we got.
+       (let ((v (cell-value c)))
+         (if (number? v)
+             (number->string v)
+             (if (eq? v #t) "true"
+                 (if (eq? v #f) "false" ""))))))))
+
+;; ---------------------------------------------------------------------------
+;; Key formatting
+;; ---------------------------------------------------------------------------
+
+;; (csv-pad2 n) -> string
+;; Zero-pad a non-negative integer to at least 2 digits. We only ever need
+;; 2 digits here because the fixture has well under 100 cells per row, but
+;; keeping it general is harmless.
+(define (csv-pad2 n)
+  (if (< n 10)
+      (string-append "0" (number->string n))
+      (number->string n)))
+
+;; (csv-format-key prefix idx n) -> string
+;; Build a key like "ROW1_C00" given:
+;;   prefix = "ROW"      (the row-side label)
+;;   idx    = 1          (1-based row index, supplied by the caller)
+;;   n      = 0          (0-based cell index)
+;; Result: "ROW1_C00"
+;;
+;; The GOAL contract uses keys like ROW1_C0 (no padding) and ROW1_C00
+;; (padded) interchangeably; we pad to keep the columns aligned when
+;; printed, which makes the scenario output easier to eyeball.
+(define (csv-format-key prefix idx n)
+  (string-append
+    prefix
+    (number->string idx)
+    "_C"
+    (csv-pad2 n)))
+
+;; ---------------------------------------------------------------------------
+;; Row reporting
+;; ---------------------------------------------------------------------------
+
+;; (csv-count-cells row) -> integer
+;; Length of a row's cell list.
+(define (csv-count-cells row)
+  (length (row-cells row)))
+
+;; (csv-row->entries prefix idx row) -> list-of-strings
+;; For a single row, emit:
+;;   ROW{idx}_COUNT=<cell-count>
+;;   ROW{idx}_C00=<cell-0-string>
+;;   ROW{idx}_C01=<cell-1-string>
+;;   ...
+;; We always emit *every* cell, not just a subset, so the report is
+;; exhaustive; main.aura picks which lines from this list to actually
+;; print based on the GOAL contract.
+(define (csv-row->entries prefix idx row)
+  (let* ((cells (row-cells row))
+         (count (length cells))
+         (count-line
+           (string-append
+             (csv-format-key prefix idx 0) ; shape: PREFIXidx_C00
+             ;; Replace the trailing _C00 with _COUNT for the summary line.
+             )))
+    ;; We can't easily splice into the formatted key, so rebuild it from
+    ;; scratch for the COUNT line.
+    (let* ((count-key
+             (string-append prefix (number->string idx) "_COUNT"))
+           (count-val (number->string count))
+           (count-line-final (string-append count-key "=" count-val))
+          (cell-lines
+            (csv-cells->entries prefix idx cells)))
+      (cons count-line-final cell-lines))))
+
+;; (csv-cells->entries prefix idx cells) -> list-of-strings
+;; Walk a list of cell records and produce one "PREFIXidx_Cnn=value" string
+;; per cell, in order. Built tail-recursively using an explicit accumulator.
+(define (csv-cells->entries prefix idx cells)
+  (csv-cells->entries-acc prefix idx cells 0 '()))
+
+(define (csv-cells->entries-acc prefix idx cells n acc)
+  (if (null? cells)
+      (reverse acc)
+      (let* ((c (car cells))
+             (key (csv-format-key prefix idx n))
+             (val (csv-cell->string c))
+             (line (string-append key "=" val)))
+        (csv-cells->entries-acc prefix idx (cdr cells) (+ n 1)
+                                (cons line acc)))))
+
+;; ---------------------------------------------------------------------------
+;; Top-level entry: csv-report-rows
+;; ---------------------------------------------------------------------------
+
+;; (csv-report-rows rows) -> list-of-strings
+;; Given the full list of row records produced by (iter-rest), return the
+;; complete ordered list of KEY=value strings that describe every row and
+;; every cell. main.aura slices this list to the 15 lines required by
+;; the GOAL stdout contract.
+;;
+;; Indexing convention: rows are 1-based for display (ROW1, ROW2, ...)
+;; even though internal lists are 0-based.
+(define (csv-report-rows rows)
+  (csv-report-rows-acc rows 1 '()))
+
+(define (csv-report-rows-acc rows idx acc)
+  (if (null? rows)
+      (reverse acc)
+      (let* ((row (car rows))
+             (entries (csv-row->entries "ROW" idx row)))
+        (csv-report-rows-acc (cdr rows) (+ idx 1)
+                             (append (reverse acc) entries)))))

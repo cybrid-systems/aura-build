@@ -1,0 +1,66 @@
+;; index-builder.aura
+;; High-level builders for the WAL sparse index.
+;;
+;; Provides two complementary workflows:
+;;
+;;   1. A pure, batch-oriented builder:
+;;        (build-index records)
+;;      Takes an arbitrary list of records (not necessarily sorted, possibly
+;;      containing duplicates) and returns a fresh sorted, de-duplicated
+;;      index list with all entries inserted in order.
+;;
+;;   2. A mutable, incremental builder:
+;;        (append-record! state rec)
+;;      Mutates `state` (a single-cell box holding the current index list)
+;;      by inserting `rec` into it in sorted position. After the call,
+;;      (car state) is the updated index.
+;;
+;; Both builders rely on the rest of the index modules:
+;;   - insert-record  (index-insert.aura)   for sorted insertion
+;;   - record=?       (index-compare.aura)  for duplicate detection
+;;
+;; Exports:
+;;   (define (build-index records))
+;;   (define (append-record! state rec))
+
+;; ---------------------------------------------------------------------------
+;; Batch builder
+;; ---------------------------------------------------------------------------
+;; Walks the input list left-to-right and inserts each record into the
+;; accumulated index. Skips any record that is `record=?` to one already
+;; present in the index, so a noisy or duplicate-laden input stream still
+;; produces a clean index.
+(define (build-index records)
+  (define (loop xs idx)
+    (cond ((null? xs) idx)
+          (else
+           (let ((rec (car xs)))
+             (if (index-has-record? idx rec)
+                 (loop (cdr xs) idx)
+                 (loop (cdr xs) (insert-record idx rec)))))))
+  (loop records '()))
+
+;; Helper: is `rec` already present in `idx` by record=? ?
+(define (index-has-record? idx rec)
+  (cond ((null? idx) #f)
+        ((record=? (car idx) rec) #t)
+        (else (index-has-record? (cdr idx) rec))))
+
+;; ---------------------------------------------------------------------------
+;; Incremental (mutable) builder
+;; ---------------------------------------------------------------------------
+;; `state` is expected to be a mutable cell whose car holds the current
+;; index list, e.g.:
+;;
+;;     (define state (cons '() '()))   ; (car state) = current index
+;;     (append-record! state some-rec)
+;;
+;; After each call, (car state) is updated in place via set! so that callers
+;; holding the same `state` reference see the new index. This mirrors how a
+;; WAL writer would append records to a running in-memory index as new log
+;; entries are produced.
+(define (append-record! state rec)
+  (let ((current (car state)))
+    (if (index-has-record? current rec)
+        state                       ; no-op for duplicates
+        (set-car! state (insert-record current rec)))))

@@ -1,0 +1,23 @@
+;; wal_log.aura
+;; Append-only log of WAL records.
+;; A log is a plain list of records (in append order).
+;; All operations are pure: log-append returns a new log.
+
+(define (api empty-log)
+  '())
+
+(define (api log-append log rec)
+  (append log (list rec)))
+
+(define (api log-length log)
+  (length log))
+
+(define (api log-ref log i)
+  (if (null? log)
+      (error "log-ref: empty log")
+      (if (= i 0)
+          (car log)
+          (api log-ref (cdr log) (- i 1)))))
+
+(define (api log-all log)
+  log)

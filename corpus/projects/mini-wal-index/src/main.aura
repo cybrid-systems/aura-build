@@ -1,0 +1,115 @@
+;; main.aura
+;; Driver / scenario runner for mini-wal-index.
+;;
+;; Exercises the module APIs by:
+;;   1. Building an initial index from a fixed WAL fixture.
+;;   2. Performing exact / floor / ceiling lookups.
+;;   3. Computing aggregate statistics.
+;;   4. Running an adjacency merge pass, then appending another record and
+;;      merging again.
+;;   5. Performing a range scan.
+;;
+;; The scenario values are produced entirely by calling the module APIs;
+;; the only literals in this file are the fixture itself and the LSN
+;; values used for queries.
+
+;; ---- Pull the fixture into scope (loaded earlier as wal-fixture.aura) ----
+
+;; ---- Build the initial index from the fixture ----------------------------
+
+(define initial-index (build-index (wal-fixture-records)))
+
+;; ---- Stats on the initial index -----------------------------------------
+
+(define n-records    (count-entries initial-index))
+(define n-segments   (segment-count initial-index))
+(define bytes-total  (total-bytes initial-index))
+
+;; ---- Exact lookup at LSN 42 ---------------------------------------------
+
+(define cover-42    (covering-entries initial-index 42))
+(define cover-42-n  (length cover-42))
+(define hit-42      (exact-lookup initial-index 42))
+
+(define hit-42-seg  (car hit-42))
+(define hit-42-off  (cdr hit-42))
+(define lsn-42      42)
+
+;; ---- Approximate (floor) lookup at LSN 500 ------------------------------
+
+(define floor-500   (floor-lookup initial-index 500))
+
+(define floor-500-seg
+  (if (null? floor-500) 0 (record-seg floor-500)))
+(define floor-500-off
+  (if (null? floor-500) 0 (record-offset floor-500)))
+
+;; (floor-lookup is defined as returning a single record, but the stdout
+;; contract asks for a count of entries; for a floor lookup the count is
+;; 1 if a record exists, 0 otherwise. We re-derive it defensively.)
+
+(define floor-500-count
+  (if (null? floor-500) 0 1))
+
+;; ---- First merge pass ----------------------------------------------------
+
+(define merged-index (merge-adjacent initial-index))
+
+(define segs-after-merge (segment-count merged-index))
+
+;; Offset of LSN 650 after the first merge: use exact-lookup, falling back
+;; to floor-lookup if the LSN no longer falls inside a single entry.
+(define hit-650
+  (let ((e (exact-lookup merged-index 650)))
+    (if e e (floor-lookup merged-index 650))))
+
+(define off-650
+  (cond ((pair? hit-650) (cdr hit-650))
+        (else (record-offset hit-650))))
+
+;; ---- Append another record, then merge again ----------------------------
+
+(define state (cons merged-index '()))
+(define new-rec (make-record 900 999 5000 7 100))
+
+(set! state (cons (append-record! state new-rec) '()))
+;; append-record! mutates the cell in `state`; the outer cons is just a
+;; box for it. Recover the updated index.
+(define merged2-index (car state))
+
+(define segs-after-merge2 (segment-count merged2-index))
+
+;; ---- Ceiling (next-greater) lookup above LSN 100 -------------------------
+
+(define ceil-100     (ceiling-lookup merged2-index 100))
+(define ceil-100-seg (record-seg ceil-100))
+
+;; ---- Range scan [600, 800] ----------------------------------------------
+
+(define scan-600-800 (range-scan merged2-index 600 800))
+(define scan-count   (length scan-600-800))
+
+;; ---- Emit stdout contract ------------------------------------------------
+
+(define (kv k v)
+  (display k)
+  (display "=")
+  (display v)
+  (newline))
+
+(kv "KEY"   "wal-index-v1")
+(kv "KEY2"  n-records)
+(kv "KEY3"  n-segments)
+(kv "KEY4"  bytes-total)
+(kv "KEY5"  cover-42-n)
+(kv "KEY6"  hit-42-seg)
+(kv "KEY7"  lsn-42)
+(kv "KEY8"  hit-42-off)
+(kv "KEY9"  floor-500-count)
+(kv "KEY10" floor-500-seg)
+(kv "KEY11" floor-500-off)
+(kv "KEY12" segs-after-merge)
+(kv "KEY13" off-650)
+(kv "KEY14" segs-after-merge2)
+(kv "KEY15" ceil-100-seg)
+(kv "KEY16" scan-count)

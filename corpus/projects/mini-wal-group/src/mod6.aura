@@ -1,0 +1,50 @@
+;; mod6.aura — commit module
+
+(define (make-commit-log)
+  (list 'commit-log '() 0 0 -1))
+
+(define (__cl-entries log) (car (cdr log)))
+(define (__cl-count log)   (car (cdr (cdr log))))
+(define (__cl-fsyncs log)  (car (cdr (cdr (cdr log)))))
+(define (__cl-last-lsn log) (car (cdr (cdr (cdr (cdr log))))))
+
+(define (__cl-rebuild log entries count fsyncs last-lsn)
+  (list 'commit-log entries count fsyncs last-lsn))
+
+(define (commit-append! log batch fsyncs)
+  (let ((entries (__cl-entries log))
+        (count   (__cl-count log))
+        (total-fsyncs (__cl-fsyncs log))
+        (batch-min (batch-min-lsn batch))
+        (batch-max (batch-max-lsn batch))
+        (new-entry (list 'commit-entry batch-min batch-max (batch-size batch))))
+    (__cl-rebuild log
+                  (append entries (list new-entry))
+                  (+ count 1)
+                  (+ total-fsyncs fsyncs)
+                  batch-max)))
+
+(define (commit-count log)
+  (__cl-count log))
+
+(define (commit-total-fsyncs log)
+  (__cl-fsyncs log))
+
+(define (commit-last-lsn log)
+  (__cl-last-lsn log))
+
+(define (commit-snapshot log)
+  (let ((count (__cl-count log))
+        (fsyncs (__cl-fsyncs log))
+        (last (__cl-last-lsn log))
+        (entries (__cl-entries log)))
+    (list 'commit-snapshot count fsyncs last entries)))
+
+(define (api sym)
+  (cond ((equal? sym 'make-commit-log) make-commit-log)
+        ((equal? sym 'commit-append!) commit-append!)
+        ((equal? sym 'commit-count) commit-count)
+        ((equal? sym 'commit-total-fsyncs) commit-total-fsyncs)
+        ((equal? sym 'commit-last-lsn) commit-last-lsn)
+        ((equal? sym 'commit-snapshot) commit-snapshot)
+        (else (error "commit: unknown api" sym))))

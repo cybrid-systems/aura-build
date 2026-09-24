@@ -1,0 +1,23 @@
+;; Record constructors and accessors for the WAL.
+;; A record is a tagged list: (record kind key value seq)
+
+(define (api make-record kind key value seq)
+  (list 'record kind key value seq))
+
+(define (api record? r)
+  (if (null? r) #f
+      (if (pair? r)
+          (equal? (car r) 'record)
+          #f)))
+
+(define (api record-seq r)
+  (list-ref r 4))
+
+(define (api record-kind r)
+  (list-ref r 1))
+
+(define (api record-key r)
+  (list-ref r 2))
+
+(define (api record-value r)
+  (list-ref r 3))

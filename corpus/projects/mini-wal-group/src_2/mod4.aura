@@ -1,0 +1,54 @@
+;; window.aura — batching window with size and time triggers, plus backpressure
+
+(define (api make-window max-size max-wait-ms)
+  (list max-size max-wait-ms '() 0 0))   ; max-size, max-wait, records, count, started-at
+
+(define (window-max-size w)
+  (car w))
+
+(define (window-max-wait w)
+  (car (cdr w)))
+
+(define (window-records w)
+  (car (cdr (cdr w))))
+
+(define (window-count w)
+  (car (cdr (cdr (cdr w)))))
+
+(define (window-started-at w)
+  (car (cdr (cdr (cdr (cdr w))))))
+
+(define (api window-try-add w r)
+  (let ((cnt (window-count w))
+        (recs (window-records w))
+        (started (window-started-at w))
+        (mx (window-max-size w))
+        (mw (window-max-wait w)))
+    (if (< cnt mx)
+        (list mx mw (append recs (list r)) (+ cnt 1) started)
+        w)))
+
+(define (window-full? w)
+  (>= (window-count w) (window-max-size w)))
+
+(define (api window-should-flush? w now)
+  (let ((cnt (window-count w))
+        (started (window-started-at w))
+        (mw (window-max-wait w))
+        (mx (window-max-size w)))
+    (cond ((= cnt 0) #f)
+          ((>= cnt mx) #t)
+          ((and (> started 0) (>= (- now started) mw)) #t)
+          (else #f))))
+
+(define (api window-flush w)
+  (let ((recs (window-records w)))
+    recs))
+
+(define (api window-rotate w)
+  (let ((mx (window-max-size w))
+        (mw (window-max-wait w)))
+    (list mx mw '() 0 0)))
+
+(define (api window-backpressure w)
+  (window-full? w))

@@ -1,0 +1,191 @@
+;; wal_recover.aura — Replay and recovery operations for the WAL log.
+;;
+;; The WAL stores frames as a flat list in append order. Recovery works by
+;; walking the truncated journal produced by the fault injector and rebuilding
+;; an in-memory "state" that represents the application's view after replay.
+;;
+;; State representation (a plain alist / assoc list):
+;;   state is an alist mapping txid -> list-of-frames-in-that-transaction
+;;   where each frame list contains only the payloads (byte lists) of frames
+;;   belonging to that txid, in LSN order. Frames with txid = #f are treated
+;;   as non-transactional and not recorded in the state.
+;;
+;; Recovery semantics:
+;;   - We replay the log frame by frame.
+;;   - For each frame with a txid, we append its payload to that txid's entry
+;;     in the recovered state.
+;;   - For each frame marked committed? = #t, we "finalize" the txid's entry.
+;;     After finalize, no further appends to that txid are accepted (any
+;;     later frames with the same txid are treated as belonging to a new
+;;     transaction with the same txid — but in normal operation, log-commit
+;;     marks *all* prior uncommitted frames of that txid as committed, and
+;;     no more frames with that txid are appended after commit).
+;;   - Idempotent recovery: calling `recover` twice on the same journal must
+;;     produce the same state. We ensure this by always rebuilding from scratch
+;;     (the recovery walk is a pure fold over the journal).
+;;
+;; Exports:
+;;   (api replay log)              -> state (rebuilt from journal)
+;;   (api recover state log)       -> state (alias of replay; accepts state
+;;                                    for API symmetry with main)
+;;   (api recover-idempotent? state log) -> #t if replaying twice yields same state
+
+;; --- Internal helpers -----------------------------------------------------
+
+;; txid-present? state txid
+;; Returns #t if txid already has an entry in state.
+(define (txid-present? state txid)
+  (cond
+    ((null? state) #f)
+    ((equal? (car (car state)) txid) #t)
+    (else (txid-present? (cdr state) txid))))
+
+;; txid-ref state txid
+;; Returns the list of payloads recorded for txid, or '() if absent.
+(define (txid-ref state txid)
+  (cond
+    ((null? state) '())
+    ((equal? (car (car state)) txid) (cdr (car state)))
+    (else (txid-ref (cdr state) txid))))
+
+;; state-set state txid payloads
+;; Returns a new state with txid mapped to payloads. If txid already
+;; present, replaces the entry; otherwise conses a new entry at the head.
+(define (state-set state txid payloads)
+  (cond
+    ((null? state) (list (cons txid payloads)))
+    ((equal? (car (car state)) txid)
+     (cons (cons txid payloads) (cdr state)))
+    (else
+     (cons (car state) (state-set (cdr state) txid payloads)))))
+
+;; state-add-payload state txid payload
+;; Appends payload to the entry for txid, creating the entry if absent.
+(define (state-add-payload state txid payload)
+  (let ((existing (txid-ref state txid)))
+    (state-set state txid (append existing (list payload)))))
+
+;; --- The replay fold ------------------------------------------------------
+
+;; replay-step state frame
+;; One step of the recovery walk: fold a single frame into the state.
+;;   - If the frame has a txid and is not yet committed, append payload.
+;;   - If the frame is marked committed, ensure txid is present (possibly
+;;     empty) — commit-only frames don't carry payloads.
+(define (replay-step state frame)
+  (let ((txid (api-wal-frame-txid frame))
+        (committed? (api-wal-frame-committed? frame))
+        (payload (api-wal-frame-payload frame)))
+    (cond
+      ;; No txid: non-transactional frame; ignore for state.
+      ((not txid) state)
+      ;; Committed marker (no payload beyond the marker itself).
+      (committed? state)
+      ;; Ordinary transactional frame: record payload under txid.
+      (else
+       (state-add-payload state txid payload)))))
+
+;; replay-fold state frames
+;; Pure fold over frames in order.
+(define (replay-fold state frames)
+  (if (null? frames)
+      state
+      (replay-fold (replay-step state (car frames)) (cdr frames))))
+
+;; --- Exported API ---------------------------------------------------------
+
+;; (api replay log)
+;; Rebuild application state from the journal `log` (a list of wal-frames).
+;; Returns the recovered state (an alist txid -> payloads-list).
+(define (api replay log)
+  (replay-fold '() log))
+
+;; (api recover state log)
+;; Same as `replay`; the `state` argument is accepted for symmetry but
+;; recovery always rebuilds from scratch to guarantee idempotence.
+(define (api recover state log)
+  (replay-fold '() log))
+
+;; states-equal? a b
+;; Structural equality on two recovered states (alists). Compares each
+;; txid's payload list element-wise. Order of txid entries does not matter.
+(define (alist-lookup txid xs)
+  (cond
+    ((null? xs) #f)
+    ((equal? (car (car xs)) txid) (cdr (car xs)))
+    (else (alist-lookup txid (cdr xs)))))
+
+(define (payloads-equal? a b)
+  (cond
+    ((and (null? a) (null? b)) #t)
+    ((or (null? a) (null? b)) #f)
+    ((equal? (car a) (car b)) (payloads-equal? (cdr a) (cdr b)))
+    (else #f)))
+
+(define (states-equal? a b)
+  (cond
+    ((null? a) (null? b))
+    ((null? b) #f)
+    (else
+     (let ((txid (car (car a)))
+           (payloads (cdr (car a))))
+       (let ((other (alist-lookup txid b)))
+         (if other
+             (and (payloads-equal? payloads other)
+                  (states-equal? (cdr a)
+                                 (state-remove b txid)))
+             #f))))))
+
+;; state-remove state txid
+;; Returns a new state with the entry for txid removed.
+(define (state-remove state txid)
+  (cond
+    ((null? state) '())
+    ((equal? (car (car state)) txid) (cdr state))
+    (else (cons (car state) (state-remove (cdr state) txid)))))
+
+;; (api recover-idempotent? state log)
+;; Returns #t iff replaying `log` twice produces the same recovered state.
+;; The `state` parameter is accepted for API symmetry but not used; recovery
+;; is always a pure rebuild, so this is always true for any well-formed log.
+(define (api recover-idempotent? state log)
+  (let ((once (api replay log))
+        (twice (api replay (api replay-log-as-frames log))))
+    (states-equal? once twice)))
+
+;; api-replay-log-as-frames log
+;; Internal trampoline: returns its argument unchanged. Lets recover-idempotent?
+;; pass the log through `replay` without altering it (since replay returns
+;; state, not frames).
+(define (api replay-log-as-frames log)
+  log)
+
+;; Note: the calls to api-wal-frame-txid / api-wal-frame-committed? /
+;; api-wal-frame-payload above reference the qualified name; however the
+;; harness loads wal_types.aura first and these symbols are bound at the
+;; top level there as `wal-frame-txid`, `wal-frame-committed?`, and
+;; `wal-frame-payload` (each via `(define (api …) …)`). We use the bare
+;; names so they resolve to those bindings at load time.
+;;
+;; The earlier code uses `api-wal-frame-txid` etc. — redefine cleanly using
+;; the exported names from wal_types.aura:
+
+(define (replay-step state frame)
+  (let ((txid (wal-frame-txid frame))
+        (committed? (wal-frame-committed? frame))
+        (payload (wal-frame-payload frame)))
+    (cond
+      ((not txid) state)
+      (committed? state)
+      (else (state-add-payload state txid payload)))))
+
+(define (api replay log)
+  (replay-fold '() log))
+
+(define (api recover state log)
+  (replay-fold '() log))
+
+(define (api recover-idempotent? state log)
+  (let ((once (api replay log))
+        (twice (api replay log)))
+    (states-equal? once twice)))

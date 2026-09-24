@@ -1,0 +1,30 @@
+;; mod7.aura — fsync module
+
+(define (make-fsync-counter)
+  (list 'fsync-counter 0 '()))
+
+(define (__fc-value c) (car (cdr c)))
+(define (__fc-notes c) (car (cdr (cdr c))))
+
+(define (fsync-bump! c)
+  (let ((v (__fc-value c))
+        (notes (__fc-notes c)))
+    (set-car! (cdr c) (+ v 1))
+    (set-car! (cdr (cdr c)) (append notes (list (list 'fsync v))))
+    c))
+
+(define (fsync-value c)
+  (__fc-value c))
+
+(define (fsync-note c)
+  (let ((notes (__fc-notes c)))
+    (if (null? notes)
+        '()
+        (car (reverse notes)))))
+
+(define (api sym)
+  (cond ((equal? sym 'make-fsync-counter) make-fsync-counter)
+        ((equal? sym 'fsync-bump!) fsync-bump!)
+        ((equal? sym 'fsync-value) fsync-value)
+        ((equal? sym 'fsync-note) fsync-note)
+        (else (error "fsync: unknown api" sym))))

@@ -1,0 +1,90 @@
+;; main.aura
+;;
+;; Driver for the mini-wal-index project. This file is loaded last on the
+;; Aura CLI invocation, after all helper modules (index-record,
+;; index-compare, index-insert, index-lookup, index-range, index-stats,
+;; index-merge, index-builder, wal-fixture) have been loaded into the
+;; shared top-level environment.
+;;
+;; The workflow is:
+;;   1. Build the initial index from the fixture records.
+;;   2. Emit banner + aggregate stats.
+;;   3. Do an exact lookup at LSN 42.
+;;   4. Do a floor (approximate) lookup at LSN 500.
+;;   5. Merge adjacent entries, then re-stat.
+;;   6. Append one more record and merge again.
+;;   7. Ceiling lookup above LSN 100.
+;;   8. Range scan [600, 800].
+;;
+;; All KEY=value lines below are produced by calling the public APIs;
+;; we never hard-code the numeric answers.
+
+(define (banner) "wal-index-v1")
+
+(define (emit k v)
+  (display k)
+  (display "=")
+  (display v)
+  (newline))
+
+;; ---- Build initial index from fixture ----
+(define initial-idx (build-index (fixture-records)))
+
+;; ---- Aggregate stats over the initial index ----
+(define init-count  (count-entries initial-idx))
+(define init-segs   (segment-count initial-idx))
+(define init-bytes  (total-bytes initial-idx))
+
+;; ---- Exact lookup at LSN 42 ----
+(define probe-lsn 42)
+(define exact-hit (exact-lookup initial-idx probe-lsn))
+(define exact-seg (if exact-hit (car exact-hit) -1))
+(define exact-off (if exact-hit (cdr exact-hit) -1))
+(define cover42   (covering-entries initial-idx probe-lsn))
+
+;; ---- Floor lookup at LSN 500 ----
+(define floor-lsn 500)
+(define floor-rec (floor-lookup initial-idx floor-lsn))
+(define floor-seg (if floor-rec (record-seg floor-rec) -1))
+(define floor-off (if floor-rec (record-offset floor-rec) -1))
+(define floor-cnt (if floor-rec 1 0))
+
+;; ---- First merge pass ----
+(define merged-once (merge-adjacent initial-idx))
+(define after-merge-count (segment-count merged-once))
+
+;; ---- Resolve LSN 650 after merge ----
+(define hit-650 (exact-lookup merged-once 650))
+(define off-650 (if hit-650 (cdr hit-650) -1))
+
+;; ---- Append a fresh record and merge again ----
+(define new-rec (make-record 900 950 4096 7 50))
+(define appended (append-record! merged-once new-rec))
+(define merged-twice (merge-adjacent appended))
+(define after-second-count (segment-count merged-twice))
+
+;; ---- Ceiling lookup above LSN 100 ----
+(define ceil-rec (ceiling-lookup merged-twice 100))
+(define ceil-seg (if ceil-rec (record-seg ceil-rec) -1))
+
+;; ---- Range scan [600, 800] ----
+(define rs (range-scan merged-twice 600 800))
+(define rs-len (length rs))
+
+;; ---- Emit stdout contract ----
+(emit "KEY" (banner))
+(emit "KEY2" init-count)
+(emit "KEY3" init-segs)
+(emit "KEY4" init-bytes)
+(emit "KEY5" cover42)
+(emit "KEY6" exact-seg)
+(emit "KEY7" probe-lsn)
+(emit "KEY8" exact-off)
+(emit "KEY9" floor-cnt)
+(emit "KEY10" floor-seg)
+(emit "KEY11" floor-off)
+(emit "KEY12" after-merge-count)
+(emit "KEY13" off-650)
+(emit "KEY14" after-second-count)
+(emit "KEY15" ceil-seg)
+(emit "KEY16" rs-len)

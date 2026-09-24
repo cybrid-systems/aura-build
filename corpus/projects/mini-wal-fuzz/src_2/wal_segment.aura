@@ -1,0 +1,53 @@
+;; wal_segment.aura
+;; Bounded segment container for WAL frames.
+;;
+;; A segment is a fixed-capacity append container holding an ordered
+;; list of frames plus an id and a current length.  Frames are appended
+;; until the segment is full; the log layer is responsible for rolling
+;; to a new segment when `segment-full?` is true.  Segments are pure
+;; value objects: `segment-append` returns a NEW segment with the frame
+;; appended, leaving the input segment untouched.
+
+;; ---- Internal helpers (not exported) -----------------------------------
+
+;; A segment shape: an alist with 'id 'cap 'len 'frames.
+;; We don't expose the raw alist; everything goes through the API.
+
+;; ---- API ---------------------------------------------------------------
+
+;; Build a fresh empty segment with the given numeric id and byte capacity.
+;; Capacity is in abstract frame-units; we treat the segment as holding
+;; at most `cap` frames.
+(define (make-segment id cap)
+  (list (cons 'id id)
+        (cons 'cap cap)
+        (cons 'len 0)
+        (cons 'frames '())))
+
+;; Return #t if no more frames can be appended.
+(define (segment-full? seg)
+  (let ((len (cdr (assq 'len seg)))
+        (cap (cdr (assq 'cap seg))))
+    (>= len cap)))
+
+;; Append a frame to the segment, returning a new segment value.
+;; If the segment is already full the frame is still appended (the log
+;; layer is expected to check fullness first) — but we never silently
+;; drop data here.
+(define (segment-append seg frame)
+  (let ((id    (cdr (assq 'id seg)))
+        (cap   (cdr (assq 'cap seg)))
+        (len   (cdr (assq 'len seg)))
+        (frames (cdr (assq 'frames seg))))
+    (list (cons 'id id)
+          (cons 'cap cap)
+          (cons 'len (+ len 1))
+          (cons 'frames (append frames (list frame))))))
+
+;; Return the segment's numeric id.
+(define (segment-id seg)
+  (cdr (assq 'id seg)))
+
+;; Return the list of frames currently in the segment, in append order.
+(define (segment-frames seg)
+  (cdr (assq 'frames seg)))

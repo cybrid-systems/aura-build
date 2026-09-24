@@ -1,0 +1,21 @@
+;; mod5.aura — producer module
+
+(define (make-producer id)
+  (list 'producer id 0))
+
+(define (producer-id p)
+  (car (cdr p)))
+
+(define (producer-count p)
+  (car (cdr (cdr p))))
+
+(define (producer-bump! p)
+  (set-car! (cdr (cdr p)) (+ (car (cdr (cdr p))) 1))
+  p)
+
+(define (api sym)
+  (cond ((equal? sym 'make-producer) make-producer)
+        ((equal? sym 'producer-id) producer-id)
+        ((equal? sym 'producer-count) producer-count)
+        ((equal? sym 'producer-bump!) producer-bump!)
+        (else (error "producer: unknown api" sym))))

@@ -1,0 +1,178 @@
+;; csv-iterator.aura
+;;
+;; Pull-style iterator that wraps the csv-lexer and applies type coercion
+;; to every cell. This is the primary public API used by callers (and
+;; main.aura) to walk an RFC 4180 CSV stream one row at a time.
+;;
+;; Public API (per module table):
+;;   (make-csv-iter source :key delimiter) -> iterator
+;;   (iter-next iter)                      -> row-record | 'eof
+;;   (iter-rest iter)                      -> list-of-row-records
+;;   (iter-count iter)                     -> integer (count of rows seen)
+;;
+;; The iterator keeps a count of rows yielded so far. (iter-count)
+;; returns the live count even before the stream is exhausted, which is
+;; useful for progress reporting. (iter-count) does not advance the
+;; iterator -- only (iter-next) and (iter-rest) do.
+;;
+;; An iterator is represented as an alist so we can extend it later
+;; without breaking callers:
+;;
+;;   (cons 'iterator
+;;         (cons (cons 'lexer   <lexer>)
+;;               (cons (cons 'count   <integer>)
+;;                     (cons (cons 'exhausted? <bool>) '()))))
+;;
+;; We use the lexer's own row API as the source of raw cell strings, then
+;; coerce each cell with (csv-coerce …) before bundling them into a row
+;; via (make-row …).
+
+(define tag-iter 'iterator)
+(define key-lexer 'lexer)
+(define key-count 'count)
+(define key-exhausted? 'exhausted?)
+
+;; --- predicate ------------------------------------------------------------
+
+(define (iterator? v)
+  (and (pair? v) (eq? (car v) tag-iter)))
+
+(define (iter-assq iter key)
+  (let loop ((rest (cdr iter)))
+    (cond ((null? rest) #f)
+          ((eq? (car (car rest)) key) (car rest))
+          (else (loop (cdr rest))))))
+
+;; --- constructor ----------------------------------------------------------
+
+;; (make-csv-iter source :key delimiter) -> iterator
+;;
+;; `source` may be either an Aura port or a string. `delimiter` defaults
+;; to the comma character. We do not eagerly read the first row here --
+;; iteration is lazy, so creating the iterator must be cheap.
+(define (make-csv-iter source . kwargs)
+  (let loop ((ks kwargs) (delim #\,))
+    (cond ((null? ks)
+           (let* ((lexer (apply csv-open (list source)
+                                (list (cons ':key 'delimiter) delim))))
+             (cons tag-iter
+                   (list (cons key-lexer lexer)
+                         (cons key-count 0)
+                         (cons key-exhausted? #f)))))
+          ((null? (cdr ks)) delim)
+          (else
+           (let ((k (car ks)) (v (cadr ks)))
+             (if (eq? k ':key)
+                 (loop (cddr ks) v)
+                 (loop (cddr ks) delim)))))))
+
+;; --- internals ------------------------------------------------------------
+
+;; Pull the next raw cell (string) out of the lexer. The lexer signals
+;; end-of-stream by returning 'eof for a cell only at end-of-row in the
+;; empty-trailing-line case; normally a cell stream just ends with the
+;; row stream. We treat a cell-level 'eof as end-of-input.
+(define (iter-raw-cell iter)
+  (let ((l (cdr (iter-assq iter key-lexer))))
+    (lexer-next-cell l)))
+
+;; Build a coerced row record from whatever cells the lexer yields for
+;; the current row. If the lexer reports an empty row (zero cells before
+;; 'eof on the row), we still return a row of length zero -- callers can
+;; distinguish this from end-of-stream via (iter-next)'s return value.
+(define (build-row-from-lexer iter)
+  (let loop ((cells '()))
+    (let ((raw (iter-raw-cell iter)))
+      (cond ((eq? raw 'eof)
+             ;; End of this row (or end of input).
+             (cons 'pending-build cells))
+            (else
+             ;; raw is a string. Coerce it to a cell record, then keep going.
+             (let ((cell (csv-coerce raw)))
+               (loop (cons cell cells))))))))
+
+;; --- iter-next ------------------------------------------------------------
+
+;; (iter-next iter) -> row-record | 'eof
+;;
+;; Returns the next row, with each cell already coerced to its typed
+;; value, or 'eof when the input is exhausted.
+(define (iter-next iter)
+  (let ((ex (cdr (iter-assq iter key-exhausted?))))
+    (if ex
+        'eof
+        (let* ((built (build-row-from-lexer iter))
+               (cells (reverse (cdr built))))
+          ;; (cdr built) is the list of coerced cells in order.
+          ;; We need to distinguish "end of input, no cells this row"
+          ;; from "got a zero-cell row then more data". The lexer's
+          ;; own row API handles the row framing; here we just bump the
+          ;; counter when we hand back a row.
+          (let ((row (make-row cells)))
+            ;; We have to peek at whether the lexer is now exhausted.
+            ;; After pulling a row, the lexer will report 'eof on the
+            ;; next cell pull if there is nothing more.
+            (set-cdr! (iter-assq iter key-count)
+                      (+ (cdr (iter-assq iter key-count)) 1))
+            ;; Probe for end-of-stream by asking the lexer.
+            (let ((probe (lexer-next-cell (cdr (iter-assq iter key-lexer))))))
+            ;; The probe consumes a cell if there is one, which would
+            ;; skip data. So instead we use the lexer's row API.
+            ;; Re-implement cleanly: ask the lexer for the next row
+            ;; directly, but we have already consumed one row's cells.
+            ;; To keep things simple and correct, we use lexer-next-row
+            ;; in iter-rest, and here in iter-next we re-route through
+            ;; the lexer's row-level API. See note below.
+            row)))))
+
+;; NOTE: The iter-next above is a sketch that double-counts and
+;; mis-uses the lexer. Below is the correct, clean implementation
+;; built directly on top of (lexer-next-row l). We keep the sketch
+;; around only as a comment so future readers can see why we ended up
+;; where we did.
+
+;; (iter-next iter) -- final, correct version.
+;; Override the previous definition.
+(set! iter-next
+      (lambda (iter)
+        (let ((ex (cdr (iter-assq iter key-exhausted?))))
+          (if ex
+              'eof
+              (let* ((lexer (cdr (iter-assq iter key-lexer)))
+                     (raw-row (lexer-next-row lexer)))
+                (cond ((eq? raw-row 'eof)
+                       (set-cdr! (iter-assq iter key-exhausted?) #t)
+                       'eof)
+                      (else
+                       ;; raw-row is a row record whose cells are
+                       ;; raw strings. Coerce each one.
+                       (let* ((raw-cells (row-cells raw-row))
+                              (coerced
+                               (let loop ((cs raw-cells) (acc '()))
+                                 (if (null? cs)
+                                     (reverse acc)
+                                     (loop (cdr cs)
+                                           (cons (csv-coerce (car cs))
+                                                 acc))))))
+                         (set-cdr! (iter-assq iter key-count)
+                                   (+ (cdr (iter-assq iter key-count)) 1))
+                         (make-row coerced)))))))))
+
+;; --- iter-rest ------------------------------------------------------------
+
+;; (iter-rest iter) -> list-of-row-records
+;;
+;; Drains the iterator to the end and returns every row as a list, in
+;; stream order. This is the convenience entry point used by main.aura.
+(define (iter-rest iter)
+  (let loop ((acc '()))
+    (let ((r (iter-next iter)))
+      (if (eq? r 'eof)
+          (reverse acc)
+          (loop (cons r acc))))))
+
+;; --- iter-count -----------------------------------------------------------
+
+;; (iter-count iter) -> integer
+(define (iter-count iter)
+  (cdr (iter-assq iter key-count)))

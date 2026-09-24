@@ -1,0 +1,42 @@
+;; wal_apply.aura
+;; Record application layer: applies a single record to state,
+;; applies all records in a log, and tracks the total number of
+;; applications performed via a mutable counter.
+
+;; Mutable counter for total apply-record invocations.
+(define wal-apply-count 0)
+
+(define (api count-applies)
+  wal-apply-count)
+
+(define (api apply-record state rec)
+  (begin
+    (set! wal-apply-count (+ wal-apply-count 1))
+    (let ((k (api record-key rec))
+          (kind (api record-kind rec))
+          (val (api record-value rec)))
+      (cond
+        ((equal? kind 'insert)
+         (cond
+           ((api state-has? state k)
+            ;; Idempotent: already present, no state change.
+            state)
+           (else
+            (api state-set! state k val))))
+        ((equal? kind 'delete)
+         (cond
+           ((api state-has? state k)
+            (api state-delete! state k))
+           (else
+            ;; Idempotent: already absent, no state change.
+            state)))
+        (else
+         ;; Unknown kind: leave state untouched.
+         state)))))
+
+(define (api apply-all state log)
+  (if (null? log)
+      state
+      (api apply-all
+           (api apply-record state (car log))
+           (cdr log))))

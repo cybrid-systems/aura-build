@@ -1,0 +1,79 @@
+;; mod9.aura — coordinator module
+
+(define (make-coord max-batch window-ms producers window fsync commit-log bp)
+  (list 'coord max-batch window-ms producers window fsync commit-log bp
+        (make-batch)   ;; pending batch
+        0))            ;; submitted count
+
+(define (__c-max-batch c)     (car (cdr c)))
+(define (__c-window-ms c)     (car (cdr (cdr c))))
+(define (__c-producers c)     (car (cdr (cdr (cdr c)))))
+(define (__c-window c)        (car (cdr (cdr (cdr (cdr c))))))
+(define (__c-fsync c)         (car (cdr (cdr (cdr (cdr (cdr c)))))))
+(define (__c-commit-log c)    (car (cdr (cdr (cdr (cdr (cdr (cdr c))))))))
+(define (__c-bp c)            (car (cdr (cdr (cdr (cdr (cdr (cdr (cdr c)))))))))
+(define (__c-pending c)       (car (cdr (cdr (cdr (cdr (cdr (cdr (cdr (cdr c))))))))))
+(define (__c-submitted c)     (car (cdr (cdr (cdr (cdr (cdr (cdr (cdr (cdr (cdr c)))))))))))
+
+(define (__c-rebuild c pending submitted)
+  (list 'coord
+        (__c-max-batch c)
+        (__c-window-ms c)
+        (__c-producers c)
+        (__c-window c)
+        (__c-fsync c)
+        (__c-commit-log c)
+        (__c-bp c)
+        pending
+        submitted))
+
+(define (__c-pending-empty? c)
+  (= (batch-size (__c-pending c)) 0))
+
+(define (__c-do-flush c)
+  (let ((pending (__c-pending c)))
+    (if (= (batch-size pending) 0)
+        c
+        (let ((w (__c-window c)))
+          (window-flush w)
+          (fsync-bump! (__c-fsync c))
+          (commit-append! (__c-commit-log c) pending (fsync-value (__c-fsync c)))
+          (window-rotate w)
+          (__c-rebuild c (make-batch) (__c-submitted c))))))
+
+(define (coord-submit! c r now)
+  (let ((w (__c-window c))
+        (max-size (__c-max-batch c)))
+    (cond ((window-backpressure w)
+           (bp-inc! (__c-bp c))
+           (set! c (__c-do-flush c))
+           (let ((w2 (__c-window c)))
+             (window-try-add w2 r)
+             (__c-rebuild c
+                          (batch-add (__c-pending c) r)
+                          (+ 1 (__c-submitted c)))))
+          (else
+           (window-try-add w r)
+           (__c-rebuild c
+                        (batch-add (__c-pending c) r)
+                        (+ 1 (__c-submitted c)))))))
+
+(define (coord-tick! c now)
+  (let ((w (__c-window c)))
+    (if (window-should-flush? w now)
+        (__c-do-flush c)
+        c)))
+
+(define (coord-stats c)
+  (list 'coord-stats
+        (__c-submitted c)
+        (commit-count (__c-commit-log c))
+        (fsync-value (__c-fsync c))
+        (bp-value (__c-bp c))))
+
+(define (api sym)
+  (cond ((equal? sym 'make-coord) make-coord)
+        ((equal? sym 'coord-submit!) coord-submit!)
+        ((equal? sym 'coord-tick!) coord-tick!)
+        ((equal? sym 'coord-stats) coord-stats)
+        (else (error "coord: unknown api" sym))))

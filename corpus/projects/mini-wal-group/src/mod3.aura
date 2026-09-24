@@ -1,0 +1,34 @@
+;; mod3.aura — batch module
+
+(define (make-batch)
+  (list 'batch '() 99999999 0))
+
+(define (batch-add b r)
+  (let ((recs (car (cdr b)))
+        (min-lsn (car (cdr (cdr b))))
+        (max-lsn (car (cdr (cdr (cdr b)))))
+        (r-lsn (car (cdr r))))
+    (let ((new-min (if (< r-lsn min-lsn) r-lsn min-lsn))
+          (new-max (if (> r-lsn max-lsn) r-lsn max-lsn)))
+      (list 'batch (append recs (list r)) new-min new-max))))
+
+(define (batch-size b)
+  (length (car (cdr b))))
+
+(define (batch-records b)
+  (car (cdr b)))
+
+(define (batch-min-lsn b)
+  (car (cdr (cdr b))))
+
+(define (batch-max-lsn b)
+  (car (cdr (cdr (cdr b)))))
+
+(define (api sym)
+  (cond ((equal? sym 'make-batch) make-batch)
+        ((equal? sym 'batch-add) batch-add)
+        ((equal? sym 'batch-size) batch-size)
+        ((equal? sym 'batch-records) batch-records)
+        ((equal? sym 'batch-min-lsn) batch-min-lsn)
+        ((equal? sym 'batch-max-lsn) batch-max-lsn)
+        (else (error "batch: unknown api" sym))))

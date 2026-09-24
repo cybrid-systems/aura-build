@@ -1,0 +1,41 @@
+;; commit.aura — append-only log of committed batches
+
+(define (api make-commit-log)
+  (list 0 0 '() '()))   ; commit-count, total-fsyncs, last-lsn, snapshot-lsns
+
+(define (commit-count-get log)
+  (car log))
+
+(define (commit-fsyncs-get log)
+  (car (cdr log)))
+
+(define (commit-last-lsn-get log)
+  (car (cdr (cdr log))))
+
+(define (commit-snapshot-get log)
+  (car (cdr (cdr (cdr log)))))
+
+(define (api commit-append! log batch fsyncs)
+  (let ((cnt (commit-count-get log))
+        (tot (commit-fsyncs-get log))
+        (snap (commit-snapshot-get log)))
+    (if (null? batch)
+        log
+        (begin
+          (set-car! log (+ cnt 1))
+          (set-car! (cdr log) (+ tot fsyncs))
+          (set-car! (cdr (cdr log)) (batch-max-lsn batch))
+          (set-car! (cdr (cdr (cdr log))) (append snap (list (batch-max-lsn batch))))
+          log))))
+
+(define (api commit-count log)
+  (commit-count-get log))
+
+(define (api commit-total-fsyncs log)
+  (commit-fsyncs-get log))
+
+(define (api commit-last-lsn log)
+  (commit-last-lsn-get log))
+
+(define (api commit-snapshot log)
+  (commit-snapshot-get log))

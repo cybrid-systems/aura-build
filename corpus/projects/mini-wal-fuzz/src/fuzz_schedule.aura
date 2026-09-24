@@ -1,0 +1,100 @@
+;; fuzz_schedule.aura — Deterministic fault-injection scheduler.
+;;
+;; The scheduler decides, given the current round number, whether to simulate
+;; a crash on this round and, if so, where in the recorded journal to cut.
+;; All decisions are derived from the fuzz_rng module so the schedule is
+;; fully reproducible from a seed.
+;;
+;; Exports (via `api`):
+;;   (schedule-crash?   round) -> #t/#f   (probability rises with round)
+;;   (schedule-cutpoint frames)-> number  (index in [0, len] inclusive)
+;;   (fault-inject log round)  -> log     (possibly truncated log)
+;;
+;; Schedule policy:
+;;   - On every round, there is a base probability of ~12% of crashing,
+;;     rising by ~1.6% per round, capped at 60%.
+;;   - The cut-point is uniformly chosen from [0, n] where n is the number
+;;     of frames currently in the log. A cut at n means "no truncation";
+;;     a cut at 0 means "wipe everything". This matches the spec which
+;;     describes crash simulation as truncating the recorded journal at
+;;     a random cut-point.
+;;
+;; The scheduler is pure w.r.t. its inputs (it only consumes randomness from
+;; fuzz_rng). It performs no I/O. Side effects (when any) are confined to
+;; advancing the RNG state in fuzz_rng.
+
+;; --- helpers --------------------------------------------------------------
+
+;; Integer length of a list.
+(define (fs-length xs)
+  (if (null? xs)
+      0
+      (+ 1 (fs-length (cdr xs)))))
+
+;; floor of (n / d) for non-negative n, d>0.
+(define (fs-floor n d)
+  (let ((q 0) (r n))
+    (define (loop q r)
+      (if (or (< r d) (= r 0))
+          q
+          (loop (+ q 1) (- r d))))
+    (loop 0 n)))
+
+;; Replicate the rng-between semantics locally so we don't need to import
+;; fuzz_rng at the top of this file (Aura has no module system; we just
+;; call the api once defined below). We compute via a pair of rng-next
+;; calls so the function is self-contained.
+(define (fs-between lo hi)
+  (if (>= lo hi)
+      lo
+      (let ((span (+ (- hi lo) 1)))
+        (+ lo (modulo (api rng-next) span)))))
+
+;; --- policy ---------------------------------------------------------------
+
+;; Base crash probability per round, expressed as percent: 12 + round*16/10,
+;; capped at 60. Using integer arithmetic so it's reproducible.
+(define (fs-crash-probability round)
+  (let ((raw (+ 12 (fs-floor (* round 16) 10))))
+    (if (> raw 60) 60 raw)))
+
+;; Decide whether to crash this round. Uses two rng-next draws so that the
+;; schedule is decorrelated from the cut-point draw later in the same round
+;; (the harness typically invokes fault-inject immediately after deciding
+;; to crash; we therefore want some independence).
+(define (fs-decide-crash? round)
+  (let ((p (fs-crash-probability round))
+        (roll (modulo (api rng-next) 100)))
+    (< roll p)))
+
+;; --- exported API ---------------------------------------------------------
+
+;; (schedule-crash? round) -> #t/#f
+(define (api schedule-crash? round)
+  (if (fs-decide-crash? round) #t #f))
+
+;; (schedule-cutpoint frames) -> number in [0, (length frames)]
+;; Note: passing '() yields 0 deterministically (rng is not consulted).
+(define (api schedule-cutpoint frames)
+  (let ((n (fs-length frames)))
+    (if (= n 0)
+        0
+        (fs-between 0 n))))
+
+;; (fault-inject log round) -> log
+;;   Returns the input log unchanged if no crash is scheduled this round.
+;;   Otherwise returns a new log truncated to the first `cut` frames, where
+;;   `cut` is chosen uniformly from [0, n]. The original log is not mutated;
+;;   the harness's wal_log.log-truncate! remains available for callers that
+;;   specifically want in-place mutation.
+(define (fault-take log n)
+  (if (= n 0)
+      '()
+      (cons (car log) (fault-take (cdr log) (- n 1)))))
+
+(define (api fault-inject log round)
+  (if (fs-decide-crash? round)
+      (let ((n (fs-length log))
+            (cut (api schedule-cutpoint log)))
+        (fault-take log cut))
+      log))

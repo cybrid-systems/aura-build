@@ -1,0 +1,54 @@
+;; wal_metrics.aura
+;; Lightweight in-memory metric counters used by the WAL engine.
+;;
+;; Metrics are stored as an association list keyed by metric name. Each
+;; metric name maps to a numeric counter. If a metric has not been
+;; incremented yet, get-metric returns 0. reset-metrics! clears the
+;; entire store back to empty.
+;;
+;; The metric cell is a single mutable binding at top-level, so all
+;; modules share the same metric state for the lifetime of the process.
+
+;; Top-level mutable metric store: an alist of (name . count) pairs.
+(define wal-metric-cell '())
+
+(define (api inc-metric! name)
+  ;; Increment the counter for `name` by 1. If no entry exists yet,
+  ;; create one with initial value 1. Returns the new counter value.
+  (let ((hit (assoc name wal-metric-cell)))
+    (cond
+      (hit
+       (begin
+         (set! wal-metric-cell
+               (cons (cons name (+ (cdr hit) 1))
+                     (remove-key name wal-metric-cell)))
+         (+ (cdr hit) 1)))
+      (else
+       (begin
+         (set! wal-metric-cell (cons (cons name 1) wal-metric-cell))
+         1)))))
+
+(define (api get-metric name)
+  ;; Return the current value of the metric named `name`. If the
+  ;; metric has never been incremented, return 0.
+  (let ((hit (assoc name wal-metric-cell)))
+    (cond
+      (hit (cdr hit))
+      (else 0))))
+
+(define (api reset-metrics!)
+  ;; Clear the metric store back to empty. Returns '().
+  (begin
+    (set! wal-metric-cell '())
+    '()))
+
+;; Internal helper: return an alist with every entry whose key equals
+;; `name` removed. Used by inc-metric! to rebuild the store without
+;; duplicating entries.
+(define (remove-key name alist)
+  (cond
+    ((null? alist) '())
+    ((equal? name (car (car alist)))
+     (remove-key name (cdr alist)))
+    (else
+     (cons (car alist) (remove-key name (cdr alist))))))

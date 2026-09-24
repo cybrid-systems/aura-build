@@ -1,0 +1,136 @@
+;; csv-fixture.aura
+;; Provides a small, deterministic fixture containing tricky RFC 4180 cases
+;; so that main.aura can exercise the parser end-to-end without depending
+;; on any external files.
+;;
+;; Public API (per module table):
+;;   (csv-fixture-text)        -> string
+;;   (csv-fixture-port)        -> port (read-char capable)
+;;
+;; The fixture is intentionally hand-written to cover:
+;;   - Quoted fields with embedded delimiters and escaped double-quotes
+;;   - A UTF-8 BOM at the very start of the stream
+;;   - Mixed types (string, integer, bool, fractional number)
+;;   - An empty field (between delimiters)
+;;   - A trailing blank line (so the lexer can see "newline after last row")
+;;   - CRLF line endings (\r\n)
+;;
+;; The fixture is built up via (string-append ...) so that the resulting
+;; text is a single concrete string. Aura strings are not subject to
+;; any escape interpretation, so we can just embed literal characters.
+
+;; --- BOM helper ----------------------------------------------------------
+;; Aura doesn't have a char literal for the BOM, so we build it from a
+;; small helper that returns the three raw bytes as a string. Since Aura
+;; strings are byte-oriented (UTF-8), we approximate by emitting the BOM
+;; as a string of length 1 containing the Unicode REPLACEMENT marker that
+;; the rest of the pipeline (csv-util / csv-bom?) recognises.
+;;
+;; For maximum robustness across Aura runtimes, we expose the BOM as a
+;; dedicated constant string. The csv-util module's csv-bom? predicate
+;; is defined to accept either:
+;;   - a single-char string of codepoint 65279 (U+FEFF), or
+;;   - a 3-byte list of integers (239 187 191) for byte-level ports.
+;;
+;; We use the single-character U+FEFF form here. Aura's string syntax
+;; supports the literal U+FEFF via the escape sequence "\ufeff".
+;;
+;; To keep this file portable across Aura builds we construct the BOM
+;; character from a tiny numeric helper rather than embedding a literal,
+;; because some Aura front-ends strip zero-width characters from source.
+;;
+;; (bom-char) -> string of length 1 containing U+FEFF
+(define (bom-char)
+  (integer->char 65279))
+
+;; --- Field constants -----------------------------------------------------
+;; Pulling each tricky field out into named constants makes the fixture
+;; easy to audit and adjust without re-reading a giant blob of text.
+
+(define field-r1c0 "foo")
+(define field-r1c1 "\"hello, world\"")
+(define field-r1c2 "42")
+
+(define field-r2c0 "\"he said \"\"hi\"\"\"")
+(define field-r2c1 "bar")
+
+(define field-r3c0 "")
+(define field-r3c1 "baz")
+(define field-r3c2 "true")
+
+(define field-r4c0 "x")
+(define field-r4c1 "y")
+(define field-r4c2 "z")
+(define field-r4c3 "2.5")
+
+;; Row 5 is intentionally just two fields, where the first is an empty
+;; field between delimiters -> " ,7" gives cells "" and "7".
+(define field-r5c0 "")
+(define field-r5c1 "7")
+
+;; Row 6 exercises boolean coercion at index 0.
+(define field-r6c0 "true")
+(define field-r6c1 "false")
+
+;; --- Row builders --------------------------------------------------------
+;; A row is a comma-joined sequence of fields terminated by CRLF.
+;; We use \r\n throughout so that the lexer is forced to handle the
+;; CRLF line-ending path of RFC 4180.
+
+(define (join-fields fields)
+  (fold-left (lambda (acc f)
+               (if (= (string-length acc) 0)
+                   f
+                   (string-append acc "," f)))
+             ""
+             fields))
+
+(define (csv-row . fields)
+  (string-append (join-fields fields) "\r\n"))
+
+(define row1 (csv-row field-r1c0 field-r1c1 field-r1c2))
+(define row2 (csv-row field-r2c0 field-r2c1))
+(define row3 (csv-row field-r3c0 field-r3c1 field-r3c2))
+(define row4 (csv-row field-r4c0 field-r4c1 field-r4c2 field-r4c3))
+(define row5 (csv-row field-r5c0 field-r5c1))
+(define row6 (csv-row field-r6c0 field-r6c1))
+
+;; --- Fixture text --------------------------------------------------------
+;; The final fixture is:
+;;   <BOM>row1row2row3row4row5row6
+;; Note: there is intentionally no trailing blank line here as an
+;; additional row, because the lexer's "blank trailing row" behaviour
+;; is exercised by the CRLF that already follows row6.
+
+(define (csv-fixture-text)
+  (string-append
+    (bom-char)
+    row1
+    row2
+    row3
+    row4
+    row5
+    row6))
+
+;; --- Fixture port --------------------------------------------------------
+;; Aura exposes (open-input-string s) for turning a string into a port.
+;; Some older Aura builds instead expose (open-input-string s) under a
+;; different name; we provide a thin compatibility layer so that this
+;; file works across runtimes.
+
+;; (open-string-port s) -> port
+;; Tries a few well-known constructors in order.
+(define (open-string-port s)
+  (cond
+    ((procedure? open-input-string) (open-input-string s))
+    ((procedure? open-input-port)   (open-input-port s))
+    ((procedure? open-input)        (open-input s))
+    (else
+      (error "csv-fixture: no string-port constructor available"))))
+
+;; (csv-fixture-port) -> a fresh port positioned at the start of the
+;; fixture text. Each call returns a new, independent port so that
+;; callers can iterate over the fixture multiple times without having
+;; to rewind.
+(define (csv-fixture-port)
+  (open-string-port (csv-fixture-text)))

@@ -1,0 +1,125 @@
+;; main.aura — Entry point for the mini-wal-fuzz crash-safety harness.
+;;
+;; This file is the ONLY file in the project that prints to stdout.
+;; It wires together the harness module with the report module and runs
+;; a single deterministic scenario:
+;;
+;;   1. Initialize the harness with seed=20260524, rounds=120
+;;   2. Drive `rounds` rounds of fuzzed log operations
+;;   3. Finalize the harness to obtain the final state and log snapshot
+;;   4. Compute the four boolean invariants
+;;   5. Print a KEY=value line for each metric
+;;   6. Print a final VERDICT line (PASS if all four invariants hold, FAIL otherwise)
+;;
+;; Required stdout contract (one line each, in order):
+;;   SEED=<seed>
+;;   ROUNDS=<rounds>
+;;   ROUNDS_RAN=<rounds actually run>
+;;   APPENDS=<total appends issued by the harness>
+;;   SYNCS=<total sync calls>
+;;   COMMITS=<total commit calls>
+;;   CRASHES=<total simulated crashes>
+;;   LSN_MONOTONIC=#t/#f
+;;   CRC_OK=#t/#f
+;;   TX_ATOMIC=#t/#f
+;;   RECOVER_IDEMPOTENT=#t/#f
+;;   VERDICT=PASS/FAIL
+;;
+;; The four boolean invariants MUST be #t for VERDICT=PASS.
+
+;; --- counters (mutable globals, per the spec's allowance) ---------------
+
+(define main-appends  0)
+(define main-syncs    0)
+(define main-commits  0)
+(define main-crashes  0)
+(define main-rounds-ran 0)
+
+;; --- API -----------------------------------------------------------------
+
+(define (api run)
+  ;; The `run` API is an explicit, deterministic entry point that mirrors
+  ;; what `main` does; we expose it so other Aura top-level files (or
+  ;; interactive REPL sessions) can re-execute the scenario without going
+  ;; through the implicit top-level side effects.
+  (begin
+    ;; Reset counters so repeated calls to `run` are idempotent.
+    (set! main-appends    0)
+    (set! main-syncs      0)
+    (set! main-commits    0)
+    (set! main-crashes    0)
+    (set! main-rounds-ran 0)
+
+    ;; Initialize harness with the fixed scenario seed and round count.
+    (define state (api-harness-init 20260524 120))
+
+    ;; Drive every round. The harness module records its own metrics
+    ;; inside `state`; we keep parallel counters here so the report
+    ;; module can read them out without poking into harness internals.
+    (define round 1)
+    (while (<= round 120)
+      (begin
+        ;; Snapshot pre-step counters so we can detect what changed.
+        (define state2 (api-harness-step state round))
+
+        ;; Pull metrics back out of the harness state via the report
+        ;; helper, falling back to local counters where appropriate.
+        (set! main-appends    (+ main-appends    (api-alist-ref state2 'appends    main-appends)))
+        (set! main-syncs      (+ main-syncs      (api-alist-ref state2 'syncs      main-syncs)))
+        (set! main-commits    (+ main-commits    (api-alist-ref state2 'commits    main-commits)))
+        (set! main-crashes    (+ main-crashes    (api-alist-ref state2 'crashes    main-crashes)))
+        (set! main-rounds-ran (+ main-rounds-ran 1))
+
+        (set! state state2)
+        (set! round (+ round 1))))
+
+    ;; Finalize: this is where the harness produces its recovered state
+    ;; and the truncated/post-recovery log snapshot we will check.
+    (define final (api-harness-finalize state))
+    (define recovered-state (car final))
+    (define final-log      (cdr final))
+
+    ;; Compute the four invariants.
+    (define inv-lsn  (api-check-lsn-monotonic final-log))
+    (define inv-crc  (api-check-crc-ok        final-log))
+    (define inv-tx   (api-check-tx-atomic     recovered-state))
+    (define inv-idem (api-recover-idempotent? recovered-state final-log))
+    (define all-ok   (and inv-lsn inv-crc inv-tx inv-idem))
+
+    ;; Build the report alist and emit the KEY=value lines.
+    (define lines
+      (list
+        (list 'SEED             "20260524")
+        (list 'ROUNDS           "120")
+        (list 'ROUNDS_RAN       (number->string main-rounds-ran))
+        (list 'APPENDS          (number->string main-appends))
+        (list 'SYNCS            (number->string main-syncs))
+        (list 'COMMITS          (number->string main-commits))
+        (list 'CRASHES          (number->string main-crashes))
+        (list 'LSN_MONOTONIC    (if inv-lsn  "#t" "#f"))
+        (list 'CRC_OK           (if inv-crc  "#t" "#f"))
+        (list 'TX_ATOMIC        (if inv-tx   "#t" "#f"))
+        (list 'RECOVER_IDEMPOTENT (if inv-idem "#t" "#f"))
+        (list 'VERDICT          (if all-ok "PASS" "FAIL"))))
+
+    (api-print-report lines)))
+
+(define (api main)
+  ;; CLI entry point. The Aura runtime invokes `main` automatically when
+  ;; this file is loaded as the top-level program.
+  (api run))
+
+;; --- helpers -------------------------------------------------------------
+
+(define (api-alist-ref alist key fallback)
+  ;; Look up `key` in a simple (key . value) alist. Returns `fallback`
+  ;; when the key is missing. Defined here so this file does not need
+  ;; to depend on any other module for trivial list helpers.
+  (cond
+    ((null? alist)            fallback)
+    ((equal? (car (car alist)) key) (cdr (car alists-alist-car alist)))
+    (else                     (api-alist-ref (cdr alist) key fallback))))
+
+(define (alists-alist-car pair)
+  ;; Trivial helper kept separate so the cond above stays readable.
+  pair)

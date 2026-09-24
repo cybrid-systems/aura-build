@@ -1,0 +1,48 @@
+;; wal_replay: drives the replay of a log starting from a checkpoint seq.
+;; replay-state iterates over log records whose seq > checkpoint-seek,
+;; applies each via apply-record, and counts ticks. It also counts
+;; "dropped-old" records whose seq <= checkpoint-seek.
+
+;; Mutable counters exposed via APIs.
+(define replay-counter 0)
+(define dropped-counter 0)
+
+(define (api replay-count)
+  replay-counter)
+
+(define (api reset-replay-count!)
+  (set! replay-counter 0)
+  (set! dropped-counter 0))
+
+;; Helper: count records in a list whose seq <= checkpoint-seek.
+(define (count-dropped-old log checkpoint-seek)
+  (cond ((null? log) 0)
+        ((<= (record-seq (car log)) checkpoint-seek)
+         (+ 1 (count-dropped-old (cdr log) checkpoint-seek)))
+        (else (count-dropped-old (cdr log) checkpoint-seek))))
+
+;; replay-state: replay a log onto state, skipping records with
+;; seq <= checkpoint-seek. Each applied record bumps replay-counter
+;; and the WAL_REPLAYED metric. We also bump dropped-counter by the
+;; number of pre-checkpoint records encountered, and increment ticks
+;; via the metrics module for each record processed.
+(define (api replay-state state log checkpoint-seek)
+  (set! dropped-counter
+        (+ dropped-counter (count-dropped-old log checkpoint-seek)))
+  (replay-loop state log checkpoint-seek))
+
+(define (replay-loop state log checkpoint-seek)
+  (cond ((null? log) state)
+        ((<= (record-seq (car log)) checkpoint-seek)
+         (replay-loop state (cdr log) checkpoint-seek))
+        (else
+         (set! replay-counter (+ replay-counter 1))
+         (inc-metric! 'WAL_REPLAYED)
+         (replay-loop
+          (apply-record state (car log))
+          (cdr log)
+          checkpoint-seek))))
+
+;; Helper accessor used by main.aura to read dropped count.
+(define (replay-dropped-count)
+  dropped-counter)

@@ -1,0 +1,422 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "src_dir": "src",
+      "temperature": 0.35,
+      "ts": "2026-09-24T15:00:14Z",
+      "ts_local": "2026-09-24 23:00:14 CST",
+      "usage": {
+        "prompt_tokens": 24567,
+        "completion_tokens": 6361,
+        "total_tokens": 30928
+      },
+      "files": [
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 1871,
+            "total_characters": 0,
+            "prompt_tokens": 1590,
+            "completion_tokens": 281,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "index-record.aura",
+          "temperature": 0.35,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 2414,
+            "total_characters": 0,
+            "prompt_tokens": 1823,
+            "completion_tokens": 591,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "index-compare.aura",
+          "temperature": 0.35,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 2349,
+            "total_characters": 0,
+            "prompt_tokens": 2076,
+            "completion_tokens": 273,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "index-insert.aura",
+          "temperature": 0.35,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 3334,
+            "total_characters": 0,
+            "prompt_tokens": 2282,
+            "completion_tokens": 1052,
+            "prompt_tokens_details": {
+              "cached_tokens": 352
+            }
+          },
+          "error": "",
+          "file": "index-lookup.aura",
+          "temperature": 0.35,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 2849,
+            "total_characters": 0,
+            "prompt_tokens": 2495,
+            "completion_tokens": 354,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "index-range.aura",
+          "temperature": 0.35,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 3349,
+            "total_characters": 0,
+            "prompt_tokens": 2714,
+            "completion_tokens": 635,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 256
+            }
+          },
+          "error": "",
+          "file": "index-stats.aura",
+          "temperature": 0.35,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 3734,
+            "total_characters": 0,
+            "prompt_tokens": 2937,
+            "completion_tokens": 797,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "index-merge.aura",
+          "temperature": 0.35,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 3536,
+            "total_characters": 0,
+            "prompt_tokens": 2918,
+            "completion_tokens": 618,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "index-builder.aura",
+          "temperature": 0.35,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 3621,
+            "total_characters": 0,
+            "prompt_tokens": 2868,
+            "completion_tokens": 753,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "wal-fixture.aura",
+          "temperature": 0.35,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 3871,
+            "total_characters": 0,
+            "prompt_tokens": 2864,
+            "completion_tokens": 1007,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "main.aura",
+          "temperature": 0.35,
+          "parse_ok": false,
+          "exists": true
+        }
+      ],
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.616,
+      "scenarios_passed": 2,
+      "scenarios_total": 16,
+      "stderr_snippet": "error: 1:37: unbound variable: wal-fixture-records\n   |\n  1 | (define initial-index (build-index (wal-fixture-records)))\n   |                                     ^^^^^^^^^^^^^^^^^^^\nerror: 1:37: unbound variable: initial-index\n   |\n  1 | (define n-records    (count-entries initial-index))\n   |                                     ^^^^^^^^^^^^^\nerror: 1:37: unbound variable: initial-index\n   |\n  1 | (define n-segments   (segment-count initial-index))\n   |                                     ^^^^^^",
+      "stdout_snippet": "KEY=wal-index-v1\nKEY7=42\n"
+    },
+    {
+      "variant": 2,
+      "src_dir": "src_2",
+      "temperature": 0.75,
+      "ts": "2026-09-24T15:01:24Z",
+      "ts_local": "2026-09-24 23:01:24 CST",
+      "usage": {
+        "prompt_tokens": 24201,
+        "completion_tokens": 7295,
+        "total_tokens": 31496
+      },
+      "files": [
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 1854,
+            "total_characters": 0,
+            "prompt_tokens": 1590,
+            "completion_tokens": 264,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "index-record.aura",
+          "temperature": 0.75,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 2301,
+            "total_characters": 0,
+            "prompt_tokens": 1814,
+            "completion_tokens": 487,
+            "prompt_tokens_details": {
+              "cached_tokens": 489
+            }
+          },
+          "error": "",
+          "file": "index-compare.aura",
+          "temperature": 0.75,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 2461,
+            "total_characters": 0,
+            "prompt_tokens": 2037,
+            "completion_tokens": 424,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "index-insert.aura",
+          "temperature": 0.75,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 2826,
+            "total_characters": 0,
+            "prompt_tokens": 2239,
+            "completion_tokens": 587,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "index-lookup.aura",
+          "temperature": 0.75,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 2936,
+            "total_characters": 0,
+            "prompt_tokens": 2451,
+            "completion_tokens": 485,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "index-range.aura",
+          "temperature": 0.75,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 3353,
+            "total_characters": 0,
+            "prompt_tokens": 2651,
+            "completion_tokens": 702,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "index-stats.aura",
+          "temperature": 0.75,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 4011,
+            "total_characters": 0,
+            "prompt_tokens": 2867,
+            "completion_tokens": 1144,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "index-merge.aura",
+          "temperature": 0.75,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 3850,
+            "total_characters": 0,
+            "prompt_tokens": 2866,
+            "completion_tokens": 984,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "index-builder.aura",
+          "temperature": 0.75,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 4196,
+            "total_characters": 0,
+            "prompt_tokens": 2845,
+            "completion_tokens": 1351,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "wal-fixture.aura",
+          "temperature": 0.75,
+          "parse_ok": false,
+          "exists": true
+        },
+        {
+          "ok": true,
+          "usage": {
+            "total_tokens": 3708,
+            "total_characters": 0,
+            "prompt_tokens": 2841,
+            "completion_tokens": 867,
+            "prompt_tokens_details": {
+              "cached_tokens": 128
+            }
+          },
+          "error": "",
+          "file": "main.aura",
+          "temperature": 0.75,
+          "parse_ok": false,
+          "exists": true
+        }
+      ],
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.44,
+      "scenarios_passed": 1,
+      "scenarios_total": 16,
+      "stderr_snippet": "error: 1:35: unbound variable: fixture-records\n   |\n  1 | (define initial-idx (build-index (fixture-records)))\n   |                                   ^^^^^^^^^^^^^^^\nerror: 1:36: unbound variable: initial-idx\n   |\n  1 | (define init-count  (count-entries initial-idx))\n   |                                    ^^^^^^^^^^^\nerror: 1:36: unbound variable: initial-idx\n   |\n  1 | (define init-segs   (segment-count initial-idx))\n   |                                    ^^^^^^^^^^^\nerror: 1:34: unbound var",
+      "stdout_snippet": "()=()\nKEY=()\nKEY7=42\n"
+    }
+  ],
+  "slug": "mini-wal-index",
+  "title": "LSN-keyed sparse index",
+  "domain": "storage_wal",
+  "files": [
+    "index-record.aura",
+    "index-compare.aura",
+    "index-insert.aura",
+    "index-lookup.aura",
+    "index-range.aura",
+    "index-stats.aura",
+    "index-merge.aura",
+    "index-builder.aura",
+    "wal-fixture.aura",
+    "main.aura"
+  ],
+  "updated_at": "2026-09-24T15:01:24Z",
+  "updated_at_local": "2026-09-24 23:01:24 CST"
+}

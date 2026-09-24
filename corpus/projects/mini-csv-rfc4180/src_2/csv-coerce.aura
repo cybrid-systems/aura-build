@@ -1,0 +1,187 @@
+;; csv-coerce.aura
+;; Converts a raw string cell value into a typed cell record.
+;;
+;; Public API (per module table):
+;;   (csv-coerce str) -> cell-record | 'eof
+;;
+;; Coercion rules (RFC 4180 -> typed):
+;;   - "" (empty string)         -> (cell 'string "")  (an empty field)
+;;   - "true"  / "TRUE" / "True"  -> (cell 'bool #t)
+;;   - "false" / "FALSE"/ "False" -> (cell 'bool #f)
+;;   - integer literal           -> (cell 'number n)
+;;   - fractional literal        -> (cell 'number n)
+;;   - everything else           -> (cell 'string str)
+;;
+;; Notes:
+;;   - We never throw on bad input; non-numeric strings simply remain strings.
+;;   - We never return 'eof from csv-coerce itself; that's the iter/lexer
+;;     concern. The signature in the module table says "cell|'eof" mainly so
+;;     downstream code can keep a uniform contract; csv-coerce always
+;;     returns a cell record (an empty input becomes an empty-string cell).
+;;   - Number parsing is done carefully: we accumulate digits/sign/dot
+;;     ourselves so that we can detect integers vs. fractionals, and so
+;;     we don't accidentally treat ".5" as a number when we don't want to
+;;     (RFC 4180 has no notion of number types; but per the scenario we
+;;     need fractional values like "2.5" to coerce). We require at least
+;;     one digit, an optional leading sign, and at most one decimal point
+;;     for the number case.
+
+;; --- helpers --------------------------------------------------------------
+
+;; Build a cell record: (cons 'cell (cons kind value))
+(define (make-cell kind value)
+  (cons 'cell (cons kind value)))
+
+;; (string-null? s) -> #t if s is ""
+(define (string-null? s)
+  (string=? s ""))
+
+;; (string-downcase s) -> lowercase copy (ASCII only)
+(define (string-downcase s)
+  (let* ((len (string-length s))
+         (buf (list->string (map (lambda (c) c) (string->list s)))))
+    (define (loop i)
+      (if (>= i len)
+          buf
+          (let ((c (string-ref s i)))
+            ;; ASCII A=65, Z=90. Lowercase letters have +32.
+            (if (and (char>=? c #\A) (char<=? c #\Z))
+                (begin
+                  (set! buf (string-set buf i (integer->char
+                                               (+ (char->integer c) 32))))
+                  (loop (+ i 1)))
+                (loop (+ i 1))))))
+    (loop 0)))
+
+;; (string=? a b) is provided by Aura. We need case-insensitive compare.
+
+;; (string-ci=? a b) -> case-insensitive string equality
+(define (string-ci=? a b)
+  (string=? (string-downcase a) (string-downcase b)))
+
+;; (string-every? pred s) -> #t if pred holds for every char of s
+(define (string-every? pred s)
+  (let loop ((i 0) (len (string-length s)))
+    (cond
+      ((>= i len) #t)
+      ((pred (string-ref s i)) (loop (+ i 1) len))
+      (else #f))))
+
+;; --- char predicates used by number parsing -------------------------------
+
+(define (digit? c)
+  (and (char>=? c #\0) (char<=? c #\9)))
+
+(define (sign? c)
+  (or (char=? c #\+) (char=? c #\-)))
+
+(define (dot? c)
+  (char=? c #\.))
+
+;; --- number parsing --------------------------------------------------------
+;;
+;; (parse-number s) -> #f if not a valid numeric literal,
+;;                     otherwise the numeric value.
+;;
+;; Accepted forms (RFC 4180 has no spec; we follow common-sense CSV usage):
+;;   [-+]?[0-9]+            -> integer
+;;   [-+]?[0-9]+\.[0-9]+    -> fractional
+;;   [-+]?[0-9]+\.          -> NOT accepted (trailing dot is ambiguous)
+;;   [-+]?\.[0-9]+          -> NOT accepted (no leading digit)
+;;
+;; We build the number by walking digits once, then applying the right
+;; conversion (inexact->exact for integers, leaving as inexact for
+;; fractional values).
+;;
+;; Aura's numeric tower: an integer literal like 42 reads as exact 42;
+;; a literal like 2.5 reads as inexact 2.5. To match what `(number->string
+;; 2.5)` would produce we use the same construction: build with `+` for
+;; the integer part, then add fractional part / 10^k. The cleanest way is
+;; to call Aura's `string->number` which honors the standard reader.
+
+(define (parse-number s)
+  (cond
+    ((string-null? s) #f)
+    (else
+      (let* ((len (string-length s))
+             (has-sign (sign? (string-ref s 0)))
+             (start (if has-sign 1 0))
+             (dot-pos (let loop ((i start) (p -1))
+                        (cond
+                          ((>= i len) p)
+                          ((dot? (string-ref s i)) i)
+                          (else (loop (+ i 1) p)))))
+             (all-valid?
+              (let loop ((i start) (ok #t))
+                (cond
+                  ((not ok) #f)
+                  ((>= i len) #t)
+                  (else
+                    (let ((c (string-ref s i)))
+                      (cond
+                        ((dot? c) (loop (+ i 1)
+                                        (and ok (= i dot-pos))))
+                        ((digit? c) (loop (+ i 1) ok))
+                        (else (loop (+ i 1) #f)))))))))
+        (cond
+          ((not all-valid?) #f)
+          ;; No dot -> must be all digits (with optional sign)
+          ((= dot-pos -1)
+           (if (string-every? (lambda (c) (digit? c)) s)
+               ;; integer: use string->number which yields an exact int
+               (let ((n (string->number s)))
+                 (if (number? n) n #f))
+               #f))
+          ;; Has a dot: require at least one digit before and after,
+          ;; and exactly one dot.
+          ((and (> dot-pos start)
+                (< dot-pos (- len 1))
+                (= dot-pos (let loop ((i start) (last -1))
+                             (cond
+                               ((>= i len) last)
+                               ((dot? (string-ref s i)) i)
+                               (else (loop (+ i 1) last)))))
+                ;; digits before dot
+                (let loop ((i start)) (cond
+                                         ((= i dot-pos) #t)
+                                         ((digit? (string-ref s i))
+                                          (loop (+ i 1)))
+                                         (else #f)))
+                ;; digits after dot
+                (let loop ((i (+ dot-pos 1)))
+                  (cond
+                    ((>= i len) #t)
+                    ((digit? (string-ref s i)) (loop (+ i 1)))
+                    (else #f))))
+           (let ((n (string->number s)))
+             (if (number? n) n #f)))
+          (else #f))))))
+
+;; --- boolean parsing -------------------------------------------------------
+
+(define (parse-bool s)
+  (cond
+    ((string-ci=? s "true") #t)
+    ((string-ci=? s "false") #f)
+    (else #f)))
+
+;; --- the public coercion entry point --------------------------------------
+
+;; (csv-coerce str) -> cell-record
+;;
+;; Priority:
+;;   1. empty string -> 'string cell with value ""
+;;   2. boolean      -> 'bool cell
+;;   3. number       -> 'number cell
+;;   4. fallback     -> 'string cell
+(define (csv-coerce str)
+  (let ((s (if (string? str) str "")))
+    (cond
+      ((string-null? s)
+       (make-cell 'string ""))
+      ((parse-bool s)
+       => (lambda (b) (make-cell 'bool b)))
+      ((parse-number s)
+       => (lambda (n) (make-cell 'number n)))
+      (else
+       (make-cell 'string s)))))

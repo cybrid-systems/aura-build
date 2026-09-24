@@ -1,0 +1,25 @@
+;; index-record.aura
+;; A record represents a single entry in the sparse WAL index:
+;;   (lsn-start lsn-end offset seg-id len)
+;; where:
+;;   lsn-start : inclusive lower bound of the LSN range covered
+;;   lsn-end   : inclusive upper bound of the LSN range covered
+;;   offset    : byte offset inside segment `seg-id` where lsn-start lives
+;;   seg-id    : identifier of the on-disk segment
+;;   len       : length in bytes covered by this index entry
+;;
+;; Records are stored as plain 5-element lists; accessors use positional
+;; car/cdr chains (no structs / records / vectors in Aura).
+
+(define (make-record lsn-start lsn-end offset seg-id len)
+  (list lsn-start lsn-end offset seg-id len))
+
+(define (record-lsn-start r) (car r))
+
+(define (record-lsn-end r) (car (cdr r)))
+
+(define (record-offset r) (car (cdr (cdr r))))
+
+(define (record-seg r) (car (cdr (cdr (cdr r)))))
+
+(define (record-len r) (car (cdr (cdr (cdr (cdr r))))))

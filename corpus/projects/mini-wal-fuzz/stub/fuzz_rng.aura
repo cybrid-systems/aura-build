@@ -1,0 +1,52 @@
+;; fuzz_rng.aura — Deterministic seeded RNG for the fuzz harness.
+;;
+;; Implements a small linear congruential generator (LCG) with state held
+;; in a top-level mutable global `fuzz-rng-state`. The state is a single
+;; non-negative integer; on every `rng-next` call the state is advanced
+;; via:
+;;
+;;   state' = (a * state + c) mod m
+;;
+;; where a = 1103515245, c = 12345, m = 2^31. This is the classic glibc
+;; LCG and is sufficient for reproducible fuzz schedules.
+;;
+;; Exports (via `api`):
+;;   (rng-seed! s)     -> side-effect: install seed s (number)
+;;   (rng-next)        -> a fresh pseudo-random non-negative integer
+;;   (rng-between lo hi) -> an integer in [lo, hi] inclusive (assuming lo<=hi)
+
+(define fuzz-rng-state 0)
+
+(define (api rng-seed! s)
+  (set! fuzz-rng-state (modulo (if (number? s) s 0) 2147483648))
+  fuzz-rng-state)
+
+;; The constants of the LCG
+(define lcg-a 1103515245)
+(define lcg-c 12345)
+(define lcg-m 2147483648)
+
+;; Internal: advance the LCG one step and return the new state.
+(define (rng-advance)
+  (set! fuzz-rng-state (modulo (+ (* lcg-a fuzz-rng-state) lcg-c) lcg-m))
+  fuzz-rng-state)
+
+;; Internal: splitmix-style scramble of an integer into a non-negative
+;; 31-bit value. Used to map the raw LCG output into a more uniformly
+;; distributed-looking sequence without giving up determinism.
+(define (rng-scramble n)
+  (let ((x (modulo n lcg-m)))
+    (modulo (+ (* x 2654435761) 1013904223) lcg-m)))
+
+(define (api rng-next)
+  (rng-scramble (rng-advance)))
+
+;; Return an integer in [lo, hi] inclusive. If hi <= lo, returns lo.
+;; We take the absolute value of rng-next modulo (hi - lo + 1) and add lo.
+(define (api rng-between lo hi)
+  (if (or (not (number? lo)) (not (number? hi)))
+      0
+      (let ((span (+ (- hi lo) 1)))
+        (if (<= span 0)
+            lo
+            (+ lo (modulo (modulo (api rng-next) (+ span 1)) span))))))

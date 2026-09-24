@@ -1,0 +1,15 @@
+;; mod1.aura — util module
+
+(define __util-monotonic-clock__ 0)
+
+(define (now-monotonic)
+  (set! __util-monotonic-clock__ (+ __util-monotonic-clock__ 1))
+  __util-monotonic-clock__)
+
+(define (format-int n)
+  (number->string n))
+
+(define (api sym)
+  (cond ((equal? sym 'now-monotonic) now-monotonic)
+        ((equal? sym 'format-int) format-int)
+        (else (error "util: unknown api" sym))))

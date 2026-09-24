@@ -1,0 +1,36 @@
+;; main.aura
+;; Entry point for the mini-csv-rfc4180 CLI scenario.
+;;
+;; This file orchestrates the other modules: it opens the iterator over
+;; the fixture, drains all rows via the public iterator APIs, then prints
+;; the 15-line KEY=value summary required by the GOAL stdout contract.
+;;
+;; No business logic lives here beyond orchestration. All parsing,
+;; coercion, and reporting helpers come from the previously-loaded
+;; modules (csv-types, csv-util, csv-lexer, csv-coerce, csv-iterator,
+;; csv-fixture, csv-report).
+
+;; --- 1. Open the parser over the fixture -------------------------------
+
+;; Drain every row up-front so we can index into them for reporting.
+;; This is fine for the small fixture; the iterator API itself is
+;; pull-style, so callers processing large streams would loop on
+;; (iter-next it) instead.
+(define it
+  (make-csv-iter (csv-fixture-port) :delimiter #\,))
+
+;; Materialize all rows as a list, in stream order.
+(define rows (iter-rest it))
+
+;; --- 2. Render and emit the 15-line summary ----------------------------
+
+;; (csv-report-rows rows) does all the per-cell formatting; we just
+;; print each line so the order matches the GOAL contract exactly.
+(define (emit-lines ls)
+  (cond ((null? ls) 'done)
+        (else
+         (display (car ls))
+         (newline)
+         (emit-lines (cdr ls)))))
+
+(emit-lines (csv-report-rows rows))

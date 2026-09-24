@@ -1,0 +1,34 @@
+;; wal_replay.aura
+;; Replay engine: applies records from a log to a state starting at
+;; a checkpoint seek position. Tracks the number of records that were
+;; actually consumed during replay.
+
+;; Mutable counter for total records replayed.
+(define wal-replay-count 0)
+
+(define (api replay-count)
+  wal-replay-count)
+
+(define (api reset-replay-count!)
+  (set! wal-replay-count 0))
+
+;; Internal helper: walk a log from index `start` to the end, applying
+;; each record in order via apply-record. `start` is the 0-based index
+;; of the first record to replay (records before `start` are dropped).
+(define (replay-walk state log start)
+  (cond
+    ((null? log) state)
+    ((= start 0)
+     (begin
+       (set! wal-replay-count (+ wal-replay-count 1))
+       (replay-walk (api apply-record state (car log)) (cdr log) 0)))
+    (else
+     (replay-walk state (cdr log) (- start 1)))))
+
+;; Replay the log against `state` starting from the checkpoint seek index.
+;; checkpoint-seek is a 0-based index into the log; records at or after
+;; that index are applied to state.
+(define (api replay-state state log checkpoint-seek)
+  (begin
+    (set! wal-replay-count 0)
+    (replay-walk state log checkpoint-seek)))

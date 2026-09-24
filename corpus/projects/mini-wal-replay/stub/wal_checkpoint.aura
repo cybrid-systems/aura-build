@@ -1,0 +1,23 @@
+;; wal_checkpoint: manages a single checkpoint over the WAL log.
+;; A checkpoint stores a sequence number that represents the highest
+;; seq that has already been durably applied. Replay begins strictly
+;; after this seq (records with seq <= checkpoint-seq are considered
+;; already-applied and dropped during replay).
+;;
+;; The checkpoint is mutable so main.aura can set it after appending
+;; the initial batch of records.
+
+(define current-checkpoint -1)
+
+;; checkpoint: set the current checkpoint seq from a log + seq pair.
+;; The log parameter is accepted for API symmetry / future use
+;; (e.g., validating that the seq actually exists in the log).
+(define (api checkpoint log seq)
+  (set! current-checkpoint seq))
+
+;; checkpoint-seq: return the current checkpoint seq. If no checkpoint
+;; has been set yet, return -1 so the comparison (seq <= checkpoint-seq)
+;; in wal_replay's dropped-old scan yields #t for every record
+;; (effectively replaying everything from the start).
+(define (api checkpoint-seq log)
+  current-checkpoint)

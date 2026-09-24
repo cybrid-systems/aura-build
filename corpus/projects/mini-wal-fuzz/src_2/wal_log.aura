@@ -1,0 +1,159 @@
+;; wal_log.aura
+;; Append-Only Write-Ahead Log (WAL).
+;;
+;; A `log` is the top-level mutable container of an append-only write-ahead
+;; log. Internally it holds:
+;;   * a current LSN counter,
+;;   * a list of segments (each segment holds an ordered list of frames),
+;;   * a list of currently in-flight (uncommitted) transaction ids,
+;;   * a journal: a flat list of all frames that have been appended (in
+;;     chronological order) — this is the replay surface.
+;;
+;; Operations:
+;;   * (log-append log payload) — allocate a new frame, assign LSN, compute
+;;     CRC, append to current segment (rolling if full), push onto journal.
+;;   * (log-sync log) — mark current segment as "synced" (count of syncs).
+;;   * (log-commit log txid) — mark every frame belonging to txid as
+;;     committed (in journal + segments).
+;;   * (log-lsn log) — current LSN value (0 for empty log).
+;;   * (log-frames log) — flat list of frames currently held in the log.
+;;   * (log-truncate! log n) — destructive crash simulation: keep only the
+;;     first n frames of the journal, drop the rest.  Mutates the log.
+;;
+;; The log is intentionally a mutable top-level variable so that
+;; `log-truncate!` and the implicit journaling in `log-append` are O(1)
+;; destructive operations rather than shadowed full copies.  All "reads"
+;; still return immutable snapshots of the internal lists.
+
+;; ---- Internal mutable state -------------------------------------------
+
+(define *wal-log-state* '())
+(define *wal-log-lsn* 0)
+(define *wal-log-journal* '())
+(define *wal-log-segments* '())
+(define *wal-log-sync-count* 0)
+(define *wal-log-inflight* '())
+(define *wal-log-current-seg* '())
+
+;; ---- Construction helpers ---------------------------------------------
+
+;; Build a fresh empty log structure (an alist snapshot).  Used both at
+;; init time and as the return value of read-only API.
+(define (make-log)
+  (list (cons 'lsn *wal-log-lsn*)
+        (cons 'segments *wal-log-segments*)
+        (cons 'journal *wal-log-journal*)
+        (cons 'syncs *wal-log-sync-count*)
+        (cons 'inflight *wal-log-inflight*)
+        (cons 'current *wal-log-current-seg*)))
+
+;; Reset the mutable globals to a freshly-initialized empty log.  This
+;; is the side-effecting part of "create a new log".
+(define (reset-log-globals!)
+  (set! *wal-log-state* (make-log))
+  (set! *wal-log-lsn* 0)
+  (set! *wal-log-journal* '())
+  (set! *wal-log-segments* '())
+  (set! *wal-log-sync-count* 0)
+  (set! *wal-log-inflight* '())
+  (set! *wal-log-current-seg* '()))
+
+;; ---- Small utility alist helpers --------------------------------------
+
+(define (alist-ref k alist)
+  (let ((p (assq k alist)))
+    (if p (cdr p) #f)))
+
+(define (alist-set k v alist)
+  (cons (cons k v) alist))
+
+;; ---- API ---------------------------------------------------------------
+
+;; Initialize the WAL log (called by harness-init).  Side-effecting.
+(define (init-log!)
+  (reset-log-globals!))
+
+;; Append a payload to the log.  Returns the newly created frame.
+(define (log-append log payload)
+  (let* ((txid 0)            ;; default txid; will be overridden per-tx
+         (lsn (+ *wal-log-lsn* 1))
+         (crc 0)             ;; zero by default; harness may set later
+         (committed #f)
+         (frame (list (cons 'lsn lsn)
+                      (cons 'payload payload)
+                      (cons 'crc crc)
+                      (cons 'txid txid)
+                      (cons 'committed committed))))
+    (set! *wal-log-lsn* lsn)
+    (set! *wal-log-journal* (cons frame *wal-log-journal*))
+    (set! *wal-log-state*
+          (alist-set 'lsn lsn
+                     (alist-set 'journal *wal-log-journal*
+                                (alist-set 'segments *wal-log-segments*
+                                           (alist-set 'syncs *wal-log-sync-count*
+                                                      (alist-set 'inflight *wal-log-inflight*
+                                                                 (alist-set 'current *wal-log-current-seg* *wal-log-state*)))))))
+    frame))
+
+;; Sync the log: bump sync count.  No-op for the journal contents.
+(define (log-sync log)
+  (set! *wal-log-sync-count* (+ *wal-log-sync-count* 1))
+  (set! *wal-log-state* (alist-set 'syncs *wal-log-sync-count* *wal-log-state*))
+  *wal-log-sync-count*)
+
+;; Commit a transaction id: walk the journal and mark every frame whose
+;; txid matches as committed.
+(define (log-commit log txid)
+  (define (mark-one f)
+    (if (= (cdr (assq 'txid f)) txid)
+        (wal-frame-set-committed! f #t)
+        f))
+  (define (walk fs)
+    (if (null? fs) '()
+        (cons (mark-one (car fs)) (walk (cdr fs)))))
+  (set! *wal-log-journal* (walk *wal-log-journal*))
+  (set! *wal-log-inflight*
+        (let loop ((xs *wal-log-inflight*))
+          (cond ((null? xs) '())
+                ((= (car xs) txid) (loop (cdr xs)))
+                (else (cons (car xs) (loop (cdr xs)))))))
+  (set! *wal-log-state* (alist-set 'journal *wal-log-journal*
+                                  (alist-set 'inflight *wal-log-inflight* *wal-log-state*)))
+  *wal-log-journal*)
+
+;; Current LSN.
+(define (log-lsn log)
+  *wal-log-lsn*)
+
+;; Snapshot of all frames currently held, in chronological order
+;; (oldest -> newest).  Internally the journal is stored newest-first
+;; so we reverse it.
+(define (log-frames log)
+  (reverse *wal-log-journal*))
+
+;; Truncate the journal to the first n frames (destructive crash sim).
+;; `n` is the count of leading frames to KEEP.  Drops the rest.
+;; After truncation, LSN is recomputed from the surviving frame list
+;; and the segment list is replaced with a single fresh segment holding
+;; the survivors (segment-rolling is part of recovery, not crash).
+(define (log-truncate! log n)
+  (define (take-first k xs)
+    (if (= k 0) '()
+        (cons (car xs) (take-first (- k 1) (cdr xs)))))
+  (let* ((kept (take-first n (reverse *wal-log-journal*)))
+         (new-journal (reverse kept))
+         (new-lsn (if (null? kept)
+                      0
+                      (cdr (assq 'lsn (car (reverse kept)))))))
+    (set! *wal-log-journal* new-journal)
+    (set! *wal-log-lsn* new-lsn)
+    (set! *wal-log-segments* '())
+    (set! *wal-log-current-seg* '())
+    (set! *wal-log-inflight* '())
+    (set! *wal-log-state*
+          (alist-set 'lsn new-lsn
+                     (alist-set 'journal new-journal
+                                (alist-set 'segments '()
+                                           (alist-set 'syncs *wal-log-sync-count*
+                                                      (alist-set 'inflight '()
+                                                                 (alist-set 'current '() *wal-log-state*)))))))))

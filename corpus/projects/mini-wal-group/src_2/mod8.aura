@@ -1,0 +1,14 @@
+;; backpressure.aura — tracks how many times producers waited for a window slot
+
+(define (api bp-counter)
+  (list 0))   ; count
+
+(define (bp-count c)
+  (car c))
+
+(define (api bp-inc! c)
+  (set-car! c (+ (bp-count c) 1))
+  c)
+
+(define (api bp-value c)
+  (bp-count c))

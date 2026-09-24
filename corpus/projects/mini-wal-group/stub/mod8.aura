@@ -1,0 +1,34 @@
+;; mod8.aura — backpressure module
+
+(define (make-bp-counter)
+  (list 'bp-counter 0 '()))
+
+(define (__bp-value c) (car (cdr c)))
+(define (__bp-notes c) (car (cdr (cdr c))))
+
+(define (bp-inc! c)
+  (let ((v (__bp-value c))
+        (notes (__bp-notes c)))
+    (set-car! (cdr c) (+ v 1))
+    (set-car! (cdr (cdr c)) (append notes (list (list 'wait v))))
+    c))
+
+(define (bp-value c)
+  (__bp-value c))
+
+(define (bp-note c)
+  (let ((notes (__bp-notes c)))
+    (if (null? notes)
+        '()
+        (car (reverse notes)))))
+
+(define (bp-history c)
+  (__bp-notes c))
+
+(define (api sym)
+  (cond ((equal? sym 'bp-counter) make-bp-counter)
+        ((equal? sym 'bp-inc!) bp-inc!)
+        ((equal? sym 'bp-value) bp-value)
+        ((equal? sym 'bp-note) bp-note)
+        ((equal? sym 'bp-history) bp-history)
+        (else (error "backpressure: unknown api" sym))))

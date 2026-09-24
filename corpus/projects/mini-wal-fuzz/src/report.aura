@@ -1,0 +1,50 @@
+;; report.aura — Report formatting utilities.
+;;
+;; Builds an alist of `KEY=value` pairs and emits them to stdout in the
+;; order they were registered. Each line is terminated by a newline.
+;;
+;; Exports (via `api`):
+;;   (report-line key value) -> alist
+;;       Records (cons (list key value) alist) — i.e. PREPENDS the new
+;;       (key . value) pair to the front of the alist.  Returns the new
+;;       alist so callers can thread it through a `let` chain or pass it
+;;       back into the next call.
+;;
+;;   (print-report alist) -> unspecified
+;;       Walks the alist in REVERSE insertion order (so the earliest
+;;       registered line is emitted first) and prints each pair as
+;;       `KEY=value\n`. Values are coerced to strings via `number->string`
+;;       for numbers, used as-is for strings, and rendered as `#t` / `#f`
+;;       for booleans. No trailing whitespace is emitted.
+
+;; --- value -> string coercion ---------------------------------------------
+
+(define (report-coerce v)
+  (cond
+    ((number? v) (number->string v))
+    ((string? v) v)
+    ((equal? v #t) "#t")
+    ((equal? v #f) "#f")
+    (else (number->string 0))))
+
+;; --- register a new KEY/VALUE pair ------------------------------------------
+
+(define (api report-line key value)
+  (cons (list key value) '()))
+
+;; --- emit all registered lines in insertion order -------------------------
+
+(define (api print-report alist)
+  (define (emit xs)
+    (if (null? xs)
+        (begin)
+        (begin
+          (display (car (car xs)))
+          (display "=")
+          (display (report-coerce (car (cdr (car xs)))))
+          (newline)
+          (emit (cdr xs)))))
+  ;; The alist was built by repeated `cons` prepends, so the first
+  ;; registered pair sits at the END of the list. Reverse to recover
+  ;; insertion order, then emit.
+  (emit (reverse alist)))

@@ -1,0 +1,93 @@
+;; main.aura — orchestrates the mini-wal-group scenario
+
+(define (__run-loop coord stats fsync-commit-counter bp-counter producers
+                   coord-ctx log ctx-window fsync bp commit-log producers-list
+                   total-records now-start)
+  ;; Helper: do one submit+tick cycle for a given producer index
+  (define (one-cycle coord stats prod-idx now)
+    (let ((producers (cdr (assoc 'producers coord-ctx)))
+          (lsn-cnt   (cdr (assoc 'lsn coord-ctx)))
+          (p (list-ref producers prod-idx)))
+      (let ((r (make-record (producer-id p) (format-int (producer-count p)))))
+        (set! lsn-cnt (+ lsn-cnt 1))
+        (let ((r2 (list 'record (producer-id p) lsn-cnt (format-int (producer-count p)) 'p))))
+        ;; We must rely on the actual make-record from mod1.aura.
+        ;; Use coord-submit! which internally builds records.
+        (coord-submit! coord r now)
+        (stats-record! stats)
+        (coord-tick! coord now)
+        (set! coord-ctx
+              (cons (cons 'producers producers)
+                    (cons (cons 'lsn lsn-cnt)
+                          (assoc-rest coord-ctx))))))
+  coord)
+
+(define (assoc-rest alist key)
+  (cond ((null? alist) '())
+        ((equal? (car (car alist)) key) (cdr alist))
+        (else (cons (car alist) (assoc-rest (cdr alist) key)))))
+
+(define (list-ref lst i)
+  (cond ((null? lst) (error "list-ref: out of bounds"))
+        ((= i 0) (car lst))
+        (else (list-ref (cdr lst) (- i 1)))))
+
+(define (run-scenario)
+  ;; 1. Build 3 producers
+  (let ((p0 (make-producer 0))
+        (p1 (make-producer 1))
+        (p2 (make-producer 2))
+        (producers (list (make-producer 0) (make-producer 1) (make-producer 2))))
+    ;; 2. Create window
+    (let ((w (make-window 10 5)))
+      ;; 3. Create commit-log, fsync-counter, bp-counter
+      (let ((fsync-c (make-fsync-counter))
+            (bp-c (make-bp-counter))
+            (commit-log (make-commit-log)))
+        ;; 4. Build coord
+        (let ((coord (make-coord 10 5 producers w fsync-c commit-log bp-c)))
+          (let ((stats (make-stats)))
+            ;; 5. Submit 42 records interleaved
+            (define (submit-loop i)
+              (if (>= i 42)
+                  #t
+                  (begin
+                    (let ((pid (modulo i 3))
+                          (now (+ i 1))
+                          (p (list-ref producers (modulo i 3))))
+                      (let ((r (make-record (producer-id p) (format-int (producer-count p)))))
+                        (producer-bump! p)
+                        (coord-submit! coord r now)
+                        (stats-record! stats)
+                        (coord-tick! coord now)))
+                    (submit-loop (+ i 1)))))
+            (submit-loop 0)
+            ;; 6-7. Drain trailing window
+            (let ((flush-loop (coord-drain coord stats 100)))
+              #t)
+            ;; 8. Finalize stats
+            (let ((final (stats-finalize stats producers (commit-count commit-log) (bp-value bp-c))))
+              ;; 9. Print contract
+              (display "records=") (display (cdr (assoc 'records final))) (newline)
+              (display "batches=") (display (cdr (assoc 'batches final))) (newline)
+              (display "fsyncs=") (display (commit-total-fsyncs commit-log)) (newline)
+              (display "avg_batch=") (display (cdr (assoc 'avg-batch final))) (newline)
+              (display "max_batch=") (display (cdr (assoc 'max-batch final))) (newline)
+              (display "backpressure=") (display (bp-value bp-c)) (newline)
+              (display "windows=") (display (commit-count commit-log)) (newline)
+              (display "final_lsn=") (display (commit-last-lsn commit-log)) (newline)
+              (display "final_commit_lsn=") (display (commit-last-lsn commit-log)) (newline)
+              (display "producers=") (display (length producers)) (newline)
+              (display "elapsed_windows=") (display (commit-count commit-log)) (newline)))))))))
+
+(define (coord-drain coord stats max-ticks)
+  ;; Run tick until window empty, up to max-ticks
+  (define (loop i)
+      (if (>= i max-ticks)
+          #t
+          (begin
+            (coord-tick! coord (+ 1000 i))
+            (loop (+ i 1)))))
+  (loop 0))
+
+(run-scenario)

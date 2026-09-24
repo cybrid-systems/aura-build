@@ -1,0 +1,106 @@
+;; wal_crc.aura — CRC32 computation and comparison
+;; Provides a deterministic CRC32 over byte lists (lists of numbers 0-255)
+;; and a constant-time-ish equality check for CRC values.
+
+;; Internal: XOR of two numbers
+(define (crc-xor a b)
+  (if (= a b) 0 (- a b)))
+
+;; Internal: rotate left by 1
+(define (crc-rotl1 n)
+  (let ((mask #xFFFFFFFF))
+    (let ((v (modulo (* 2 n) (+ mask 1))))
+      (if (>= v #x80000000)
+          (modulo (+ v (- #x80000000)) (+ mask 1))
+          v))))
+
+;; Internal: rotate left by n bits (mod 32), keeping within 32-bit range
+(define (crc-rotl n k)
+  (if (= k 0)
+      n
+      (crc-rotl (crc-rotl1 n) (- k 1))))
+
+;; Internal: take low 8 bits of a number as a byte
+(define (byte-mask n)
+  (modulo n 256))
+
+;; Internal: compute one byte of a precomputed CRC32 table entry
+;; table[i] = (crc >> 8) ^ T( (crc ^ i) & 0xFF ) where T(x) is the standard
+;; polynomial-driven lookup. We compute the table lazily per byte.
+;; For simplicity and correctness, we use the standard polynomial 0xEDB88320.
+
+;; Precompute CRC32 lookup table as a list of 256 entries.
+;; table[i] for i in 0..255:
+;;   let c = i
+;;   repeat 8 times: c = (c >> 1) ^ (0xEDB88320 if (c & 1) else 0)
+;;   store c
+(define (crc-build-table-helper i acc)
+  (if (= i 256)
+      (reverse acc)
+      (let ((entry (crc-build-entry i 8 0xEDB88320)))
+        (crc-build-table-helper (+ i 1) (cons entry acc)))))
+
+(define (crc-build-entry i k poly)
+  (if (= k 0)
+      i
+      (let ((next (if (odd? i)
+                      (crc-xor (crc-quotient-shift i) poly)
+                      (crc-quotient-shift i))))
+        (crc-build-entry next (- k 1) poly))))
+
+(define (crc-quotient-shift n)
+  (quotient n 2))
+
+(define *crc-table* (crc-build-table-helper 0 '()))
+
+;; Internal: lookup table entry by byte index (0..255)
+(define (crc-table-ref tbl idx)
+  (if (null? tbl)
+      0
+      (if (= idx 0)
+          (car tbl)
+          (crc-table-ref (cdr tbl) (- idx 1)))))
+
+;; Internal: update a running CRC with one byte
+(define (crc-update-byte crc byte)
+  (let* ((tbl-entry (crc-table-ref *crc-table* (byte-mask byte)))
+         (shifted (modulo (quotient crc 256) #x100000000))
+         (xored (modulo (+ shifted tbl-entry) #x100000000)))
+    ;; top byte XOR with low byte of input is folded into table lookup;
+    ;; we combine by XORing crc with (byte << 24) shifted into low byte via table.
+    ;; Standard formulation:
+    ;;   table[(crc ^ byte) & 0xFF] ^ (crc >> 8)
+    ;; Our tbl-entry already encodes the polynomial reduction for one byte,
+    ;; so we fold with (crc >> 8) XOR tbl[ (crc ^ byte) & 0xFF ].
+    ;; Re-do cleanly:
+    (let* ((low (byte-mask (crc-xor crc byte)))
+           (shifted8 (quotient crc 256))
+           (combined (modulo (crc-xor shifted8 tbl-entry) #x100000000)))
+      combined)))
+
+;; Internal: fold in one byte, robust implementation
+(define (crc-step crc byte)
+  (let* ((idx (byte-mask (crc-xor crc byte)))
+         (tbl (crc-table-ref *crc-table* idx))
+         (hi (quotient crc 256))
+         (result (modulo (crc-xor hi tbl) #x100000000)))
+    result))
+
+;; Public: compute CRC32 of a list of bytes (numbers 0..255).
+;; Initial value 0xFFFFFFFF, final XOR 0xFFFFFFFF.
+;; Returns an unsigned 32-bit integer (mod 0x100000000).
+(define (api crc32 bytes)
+  (let* ((init #xFFFFFFFF)
+         (running (crc-fold-bytes bytes init))
+         (final (modulo (crc-xor running #xFFFFFFFF) #x100000000)))
+    final))
+
+(define (crc-fold-bytes bs state)
+  (if (null? bs)
+      state
+      (crc-fold-bytes (cdr bs) (crc-step state (car bs)))))
+
+;; Public: equality check on two CRC values (both numbers).
+;; Returns #t if equal, #f otherwise. Used to verify CRC integrity.
+(define (api crc=? a b)
+  (if (= a b) #t #f))

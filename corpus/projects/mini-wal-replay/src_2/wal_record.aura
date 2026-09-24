@@ -1,0 +1,22 @@
+;; wal_record.aura
+;; Record representation for the WAL replay engine.
+;; A record is a simple list: (kind key value seq)
+;; Accessors work positionally.
+
+(define (api make-record kind key value seq)
+  (list kind key value seq))
+
+(define (api record? r)
+  (and (list? r) (= (length r) 4)))
+
+(define (api record-seq r)
+  (car (cdr (cdr (cdr r)))))
+
+(define (api record-kind r)
+  (car r))
+
+(define (api record-key r)
+  (car (cdr r)))
+
+(define (api record-value r)
+  (car (cdr (cdr r))))

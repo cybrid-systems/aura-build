@@ -1,0 +1,37 @@
+;; index-insert.aura
+;; Incremental insertion into the sparse WAL index.
+;;
+;; The index is a list of records sorted in ascending order by lsn-start.
+;; `insert-record` returns a NEW index list with `rec` placed in the
+;; correct position. If a record with the same lsn-start already exists,
+;; the new record REPLACES it (last-write-wins on the primary key) —
+;; this mirrors the way an idempotent indexer would handle a rewrite.
+;;
+;; We avoid tail-call-only assumptions by using a simple accumulator-
+;; based insertion: walk the index, accumulating elements that are
+;; strictly less than the new record, splice in the new record, then
+;; append the rest (skipping any record with the same lsn-start).
+;;
+;; Both pure (returns new list) and mutation-friendly (`set!` on the
+;; cons cells) styles are equivalent here; we use the pure style for
+;; clarity and to keep the caller's index binding intact.
+
+(define (insert-record idx rec)
+  ;; Helper: insert `rec` into `xs` (assumed sorted by lsn-start).
+  ;; - Records with lsn-start strictly less than rec's are kept in order.
+  ;; - The first record with lsn-start >= rec's lsn-start: if equal,
+  ;;   it's replaced; if greater, rec is spliced before it.
+  ;; - Everything after that is appended unchanged.
+  (define (ins xs)
+    (cond
+      ((null? xs)
+       (list rec))
+      ((< (record-lsn-start (car xs)) (record-lsn-start rec))
+       (cons (car xs) (ins (cdr xs))))
+      ((= (record-lsn-start (car xs)) (record-lsn-start rec))
+       ;; Same primary key: replace.
+       (cons rec (cdr xs)))
+      (else
+       ;; First strictly-greater element: splice rec in front.
+       (cons rec xs))))
+  (ins idx))

@@ -1,0 +1,65 @@
+;; mod4.aura — window module
+
+(define (make-window max-size max-wait-ms)
+  (let ((now (cons 'now-monotonic 0)))
+    (list 'window
+          max-size
+          max-wait-ms
+          '()           ;; records
+          now           ;; opened-at clock (placeholder)
+          now           ;; last-submit clock (placeholder)
+          #f)))         ;; flushed? flag
+
+(define (__w-max-size w) (car (cdr w)))
+(define (__w-max-wait w) (car (cdr (cdr w))))
+(define (__w-recs w)     (car (cdr (cdr (cdr w)))))
+(define (__w-opened w)   (car (cdr (cdr (cdr (cdr w))))))
+(define (__w-last w)     (car (cdr (cdr (cdr (cdr (cdr w)))))))
+(define (__w-flushed w)  (car (cdr (cdr (cdr (cdr (cdr (cdr w))))))))
+
+(define (__w-rebuild w recs opened last flushed)
+  (list 'window
+        (__w-max-size w)
+        (__w-max-wait w)
+        recs
+        opened
+        last
+        flushed))
+
+(define (window-try-add w r)
+  (let ((recs (__w-recs w))
+        (max-size (__w-max-size w))
+        (last (__w-last w)))
+    (if (>= (length recs) max-size)
+        #f
+        (begin
+          (set-car! (cdr (cdr (cdr (cdr (cdr w))))) last)
+          (__w-rebuild w (append recs (list r)) (__w-opened w) last (__w-flushed w))))))
+
+(define (window-should-flush? w now)
+  (let ((recs (__w-recs w))
+        (max-size (__w-max-size w))
+        (max-wait (__w-max-wait w))
+        (opened (__w-opened w)))
+    (if (null? recs)
+        #f
+        (or (>= (length recs) max-size)
+            (>= (- now opened) max-wait)))))
+
+(define (window-flush w)
+  (make-batch))
+
+(define (window-rotate w now)
+  (__w-rebuild w '() now now #f))
+
+(define (window-backpressure w)
+  (>= (length (__w-recs w)) (__w-max-size w)))
+
+(define (api sym)
+  (cond ((equal? sym 'make-window) make-window)
+        ((equal? sym 'window-try-add) window-try-add)
+        ((equal? sym 'window-should-flush?) window-should-flush?)
+        ((equal? sym 'window-flush) window-flush)
+        ((equal? sym 'window-rotate) window-rotate)
+        ((equal? sym 'window-backpressure) window-backpressure)
+        (else (error "window: unknown api" sym))))

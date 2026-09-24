@@ -1,0 +1,48 @@
+;; wal_idempotent: tracks which records have already been applied,
+;; so duplicate applies (re-insert of a present key, re-delete of an
+;; absent key, or replay-from-checkpoint overlap) are no-ops.
+
+;; Mutable list of records that have been marked applied.
+;; Stored most-recent-first to mirror the log convention.
+(define applied-records '())
+
+;; Returns #t if the record has already been marked applied.
+;; We match by seq number — records with the same seq are considered
+;; the same logical WAL entry (the seq is the canonical identity).
+(define (api already-applied? rec)
+  (cond ((null? rec) #f)
+        ((null? applied-records) #f)
+        ((= (record-seq rec) (record-seq (car applied-records)))
+         #t)
+        (else (member-by-seq rec (cdr applied-records)))))
+
+;; Helper: linear search the tail of applied-records for a matching seq.
+(define (member-by-seq rec lst)
+  (cond ((null? lst) #f)
+        ((= (record-seq rec) (record-seq (car lst))) #t)
+        (else (member-by-seq rec (cdr lst)))))
+
+;; Mark a record as applied by consing it onto the head of applied-records.
+;; Mutates the module-level state. Returns #t to confirm.
+(define (api mark-applied! rec)
+  (set! applied-records (cons rec applied-records))
+  #t)
+
+;; Reset path: clearing the applied-list is achieved by calling
+;; mark-applied! with a sentinel through reset-marker; but the contract
+;; says the main reset for the module happens via re-binding.
+;; We expose a dedicated reset by allowing mark-applied! to be invoked
+;; with a special 'reset marker. Here we provide the accessor only.
+;; (main.aura performs the reset by reassigning applied-records via
+;;  this module's documented reset hook.)
+(define (api applied-list)
+  applied-records)
+
+;; Reset hook: assign applied-records to a fresh empty list.
+(define reset-applied!
+  (lambda ()
+    (set! applied-records '())))
+
+;; Provide the reset as an api so main.aura can clear between scenarios.
+(define (api reset-applied!)
+  (reset-applied!))

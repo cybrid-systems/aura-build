@@ -1,0 +1,75 @@
+;; index-merge.aura
+;; Adjacency-based merging of WAL sparse index records.
+;;
+;; Two records are "adjacent" when the LSN range of the second begins
+;; exactly one past the LSN range of the first AND they belong to the
+;; same on-disk segment. The semantics are provided by index-compare.aura
+;; via the `adjacent?` predicate.
+;;
+;; Exports:
+;;   (merge-pair a b)
+;;       Returns a single record that spans the union of a and b,
+;;       assuming a and b are adjacent and in order (a precedes b).
+;;       If they are not adjacent, returns the pair as a list so the
+;;       caller can decide what to do.
+;;
+;;   (merge-adjacent idx)
+;;       Walks idx left-to-right and folds any adjacent pairs (sharing
+;;       seg-id and contiguous LSN ranges) into a single record. The
+;;       returned list is a fresh list; the input idx is not mutated.
+;;
+;; The merge preserves the invariant of the sparse index: each resulting
+;; record still carries an (lsn-start, lsn-end, offset, seg-id, len)
+;; shape, and records remain sorted by lsn-start because we only ever
+;; merge a record with its immediate successor.
+
+;; merge-pair: combine two adjacent records a (first) and b (second)
+;; into a single record. The resulting record:
+;;   - inherits lsn-start from a
+;;   - inherits lsn-end   from b
+;;   - inherits offset     from a (the original byte position of the run)
+;;   - inherits seg-id     from a (both share it, by adjacency definition)
+;;   - has len = a.len + b.len  (bytes covered are additive)
+;; When the inputs are not adjacent we return them as a two-element list
+;; (a b); callers can detect this by checking the length / shape.
+(define (merge-pair a b)
+  (if (adjacent? a b)
+      (make-record (record-lsn-start a)
+                   (record-lsn-end   b)
+                   (record-offset    a)
+                   (record-seg       a)
+                   (+ (record-len     a)
+                      (record-len     b)))
+      (list a b)))
+
+;; Internal helper: take a list xs (assumed sorted) and merge its head
+;; with as many following adjacent records as possible. Returns a pair
+;; (merged-head . rest) where rest is the leftover tail of xs that did
+;; not get merged into the head.
+(define (merge-run xs)
+  (if (null? xs)
+      (cons '() '())
+      (let ((head (car xs)) (tail (cdr xs)))
+        (let loop ((current head) (rest tail))
+          (cond ((null? rest)
+                 ;; Nothing left to merge with.
+                 (cons current '()))
+                ((adjacent? current (car rest))
+                 ;; Fold the next record into `current` and keep going.
+                 (loop (merge-pair current (car rest))
+                       (cdr rest)))
+                (else
+                 ;; Not adjacent; stop merging and hand back the rest.
+                 (cons current rest)))))))
+
+;; merge-adjacent: linear scan over idx, folding every maximal run of
+;; mutually-adjacent records into a single record. Because records are
+;; sorted by lsn-start, two adjacent entries must appear consecutively
+;; in the list, so a single left-to-right pass is sufficient.
+(define (merge-adjacent idx)
+  (let loop ((xs idx) (acc '()))
+    (if (null? xs)
+        (reverse acc)
+        (let ((run (merge-run xs)))
+          (loop (cdr run)
+                (cons (car run) acc))))))

@@ -1,0 +1,231 @@
+;; harness.aura — Top-level fuzz harness driving the WAL under crash simulation.
+;;
+;; The harness owns the "state" passed around between rounds. State shape:
+;;
+;;   state is a list:
+;;     (round log state-lsn last-sync last-commit crash-count rounds-run
+;;      final-state recovered-twice-equal? tx-count)
+;;
+;; where:
+;;   round                : current round counter (starts at 0)
+;;   log                  : the WAL log being built (list of frames)
+;;   state-lsn            : the LSN counter tracked by the harness
+;;                          (separate from the log's own counter so the
+;;                          harness can detect LSN drift across crashes)
+;;   last-sync            : LSN of the most recent sync frame (number / #f)
+;;   last-commit          : txid of the most recent commit (number / #f)
+;;   crash-count          : number of simulated crashes so far
+;;   rounds-run           : number of rounds executed so far
+;;   final-state          : recovered state after the final replay (#f
+;;                          until finalize runs)
+;;   recovered-twice-equal? : #t if two consecutive replays agree (#f
+;;                          until finalize has compared them)
+;;   tx-count             : number of distinct txids seen
+;;
+;; The harness's role is:
+;;   - per round, simulate 1..4 `log-append` calls with random payload,
+;;     occasionally call `log-sync` and `log-commit`,
+;;   - at the end of each round, consult the fault-injector; if it
+;;     truncates the log, run a recovery pass and reset the local LSN
+;;     counter to the replayed LSN,
+;;   - at finalize-time, run recovery twice and assert idempotence, then
+;;     run the invariant checker.
+;;
+;; All API functions return a state value (possibly the same list with
+;; mutated slots replaced via set! on top-level globals per the spec).
+
+;; --- top-level mutable globals --------------------------------------------
+
+(define harness-state (list 0 '() 0 #f #f 0 0 #f #f 0))
+;; slot indices for clarity
+(define H-ROUND               0)
+(define H-LOG                 1)
+(define H-STATE-LSN           2)
+(define H-LAST-SYNC           3)
+(define H-LAST-COMMIT         4)
+(define H-CRASH-COUNT         5)
+(define H-ROUNDS-RUN          6)
+(define H-FINAL-STATE         7)
+(define H-RECOVERED-TWICE?    8)
+(define H-TX-COUNT            9)
+
+;; --- small helpers --------------------------------------------------------
+
+(define (hsl n)   ; helper: list-ref by integer index
+  (let loop ((xs harness-state) (i 0))
+    (if (= i n) (car xs) (loop (cdr xs) (+ i 1)))))
+
+(define (hset! n v)  ; helper: replace slot n with v (mutates harness-state)
+  (let loop ((xs harness-state) (i 0) (acc '()))
+    (cond
+      ((null? xs) (reverse acc))
+      ((= i n)
+       (loop (cdr xs) (+ i 1) (cons v acc)))
+      (else
+       (loop (cdr xs) (+ i 1) (cons (car xs) acc))))))
+
+(define (hreplace-log! new-log)
+  ;; rebuild state with H-LOG replaced; everything else preserved.
+  (set! harness-state
+        (list (hsl H-ROUND)
+              new-log
+              (hsl H-STATE-LSN)
+              (hsl H-LAST-SYNC)
+              (hsl H-LAST-COMMIT)
+              (hsl H-CRASH-COUNT)
+              (hsl H-ROUNDS-RUN)
+              (hsl H-FINAL-STATE)
+              (hsl H-RECOVERED-TWICE?)
+              (hsl H-TX-COUNT))))
+
+(define (hslot-set! n v)
+  (set! harness-state
+        (list (hsl 0)
+              (hsl 1)
+              (hsl 2)
+              (hsl 3)
+              (hsl 4)
+              (hsl 5)
+              (hsl 6)
+              (hsl 7)
+              (hsl 8)
+              (hsl 9)))
+  ;; now mutate just slot n via hset!
+  (let ((cur harness-state))
+    (cond
+      ((= n 0) (set! harness-state (cons v (cdr cur))))
+      ((= n 1) (set! harness-state
+                      (cons (car cur) (cons v (cdr (cdr cur))))))
+      ((= n 2) (set! harness-state
+                      (list (car cur) (car (cdr cur)) v
+                            (car (cdr (cdr (cdr cur))))
+                            (car (cdr (cdr (cdr (cdr cur)))))
+                            (car (cdr (cdr (cdr (cdr (cdr cur))))))
+                            (car (cdr (cdr (cdr (cdr (cdr (cdr cur)))))))
+                            (car (cdr (cdr (cdr (cdr (cdr (cdr (cdr cur))))))))
+                            (car (cdr (cdr (cdr (cdr (cdr (cdr (cdr (cdr cur)))))))))
+                            (car (cdr (cdr (cdr (cdr (cdr (cdr (cdr (cdr (cdr cur)))))))))))))
+      (else
+       (set! harness-state
+             (let loop ((xs cur) (i 0) (acc '()))
+               (cond
+                 ((null? xs) (reverse acc))
+                 ((= i n) (loop (cdr xs) (+ i 1) (cons v acc)))
+                 (else (loop (cdr xs) (+ i 1) (cons (car xs) acc)))))))))
+
+;; --- random payload -------------------------------------------------------
+
+(define (random-byte)
+  ;; returns an integer in [0, 255]
+  (modulo (api rng-next) 256))
+
+(define (random-payload n)
+  ;; returns a list of n random bytes (each 0..255)
+  (let loop ((i 0) (acc '()))
+    (if (>= i n)
+        (reverse acc)
+        (loop (+ i 1) (cons (random-byte) acc)))))
+
+;; --- helpers from other modules (re-exposed as plain names) ---------------
+
+(define (do-log-append log payload txid)
+  ;; Build a frame by hand using the WAL types API.
+  (let* ((lsn (api log-lsn log))
+         (crc (api crc32 payload))
+         (frame (cons 'wal-frame
+                      (list lsn payload crc txid #f))))
+    (api log-append log frame)))
+
+(define (do-log-sync log)
+  ;; Sync appends a "sync" marker frame with a fixed payload pattern.
+  (let* ((payload (list 83 89 78 67))   ;; "SYNC"
+         (lsn (api log-lsn log))
+         (crc (api crc32 payload))
+         (frame (cons 'wal-frame
+                      (list lsn payload crc #f #f))))
+    (api log-sync log frame)))
+
+(define (do-log-commit log txid)
+  (api log-commit log txid))
+
+;; --- recovery wrappers ----------------------------------------------------
+
+(define (do-recover state log)
+  (api recover state log))
+
+(define (do-replay log)
+  (api replay log))
+
+;; --- harness-init ---------------------------------------------------------
+
+(define (api harness-init seed)
+  (api rng-seed! seed)
+  (set! harness-state
+        (list 0 '() 0 #f #f 0 0 #f #f 0))
+  harness-state)
+
+;; --- harness-step ---------------------------------------------------------
+
+(define (api harness-step state round)
+  ;; state is unused directly; we operate on the mutable harness-state.
+  (let* ((log (hsl H-LOG))
+         (n-append (api rng-between 1 4))
+         (txid (modulo round 7))
+         (txid (if (= txid 0) 1 txid)))   ;; ensure txid is positive
+    ;; bump tx-count if this is a fresh txid
+    (let ((frames log))
+      (let loop ((xs frames) (seen #f))
+        (cond
+          ((null? xs) #f)
+          ((equal? (api wal-frame-txid (car xs)) txid)
+           (set! seen #t))
+          (else (loop (cdr xs) seen)))))
+    ;; Perform the appends.
+    (let loop1 ((i 0) (cur-log log))
+      (if (>= i n-append)
+          (begin
+            (hreplace-log! cur-log)
+            (hslot-set! H-STATE-LSN (api log-lsn cur-log)))
+          (let* ((plen (api rng-between 1 6))
+                 (payload (random-payload plen)))
+            (loop1 (+ i 1)
+                   (do-log-append cur-log payload txid))))))
+  ;; Occasionally sync (prob ~1/4).
+  (if (= (modulo (api rng-next) 4) 0)
+      (begin
+        (hreplace-log! (do-log-sync (hsl H-LOG)))
+        (hslot-set! H-LAST-SYNC (api log-lsn (hsl H-LOG)))))
+  ;; Occasionally commit the just-appended tx (prob ~1/3).
+  (if (= (modulo (api rng-next) 3) 0)
+      (begin
+        (hreplace-log! (do-log-commit (hsl H-LOG) txid))
+        (hslot-set! H-LAST-COMMIT txid)
+        ;; bump tx-count if we haven't seen this txid yet
+        (let ((cur-count (hsl H-TX-COUNT)))
+          (hslot-set! H-TX-COUNT (+ cur-count 1)))))
+  ;; Consult fault injector: maybe truncate + recover.
+  (let* ((cur-log (hsl H-LOG))
+         (maybe-truncated (api fault-inject cur-log round)))
+    (if (not (equal? maybe-truncated cur-log))
+        (let* ((recovered-state (do-recover '() maybe-truncated))
+               (replayed-lsn (api log-lsn maybe-truncated)))
+          (hreplace-log! maybe-truncated)
+          (hslot-set! H-CRASH-COUNT (+ (hsl H-CRASH-COUNT) 1))
+          (hslot-set! H-STATE-LSN replayed-lsn))
+        ;; no crash this round
+        #f))
+  ;; bump round counters
+  (hslot-set! H-ROUND round)
+  (hslot-set! H-ROUNDS-RUN (+ (hsl H-ROUNDS-RUN) 1))
+  harness-state)
+
+;; --- harness-finalize -----------------------------------------------------
+
+(define (api harness-finalize state)
+  ;; Two consecutive replays to test idempotence.
+  (let* ((log (hsl H-LOG))
+         (s1 (do-recover '() log))
+         (s2 (do-recover s1 log)))
+    (hslot-set! H-FINAL-STATE s1)
+    (hslot-set! H-RECOVERED-TWICE? (equal? s1 s2)))
+  harness-state)

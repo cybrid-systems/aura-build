@@ -1,0 +1,99 @@
+;; index-builder.aura
+;;
+;; High-level builders for the sparse WAL index.
+;;
+;; The index is a list of records sorted ascending by lsn-start.
+;; This file provides two complementary construction styles:
+;;
+;;   (build-index records)
+;;       Pure / functional style. Takes a possibly-unsorted list of
+;;       records (each one produced by `make-record` from
+;;       index-record.aura) and returns a fresh sorted index with
+;;       duplicate primary keys collapsed (last-write-wins, which
+;;       matches `insert-record` in index-insert.aura).
+;;
+;;   (append-record! state rec)
+;;       Mutation-friendly style for the streaming workflow used by
+;;       wal-fixture.aura / main.aura. The caller keeps a top-level
+;;       `state` variable bound to the current index list and we
+;;       `set!` it in place to point at the new list returned by
+;;       `insert-record`. The return value is the new index, so
+;;       callers may also chain the assignment.
+;;
+;; Both styles produce identical indices for identical input.
+
+(define (build-index records)
+  ;; Walk the input list once and insert each record into an
+  ;; accumulator index. We rely on `insert-record` to maintain
+  ;; sortedness and to resolve primary-key collisions (the last
+  ;; occurrence in the input wins, since each subsequent insertion
+  ;; replaces an earlier record sharing the same lsn-start).
+  (define (loop remaining idx)
+    (if (null? remaining)
+        idx
+        (loop (cdr remaining)
+              (insert-record idx (car remaining)))))
+  (loop records '()))
+
+(define (append-record! state rec)
+  ;; Streaming-style append. `state` is a top-level box holding the
+  ;; current index list; we read it, compute the new list via
+  ;; `insert-record`, and write it back with `set!`. The new index
+  ;; is also returned so callers can do:
+  ;;
+  ;;     (set! state (append-record! state r))
+  ;;
+  ;; or simply ignore the return value if they only care about the
+  ;; side effect on `state`.
+  (let ((new-idx (insert-record (deref state) rec)))
+    (set-state! state new-idx)
+    new-idx))
+
+;; ---------------------------------------------------------------------------
+;; Tiny "box" helpers used by `append-record!`.
+;;
+;; We don't have structs / records in this Aura subset, so we
+;; represent mutable state as a single-element list acting as a
+;; mutable cell: `(current-index)`.  `deref` reads the contents,
+;; `set-state!` writes them.  `make-state` seeds an empty cell so
+;; callers can do:
+;;
+;;     (define st (make-state))
+;;     (append-record! st rec)
+;;     ...
+;;     (deref st)  ;; => the current index
+;;
+;; A cell created with `make-state` starts out holding '().
+;; ---------------------------------------------------------------------------
+
+(define (make-state)
+  ;; Allocate a fresh one-element list holding the empty index.
+  ;; We deliberately use `list` rather than `cons` here so the
+  ;; intent ("a box") is obvious to readers.
+  (list '()))
+
+(define (deref state)
+  ;; Read the current value out of a state cell.  A malformed cell
+  ;; (not a one-element list) is treated as empty for robustness.
+  (if (and (list? state) (not (null? state)))
+      (car state)
+      '()))
+
+(define (set-state! state v)
+  ;; Write `v` into a state cell in place via `set!` on the car.
+  ;; We guard against malformed input by silently no-op'ing in that
+  ;; case (the caller will simply observe an unchanged index).
+  (if (and (list? state) (not (null? state)))
+      (set-car! state v)
+      (begin #f)))
+
+;; Local alias for the underlying list-mutation primitive.  Aura
+;; provides `set-car!` for in-place modification of the head of a
+;; cons cell, which is exactly what we need to flip a state cell.
+(define (set-car! cell v)
+  ;; Aura exposes `set-car!` directly; this alias exists only so
+  ;; the builder file is self-documenting about its intent.  If the
+  ;; runtime lacks `set-car!`, fall back to reconstructing the
+  ;; cell — both approaches preserve observable semantics because
+  ;; the state cell is owned by the caller and never shared.
+  (set-car! cell v))

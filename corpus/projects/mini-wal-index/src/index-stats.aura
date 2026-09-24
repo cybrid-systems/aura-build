@@ -1,0 +1,59 @@
+;; index-stats.aura
+;; Aggregate statistics over a WAL sparse index.
+;;
+;; The index is a list of records (see index-record.aura) sorted in
+;; non-decreasing order by (lsn-start, lsn-end). All operations below are
+;; simple linear scans; they do not mutate idx.
+;;
+;; Exports:
+;;   (segment-count idx)
+;;       Number of distinct on-disk segments covered by idx. Records may
+;;       share a seg-id (e.g. when merge-adjacent has not yet been run); we
+;;       count each unique seg-id exactly once.
+;;
+;;   (total-bytes idx)
+;;       Sum of record `len` fields. This is the total byte span covered by
+;;       the index across all of its entries.
+;;
+;;   (covering-entries idx lsn)
+;;       The list of entries whose LSN range contains `lsn`, i.e. those
+;;       records with lsn-start <= lsn <= lsn-end. Returned in the same order
+;;       as they appear in idx.
+
+(define (segment-count idx)
+  ;; Walk idx, accumulating seg-ids we've already seen in an alist
+  ;; ((seg-id . #t) ...). The count is the length of that alist.
+  (define (walk xs seen)
+    (cond ((null? xs)
+           ;; Count entries in the seen-alist.
+           (let loop ((s seen) (n 0))
+             (if (null? s) n (loop (cdr s) (+ n 1)))))
+          (else
+           (let ((sid (record-seg (car xs))))
+             (if (assq sid seen)
+                 (walk (cdr xs) seen)
+                 (walk (cdr xs) (cons (cons sid #t) seen)))))))
+  (walk idx '()))
+
+(define (total-bytes idx)
+  ;; Fold over idx summing record-len. Use a tail-recursive helper so we
+  ;; don't blow the stack on long indices.
+  (let loop ((xs idx) (acc 0))
+    (cond ((null? xs) acc)
+          (else (loop (cdr xs) (+ acc (record-len (car xs))))))))
+
+(define (covering-entries idx lsn)
+  ;; Walk idx, collecting records whose range contains lsn. The index is
+  ;; sorted by lsn-start; once we pass a record with lsn-start > lsn, no
+  ;; later record can possibly contain lsn, so we stop there.
+  (define (walk xs)
+    (cond ((null? xs) '())
+          (else
+           (let ((r (car xs)))
+             (let ((s (record-lsn-start r))
+                   (e (record-lsn-end   r)))
+               (cond ((> s lsn) '())
+                     ((< e lsn) (walk (cdr xs)))
+                     (else
+                      (cons r (walk (cdr xs))))))))))
+  (walk idx))

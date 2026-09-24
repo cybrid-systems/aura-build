@@ -1,0 +1,113 @@
+;; wal_log.aura — Core WAL log operations.
+;;
+;; A WAL log is represented as a list of wal-frames in append order.
+;; The log itself is held as a top-level mutable global `wal-log-state`
+;; so that `log-truncate!` can mutate it in place (per the spec's allowance
+;; of set! on top-level mutable globals per module).
+;;
+;; The exported API:
+;;   (log-append log frame)        -> log (possibly extended; advances LSN)
+;;   (log-sync   log)              -> log (sync frame appended; mark durable)
+;;   (log-commit log txid)         -> log (marks prior frames of txid committed)
+;;   (log-lsn    log)              -> number (current LSN counter)
+;;   (log-frames log)              -> list of frames (snapshot)
+;;   (log-truncate! log n)         -> truncates the log in place to first n frames
+
+;; Mutable top-level state for the current log.
+;; On load, the log starts empty and LSN counter starts at 0.
+(define wal-log-state '())
+(define wal-log-lsn 0)
+
+;; --- helpers --------------------------------------------------------------
+
+;; Append a single frame onto the front of a log list (reverse-cons style).
+(define (log-prepend xs frame)
+  (cons frame xs))
+
+;; Internal: set the LSN of a frame if it isn't already set.
+;; Frames may already carry an LSN (for crash-cut replays); in that case
+;; we leave it alone.
+(define (frame-with-lsn frame lsn)
+  (let ((cur (car frame)))
+    (if (number? cur)
+        frame
+        (cons lsn (cdr frame)))))
+
+;; --- log-append -----------------------------------------------------------
+
+(define (api log-append log frame)
+  ;; Append a frame to the log. If the frame has no LSN yet, assign the
+  ;; next LSN. Returns the (possibly extended) log list (NEW list, head=oldest).
+  (set! wal-log-lsn (+ wal-log-lsn 1))
+  (let ((f (frame-with-lsn frame wal-log-lsn)))
+    (set! wal-log-state (append log (list f)))
+    wal-log-state))
+
+;; --- log-sync -------------------------------------------------------------
+
+(define (api log-sync log)
+  ;; Append a sync marker frame (no payload, no txid) to make preceding
+  ;; frames "durable". We model durability with a dedicated marker frame
+  ;; whose payload is the symbol 'sync.
+  (set! wal-log-lsn (+ wal-log-lsn 1))
+  (let ((sync-frame (list wal-log-lsn #f '(sync) 0 #f)))
+    (set! wal-log-state (append log (list sync-frame)))
+    wal-log-state))
+
+;; --- log-commit -----------------------------------------------------------
+
+(define (api log-commit log txid)
+  ;; Mark every frame belonging to transaction `txid` as committed (#t).
+  ;; Frames already committed stay committed. Non-tx frames are untouched.
+  ;; Walks the log, rebuilding with commit flags flipped.
+  (let loop ((xs log) (acc '()))
+    (cond
+      ((null? xs)
+       (set! wal-log-state (reverse acc))
+       wal-log-state)
+      (else
+       (let ((f (car xs)))
+         (let ((f-txid (cadr f))
+               (rest (cdr (cdr f))))
+           (if (and (number? f-txid) (= f-txid txid))
+               ;; Rebuild frame with committed? = #t, keep CRC as-is
+               (let ((new-f (list (car f) f-txid (car rest) (car (cdr rest)) #t)))
+                 (loop (cdr xs) (cons new-f acc)))
+               (loop (cdr xs) (cons f acc)))))))))
+
+;; --- log-lsn --------------------------------------------------------------
+
+(define (api log-lsn log)
+  ;; Current LSN: the highest LSN assigned so far.
+  wal-log-lsn)
+
+;; --- log-frames -----------------------------------------------------------
+
+(define (api log-frames log)
+  ;; Return a snapshot of the frames in the log (oldest first).
+  log)
+
+;; --- log-truncate! --------------------------------------------------------
+
+(define (api log-truncate! log n)
+  ;; Mutate the global log in place: keep only the first `n` frames
+  ;; (oldest-first ordering). If n >= length, no-op. If n <= 0, empty.
+  ;; Used by the fault injector to simulate a power-loss cut-point.
+  (let* ((len (length log))
+         (keep (if (< n 0) 0 (if (> n len) len n))))
+    (let loop ((xs log) (i 0) (acc '()))
+      (cond
+        ((null? xs)
+         (set! wal-log-state (reverse acc))
+         wal-log-state)
+        ((< i keep)
+         (loop (cdr xs) (+ i 1) (cons (car xs) acc)))
+        (else
+         ;; Past cut-point: still need to update LSN to last kept frame's LSN
+         (set! wal-log-state (reverse acc))
+         (let ((last-lsn
+                (if (null? acc)
+                    0
+                    (car (car (reverse acc))))))
+           (set! wal-log-lsn last-lsn))
+         wal-log-state)))))

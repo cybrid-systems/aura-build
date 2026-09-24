@@ -1,0 +1,35 @@
+;; Apply module: applies WAL records to state with idempotency.
+;; Consults already-applied? and mark-applied! from wal_idempotent;
+;; mutates state via wal_state APIs; tracks apply count and metrics.
+
+;; Mutable counter for total apply-record invocations (including idempotent skips).
+(define apply-counter 0)
+
+(define (api count-applies)
+  apply-counter)
+
+;; apply-record: dispatch on record kind. Always increments apply-counter
+;; and the WAL_REPLAYED metric. If already applied, increments
+;; WAL_IDEMPOTENT_APPLIES and returns state unchanged. Otherwise mutates
+;; state (insert or delete) and marks the record as applied.
+(define (api apply-record state rec)
+  (set! apply-counter (+ apply-counter 1))
+  (inc-metric! 'WAL_REPLAYED)
+  (cond ((already-applied? rec)
+         (inc-metric! 'WAL_IDEMPOTENT_APPLIES)
+         state)
+        (else
+         (mark-applied! rec)
+         (let ((k (record-key rec)))
+           (cond ((equal? (record-kind rec) 'insert)
+                  (state-set! state k (record-value rec)))
+                 ((equal? (record-kind rec) 'delete)
+                  (state-delete! state k))
+                 (else state))))))
+
+;; apply-all: fold apply-record over every record in the log.
+(define (api apply-all state log)
+  (cond ((null? log) state)
+        (else
+         (let ((rest-state (apply-all state (cdr log))))
+           (apply-record rest-state (car log))))))

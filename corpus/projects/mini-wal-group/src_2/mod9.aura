@@ -1,0 +1,54 @@
+;; stats.aura — accumulates and finalizes workload statistics
+
+(define (api make-stats)
+  (list 0 0 0))   ; total-records, total-batches, max-batch-size
+
+(define (stats-total-records s)
+  (car s))
+
+(define (stats-total-batches s)
+  (car (cdr s)))
+
+(define (stats-max-batch-size s)
+  (car (cdr (cdr s))))
+
+(define (api stats-record! s)
+  (set-car! s (+ (stats-total-records s) 1))
+  s)
+
+(define (api stats-batch! s size)
+  (set-car! (cdr s) (+ (stats-total-batches s) 1))
+  (if (> size (stats-max-batch-size s))
+      (set-car! (cdr (cdr s)) size))
+  s)
+
+(define (api stats-finalize s producers windows backpressure-waits)
+  (let ((total-recs (stats-total-records s))
+        (total-batches (stats-total-batches s))
+        (max-size (stats-max-batch-size s)))
+    (let ((avg-batch (if (= total-batches 0)
+                         0
+                         (quotient total-recs total-batches))))
+      (list avg-batch max-size total-batches backpressure-waits windows
+            total-recs producers))))
+
+(define (stats-avg-batch result)
+  (car result))
+
+(define (stats-max-batch result)
+  (car (cdr result)))
+
+(define (stats-batches result)
+  (car (cdr (cdr result))))
+
+(define (stats-bp result)
+  (car (cdr (cdr (cdr result)))))
+
+(define (stats-windows result)
+  (car (cdr (cdr (cdr (cdr result))))))
+
+(define (stats-records result)
+  (car (cdr (cdr (cdr (cdr (cdr result)))))))
+
+(define (stats-producer-count result)
+  (car (cdr (cdr (cdr (cdr (cdr (cdr result))))))))

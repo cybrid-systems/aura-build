@@ -1,0 +1,49 @@
+;; index-lookup.aura
+;; Exact, floor, and ceiling LSN lookups against a sparse WAL index.
+;;
+;; The index is a list of records sorted ascending by lsn-start.
+;; We implement bounded, linear-style scans that terminate as soon as
+;; we know the answer. (A real implementation would binary-search; in
+;; a tiny in-memory toy a small linear walk keeps the code obviously
+;; correct and avoids subtle off-by-one bugs around inclusive bounds.)
+;;
+;; Inclusive-range semantics throughout:
+;;   - exact   : lsn-start <= lsn <= lsn-end  ->  hit
+;;   - floor   : largest record with lsn-start <= lsn  (may or may not
+;;               still cover lsn; caller decides what to do)
+;;   - ceiling : smallest record with lsn-start >  lsn   ("next greater")
+
+(define (exact-lookup idx lsn)
+  ;; Walk the index, returning (seg-id . offset) for the first record
+  ;; whose LSN range includes `lsn`. Returns #f if no such record.
+  ;; We keep this strictly linear: no `set!`, no mutation, just a
+  ;; bounded traversal that bails out at the first qualifying hit.
+  (cond
+    ((null? idx) #f)
+    ((let ((r (car idx)))
+       (and (<= (record-lsn-start r) lsn)
+            (<= lsn (record-lsn-end r))))
+     (cons (record-seg (car idx))
+           (record-offset (car idx))))
+    (else (exact-lookup (cdr idx) lsn))))
+
+(define (floor-lookup idx lsn)
+  ;; Return the record with the largest lsn-start that is still
+  ;; <= lsn. If every record has lsn-start > lsn, returns #f.
+  ;; Because the list is sorted ascending, we can do this in one
+  ;; pass: keep the most recent candidate that satisfied the bound.
+  (let loop ((rest idx) (best #f))
+    (cond
+      ((null? rest) best)
+      ((<= (record-lsn-start (car rest)) lsn)
+       (loop (cdr rest) (car rest)))
+      (else best))))
+
+(define (ceiling-lookup idx lsn)
+  ;; Return the record with the smallest lsn-start that is strictly
+  ;; greater than `lsn` ("next greater"). Returns #f if none exist.
+  ;; Walk until we find the first record whose lsn-start > lsn.
+  (cond
+    ((null? idx) #f)
+    ((> (record-lsn-start (car idx)) lsn) (car idx))
+    (else (ceiling-lookup (cdr idx) lsn))))

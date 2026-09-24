@@ -1,0 +1,52 @@
+;; wal_checkpoint.aura
+;; Checkpoint management for the WAL replay engine.
+;;
+;; A checkpoint is a marker that records the highest sequence number
+;; that has been durably processed. On recovery, replay starts from
+;; the record whose seq is strictly greater than the checkpoint seq.
+;;
+;; We model the checkpoint as a single-cell mutable box:
+;;   (cons 'checkpoint seq)
+;; Both `checkpoint` and `checkpoint-seq` consult and mutate the same
+;; top-level binding `wal-checkpoint-cell`, so the checkpoint state is
+;; shared across the lifetime of the process.
+
+;; Top-level mutable checkpoint cell. Initially set to seq 0
+;; (meaning "nothing has been checkpointed; replay everything").
+(define wal-checkpoint-cell (cons 'checkpoint 0))
+
+;; Set the checkpoint to `seq` by scanning `log` from the front.
+;; The checkpoint seq is clamped to the maximum seq actually present
+;; in the log: if the requested seq is higher than any record's seq,
+;; it is lowered to the largest seen seq. This keeps replay consistent
+;; with the real WAL contents.
+;;
+;; Returns the new checkpoint seq value.
+(define (api checkpoint log seq)
+  (begin
+    ;; Find the maximum seq in the log.
+    (let ((max-seq
+           (let loop ((rest log) (best 0))
+             (cond
+               ((null? rest) best)
+               ((api record? (car rest))
+                (let ((s (api record-seq (car rest))))
+                  (loop (cdr rest)
+                        (if (> s best) s best))))
+               (else
+                (loop (cdr rest) best))))))
+      (let ((clamped
+             (if (> seq max-seq) max-seq seq)))
+        (set! wal-checkpoint-cell
+              (cons 'checkpoint clamped))
+        clamped))
+    ;; Return the newly stored checkpoint seq (re-read for clarity).
+    (cdr wal-checkpoint-cell)))
+
+;; Return the current checkpoint sequence number.
+;; If no checkpoint has been explicitly set, returns 0.
+(define (api checkpoint-seq log)
+  ;; The `log` argument is accepted for API uniformity (some
+  ;; implementations derive the checkpoint from log inspection).
+  ;; Our implementation uses the dedicated cell.
+  (cdr wal-checkpoint-cell))

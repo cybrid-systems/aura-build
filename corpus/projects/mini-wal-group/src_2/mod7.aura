@@ -1,0 +1,17 @@
+;; fsync.aura — tracks fsync invocations
+
+(define (api make-fsync-counter)
+  (list 0))   ; count
+
+(define (fsync-count c)
+  (car c))
+
+(define (api fsync-bump! c)
+  (set-car! c (+ (fsync-count c) 1))
+  c)
+
+(define (api fsync-value c)
+  (fsync-count c))
+
+(define (api fsync-note f)
+  "fsync")

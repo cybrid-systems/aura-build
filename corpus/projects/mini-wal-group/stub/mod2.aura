@@ -1,0 +1,24 @@
+;; mod2.aura — record module
+
+(define __record-next-lsn__ 0)
+
+(define (make-record producer payload)
+  (let ((lsn __record-next-lsn__))
+    (set! __record-next-lsn__ (+ __record-next-lsn__ 1))
+    (list 'record lsn producer payload)))
+
+(define (record-lsn r)
+  (car (cdr r)))
+
+(define (record-producer r)
+  (car (cdr (cdr r))))
+
+(define (record-payload r)
+  (car (cdr (cdr (cdr r)))))
+
+(define (api sym)
+  (cond ((equal? sym 'make-record) make-record)
+        ((equal? sym 'record-lsn) record-lsn)
+        ((equal? sym 'record-payload) record-payload)
+        ((equal? sym 'record-producer) record-producer)
+        (else (error "record: unknown api" sym))))

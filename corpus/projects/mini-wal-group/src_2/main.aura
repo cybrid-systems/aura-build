@@ -1,0 +1,88 @@
+;; main.aura — runs the mini-wal-group scenario
+
+;; Scenario parameters
+(define total-records 42)
+(define max-batch-size 10)
+(define window-ms 5)
+(define num-producers 3)
+
+;; Build 3 producers with IDs 0, 1, 2
+(define producers (list (make-producer 0) (make-producer 1) (make-producer 2)))
+
+;; Build window, commit-log, fsync counter, backpressure counter
+(define win (make-window max-batch-size window-ms))
+(define commit-log (make-commit-log))
+(define fsync-c (make-fsync-counter))
+(define bp-c (bp-counter))
+(define stats (make-stats))
+
+;; Coordinator (uses coord-submit! and coord-tick! if available;
+;; otherwise implement inline behavior equivalent to the spec).
+
+;; Since coord.aura is not shown as generated, implement the
+;; coordination logic directly using the available APIs.
+
+(define (flush-current-window!)
+  ;; Build a batch from window-records, then commit it.
+  (let ((recs (window-records win)))
+    (if (null? recs)
+        '()
+        (let ((b (make-batch)))
+          (begin
+            (set! b (fold-batch-add b recs))
+            (fsync-bump! fsync-c)
+            (commit-append! commit-log b 1)
+            (stats-batch! stats (batch-size b))
+            (set! win (window-rotate win))
+            b)))))
+
+;; Helper: fold batch-add across a list of records
+(define (fold-batch-add b recs)
+  (if (null? recs)
+      b
+      (fold-batch-add (batch-add b (car recs)) (cdr recs))))
+
+;; Submission loop: 42 records, interleaved across producers,
+;; timestamps increase by 1 each submit.
+(define now 0)
+(define i 0)
+(define (submit-loop!)
+  (if (< i total-records)
+      (let ((pid (modulo i num-producers))
+            (p (list-ref producers (modulo i num-producers)))
+            (lsn (+ i 1))
+            (payload (string-append "rec-" (number->string i))))
+        (let ((r (make-record pid payload)))
+          ;; Assign LSN by using payload field trick: we use record-lsn
+          ;; via a dedicated setter? spec says make-record only takes
+          ;; producer and payload. We'll embed lsn via payload string.
+          (begin
+            ;; Track via stats-record
+            (stats-record! stats)
+            (producer-bump! p)
+            ;; Try to add to window
+            (let ((w2 (window-try-add win r)))
+              (cond
+                ((= (window-count w2) (window-count win))
+                 ;; full -> backpressure
+                 (bp-inc! bp-c)
+                 ;; flush current window if needed
+                 (if (window-should-flush? win now)
+                     (flush-current-window!))
+                 ;; now retry into new window
+                 (set! win (window-try-add win r)))
+                (else
+                 (set! win w2)))
+            (set! now (+ now 1))
+            (set! i (+ i 1))
+            (submit-loop!))))))
+
+;; Hmm — record has no lsn field per the API. The spec says
+;; batch-min-lsn and batch-max-lsn exist. Let's check: the record
+;; API gives only producer/payload accessors. So LSN must be
+;; derived differently. Re-reading step 5: "Submission timestamps
+;; come from now-monotonic and increase by 1 each call." So LSN
+;; equals the timestamp `now` at submit. Records don't carry LSN
+;; explicitly; we tag them by storing `now` somehow. Since
+;; make-record only takes producer+payload, we'll embed lsn in
+;; payload as "lsn=N|rec-i" so batch-min-lsn can parse it.

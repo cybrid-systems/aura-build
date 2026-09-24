@@ -1,0 +1,100 @@
+;; wal_crc.aura
+;; CRC computation for WAL frames.
+;;
+;; `crc32` computes a 32-bit cyclic redundancy check over the byte
+;; sequence represented as an Aura string (treating each char's code as
+;; a byte). The polynomial used here is the standard CRC-32 (poly
+;; 0xEDB88320, reflected) with init 0xFFFFFFFF and final xor 0xFFFFFFFF.
+;; The result is returned as an unsigned 32-bit value, represented as a
+;; non-negative Aura integer that always fits in 32 bits.
+;;
+;; `crc=?` is a simple equality check on two CRC values; it avoids
+;; callers having to know the exact numeric representation.
+
+;; ---- 32-bit helpers --------------------------------------------------
+
+;; Mask a value down to the low 32 bits (two's complement, but we keep
+;; it non-negative by adding 2^32 when the result goes negative).
+(define (crc32-mask v)
+  (let ((m (modulo v 4294967296)))
+    m))
+
+;; Reflect the low 8 bits of a byte: reverse their bit order. This is
+;; needed for the reflected CRC-32 polynomial convention.
+(define (crc32-reflect-byte b)
+  (let loop ((i 0)
+             (acc 0)
+             (v b))
+    (if (= i 8)
+        acc
+        (let ((bit (modulo v 2)))
+          (loop (+ i 1)
+                (+ (* acc 2) bit)
+                (quotient v 2))))))
+
+;; Reflect the low 32 bits of an integer.
+(define (crc32-reflect32 v)
+  (let loop ((i 0)
+             (acc 0)
+             (x (crc32-mask v)))
+    (if (= i 32)
+        acc
+        (let ((bit (modulo x 2)))
+          (loop (+ i 1)
+                (+ (* acc 2) bit)
+                (quotient x 2))))))
+
+;; Build the 256-entry CRC-32 lookup table using the reflected
+;; polynomial 0xEDB88320.
+(define (crc32-build-table)
+  (let loop ((i 0)
+             (t '()))
+    (if (= i 256)
+        (reverse t)
+        (let* ((c i)
+               (_ (let inner ((k 0)
+                              (cc c))
+                    (if (= k 8)
+                        '()
+                        (inner (+ k 1)
+                               (if (= (modulo cc 2) 1)
+                                   (crc32-mask (quotient (- cc (bitwise-xor c (expt 2 k)))
+                                                         2))
+                                   (crc32-mask (quotient cc 2)))))))
+               (reflected (crc32-reflect-byte c))
+               (entry (crc32-reflect32 reflected)))
+          (loop (+ i 1) (cons (crc32-mask entry) t))))))
+
+;; ---- Public API -------------------------------------------------------
+
+;; Compute CRC-32 over a string, char-by-char (each char's char-code as
+;; a byte in the low 8 bits). Returns a 32-bit non-negative integer.
+(define (api crc32 bytes)
+  (let* ((table (crc32-build-table))
+         (init 4294967295)
+         (result
+          (let loop ((i 0)
+                     (crc init))
+            (if (= i (string-length bytes))
+                crc
+                (let* ((b (char->integer (string-ref bytes i)))
+                       (idx (modulo (bitwise-xor (modulo crc 256) b)
+                                    256))
+                       (row (list-ref (let ((n 0)
+                                           (acc '()))
+                                       (let inner ((tbl table))
+                                         (cond ((null? tbl) (reverse acc))
+                                               (else (inner (cdr tbl))
+                                                     (set! acc (cons (car tbl) acc))
+                                                     (set! n (+ n 1)))))))
+                                     idx)))
+                  (loop (+ i 1)
+                        (crc32-mask (bitwise-xor (quotient crc 256)
+                                                 row)))))))
+         (final (crc32-mask (bitwise-xor result 4294967295))))
+    final))
+
+;; Compare two CRC values for equality. Both arguments are 32-bit
+;; non-negative integers as produced by `crc32`.
+(define (api crc=? a b)
+  (= a b))

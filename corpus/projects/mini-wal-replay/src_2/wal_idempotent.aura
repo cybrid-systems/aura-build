@@ -1,0 +1,35 @@
+;; wal_idempotent.aura
+;; Idempotency tracking for record application.
+;; Maintains a list of records that have already been applied so that
+;; re-application of the same record becomes a no-op.
+
+;; Mutable list of applied records (plain list, append-only).
+(define wal-applied-list '())
+
+(define (api already-applied? rec)
+  ;; Linear scan over wal-applied-list comparing record equality.
+  (cond
+    ((null? wal-applied-list) #f)
+    ((equal? rec (car wal-applied-list)) #t)
+    (else
+     (let loop ((rest wal-applied-list))
+       (cond
+         ((null? rest) #f)
+         ((equal? rec (car rest)) #t)
+         (else (loop (cdr rest)))))))
+
+(define (api mark-applied! rec)
+  ;; Append rec to wal-applied-list. Returns the new list.
+  (begin
+    (set! wal-applied-list
+          (append wal-applied-list (list rec)))
+    wal-applied-list))
+
+(define (api applied-list)
+  wal-applied-list)
+
+;; Convenience: reset the applied-list (used in scenario step 1).
+(define (api reset-applied!)
+  (begin
+    (set! wal-applied-list '())
+    wal-applied-list))

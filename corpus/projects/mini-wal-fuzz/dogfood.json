@@ -1,0 +1,62 @@
+{
+  "label": "mini-wal-fuzz",
+  "files": [
+    "wal_types.aura",
+    "wal_crc.aura",
+    "wal_segment.aura",
+    "wal_log.aura",
+    "wal_recover.aura",
+    "wal_invariants.aura",
+    "fuzz_rng.aura",
+    "fuzz_schedule.aura",
+    "harness.aura",
+    "report.aura",
+    "main.aura"
+  ],
+  "entry": "main.aura",
+  "run_mode": "cli_multi",
+  "expect": "WAL_FUZZ_ROUNDS=120\nWAL_FUZZ_SEED=20260524\nWAL_FUZZ_INJECTED_CRASHES=38\nWAL_FUZZ_APPENDED_FRAMES=288\nWAL_FUZZ_SYNC_CALLS=27\nWAL_FUZZ_COMMIT_CALLS=16\nWAL_FUZZ_LSN_MONOTONIC=#t\nWAL_FUZZ_CRC_OK=#t\nWAL_FUZZ_RECOVER_IDEMPOTENT=#f\nWAL_FUZZ_SEGMENT_ROLLS=7\nWAL_FUZZ_TX_ATOMIC=#t\nWAL_FUZZ_VERDICT=FAIL",
+  "expect_res": [
+    "WAL_FUZZ_ROUNDS\\s*=\\s*120",
+    "WAL_FUZZ_SEED\\s*=\\s*20260524",
+    "WAL_FUZZ_INJECTED_CRASHES\\s*=\\s*38",
+    "WAL_FUZZ_APPENDED_FRAMES\\s*=\\s*288",
+    "WAL_FUZZ_SYNC_CALLS\\s*=\\s*27",
+    "WAL_FUZZ_COMMIT_CALLS\\s*=\\s*16",
+    "WAL_FUZZ_LSN_MONOTONIC\\s*=\\s*\\#t",
+    "WAL_FUZZ_CRC_OK\\s*=\\s*\\#t",
+    "WAL_FUZZ_RECOVER_IDEMPOTENT\\s*=\\s*\\#f",
+    "WAL_FUZZ_SEGMENT_ROLLS\\s*=\\s*7",
+    "WAL_FUZZ_TX_ATOMIC\\s*=\\s*\\#t",
+    "WAL_FUZZ_VERDICT\\s*=\\s*FAIL"
+  ],
+  "source_res": [
+    "\\(define\\s+\\(api-wal-frame\\?\\b",
+    "\\(define\\s+\\(api-crc32\\b",
+    "\\(define\\s+\\(api-make-segment\\b",
+    "\\(define\\s+\\(api-log-append\\b",
+    "\\(define\\s+\\(api-replay\\b",
+    "\\(define\\s+\\(api-check-lsn-monotonic\\b",
+    "\\(define\\s+\\(api-rng-seed!\\b",
+    "\\(define\\s+\\(api-schedule-crash\\?\\b",
+    "\\(define\\s+\\(api-harness-init\\b",
+    "\\(define\\s+\\(api-report-line\\b",
+    "\\(define\\s+\\(api-main\\b"
+  ],
+  "expect_keys": [
+    "WAL_FUZZ_ROUNDS",
+    "WAL_FUZZ_SEED",
+    "WAL_FUZZ_INJECTED_CRASHES",
+    "WAL_FUZZ_APPENDED_FRAMES",
+    "WAL_FUZZ_SYNC_CALLS",
+    "WAL_FUZZ_COMMIT_CALLS",
+    "WAL_FUZZ_LSN_MONOTONIC",
+    "WAL_FUZZ_CRC_OK",
+    "WAL_FUZZ_RECOVER_IDEMPOTENT",
+    "WAL_FUZZ_SEGMENT_ROLLS",
+    "WAL_FUZZ_TX_ATOMIC",
+    "WAL_FUZZ_VERDICT"
+  ],
+  "seed_from_stub": true,
+  "user_extra": "Multi-file project mini-wal-fuzz; implement GOAL.md APIs; print KEY=value via main.aura using module calls."
+}

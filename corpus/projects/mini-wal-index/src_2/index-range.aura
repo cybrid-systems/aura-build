@@ -1,0 +1,49 @@
+;; index-range.aura
+;; Range scans and entry counting on the sparse WAL index.
+;;
+;; The index is a sorted list of records (ascending by lsn-start).
+;; We provide two operations here:
+;;
+;;   (range-scan idx lo hi)
+;;       Returns the list of records whose lsn-start falls in the
+;;       inclusive interval [lo, hi]. The result is a freshly consed
+;;       list in ascending order (we simply walk the sorted index and
+;;       collect matching entries — no sorting required).
+;;
+;;   (count-entries idx)
+;;       Returns the total number of records currently in the index.
+;;       Used by the stats pipeline and exposed as a public API.
+;;
+;; Both helpers rely on record accessors from index-record.aura.
+
+(define (range-scan idx lo hi)
+  ;; Walk the sorted index front-to-back. The first record whose
+  ;; lsn-start is strictly greater than `hi` ends the scan (since the
+  ;; list is sorted, nothing later can match). Otherwise we collect
+  ;; any record with `lo <= lsn-start <= hi`.
+  ;;
+  ;; Implemented tail-recursively with an accumulator; the accumulator
+  ;; is built in reverse and reversed at the end so the result is in
+  ;; ascending order, matching the index ordering.
+  (define (walk rest acc)
+    (cond
+      ((null? rest) (reverse acc))
+      (else
+        (let ((r (car rest)))
+          (let ((s (record-lsn-start r)))
+            (cond
+              ((> s hi) (reverse acc))
+              ((< s lo) (walk (cdr rest) acc))
+              (else    (walk (cdr rest) (cons r acc)))))))))
+  (walk idx '()))
+
+(define (count-entries idx)
+  ;; Simple length-counting walk. Kept as its own API (rather than
+  ;; always calling `length`) so callers can extend it later — e.g.
+  ;; to exclude tombstones or shadowed entries — without rippling
+  ;; through the rest of the codebase.
+  (define (walk rest n)
+    (if (null? rest)
+        n
+        (walk (cdr rest) (+ n 1))))
+  (walk idx 0))
