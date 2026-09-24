@@ -1,0 +1,31 @@
+; Broken main — wrong COUNT; still calls saga-run / saga-status
+(define (show label val)
+  (display label)(display "=")(display val)(newline))
+(define (full-init)
+  (idemp-init)
+  (journal-init)
+  (book-init)
+  (pay-init)
+  (ship-init)
+  (saga-init))
+
+(full-init)
+(define ok (saga-run "s1" "r1" "10" "home"))
+(show "OK" ok)
+(show "ST1" (saga-status))
+(define dup (saga-run "s1" "r1" "10" "home"))
+(show "DUP" dup)
+(show "ST1B" (saga-status))
+
+(full-init)
+(define fail-pay (saga-run "s2" "r2" "bad" "home"))
+(show "FAIL_PAY" fail-pay)
+(show "ST2" (saga-status))
+
+(full-init)
+(define fail-ship (saga-run "s3" "r3" "10" "blocked"))
+(show "FAIL_SHIP" fail-ship)
+(show "ST3" (saga-status))
+
+; wrong: claims none of the four are okish
+(show "COUNT" 0)

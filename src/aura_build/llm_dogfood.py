@@ -50,6 +50,7 @@ TASK_QUEUE = "queue"
 TASK_PUBSUB = "pubsub"
 TASK_2PC = "2pc"
 TASK_TWOPC = "twopc"
+TASK_SAGA = "saga"
 DEFAULT_TASK = TASK_FIB
 DEFAULT_MAX_ROUNDS = 8
 DEFAULT_WORLDLINES = 3
@@ -325,6 +326,14 @@ TASKS: dict[str, dict[str, Any]] = {
         "verify_script": "examples/projects/mini-2pc/verify.sh",
         "user": "",
         "expect": "RUN1=commit\nSTATE1=committed\nRUN2=abort\nSTATE2=aborted\nLOG=abort\nRECOVER=aborted\nPOISON=abort\nCOUNT=5",
+        "fallback": "",
+    },
+    TASK_SAGA: {
+        "label": "saga",
+        "project": "examples/projects/mini-saga",
+        "verify_script": "examples/projects/mini-saga/verify.sh",
+        "user": "",
+        "expect": "OK=committed\nST1=held/charged/sent\nDUP=dup\nST1B=held/charged/sent\nFAIL_PAY=aborted\nST2=cancelled/none/none\nFAIL_SHIP=aborted\nST3=cancelled/refunded/none\nCOUNT=4",
         "fallback": "",
     },
 }
@@ -1199,8 +1208,189 @@ def _tool_rule_sources(
         or "bus-init" in str(task_spec.get("user_extra") or "").lower()
         or "bus-init" in str(task_spec.get("source_res") or "").lower()
     )
+    is_saga = (
+        label == "saga"
+        or "mini-saga" in project
+        or "fail_pay" in expect.lower()
+        or "fail_ship" in expect.lower()
+        or "compensate-from" in str(task_spec.get("user_extra") or "").lower()
+        or "saga-run" in str(task_spec.get("source_res") or "").lower()
+    )
 
-    if is_2pc and files:
+    if is_saga and files:
+        sources = {
+            "idemp.aura": (
+                "(define idemp-keys '())\n"
+                "(define (idemp-init)\n"
+                "  (set! idemp-keys '()))\n"
+                "(define (idemp-seen? key)\n"
+                "  (if (member key idemp-keys) #t #f))\n"
+                "(define (idemp-mark key)\n"
+                "  (set! idemp-keys (cons key idemp-keys)))\n"
+            ),
+            "journal.aura": (
+                "(define jlog '())\n"
+                "(define (journal-init)\n"
+                "  (set! jlog '()))\n"
+                "(define (journal-append step status)\n"
+                "  (set! jlog (cons (list step status) jlog)))\n"
+                "(define (journal-last)\n"
+                "  (if (null? jlog) \"empty\" (car jlog)))\n"
+                "(define (j-has rs step status)\n"
+                "  (if (null? rs) #f\n"
+                "      (if (and (equal? (car (car rs)) step) (equal? (car (cdr (car rs))) status))\n"
+                "          #t\n"
+                "          (j-has (cdr rs) step status))))\n"
+                "(define (journal-has? step status)\n"
+                "  (j-has jlog step status))\n"
+            ),
+            "book.aura": (
+                "(define book-st \"none\")\n"
+                "(define (book-init)\n"
+                "  (set! book-st \"none\"))\n"
+                "(define (book-reserve key room)\n"
+                "  (if (idemp-seen? key)\n"
+                "      \"dup\"\n"
+                "      (if (equal? room \"full\")\n"
+                "          \"fail\"\n"
+                "          (begin\n"
+                "            (idemp-mark key)\n"
+                "            (set! book-st \"held\")\n"
+                "            \"ok\"))))\n"
+                "(define (book-cancel key)\n"
+                "  (set! book-st \"cancelled\"))\n"
+                "(define (book-state)\n"
+                "  book-st)\n"
+            ),
+            "pay.aura": (
+                "(define pay-st \"none\")\n"
+                "(define (pay-init)\n"
+                "  (set! pay-st \"none\"))\n"
+                "(define (pay-charge key amount)\n"
+                "  (if (idemp-seen? key)\n"
+                "      \"dup\"\n"
+                "      (if (or (equal? amount \"bad\") (equal? amount \"0\") (equal? amount 0))\n"
+                "          \"fail\"\n"
+                "          (begin\n"
+                "            (idemp-mark key)\n"
+                "            (set! pay-st \"charged\")\n"
+                "            \"ok\"))))\n"
+                "(define (pay-refund key)\n"
+                "  (set! pay-st \"refunded\"))\n"
+                "(define (pay-state)\n"
+                "  pay-st)\n"
+            ),
+            "ship.aura": (
+                "(define ship-st \"none\")\n"
+                "(define (ship-init)\n"
+                "  (set! ship-st \"none\"))\n"
+                "(define (ship-send key dest)\n"
+                "  (if (idemp-seen? key)\n"
+                "      \"dup\"\n"
+                "      (if (equal? dest \"blocked\")\n"
+                "          \"fail\"\n"
+                "          (begin\n"
+                "            (idemp-mark key)\n"
+                "            (set! ship-st \"sent\")\n"
+                "            \"ok\"))))\n"
+                "(define (ship-recall key)\n"
+                "  (set! ship-st \"recalled\"))\n"
+                "(define (ship-state)\n"
+                "  ship-st)\n"
+            ),
+            "step.aura": (
+                "(define (run-step name thunk-result)\n"
+                "  (journal-append name thunk-result)\n"
+                "  thunk-result)\n"
+            ),
+            "compensate.aura": (
+                "(define (compensate-from step)\n"
+                "  (cond\n"
+                "    ((equal? step \"pay\")\n"
+                "     (begin\n"
+                "       (book-cancel \"comp\")\n"
+                "       \"comped\"))\n"
+                "    ((equal? step \"ship\")\n"
+                "     (begin\n"
+                "       (pay-refund \"comp\")\n"
+                "       (book-cancel \"comp\")\n"
+                "       \"comped\"))\n"
+                "    ((equal? step \"book\")\n"
+                "     \"noop\")\n"
+                "    (#t \"noop\")))\n"
+            ),
+            "saga.aura": (
+                "(define (saga-init)\n"
+                "  #t)\n"
+                "(define (step-key sid step)\n"
+                "  (string-append sid \":\" step))\n"
+                "(define (saga-fail sid step)\n"
+                "  (compensate-from step)\n"
+                "  (journal-append sid \"aborted\")\n"
+                "  \"aborted\")\n"
+                "(define (saga-run sid room amount dest)\n"
+                "  (if (journal-has? sid \"committed\")\n"
+                "      \"dup\"\n"
+                "      (begin\n"
+                "        (define br (book-reserve (step-key sid \"book\") room))\n"
+                "        (if (equal? br \"fail\")\n"
+                "            (saga-fail sid \"book\")\n"
+                "            (begin\n"
+                "              (run-step \"book\" br)\n"
+                "              (define pr (pay-charge (step-key sid \"pay\") amount))\n"
+                "              (if (equal? pr \"fail\")\n"
+                "                  (saga-fail sid \"pay\")\n"
+                "                  (begin\n"
+                "                    (run-step \"pay\" pr)\n"
+                "                    (define sr (ship-send (step-key sid \"ship\") dest))\n"
+                "                    (if (equal? sr \"fail\")\n"
+                "                        (saga-fail sid \"ship\")\n"
+                "                        (begin\n"
+                "                          (run-step \"ship\" sr)\n"
+                "                          (journal-append sid \"committed\")\n"
+                "                          \"committed\")))))))))\n"
+            ),
+            "query.aura": (
+                "(define (saga-status)\n"
+                "  (string-append (book-state) \"/\" (pay-state) \"/\" (ship-state)))\n"
+            ),
+            "main.aura": (
+                "(define (show label val)\n"
+                "  (display label)(display \"=\")(display val)(newline))\n"
+                "(define (okish v)\n"
+                "  (if (or (equal? v \"committed\") (equal? v \"dup\") (equal? v \"aborted\")) 1 0))\n"
+                "(define (full-init)\n"
+                "  (idemp-init)\n"
+                "  (journal-init)\n"
+                "  (book-init)\n"
+                "  (pay-init)\n"
+                "  (ship-init)\n"
+                "  (saga-init))\n"
+                "\n"
+                "(full-init)\n"
+                "(define ok (saga-run \"s1\" \"r1\" \"10\" \"home\"))\n"
+                "(show \"OK\" ok)\n"
+                "(show \"ST1\" (saga-status))\n"
+                "(define dup (saga-run \"s1\" \"r1\" \"10\" \"home\"))\n"
+                "(show \"DUP\" dup)\n"
+                "(show \"ST1B\" (saga-status))\n"
+                "\n"
+                "(full-init)\n"
+                "(define fail-pay (saga-run \"s2\" \"r2\" \"bad\" \"home\"))\n"
+                "(show \"FAIL_PAY\" fail-pay)\n"
+                "(show \"ST2\" (saga-status))\n"
+                "\n"
+                "(full-init)\n"
+                "(define fail-ship (saga-run \"s3\" \"r3\" \"10\" \"blocked\"))\n"
+                "(show \"FAIL_SHIP\" fail-ship)\n"
+                "(show \"ST3\" (saga-status))\n"
+                "\n"
+                "(show \"COUNT\" (+ (okish ok) (+ (okish dup) (+ (okish fail-pay) (okish fail-ship)))))\n"
+            ),
+        }
+        sources = {fn: sources[fn] for fn in files if fn in sources}
+
+    elif is_2pc and files:
         sources = {
             "log.aura": (
                 "(define decision-log '())\n"

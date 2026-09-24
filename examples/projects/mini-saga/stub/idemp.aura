@@ -1,0 +1,9 @@
+; Broken: never marks keys; seen? always #f
+(define idemp-keys '())
+(define (idemp-init)
+  (set! idemp-keys '()))
+(define (idemp-seen? key)
+  #f)
+(define (idemp-mark key)
+  ; broken: ignore mark
+  #t)

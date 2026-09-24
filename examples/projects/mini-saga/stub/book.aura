@@ -1,0 +1,13 @@
+; Broken: ignore full; always ok and held
+(define book-st "none")
+(define (book-init)
+  (set! book-st "none"))
+(define (book-reserve key room)
+  ; broken: ignore full + idemp
+  (set! book-st "held")
+  "ok")
+(define (book-cancel key)
+  ; broken: leave held instead of cancelled
+  (set! book-st "held"))
+(define (book-state)
+  book-st)

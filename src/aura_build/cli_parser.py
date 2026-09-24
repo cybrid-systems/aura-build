@@ -184,7 +184,7 @@ def build_parser() -> argparse.ArgumentParser:
     _opt(
         dog,
         "--task",
-        choices=("fib", "greet", "calc", "kv", "stack", "bank", "router", "cache", "queue", "pubsub", "2pc", "twopc"),
+        choices=("fib", "greet", "calc", "kv", "stack", "bank", "router", "cache", "queue", "pubsub", "2pc", "twopc", "saga"),
         default="fib",
         help="Built-in dogfood task (or use --project for any GOAL.md dir)",
     )

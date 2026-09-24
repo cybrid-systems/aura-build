@@ -1,0 +1,11 @@
+; Broken: append is no-op; has? always #f; last always empty
+(define jlog '())
+(define (journal-init)
+  (set! jlog '()))
+(define (journal-append step status)
+  ; broken: ignore
+  #t)
+(define (journal-last)
+  "empty")
+(define (journal-has? step status)
+  #f)

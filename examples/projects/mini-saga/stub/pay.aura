@@ -1,0 +1,13 @@
+; Broken: ignore bad/0; always charge
+(define pay-st "none")
+(define (pay-init)
+  (set! pay-st "none"))
+(define (pay-charge key amount)
+  ; broken: ignore bad amount + idemp
+  (set! pay-st "charged")
+  "ok")
+(define (pay-refund key)
+  ; broken: leave charged
+  (set! pay-st "charged"))
+(define (pay-state)
+  pay-st)

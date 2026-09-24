@@ -1,0 +1,11 @@
+; Broken: always committed path; ignores fail; never returns dup/aborted
+(define (saga-init)
+  #t)
+(define (step-key sid step)
+  (string-append sid ":" step))
+(define (saga-run sid room amount dest)
+  ; broken: always take success path regardless of results / journal
+  (book-reserve (step-key sid "book") room)
+  (pay-charge (step-key sid "pay") amount)
+  (ship-send (step-key sid "ship") dest)
+  "committed")

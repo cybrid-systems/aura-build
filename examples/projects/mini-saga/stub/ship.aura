@@ -1,0 +1,12 @@
+; Broken: ignore blocked; always send
+(define ship-st "none")
+(define (ship-init)
+  (set! ship-st "none"))
+(define (ship-send key dest)
+  ; broken: ignore blocked + idemp
+  (set! ship-st "sent")
+  "ok")
+(define (ship-recall key)
+  (set! ship-st "recalled"))
+(define (ship-state)
+  ship-st)
