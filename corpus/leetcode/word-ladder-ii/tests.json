@@ -1,0 +1,89 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "beginWord": "hit",
+      "endWord": "cog",
+      "wordList": [
+        "hot",
+        "dot",
+        "dog",
+        "lot",
+        "log",
+        "cog"
+      ]
+    },
+    "expected": "[[\"hit\",\"hot\",\"dot\",\"dog\",\"cog\"],[\"hit\",\"hot\",\"lot\",\"log\",\"cog\"]]"
+  },
+  {
+    "id": 1,
+    "input": {
+      "beginWord": "hit",
+      "endWord": "cog",
+      "wordList": [
+        "hot",
+        "dot",
+        "dog",
+        "lot",
+        "log"
+      ]
+    },
+    "expected": "[]"
+  },
+  {
+    "id": 2,
+    "input": {
+      "beginWord": "a",
+      "endWord": "c",
+      "wordList": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "expected": "[[\"a\",\"c\"]]"
+  },
+  {
+    "id": 3,
+    "input": {
+      "beginWord": "hot",
+      "endWord": "dog",
+      "wordList": [
+        "hot",
+        "dog"
+      ]
+    },
+    "expected": "[]"
+  },
+  {
+    "id": 4,
+    "input": {
+      "beginWord": "ab",
+      "endWord": "cd",
+      "wordList": [
+        "ab",
+        "cb",
+        "cd"
+      ]
+    },
+    "expected": "[[\"ab\",\"cb\",\"cd\"]]"
+  },
+  {
+    "id": 5,
+    "input": {
+      "beginWord": "red",
+      "endWord": "tax",
+      "wordList": [
+        "ted",
+        "tex",
+        "red",
+        "tax",
+        "tad",
+        "den",
+        "rex",
+        "pee"
+      ]
+    },
+    "expected": "[[\"red\",\"ted\",\"tad\",\"tax\"],[\"red\",\"ted\",\"tex\",\"tax\"],[\"red\",\"rex\",\"tex\",\"tax\"]]"
+  }
+]

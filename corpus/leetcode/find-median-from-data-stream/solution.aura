@@ -1,0 +1,134 @@
+;; Find Median from Data Stream using two heaps
+;; We'll simulate the heaps as sorted lists (small lists work for testing)
+
+(define (make-heap cmp)
+  (cons cmp '()))
+
+(define (heap-data h) (cdr h))
+(define (heap-cmp h) (car h))
+
+(define (heap-empty? h) (null? (heap-data h)))
+
+(define (heap-peek h)
+  (car (heap-data h)))
+
+(define (heap-push h x)
+  (let ((cmp (heap-cmp h))
+        (data (heap-data h)))
+    (define (insert lst)
+      (cond ((null? lst) (cons x '()))
+            ((cmp x (car lst)) (cons x lst))
+            (else (cons (car lst) (insert (cdr lst))))))
+    (cons cmp (insert data))))
+
+(define (heap-pop h)
+  (cons (heap-cmp h) (cdr (heap-data h))))
+
+;; Median structure: list of (max-heap min-heap)
+;; max-heap: comparator (a b) -> (> a b) means a should come first when sorted ascending
+;; min-heap: comparator (a b) -> (< a b)
+;; We store max-heap with comparator such that largest is first (peek = max)
+;; and min-heap with comparator such that smallest is first (peek = min)
+
+(define (make-median)
+  (let ((max-h (cons (lambda (a b) (> a b)) '()))
+        (min-h (cons (lambda (a b) (< a b)) '())))
+    (cons max-h min-h)))
+
+(define (median-max-h m) (car m))
+(define (median-min-h m) (cdr m))
+
+(define (median-add m x)
+  (let ((max-h (median-max-h m))
+        (min-h (median-min-h m)))
+    ;; Decide which heap to insert into
+    (cond ((heap-empty? max-h)
+           (set! max-h (heap-push max-h x)))
+          ((<= x (heap-peek max-h))
+           (set! max-h (heap-push max-h x)))
+          (else
+           (set! min-h (heap-push min-h x))))
+    ;; Rebalance
+    (let ((max-size (length (heap-data max-h)))
+          (min-size (length (heap-data min-h))))
+      (cond ((> max-size (+ min-size 1))
+             (let ((top (heap-peek max-h)))
+               (set! max-h (heap-pop max-h))
+               (set! min-h (heap-push min-h top))))
+            ((> min-size max-size)
+             (let ((top (heap-peek min-h)))
+               (set! min-h (heap-pop min-h))
+               (set! max-h (heap-push max-h top))))))
+    (cons max-h min-h)))
+
+(define (median-query m)
+  (let ((max-h (median-max-h m))
+        (min-h (median-min-h m)))
+    (let ((max-size (length (heap-data max-h)))
+          (min-size (length (heap-data min-h))))
+      (cond ((= max-size min-size)
+             (/ (+ (heap-peek max-h) (heap-peek min-h)) 2.0))
+            ((> max-size min-size)
+             (heap-peek max-h))
+            (else
+             (heap-peek min-h))))))
+
+;; Process commands and return list of results
+(define (process-commands cmds)
+  (let ((m (make-median))
+        (results '()))
+    (define (loop cs)
+      (if (null? cs) results
+          (let ((cmd (car cs)))
+            (cond ((equal? (car cmd) 'ADD)
+                   (set! m (median-add m (cadr cmd)))
+                   (loop (cdr cs)))
+                  ((equal? (car cmd) 'MEDIAN)
+                   (set! results (append results (list (median-query m))))
+                   (loop (cdr cs)))
+                  (else (loop (cdr cs)))))))
+    (loop cmds)))
+
+;; Format number for display - need sufficient precision
+(define (display-number n)
+  ;; If integer-valued and not too large, display as number with .0 to be safe? 
+  ;; Just use number->string; Aura's number->string should handle floats.
+  (display (number->string n)))
+
+;; solve: given embedded input commands, produce list of medians
+(define (solve commands)
+  (process-commands commands))
+
+;; Helper to display a list of numbers
+(define (display-results lst)
+  (cond ((null? lst) (display "()") (newline))
+        (else
+         (display-number (car lst))
+         (newline)
+         (display-results (cdr lst)))))
+
+;; Embedded test inputs
+(define case0 '((ADD 1) (MEDIAN) (ADD 2) (MEDIAN) (ADD 3) (MEDIAN)))
+(define case1 '((ADD 42) (MEDIAN)))
+(define case2 '((ADD 10) (ADD 20) (MEDIAN)))
+(define case3 '((ADD -5) (MEDIAN) (ADD -1) (MEDIAN) (ADD -3) (MEDIAN) (ADD -7) (MEDIAN)))
+(define case4 '((ADD 0) (MEDIAN) (ADD 0) (MEDIAN) (ADD 0) (MEDIAN) (ADD 5) (MEDIAN) (ADD -5) (MEDIAN)))
+(define case5 '((ADD 7) (ADD 1) (ADD 9) (ADD 4) (ADD 6) (ADD 2) (ADD 8) (MEDIAN) (ADD 5) (MEDIAN) (ADD 3) (MEDIAN)))
+(define case6 '((ADD 100) (ADD 50) (ADD 200) (ADD 25) (ADD 75) (ADD 150) (ADD 250) (MEDIAN) (MEDIAN) (MEDIAN) (MEDIAN) (MEDIAN) (MEDIAN) (MEDIAN)))
+(define case7 '((ADD 1) (MEDIAN) (ADD 1000000) (MEDIAN) (ADD 2) (MEDIAN) (ADD 999999) (MEDIAN) (ADD 500000) (MEDIAN)))
+
+(define (run-case i cmds)
+  (display "CASE")
+  (display (number->string i))
+  (display "=")
+  (newline)
+  (display-results (solve cmds)))
+
+(run-case 0 case0)
+(run-case 1 case1)
+(run-case 2 case2)
+(run-case 3 case3)
+(run-case 4 case4)
+(run-case 5 case5)
+(run-case 6 case6)
+(run-case 7 case7)

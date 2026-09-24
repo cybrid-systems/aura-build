@@ -1,0 +1,141 @@
+;; Implement Trie (Prefix Tree) in Aura
+
+;; A trie node is represented as a mutable structure with:
+;;   children: a vector of 26 slots, each holding either #f or another node
+;;   is-end: a boolean indicating that a word ends at this node
+;; We use vectors to allow mutable updates.
+
+(define (make-node)
+  (let ((v (make-vector 26 #f)))
+    (set! v (cons v #f))
+    v))
+
+(define (node-children n) (car n))
+(define (node-end n) (cdr n))
+(define (set-node-end! n v) (set-cdr! n v))
+
+(define (node-get-child n idx)
+  (vector-ref (node-children n) idx))
+
+(define (node-set-child! n idx child)
+  (vector-set! (node-children n) idx child))
+
+;; Trie: just a root node, plus an inserted-empty flag
+(define (make-trie)
+  (let ((root (make-node)))
+    (cons root #f))) ;; car = root, cdr = inserted-empty? flag
+
+(define (trie-root t) (car t))
+(define (trie-empty-inserted t) (cdr t))
+(define (set-trie-empty! t v) (set-cdr! t v))
+
+(define (char->idx c)
+  (- (char->integer c) (char->integer #\a)))
+
+(define (trie-insert t word)
+  (let ((len (string-length word)))
+    (if (= len 0)
+        (begin
+          (set-trie-empty! t #t)
+          (set-node-end! (trie-root t) #t))
+        (let loop ((node (trie-root t)) (i 0))
+          (if (= i len)
+              (set-node-end! node #t)
+              (let ((idx (char->idx (string-ref word i)))
+                    (child (node-get-child node idx)))
+                (if child
+                    (loop child (+ i 1))
+                    (let ((new-child (make-node)))
+                      (node-set-child! node idx new-child)
+                      (loop new-child (+ i 1))))))))))
+
+(define (trie-search t word)
+  (let ((len (string-length word)))
+    (if (= len 0)
+        (node-end (trie-root t))
+        (let loop ((node (trie-root t)) (i 0))
+          (if (= i len)
+              (node-end node)
+              (let ((child (node-get-child node (char->idx (string-ref word i)))))
+                (if child
+                    (loop child (+ i 1))
+                    #f)))))))
+
+(define (trie-starts-with t prefix)
+  (let ((len (string-length prefix)))
+    (if (= len 0)
+        #t
+        (let loop ((node (trie-root t)) (i 0))
+          (if (= i len)
+              #t
+              (let ((child (node-get-child node (char->idx (string-ref prefix i)))))
+                (if child
+                    (loop child (+ i 1))
+                    #f)))))))
+
+(define (solve ops)
+  (let ((t (make-trie))
+        (results '()))
+    (define (process op)
+      (let ((cmd (list-ref op 0))
+            (arg (list-ref op 1)))
+        (cond
+          ((equal? cmd "insert")
+           (trie-insert t arg))
+          ((equal? cmd "search")
+           (set! results (cons (trie-search t arg) results)))
+          ((equal? cmd "starts_with")
+           (set! results (cons (trie-starts-with t arg) results)))
+          (else (display "unknown op")))))
+    (let loop ((i (- (length ops) 1)))
+      (if (< i 0)
+          (begin #t)
+          (begin
+            (process (list-ref ops i))
+            (loop (- i 1)))))
+    (reverse results)))
+
+;; Helper to print a list of results (each #t/#f) space-separated on one line.
+(define (print-results lst)
+  (define (loop rest first?)
+    (if (null? rest)
+        (begin)
+        (begin
+          (if first? (begin) (display " "))
+          (display (car rest))
+          (loop (cdr rest) #f))))
+  (loop lst #t))
+
+;; Embedded test inputs
+(define case0
+  '((insert apple) (search apple) (starts_with app) (insert app)
+    (search app) (search ap) (starts_with ap)))
+
+(define case1
+  '((search hello) (starts_with hell) (insert hello) (search hello)
+    (search hell) (starts_with hello) (starts_with helloworld)))
+
+(define case2
+  '((insert a) (insert ab) (insert abc) (search a) (search ab)
+    (search abc) (search abcd) (starts_with a) (starts_with ab)
+    (starts_with abc) (starts_with abcd) (starts_with b)))
+
+(define case3
+  '((insert dog) (insert doggo) (insert cat) (search dog)
+    (search doggy) (search do) (starts_with do) (starts_with dog)
+    (starts_with doggy) (starts_with c) (starts_with d)))
+
+(define case4
+  '((insert zebra) (search zeb) (search zebra) (starts_with zeb)
+    (starts_with zea) (starts_with z) (starts_with "")))
+
+(define case5
+  '((insert "") (search "") (starts_with "")))
+
+;; Execute each case
+(display "CASE0=") (print-results (solve case0)) (newline)
+(display "CASE1=") (print-results (solve case1)) (newline)
+(display "CASE2=") (print-results (solve case2)) (newline)
+(display "CASE3=") (print-results (solve case3)) (newline)
+(display "CASE4=") (print-results (solve case4)) (newline)
+(display "CASE5=") (print-results (solve case5)) (newline)

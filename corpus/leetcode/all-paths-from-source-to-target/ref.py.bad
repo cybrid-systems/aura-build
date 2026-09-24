@@ -1,0 +1,46 @@
+import json
+from typing import List
+
+def solve(graph: List[List[int]]) -> List[List[int]]:
+    n = len(graph)
+    if n == 0:
+        return []
+    target = n - 1
+    results: List[List[int]] = []
+    path: List[int] = [0]
+    
+    def dfs(node: int) -> None:
+        if node == target:
+            results.append(path.copy())
+            return
+        for nxt in graph[node]:
+            path.append(nxt)
+            dfs(nxt)
+            path.pop()
+    
+    dfs(0)
+    return results
+
+
+CASES = [
+    {"graph": [[1, 2], [3], [3], []]},
+    {"graph": [[1, 2, 3], [4], [4], [4], []]},
+    {"graph": [[1], [2], [3], [4], []]},
+    {"graph": [[1, 2], [], [3], [], [4], [4], []]},
+    {"graph": [[1], [2, 3], [4], [4], [5], []]},
+    {"graph": [[1], [2], [1], [4], []]},
+    {"graph": [[1], []]},
+    {"graph": [[1, 2], [3, 4], [3], [4], []]},
+]
+
+
+if __name__ == '__main__':
+    out = []
+    for i, case in enumerate(CASES):
+        result = solve(**case)
+        out.append({
+            "id": i,
+            "input": case,
+            "expected": json.dumps(result, separators=(',', ':'), ensure_ascii=False)
+        })
+    print(json.dumps(out, separators=(',', ':'), ensure_ascii=False))

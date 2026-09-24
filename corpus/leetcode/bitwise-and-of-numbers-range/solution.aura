@@ -1,0 +1,76 @@
+;; Bitwise AND of all numbers in [m, n], with m,n treated as unsigned 64-bit.
+;; Trick: shift both right until they are equal; that count is the number of
+;; differing low bits. Then answer = m shifted left by that count (in 64-bit space).
+
+(define (solve m n)
+  (if (= m n)
+      m
+      (let loop ((a m) (b n) (shift 0))
+        (if (= a b)
+            (let* ((result a)
+                   (shifted (bitwise-shift-left result shift)))
+              ;; keep within 64 bits by masking with 2^64-1
+              (bitwise-and shifted mask64))
+            (loop (bitwise-shift-right a 1)
+                  (bitwise-shift-right b 1)
+                  (+ shift 1))))))
+
+(define mask64 (- (bitwise-shift-left 1 64) 1))
+
+(define (bitwise-shift-left x k)
+  (let loop ((x x) (k k))
+    (if (= k 0) x (loop (* x 2) (- k 1)))))
+
+(define (bitwise-shift-right x k)
+  (let loop ((x x) (k k))
+    (if (= k 0) x (loop (quotient x 2) (- k 1)))))
+
+(define (bitwise-and a b)
+  (let loop ((a a) (b b))
+    (if (= b 0)
+        0
+        (if (odd? b)
+            (+ (loop (bitwise-shift-right a 1) (bitwise-shift-right b 1)) a)
+            (loop (bitwise-shift-right a 1) (bitwise-shift-right b 1))))))
+
+;; Display list-like; here results are numbers so just display
+(define (run-case i m n)
+  (display "CASE")
+  (display i)
+  (display "=m=")
+  (display m)
+  (display ",n=")
+  (display n)
+  (newline))
+
+(define (run-ans i m n)
+  (display "ANS")
+  (display i)
+  (display "=")
+  (display (solve m n))
+  (newline))
+
+;; Inputs
+(define cases
+  (list
+    (cons 5 7)
+    (cons 0 0)
+    (cons 1 9223372036854775808)
+    (cons 9223372036854775808 9223372036854775808)
+    (cons 0 18446744073709551615)
+    (cons 0 1)
+    (cons 12 15)
+    (cons 9223372036854775808 18446744073709551615)))
+
+(define (run-all cases i)
+  (if (null? cases)
+      'done
+      (begin
+        (let* ((p (car cases))
+               (m (car p))
+               (n (cdr p)))
+          (run-case i m n)
+          (run-ans i m n)
+          (run-all (cdr cases) (+ i 1))))))
+
+(run-all cases 0)

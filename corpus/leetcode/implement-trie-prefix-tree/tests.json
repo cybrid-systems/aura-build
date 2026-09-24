@@ -1,0 +1,238 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "operations": [
+        [
+          "insert",
+          "apple"
+        ],
+        [
+          "search",
+          "apple"
+        ],
+        [
+          "starts_with",
+          "app"
+        ],
+        [
+          "insert",
+          "app"
+        ],
+        [
+          "search",
+          "app"
+        ],
+        [
+          "search",
+          "ap"
+        ],
+        [
+          "starts_with",
+          "ap"
+        ]
+      ]
+    },
+    "expected": "[true,true,true,false,true]"
+  },
+  {
+    "id": 1,
+    "input": {
+      "operations": [
+        [
+          "search",
+          "hello"
+        ],
+        [
+          "starts_with",
+          "hell"
+        ],
+        [
+          "insert",
+          "hello"
+        ],
+        [
+          "search",
+          "hello"
+        ],
+        [
+          "search",
+          "hell"
+        ],
+        [
+          "starts_with",
+          "hello"
+        ],
+        [
+          "starts_with",
+          "helloworld"
+        ]
+      ]
+    },
+    "expected": "[false,false,true,false,true,false]"
+  },
+  {
+    "id": 2,
+    "input": {
+      "operations": [
+        [
+          "insert",
+          "a"
+        ],
+        [
+          "insert",
+          "ab"
+        ],
+        [
+          "insert",
+          "abc"
+        ],
+        [
+          "search",
+          "a"
+        ],
+        [
+          "search",
+          "ab"
+        ],
+        [
+          "search",
+          "abc"
+        ],
+        [
+          "search",
+          "abcd"
+        ],
+        [
+          "starts_with",
+          "a"
+        ],
+        [
+          "starts_with",
+          "ab"
+        ],
+        [
+          "starts_with",
+          "abc"
+        ],
+        [
+          "starts_with",
+          "abcd"
+        ],
+        [
+          "starts_with",
+          "b"
+        ]
+      ]
+    },
+    "expected": "[true,true,true,false,true,true,true,false,false]"
+  },
+  {
+    "id": 3,
+    "input": {
+      "operations": [
+        [
+          "insert",
+          "dog"
+        ],
+        [
+          "insert",
+          "doggo"
+        ],
+        [
+          "insert",
+          "cat"
+        ],
+        [
+          "search",
+          "dog"
+        ],
+        [
+          "search",
+          "doggy"
+        ],
+        [
+          "search",
+          "do"
+        ],
+        [
+          "starts_with",
+          "do"
+        ],
+        [
+          "starts_with",
+          "dog"
+        ],
+        [
+          "starts_with",
+          "doggy"
+        ],
+        [
+          "starts_with",
+          "c"
+        ],
+        [
+          "starts_with",
+          "d"
+        ]
+      ]
+    },
+    "expected": "[true,false,false,true,true,false,true,true]"
+  },
+  {
+    "id": 4,
+    "input": {
+      "operations": [
+        [
+          "insert",
+          "zebra"
+        ],
+        [
+          "search",
+          "zeb"
+        ],
+        [
+          "search",
+          "zebra"
+        ],
+        [
+          "starts_with",
+          "zeb"
+        ],
+        [
+          "starts_with",
+          "zea"
+        ],
+        [
+          "starts_with",
+          "z"
+        ],
+        [
+          "starts_with",
+          ""
+        ]
+      ]
+    },
+    "expected": "[false,true,true,false,true,true]"
+  },
+  {
+    "id": 5,
+    "input": {
+      "operations": [
+        [
+          "insert",
+          ""
+        ],
+        [
+          "search",
+          ""
+        ],
+        [
+          "starts_with",
+          ""
+        ]
+      ]
+    },
+    "expected": "[true,true]"
+  }
+]

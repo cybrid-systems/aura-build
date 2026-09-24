@@ -1,0 +1,112 @@
+(define (make-2d m n) 
+  (build-list m (lambda (i) (build-list n (lambda (j) 0)))))
+
+(define (screen-get screen r c) (list-ref (list-ref screen r) c))
+(define (screen-set! screen r c v) 
+  (let ((row (list-ref screen r)))
+    (set! (list-ref row c) v)))
+
+(define (copy-2d screen)
+  (map (lambda (row) (map (lambda (x) x) row)) screen))
+
+(define (flood-fill screen sr sc new-color)
+  (let* ((m (length screen))
+         (n (if (= m 0) 0 (length (car screen))))
+         (orig (screen-get screen sr sc))
+         (result (copy-2d screen)))
+    (if (= orig new-color)
+        result
+        (begin
+          (define (bfs)
+            (let ((queue (list (cons sr sc)))
+                  (visited '()))
+              (define (in-queue? q r c)
+                (let loop ((rest q))
+                  (cond ((null? rest) #f)
+                        ((and (= (car (car rest)) r) (= (cdr (car rest)) c)) #t)
+                        (else (loop (cdr rest))))))
+              (define (neighbors r c)
+                (let ((result '()))
+                  (if (> r 0) (set! result (cons (cons (- r 1) c) result)) '())
+                  (if (< r (- m 1)) (set! result (cons (cons (+ r 1) c) result)) result)
+                  (if (> c 0) (set! result (cons (cons r (- c 1)) result)) result)
+                  (if (< c (- n 1)) (set! result (cons (cons r (+ c 1)) result)) result)))
+              (let loop ((q queue))
+                (if (null? q)
+                    'done
+                    (let* ((cell (car q))
+                           (r (car cell))
+                           (c (cdr cell))
+                           (rest (cdr q)))
+                      (set! visited (cons cell visited))
+                      (screen-set! result r c new-color)
+                      (let ((nbrs (neighbors r c)))
+                        (define (process-nbrs nbrs2)
+                          (cond ((null? nbrs2) '())
+                                (else
+                                 (let* ((nb (car nbrs2))
+                                        (nr (car nb))
+                                        (nc (cdr nb)))
+                                   (if (and (not (in-queue? visited nr nc))
+                                            (= (screen-get result nr nc) orig))
+                                       (process-nbrs (cdr nbrs2))
+                                       (process-nbrs (cdr nbrs2)))))))
+                        (process-nbrs nbrs))
+                      (loop rest)))))
+          (bfs)
+          result))))
+
+(define (display-row row)
+  (display "[")
+  (let loop ((r row) (first #t))
+    (cond ((null? r) '())
+          (else
+           (if first
+               (begin (display (car r)) (loop (cdr r) #f))
+               (begin (display ",") (display (car r)) (loop (cdr r) #f))))))
+  (display "]"))
+
+(define (display-screen s)
+  (display "[")
+  (let loop ((rows s) (first #t))
+    (cond ((null? rows) '())
+          (else
+           (if first
+               (begin (display-row (car rows)) (loop (cdr rows) #f))
+               (begin (display ",") (display-row (car rows)) (loop (cdr rows) #f))))))
+  (display "]"))
+
+(define (solve screen sr sc new-color)
+  (flood-fill screen sr sc new-color))
+
+;; CASE 0
+(define r0 (solve '((1 1 1) (1 1 0) (1 0 1)) 1 1 2))
+(display "CASE0=") (display-screen r0) (newline)
+
+;; CASE 1
+(define r1 (solve '((0 0 0) (0 0 0)) 0 0 0))
+(display "CASE1=") (display-screen r1) (newline)
+
+;; CASE 2
+(define r2 (solve '((0 0 0) (0 0 0)) 0 1 1))
+(display "CASE2=") (display-screen r2) (newline)
+
+;; CASE 3
+(define r3 (solve '((5)) 0 0 9))
+(display "CASE3=") (display-screen r3) (newline)
+
+;; CASE 4
+(define r4 (solve '((1 2 1) (2 1 2) (1 2 1)) 0 0 3))
+(display "CASE4=") (display-screen r4) (newline)
+
+;; CASE 5
+(define r5 (solve '((1 1 1 1 1) (1 1 1 1 1) (1 1 1 1 1)) 1 2 7))
+(display "CASE5=") (display-screen r5) (newline)
+
+;; CASE 6
+(define r6 (solve '((0 1 0) (1 1 1) (0 1 0)) 1 1 5))
+(display "CASE6=") (display-screen r6) (newline)
+
+;; CASE 7
+(define r7 (solve '((1 0) (0 1)) 0 0 8))
+(display "CASE7=") (display-screen r7) (newline)

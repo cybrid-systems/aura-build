@@ -1,0 +1,23 @@
+(define (solve n)
+  (let loop ((i 0) (result 0))
+    (if (= i 32)
+        result
+        (let ((bit (modulo (quotient n (expt 2 i)) 2)))
+          (loop (+ i 1) (+ (* result 2) bit))))))
+
+(define (run-case i n)
+  (begin
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display (solve n))
+    (newline)))
+
+(run-case 0 123456)
+(run-case 1 0)
+(run-case 2 4294967295)
+(run-case 3 1)
+(run-case 4 1431655765)
+(run-case 5 2)
+(run-case 6 2147483648)
+(run-case 7 2863311530)

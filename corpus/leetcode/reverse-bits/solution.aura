@@ -1,0 +1,26 @@
+(define (solve n)
+  (let loop ((i 0) (result 0))
+    (if (= i 32)
+        result
+        (loop (+ i 1)
+              (+ (* result 2) (modulo (quotient n (expt 2 i)) 2))))))
+
+(define (expt2 i)
+  (let loop ((j 0) (acc 1))
+    (if (= j i) acc (loop (+ j 1) (* acc 2)))))
+
+(define (solve n)
+  (let loop ((i 0) (result 0))
+    (if (= i 32)
+        result
+        (loop (+ i 1)
+              (+ (* result 2) (modulo (quotient n (expt2 i)) 2))))))
+
+(display "CASE0=") (display (solve 123456)) (newline)
+(display "CASE1=") (display (solve 0)) (newline)
+(display "CASE2=") (display (solve 4294967295)) (newline)
+(display "CASE3=") (display (solve 1)) (newline)
+(display "CASE4=") (display (solve 1431655765)) (newline)
+(display "CASE5=") (display (solve 2)) (newline)
+(display "CASE6=") (display (solve 2147483648)) (newline)
+(display "CASE7=") (display (solve 2863311530)) (newline)

@@ -1,0 +1,158 @@
+;; Min-heap operations on list of (value, list-idx, pos)
+(define (heap-empty? h) (null? h))
+
+(define (heap-peek h) (car h))
+
+(define (heap-push h val idx pos)
+  ;; Insert maintaining min-heap property
+  (define (insert lst)
+    (cond ((null? lst) (cons (list val idx pos) '()))
+          ((< val (car (car lst)))
+           (cons (list val idx pos) lst))
+          (else (cons (car lst) (insert (cdr lst))))))
+  (insert h))
+
+(define (heap-pop h)
+  ;; Remove minimum
+  (cdr h))
+
+(define (heap-update h new-val idx pos)
+  ;; Pop min, push new
+  (heap-push (heap-pop h) new-val idx pos))
+
+;; Get element from lists
+(define (get-elem lists idx pos)
+  (car (list-ref (list-ref lists idx) pos)))
+
+(define (list-ref lst n)
+  (if (= n 0) (car lst) (list-ref (cdr lst) (- n 1))))
+
+;; Check coverage for current window
+(define (all-covered coverage k)
+  (define (check i)
+    (cond ((= i k) #t)
+          ((= (list-ref coverage i) 0) #f)
+          (else (check (+ i 1)))))
+  (check 0))
+
+(define (make-zero-list k)
+  (define (loop i)
+    (if (= i k) '() (cons 0 (loop (+ i 1)))))
+  (loop 0))
+
+(define (update-coverage coverage lists start-pos min-val)
+  ;; For each list, find if min-val is in that list given start positions
+  ;; This is expensive; better approach below
+  '())
+
+;; Better approach: sliding window with pointers
+;; For each list maintain a pointer. The coverage is [current_min, current_max]
+;; We need to find smallest window covering all lists
+
+(define (find-min-list lists pointers k)
+  ;; Find list with minimum value at current pointer
+  (define (loop i min-val min-idx)
+    (cond ((= i k) min-idx)
+          (else
+           (let ((v (get-elem lists i (list-ref pointers i))))
+             (if (< v min-val)
+                 (loop (+ i 1) v i)
+                 (loop (+ i 1) min-val min-idx)))))
+  0))
+
+(define (find-max-list lists pointers k)
+  ;; Find list with maximum value at current pointer
+  (define (loop i max-val)
+    (cond ((= i k) max-val)
+          (else
+           (let ((v (get-elem lists i (list-ref pointers i))))
+             (if (> v max-val) (loop (+ i 1) v) (loop (+ i 1) max-val))))))
+  (loop 0 -1))
+
+;; Main solve using min-heap approach
+(define (solve k n lists)
+  (cond ((= k 1)
+         (let ((first-elem (car (car lists))))
+           (list first-elem first-elem)))
+        (else
+         ;; Initialize heap with first element of each list
+         ;; Heap: list of (value, list-idx, pos)
+         (define heap '())
+         (define (init i)
+           (if (= i k) heap
+               (begin
+                 (set! heap (heap-push heap (get-elem lists i 0) i 0))
+                 (init (+ i 1)))))
+         (init 0)
+         ;; Find current max
+         (define cur-max -1)
+         (define (find-max i)
+           (if (= i k) cur-max
+               (let ((v (get-elem lists i 0)))
+                 (if (> v cur-max)
+                     (begin (set! cur-max v) (find-max (+ i 1)))
+                     (find-max (+ i 1))))))
+         (find-max 0)
+         ;; Track best range
+         (define best-a (car (heap-peek heap)))
+         (define best-b cur-max)
+         (define best-len (- best-b best-a))
+         ;; Main loop
+         (define (main-loop)
+           (let ((top-entry (heap-peek heap)))
+             (let ((top-val (car top-entry))
+                   (top-idx (car (cdr top-entry)))
+                   (top-pos (car (cdr (cdr top-entry)))))
+               (cond ((>= top-pos (- n 1))
+                      ;; Can't advance this list further
+                      (list best-a best-b))
+                     (else
+                      ;; Update range
+                      (let ((cur-len (- cur-max top-val)))
+                        (if (or (< cur-len best-len)
+                                (and (= cur-len best-len) (< top-val best-a)))
+                            (begin
+                              (set! best-a top-val)
+                              (set! best-b cur-max)
+                              (set! best-len cur-len))
+                            '())))
+                      ;; Advance the top list
+                      (let ((new-pos (+ top-pos 1))
+                            (new-val (get-elem lists top-idx new-pos)))
+                        (if (> new-val cur-max) (set! cur-max new-val) '())
+                        (set! heap (heap-update heap new-val top-idx new-pos))
+                        (main-loop))))))
+         (main-loop))))
+
+;; Display helper for list result
+(define (display-list lst)
+  (cond ((null? lst) (display ")"))
+        (else
+         (display " ")
+         (display (car lst))
+         (display-list (cdr lst)))))
+
+(define (display-result result)
+  (display "(")
+  (display (car result))
+  (display " ")
+  (display (car (cdr result)))
+  (display ")")
+  (newline))
+
+;; Test cases
+(define case0-lists '((1 5 10 13 21) (2 6 12 19 25) (3 8 15 24 26)))
+(define case1-lists '((4 10 15 24)))
+(define case2-lists '((1 2 3) (4 5 6)))
+(define case3-lists '((1 5 9) (2 3 10)))
+(define case4-lists '((1 2 3) (1 2 3) (1 2 3)))
+(define case5-lists '((0 100) (1 2)))
+(define case6-lists '((1 4 7) (2 5 8) (3 6 9) (0 10 20)))
+
+(display "CASE0=") (display-result (solve 3 5 case0-lists))
+(display "CASE1=") (display-result (solve 1 4 case1-lists))
+(display "CASE2=") (display-result (solve 2 3 case2-lists))
+(display "CASE3=") (display-result (solve 2 3 case3-lists))
+(display "CASE4=") (display-result (solve 3 3 case4-lists))
+(display "CASE5=") (display-result (solve 2 2 case5-lists))
+(display "CASE6=") (display-result (solve 4 3 case6-lists))

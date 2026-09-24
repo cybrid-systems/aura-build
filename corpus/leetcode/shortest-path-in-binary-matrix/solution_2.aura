@@ -1,0 +1,143 @@
+(define (length xs)
+  (if (null? xs) 0 (+ 1 (length (cdr xs)))))
+
+(define (list-ref xs i)
+  (if (= i 0) (car xs) (list-ref (cdr xs) i)))
+
+(define (make-grid n)
+  (let ((g '()))
+    (let loop ((i 0))
+      (if (= i n) g
+          (begin
+            (set! g (cons (make-vector n 0) g))
+            (loop (+ i 1)))))))
+
+(define (grid-set g i j v)
+  (vector-set! (list-ref g i) j v))
+
+(define (grid-ref g i j)
+  (vector-ref (list-ref g i) j))
+
+(define (grid-copy g n)
+  (let ((out (make-grid n)))
+    (let loop ((i 0))
+      (if (= i n) out
+          (begin
+            (let inner ((j 0))
+              (if (< j n)
+                  (begin
+                    (grid-set out i j (grid-ref g i j))
+                    (inner (+ j 1)))))
+            (loop (+ i 1)))))))
+
+(define (parse-row row)
+  (let ((v (make-vector (length row) 0)))
+    (let loop ((i 0) (xs row))
+      (if (null? xs) v
+          (begin
+            (vector-set! v i (car xs))
+            (loop (+ i 1) (cdr xs)))))))
+
+(define (parse-grid lst)
+  (let ((n (length lst)))
+    (let ((g (make-grid n)))
+      (let loop ((i 0) (rows lst))
+        (if (null? rows) g
+            (begin
+              (let ((v (parse-row (car rows))))
+                (let inner ((j 0))
+                  (if (< j n)
+                      (begin
+                        (grid-set g i j (vector-ref v j))
+                        (inner (+ j 1))))))
+              (loop (+ i 1) (cdr rows)))))
+      g)))
+
+(define (make-queue) (cons '() '()))
+(define (q-empty? q) (null? (car q)))
+(define (q-push q item) 
+  (let ((front (car q)) (back (cdr q)))
+    (if (null? back)
+        (cons (append front (list item)) '())
+        (cons front (append back (list item))))))
+(define (q-pop q)
+  (let ((front (car q)))
+    (cons (cdr front) (cdr q))))
+
+(define (solve grid)
+  (let ((n (length grid)))
+    (cond
+      ((= n 0) -1)
+      ((and (= n 1) (= 0 (grid-ref grid 0 0))) 1)
+      ((or (= 0 (grid-ref grid 0 0))
+           (= 0 (grid-ref grid (- n 1) (- n 1)))) 
+       (if (and (= 1 (grid-ref grid 0 0))
+                (= 1 (grid-ref grid (- n 1) (- n 1)))) 
+           -1
+           (bfs grid n)))
+      (else -1))))
+
+(define (bfs grid n)
+  (let ((visited (make-grid n)))
+    (let ((q (make-queue)) (front-elem (cons 0 (cons 0 (cons 1 '())))))
+      (grid-set visited 0 0 1)
+      (set! q (q-push q front-elem))
+      (let loop ((q q))
+        (if (q-empty? q) -1
+            (let* ((qq (q-pop q))
+                   (cell (car qq))
+                   (q2 (cdr qq))
+                   (r (car cell))
+                   (c (car (cdr cell)))
+                   (d (car (cdr (cdr cell)))))
+              (if (and (= r (- n 1)) (= c (- n 1))) d
+                  (let ((q3 q2))
+                    (let ((dx '(-1 0 1)))
+                      (let dxloop ((dxs dx))
+                        (if (null? dxs) (loop q3)
+                            (let ((dy '(-1 0 1)))
+                              (let dyloop ((dys dy))
+                                (if (null? dys) (dxloop (cdr dxs))
+                                    (let ((dr (car dxs)) (dc (car dys)))
+                                      (if (and (= dr 0) (= dc 0))
+                                          (dyloop (cdr dys))
+                                          (let ((nr (+ r dr)) (nc (+ c dc)))
+                                            (if (and (>= nr 0) (< nr n) (>= nc 0) (< nc n)
+                                                     (= 0 (grid-ref grid nr nc))
+                                                     (= 0 (grid-ref visited nr nc)))
+                                                (begin
+                                                  (grid-set visited nr nc 1)
+                                                  (set! q3 (q-push q3 (cons nr (cons nc (cons (+ d 1) '()))))))
+                                                '()))))
+                                    '()))
+                              '())))
+                    (loop q3)))))))))))
+
+;; Helper to convert list to display
+(define (display-list xs)
+  (display "(")
+  (let loop ((xs xs) (first #t))
+    (if (null? xs) (display ")")
+        (begin
+          (if first (set! first #f) (display " "))
+          (display (car xs))
+          (loop (cdr xs) first)))))
+
+(define (run-case i grid-lst)
+  (let ((g (parse-grid grid-lst)))
+    (let ((result (solve g)))
+      (display "CASE")
+      (display i)
+      (display "=")
+      (display result)
+      (newline))))
+
+;; Main: run all cases
+(run-case 0 '((0 0 0) (1 1 0) (1 1 0)))
+(run-case 1 '((0 1) (1 0)))
+(run-case 2 '((1 0 0) (0 0 0) (0 0 1)))
+(run-case 3 '((0)))
+(run-case 4 '((1)))
+(run-case 5 '((0 0 0 0) (0 1 1 0) (0 1 1 0) (0 0 0 0)))
+(run-case 6 '((0 0) (0 0)))
+(run-case 7 '((0 1 0) (1 0 1) (0 1 0)))

@@ -1,0 +1,41 @@
+(define (abs n)
+  (if (< n 0) (- 0 n) n))
+
+(define (fast-pow x n)
+  (let ((result 1.0)
+        (base x)
+        (exp n))
+    (let loop ((result result)
+               (base base)
+               (exp exp))
+      (cond
+        ((= exp 0) result)
+        ((= (modulo exp 2) 1)
+         (loop (* result base) (* base base) (quotient exp 2)))
+        (else
+         (loop result (* base base) (quotient exp 2))))))
+
+(define (solve x n)
+  (if (= n 0)
+      1.0
+      (let ((nn (abs n)))
+        (let ((p (fast-pow x nn)))
+          (if (< n 0)
+              (/ 1.0 p)
+              p)))))
+
+(define (display-float x)
+  (display (number->string x)))
+
+(display "CASE0=") (display-float (solve 2.0 10)) (newline)
+(display "CASE1=") (display-float (solve 2.1 3)) (newline)
+(display "CASE2=") (display-float (solve 2.0 -2)) (newline)
+(display "CASE3=") (display-float (solve 1.0 0)) (newline)
+(display "CASE4=") (display-float (solve 0.0 0)) (newline)
+(display "CASE5=") (display-float (solve 0.0 5)) (newline)
+(display "CASE6=") (display-float (solve -2.0 3)) (newline)
+(display "CASE7=") (display-float (solve -2.0 4)) (newline)
+(display "CASE8=") (display-float (solve 2.0 -2147483648)) (newline)
+(display "CASE9=") (display-float (solve 1.5 20)) (newline)
+(display "CASE10=") (display-float (solve 0.5 -3)) (newline)
+(display "CASE11=") (display-float (solve 1.0 2147483647)) (newline)

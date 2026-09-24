@@ -1,0 +1,69 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:07:48Z",
+      "ts_local": "2026-09-24 23:07:48 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2015,
+        "total_characters": 0,
+        "prompt_tokens": 1348,
+        "completion_tokens": 667,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 512
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.045,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 1:20: unbound variable: bitwise-shift-left\n   |\n  1 | (define mask64 (- (bitwise-shift-left 1 64) 1))\n   |                    ^^^^^^^^^^^^^^^^^^\nerror: 1:10: unbound variable: cases\n   |\n  1 | (run-all cases 0)\n   |          ^^^^^\n",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:07:53Z",
+      "ts_local": "2026-09-24 23:07:53 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1731,
+        "total_characters": 0,
+        "prompt_tokens": 1348,
+        "completion_tokens": 383,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 1280
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.023,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 7:12: unbound variable: n\n  did you mean 'i'?\nerror: 5:12: unbound variable: m\n  did you mean 'i'?\nerror: 7:12: unbound variable: n\n  did you mean 'i'?\nerror: 5:12: unbound variable: m\n  did you mean 'i'?\n",
+      "stdout_snippet": "CASE0=m=5,n=7\nANS0=4\nCASE1=m=0,n=0\nANS1=0\nCASE2=m=1,n=CASE0=m=5,n=7\nANS0=4\nCASE1=m=0,n=0\nANS1=0\nCASE2=m=1,n=CASE3=m=CASE4=m=0,n=CASE5=m=0,n=1\nANS5=0\nCASE6=m=12,n=15\nANS6=12\nCASE7=m="
+    }
+  ],
+  "slug": "bitwise-and-of-numbers-range",
+  "title": "Bitwise AND of Numbers Range",
+  "category": "bit_manipulation",
+  "updated_at": "2026-09-24T15:07:53Z",
+  "updated_at_local": "2026-09-24 23:07:53 CST"
+}

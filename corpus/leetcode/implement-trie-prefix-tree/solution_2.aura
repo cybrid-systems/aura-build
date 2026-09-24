@@ -1,0 +1,98 @@
+(define (make-node)
+  (let ((children (make-vector 26 #f))
+        (is-end #f))
+    (cons children is-end)))
+
+(define (node-get-child node idx)
+  (vector-ref (car node) idx))
+
+(define (node-set-child node idx child)
+  (vector-set! (car node) idx child))
+
+(define (node-end? node)
+  (cdr node))
+
+(define (node-set-end! node)
+  (set-cdr! node #t))
+
+(define (char->idx c)
+  (- (char->integer c) (char->integer #\a)))
+
+(define (trie-insert trie word)
+  (let ((n (string-length word)))
+    (let loop ((i 0) (node trie))
+      (if (= i n)
+          (node-set-end! node)
+          (let ((idx (char->idx (string-ref word i)))
+                (child (node-get-child node idx)))
+            (if child
+                (loop (+ i 1) child)
+                (let ((new-child (make-node)))
+                  (node-set-child node idx new-child)
+                  (loop (+ i 1) new-child))))))))
+
+(define (trie-search trie word)
+  (let ((n (string-length word)))
+    (let loop ((i 0) (node trie))
+      (cond
+        ((null? node) #f)
+        ((= i n) (node-end? node))
+        (else
+         (let ((idx (char->idx (string-ref word i))))
+           (loop (+ i 1) (node-get-child node idx))))))))
+
+(define (trie-starts-with trie prefix)
+  (let ((n (string-length prefix)))
+    (let loop ((i 0) (node trie))
+      (cond
+        ((null? node) #f)
+        ((= i n) #t)
+        (else
+         (let ((idx (char->idx (string-ref prefix i))))
+           (loop (+ i 1) (node-get-child node idx))))))))
+
+(define (solve operations)
+  (let ((trie (make-node))
+        (results '()))
+    (let loop ((ops operations))
+      (if (null? ops)
+          (reverse results)
+          (let ((op (car ops)))
+            (cond
+              ((equal? (car op) "insert")
+               (trie-insert trie (cadr op))
+               (loop (cdr ops)))
+              ((equal? (car op) "search")
+               (set! results (cons (trie-search trie (cadr op)) results))
+               (loop (cdr ops)))
+              ((equal? (car op) "starts_with")
+               (set! results (cons (trie-starts-with trie (cadr op)) results))
+               (loop (cdr ops)))
+              (else (loop (cdr ops)))))))))
+
+(define (display-list lst)
+  (display "[")
+  (let loop ((l lst) (first? #t))
+    (if (null? l)
+        (display "]")
+        (begin
+          (if first?
+              (set! first? #f)
+              (display ", "))
+          (display (car l))
+          (loop (cdr l) first?))))
+  (newline))
+
+(define case0 '(("insert" "apple") ("search" "apple") ("starts_with" "app") ("insert" "app") ("search" "app") ("search" "ap") ("starts_with" "ap")))
+(define case1 '(("search" "hello") ("starts_with" "hell") ("insert" "hello") ("search" "hello") ("search" "hell") ("starts_with" "hello") ("starts_with" "helloworld")))
+(define case2 '(("insert" "a") ("insert" "ab") ("insert" "abc") ("search" "a") ("search" "ab") ("search" "abc") ("search" "abcd") ("starts_with" "a") ("starts_with" "ab") ("starts_with" "abc") ("starts_with" "abcd") ("starts_with" "b")))
+(define case3 '(("insert" "dog") ("insert" "doggo") ("insert" "cat") ("search" "dog") ("search" "doggy") ("search" "do") ("starts_with" "do") ("starts_with" "dog") ("starts_with" "doggy") ("starts_with" "c") ("starts_with" "d")))
+(define case4 '(("insert" "zebra") ("search" "zeb") ("search" "zebra") ("starts_with" "zeb") ("starts_with" "zea") ("starts_with" "z") ("starts_with" "")))
+(define case5 '(("insert" "") ("search" "") ("starts_with" "")))
+
+(display "CASE0=") (display-list (solve case0))
+(display "CASE1=") (display-list (solve case1))
+(display "CASE2=") (display-list (solve case2))
+(display "CASE3=") (display-list (solve case3))
+(display "CASE4=") (display-list (solve case4))
+(display "CASE5=") (display-list (solve case5))

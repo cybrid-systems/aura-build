@@ -1,0 +1,97 @@
+(define (list-length xs)
+  (if (null? xs) 0 (+ 1 (list-length (cdr xs)))))
+
+;; Insert x into sorted list `xs` in descending order (max-heap behavior)
+(define (insert-desc x xs)
+  (cond ((null? xs) (cons x '()))
+        ((<= x (car xs)) (cons (car xs) (insert-desc x (cdr xs))))
+        (else (cons x xs))))
+
+;; Insert x into sorted list `xs` in ascending order (min-heap behavior)
+(define (insert-asc x xs)
+  (cond ((null? xs) (cons x '()))
+        ((>= x (car xs)) (cons (car xs) (insert-asc x (cdr xs))))
+        (else (cons x xs))))
+
+;; Remove and return the first element
+(define (pop-front xs) (cdr xs))
+
+;; Run a single test case. Returns a list of median strings.
+(define (run-case commands)
+  (letrec ((lower '())   ;; max-heap (descending sorted)
+           (upper '())   ;; min-heap (ascending sorted)
+           (results '())
+           (balance (lambda (l u acc)
+             (let ((ls (list-length l)) (us (list-length u)))
+               (cond ((= ls us) (values l u acc))           ;; balanced
+                     ((= ls (+ us 1))                       ;; lower too big
+                      (let ((top (car l)))
+                        (balance (cdr l) (insert-asc top u) acc)))
+                     ((= us (+ ls 1))                       ;; upper too big
+                      (let ((top (car u)))
+                        (balance (insert-desc top l) (cdr u) acc)))
+                     (else (values l u acc))))))
+           (compute-median (lambda (l u)
+             (let ((ls (list-length l)) (us (list-length u)))
+               (cond ((= ls us) (/ (+ (car l) (car u)) 2.0))
+                     ((> ls us) (car l))
+                     (else (car u))))))
+           (loop (lambda (cmds l u acc)
+             (if (null? cmds) acc
+                 (let ((cmd (car cmds)))
+                   (cond ((equal? (car cmd) 'ADD)
+                          (let ((num (car (cdr cmd))))
+                            ;; Add to appropriate heap
+                            (if (or (null? l) (<= num (car l)))
+                                (loop (cdr cmds) (insert-desc num l) u acc)
+                                (loop (cdr cmds) l (insert-asc num u) acc))))
+                         (else
+                          ;; MEDIAN
+                          (let-values (((nl nu _) (balance l u '())))
+                            (loop (cdr cmds) nl nu
+                                  (cons (compute-median nl nu) acc))))))))))
+    ;; Note: results accumulated in reverse; reverse for caller convenience
+    (reverse (loop commands lower upper results))))
+
+;; Display the case result in a readable form
+(define (display-list-of-numbers lst)
+  (display "(")
+  (let loop ((xs lst))
+    (cond ((null? xs) (display ")"))
+          (else
+           (display (car xs))
+           (if (null? (cdr xs))
+               (display ")")
+               (begin (display " ") (loop (cdr xs))))))))
+
+(define (solve case-input)
+  (run-case (cdr (assoc 'commands case-input))))
+
+;; ----- Driver: iterate over embedded test cases and print CASEi=result -----
+(define test-cases
+  (list
+    (list 'commands (list (list 'ADD 1) (list 'MEDIAN) (list 'ADD 2) (list 'MEDIAN) (list 'ADD 3) (list 'MEDIAN)))
+    (list 'commands (list (list 'ADD 42) (list 'MEDIAN)))
+    (list 'commands (list (list 'ADD 10) (list 'ADD 20) (list 'MEDIAN)))
+    (list 'commands (list (list 'ADD -5) (list 'MEDIAN) (list 'ADD -1) (list 'MEDIAN) (list 'ADD -3) (list 'MEDIAN) (list 'ADD -7) (list 'MEDIAN)))
+    (list 'commands (list (list 'ADD 0) (list 'MEDIAN) (list 'ADD 0) (list 'MEDIAN) (list 'ADD 0) (list 'MEDIAN) (list 'ADD 5) (list 'MEDIAN) (list 'ADD -5) (list 'MEDIAN)))
+    (list 'commands (list (list 'ADD 7) (list 'ADD 1) (list 'ADD 9) (list 'ADD 4) (list 'ADD 6) (list 'ADD 2) (list 'ADD 8) (list 'MEDIAN) (list 'ADD 5) (list 'MEDIAN) (list 'ADD 3) (list 'MEDIAN)))
+    (list 'commands (list (list 'ADD 100) (list 'ADD 50) (list 'ADD 200) (list 'ADD 25) (list 'ADD 75) (list 'ADD 150) (list 'ADD 250) (list 'MEDIAN) (list 'MEDIAN) (list 'MEDIAN) (list 'MEDIAN) (list 'MEDIAN) (list 'MEDIAN) (list 'MEDIAN)))
+    (list 'commands (list (list 'ADD 1) (list 'MEDIAN) (list 'ADD 1000000) (list 'MEDIAN) (list 'ADD 2) (list 'MEDIAN) (list 'ADD 999999) (list 'MEDIAN) (list 'ADD 500000) (list 'MEDIAN)))
+  ))
+
+(define (assoc key lst)
+  (cond ((null? lst) #f)
+        ((equal? (car (car lst)) key) (car lst))
+        (else (assoc key (cdr lst)))))
+
+(define (run-all cases)
+  (let loop ((cs cases) (i 0))
+    (if (null? cs) 'done
+        (begin
+          (display "CASE")(display i)(display "=")
+          (display-list-of-numbers (solve (car cs)))
+          (newline)
+          (loop (cdr cs) (+ i 1))))))
+
+(run-all test-cases)

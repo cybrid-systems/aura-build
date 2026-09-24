@@ -1,0 +1,71 @@
+;; Kth Smallest Element in a Sorted Matrix
+;; Classic min-heap approach: seed the heap with the first column,
+;; then pop k times, pushing the next element from the same row when popping.
+
+(define (heap-insert heap val)
+  ;; insert val into the heap (a list of pairs '(value row col) as a min-heap via insertion sort)
+  ;; We'll keep heap as a sorted list of triplets by value ascending
+  (define (insert-h h v)
+    (cond ((null? h) (cons v '()))
+          ((< (car v) (car (car h))) (cons v h))
+          (else (cons (car h) (insert-h (cdr h) v)))))
+  (insert-h heap val))
+
+(define (heap-pop heap)
+  ;; pop the smallest (car of heap). heap is non-empty.
+  (let ((top (car heap))
+        (rest (cdr heap)))
+    (values top rest)))
+
+(define (solve matrix k)
+  (define n (length matrix))
+
+  ;; Collect (value row col) triplets from the first column of each row.
+  ;; Rows: pull row by index using list-ref.
+  (define (row-elt r i)
+    (let loop ((r r) (idx 0))
+      (if (= idx i) (car r) (loop (cdr r) (+ idx 1)))))
+
+  (define (build-initial-heap idx heap)
+    (if (>= idx n)
+        heap
+        (let ((v (row-elt (list-ref matrix idx) 0)))
+          (build-initial-heap (+ idx 1)
+                              (heap-insert heap (cons v (cons idx (cons 0 '()))))))))
+
+  (define heap (build-initial-heap 0 '()))
+
+  ;; pop k times
+  (define (loop-k h step)
+    (if (= step k)
+        (car (car h))  ; the current min value
+        (let* ((top (car h))
+               (rest-h (cdr h))
+               (val (car top))
+               (rc (cdr top))
+               (row (car rc))
+               (cc (cdr rc))
+               (next-col (+ cc 1)))
+          (if (>= next-col n)
+              (loop-k rest-h (+ step 1))
+              (let ((nv (row-elt (list-ref matrix row) next-col)))
+                (loop-k (heap-insert rest-h
+                                     (cons nv (cons row (cons next-col '()))))
+                        (+ step 1)))))))
+
+  (loop-k heap 1))
+
+;; ---- helper to display CASE lines ----
+(define (display-case i result)
+  (display "CASE") (display i) (display "=") (display result) (newline))
+
+;; ---- run on embedded cases ----
+
+(display-case 0 (solve '((1 5 9) (10 11 13) (12 13 15)) 8))
+(display-case 1 (solve '((-5)) 1))
+(display-case 2 (solve '((1 2) (3 4)) 1))
+(display-case 3 (solve '((1 2) (3 4)) 4))
+(display-case 4 (solve '((1 3 5) (2 4 6) (7 8 9)) 5))
+(display-case 5 (solve '((1 5 9 11) (10 11 13 15) (12 13 15 17) (14 16 18 20)) 7))
+(display-case 6 (solve '((2 2 3) (2 3 3) (3 3 4)) 6))
+(display-case 7 (solve '((1)) 1))

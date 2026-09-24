@@ -1,0 +1,125 @@
+import heapq
+from collections import defaultdict
+
+def solve(nums: list[int], k: int) -> list[int]:
+    if k == 0 or not nums:
+        return []
+    
+    n = len(nums)
+    if k > n:
+        return []
+    
+    # Max-heap for lower half (store negatives)
+    small = []
+    # Min-heap for upper half
+    large = []
+    
+    # Lazy deletion counts
+    delayed = defaultdict(int)
+    
+    # Actual sizes (excluding delayed elements)
+    small_size = 0
+    large_size = 0
+    
+    def prune(heap):
+        nonlocal delayed
+        while heap:
+            num = -heap[0] if heap is small else heap[0]
+            if num in delayed and delayed[num] > 0:
+                heapq.heappop(heap)
+                delayed[num] -= 1
+                if delayed[num] == 0:
+                    del delayed[num]
+            else:
+                break
+    
+    def balance():
+        nonlocal small_size, large_size
+        # Invariant: small_size >= large_size and small_size <= large_size + 1
+        # Or for even k: small_size == large_size (when k even)
+        # Actually: we want small_size to have the extra element if k is odd
+        
+        if k % 2 == 1:
+            # small should have one more element than large
+            if small_size > large_size + 1:
+                # move top of small to large
+                num = -heapq.heappop(small)
+                heapq.heappush(large, num)
+                small_size -= 1
+                large_size += 1
+                prune(large)
+            elif small_size < large_size:
+                # move top of large to small
+                num = heapq.heappop(large)
+                heapq.heappush(small, -num)
+                small_size += 1
+                large_size -= 1
+                prune(small)
+        else:
+            # k is even: sizes should be equal
+            if small_size > large_size:
+                num = -heapq.heappop(small)
+                heapq.heappush(large, num)
+                small_size -= 1
+                large_size += 1
+                prune(large)
+            elif small_size < large_size:
+                num = heapq.heappop(large)
+                heapq.heappush(small, -num)
+                small_size += 1
+                large_size -= 1
+                prune(small)
+    
+    def get_median():
+        if k % 2 == 1:
+            # prune small to get valid top
+            prune(small)
+            return -small[0]
+        else:
+            prune(small)
+            prune(large)
+            return (-small[0]) + large[0]
+    
+    result = []
+    
+    for i, num in enumerate(nums):
+        # Add element
+        if small and num <= -small[0]:
+            heapq.heappush(small, -num)
+            small_size += 1
+        elif large and num >= large[0]:
+            heapq.heappush(large, num)
+            large_size += 1
+        else:
+            # Place in the heap with fewer elements (or default to small)
+            if small_size <= large_size:
+                heapq.heappush(small, -num)
+                small_size += 1
+            else:
+                heapq.heappush(large, num)
+                large_size += 1
+        
+        # Prune newly added might not be needed but safe
+        balance()
+        
+        # Remove element leaving window
+        if i >= k:
+            out_num = nums[i - k]
+            delayed[out_num] += 1
+            # Determine which heap
+            # We need to check; but we don't track which heap each element is in
+            # Lazy approach: prune both
+            if small and -small[0] == out_num:
+                # definitely in small
+                prune(small)
+                small_size -= 1
+            elif large and large[0] == out_num:
+                prune(large)
+                large_size -= 1
+            else:
+                # We don't know — just decrement size from the one we think it's in
+                # Actually, we need to track this. Let me reconsider.
+                pass
+        
+        # Hmm, I need to know which heap the outgoing element is in.
+        # Let me track that with a separate hashmap.

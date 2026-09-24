@@ -1,0 +1,73 @@
+(define (make-vec n fill)
+  (let ((v '()))
+    (let loop ((i 0))
+      (if (>= i n) v
+          (loop (+ i 1)))))
+  ;; build vector via list of n items (Aura has no vectors; use association list)
+  (let loop ((i 0) (acc '()))
+    (if (>= i n) acc
+        (loop (+ i 1) (cons fill acc)))))
+
+(define (adj-set! adj u v)
+  (let ((cur (car (cdr (assq u adj)))))
+    (set-car! (cdr (assq u adj)) (cons v cur))))
+
+(define (build-adj n edges)
+  (let ((adj '()))
+    (let loop ((i 0))
+      (if (>= i n) adj
+          (begin
+            (set! adj (cons (cons i '()) adj))
+            (loop (+ i 1)))))
+    (let loop ((es edges))
+      (if (null? es) adj
+          (let ((e (car es)))
+            (let ((u (car e)) (v (car (cdr e))))
+              (adj-set! adj u v)
+              (adj-set! adj v u)
+              (loop (cdr es))))))))
+
+(define (neighbors adj u)
+  (car (cdr (assq adj u))))
+
+;; Wait, assq needs the key first. Fix: (assq u adj) returns the (u . neighbors) pair.
+;; But adj is ((0 . ()) (1 . ()) ...). Let's redo neighbors.
+
+(define (neighbors adj u)
+  (cdr (assq u adj)))
+
+(define (degree adj u)
+  (length (cdr (assq u adj))))
+
+(define (remove-edge! adj u v)
+  ;; remove v from u's neighbor list
+  (let ((pair (assq u adj)))
+    (set-cdr! pair (filter-not (lambda (x) (= x v)) (cdr pair)))))
+
+(define (filter-not p lst)
+  (cond ((null? lst) '())
+        ((p (car lst)) (filter-not p (cdr lst)))
+        (else (cons (car lst) (filter-not p (cdr lst))))))
+
+(define (find-min-height-roots n edges)
+  (cond ((= n 1) '(0))
+        ((= n 2) '(0 1))
+        (else
+         (let ((adj (build-adj n edges)))
+           (let ((deg (make-vec-deg n adj)))
+             (let loop ((curr-leaves '()))
+               (let ((next-leaves '()))
+                 (let inner ((ls curr-leaves))
+                   (if (null? ls) '()
+                       (let ((u (car ls)))
+                         (let ((nbrs (neighbors adj u)))
+                           (let nloop ((ns nbrs))
+                             (if (null? ns) '()
+                                 (begin
+                                   (remove-edge! adj (car ns) u)
+                                   (if (= (degree adj (car ns)) 1)
+                                       (cons (car ns) '())
+                                       '())))))))))
+               ))))))
+
+;; This is getting too complicated. Let me restructure cleanly.

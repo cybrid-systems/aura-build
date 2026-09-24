@@ -1,0 +1,144 @@
+;; k-th smallest in sorted matrix using min-heap (Aura)
+
+(define (length lst)
+  (if (null? lst) 0 (+ 1 (length (cdr lst)))))
+
+;; node = (value row col)
+;; min-heap as list of nodes, ordered ascending by value
+
+(define (heap-empty? h) (null? h))
+
+(define (heap-pop h)
+  (if (null? h)
+      (list #f '())
+      (list (car h) (cdr h))))
+
+(define (heap-push h node)
+  ;; insert node then bubble up; we just cons and rely on the fact we
+  ;; always pop smallest after bubbling-up call. For simplicity we keep
+  ;; the heap as a SORTED list (insertion sort) -- fine for small n.
+  (cond
+    ((null? h) (cons node '()))
+    ((<= (car node) (car (car h)))
+     (cons node h))
+    (else
+      (cons (car h) (heap-push (cdr h) node)))))
+
+(define (solve matrix k)
+  (let* ((n (length matrix))
+         (push-col (lambda (h r c)
+                     (heap-push h (cons (car (cdr (car (cdr (car (cdr (car matrix))))))) '())))))
+  ;; We'll build a fresh heap to avoid confusion
+  (let ((row1 (car matrix))
+        (rest (cdr matrix)))
+    (define (col-get m r)
+      (define (nth lst i)
+        (if (= i 0) (car lst) (nth (cdr lst) (- i 1))))
+      (nth (car (cdr (cdr m))) r)) ;; unused, keep simple
+    (define (get-cell mat r c)
+      ;; mat is list of rows; nth row r, nth element c
+      (define (nth lst i)
+        (if (= i 0) (car lst) (nth (cdr lst) (- i 1))))
+      (nth (nth mat r) c))
+    (define (push-row-first-col h mat row-idx)
+      (if (>= row-idx n)
+          h
+          (let ((val (get-cell mat row-idx 0)))
+            (heap-push (push-row-first-col h mat (+ row-idx 1)))
+            )))
+    ;; Simpler iterative push
+    (define (build-heap h mat idx)
+      (if (>= idx n)
+          h
+          (build-heap (heap-push h
+                                  (cons (get-cell mat idx 0) (cons idx (cons 0 '()))))
+                      mat (+ idx 1))))
+    (let ((h (build-heap '() matrix 0)))
+      (let loop ((count 1) (cur h))
+        (let* ((popped (heap-pop cur))
+               (node (car popped))
+               (rest-h (car (cdr popped))))
+          (if (= count k)
+              (car node)
+              (let ((r (car (cdr node)))
+                    (c (car (cdr (cdr node)))))
+                (let ((new-c (+ c 1)))
+                  (if (< new-c n)
+                      (loop (+ count 1)
+                            (heap-push rest-h
+                                       (cons (get-cell matrix r new-c)
+                                             (cons r (cons new-c '())))))
+                      (loop (+ count 1) rest-h))))))))))
+
+;; Display helpers
+(define (display-list xs)
+  (display "[")
+  (let loop ((first? #t) (xs xs))
+    (cond
+      ((null? xs) (display "]"))
+      (else
+        (if first? (display "[") (display ","))
+        (display (car xs))
+        (loop #f (cdr xs))))))
+
+;; Embed test cases
+(define cases
+  (list
+    (list '((1 5 9) (10 11 13) (12 13 15)) 8)
+    (list '((-5)) 1)
+    (list '((1 2) (3 4)) 1)
+    (list '((1 2) (3 4)) 4)
+    (list '((1 3 5) (2 4 6) (7 8 9)) 5)
+    (list '((1 5 9 11) (10 11 13 15) (12 13 15 17) (14 16 18 20)) 7)
+    (list '((2 2 3) (2 3 3) (3 3 4)) 6)
+    (list '((1)) 1)))
+
+(define (run-cases cs i)
+  (if (null? cs)
+      'done
+      (begin
+        (let* ((c (car cs))
+               (mat (car c))
+               (k (car (cdr c)))
+               (res (solve mat k)))
+          (display "CASE")
+          (display i)
+          (display "=")
+          (display res)
+          (display "#")
+          (newline) ;; placeholder; will be replaced below
+          ))))
+
+;; Simplified output loop
+(define (run-all cs i)
+  (if (null? cs)
+      'done
+      (let* ((c (car cs))
+             (mat (car c))
+             (k (car (cdr c)))
+             (res (solve mat k)))
+        (display "CASE")
+        (display i)
+        (display "=")
+        (display res)
+        (display "#")
+        (run-all (cdr cs) (+ i 1)))))
+;; Actually we'd like trailing newline only; replace "#"
+;; by nothing and end with newline.
+;; Redefine run-all properly:
+(define (run-all2 cs i)
+  (if (null? cs)
+      'done
+      (begin
+        (let* ((c (car cs))
+               (mat (car c))
+               (k (car (cdr c)))
+               (res (solve mat k)))
+          (display "CASE")
+          (display i)
+          (display "=")
+          (display res))
+        (newline)
+        (run-all2 (cdr cs) (+ i 1)))))
+
+(run-all2 cases 0)

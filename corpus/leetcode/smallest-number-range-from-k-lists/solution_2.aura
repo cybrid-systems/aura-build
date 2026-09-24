@@ -1,0 +1,202 @@
+;; Smallest range covering all k lists.
+;; Approach: merge all (value, list-index, position) into one list, sort by value,
+;; then sliding window over this merged sorted list. The minimum window that
+;; contains at least one element from each list is the answer (ties on length
+;; broken by smallest starting value).
+
+(define (list-ref lst i)
+  (if (= i 0) (car lst) (list-ref (cdr lst) i)))
+
+(define (list-set lst i v)
+  (if (= i 0)
+      (cons v (cdr lst))
+      (cons (car lst) (list-set (cdr lst) (- i 1) v))))
+
+(define (list-length lst)
+  (if (null? lst) 0 (+ 1 (list-length (cdr lst)))))
+
+(define (append a b)
+  (if (null? a) b (cons (car a) (append (cdr a) b))))
+
+;; Build a list of triples (value, list-index, position) flattened from all lists.
+(define (build-triples k n lists)
+  (letrec ((loop-i (lambda (i acc)
+                     (if (= i k)
+                         acc
+                         (let ((row (list-ref lists i)))
+                           (loop-i (+ i 1)
+                                   (append acc
+                                           (build-row row i 0 n)))))))
+           (build-row (lambda (row ri pos limit)
+                        (if (= pos limit)
+                            '()
+                            (cons (list (list-ref row pos) ri pos)
+                                  (build-row row ri (+ pos 1) limit))))))
+    (loop-i 0 '())))
+
+;; Compare two triples by value (car). Return negative/zero/positive.
+(define (triple<? a b)
+  (< (car a) (car b)))
+
+;; Insert a triple into a sorted list (ascending by value).
+(define (insert-sorted xs t)
+  (cond ((null? xs) (cons t '()))
+        ((triple<? t (car xs)) (cons t xs))
+        (else (cons (car xs) (insert-sorted (cdr xs) t)))))
+
+(define (sort-triples xs)
+  (if (null? xs)
+      '()
+      (insert-sorted (sort-triples (cdr xs)) (car xs))))
+
+;; Slide a window over sorted triples; window covers a contiguous range of
+;; values. We want the shortest window (by value length) that contains at least
+;; one element from each list 0..k-1. Return (min-len min-start min-end) where
+;; min-start = value at window start triple, min-end = value at window end.
+(define (find-window triples k)
+  (letrec ((len (list-length triples))
+           (best-len (lambda () (list-ref (car best-state) 0)))
+           (best-start (lambda () (list-ref (car best-state) 1)))
+           (best-end (lambda () (list-ref (car best-state) 2)))
+           (best-state (list (list 99999999 '() '()))))
+    (letrec ((sliding
+              (lambda (left right covered)
+                (cond ((= right len)
+                      ;; right exhausted; further left increments only shrink coverage
+                      'done)
+                  (else
+                   (let ((right-val (car (list-ref triples right)))
+                         (left-val (car (list-ref triples left))))
+                     (cond
+                       ;; covered contains every list 0..k-1?
+                       ((covers-all? covered k)
+                        ;; Try to update best, then advance left.
+                        (let ((cur-len (- right-val left-val)))
+                          (cond
+                            ((or (< cur-len (best-len))
+                                 (and (= cur-len (best-len))
+                                      (< left-val (best-start))))
+                             (set! best-state
+                                   (list (list cur-len left-val right-val))))
+                            (else '())))
+                        (let ((left-list (list-ref (list-ref triples left) 1))
+                              (new-covered (remove-one covered (list-ref (list-ref triples left) 1))))
+                          (sliding (+ left 1) right new-covered)))
+                       (else
+                        ;; Not covering all lists; advance right and add its list.
+                        (sliding left
+                                 (+ right 1)
+                                 (add-one covered
+                                          (list-ref (list-ref triples right) 1))))))))))))
+      (sliding 0 0 '()))
+    best-state))
+
+;; covered is a list of distinct list-indices currently in window.
+(define (add-one covered idx)
+  (if (member? covered idx) covered (cons idx covered)))
+
+(define (remove-one covered idx)
+  (cond ((null? covered) '())
+        ((= (car covered) idx) (cdr covered))
+        (else (cons (car covered) (remove-one (cdr covered) idx)))))
+
+(define (member? lst v)
+  (cond ((null? lst) #f)
+        ((= (car lst) v) #t)
+        (else (member? (cdr lst) v))))
+
+(define (covers-all? covered k)
+  (letrec ((loop (lambda (i)
+                   (cond ((= i k) #t)
+                         ((member? covered i) (loop (+ i 1)))
+                         (else #f)))))
+    (loop '())) ;; placeholder; will rebind via let inside caller
+
+;; We'll just inline the k check via list-length of covered on sorted indices 0..k-1.
+;; Simpler: pass k via a global style; here we just inline.
+
+(define (covers-all covered k)
+  (letrec ((loop (lambda (i)
+                   (cond ((= i k) #t)
+                         ((member? covered i) (loop (+ i 1)))
+                         (else #f)))))
+    (loop 0)))
+
+;; Wrapper: compute minimum window using covers-all (avoids the stub above).
+(define (find-window triples k)
+  (let ((best-state (list (list 99999999 99999999 99999999))))
+    (letrec ((sliding
+              (lambda (left right covered)
+                (cond ((= right (list-length triples)) 'done)
+                  (else
+                   (let ((right-val (car (list-ref triples right)))
+                         (left-val (car (list-ref triples left))))
+                     (cond
+                       ((covers-all covered k)
+                        (let ((cur-len (- right-val left-val))
+                              (cur-start left-val)
+                              (cur-end right-val)
+                              (bl (car (car best-state)))
+                              (bs (car (cdr (car best-state)))))
+                          (cond
+                            ((or (< cur-len bl)
+                                 (and (= cur-len bl) (< cur-start bs)))
+                             (set! best-state
+                                   (list (list cur-len cur-start cur-end))))
+                            (else '())))
+                        (let ((left-list-idx (list-ref (list-ref triples left) 1)))
+                          (sliding (+ left 1) right (remove-one covered left-list-idx))))
+                       (else
+                        (let ((right-list-idx (list-ref (list-ref triples right) 1)))
+                          (sliding left (+ right 1) (add-one covered right-list-idx))))))))))))
+      (sliding 0 0 '()))
+    best-state))
+
+(define (solve k n lists)
+  (cond ((= k 1)
+         (list (list-ref (list-ref lists 0) 0)
+               (list-ref (list-ref lists 0) 0)))
+        (else
+         (let ((triples (sort-triples (build-triples k n lists))))
+           (let ((bs (car (find-window triples k))))
+             (list (car (cdr bs)) (car (cdr (cdr bs))))))))
+
+;; ---- Display helper for nested lists ----
+(define (display-list lst)
+  (cond ((null? lst) (display "()"))
+        ((pair? lst)
+         (display "(")
+         (display-list (car lst))
+         (letrec ((loop (lambda (rest)
+                          (cond ((null? rest) (display ")"))
+                                (else
+                                 (display " ")
+                                 (display-list (car rest))
+                                 (loop (cdr rest)))))))
+           (loop (cdr lst))))
+        ((number? lst)
+         (display (number->string lst)))
+        (else
+         (display (car (list (list 'unhandled 'type)))))))
+
+;; ---- Embedded test cases ----
+(define (run-case i k n lists)
+  (let ((res (solve k n lists)))
+    (display "CASE")
+    (display (number->string i))
+    (display "=")
+    (display-list res)
+    (newline)))
+
+(run-case 0 3 5 (list (list 1 5 10 13 21)
+                     (list 2 6 12 19 25)
+                     (list 3 8 15 24 26)))
+(run-case 1 1 4 (list (list 4 10 15 24)))
+(run-case 2 2 3 (list (list 1 2 3) (list 4 5 6)))
+(run-case 3 2 3 (list (list 1 5 9) (list 2 3 10)))
+(run-case 4 3 3 (list (list 1 2 3) (list 1 2 3) (list 1 2 3)))
+(run-case 5 2 2 (list (list 0 100) (list 1 2)))
+(run-case 6 4 3 (list (list 1 4 7)
+                     (list 2 5 8)
+                     (list 3 6 9)
+                     (list 0 10 20)))

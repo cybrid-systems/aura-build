@@ -1,0 +1,193 @@
+(define (member? x lst)
+  (cond ((null? lst) #f)
+        ((equal? x (car lst)) #t)
+        (else (member? x (cdr lst)))))
+
+(define (string-ref s i)
+  (substring s i (+ i 1)))
+
+(define (one-apart? a b)
+  (let ((len (string-length a)))
+    (define (loop i d)
+      (cond ((= i len) (= d 1))
+            ((equal? (string-ref a i) (string-ref b i)) (loop (+ i 1) d))
+            ((= d 0) (loop (+ i 1) 1))
+            (else #f)))
+    (loop 0 0)))
+
+(define (neighbors w wordList)
+  (cond ((null? wordList) '())
+        ((one-apart? w (car wordList))
+         (cons (car wordList) (neighbors w (cdr wordList))))
+        (else (neighbors w (cdr wordList)))))
+
+;; --- BFS distance map: returns alist (word . dist) for beginWord and reachable ---
+(define (bfs-distances beginWord wordList)
+  (define (bfs-helper queue visited)
+    (cond ((null? queue) visited)
+          (else
+           (let ((w (car queue)) (rest (cdr queue)))
+             (let ((nbrs (neighbors w wordList)))
+               (define (enqueue-unguarded n ns v2)
+                 (cond ((null? n) (cons rest ns))
+                       ((member? (car n) v2)
+                        (enqueue-unguarded (cdr n) ns v2))
+                       (else
+                        (enqueue-unguarded (cdr n)
+                                           (cons (car n) ns)
+                                           (cons (car n) v2)))))
+               (let ((new-rest (car (enqueue-unguarded nbrs rest visited))))
+                 (bfs-helper new-rest
+                            (cons w visited))))))))
+  (bfs-helper (list beginWord) '()))
+
+;; --- alist helpers ---
+(define (assoc key lst)
+  (cond ((null? lst) #f)
+        ((equal? key (car (car lst))) (car lst))
+        (else (assoc key (cdr lst)))))
+
+(define (alist-ref key lst)
+  (let ((p (assoc key lst)))
+    (if p (cdr p) #f)))
+
+;; --- BFS layering: list of "levels", each level is list of (word . dist) ---
+(define (bfs-levels beginWord wordList)
+  (define (bfs-step current-level remaining visited next-level acc-levels)
+    (cond ((null? current-level)
+           (if (null? next-level)
+               acc-levels
+               (bfs-step next-level remaining visited '() (cons next-level acc-levels))))
+          (else
+           (let ((w (car current-level)) (rest-curr (cdr current-level)))
+             (define (scan n ns nl)
+               (cond ((null? n) (bfs-step rest-curr remaining visited (reverse nl) acc-levels))
+                     ((member? (car n) visited)
+                      (scan (cdr n) ns nl))
+                     ((member? (car n) remaining)
+                      (scan (cdr n) (cons (car n) ns) (cons (car n) nl)))
+                     (else
+                      (scan (cdr n) ns nl))))
+             (let ((new-next (car (scan (neighbors w wordList) '() '()))))
+               (let ((new-visited (append new-next visited)))
+                 (bfs-step rest-curr
+                           (filter-not w remaining)
+                           new-visited
+                           new-next
+                           acc-levels)))))))
+  (filter-not 'dummy (bfs-step (list beginWord) wordList '() '() '())))
+
+(define (filter-not x lst)
+  (cond ((null? lst) '())
+        ((equal? x (car lst)) (filter-not x (cdr lst)))
+        (else (cons (car lst) (filter-not x (cdr lst))))))
+
+;; --- Better BFS using levels for adjacency (parent -> children at dist+1) ---
+(define (bfs-graph beginWord wordList)
+  ;; Returns list of (word . children-list)
+  (let ((levels (bfs-levels beginWord wordList)))
+    (define (mk-edge parent cs result)
+      (cond ((null? cs) (cons (cons parent result) '()))
+            (else (cons (cons parent (reverse cs)) '()))))
+    ;; Actually we need: for each word in levels except last, its children are words in next level
+    (define (build lvl-list acc)
+      (cond ((null? lvl-list) '())
+            ((null? (cdr lvl-list))
+             (cons (cons (car (car lvl-list)) '()) acc))
+            (else
+             (let ((cur (car (car lvl-list)))
+                   (next-level (car (cdr lvl-list))))
+               (define (find-children n cs)
+                 (cond ((null? n) (reverse cs))
+                       ((one-apart? cur (car n))
+                        (find-children (cdr n) (cons (car n) cs)))
+                       (else (find-children (cdr n) cs))))
+               (let ((children (find-children next-level '())))
+                 (build (cdr lvl-list) (cons (cons cur children) acc)))))))
+    (build levels '())))
+
+;; --- DFS from endWord to beginWord using graph edges reversed ---
+(define (dfs-paths graph beginWord endWord)
+  (define (reverse-edges g)
+    (define (add-edge e acc)
+      (let ((child (car e)) (parent (cdr e)))
+        (define (add-child key lst)
+          (let ((p (assoc key lst)))
+            (if p
+                (map (lambda (x)
+                       (if (equal? (car x) key)
+                           (cons key (cons child (cdr x)))
+                           x)) lst)
+                (cons (cons key (list child)) lst))))
+        (fold-left add-child acc parent)))
+    (fold-left add-edge '() g))
+  (let ((rev (reverse-edges graph)))
+    (define (dfs w path)
+      (cond ((equal? w beginWord) (list (reverse path)))
+            (else
+             (let ((ps (assoc w rev)))
+               (if (not ps)
+                   '()
+                   (let ((parents (cdr ps)))
+                     (define (loop plst acc)
+                       (cond ((null? plst) acc)
+                             (else
+                              (let ((sub (dfs (car plst) (cons w path))))
+                                (loop (cdr plst) (append sub acc))))))
+                     (loop parents '())))))))
+    (if (assoc endWord rev)
+        (dfs endWord (list endWord))
+        '())))
+
+;; --- Display helpers ---
+(define (display-list lst)
+  (cond ((null? lst) (display "[]"))
+        (else
+         (display "[")
+         (display (car lst))
+         (display ",")
+         (display-list (cdr lst))
+         (display "]"))))
+
+(define (display-list-of-lists lol)
+  (cond ((null? lol) (display "[]"))
+        (else
+         (display "[")
+         (display-list (car lol))
+         (display ",")
+         (display-list-of-lists (cdr lol))
+         (display "]"))))
+
+(define (solve beginWord endWord wordList)
+  (let ((wordList-set (if (member? endWord wordList) wordList wordList)))
+    (if (not (member? endWord wordList))
+        '()
+        (let ((g (bfs-graph beginWord wordList)))
+          (dfs-paths g beginWord endWord)))))
+
+;; --- Test harness ---
+(define CASE0_BEGIN "hit")
+(define CASE0_END "cog")
+(define CASE0_LIST (list "hot" "dot" "dog" "lot" "log" "cog"))
+(define CASE1_BEGIN "hit")
+(define CASE1_END "cog")
+(define CASE1_LIST (list "hot" "dot" "dog" "lot" "log"))
+(define CASE2_BEGIN "a")
+(define CASE2_END "c")
+(define CASE2_LIST (list "a" "b" "c"))
+(define CASE3_BEGIN "hot")
+(define CASE3_END "dog")
+(define CASE3_LIST (list "hot" "dog"))
+(define CASE4_BEGIN "ab")
+(define CASE4_END "cd")
+(define CASE4_LIST (list "ab" "cb" "cd"))
+(define CASE5_BEGIN "red")
+(define CASE5_END "tax")
+(define CASE5_LIST (list "ted" "tex" "red" "tax" "tad" "den" "rex" "pee"))
+
+(display "CASE0=") (display-list-of-lists (solve CASE0_BEGIN CASE0_END CASE0_LIST)) (newline)
+(display "CASE1=") (display-list-of-lists (solve CASE1_BEGIN CASE1_END CASE1_LIST)) (newline)
+(display "CASE2=") (display-list-of-lists (solve CASE2_BEGIN CASE2_END CASE2_LIST)) (newline)
+(display "CASE3=") (display-list-of-lists (solve CASE3_BEGIN CASE3_END CASE3_LIST)) (newline)
+(display "CASE4=") (display-list-of-lists (solve CASE4_BEGIN CASE4_END CASE4_LIST)) (newline)
+(display "CASE5=") (display-list-of-lists (solve CASE5_BEGIN CASE5_END CASE5_LIST)) (newline)
