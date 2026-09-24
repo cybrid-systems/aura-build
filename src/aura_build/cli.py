@@ -102,6 +102,7 @@ def main(argv: list[str] | None = None) -> int:
         "llm-dogfood": _cmd_llm_dogfood,
         "session": _cmd_session,
         "pursue": _cmd_pursue,
+        "corpus-gen": _cmd_corpus_gen,
     }
     fn = handlers.get(args.cmd)
     return fn(args) if fn else 2
@@ -977,6 +978,42 @@ def _cmd_pursue(args: argparse.Namespace) -> int:
     )
     return code if code is not None else 2
 
+
+
+
+def _cmd_corpus_gen(args: argparse.Namespace) -> int:
+    """LeetCode-style MiniMax→Aura corpus burner (product layer only)."""
+    from pathlib import Path
+
+    from aura_build.corpus_gen import (
+        DEFAULT_RUN_LOG,
+        DEFAULT_SCRATCH,
+        build_burn_config_from_args,
+        cmd_burn,
+        cmd_catalog,
+        cmd_stop,
+        cmd_summary,
+    )
+
+    sub = getattr(args, "corpus_gen_cmd", None)
+    if sub == "catalog":
+        scratch = Path(args.scratch or DEFAULT_SCRATCH)
+        run_log = Path(args.run_log) if args.run_log else (scratch / "run_log.jsonl")
+        return cmd_catalog(
+            corpus_dir=Path(args.corpus_dir),
+            target=int(args.target),
+            env_file=args.env_file,
+            run_log=run_log,
+            scratch=scratch,
+        )
+    if sub == "burn":
+        bc = build_burn_config_from_args(args)
+        return cmd_burn(bc)
+    if sub == "summary":
+        return cmd_summary(Path(args.corpus_dir), Path(args.run_log) if args.run_log else None)
+    if sub == "stop":
+        return cmd_stop(Path(args.scratch or DEFAULT_SCRATCH))
+    return 2
 
 
 def console_main() -> None:

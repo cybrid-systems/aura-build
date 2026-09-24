@@ -488,6 +488,58 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _common(pursue, aura=True)
 
+
+    cg = sub.add_parser(
+        "corpus-gen",
+        help=(
+            "MiniMax LeetCode-style Aura corpus burner: catalog|burn|summary|stop "
+            "(quota burn; repair targets; host-thread MiniMax; oneshot Aura)"
+        ),
+    )
+    cg_sub = cg.add_subparsers(dest="corpus_gen_cmd", required=True)
+    cg_cat = cg_sub.add_parser("catalog", help="generate/extend catalog.jsonl via MiniMax")
+    _opt(cg_cat, "--corpus-dir", type=Path, default=Path("corpus/leetcode"))
+    _opt(cg_cat, "--target", type=int, default=300, help="desired catalog size")
+    _opt(cg_cat, "--env-file", type=Path, default=None)
+    _opt(cg_cat, "--scratch", type=Path, default=Path("scratch/corpus_gen"))
+    _opt(cg_cat, "--run-log", type=Path, default=None)
+    _common(cg_cat, harness=False, json_flag=False)
+
+    cg_burn = cg_sub.add_parser(
+        "burn",
+        help="generate ref.py/tests/Aura variants; resumable; optional --continuous",
+    )
+    _opt(cg_burn, "--corpus-dir", type=Path, default=Path("corpus/leetcode"))
+    _opt(cg_burn, "--scratch", type=Path, default=Path("scratch/corpus_gen"))
+    _opt(cg_burn, "--run-log", type=Path, default=None)
+    _opt(cg_burn, "--env-file", type=Path, default=None)
+    _opt(cg_burn, "--workers", type=int, default=6)
+    _opt(cg_burn, "--variants", type=int, default=2, help="Aura variants per problem")
+    _opt(cg_burn, "--temperatures", default="0.3,0.7,0.95")
+    _opt(cg_burn, "--limit", type=int, default=None, help="max problems this invocation")
+    _opt(cg_burn, "--continuous", action="store_true", help="extend catalog / bump variants forever")
+    _opt(cg_burn, "--catalog-extend", type=int, default=40)
+    _opt(
+        cg_burn,
+        "--auto-commit",
+        action="store_true",
+        help="git add corpus/leetcode + commit+push every batch (main; no CI wait)",
+    )
+    _opt(cg_burn, "--commit-every", type=int, default=20, help="problems between auto-commits")
+    _opt(cg_burn, "--llm-timeout", type=float, default=120.0)
+    _opt(cg_burn, "--aura-timeout", type=float, default=20.0)
+    _opt(cg_burn, "--py-timeout", type=float, default=20.0)
+    _common(cg_burn, aura=True, harness=False, json_flag=False)
+
+    cg_sum = cg_sub.add_parser("summary", help="corpus + burn-rate stats")
+    _opt(cg_sum, "--corpus-dir", type=Path, default=Path("corpus/leetcode"))
+    _opt(cg_sum, "--run-log", type=Path, default=Path("scratch/corpus_gen/run_log.jsonl"))
+    _common(cg_sum, harness=False, json_flag=False)
+
+    cg_stop = cg_sub.add_parser("stop", help="write STOP flag + SIGTERM burn pid")
+    _opt(cg_stop, "--scratch", type=Path, default=Path("scratch/corpus_gen"))
+    _common(cg_stop, harness=False, json_flag=False)
+
     doc = sub.add_parser("doctor", help="Aura probe + last prove-incr report")
     _opt(doc, "--skip-probe", action="store_true")
     _common(doc, aura=True)

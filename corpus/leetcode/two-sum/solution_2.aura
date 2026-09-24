@@ -1,0 +1,65 @@
+;; Helper to look up a key in an association list of (key . value) pairs
+(define (lookup key alist)
+  (cond ((null? alist) #f)
+        ((equal? (car (car alist)) key) (cdr (car alist)))
+        (else (lookup key (cdr alist)))))
+
+;; Helper to build an assoc list from nums with indices (value -> index)
+(define (build-map nums idx alist)
+  (if (null? nums) alist
+      (build-map (cdr nums) (+ idx 1)
+                 (cons (cons (car nums) idx) alist))))
+
+(define (solve nums target)
+  (let ((map (build-map nums 0 '())))
+    (find-pair nums 0 map target)))
+
+(define (find-pair nums idx map target)
+  (if (null? nums)
+      '(0 1)
+      (let ((complement (- target (car nums)))
+            (rest-idx idx))
+        (let ((found (lookup complement map)))
+          (if found
+              (if (< found rest-idx)
+                  (list found rest-idx)
+                  (list rest-idx found))
+              (find-pair (cdr nums) (+ idx 1) map target))))))
+
+;; Display helpers
+(define (display-pair p)
+  (display (car p))
+  (display " ")
+  (display (cdr p)))
+
+(define (display-list lst)
+  (display "(")
+  (cond ((null? lst) (display ")"))
+        (else
+          (display (car lst))
+          (let loop ((rest (cdr lst)))
+            (if (null? rest) (display ")")
+                (begin
+                  (display " ")
+                  (display (car rest))
+                  (loop (cdr rest))))))))
+
+(define (run-case i nums target)
+  (let ((result (solve nums target)))
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display (car result))
+    (display " ")
+    (display (car (cdr result)))
+    (newline)))
+
+;; Test cases
+(run-case 0 '(2 7 11 15) 9)
+(run-case 1 '(3 2 4) 6)
+(run-case 2 '(3 3) 6)
+(run-case 3 '(-1 -2 -3 -4 -5) -8)
+(run-case 4 '(0 4 3 0) 0)
+(run-case 5 '(1 5 1 5) 10)
+(run-case 6 '(1000000 -1000000 2 3) 0)
+(run-case 7 '(1 2 3 4 5 6 7 8 9 10) 19)

@@ -1,0 +1,82 @@
+(define (solve prices)
+  (letrec ((helper (lambda (prices min-price max-profit)
+    (if (null? prices)
+        max-profit
+        (let ((p (car prices))
+              (rest (cdr prices)))
+          (let ((new-min (if (< p min-price) p min-price))
+                (new-profit (if (> p min-price) (- p min-price) max-profit)))
+            (helper rest new-min (if (> new-profit max-profit) new-profit max-profit))))))))
+    (if (null? prices)
+        0
+        (helper prices 99999999 0))))
+
+(define (display-list lst)
+  (display "[")
+  (letrec ((loop (lambda (lst)
+    (cond ((null? lst) (display ""))
+          ((null? (cdr lst)) 
+           (display (car lst))
+           (display ""))
+          (else
+           (display (car lst))
+           (display ", ")
+           (loop (cdr lst)))))))
+    (loop lst))
+  (display "]"))
+
+(define (display-result v)
+  (cond ((list? v) (display-list v))
+        ((number? v) (display v))
+        ((string? v) (display v))
+        ((equal? v #t) (display "#t"))
+        ((equal? v #f) (display "#f"))
+        (else (display v))))
+
+; CASE0: prices = [7, 1, 5, 3, 6, 4]
+(define case0 '(7 1 5 3 6 4))
+(display "CASE0=")
+(display-result (solve case0))
+(newline)
+
+; CASE1: prices = [7, 6, 4, 3, 1]
+(define case1 '(7 6 4 3 1))
+(display "CASE1=")
+(display-result (solve case1))
+(newline)
+
+; CASE2: prices = [1]
+(define case2 '(1))
+(display "CASE2=")
+(display-result (solve case2))
+(newline)
+
+; CASE3: prices = [2, 4, 1]
+(define case3 '(2 4 1))
+(display "CASE3=")
+(display-result (solve case3))
+(newline)
+
+; CASE4: prices = [3, 2, 6, 5, 0, 3]
+(define case4 '(3 2 6 5 0 3))
+(display "CASE4=")
+(display-result (solve case4))
+(newline)
+
+; CASE5: prices = [1, 2, 3, 4, 5]
+(define case5 '(1 2 3 4 5))
+(display "CASE5=")
+(display-result (solve case5))
+(newline)
+
+; CASE6: prices = [5, 4, 3, 2, 1]
+(define case6 '(5 4 3 2 1))
+(display "CASE6=")
+(display-result (solve case6))
+(newline)
+
+; CASE7: prices = [0, 0, 0, 0]
+(define case7 '(0 0 0 0))
+(display "CASE7=")
+(display-result (solve case7))
+(newline)

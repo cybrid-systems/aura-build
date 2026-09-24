@@ -1,0 +1,44 @@
+(define (parse-nums s)
+  ;; s is a string; returns list of numbers (as strings for now, we'll convert)
+  (let ((len (string-length s)))
+    (parse-loop s 0 '())))
+
+(define (parse-loop s i acc)
+  (cond ((= i (string-length s)) (reverse acc))
+        ((char-is-digit-or-minus? (string-ref s i))
+         (let ((j (skip-number s i)))
+           (let ((num (substring s i j)))
+             (parse-loop s j (cons (string->number num) acc)))))
+        (else (parse-loop s (+ i 1) acc))))
+
+(define (char-is-digit-or-minus? c)
+  (or (char=? c #\-)
+      (and (char>=? c #\0) (char<=? c #\9))))
+
+(define (char=? a b) (= (char->integer a) (char->integer b)))
+(define (char>=? a b) (>= (char->integer a) (char->integer b)))
+(define (char<=? a b) (<= (char->integer a) (char->integer b)))
+
+(define (skip-number s i)
+  (let ((len (string-length s)))
+    (cond ((= i len) i)
+          ((or (char=? (string-ref s i) #\-)
+               (and (char>=? (string-ref s i) #\0)
+                    (char<=? (string-ref s i) #\9)))
+           (skip-number s (+ i 1)))
+          (else i))))
+
+(define (substring s start end)
+  (substring-impl s start end '()))
+
+(define (substring-impl s start end acc)
+  (if (= start end)
+      (list->string (reverse acc))
+      (substring-impl s (+ start 1) end (cons (string-ref s start) acc))))
+
+(define (list->string chars)
+  (list->string-impl chars 0 (length chars) (make-string (length chars))))
+
+;; Hmm, this is getting complicated. Let me use a simpler approach with direct string parsing.
+
+;; Actually, let me simplify - parse the input string char by char.

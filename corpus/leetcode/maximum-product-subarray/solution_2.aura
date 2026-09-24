@@ -1,0 +1,39 @@
+;; Maximum Product Subarray - Aura solution
+
+(define (max a b) (if (> a b) a b))
+(define (min a b) (if (< a b) a b))
+
+(define (solve nums)
+  ;; Compute maximum product subarray using Kadane-like approach
+  ;; tracking both min and max product ending at each position.
+  (let loop ((xs (cdr nums))
+             (cur-max (car nums))
+             (cur-min (car nums))
+             (best (car nums)))
+    (if (null? xs)
+        best
+        (let ((x (car xs))
+              (prev-max cur-max)
+              (prev-min cur-min))
+          (let ((m1 (* prev-max x))
+                (m2 (* prev-min x)))
+            (let ((new-max (max x (max m1 m2)))
+                  (new-min (min x (min m1 m2))))
+              (loop (cdr xs)
+                    new-max
+                    new-min
+                    (max best new-max))))))))
+
+;; Display an integer
+(define (display-int n)
+  (display (number->string n)))
+
+;; Run all test cases (embedded inputs)
+(display "CASE0=") (display-int (solve (list 2 3 -2 4))) (newline)
+(display "CASE1=") (display-int (solve (list -2 0 -1))) (newline)
+(display "CASE2=") (display-int (solve (list -2))) (newline)
+(display "CASE3=") (display-int (solve (list 0 2))) (newline)
+(display "CASE4=") (display-int (solve (list 2 -5 -2 -4 1))) (newline)
+(display "CASE5=") (display-int (solve (list -1 -3 -10 0 60))) (newline)
+(display "CASE6=") (display-int (solve (list 1 -2 3 -4 5 -6))) (newline)
+(display "CASE7=") (display-int (solve (list 0 0 0))) (newline)

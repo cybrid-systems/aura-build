@@ -1,0 +1,65 @@
+;; Contains Duplicate - O(n) using a hash set (association list as set)
+;; For each element, check if it's in the seen set; if yes return #t.
+;; Otherwise add it. If we finish the list, return #f.
+
+(define (make-set) '())
+
+(define (set-contains? s x)
+  (cond ((null? s) #f)
+        ((equal? (car (car s)) x) #t)
+        (else (set-contains? (cdr s) x))))
+
+(define (set-add s x) (cons (cons x #t) s))
+
+(define (contains-dup-helper nums seen)
+  (cond ((null? nums)
+         #f)
+        ((set-contains? seen (car nums))
+         #t)
+        (else
+         (contains-dup-helper (cdr nums)
+                              (set-add seen (car nums))))))
+
+(define (solve nums)
+  (contains-dup-helper nums (make-set)))
+
+;; Helper to display a boolean as #t/#f
+(define (display-bool b)
+  (display (if b "#t" "#f"))
+  (newline))
+
+;; --- Test cases ---
+
+(display "CASE0=")
+(display-bool (solve (list 1 2 3 1)))
+
+(display "CASE1=")
+(display-bool (solve (list 1 2 3 4)))
+
+(display "CASE2=")
+(display-bool (solve (list 1 1 1 3 3 4 5 2 2)))
+
+(display "CASE3=")
+(display-bool (solve (list 1)))
+
+(display "CASE4=")
+(display-bool (solve (list 0 0)))
+
+(display "CASE5=")
+(display-bool (solve (list -1 -2 -3 -1)))
+
+(display "CASE6=")
+(display-bool (solve (list 5 4 3 2 1)))
+
+;; CASE7: list of 0..9999 -> no duplicates, should return #f
+;; We'll build it explicitly. To keep source readable we use a helper.
+(define (range-list n)
+  (let loop ((i 0) (acc '()))
+    (if (= i n)
+        acc
+        (loop (+ i 1) (cons i acc)))))
+
+(define big-input (range-list 10000))
+
+(display "CASE7=")
+(display-bool (solve big-input))

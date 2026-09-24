@@ -1,0 +1,149 @@
+(define (list-set! lst i v)
+  (set-car! (list-tail lst i) v))
+
+(define (list-tail lst i)
+  (if (= i 0)
+      lst
+      (list-tail (cdr lst) (- i 1))))
+
+(define (list-ref lst i)
+  (car (list-tail lst i)))
+
+(define (merge m n nums1 nums2)
+  (let ((i (- m 1))
+        (j (- n 1))
+        (k (- (+ m n) 1)))
+    (define (loop i j k)
+      (cond ((< j 0) 'done)
+            ((< i 0)
+             (let loop2 ((j j) (k k))
+               (if (< j 0)
+                   'done
+                   (begin
+                     (list-set! nums1 k (list-ref nums2 j))
+                     (loop2 (- j 1) (- k 1))))))
+            (else
+             (let ((a (list-ref nums1 i))
+                   (b (list-ref nums2 j)))
+               (if (> a b)
+                   (begin
+                     (list-set! nums1 k a)
+                     (loop (- i 1) j (- k 1)))
+                   (begin
+                     (list-set! nums1 k b)
+                     (loop i (- j 1) (- k 1))))))))
+    (loop i j k)))
+
+(define (solve m n nums1 nums2)
+  (merge m n nums1 nums2)
+  nums1)
+
+;; Mini JSON-ish parser
+(define (skip-ws s i)
+  (let ((len (string-length s)))
+    (let loop ((i i))
+      (if (>= i len)
+          i
+          (let ((c (string-ref s i)))
+            (if (or (char=? c #\space) (char=? c #\,))
+                (loop (+ i 1))
+                i))))))
+
+(define (parse-number s i)
+  (let ((len (string-length s)))
+    (let loop ((i i) (acc '()))
+      (if (>= i len)
+          (values (string->number (list->string (reverse acc))) i)
+          (let ((c (string-ref s i)))
+            (if (or (char>=? c #\0) (char=? c #\-))
+                (loop (+ i 1) (cons c acc))
+                (values (string->number (list->string (reverse acc))) i)))))))
+
+(define (parse-list s i)
+  ;; expects [ ... ]
+  (let ((len (string-length s)))
+    (if (and (< i len) (char=? (string-ref s i) #\[))
+        (let loop ((i (+ i 1)) (acc '()))
+          (let ((i2 (skip-ws s i)))
+            (if (>= i2 len)
+                (values (reverse acc) i2)
+                (let ((c (string-ref s i2)))
+                  (if (char=? c #\])
+                      (values (reverse acc) (+ i2 1))
+                      (let-values (((num ni) (parse-number s i2)))
+                        (loop (+ ni 1) (cons num acc))))))))
+        (values '() i))))
+
+(define (parse-int s i)
+  (parse-number s i))
+
+(define (parse-input s)
+  ;; expects key=value pairs separated by commas; format like:
+  ;; {"m": 3, "n": 2, "nums1": [...], "nums2": [...]}
+  (let ((len (string-length s)))
+    (let loop ((i 0) (m #f) (n #f) (nums1 #f) (nums2 #f))
+      (let ((i2 (skip-ws s i)))
+        (if (>= i2 len)
+            (list m n nums1 nums2)
+            (let ((c (string-ref s i2)))
+              (cond ((char=? c #\{) (loop (+ i2 1) m n nums1 nums2))
+                    ((char=? c #\})
+                          (list m n nums1 nums2))
+                    ((char=? c #\:)
+                     (let ((i3 (skip-ws s (+ i2 1))))
+                       (cond
+                         ((char=? (string-ref s (- i2 1)) #\m)
+                          (let-values ((vv ni)) (parse-int s i3))
+                          (loop (+ ni 1) vv n nums1 nums2))
+                         ((char=? (string-ref s (- i2 1)) #\n)
+                          ;; ambiguous with nums1/nums2; check next char
+                          (let-values ((vv ni)) (parse-int s i3))
+                          (loop (+ ni 1) m vv nums1 nums2))
+                         (else
+                          (let-values ((vv ni)) (parse-list s i3))
+                          (cond
+                            ((char=? (string-ref s (- i2 1)) #\1)
+                             (loop (+ ni 1) m n vv nums2))
+                            ((char=? (string-ref s (- i2 1)) #\2)
+                             (loop (+ ni 1) m n nums1 vv))
+                            (else
+                             (loop (+ ni 1) m n nums1 nums2)))))))
+                    (else (loop (+ i2 1) m n nums1 nums2)))))))))
+
+(define (display-list lst)
+  (display "[")
+  (let loop ((l lst) (first #t))
+    (cond ((null? l) (display "]"))
+          (else
+            (if first
+                (display (car l))
+                (begin (display ",") (display (car l))))
+            (loop (cdr l) #f)))))
+
+;; Test inputs (embedded)
+(define inputs
+  (list
+    "{\"m\": 3, \"n\": 2, \"nums1\": [1, 2, 2, 3, 5, 0], \"nums2\": [2, 5, 7]}"
+    "{\"m\": 1, \"n\": 1, \"nums1\": [1, 2], \"nums2\": [2]}"
+    "{\"m\": 0, \"n\": 3, \"nums1\": [1, 2, 3], \"nums2\": [1, 2, 3]}"
+    "{\"m\": 3, \"n\": 3, \"nums1\": [1, 1, 2, 2, 3, 3], \"nums2\": [1, 2, 3]}"
+    "{\"m\": 4, \"n\": 2, \"nums1\": [-3, -2, -1, 0, 1, 2], \"nums2\": [-2, 1]}"
+    "{\"m\": 2, \"n\": 0, \"nums1\": [5, 6, 0], \"nums2\": []}"
+    "{\"m\": 5, \"n\": 5, \"nums1\": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], \"nums2\": [2, 4, 6, 8, 10]}"
+    "{\"m\": 3, \"n\": 3, \"nums1\": [1, 2, 3, 4, 5, 6], \"nums2\": [1, 2, 3]}"))
+
+(define (run-case i s)
+  (let-values (((m n nums1 nums2)) (parse-input s)))
+  (define result (solve m n nums1 nums2))
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display-list result)
+  (newline))
+
+(let loop ((i 0) (ins inputs))
+  (if (null? ins)
+      'done
+      (begin
+        (run-case i (car ins))
+        (loop (+ i 1) (cdr ins)))))

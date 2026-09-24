@@ -1,0 +1,46 @@
+;; Container With Most Water - two-pointer O(n) solution
+
+(define (len lst)
+  (if (null? lst) 0 (+ 1 (len (cdr lst)))))
+
+(define (ref lst i)
+  (if (= i 0) (car lst) (ref (cdr lst) (- i 1))))
+
+(define (max2 a b) (if (> a b) a b))
+
+(define (min2 a b) (if (< a b) a b))
+
+(define (solve heights)
+  ;; Convert list to mutable vector-style using list-ref
+  (let ((n (len heights)))
+    (define (step lo hi best)
+      (if (>= lo hi)
+          best
+          (let ((l (ref heights lo))
+                (r (ref heights hi))
+                (w (- hi lo))
+                (h (min2 (ref heights lo) (ref heights hi)))
+                (area (* w h)))
+            (let ((new-best (max2 best area)))
+              (if (<= l r)
+                  (step (+ lo 1) hi new-best)
+                  (step lo (- hi 1) new-best))))))
+    (step 0 (- n 1) 0)))
+
+(define (display-list lst)
+  (display "[")
+  (let loop ((xs lst) (first? #t))
+    (cond ((null? xs) (display "]"))
+          (else
+           (if first? (set! first? #f) (display " "))
+           (display (car xs))
+           (loop (cdr xs) #f)))))
+
+;; Test cases
+(solve (list 1 8 6 2 5 4 8 3 7))
+(solve (list 1 1))
+(solve (list 4 3 2 1 4))
+(solve (list 1 2 1))
+(solve (list 2 3 4 5 18 17 6))
+(solve (list 0 0 0 0))
+(solve (list 5 4 3 2 1))

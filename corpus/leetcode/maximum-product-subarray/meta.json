@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:17:07Z",
+      "ts_local": "2026-09-24 22:17:07 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 4489,
+        "total_characters": 0,
+        "prompt_tokens": 1061,
+        "completion_tokens": 3428,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.053,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 3:13: unbound variable: char>=?\n   |\n  3 |       (and (char>=? c #\\0) (char<=? c #\\9))))\n   |             ^^^^^^^\nerror: 7:25: unbound variable: s\n   |\n  7 |            (skip-number s (+ i 1)))\n   |                         ^\n",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:17:12Z",
+      "ts_local": "2026-09-24 22:17:12 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1500,
+        "total_characters": 0,
+        "prompt_tokens": 1061,
+        "completion_tokens": 439,
+        "prompt_tokens_details": {
+          "cached_tokens": 1060
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.04,
+      "tests_passed": 8,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=6\nCASE1=0\nCASE2=-2\nCASE3=2\nCASE4=20\nCASE5=60\nCASE6=360\nCASE7=0\n"
+    }
+  ],
+  "slug": "maximum-product-subarray",
+  "title": "Maximum Product Subarray",
+  "category": "arrays",
+  "updated_at": "2026-09-24T14:17:12Z",
+  "updated_at_local": "2026-09-24 22:17:12 CST"
+}

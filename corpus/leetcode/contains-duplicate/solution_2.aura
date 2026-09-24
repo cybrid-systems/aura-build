@@ -1,0 +1,46 @@
+;; Contains Duplicate - check if any value appears at least twice.
+;; Uses a recursive helper that scans the list while building up a "seen" set
+;; represented as an association list (list of (key . #t) pairs).
+;; O(n) time, O(n) space.
+
+(define (make-empty-set) '())
+(define (set-contains? s x)
+  (cond ((null? s) #f)
+        ((equal? (car (car s)) x) #t)
+        (else (set-contains? (cdr s) x))))
+(define (set-add s x) (cons (cons x #t) s))
+
+(define (contains-dup-helper nums seen)
+  (cond ((null? nums) #f)
+        ((set-contains? seen (car nums)) #t)
+        (else
+         (contains-dup-helper (cdr nums) (set-add seen (car nums))))))
+
+(define (solve nums)
+  (contains-dup-helper nums (make-empty-set)))
+
+;; --- Helper to build a numeric range list [lo .. hi] ---
+(define (range-list lo hi)
+  (if (> lo hi) '() (cons lo (range-list (+ lo 1) hi))))
+
+;; --- Test cases ---
+(define case0 '(1 2 3 1))
+(define case1 '(1 2 3 4))
+(define case2 '(1 1 1 3 3 4 5 2 2))
+(define case3 '(1))
+(define case4 '(0 0))
+(define case5 '(-1 -2 -3 -1))
+(define case6 '(5 4 3 2 1))
+;; Large case: 0..9999 (all unique) — verify the algorithm handles big input.
+(define case7 (range-list 0 9999))
+
+(define (display-bool b) (display (if b "#t "#f")))
+
+(display "CASE0=") (display-bool (solve case0)) (newline)
+(display "CASE1=") (display-bool (solve case1)) (newline)
+(display "CASE2=") (display-bool (solve case2)) (newline)
+(display "CASE3=") (display-bool (solve case3)) (newline)
+(display "CASE4=") (display-bool (solve case4)) (newline)
+(display "CASE5=") (display-bool (solve case5)) (newline)
+(display "CASE6=") (display-bool (solve case6)) (newline)
+(display "CASE7=") (display-bool (solve case7)) (newline)

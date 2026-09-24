@@ -1,0 +1,52 @@
+(define (solve nums target)
+  ;; Build association list mapping value -> index while scanning
+  ;; Returns the pair of indices (i j) in increasing order.
+  (letrec
+    ((seen '())
+     (helper (lambda (lst idx)
+               (cond
+                 ((null? lst)
+                  ;; Should never happen per problem guarantee, but be safe:
+                  '(0 1))
+                 (else
+                  (let ((v (car lst)))
+                    (let ((rest (cdr lst)))
+                      (let ((need (- target v)))
+                        (let ((pair (find-index seen need)))
+                          (if (number? pair)
+                              (let ((j pair))
+                                (if (< idx j)
+                                    (list idx j)
+                                    (list j idx)))
+                              (helper rest (+ idx 1) (cons (cons v idx) seen))))))))))))
+    (helper nums 0 seen)))
+
+;; Helper: find index (value) associated with key in alist (list of (value . index))
+(define (find-index alist key)
+  (cond
+    ((null? alist) #f)
+    ((equal? (caar alist) key) (cdar alist))
+    (else (find-index (cdr alist) key))))
+
+;; Helper to display a list of two integers as "i j"
+(define (display-pair p)
+  (display (car p))
+  (display " ")
+  (display (cadr p)))
+
+;; --- Test cases ---
+(define (run-case i nums target)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display-pair (solve nums target))
+  (newline))
+
+(run-case 0 '(2 7 11 15) 9)
+(run-case 1 '(3 2 4) 6)
+(run-case 2 '(3 3) 6)
+(run-case 3 '(-1 -2 -3 -4 -5) -8)
+(run-case 4 '(0 4 3 0) 0)
+(run-case 5 '(1 5 1 5) 10)
+(run-case 6 '(1000000 -1000000 2 3) 0)
+(run-case 7 '(1 2 3 4 5 6 7 8 9 10) 19)

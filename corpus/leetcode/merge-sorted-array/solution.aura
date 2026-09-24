@@ -1,0 +1,93 @@
+(define (list-ref lst i)
+  (if (= i 0) (car lst) (list-ref (cdr lst) i)))
+
+(define (list-set! lst i v)
+  (if (= i 0)
+      (set-car! lst v)
+      (list-set! (cdr lst) (- i 1) v)))
+
+(define (merge-back m n nums1 nums2)
+  (let ((i (- m 1))
+        (j (- n 1))
+        (k (- (+ m n) 1)))
+    (let loop ((i i) (j j) (k k))
+      (cond
+        ((< j 0) nums1)
+        ((< i 0)
+         (let copy ((j j) (k k))
+           (if (< j 0) nums1
+               (begin
+                 (list-set! nums1 k (list-ref nums2 j))
+                 (copy (- j 1) (- k 1))))))
+        (else
+         (let ((a (list-ref nums1 i))
+               (b (list-ref nums2 j)))
+           (if (> a b)
+               (begin
+                 (list-set! nums1 k a)
+                 (loop (- i 1) j (- k 1)))
+               (begin
+                 (list-set! nums1 k b)
+                 (loop i (- j 1) (- k 1))))))))))
+
+(define (solve m n nums1 nums2)
+  (merge-back m n nums1 nums2))
+
+(define (print-list lst)
+  (display "[")
+  (let loop ((first? #t) (xs lst))
+    (cond
+      ((null? xs) (display "]"))
+      (else
+       (if first? (display "") (display ","))
+       (display (car xs))
+       (loop #f (cdr xs))))))
+
+;; Test cases
+(let ((case0-result
+       (solve 3 2 '(1 2 2 3 5 0) '(2 5 7))))
+  (display "CASE0=")
+  (print-list case0-result)
+  (newline))
+
+(let ((case1-result
+       (solve 1 1 '(1 2) '(2))))
+  (display "CASE1=")
+  (print-list case1-result)
+  (newline))
+
+(let ((case2-result
+       (solve 0 3 '(1 2 3) '(1 2 3))))
+  (display "CASE2=")
+  (print-list case2-result)
+  (newline))
+
+(let ((case3-result
+       (solve 3 3 '(1 1 2 2 3 3) '(1 2 3))))
+  (display "CASE3=")
+  (print-list case3-result)
+  (newline))
+
+(let ((case4-result
+       (solve 4 2 '(-3 -2 -1 0 1 2) '(-2 1))))
+  (display "CASE4=")
+  (print-list case4-result)
+  (newline))
+
+(let ((case5-result
+       (solve 2 0 '(5 6 0) '())))
+  (display "CASE5=")
+  (print-list case5-result)
+  (newline))
+
+(let ((case6-result
+       (solve 5 5 '(1 2 3 4 5 6 7 8 9 10) '(2 4 6 8 10))))
+  (display "CASE6=")
+  (print-list case6-result)
+  (newline))
+
+(let ((case7-result
+       (solve 3 3 '(1 2 3 4 5 6) '(1 2 3))))
+  (display "CASE7=")
+  (print-list case7-result)
+  (newline))
