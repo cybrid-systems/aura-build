@@ -60,3 +60,7 @@ No Soft Ready / fiber_live / `llm_parallel=fiber` invented from env. Local stub 
 - Soft multi-worker denseness still not production Ready  
 - Attached `incr_proven` can look fresh — check `prove_incr.report_ts`  
 - Soft status `value` with raw `{` still fragile (aura-build #1)
+
+## Dig follow-up (2026-09-24): fiber-llm second-batch timeout
+
+Combat `20260924-112153` round1 `serve_session_timeout` after probe-ok / round0 fiber OK is **Soft wedge** (Aura [#4054](https://github.com/cybrid-systems/aura/issues/4054)), not aura-build timeout. Local-stub #4053 N=4 still PASS @ `a9975a3`. See FINDINGS.md dig section.
