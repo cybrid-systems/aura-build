@@ -665,6 +665,7 @@ def _score_from_stdout(
     shared_ast: Any = None,
     oracle_verify_script: bool | None = None,
     exit_code: int | None = None,
+    expect_text: str | None = None,
 ) -> dict[str, Any]:
     if expect_re is None:
         patterns: list[re.Pattern[str]] = []
@@ -678,18 +679,15 @@ def _score_from_stdout(
     if not structure_ok and source_res:
         err_note = (err_note + "\n" + _structure_fail_note(source_res)).strip()
     passed = matched and structure_ok and not has_error
-    if passed:
-        fitness = 1.0
-    elif matched and not structure_ok:
-        fitness = 0.4
-    elif matched and has_error:
-        fitness = 0.35
-    elif (stdout or "").strip() and not has_error:
-        fitness = 0.25
-    elif has_error:
-        fitness = max(0.05, 0.2 - min(0.15, len(err_note) / 5000.0))
-    else:
-        fitness = 0.05
+    fitness, fit_meta = _fitness_partial(
+        passed=passed,
+        structure_ok=structure_ok,
+        has_error=has_error,
+        stdout=stdout or "",
+        stderr=err_note,
+        expect_text=expect_text,
+        expect_re=patterns or None,
+    )
     out: dict[str, Any] = {
         "ok": passed,
         "fitness": round(fitness, 4),
@@ -703,6 +701,9 @@ def _score_from_stdout(
         "has_error": has_error,
         "via": via,
         "cold_spawns": int(cold_spawns),
+        "expect_hits": fit_meta.get("expect_hits"),
+        "expect_total": fit_meta.get("expect_total"),
+        "fitness_band": fit_meta.get("band"),
     }
     if session_model is not None:
         out["session_model"] = session_model
@@ -724,6 +725,7 @@ def _run_verify_script(
     source_text: str,
     expect_re: re.Pattern[str] | list[re.Pattern[str]] | None,
     source_res: list[re.Pattern[str]] | None,
+    expect_text: str | None = None,
 ) -> dict[str, Any]:
     t0 = time.monotonic()
     try:
@@ -751,6 +753,7 @@ def _run_verify_script(
             session_model=SESSION_SHARED,
             cold_spawns=1,
             exit_code=124,
+            expect_text=expect_text,
         )
     ms = int((time.monotonic() - t0) * 1000)
     stdout = proc.stdout or ""
@@ -762,16 +765,21 @@ def _run_verify_script(
     if passed and not structure_ok:
         passed = False
         stderr = (stderr + "\n" + _structure_fail_note(source_res)).strip()
-    fitness = 1.0 if passed else (
-        0.4 if "verify ok" in stdout.lower() else (
-            0.25 if stdout.strip() else 0.1
-        )
+    has_error = (not passed) and bool(
+        re.search(r"(?i)\berror:|\bunbound variable\b", stdout + stderr)
     )
-    if not passed and proc.returncode != 0:
-        fitness = max(0.05, min(0.45, fitness))
+    fitness, fit_meta = _fitness_partial(
+        passed=passed,
+        structure_ok=structure_ok,
+        has_error=has_error,
+        stdout=stdout,
+        stderr=stderr,
+        expect_text=expect_text,
+        expect_re=expect_re,
+    )
     return {
         "ok": passed,
-        "fitness": round(fitness if passed else fitness, 4),
+        "fitness": round(fitness, 4),
         "passed": passed,
         "stdout": stdout[-4000:],
         "stderr": stderr[-4000:],
@@ -779,12 +787,13 @@ def _run_verify_script(
         "ms": ms,
         "matched_expect": _matched_expect(passed, stdout, expect_re),
         "structure_ok": structure_ok,
-        "has_error": (not passed) and bool(
-            re.search(r"(?i)\berror:|\bunbound variable\b", stdout + stderr)
-        ),
+        "has_error": has_error,
         "via": "verify_script",
         "session_model": SESSION_SHARED,
         "cold_spawns": 1,
+        "expect_hits": fit_meta.get("expect_hits"),
+        "expect_total": fit_meta.get("expect_total"),
+        "fitness_band": fit_meta.get("band"),
     }
 
 
@@ -797,6 +806,7 @@ def verify_aura_program(
     verify_script: str | Path | None = None,
     candidate_dir: Path | str | None = None,
     files: list[str] | None = None,
+    expect_text: str | None = None,
     timeout_s: float = 15.0,
     serve_session: Any | None = None,
     harness_root: Path | str | None = None,
@@ -915,6 +925,7 @@ def verify_aura_program(
                 cold_spawns=0,
                 serve_mode=serve_mode,
                 shared_ast=shared_ast,
+                expect_text=expect_text,
             )
         except Exception as exc:  # noqa: BLE001 — timeout / sock fail → fallback
             hot_structural_fail = True
@@ -981,6 +992,7 @@ def verify_aura_program(
             source_text=source_text,
             expect_re=expect_re,
             source_res=source_res,
+            expect_text=expect_text,
         )
         if want_oracle and hot is not None and not need_fallback:
             # Hot path primary; stamp that oracle also ran. Prefer hot fitness
@@ -1052,6 +1064,7 @@ def verify_aura_program(
             session_model=SESSION_SHARED,
             cold_spawns=1,
             exit_code=124,
+            expect_text=expect_text,
         )
     ms = int((time.monotonic() - t0) * 1000)
     stdout = proc.stdout or ""
@@ -1072,7 +1085,8 @@ def verify_aura_program(
         session_model=SESSION_SHARED,
         cold_spawns=1,
         exit_code=proc.returncode,
-    )
+            expect_text=expect_text,
+        )
 
 
 
@@ -2363,6 +2377,273 @@ def _interface_contracts_blob(task_spec: dict[str, Any]) -> str:
     return "## Interface / scenario contracts\n" + "\n".join(lines) + "\n"
 
 
+
+def _parens_balanced(src: str) -> tuple[bool, str]:
+    """Balance ``()`` outside strings and ``;`` line comments."""
+    depth = 0
+    i = 0
+    n = len(src or "")
+    in_str = False
+    while i < n:
+        ch = src[i]
+        if in_str:
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == '"':
+                in_str = False
+            i += 1
+            continue
+        if ch == ";":
+            while i < n and src[i] != "\n":
+                i += 1
+            continue
+        if ch == '"':
+            in_str = True
+            i += 1
+            continue
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth < 0:
+                return False, "unbalanced:extra_close"
+        i += 1
+    if in_str:
+        return False, "unbalanced:unclosed_string"
+    if depth != 0:
+        return False, f"unbalanced:depth={depth}"
+    return True, "ok"
+
+
+def _aura_parse_gate(
+    text: str,
+    *,
+    aura_bin: str | None = None,
+    label: str = "file",
+    timeout_s: float = 4.0,
+) -> dict[str, Any]:
+    """Per-file parse gate: paren balance (+ optional Aura oneshot for parse errors).
+
+    Unbound/runtime errors on a lone library file are **not** parse failures —
+    only unbalanced / no-complete-S-expression / parse-error class failures reject.
+    """
+    ok_bal, reason = _parens_balanced(text or "")
+    if not ok_bal:
+        return {"ok": False, "reason": f"{label}:{reason}", "via": "parens"}
+    try:
+        bin_path = resolve_aura_bin(aura_bin)
+    except Exception:
+        bin_path = None
+    if not bin_path or not (text or "").strip():
+        return {"ok": True, "reason": f"{label}:parens_ok", "via": "parens"}
+    import tempfile
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".aura", delete=False, encoding="utf-8"
+        ) as fh:
+            fh.write(text)
+            tmp = Path(fh.name)
+        try:
+            proc = subprocess.run(
+                [bin_path, str(tmp)],
+                capture_output=True,
+                text=True,
+                timeout=timeout_s,
+                env=aura_subprocess_env(bin_path),
+                check=False,
+            )
+        finally:
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+        blob = f"{proc.stdout or ''}\n{proc.stderr or ''}"
+        if re.search(
+            r"(?i)unbalanced parentheses|no complete S-expression|parse error",
+            blob,
+        ):
+            snip = re.sub(r"\s+", " ", blob).strip()[:180]
+            return {"ok": False, "reason": f"{label}:aura_parse:{snip}", "via": "aura"}
+        return {"ok": True, "reason": f"{label}:aura_parse_ok", "via": "aura"}
+    except Exception as exc:  # noqa: BLE001
+        # Fail open on tooling issues — paren balance already passed.
+        return {
+            "ok": True,
+            "reason": f"{label}:gate_exc:{type(exc).__name__}",
+            "via": "parens",
+        }
+
+
+def _merge_sources_parse_gate(
+    base: dict[str, str],
+    proposed: dict[str, str],
+    *,
+    files: list[str],
+    aura_bin: str | None = None,
+) -> tuple[dict[str, str], dict[str, Any]]:
+    """Elitist per-file merge: keep ``base`` when rewrite fails the parse gate."""
+    out = {fn: str(base.get(fn) or "") for fn in files}
+    notes: dict[str, Any] = {"accepted": [], "rejected": [], "kept_base": []}
+    for fn in files:
+        new = proposed.get(fn) or ""
+        old = base.get(fn) or ""
+        if not new.strip():
+            notes["kept_base"].append(fn)
+            continue
+        if new.strip() == old.strip():
+            out[fn] = new
+            notes["kept_base"].append(fn)
+            continue
+        gate = _aura_parse_gate(new, aura_bin=aura_bin, label=fn)
+        if gate.get("ok"):
+            out[fn] = new
+            notes["accepted"].append(fn)
+        else:
+            # Reject rewrite — keep base (may be empty on first propose).
+            if old.strip():
+                out[fn] = old
+            else:
+                out[fn] = old
+            notes["rejected"].append({"file": fn, "reason": gate.get("reason")})
+    return out, notes
+
+
+def _expect_line_hit_count(
+    expect_text: str | None,
+    stdout: str,
+    expect_re: re.Pattern[str] | list[re.Pattern[str]] | None = None,
+) -> tuple[int, int]:
+    """Count how many expected KEY=value lines (or expect_re patterns) hit stdout."""
+    hits = 0
+    total = 0
+    lines = [
+        ln.strip()
+        for ln in str(expect_text or "").splitlines()
+        if ln.strip() and "=" in ln.strip() and not ln.strip().startswith("#")
+    ]
+    if lines:
+        total = len(lines)
+        out_lines = [ln.strip() for ln in (stdout or "").splitlines() if ln.strip()]
+        out_map: dict[str, str] = {}
+        for ln in out_lines:
+            if "=" in ln:
+                k, _, v = ln.partition("=")
+                out_map[k.strip()] = v.strip()
+        for ln in lines:
+            k, _, v = ln.partition("=")
+            k, v = k.strip(), v.strip()
+            if out_map.get(k) == v:
+                hits += 1
+        return hits, total
+    if expect_re is None:
+        return 0, 0
+    patterns = expect_re if isinstance(expect_re, list) else [expect_re]
+    total = len(patterns)
+    hits = sum(1 for p in patterns if p.search(stdout or ""))
+    return hits, total
+
+
+def _fitness_partial(
+    *,
+    passed: bool,
+    structure_ok: bool,
+    has_error: bool,
+    stdout: str,
+    stderr: str,
+    expect_text: str | None = None,
+    expect_re: re.Pattern[str] | list[re.Pattern[str]] | None = None,
+) -> tuple[float, dict[str, Any]]:
+    """Finer fitness gradient from per-expect-line hits (never rewards hardcode alone).
+
+    Structure failures cap fitness below pass. Line hits provide selection gradient
+    when stuck at the old flat 0.25 runnable band.
+    """
+    if passed:
+        return 1.0, {"expect_hits": -1, "expect_total": -1, "band": "pass"}
+    hits, total = _expect_line_hit_count(expect_text, stdout, expect_re)
+    frac = (hits / total) if total else 0.0
+    meta = {"expect_hits": hits, "expect_total": total, "expect_frac": round(frac, 4)}
+    if total and frac >= 1.0 and not structure_ok:
+        # All lines match but structure/anti-hardcode failed — keep below pass.
+        return 0.45, {**meta, "band": "lines_ok_structure_fail"}
+    if total and frac >= 1.0 and has_error:
+        return 0.35, {**meta, "band": "lines_ok_runtime_error"}
+    if total:
+        # Gradient: base + line frac + small structure bonus. Cap below 0.95.
+        fitness = 0.08 + 0.70 * frac + (0.08 if structure_ok else 0.0)
+        if (stdout or "").strip() and not has_error:
+            fitness += 0.04
+        if has_error:
+            fitness = min(fitness, 0.40)
+        fitness = max(0.05, min(0.92, fitness))
+        return round(fitness, 4), {**meta, "band": "line_gradient"}
+    # No expect lines/patterns — fall back to coarse bands.
+    if (stdout or "").strip() and not has_error:
+        return 0.25, {**meta, "band": "runnable_no_expect"}
+    if has_error:
+        return max(0.05, 0.2 - min(0.15, len(stderr or "") / 5000.0)), {
+            **meta,
+            "band": "error",
+        }
+    return 0.05, {**meta, "band": "empty"}
+
+
+def _aggregate_llm_parallel(
+    rounds_log: list[dict[str, Any]],
+) -> tuple[str | None, bool, dict[str, Any]]:
+    """Best-of-run llm_parallel with per-value counts (do not let a final serial wipe fiber)."""
+    counts: dict[str, int] = {}
+    ok_any = False
+    for r in rounds_log:
+        if int(r.get("round", -1)) < 0:
+            continue
+        v = r.get("llm_parallel")
+        if not v:
+            continue
+        counts[str(v)] = counts.get(str(v), 0) + 1
+        if r.get("llm_parallel_ok"):
+            ok_any = True
+    if not counts:
+        return None, False, {"counts": {}}
+    # Prefer true concurrent fiber over serial over host.
+    for cand in ("fiber", "fiber_serial", "host_thread"):
+        if counts.get(cand):
+            return cand, bool(ok_any or cand == "fiber"), {"counts": counts}
+    # Fallback: most common
+    best = max(counts.keys(), key=lambda k: counts[k])
+    return best, ok_any, {"counts": counts}
+
+
+_EXCHANGE_REPAIR_STAGES: list[list[str]] = [
+    ["idemp.aura", "journal.aura", "ledger.aura", "fee.aura", "risk.aura", "book.aura"],
+    ["match.aura", "order.aura", "settle.aura", "halt.aura"],
+    ["snapshot.aura", "replay.aura", "query.aura", "exchange.aura", "main.aura"],
+]
+
+
+def _repair_focus_files(
+    files: list[str],
+    *,
+    round_i: int,
+    err: str,
+    prev_sources: dict[str, str] | None,
+) -> list[str]:
+    """Bottom-up staged focus ∩ implicated files for few-file patches."""
+    implicated = _implicated_files(err, files, prev_sources=prev_sources)
+    if any(f.endswith(".aura") and f.startswith(("idemp", "match", "order", "main", "exchange")) for f in files):
+        stage = _EXCHANGE_REPAIR_STAGES[min(max(round_i, 0) // 2, len(_EXCHANGE_REPAIR_STAGES) - 1)]
+        staged = [f for f in stage if f in files]
+        # Prefer intersection with implicated; if empty use stage (early scaffold).
+        focus = [f for f in staged if f in implicated] or staged
+        # Always allow truly implicated files outside stage (e.g. parse error file).
+        for f in implicated:
+            if f not in focus:
+                focus.append(f)
+        return focus or implicated or list(files)
+    return implicated or list(files)
+
+
 def _build_propose_messages(
     task_spec: dict[str, Any],
     *,
@@ -2410,8 +2691,13 @@ def _build_propose_messages(
                     body = body.lstrip("\r\n")
                     if name:
                         src_map[name] = body
-        implicated = _implicated_files(err, file_list, prev_sources=src_map)
-        # Full bodies for implicated files; signatures only for the rest.
+        implicated = _repair_focus_files(
+            file_list,
+            round_i=round_i,
+            err=err,
+            prev_sources=src_map,
+        )
+        # Full bodies for implicated/stage-focused files; signatures only for the rest.
         full_blocks: list[str] = []
         sig_blocks: list[str] = []
         for fn in file_list:
@@ -2831,6 +3117,7 @@ def run_closed_loop(
                 verify_script=verify_script,
                 candidate_dir=seed_dir,
                 files=files_seed,
+                expect_text=str(task_spec.get("expect") or ""),
                 serve_session=serve_sess,
                 harness_root=hroot,
             )
@@ -2852,8 +3139,16 @@ def run_closed_loop(
                     "passed": bool(seed_ver.get("passed")),
                     "fitness": float(seed_ver.get("fitness") or 0.0),
                     "seed_from_stub": True,
+                    "expect_hits": seed_ver.get("expect_hits"),
+                    "expect_total": seed_ver.get("expect_total"),
                 }
             )
+
+    # Elitist carry-over: never regress below best parse-gated sources seen.
+    elite_sources: dict[str, str] = dict(last_sources)
+    elite_fitness = float((rounds_log[-1].get("fitness") if rounds_log else 0.0) or 0.0)
+    elite_errors = last_errors
+    elite_id = "stub-seed" if rounds_log else "wl-0"
 
     for round_i in range(max_rounds):
         round_wls: list[dict[str, Any]] = []
@@ -2909,11 +3204,10 @@ def run_closed_loop(
                     _build_propose_messages(
                         task_spec,
                         round_i=round_i,
-                        prev_source=last_source if (i == 0 or round_i > 0) else (
-                            last_source if i == 0 else None
-                        ),
+                        prev_source=(last_source if last_source else None),
+                        # elitist base carried via prev_sources
                         prev_errors=prev_err_i,
-                        prev_sources=last_sources if (round_i > 0 or last_errors) else None,
+                        prev_sources=(elite_sources or last_sources) if (round_i > 0 or last_errors or elite_sources) else None,
                         candidate_index=i,
                     )
                 )
@@ -2966,7 +3260,7 @@ def run_closed_loop(
                 )
                 if (round_i > 0 or last_errors)
                 else None,
-                prev_sources=last_sources if (round_i > 0 or last_errors) else None,
+                prev_sources=(elite_sources or last_sources) if (round_i > 0 or last_errors or elite_sources) else None,
                 candidate_index=i,
                 tools=tools,
                 serve_session=serve_sess,
@@ -2981,7 +3275,7 @@ def run_closed_loop(
                     task_spec=task_spec,
                     round_i=round_i,
                     prev_source=last_source,
-                    prev_errors=last_errors + f"\n(explorer variant {i})",
+                    prev_errors=(elite_errors or last_errors) + f"\n(explorer variant {i})",
                     prev_sources=last_sources,
                     candidate_index=i,
                     tools=tools,
@@ -2997,19 +3291,28 @@ def run_closed_loop(
             fallback = task_spec.get("fallback")
             tools_used = list(prop.get("tools_used") or [])
             if multi:
+                base_map = dict(elite_sources or last_sources or {})
                 for fn in files:
                     if not (sources_map.get(fn) or "").strip():
-                        if (last_sources.get(fn) or "").strip():
-                            sources_map[fn] = last_sources[fn]
+                        if (base_map.get(fn) or "").strip():
+                            sources_map[fn] = base_map[fn]
                         elif isinstance(fallback, dict):
                             sources_map[fn] = str(fallback.get(fn) or "")
                 if not any((sources_map.get(fn) or "").strip() for fn in files):
-                    if last_sources:
-                        sources_map = {fn: str(last_sources.get(fn) or "") for fn in files}
+                    if base_map:
+                        sources_map = {fn: str(base_map.get(fn) or "") for fn in files}
                     elif isinstance(fallback, dict):
                         sources_map = {fn: str(fallback.get(fn) or "") for fn in files}
                     else:
                         sources_map = {files[-1]: str(fallback or FIB_FALLBACK)}
+                # Per-file Aura parse gate: reject unbalanced rewrites; keep base.
+                sources_map, gate_notes = _merge_sources_parse_gate(
+                    base_map,
+                    sources_map,
+                    files=files,
+                    aura_bin=aura_bin,
+                )
+                prop["parse_gate"] = gate_notes
                 for fn in files:
                     (cdir / fn).write_text(sources_map.get(fn) or "", encoding="utf-8")
                 source = chr(10).join(
@@ -3060,6 +3363,7 @@ def run_closed_loop(
                 verify_script=verify_script,
                 candidate_dir=cand_dir,
                 files=files if multi else None,
+                expect_text=str(task_spec.get("expect") or ""),
                 serve_session=serve_sess,
                 harness_root=hroot,
                 prefer_session=prefer_session,
@@ -3228,6 +3532,26 @@ def run_closed_loop(
                     except OSError:
                         pass
         last_errors = best["eval"]["notes"]
+        # Elitist: only advance elite when fitness does not regress.
+        round_fit = float(fitness_by_id.get(selected_id, 0.0) or 0.0)
+        if round_fit > elite_fitness + 1e-9 or (
+            abs(round_fit - elite_fitness) <= 1e-9 and last_sources
+        ):
+            if round_fit >= elite_fitness:
+                elite_fitness = round_fit
+                if last_sources:
+                    elite_sources = dict(last_sources)
+                elite_errors = last_errors
+                elite_id = selected_id
+        else:
+            # Regress guard — next propose starts from elite, not this worse pick.
+            if elite_sources:
+                last_sources = dict(elite_sources)
+                last_source = chr(10).join(
+                    f"; --- {fn} ---{chr(10)}{last_sources.get(fn, '')}"
+                    for fn in list(task_spec.get("files") or last_sources.keys())
+                )
+                last_errors = elite_errors or last_errors
         if not best["eval"]["passed"]:
             # richer error feed for repair
             eval_path = ws_root / "candidates" / selected_id / "eval.json"
@@ -3450,8 +3774,25 @@ def run_closed_loop(
             shutil.copy2(final_program, keep)
             final_program = keep
 
-    # Summarize fiber explore honesty from last successful / final round
+    # Summarize fiber explore honesty — aggregate llm_parallel across rounds
+    # (do not let a final fiber_serial wipe earlier measured fiber batches).
     last_round = rounds_log[-1] if rounds_log else {}
+    agg_parallel, agg_parallel_ok, agg_meta = _aggregate_llm_parallel(rounds_log)
+    # Prefer last non-null llm_via; fall back across rounds.
+    agg_via = last_round.get("llm_via")
+    if not agg_via:
+        for r in reversed(rounds_log):
+            if r.get("llm_via"):
+                agg_via = r.get("llm_via")
+                break
+    best_fit = max(
+        (
+            float(r.get("fitness") or 0.0)
+            for r in rounds_log
+            if int(r.get("round", -1)) >= -1
+        ),
+        default=0.0,
+    )
     summary = {
         "ok": success,
         "traj_id": traj_id,
@@ -3467,9 +3808,17 @@ def run_closed_loop(
         "fiber_explore_n": fiber_explore_n,
         "concurrent_llm": bool(concurrent_llm_mode),
         "llm_calls_parallel": last_round.get("llm_calls_parallel"),
-        "llm_parallel": last_round.get("llm_parallel"),
-        "llm_parallel_ok": bool(last_round.get("llm_parallel_ok")),
-        "llm_via": last_round.get("llm_via"),
+        "llm_parallel": agg_parallel if agg_parallel is not None else last_round.get("llm_parallel"),
+        "llm_parallel_ok": bool(
+            agg_parallel_ok
+            if agg_parallel is not None
+            else last_round.get("llm_parallel_ok")
+        ),
+        "llm_parallel_rounds": agg_meta.get("counts") or {},
+        "llm_via": agg_via,
+        "best_fitness": round(float(best_fit), 4),
+        "elite_fitness": round(float(elite_fitness), 4),
+        "elite_id": elite_id,
         "fiber_llm": bool(fiber_llm_live),
         "fiber_llm_probe": {
             "ok": bool(fiber_llm_probe_info.get("ok")),
@@ -3502,14 +3851,22 @@ def run_closed_loop(
             "via_prefer_session": bool(serve_meta.get("via_prefer_session")),
             "via": last_round.get("via"),
             "concurrent_llm": bool(concurrent_llm_mode),
-            "llm_parallel": last_round.get("llm_parallel"),
-            "llm_parallel_ok": bool(last_round.get("llm_parallel_ok")),
-            "llm_via": last_round.get("llm_via"),
+            "llm_parallel": (
+                agg_parallel if agg_parallel is not None else last_round.get("llm_parallel")
+            ),
+            "llm_parallel_ok": bool(
+                agg_parallel_ok
+                if agg_parallel is not None
+                else last_round.get("llm_parallel_ok")
+            ),
+            "llm_parallel_rounds": agg_meta.get("counts") or {},
+            "llm_via": agg_via,
             "fiber_llm": bool(fiber_llm_live),
             "repair_path": last_round.get("repair_path"),
             "orch_observation_ok": bool(
                 (last_round.get("orch_observation") or {}).get("ok")
             ),
+            "elite_fitness": round(float(elite_fitness), 4),
             "reason": honesty.get("reason"),
         },
         "rounds_log": rounds_log,
