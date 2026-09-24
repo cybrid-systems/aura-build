@@ -71,4 +71,3 @@ Aura kernel edits: issue stubs only (never auto-edit).
 - `20260924-173546` ok=False llm_via=fiber llm_parallel=fiber_serial explore=host_thread artifacts=`combat_20260924-173546_stdout.json`
 - `20260924-174643` ok=False llm_via=fiber llm_parallel=fiber explore=fiber_graph artifacts=`combat_20260924-174643_stdout.json` soft=#4055_live_ok
 
-- `20260924-175921` ok=False llm_via=fiber llm_parallel=fiber explore=fiber_graph artifacts=`combat_20260924-175921_stdout.json`
