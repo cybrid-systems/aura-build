@@ -233,6 +233,16 @@ def build_parser() -> argparse.ArgumentParser:
             "(strategies — not named agent products; default rule,llm,intent)"
         ),
     )
+    _opt(
+        dog,
+        "--concurrent-llm",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "force every explorer to tools=['llm'] for parallel MiniMax proposes "
+            "(also AURA_BUILD_CONCURRENT_LLM=1); stamps concurrent_llm + llm_parallel_ok"
+        ),
+    )
     _common(dog, aura=True)
 
     sess = sub.add_parser(

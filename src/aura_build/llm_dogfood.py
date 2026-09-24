@@ -2094,6 +2094,112 @@ def fiber_fanout_probe(
 
 
 
+
+def snapshot_orch_observation(
+    serve_session: Any,
+    *,
+    timeout_s: float = 5.0,
+    facade: str = "query:orch-module-stats",
+) -> dict[str, Any]:
+    """Snapshot Soft orch obs facade on a live serve session.
+
+    Soft serve string-heap opacity means ``hash-ref`` on string keys often
+    misses even when the hash is live. We measure honestly:
+
+    - ``ok`` only when Soft returns status=ok and key_count > 0
+    - ``orch_obs_facade_unified_2589`` when value ``2589`` appears in
+      hash-values (schema-2589 / issue-2589 pair from Aura #2589 facade)
+    - ``keys_sample`` is a small measured subset (counts / sentinels), never
+      a megabyte dump and never invented from env alone
+
+    Hard timeout ≤5s. On Soft miss → ``ok=false`` + reason; never fake.
+    """
+    out: dict[str, Any] = {
+        "ok": False,
+        "facade": facade,
+        "orch_obs_facade_unified_2589": None,
+        "keys_sample": [],
+        "ms": 0,
+    }
+    if serve_session is None:
+        out["reason"] = "no_session"
+        return out
+    # Soft Ready: hash-ref string keys opaque; measure via hash-values + count.
+    # Escaped facade is a fixed allowlist string — not user input.
+    safe = facade.replace("\\", "").replace('"', "")
+    if not safe.startswith("query:"):
+        out["reason"] = "facade_not_query"
+        return out
+    expr = (
+        f'(let* ((h (engine:metrics "{safe}"))'
+        f" (vs (hash-values h))"
+        f" (n (length (hash-keys h)))"
+        f" (n2589 (length (filter (lambda (v) (equal? v 2589)) vs)))"
+        f" (n1588 (length (filter (lambda (v) (equal? v 1588)) vs)))"
+        f" (n1879 (length (filter (lambda (v) (equal? v 1879)) vs))))"
+        f" (list n n2589 n1588 n1879))"
+    )
+    t0 = time.monotonic()
+    try:
+        r = serve_session.raw_line(expr, timeout_s=min(5.0, float(timeout_s)))
+    except Exception as exc:  # noqa: BLE001
+        out["ms"] = int((time.monotonic() - t0) * 1000)
+        out["reason"] = f"orch_obs_exc:{type(exc).__name__}:{exc}"
+        return out
+    out["ms"] = int((time.monotonic() - t0) * 1000)
+    if r.get("status") != "ok":
+        out["reason"] = f"orch_obs_failed:{r.get('msg') or r.get('status')}"
+        out["raw_status"] = r.get("status")
+        return out
+    raw_val = r.get("value")
+    # Parse "(399 2 1 1)" list from Soft JSON value
+    nums: list[int] = []
+    if isinstance(raw_val, (list, tuple)):
+        for x in raw_val:
+            try:
+                nums.append(int(x))
+            except (TypeError, ValueError):
+                pass
+    elif isinstance(raw_val, str):
+        import re as _re
+        nums = [int(x) for x in _re.findall(r"-?\d+", raw_val)]
+    if len(nums) < 1:
+        out["reason"] = f"orch_obs_bad_value:{raw_val!r}"
+        out["raw_value"] = str(raw_val)[:200] if raw_val is not None else None
+        return out
+    key_count = int(nums[0])
+    n2589 = int(nums[1]) if len(nums) > 1 else 0
+    n1588 = int(nums[2]) if len(nums) > 2 else 0
+    n1879 = int(nums[3]) if len(nums) > 3 else 0
+    if key_count <= 0:
+        out["reason"] = "orch_obs_empty_hash"
+        out["key_count"] = key_count
+        return out
+    # Soft string keys opaque — cannot expand real key names; stamp measured
+    # sentinel counts instead (honest, small).
+    out["ok"] = True
+    out["key_count"] = key_count
+    out["schema_2589_hits"] = n2589
+    out["schema_1588_hits"] = n1588
+    out["schema_1879_hits"] = n1879
+    # #2589 unified facade wires schema-2589 + issue-2589 (=2589) + sentinel 1.
+    # Soft cannot hash-ref the sentinel string key; value 2589 ≥1 is the Soft
+    # measured proof the unified facade is on this live process.
+    out["orch_obs_facade_unified_2589"] = bool(n2589 >= 1)
+    out["soft_hash_ref_string_keys"] = False
+    out["keys_sample"] = [
+        f"key_count={key_count}",
+        f"schema_2589_hits={n2589}",
+        f"schema_1588_hits={n1588}",
+        f"schema_1879_hits={n1879}",
+        "soft_string_keys=opaque",
+    ]
+    out["note"] = (
+        "soft_serve_hash_values_probe; string hash-ref opaque on Soft serve"
+    )
+    return out
+
+
 def _propose(
     cfg: MiniMaxConfig,
     *,
@@ -2297,6 +2403,7 @@ def run_closed_loop(
     prefer_session: bool | None = True,
     fiber_explore: int | None = None,
     explore_tools: list[str] | str | None = None,
+    concurrent_llm: bool | None = None,
 ) -> dict[str, Any]:
     """Propose → verify → repair with optional fiber:spawn concurrent explore.
 
@@ -2334,6 +2441,19 @@ def run_closed_loop(
         verify_script = str(vs) if vs.is_file() else str(verify_script)
     cfg = config or load_minimax_config()
     tools = parse_explore_tools(explore_tools)
+    # --concurrent-llm / AURA_BUILD_CONCURRENT_LLM=1: force every explorer to
+    # MiniMax-only so rule/intent cannot steal the round (honest parallel LLM).
+    env_concurrent = os.environ.get("AURA_BUILD_CONCURRENT_LLM", "").strip() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+    concurrent_llm_mode = (
+        bool(concurrent_llm) if concurrent_llm is not None else env_concurrent
+    )
+    if concurrent_llm_mode:
+        tools = ["llm"]
     hroot = harness_root or (repo / ".aura-build")
     hroot.mkdir(parents=True, exist_ok=True)
     honesty = load_honesty(hroot)
@@ -2528,6 +2648,9 @@ def run_closed_loop(
             else:
                 round_backend = None  # do not invent fiber_graph
 
+        # Soft orch observation on live serve (never invent from env).
+        orch_obs = snapshot_orch_observation(serve_sess, timeout_s=5.0)
+
         n_explore = fiber_explore_n
 
         def _explore_one(i: int) -> dict[str, Any]:
@@ -2650,18 +2773,31 @@ def run_closed_loop(
             }
 
         # Parallel host propose/verify across explorers (sock verify serializes
-        # inside holder lock; propose tools can overlap).
+        # inside holder lock; propose/LLM HTTP can overlap on host threads).
+        # Honesty: denseness may stamp explore_parallel=fiber_graph while LLM
+        # HTTP remains host_thread (llm_parallel=host_thread).
         results: list[dict[str, Any]] = []
+        explore_t0 = time.monotonic()
         with ThreadPoolExecutor(max_workers=max(1, n_explore)) as pool:
             futs = {pool.submit(_explore_one, i): i for i in range(n_explore)}
             for fut in as_completed(futs):
                 results.append(fut.result())
+        explore_wall_ms = int((time.monotonic() - explore_t0) * 1000)
         results.sort(key=lambda r: r["cid"])
 
         explore_parallel = (
             "fiber_graph" if round_backend == "fiber_graph" else "host_thread"
         )
+        llm_parallel = "host_thread"  # MiniMax HTTP is always host-side today
+        llm_wls = [
+            r for r in results if "llm" in (r.get("tools_used") or [])
+        ]
+        llm_parallel_ok = len(llm_wls) >= 2
+        llm_calls_parallel = len(llm_wls) if concurrent_llm_mode else (
+            len(llm_wls) if llm_parallel_ok else 0
+        )
 
+        serve_via_seen = False
         for res in results:
             cid = res["cid"]
             ver = res["ver"]
@@ -2673,7 +2809,12 @@ def run_closed_loop(
             cdir = res["cdir"]
             fitness_by_id[cid] = float(ver["fitness"])
             sources[cid] = source
-            round_via = str(ver.get("via") or round_via)
+            vvia = str(ver.get("via") or "")
+            if vvia.startswith("serve_session"):
+                serve_via_seen = True
+                round_via = vvia
+            elif not serve_via_seen:
+                round_via = vvia or round_via
             if ver.get("oracle_verify_script"):
                 round_oracle = True
             (cdir / "eval.json").write_text(
@@ -2831,8 +2972,27 @@ def run_closed_loop(
                 ),
                 "via_prefer_session": bool(serve_meta.get("via_prefer_session")),
                 "via": round_via,
+                "repair_path": (
+                    "soft_session_worldline"
+                    if (
+                        serve_sess is not None
+                        and prefer_session is not False
+                        and (
+                            serve_via_seen
+                            or str(round_via).startswith("serve_session")
+                            or round_backend == "fiber_graph"
+                        )
+                    )
+                    else "cold_subprocess"
+                ),
                 "workspace": str(ws_root),
                 "llm": cfg.public_dict(),
+                "concurrent_llm": bool(concurrent_llm_mode),
+                "llm_calls_parallel": int(llm_calls_parallel),
+                "llm_parallel": llm_parallel,
+                "llm_parallel_ok": bool(llm_parallel_ok),
+                "explore_wall_ms": int(explore_wall_ms),
+                "orch_observation": dict(orch_obs),
                 "dogfood": {
                     "provider": "minimax",
                     "model": cfg.model,
@@ -2847,6 +3007,7 @@ def run_closed_loop(
                     "traj_id": traj_id,
                     "explore_tools": list(tools),
                     "fiber_explore_n": fiber_explore_n,
+                    "concurrent_llm": bool(concurrent_llm_mode),
                     "oracle_verify_script": round_oracle,
                 },
             },
@@ -2910,6 +3071,37 @@ def run_closed_loop(
                     for w in round_wls
                     for t in (w.get("tools_used") or [])
                 }),
+                "tools_used_by_wl": {
+                    w["id"]: list(w.get("tools_used") or []) for w in round_wls
+                },
+                "concurrent_llm": bool(concurrent_llm_mode),
+                "llm_calls_parallel": int(llm_calls_parallel),
+                "llm_parallel": llm_parallel,
+                "llm_parallel_ok": bool(llm_parallel_ok),
+                "explore_wall_ms": int(explore_wall_ms),
+                "orch_observation": {
+                    "ok": bool(orch_obs.get("ok")),
+                    "facade": orch_obs.get("facade"),
+                    "orch_obs_facade_unified_2589": orch_obs.get(
+                        "orch_obs_facade_unified_2589"
+                    ),
+                    "key_count": orch_obs.get("key_count"),
+                    "ms": orch_obs.get("ms"),
+                    "reason": orch_obs.get("reason"),
+                },
+                "repair_path": (
+                    "soft_session_worldline"
+                    if (
+                        serve_sess is not None
+                        and prefer_session is not False
+                        and (
+                            serve_via_seen
+                            or str(round_via).startswith("serve_session")
+                            or round_backend == "fiber_graph"
+                        )
+                    )
+                    else "cold_subprocess"
+                ),
                 "oracle_verify_script": round_oracle,
                 "aura_orch": (
                     {"ok": aura_rec.get("ok"), "via": aura_rec.get("via")}
@@ -2945,6 +3137,12 @@ def run_closed_loop(
         "llm": cfg.public_dict(),
         "explore_tools": list(tools),
         "fiber_explore_n": fiber_explore_n,
+        "concurrent_llm": bool(concurrent_llm_mode),
+        "llm_calls_parallel": last_round.get("llm_calls_parallel"),
+        "llm_parallel": last_round.get("llm_parallel"),
+        "llm_parallel_ok": bool(last_round.get("llm_parallel_ok")),
+        "orch_observation": last_round.get("orch_observation"),
+        "repair_path": last_round.get("repair_path"),
         "worldline_backend": last_round.get("worldline_backend"),
         "explore_parallel": last_round.get("explore_parallel"),
         "via": last_round.get("via"),
@@ -2968,6 +3166,13 @@ def run_closed_loop(
             ),
             "via_prefer_session": bool(serve_meta.get("via_prefer_session")),
             "via": last_round.get("via"),
+            "concurrent_llm": bool(concurrent_llm_mode),
+            "llm_parallel": last_round.get("llm_parallel"),
+            "llm_parallel_ok": bool(last_round.get("llm_parallel_ok")),
+            "repair_path": last_round.get("repair_path"),
+            "orch_observation_ok": bool(
+                (last_round.get("orch_observation") or {}).get("ok")
+            ),
             "reason": honesty.get("reason"),
         },
         "rounds_log": rounds_log,

@@ -445,6 +445,17 @@ worldlines select-best + repair. Honesty: `session_model=serve` when long-lived 
 actually used; else `explore_parallel=host_thread` + `shared_workspace_subprocess` cold fallback.
 Multi-file hot verify → `via=serve_session` when attach live; `verify.sh` is oracle/fallback.
 `--explore-tools` are strategies any explorer may use (not named agent kinds).
+`--concurrent-llm` (or `AURA_BUILD_CONCURRENT_LLM=1`) forces every explorer to `tools=['llm']`
+so MiniMax actually fans out in parallel; stamps `concurrent_llm`, `llm_parallel_ok`,
+`llm_parallel=host_thread` (HTTP is host-side — denseness may still be `fiber_graph`),
+and Soft-session `orch_observation` from `query:orch-module-stats`.
+
+```bash
+aura-build llm-dogfood --project examples/projects/mini-cache \
+  --prefer-session --fiber-explore 3 --explore-tools llm \
+  --concurrent-llm --max-rounds 8 --worldlines 3 --json
+```
+
 Trajectories record
 `runtime.kernel=aura`, `runtime.llm.model`, `runtime.dogfood.task/project`,
 actions/fitness; API keys are redacted.

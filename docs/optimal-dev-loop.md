@@ -135,6 +135,25 @@ aura-build llm-dogfood --project examples/projects/mini-saga \
   --out trajectories/mini_saga_dogfood.jsonl --json
 ```
 
+
+## Concurrent LLM explorers + Soft orch observation
+
+Force N explorers to MiniMax-only (no rule/intent stealing the round) and stamp
+Soft orch facade stats measured on the live serve session:
+
+```bash
+aura-build llm-dogfood --project examples/projects/mini-cache \
+  --prefer-session --fiber-explore 3 --explore-tools llm \
+  --concurrent-llm --max-rounds 8 --worldlines 3 --json
+```
+
+Honesty:
+- `explore_parallel=fiber_graph` only when Soft denseness probe ok; else `host_thread`
+- LLM HTTP is always host-side → `llm_parallel=host_thread` (do **not** claim in-fiber LLM)
+- `concurrent_llm=true` + `llm_parallel_ok` when ≥2 worldlines have `tools_used` containing `llm` in the same round
+- `orch_observation.ok` only when Soft `(engine:metrics "query:orch-module-stats")` returns a live hash (sentinel via Soft hash-values `2589` hits; Soft string `hash-ref` is opaque)
+- `repair_path=soft_session_worldline` when prefer-session verify is on the live Soft holder
+
 ## See also
 
 - [architecture.md](architecture.md) — layers

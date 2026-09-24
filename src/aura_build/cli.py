@@ -687,6 +687,7 @@ def _cmd_llm_dogfood(args: argparse.Namespace) -> int:
         prefer_session=prefer,
         fiber_explore=getattr(args, "fiber_explore", None),
         explore_tools=getattr(args, "explore_tools", None),
+        concurrent_llm=bool(getattr(args, "concurrent_llm", False)),
     )
     hon = summary.get("honesty") or {}
     print(
@@ -707,6 +708,11 @@ def _cmd_llm_dogfood(args: argparse.Namespace) -> int:
         f" worldline_backend={summary.get('worldline_backend') or hon.get('worldline_backend')}"
         f" explore_parallel={summary.get('explore_parallel')}"
         f" fiber_explore_n={summary.get('fiber_explore_n')}"
+        f" concurrent_llm={summary.get('concurrent_llm')}"
+        f" llm_parallel_ok={summary.get('llm_parallel_ok')}"
+        f" llm_parallel={summary.get('llm_parallel')}"
+        f" orch_obs_ok={(summary.get('orch_observation') or {}).get('ok')}"
+        f" repair_path={summary.get('repair_path')}"
         f" tools_used={summary.get('tools_used_selected')}"
         f" fiber_live={hon.get('fiber_live')}"
         f" incr_proven={hon.get('incr_proven')}"
