@@ -1,0 +1,60 @@
+(define (length lst)
+  (if (null? lst) 0 (+ 1 (length (cdr lst)))))
+
+(define (list-ref lst i)
+  (if (= i 0) (car lst) (list-ref (cdr lst) (- i 1))))
+
+(define (max-consecutive-ones nums k)
+  (let ((n (length nums)))
+    (letrec ((best 0)
+             (left 0)
+             (zeros 0)
+             (right-iter (lambda (right best left zeros)
+                           (cond
+                             ((= right n) best)
+                             (else
+                              (let ((val (list-ref nums right)))
+                                (let ((new-zeros (if (= val 0) (+ zeros 1) zeros)))
+                                  (let ((updated
+                                         (if (> new-zeros k)
+                                             (letrec ((shift-left
+                                                       (lambda (l z)
+                                                         (let ((lv (list-ref nums l)))
+                                                           (if (= lv 0)
+                                                               (values (+ l 1) (- z 1))
+                                                               (values (+ l 1) z))))))
+                                               (let-values (((nl nz) (shift-left left zeros)))
+                                                 (set! left nl)
+                                                 (set! zeros nz)
+                                                 nl))
+                                             left)))
+                                    (let ((curr-len (- (+ right 1) (if (> new-zeros k) updated left))))
+                                      (let ((new-best (if (> curr-len best) curr-len best)))
+                                        (set! best new-best)
+                                        (set! zeros (if (> new-zeros k) zeros new-zeros))
+                                        (right-iter (+ right 1) new-best left zeros)))))))))))
+      (right-iter 0 best left zeros))))
+
+(define (solve nums k)
+  (max-consecutive-ones nums k))
+
+(define (display-list lst)
+  (display "[")
+  (letrec ((iter (lambda (l first)
+                     (cond
+                       ((null? l) (display ""))
+                       (else
+                        (if (not first) (display ", ") (display ""))
+                        (display (car l))
+                        (iter (cdr l) #f))))))
+    (iter lst #t))
+  (display "]"))
+
+(display "CASE0=") (display (solve (list 1 1 1 0 0 0 1 1 1 1 0) 2)) (newline)
+(display "CASE1=") (display (solve (list 0 1 1 0 0 0 1 1 0 0 1 1 0 0 0 1 1 1 0) 3)) (newline)
+(display "CASE2=") (display (solve (list 0 0 0 0) 0)) (newline)
+(display "CASE3=") (display (solve (list 0 0 0 0) 4)) (newline)
+(display "CASE4=") (display (solve (list 1 1 1 1) 0)) (newline)
+(display "CASE5=") (display (solve (list) 0)) (newline)
+(display "CASE6=") (display (solve (list 0 1 0 1 0 1 0 1) 1)) (newline)
+(display "CASE7=") (display (solve (list 0 1 0 1 0 1 0 1) 2)) (newline)

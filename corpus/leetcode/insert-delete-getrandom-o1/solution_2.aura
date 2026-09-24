@@ -1,0 +1,123 @@
+;; RandomizedSet implementation for Insert Delete GetRandom O(1)
+;; Uses a list (vector) + association list for value -> index mapping.
+
+(define (make-rs)
+  (let ((vec '())       ; list of values
+        (idx '()))      ; association list of (val . index)
+    (lambda (op . args)
+      (cond
+        ((equal? op 'insert)
+         (let ((v (car args)))
+           (if (assoc v idx)
+               #f
+               (begin
+                 (set! vec (append vec (list v)))
+                 (set! idx (cons (cons v (- (length vec) 1)) idx))
+                 #t))))
+        ((equal? op 'remove)
+         (let ((v (car args)))
+           (let ((pair (assoc v idx)))
+             (if (not pair)
+                 #f
+                 (begin
+                   (let ((i (cdr pair))
+                         (n (- (length vec) 1))
+                         (last-val (list-ref vec (- (length vec) 1))))
+                     ;; Update index of the moved element if i != n
+                     (if (not (= i n))
+                         (begin
+                           (set! vec (list-set vec i last-val))
+                           ;; Update idx for last-val
+                           (set! idx (map
+                                       (lambda (p)
+                                         (if (equal? (car p) last-val)
+                                             (cons (car p) i)
+                                             p))
+                                       idx))))
+                     ;; Remove last element from vec
+                     (set! vec (take vec n))
+                     ;; Remove v from idx
+                     (set! idx (filter
+                                 (lambda (p) (not (equal? (car p) v)))
+                                 idx))
+                   #t))))))
+        ((equal? op 'getRandom)
+         (let ((n (length vec)))
+           (list-ref vec (modulo (random) n))))
+        (else 'error)))))
+
+;; Helpers for list operations
+
+(define (assoc v lst)
+  (cond ((null? lst) #f)
+        ((equal? (caar lst) v) (car lst))
+        (else (assoc v (cdr lst)))))
+
+(define (list-ref lst i)
+  (if (= i 0)
+      (car lst)
+      (list-ref (cdr lst) (- i 1))))
+
+(define (list-set lst i v)
+  (if (= i 0)
+      (cons v (cdr lst))
+      (cons (car lst) (list-set (cdr lst) (- i 1) v))))
+
+(define (take lst n)
+  (if (= n 0)
+      '()
+      (cons (car lst) (take (cdr lst) (- n 1)))))
+
+(define (filter pred lst)
+  (cond ((null? lst) '())
+        ((pred (car lst)) (cons (car lst) (filter pred (cdr lst))))
+        (else (filter pred (cdr lst)))))
+
+(define (solve ops args)
+  (let ((rs (make-rs))
+        (results '()))
+    (let loop ((ops ops) (args args) (acc '()))
+      (if (null? ops)
+          (reverse acc)
+          (let* ((op (car ops))
+                 (a (car args))
+                 (rest-ops (cdr ops))
+                 (rest-args (cdr args))
+                 (res (if (null? a)
+                          (rs op)
+                          (apply rs (cons op a)))))
+            (loop rest-ops rest-args (cons res acc)))))
+    ))
+
+;; Display helper for results
+(define (bool->str b)
+  (if b "true" "false"))
+
+(define (display-result r)
+  (cond ((boolean? r) (display (bool->str r)))
+        ((number? r) (display (number->string r)))
+        ((null? r) (display "nil"))
+        (else (display r))))
+
+;; Embedded test cases - each as a (list ops args) pair
+
+(define CASE0-OPS (list "insert" "remove" "insert" "getRandom" "remove"))
+(define CASE0-ARGS (list (list 1) (list 2) (list 2) '() (list 1)))
+
+(define CASE1-OPS (list "insert" "insert" "getRandom" "remove" "getRandom"))
+(define CASE1-ARGS (list (list 0) (list 1) '() (list 0) '()))
+
+(define CASE2-OPS (list "insert" "insert" "insert" "remove" "remove" "remove"))
+(define CASE2-ARGS (list (list 1) (list 2) (list 3) (list 2) (list 1) (list 3)))
+
+(define CASE3-OPS (list "insert" "remove" "remove"))
+(define CASE3-ARGS (list (list 5) (list 5) (list 5)))
+
+(define CASE4-OPS (list "insert" "insert" "insert" "getRandom"))
+(define CASE4-ARGS (list (list 10) (list 20) (list 30) '()))
+
+(display "CASE0=") (display-result (solve CASE0-OPS CASE0-ARGS)) (newline)
+(display "CASE1=") (display-result (solve CASE1-OPS CASE1-ARGS)) (newline)
+(display "CASE2=") (display-result (solve CASE2-OPS CASE2-ARGS)) (newline)
+(display "CASE3=") (display-result (solve CASE3-OPS CASE3-ARGS)) (newline)
+(display "CASE4=") (display-result (solve CASE4-OPS CASE4-ARGS)) (newline)

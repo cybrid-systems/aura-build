@@ -1,0 +1,66 @@
+(define (at-most nums k)
+  (define (helper lst left right count freq result)
+    (cond
+      ((null? lst)
+       result)
+      (else
+       (let ((x (car lst)))
+         (cond
+           ;; shrink window if too many distinct
+           ((and (> count k) (<= left right))
+            (let ((y (list-ref nums left)))
+              (set! freq (list-replace freq y (- (list-get freq y 0) 1)))
+              (if (= (list-get freq y 0) 0)
+                  (set! count (- count 1))
+                  '())
+              (helper (cdr lst) (+ left 1) right count freq result)))
+           (else
+            (set! freq (list-replace freq x (+ (list-get freq x 0) 1)))
+            (if (= (list-get freq x 0) 1)
+                (set! count (+ count 1))
+                '())
+            (set! right (+ right 1))
+            (if (<= count k)
+                (set! result (+ result (- right left 1)))
+                '())
+            (helper (cdr lst) left right count freq result)))))))
+  (if (<= k 0)
+      0
+      (helper nums 0 -1 0 (make-list 20001 0) 0)))
+
+(define (list-get lst idx default)
+  (if (>= idx (length lst))
+      default
+      (list-ref lst idx)))
+
+(define (list-replace lst idx val)
+  (let loop ((i 0) (l lst) (acc '()))
+    (cond
+      ((null? l) (reverse acc))
+      ((= i idx)
+       (loop (+ i 1) (cdr l) (cons val acc)))
+      (else
+       (loop (+ i 1) (cdr l) (cons (car l) acc))))))
+
+(define (solve nums k)
+  (if (<= k 0)
+      0
+      (- (at-most nums k) (at-most nums (- k 1))))))
+
+(define (run-cases)
+  (define c0 '(1 2 1 2 3))
+  (display "CASE0=") (display (solve c0 2)) (newline)
+  (define c1 '(1 2 1 3 4))
+  (display "CASE1=") (display (solve c1 3)) (newline)
+  (define c2 '(1 2 1 2 3))
+  (display "CASE2=") (display (solve c2 1)) (newline)
+  (define c3 '(1 2 1 2 3))
+  (display "CASE3=") (display (solve c3 3)) (newline)
+  (display "CASE4=") (display (solve '() 0)) (newline)
+  (display "CASE5=") (display (solve '() 1)) (newline)
+  (define c6 '(1 1 1 1))
+  (display "CASE6=") (display (solve c6 1)) (newline)
+  (define c7 '(1 2 3 4 5))
+  (display "CASE7=") (display (solve c7 5)) (newline))
+
+(run-cases)

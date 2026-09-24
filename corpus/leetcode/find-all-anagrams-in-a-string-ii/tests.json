@@ -1,0 +1,66 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "s": "cbaebabacd",
+      "p": "abc"
+    },
+    "expected": "[0,6]"
+  },
+  {
+    "id": 1,
+    "input": {
+      "s": "abab",
+      "p": "ab"
+    },
+    "expected": "[0,1,2]"
+  },
+  {
+    "id": 2,
+    "input": {
+      "s": "aaaaa",
+      "p": "aa"
+    },
+    "expected": "[0,1,2,3]"
+  },
+  {
+    "id": 3,
+    "input": {
+      "s": "abcd",
+      "p": "efgh"
+    },
+    "expected": "[]"
+  },
+  {
+    "id": 4,
+    "input": {
+      "s": "abdc",
+      "p": "abcd"
+    },
+    "expected": "[0]"
+  },
+  {
+    "id": 5,
+    "input": {
+      "s": "a",
+      "p": "a"
+    },
+    "expected": "[0]"
+  },
+  {
+    "id": 6,
+    "input": {
+      "s": "a",
+      "p": "b"
+    },
+    "expected": "[]"
+  },
+  {
+    "id": 7,
+    "input": {
+      "s": "abcabcabc",
+      "p": "abc"
+    },
+    "expected": "[0,1,2,3,4,5,6]"
+  }
+]

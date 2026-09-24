@@ -1,0 +1,101 @@
+(define (sum-list xs)
+  (cond ((null? xs) 0)
+        (else (+ (car xs) (sum-list (cdr xs))))))
+
+(define (take n xs)
+  (if (= n 0)
+      '()
+      (cons (car xs) (take (- n 1) (cdr xs)))))
+
+(define (drop n xs)
+  (if (= n 0)
+      xs
+      (drop (- n 1) (cdr xs))))
+
+(define (length xs)
+  (if (null? xs) 0 (+ 1 (length (cdr xs)))))
+
+(define (extra-satisfied customers grumpy)
+  (let loop ((cs customers) (gs grumpy) (acc 0))
+    (cond ((null? cs) acc)
+          ((= (car gs) 1) (loop (cdr cs) (cdr gs) (+ acc (car cs))))
+          (else (loop (cdr cs) (cdr gs) acc)))))
+
+(define (sum-window customers grumpy k)
+  (sum-list (map-helper customers grumpy k 0 '())))
+
+(define (map-helper cs gs k i acc)
+  (if (= i k)
+      acc
+      (map-helper (cdr cs) (cdr gs) k (+ i 1)
+                  (cons (if (= (car gs) 1) (car cs) 0) acc))))
+
+(define (slide cs gs k)
+  (let* ((n (length cs))
+         (window (map-helper (take k cs) (take k gs) k 0 '()))
+         (max-sum (sum-list window))
+         (cur-sum max-sum))
+    (let loop ((i 0) (cs-rest (drop k cs)) (gs-rest (drop k gs)) (best max-sum))
+      (if (null? cs-rest)
+          best
+          (let* ((out-idx i)
+                 (in-idx (+ i k))
+                 (out-val (if (= (list-ref gs out-idx) 1) (list-ref cs out-idx) 0))
+                 (in-val (if (= (car gs-rest) 1) (car cs-rest) 0))
+                 (new-cur (- (+ cur-sum in-val) out-val))
+                 (new-best (if (> new-cur best) new-cur best)))
+            (loop (+ i 1) (cdr cs-rest) (cdr gs-rest) new-best))))))
+
+(define (list-ref xs i)
+  (if (= i 0)
+      (car xs)
+      (list-ref (cdr xs) (- i 1))))
+
+(define (solve customers grumpy k)
+  (let* ((n (length customers))
+         (base (sum-list
+                (map-base customers grumpy 0 '())))
+         (extra (slide customers grumpy k)))
+    (+ base extra)))
+
+(define (map-base cs gs i acc)
+  (if (null? cs)
+      acc
+      (map-base (cdr cs) (cdr gs) (+ i 1)
+                (cons (if (= (car gs) 0) (car cs) 0) acc))))
+
+(define customers0 '(1 0 1 2 1 1 7 5))
+(define grumpy0 '(0 1 0 1 0 1 0 1))
+(define k0 3)
+
+(define customers1 '(1))
+(define grumpy1 '(0))
+(define k1 1)
+
+(define customers2 '(5))
+(define grumpy2 '(3))
+(define k2 1)
+
+(define customers3 '(5 5 5 5 5))
+(define grumpy3 '(0 0 0 0 0))
+(define k3 2)
+
+(define customers4 '(10 1 0 10))
+(define grumpy4 '(1 0 1 1))
+(define k4 2)
+
+(define customers5 '(2 6 3 1 2 4 1 2 8 2))
+(define grumpy5 '(1 0 1 1 0 1 1 1 0 1))
+(define k5 3)
+
+(define customers6 '(1 2 3 4 5))
+(define grumpy6 '(1 1 1 1 1))
+(define k6 5)
+
+(display "CASE0=") (display (solve customers0 grumpy0 k0)) (newline)
+(display "CASE1=") (display (solve customers1 grumpy1 k1)) (newline)
+(display "CASE2=") (display (solve customers2 grumpy2 k2)) (newline)
+(display "CASE3=") (display (solve customers3 grumpy3 k3)) (newline)
+(display "CASE4=") (display (solve customers4 grumpy4 k4)) (newline)
+(display "CASE5=") (display (solve customers5 grumpy5 k5)) (newline)
+(display "CASE6=") (display (solve customers6 grumpy6 k6)) (newline)

@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:01:18Z",
+      "ts_local": "2026-09-24 23:01:18 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2358,
+        "total_characters": 0,
+        "prompt_tokens": 1092,
+        "completion_tokens": 1266,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.069,
+      "tests_passed": 4,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=[]\nCASE1=[0, 2]\nCASE2=[0, 1, 2, 3]\nCASE3=[]\nCASE4=[]\nCASE5=[0]\nCASE6=[]\nCASE7=[0, 3, 6]\n#t\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:01:44Z",
+      "ts_local": "2026-09-24 23:01:44 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2368,
+        "total_characters": 0,
+        "prompt_tokens": 1092,
+        "completion_tokens": 1276,
+        "prompt_tokens_details": {
+          "cached_tokens": 1091
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": -1,
+      "timeout": true,
+      "duration_s": 20.023,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "warning: unbalanced parentheses in input\n",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "find-all-anagrams-in-a-string-ii",
+  "title": "Find All Anagrams in a String (Variant)",
+  "category": "hashing",
+  "updated_at": "2026-09-24T15:01:44Z",
+  "updated_at_local": "2026-09-24 23:01:44 CST"
+}

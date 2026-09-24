@@ -1,0 +1,63 @@
+(define (solve nums)
+  (let* ((n (length nums))
+         (work (map (lambda (x) (modulo x n)) nums)))
+    ;; Mark: for each nums[i] in [1..n], negate work[nums[i]-1]
+    (define (mark xs i)
+      (if (null? xs)
+          '()
+          (let* ((v (car xs))
+                 (idx (- v 1))
+                 (cur (list-ref work idx)))
+            (begin
+              ;; can't set! list-ref result, so we approximate by ignoring
+              (mark (cdr xs) (+ i 1))))))
+    ;; Simpler: iterate and rebuild a mutation-safe structure
+    ;; Use a vector-like approach via an association list
+    (let loop ((xs nums) (i 0) (seen '()))
+      (if (null? xs)
+          ;; Now build result: numbers 1..n not in seen
+          (let ((missing
+                 (let collect ((k 1) (acc '()))
+                   (if (> k n)
+                       (reverse acc)
+                       (if (member k seen)
+                           (collect (+ k 1) acc)
+                           (collect (+ k 1) (cons k acc)))))))
+            missing)
+          (let* ((v (car xs))
+                 (k (modulo v n)))
+            ;; k is in [0, n-1]; actual value is k+1
+            (if (= k 0)
+                (loop (cdr xs) (+ i 1) (cons n seen))
+                (loop (cdr xs) (+ i 1) (cons k seen))))))))
+
+(define (display-list xs)
+  (define (go xs first?)
+    (if (null? xs)
+        '()
+        (begin
+          (display (if first? "" " "))
+          (display (car xs))
+          (go (cdr xs) #f))))
+  (go xs #t))
+
+;; Embedded tests
+(define c0 '(4 3 2 7 8 2 3 1))
+(define c1 '(1 1))
+(define c2 '(1 2 3 4))
+(define c3 '(2 2))
+(define c4 '(3 3 3 3))
+(define c5 '(5 4 3 2 1))
+(define c6 '())
+(define c7 '(2))
+(define c8 '(1 1 1 2 2 3))
+
+(display "CASE0=") (display-list (solve c0)) (newline)
+(display "CASE1=") (display-list (solve c1)) (newline)
+(display "CASE2=") (display-list (solve c2)) (newline)
+(display "CASE3=") (display-list (solve c3)) (newline)
+(display "CASE4=") (display-list (solve c4)) (newline)
+(display "CASE5=") (display-list (solve c5)) (newline)
+(display "CASE6=") (display-list (solve c6)) (newline)
+(display "CASE7=") (display-list (solve c7)) (newline)
+(display "CASE8=") (display-list (solve c8)) (newline)

@@ -1,0 +1,120 @@
+;; Helper: get the n-th character of a string (0-indexed) as integer code via char->int equivalent
+;; In Aura, we treat strings as sequences and use substring operations.
+
+;; We'll use a vector-like approach with mutable state via set! on lists (using list-set via assoc).
+
+;; A simpler approach: recursive character counting using string->list.
+
+(define (string->list-of-chars s)
+  ;; Convert a string into a list of single-character strings using Aura's substring
+  (define (helper i acc)
+    (if (< i 0)
+        acc
+        (helper (- i 1) (cons (substring s i (+ i 1)) acc))))
+  (helper (- (string-length s) 1) '()))
+
+(define (char-list->string lst)
+  (if (null? lst)
+      ""
+      (string-append (car lst) (char-list->string (cdr lst)))))
+
+;; For this problem, we use an efficient divide-and-conquer approach:
+;; - Count frequencies of all characters.
+;; - If a character has frequency < k, split the string at every occurrence of that character.
+;; - Recursively check each split.
+;; This avoids O(n^2) complexity for many cases.
+
+(define (count-freq s)
+  ;; Returns a list of (char . count) pairs, using association list.
+  (let ((n (string-length s)))
+    (define (iter i freq)
+      (if (>= i n)
+          freq
+          (let* ((c (substring s i (+ i 1)))
+                 (existing (assoc c freq)))
+            (if existing
+                (iter (+ i 1)
+                      (cons (cons c (+ (cdr existing) 1))
+                            (remove-assoc c freq)))
+                (iter (+ i 1)
+                      (cons (cons c 1) freq))))))
+    (define (remove-assoc c lst)
+      (cond ((null? lst) '())
+            ((equal? (car (car lst)) c) (cdr lst))
+            (else (cons (car lst) (remove-assoc c (cdr lst))))))
+    (iter 0 '())))
+
+(define (assoc c lst)
+  (cond ((null? lst) #f)
+        ((equal? (car (car lst)) c) (car lst))
+        (else (assoc c (cdr lst)))))
+
+(define (frequencies-below-k? freq k)
+  ;; Check if ALL frequencies are >= k. If yes, return #t.
+  ;; Otherwise, return #f (meaning there's at least one bad character).
+  (cond ((null? freq) #t)
+        ((< (cdr (car freq)) k) #f)
+        (else (frequencies-below-k? (cdr freq) k))))
+
+(define (split-string s c)
+  ;; Split string s by character c (single-char string) into a list of substrings.
+  ;; The character c is removed from splits.
+  (let ((n (string-length s)))
+    (define (iter i start acc)
+      (if (>= i n)
+          (reverse
+           (cons (substring s start n) acc))
+          (let ((cur (substring s i (+ i 1))))
+            (if (equal? cur c)
+                (iter (+ i 1)
+                      (+ i 1)
+                      (cons (substring s start i) acc))
+                (iter (+ i 1) start acc)))))
+    (iter 0 0 '())))
+
+(define (filter-non-empty lst)
+  (cond ((null? lst) '())
+        ((equal? (car lst) "") (filter-non-empty (cdr lst)))
+        (else (cons (car lst) (filter-non-empty (cdr lst))))))
+
+(define (longest-substring-helper s k)
+  (let ((n (string-length s)))
+    (cond ((= n 0) 0)
+          ((<= k 1) n)
+          ((> k n) 0)
+          (else
+           (let ((freq (count-freq s)))
+             (if (frequencies-below-k? freq k)
+                 n
+                 ;; Find a bad character to split on
+                 (let ((bad-char (find-bad freq k)))
+                   (let ((splits (filter-non-empty (split-string s bad-char))))
+                     (if (null? splits)
+                         0
+                         (apply-max (map (lambda (sub) (longest-substring-helper sub k)) splits)))))))))))
+
+(define (find-bad freq k)
+  ;; Return the first character with frequency < k.
+  (cond ((null? freq) #f)
+        ((< (cdr (car freq)) k) (car (car freq)))
+        (else (find-bad (cdr freq) k))))
+
+(define (apply-max lst)
+  (cond ((null? lst) 0)
+        (else (let ((rest-max (apply-max (cdr lst))))
+                (if (> (car lst) rest-max) (car lst) rest-max)))))
+
+(define (solve s k)
+  (longest-substring-helper s k))
+
+;; Test harness
+(display "CASE0=") (display (solve "aaabb" 3)) (newline)
+(display "CASE1=") (display (solve "ababbc" 2)) (newline)
+(display "CASE2=") (display (solve "aabbcc" 1)) (newline)
+(display "CASE3=") (display (solve "abcdef" 2)) (newline)
+(display "CASE4=") (display (solve "a" 1)) (newline)
+(display "CASE5=") (display (solve "a" 2)) (newline)
+(display "CASE6=") (display (solve "aaabbb" 3)) (newline)
+(display "CASE7=") (display (solve "ababacb" 3)) (newline)
+(display "CASE8=") (display (solve "bbaa" 3)) (newline)
+(display "CASE9=") (display (solve "weitong" 2)) (newline)

@@ -1,0 +1,101 @@
+;; Subarrays with exactly k distinct integers using the "at most k" trick.
+;; Each test case is hard-coded as a literal list + k.
+
+(define (at-most-k nums k)
+  ;; Count subarrays with at most k distinct integers using sliding window.
+  (if (< k 0)
+      0
+      (let ((count 0)
+            (left 0)
+            (distinct 0)
+            (freq (list 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0))) ;; size 20, indices per value mod 20
+        (define (inc idx)
+            (let ((v (list-ref freq idx)))
+              (if (= v 0) (set! distinct (+ distinct 1)) 0)
+              (list-set! freq idx (+ v 1))))
+        (define (dec idx)
+            (let ((v (list-ref freq idx)))
+              (list-set! freq idx (- v 1))
+              (if (= (- v 1) 0) (set! distinct (- distinct 1)) 0)))
+        (define (loop right)
+          (if (= right (length nums))
+              count
+              (let* ((rv (list-ref nums right))
+                     (ridx (modulo rv 20)))
+                (inc ridx)
+                (let shrink ()
+                  (if (> distinct k)
+                      (let* ((lv (list-ref nums left))
+                             (lidx (modulo lv 20)))
+                        (dec lidx)
+                        (set! left (+ left 1))
+                        (shrink))
+                      0))
+                (set! count (+ count (- right left -1)))
+                (loop (+ right 1))))))
+        (loop 0))))
+
+(define (exactly-k nums k)
+  (- (at-most-k nums k) (at-most-k nums (- k 1))))
+
+;; List-set! helper using set! on car/cdr chains isn't standard; redefine freq as mutable via set-car!/list-set!.
+;; Aura lacks list-set!; we'll represent freq via a list of boxes using set-car!/set-cdr! is also non-standard.
+;; Instead, use a simpler approach: recompute distinct via scanning each window (still O(n^2) which is fine for small n).
+;; But for correctness and simplicity, switch to O(n^2) counting since input is small.
+
+(define (count-distinct-in-range nums lo hi)
+  ;; count distinct values in nums[lo..hi-1]
+  (let ((seen '()) (c 0))
+    (define (iter i)
+      (if (= i hi)
+          c
+          (let ((v (list-ref nums i)))
+            (define (contains? lst)
+              (cond ((null? lst) #f)
+                    ((= (car lst) v) #t)
+                    (else (contains? (cdr lst)))))
+            (if (contains? seen)
+                (iter (+ i 1))
+                (begin
+                  (set! seen (cons v seen))
+                  (set! c (+ c 1))
+                  (iter (+ i 1)))))))
+    (iter lo)))
+
+(define (exactly-k-brute nums k)
+  (let ((n (length nums)) (ans 0))
+    (let loop-i ((i 0))
+      (if (= i n) ans
+        (let loop-j ((j (+ i 1)) (seen '()))
+          (cond ((= j n) ans)
+                (else
+                  (let ((v (list-ref nums (- j 1))))
+                    (define (contains? lst)
+                      (cond ((null? lst) #f)
+                            ((= (car lst) v) #t)
+                            (else (contains? (cdr lst)))))
+                    (if (contains? seen)
+                        (begin
+                          (set! ans (if (= (length seen) k) (+ ans 1) ans))
+                          (loop-j (+ j 1) seen))
+                        (let ((new-seen (cons v seen)))
+                          (set! ans (if (= (length new-seen) k) (+ ans 1) ans))
+                          (loop-j (+ j 1) new-seen)))))))))))
+
+(define (solve nums k) (exactly-k-brute nums k))
+
+(define (print-case i nums k)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve nums k))
+  (newline))
+
+(print-case 0 '(1 2 1 2 3) 2)
+(print-case 1 '(1 2 1 3 4) 3)
+(print-case 2 '(1 2 1 2 3) 1)
+(print-case 3 '(1 2 1 2 3) 3)
+(print-case 4 '() 0)
+(print-case 5 '() 1)
+(print-case 6 '(1 1 1 1) 1)
+(print-case 7 '(1 2 3 4 5) 5)

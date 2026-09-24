@@ -1,0 +1,35 @@
+(define (display-list xs)
+  (cond
+    ((null? xs) (display ""))
+    (else
+      (display (car xs))
+      (display-list (cdr xs))))))
+
+(define (solve s)
+  (let loop ((chars (string->list s)) (stack '()))
+    (cond
+      ((null? chars)
+       (list->string (reverse stack)))
+      (else
+       (let ((c (car chars)))
+         (cond
+           ((and (not (null? stack)) (char=? (car stack) c))
+            (loop (cdr chars) (cdr stack)))
+           (else
+            (loop (cdr chars) (cons c stack)))))))))
+
+(define (run-case i s)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve s))
+  (newline))
+
+(run-case 0 "abbaca")
+(run-case 1 "azxxzy")
+(run-case 2 "a")
+(run-case 3 "aa")
+(run-case 4 "abba")
+(run-case 5 "abcddcba")
+(run-case 6 "mississippi")
+(run-case 7 "")

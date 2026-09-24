@@ -1,0 +1,83 @@
+(define (len xs)
+  (if (null? xs) 0 (+ 1 (len (cdr xs)))))
+
+(define (list-ref xs i)
+  (if (= i 0) (car xs) (list-ref (cdr xs) (- i 1))))
+
+(define (max a b) (if (> a b) a b))
+
+(define (solve nums k)
+    (let ((n (len nums)))
+      (if (= n 0)
+          0
+          (letrec ((helper (lambda (left right zeros best)
+            (cond
+              ((= right n) best)
+              ((> zeros k)
+               (helper (+ left 1) right
+                       (if (= (list-ref nums left) 0) (- zeros 1) zeros)
+                       best))
+              (else
+               (let ((new-zeros (+ zeros (if (= (list-ref nums right) 0) 1 0))))
+                 (if (> new-zeros k)
+                     best
+                     (max best (- (+ right 1) left)))))))
+            ))
+            (letrec ((search (lambda (left right zeros best)
+              (cond
+                ((= right n) best)
+                (else
+                 (let ((new-zeros (+ zeros (if (= (list-ref nums right) 0) 1 0))))
+                   (cond
+                     ((> new-zeros k)
+                      (search (+ left + (- new-zeros k) ) (+ right 1) (- new-zeros (- new-zeros k)) best))
+                     (else
+                      (search left (+ right 1) new-zeros (max best (- (+ right 1) left))))))))))
+            )
+            (letrec ((loop (lambda (left right zeros best)
+              (cond
+                ((= right n) best)
+                (else
+                 (let ((new-zeros (+ zeros (if (= (list-ref nums right) 0) 1 0))))
+                   (if (> new-zeros k)
+                       (loop (+ left 1) (+ right 1)
+                             (- new-zeros (if (= (list-ref nums left) 0) 1 0))
+                             best)
+                       (loop left (+ right 1) new-zeros (max best (- (+ right 1) left))))))))))
+            (loop 0 0 0 0))))))
+
+; Display helper for numbers (simple)
+(define (display-int x) (display x))
+
+(define CASE0_NUMS (list 1 1 1 0 0 0 1 1 1 1 0))
+(define CASE0_K 2)
+
+(define CASE1_NUMS (list 0 1 1 0 0 0 1 1 0 0 1 1 0 0 0 1 1 1 0))
+(define CASE1_K 3)
+
+(define CASE2_NUMS (list 0 0 0 0))
+(define CASE2_K 0)
+
+(define CASE3_NUMS (list 0 0 0 0))
+(define CASE3_K 4)
+
+(define CASE4_NUMS (list 1 1 1 1))
+(define CASE4_K 0)
+
+(define CASE5_NUMS ())
+(define CASE5_K 0)
+
+(define CASE6_NUMS (list 0 1 0 1 0 1 0 1))
+(define CASE6_K 1)
+
+(define CASE7_NUMS (list 0 1 0 1 0 1 0 1))
+(define CASE7_K 2)
+
+(display "CASE0=") (display (solve CASE0_NUMS CASE0_K)) (newline)
+(display "CASE1=") (display (solve CASE1_NUMS CASE1_K)) (newline)
+(display "CASE2=") (display (solve CASE2_NUMS CASE2_K)) (newline)
+(display "CASE3=") (display (solve CASE3_NUMS CASE3_K)) (newline)
+(display "CASE4=") (display (solve CASE4_NUMS CASE4_K)) (newline)
+(display "CASE5=") (display (solve CASE5_NUMS CASE5_K)) (newline)
+(display "CASE6=") (display (solve CASE6_NUMS CASE6_K)) (newline)
+(display "CASE7=") (display (solve CASE7_NUMS CASE7_K)) (newline)

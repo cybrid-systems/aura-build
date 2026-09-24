@@ -1,0 +1,52 @@
+(define (display-list xs)
+  (display "[")
+  (let loop ((rest xs))
+    (cond ((null? rest) (display "]"))
+          (else
+            (display (car rest))
+            (when (not (null? (cdr rest))) (display " "))
+            (loop (cdr rest))))))
+
+(define (display-result s)
+  (cond ((null? s) (display ""))
+        (else
+          (let loop ((rest s))
+            (cond ((null? rest) (display ""))
+                  (else
+                    (display (car rest))
+                    (loop (cdr rest))))))))
+
+(define (solve s)
+  (let loop ((chars s) (acc '()))
+    (cond ((null? chars)
+           (reverse acc))
+          (else
+            (let ((c (car chars)))
+              (cond ((and (not (null? acc)) (equal? (car acc) c))
+                     (loop (cdr chars) (cdr acc)))
+                    (else
+                      (loop (cdr chars) (cons c acc)))))))))
+
+(define cases '(
+  ("abbaca")
+  ("azxxzy")
+  ("a")
+  ("aa")
+  ("abba")
+  ("abcddcba")
+  ("mississippi")
+  ("")))
+
+(define (run-case i case)
+  (let ((input (cadr case)))
+    (let ((result (solve input)))
+      (display "CASE")
+      (display i)
+      (display "=")
+      (display-result result)
+      (newline))))
+
+(let loop ((cs cases) (i 0))
+  (when (not (null? cs))
+    (run-case i (car cs))
+    (loop (cdr cs) (+ i 1))))

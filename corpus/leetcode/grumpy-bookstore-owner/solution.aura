@@ -1,0 +1,100 @@
+(define (sum-list lst)
+  (if (null? lst) 0 (+ (car lst) (sum-list (cdr lst)))))
+
+(define (list-take lst n)
+  (if (= n 0) '()
+      (cons (car lst) (list-take (cdr lst) (- n 1)))))
+
+(define (list-drop lst n)
+  (if (= n 0) lst
+      (list-drop (cdr lst) (- n 1))))
+
+(define (max a b) (if (> a b) a b))
+
+;; Compute base satisfaction: when grumpy and customers[i] <= grumpy[i]
+(define (base-satisfied cust grmp i n)
+  (cond ((= i n) 0)
+        ((= (list-ref grmp i) 0)
+         (base-satisfied cust grmp (+ i 1) n))
+        ((>= (list-ref cust i) (list-ref grmp i))
+         (+ 1 (base-satisfied cust grmp (+ i 1) n)))
+        (else (base-satisfied cust grmp (+ i 1) n))))
+
+;; Build the "extra" list: customers who would NOT be satisfied naturally but ARE satisfied with technique
+(define (build-extra cust grmp i n)
+  (cond ((= i n) '())
+        ((and (= (list-ref grmp i) 1)
+              (> (list-ref cust i) (list-ref grmp i)))
+         (cons (list-ref cust i) (build-extra cust grmp (+ i 1) n)))
+        (else (build-extra cust grmp (+ i 1) n))))
+
+;; Sum of a window of size k in the extra list
+(define (best-window-sum extra k)
+  (let ((n (length extra)))
+    (if (< n k) (sum-list extra)
+        (let ((first-window (sum-list (list-take extra k))))
+          (let loop ((i 1) (best first-window) (cur first-window))
+            (if (> (+ i k -1) (- n 1)) best
+                (let ((new-cur (+ (- cur (list-ref extra (- i 1)))
+                                  (list-ref extra (+ i k -1)))))
+                  (loop (+ i 1) (max best new-cur) new-cur))))))))
+
+(define (solve customers grumpy k)
+  (let ((n (length customers)))
+    (let ((base (base-satisfied customers grumpy 0 n))
+          (extra (build-extra customers grumpy 0 n)))
+      (+ base (best-window-sum extra k)))))
+
+;; Helper to display
+(define (display-int x)
+  (display x))
+
+;; Run cases
+(let ((case0-cust '(1 0 1 2 1 1 7 5))
+      (case0-grmp '(0 1 0 1 0 1 0 1))
+      (case0-k 3))
+  (display "CASE0=")
+  (display-int (solve case0-cust case0-grmp case0-k))
+  (newline))
+
+(let ((case1-cust '(1))
+      (case1-grmp '(0))
+      (case1-k 1))
+  (display "CASE1=")
+  (display-int (solve case1-cust case1-grmp case1-k))
+  (newline))
+
+(let ((case2-cust '(5))
+      (case2-grmp '(3))
+      (case2-k 1))
+  (display "CASE2=")
+  (display-int (solve case2-cust case2-grmp case2-k))
+  (newline))
+
+(let ((case3-cust '(5 5 5 5 5))
+      (case3-grmp '(0 0 0 0 0))
+      (case3-k 2))
+  (display "CASE3=")
+  (display-int (solve case3-cust case3-grmp case3-k))
+  (newline))
+
+(let ((case4-cust '(10 1 0 10))
+      (case4-grmp '(1 0 1 1))
+      (case4-k 2))
+  (display "CASE4=")
+  (display-int (solve case4-cust case4-grmp case4-k))
+  (newline))
+
+(let ((case5-cust '(2 6 3 1 2 4 1 2 8 2))
+      (case5-grmp '(1 0 1 1 0 1 1 1 0 1))
+      (case5-k 3))
+  (display "CASE5=")
+  (display-int (solve case5-cust case5-grmp case5-k))
+  (newline))
+
+(let ((case6-cust '(1 2 3 4 5))
+      (case6-grmp '(1 1 1 1 1))
+      (case6-k 5))
+  (display "CASE6=")
+  (display-int (solve case6-cust case6-grmp case6-k))
+  (newline))

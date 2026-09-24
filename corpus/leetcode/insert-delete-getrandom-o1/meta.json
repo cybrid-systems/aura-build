@@ -1,5 +1,60 @@
 {
-  "variants": [],
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:59:20Z",
+      "ts_local": "2026-09-24 22:59:20 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2963,
+        "total_characters": 0,
+        "prompt_tokens": 1355,
+        "completion_tokens": 1608,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.169,
+      "tests_passed": 0,
+      "tests_total": 5,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=CASE0=<error>\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:59:26Z",
+      "ts_local": "2026-09-24 22:59:26 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2559,
+        "total_characters": 0,
+        "prompt_tokens": 1355,
+        "completion_tokens": 1204,
+        "prompt_tokens_details": {
+          "cached_tokens": 1354
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.158,
+      "tests_passed": 0,
+      "tests_total": 5,
+      "stderr_snippet": "error: 43:35: unbound variable: random\nerror: 43:35: unbound variable: random\n",
+      "stdout_snippet": "CASE0=CASE0=12nil\nCASE1=01\nCASE2=1232nil\nCASE3=55nil\nCASE4=102030\n"
+    }
+  ],
   "slug": "insert-delete-getrandom-o1",
   "title": "Insert Delete GetRandom O(1)",
   "category": "hashing",
@@ -8,10 +63,10 @@
       "ok": true,
       "error": "",
       "usage": {
-        "total_tokens": 1675,
+        "total_tokens": 1807,
         "total_characters": 0,
         "prompt_tokens": 990,
-        "completion_tokens": 685,
+        "completion_tokens": 817,
         "prompt_tokens_details": {
           "cached_tokens": 989
         }
@@ -21,12 +76,13 @@
     "run": {
       "ref_ok": false,
       "exit_code": 1,
-      "stderr": "Traceback (most recent call last):\n  File \"/workspace/aura-build/corpus/leetcode/insert-delete-getrandom-o1/ref.py\", line 76, in <module>\n    r = solve(c[\"operations\"], c[\"args\"])\n  File \"/workspace/aura-build/corpus/leetcode/insert-delete-getrandom-o1/ref.py\", line 41, in solve\n    results.append(int(rs.getRandom()))\n                       ~~~~~~~~~~~~^^\n  File \"/workspace/aura-build/corpus/leetcode/insert-delete-getrandom-o1/ref.py\", line 29, in getRandom\n    return random.choice(self.arr)\n   ",
-      "duration_s": 0.037,
+      "stderr": "Traceback (most recent call last):\n  File \"/workspace/aura-build/corpus/leetcode/insert-delete-getrandom-o1/ref.py\", line 84, in <module>\n    res = solve(c[\"operations\"], c[\"args\"])\n  File \"/workspace/aura-build/corpus/leetcode/insert-delete-getrandom-o1/ref.py\", line 41, in solve\n    results.append(rs.getRandom())\n                   ~~~~~~~~~~~~^^\n  File \"/workspace/aura-build/corpus/leetcode/insert-delete-getrandom-o1/ref.py\", line 29, in getRandom\n    return random.choice(self.arr)\n          ",
+      "duration_s": 0.028,
       "timeout": false,
       "n_tests": 0
     },
-    "ts": "2026-09-24T14:58:41Z"
+    "ts": "2026-09-24T14:59:08Z"
   },
-  "updated_at": "2026-09-24T14:58:41Z"
+  "updated_at": "2026-09-24T14:59:26Z",
+  "updated_at_local": "2026-09-24 22:59:26 CST"
 }

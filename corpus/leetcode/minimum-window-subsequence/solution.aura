@@ -1,0 +1,113 @@
+;; Minimum Window Subsequence
+;; Find the minimum-length contiguous substring of S such that T is a subsequence.
+
+(define (list-from-string s)
+  (let ((len (string-length s)))
+    (let loop ((i 0) (acc '()))
+      (if (= i len)
+          (reverse acc)
+          (loop (+ i 1) (cons (string-ref s i) acc))))))
+
+(define (string-from-chars lst)
+  (let loop ((l lst) (acc ""))
+    (if (null? l)
+        acc
+        (loop (cdr l) (string-append acc (string (car l)))))))
+
+(define (string-length s)
+  ;; Built-in; define stub if not available
+  (let loop ((i 0))
+    (if (string=? (substring s i (+ i 1)) "")
+        i
+        (loop (+ i 1)))))
+
+;; A robust built-in string-length is typically provided in Aura.
+;; We'll assume standard primitives:
+;;   string-length, substring, string-ref, string=?, string-append, string
+
+(define (solve s t)
+  (let ((n (string-length s))
+        (m (string-length t)))
+    (let ((best-len #f)
+          (best-start #f)
+          (best-end #f))
+      ;; Try each starting index i in S
+      (let outer ((i 0))
+        (if (= i n)
+            (begin
+              (if (and best-start best-end)
+                  (substring s best-start (+ best-end 1))
+                  ""))
+            (begin
+              ;; Check if T can be matched starting at or after position i
+              (let ((i-pos i)
+                    (j-pos 0))
+                ;; Forward pass: find end position
+                (let ((matched #f)
+                      (end -1))
+                  (let fwd ((p i) (q 0))
+                    (cond
+                      ((= q m) (begin (set! matched #t) (set! end (- p 1))))
+                      ((= p n) (begin (set! matched #f)))
+                      (else
+                       (if (char=? (string-ref s p) (string-ref t q))
+                           (fwd (+ p 1) (+ q 1))
+                           (fwd (+ p 1) q))))))
+                  (if matched
+                      (begin
+                        ;; Backward pass: find earliest start
+                        (let ((start (- end 1)))
+                          (let bwd ((p end) (q (- m 1)) (st end))
+                            (cond
+                              ((< q 0) (set! start st))
+                              ((< p 0) (set! start -1))
+                              (else
+                               (if (char=? (string-ref s p) (string-ref t q))
+                                   (bwd (- p 1) (- q 1) p)
+                                   (bwd (- p 1) q st))))))
+                          (if (>= start 0)
+                              (let ((len (+ (- end start) 1)))
+                                (if (or (not best-len)
+                                        (< len best-len)
+                                        (and (= len best-len) (< start best-start)))
+                                    (begin
+                                      (set! best-len len)
+                                      (set! best-start start)
+                                      (set! best-end end))))))))))
+              (outer (+ i 1))))))))
+
+;; Wrapper to print result for each test case
+(define (print-result idx result)
+  (display "CASE")
+  (display idx)
+  (display "=")
+  (display result)
+  (newline))
+
+;; Test cases
+(define cases
+  (list
+   (list "abacbabc" "abcabc")
+   (list "abc" "abc")
+   (list "abc" "abcd")
+   (list "aaaaa" "aaa")
+   (list "cabbac" "ab")
+   (list "a" "a")
+   (list "abcdebdde" "bde")
+   (list "jmeqksfrqdcvcwv" "krqe")
+   (list "ofashionnation" "ofn")
+   (list "xyzabcxyzabc" "abc")))
+
+(let loop ((cs cases) (i 0))
+  (if (null? cs)
+      '()
+      (begin
+        (let ((s (car (car cs)))
+              (t (car (cdr (car cs)))))
+          (let ((res (solve s t)))
+            (display "CASE")
+            (display i)
+            (display "=")
+            (display res)
+            (newline)))
+        (loop (cdr cs) (+ i 1)))))
