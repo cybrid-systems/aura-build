@@ -1,0 +1,37 @@
+;; index-range.aura
+;; Range scan and counting operations over a sorted WAL sparse index.
+;;
+;; The index is a list of records (see index-record.aura) sorted in
+;; non-decreasing order by (lsn-start, lsn-end).
+;;
+;; Exports:
+;;   (range-scan idx lo hi)
+;;       Returns the list of records whose lsn-start falls in [lo, hi].
+;;       Records are returned in the same order as they appear in idx.
+;;
+;;   (count-entries idx)
+;;       Returns the number of records currently stored in idx.
+
+;; range-scan: walk idx once, accumulating records with lo <= lsn-start <= hi.
+;; The index is already sorted by lsn-start, so once we see a record with
+;; lsn-start > hi we can stop scanning entirely.
+(define (range-scan idx lo hi)
+  (define (scan xs)
+    (cond ((null? xs) '())
+          (else
+           (let ((s (record-lsn-start (car xs))))
+             (cond ((> s hi) '())
+                   ((< s lo) (scan (cdr xs)))
+                   (else
+                    (cons (car xs) (scan (cdr xs)))))))))
+  (scan idx))
+
+;; count-entries: standard O(n) length, but written out explicitly so the
+;; function does not depend on a `length` builtin being available.
+(define (count-entries idx)
+  (let ((count-iter
+          (lambda (xs acc)
+            (if (null? xs)
+                acc
+                (count-iter (cdr xs) (+ acc 1))))))
+    (count-iter idx 0)))

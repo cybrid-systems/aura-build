@@ -1,0 +1,98 @@
+;; index-lookup.aura
+;; Exact, floor, and ceiling lookup operations over a sorted WAL sparse index.
+;;
+;; The index is a list of records (see index-record.aura) sorted in
+;; non-decreasing order by (lsn-start, lsn-end). We use bounded linear scans
+;; from both ends so that an exact lookup against a typical WAL sparse index
+;; (where the last record is the most-recent) tends to short-circuit.
+;;
+;; Semantics:
+;;   exact-lookup:  finds a record whose [lsn-start, lsn-end] range contains
+;;                  the given LSN. Returns (seg-id . offset) or #f.
+;;   floor-lookup:  finds the greatest record with lsn-start <= lsn.
+;;                  Returns the record itself or #f.
+;;   ceiling-lookup: finds the least record with lsn-start > lsn.
+;;                  Returns the record itself or #f.
+;;
+;; Both floor and ceiling are stable across the list ordering defined by
+;; index-compare.aura.
+
+(define (lookup-walk-forward idx lsn)
+  ;; Returns #f if no record matches in forward order, otherwise the matching
+  ;; record (for exact) or the floor/ceiling record according to `mode`.
+  ;; mode is one of: 'exact, 'floor, 'ceiling
+  (letrec ((scan (lambda (xs)
+                   (cond ((null? xs) #f)
+                         (else
+                          (let ((r (car xs)))
+                            (let ((s (record-lsn-start r))
+                                  (e (record-lsn-end   r)))
+                              ;; Decide based on the mode was injected by the
+                              ;; caller via a closure below.
+                              (cond ((and (exact-mode?) (<= s lsn) (>= e lsn))
+                                     r)
+                                    ((and (floor-mode?) (<= s lsn))
+                                     ;; keep scanning to find the LAST such r
+                                     (let ((rest (scan (cdr xs))))
+                                       (if rest rest r)))
+                                    ((and (ceiling-mode?) (> s lsn))
+                                     r)
+                                    (else (scan (cdr xs)))))))))))
+    ;; The three helpers below are bound per-call by the wrappers; the inner
+    ;; scan consults them. We use a tiny dispatch via a global flag pair.
+    (let ((m (current-lookup-mode)))
+      (set! current-lookup-mode m)
+      (scan idx))))
+
+;; Mode flag plumbing. Each lookup entry-point sets this before scanning.
+(define current-lookup-mode 'exact)
+(define (set-lookup-mode! m) (set! current-lookup-mode m))
+(define (exact-mode?)    (eq? current-lookup-mode 'exact))
+(define (floor-mode?)    (eq? current-lookup-mode 'floor))
+(define (ceiling-mode?)  (eq? current-lookup-mode 'ceiling))
+
+;; The wrappers below set the mode and then drive the scan. They use
+;; tail-recursive walks over the index list.
+
+(define (exact-lookup idx lsn)
+  ;; Walks the list once. Most WAL sparse-index lookups hit the tail (recent
+  ;; LSNs), so we scan from the back: if any record contains lsn, return it.
+  (letrec ((scan-back (lambda (xs)
+                        (cond ((null? xs) #f)
+                              (else
+                               (let ((r (car xs)))
+                                 (let ((s (record-lsn-start r))
+                                       (e (record-lsn-end   r)))
+                                   (if (and (<= s lsn) (>= e lsn))
+                                       r
+                                       (scan-back (cdr xs))))))))))
+    (let ((hit (scan-back (reverse idx))))
+      (if hit
+          (cons (record-seg hit) (record-offset hit))
+          #f))))
+
+(define (floor-lookup idx lsn)
+  ;; Greatest record with lsn-start <= lsn. Single left-to-right pass while
+  ;; remembering the best candidate seen so far.
+  (letrec ((scan (lambda (xs best)
+                   (cond ((null? xs) best)
+                         (else
+                          (let ((r (car xs)))
+                            (let ((s (record-lsn-start r)))
+                              (if (<= s lsn)
+                                  (scan (cdr xs) r)
+                                  (scan (cdr xs) best)))))))))
+    (let ((best (scan idx #f)))
+      best)))
+
+(define (ceiling-lookup idx lsn)
+  ;; Least record with lsn-start > lsn. Single left-to-right pass; first hit
+  ;; wins because the index is sorted by lsn-start.
+  (letrec ((scan (lambda (xs)
+                   (cond ((null? xs) #f)
+                         (else
+                          (let ((r (car xs)))
+                            (if (> (record-lsn-start r) lsn)
+                                r
+                                (scan (cdr xs)))))))))
+    (scan idx)))

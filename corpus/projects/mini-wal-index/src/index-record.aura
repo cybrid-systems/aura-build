@@ -1,0 +1,21 @@
+;; index-record.aura
+;; Defines the record abstraction for the WAL sparse index.
+;; A record is represented as an association list with the following keys:
+;;   'lsn-start  -- inclusive starting LSN of the range
+;;   'lsn-end    -- inclusive ending LSN of the range
+;;   'offset     -- byte offset in the segment where the range starts
+;;   'seg-id     -- identifier of the on-disk segment
+;;   'len        -- length (in bytes) of the range within the segment
+
+(define (make-record lsn-start lsn-end offset seg-id len)
+  (list (cons 'lsn-start lsn-start)
+        (cons 'lsn-end   lsn-end)
+        (cons 'offset    offset)
+        (cons 'seg-id    seg-id)
+        (cons 'len       len)))
+
+(define (record-lsn-start r) (cdr (assq 'lsn-start r)))
+(define (record-lsn-end   r) (cdr (assq 'lsn-end   r)))
+(define (record-offset    r) (cdr (assq 'offset    r)))
+(define (record-seg       r) (cdr (assq 'seg-id    r)))
+(define (record-len       r) (cdr (assq 'len       r)))

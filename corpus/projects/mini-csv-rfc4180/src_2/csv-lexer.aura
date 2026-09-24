@@ -1,0 +1,322 @@
+;; csv-lexer.aura
+;; Pull-style CSV lexer over a port.
+;;
+;; Public API (per module table):
+;;   (csv-open source :key delimiter)   -> lexer
+;;   (lexer-state l)                    -> ('outside|'quoted|'newline . rest)
+;;   (lexer-exhausted? l)               -> #t when no more rows
+;;   (lexer-next-cell l)                -> cell-record | 'eof
+;;   (lexer-next-row l)                 -> row | 'eof
+;;
+;; Conventions:
+;;   - "port" may be either an Aura port or a string source. When a string
+;;     is passed to csv-open we turn it into a list of characters and
+;;     provide our own peek/read primitives.
+;;   - Cells come back as: (cons 'cell (cons kind value)) where kind is
+;;     'string. The lexer never coerces; that is csv-coerce's job.
+;;   - A blank trailing line (e.g. a file ending in "\n" after the last
+;;     record) is treated as the end of input. A row containing only empty
+;;     fields is a real row.
+;;   - We deliberately do NOT peek ahead from outside the row loop, so
+;;     an exhausted lexer keeps returning 'eof safely.
+
+;; ---------------------------------------------------------------------------
+;; Port abstraction: normalize string -> character list with index pointer
+;; ---------------------------------------------------------------------------
+
+;; A "byte-port" / character-port is represented as a mutable record-like
+;; list: (list-of-chars . index). We mutate via set! on a wrapper so the
+;; underlying list isn't shared.
+(define (make-char-port chars)
+  (cons chars 0))
+
+(define (cp-chars cp)
+  (car cp))
+
+(define (cp-pos cp)
+  (cdr cp))
+
+(define (cp-set-pos! cp n)
+  (set-cdr! cp n))
+
+(define (cp-eof? cp)
+  (>= (cp-pos cp) (length (cp-chars cp))))
+
+(define (cp-peek cp)
+  (if (cp-eof? cp)
+      #\nul
+      (list-ref (cp-chars cp) (cp-pos cp))))
+
+(define (cp-read cp)
+  (let ((p (cp-pos cp)))
+    (if (>= p (length (cp-chars cp)))
+        (begin
+          (cp-set-pos! cp (+ p 1))
+          #\nul)
+        (let ((c (list-ref (cp-chars cp) p)))
+          (cp-set-pos! cp (+ p 1))
+          c))))
+
+;; Convert a string source into a list of chars.
+(define (string->char-list s)
+  (let ((len (string-length s)))
+    (let loop ((i 0) (acc '()))
+      (if (>= i len)
+          (reverse acc)
+          (loop (+ i 1)
+                (cons (string-ref s i) acc))))))
+
+;; ---------------------------------------------------------------------------
+;; Lexer state
+;; ---------------------------------------------------------------------------
+
+;; A lexer is:
+;;   (cons tag-lexer
+;;         (cons source          ; either a real port or a char-port
+;;               (cons delimiter  ; a character
+;;                     (cons state  ; 'outside, 'in-quoted, or 'after-quote
+;;                           (cons field-buf  ; reversed list of chars
+;;                                 (cons rows-buf ; list of rows waiting (each = reversed cells)
+;;                                       (cons fields-this-row ; reversed cells in current row
+;;                                             exhausted-flag))))))))
+(define tag-lexer 'lexer)
+
+(define (lex-src l)            (car (cdr l)))
+(define (lex-delim l)          (car (cdr (cdr l))))
+(define (lex-state l)          (car (cdr (cdr (cdr l)))))
+(define (lex-field-buf l)      (car (cdr (cdr (cdr (cdr l))))))
+(define (lex-rows-buf l)       (car (cdr (cdr (cdr (cdr (cdr l)))))))
+(define (lex-fields-this l)    (car (cdr (cdr (cdr (cdr (cdr (cdr l))))))))
+(define (lex-exhausted-flag l) (cdr (cdr (cdr (cdr (cdr (cdr (cdr l))))))))
+
+(define (set-lex-state! l s)        (set-car! (cdr (cdr (cdr l))) s))
+(define (set-lex-field-buf! l fb)   (set-car! (cdr (cdr (cdr (cdr l)))) fb))
+(define (set-lex-rows-buf! l rb)    (set-car! (cdr (cdr (cdr (cdr (cdr l)))))) rb)
+(define (set-lex-fields-this! l ft) (set-car! (cdr (cdr (cdr (cdr (cdr (cdr l))))))) ft)
+(define (set-lex-exhausted! l b)    (set-cdr! (cdr (cdr (cdr (cdr (cdr (cdr l)))))) b))
+
+;; ---------------------------------------------------------------------------
+;; Generic char IO over either a real port or our char-port.
+;; ---------------------------------------------------------------------------
+
+(define (io-peek src)
+  (cond ((string? src) (cp-peek src))
+        ((input-port? src))
+        (else (cp-peek src))))
+
+(define (io-read src)
+  (cond ((string? src) (cp-read src))
+        (else (cp-read src))))
+
+;; Real ports via csv-util aren't available across modules in this loader
+;; order, so csv-open only accepts strings. We expose the API flexibly:
+;; if caller passes a char-port-like pair, we use it directly.
+
+;; ---------------------------------------------------------------------------
+;; Cell construction (local helper; csv-types owns the official record,
+;; but the lexer only needs the raw cell-list form so it can stay
+;; agnostic of identity. csv-coerce / iter layer can wrap as needed.)
+;; ---------------------------------------------------------------------------
+
+(define (make-string-cell s)
+  (cons 'cell (cons 'string s)))
+
+;; ---------------------------------------------------------------------------
+;; Public: csv-open
+;; ---------------------------------------------------------------------------
+
+(define (csv-open source :key delimiter (delimiter #\,))
+  ;; Accept a string, or a (chars . pos) pair. Normalize to char-port.
+  (let ((src (cond ((string? source) (make-char-port (string->char-list source)))
+                   ((pair? source) source)        ; assume char-port
+                   (else (error "csv-open: unsupported source")))))
+    (cons tag-lexer
+          (cons src
+                (cons delimiter
+                      (cons 'outside
+                            (cons '()
+                                  (cons '()
+                                        (cons '()
+                                              #f)))))))))
+
+;; ---------------------------------------------------------------------------
+;; Public: lexer-state / lexer-exhausted?
+;; ---------------------------------------------------------------------------
+
+(define (lexer-state l)
+  (lex-state l))
+
+(define (lexer-exhausted? l)
+  (lex-exhausted-flag l))
+
+;; ---------------------------------------------------------------------------
+;; Field buffer management
+;; ---------------------------------------------------------------------------
+
+(define (flush-field! l)
+  (let ((rev (lex-field-buf l)))
+    (set-lex-field-buf! l '())
+    (let ((s (list->string (reverse rev))))
+      (cons 'cell (cons 'string s)))))
+
+;; ---------------------------------------------------------------------------
+;; Core: read one logical field. Returns the cell record (string-typed).
+;; On real EOF inside 'outside, returns 'eof and marks exhausted.
+;; ---------------------------------------------------------------------------
+
+(define (read-field l)
+  ;; Start state must be 'outside or 'after-quote.
+  (let ((src (lex-src l))
+        (delim (lex-delim l)))
+    (cond
+      ((eq? (lex-state l) 'outside)
+       (read-field-outside l src delim))
+      ((eq? (lex-state l) 'after-quote)
+       ;; Field already buffered; just produce it.
+       (let ((cell (flush-field! l)))
+         (set-lex-state! l 'outside)
+         cell))
+      (else
+       (error "read-field: bad state")))))
+
+(define (read-field-outside l src delim)
+  ;; Peek first char to decide: quote -> quoted field; otherwise plain.
+  (let ((c (io-peek src)))
+    (cond
+      ((eof-char? c src)
+       ;; Immediate EOF -> end of input.
+       (set-lex-exhausted! l #t)
+       'eof)
+      ((char=? c #\")
+       ;; Quoted field
+       (io-read src)            ; consume opening quote
+       (set-lex-state! l 'in-quoted)
+       (read-quoted-body l src delim))
+      (else
+       (read-plain-field l src delim)))))
+
+(define (read-quoted-body l src delim)
+  (let loop ()
+    (let ((c (io-peek src)))
+      (cond
+        ((eof-char? c src)
+         ;; Unterminated quoted field: accept what we have per RFC leniency.
+         (set-lex-state! l 'after-quote)
+         (flush-field! l))
+        ((char=? c #\")
+         ;; Could be end-of-field or escaped quote.
+         (io-read src)
+         (let ((c2 (io-peek src)))
+           (cond
+             ((char=? c2 #\")
+              (io-read src)
+              (set-lex-field-buf! l (cons #\" (lex-field-buf l)))
+              (loop))
+             (else
+              ;; End of quoted field.
+              (set-lex-state! l 'after-quote)
+              (flush-field! l))))
+        (else
+         (io-read src)
+         (set-lex-field-buf! l (cons c (lex-field-buf l)))
+         (loop))))))
+
+(define (read-plain-field l src delim)
+  (let loop ()
+    (let ((c (io-peek src)))
+      (cond
+        ((eof-char? c src)
+         (set-lex-state! l 'after-quote)
+         (flush-field! l))
+        ((char=? c delim)
+         (set-lex-state! l 'after-quote)
+         (flush-field! l))
+        ((or (char=? c #\newline) (char=? c #\return))
+         (set-lex-state! l 'after-quote)
+         (flush-field! l))
+        (else
+         (io-read src)
+         (set-lex-field-buf! l (cons c (lex-field-buf l)))
+         (loop))))))
+
+;; ---------------------------------------------------------------------------
+;; Public: lexer-next-cell
+;; ---------------------------------------------------------------------------
+
+(define (lexer-next-cell l)
+  (if (lex-exhausted-flag l)
+      'eof
+      (let ((c (read-field l)))
+        (if (eq? c 'eof)
+            (begin
+              (set-lex-exhausted! l #t)
+              'eof)
+            c))))
+
+;; ---------------------------------------------------------------------------
+;; Row reading. Reads cells until we hit newline, EOF-after-row-end, or EOF.
+;; We collect cells into the current row buffer. On newline we finalize.
+;; ---------------------------------------------------------------------------
+
+(define (consume-newline! l)
+  ;; Consume \n, \r\n, or bare \r.
+  (let ((src (lex-src l)))
+    (let ((c (io-peek src)))
+      (cond
+        ((eof-char? c src) #t)
+        ((char=? c #\return)
+         (io-read src)
+         (let ((c2 (io-peek src)))
+           (if (char=? c2 #\newline)
+               (io-read src)
+               'ok)))
+        ((char=? c #\newline)
+         (io-read src)
+         'ok)
+        (else 'ok)))))
+
+(define (lexer-next-row l)
+  (if (lex-exhausted-flag l)
+      'eof
+      (let loop ()
+        (let ((cell (lexer-next-cell l)))
+          (cond
+            ((eq? cell 'eof)
+             ;; End of stream. If we collected any cells, finalize row.
+             (let ((cells (lex-fields-this l)))
+               (if (null? cells)
+                   'eof
+                   (begin
+                     (set-lex-fields-this! l '())
+                     (cons 'row cells)))))
+            (else
+             ;; Append cell to current row.
+             (set-lex-fields-this! l (cons cell (lex-fields-this l)))
+             ;; Look at peek to decide if row continues.
+             (let ((src (lex-src l))
+                   (delim (lex-delim l)))
+               (let ((c (io-peek src)))
+                 (cond
+                   ((char=? c delim)
+                    (io-read src)
+                    (loop))
+                   ((char=? c #\return)
+                    ;; End of row.
+                    (consume-newline! l)
+                    (let ((cells (reverse (lex-fields-this l))))
+                      (set-lex-fields-this! l '())
+                      (cons 'row cells)))
+                   ((char=? c #\newline)
+                    (consume-newline! l)
+                    (let ((cells (reverse (lex-fields-this l))))
+                      (set-lex-fields-this! l '())
+                      (cons 'row cells)))
+                   ((eof-char? c src)
+                    ;; EOF mid-row after at least one cell.
+                    (let ((cells (reverse (lex-fields-this l))))
+                      (set-lex-fields-this! l '())
+                      (set-lex-exhausted! l #t)
+                      (cons 'row cells)))
+                   (else
+                    ;; Shouldn't happen; trea
+; truncated by extract_aura_sources
