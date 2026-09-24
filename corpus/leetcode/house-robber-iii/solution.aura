@@ -1,0 +1,81 @@
+;; Helper: display a result value (number) on one line
+(define (display-result val)
+  (display val)
+  (newline))
+
+;; Build tree as association list: ((index . money) ...)
+;; Only include valid (non-negative) nodes
+(define (build-tree flat n)
+  (let loop ((i 0) (acc '()))
+    (if (>= i n)
+        (reverse acc)
+        (let ((v (list-ref flat i)))
+          (if (negative? v)
+              (loop (+ i 1) acc)
+              (loop (+ i 1) (cons (cons i v) acc)))))))
+
+;; Check if a key exists in an association list (by index)
+(define (has-index? alist idx)
+  (cond ((null? alist) #f)
+        ((= (car (car alist)) idx) #t)
+        (else (has-index? (cdr alist) idx))))
+
+;; Get money at a given index from alist (0 if not present)
+(define (get-money alist idx)
+  (cond ((null? alist) 0)
+        ((= (car (car alist)) idx) (cdr (car alist)))
+        (else (get-money (cdr alist) idx))))
+
+;; DFS: returns (rob . skip) pair for subtree rooted at idx
+;; rob = max money when this node is robbed (must skip children)
+;; skip = max money when this node is skipped (children can do whatever)
+(define (dfs alist idx)
+  (let ((left-idx (+ (* idx 2) 1))
+        (right-idx (+ (* idx 2) 2))
+        (has-left (has-index? alist left-idx))
+        (has-right (has-index? alist right-idx)))
+    (let ((my-money (get-money alist idx)))
+      (if (and (not has-left) (not has-right))
+          ;; Leaf
+          (cons my-money 0)
+          ;; Internal node
+          (let* ((has-l has-left)
+                 (has-r has-right)
+                 (lr (if has-l (dfs alist left-idx) (cons 0 0)))
+                 (rr (if has-r (dfs alist right-idx) (cons 0 0))))
+            (let ((lr-rob (car lr)) (lr-skip (cdr lr))
+                  (rr-rob (car rr)) (rr-skip (cdr rr)))
+              ;; If we rob this node, children must be skipped
+              (let ((rob-this (+ my-money lr-skip rr-skip))
+                    ;; If we skip this node, children can take their best
+                    (skip-this (+ (max lr-rob lr-skip) (max rr-rob rr-skip))))
+                (cons rob-this skip-this))))))))
+
+(define (solve tree)
+  (let ((n (length tree)))
+    (if (= n 0)
+        0
+        (let ((root-val (list-ref tree 0)))
+          (if (negative? root-val)
+              0
+              (let ((alist (build-tree tree n)))
+                (let ((result (dfs alist 0)))
+                  (max (car result) (cdr result)))))))))
+
+;; ===== Test cases =====
+(define (run-case i tree)
+  (begin
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display-result (solve tree))))
+
+(begin
+  (run-case 0 '())
+  (run-case 1 '(-1))
+  (run-case 2 '(0))
+  (run-case 3 '(3 2 3 -1 -1 -1 1))
+  (run-case 4 '(3 4 5 1 3 -1 1))
+  (run-case 5 '(4 1 -1 2 -1 -1 -1))
+  (run-case 6 '(2 1 3 -1 4))
+  (run-case 7 '(1 2 3 4 5 -1 6 -1 -1 -1 -1 -1 -1 7 -1)))

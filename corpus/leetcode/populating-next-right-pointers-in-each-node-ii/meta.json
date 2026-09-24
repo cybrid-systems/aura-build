@@ -1,5 +1,60 @@
 {
-  "variants": [],
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:38:18Z",
+      "ts_local": "2026-09-24 22:38:18 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 5416,
+        "total_characters": 0,
+        "prompt_tokens": 1416,
+        "completion_tokens": 4000,
+        "prompt_tokens_details": {
+          "cached_tokens": 528
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.033,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "warning: unbalanced parentheses in input\n⚠ program returned an uncalled function\n",
+      "stdout_snippet": "#<procedure>\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:38:45Z",
+      "ts_local": "2026-09-24 22:38:45 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 5416,
+        "total_characters": 0,
+        "prompt_tokens": 1416,
+        "completion_tokens": 4000,
+        "prompt_tokens_details": {
+          "cached_tokens": 1415
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.025,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 46:15: parse error: unexpected ')'\n",
+      "stdout_snippet": ""
+    }
+  ],
   "slug": "populating-next-right-pointers-in-each-node-ii",
   "title": "Populating Next Right Pointers in Each Node II",
   "category": "trees",
@@ -28,5 +83,6 @@
     },
     "ts": "2026-09-24T14:35:25Z"
   },
-  "updated_at": "2026-09-24T14:35:25Z"
+  "updated_at": "2026-09-24T14:38:45Z",
+  "updated_at_local": "2026-09-24 22:38:45 CST"
 }

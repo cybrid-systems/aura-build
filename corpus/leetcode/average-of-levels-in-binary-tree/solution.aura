@@ -1,0 +1,239 @@
+;; Average of Levels in Binary Tree
+;; Reads CASE0=... line, parses level-order tokens, builds tree, returns per-level averages.
+
+(define (token->value tok)
+  (if (equal? tok "null")
+      'null
+      (string->number tok)))
+
+(define (parse-level-order tokens)
+  (if (null? tokens)
+      '()
+      (let* ((first (car tokens))
+             (rest (cdr tokens))
+             (val (token->value first)))
+        (if (eq? val 'null)
+            '()
+            (let ((node (cons val (cons '() '()))))
+              ;; Attach left
+              (let ((lr rest))
+                (if (null? lr)
+                    (set-cdr! node (cons '() '()))
+                    (let* ((ltok (car lr))
+                           (lrest (cdr lr))
+                           (lval (token->value ltok))
+                           (left (if (eq? lval 'null) '() (cons lval (cons '() '()))))
+                           (after-left lrest))
+                      (set-car! (cdr node) left)
+                      ;; Attach right
+                      (if (null? after-left)
+                          (set-cdr! (cdr node) '())
+                          (let* ((rtok (car after-left))
+                                 (rval (token->value rtok))
+                                 (right (if (eq? rval 'null) '() (cons rval (cons '() '())))))
+                            (set-cdr! (cdr node) right))))))
+              (cons node (parse-level-order (cdr rest))))))))
+
+(define (build-tree tokens)
+  (if (null? tokens)
+      '()
+      (let* ((first (car tokens))
+             (val (token->value first))
+             (rest-tokens (cdr tokens))
+             (root (cons val (cons '() '()))))
+        (if (eq? val 'null)
+            '()
+            (let* ((idx 0)
+                   (queue (list root))
+                   (ti 1)
+                   (result (build-from-queue queue rest-tokens ti)))
+              result)))))
+
+(define (build-from-queue queue tokens ti)
+  (if (null? queue)
+      (car (reverse (list '())))
+      (let ((node (car queue))
+            (qrest (cdr queue)))
+        (if (null? node)
+            (build-from-queue qrest tokens ti)
+            (let ((rest1 (attach-left node tokens)))
+              (let ((after-l (car rest1))
+                    (tok2 (cdr rest1)))
+                (let ((rest2 (attach-right node after-l))
+                      (tok3 (cdr rest2)))
+                  (build-from-queue (append qrest (list (car (cdr node))) (list (cdr (cdr node)))) tok3 0))))))))
+
+(define (attach-left node tokens)
+  (if (null? tokens)
+      (cons tokens (cons 'null (cons '() '())))
+      (let* ((tok (car tokens))
+             (rest (cdr tokens))
+             (val (token->value tok))
+             (child (if (eq? val 'null) '() (cons val (cons '() '())))))
+        (set-car! (cdr node) child)
+        (cons rest (cons tok (cons '() '()))))))
+
+(define (attach-right node tokens)
+  (if (null? tokens)
+      (cons tokens (cons 'null (cons '() '())))
+      (let* ((tok (car tokens))
+             (rest (cdr tokens))
+             (val (token->value tok))
+             (child (if (eq? val 'null) '() (cons val (cons '() '())))))
+        (set-cdr! (cdr node) child)
+        (cons rest (cons tok (cons '() '()))))))
+
+;; Simpler clean BFS tree builder
+(define (build-bfs tokens)
+  (if (null? tokens)
+      '()
+      (let ((v0 (token->value (car tokens))))
+        (if (eq? v0 'null)
+            '()
+            (let* ((root (cons v0 (cons '() '())))
+                   (queue (list root))
+                   (i 1)
+                   (final (bfs-loop queue tokens i)))
+              root)))))
+
+(define (bfs-loop queue tokens i)
+  (if (null? queue)
+      'done
+      (let* ((node (car queue))
+             (qrest (cdr queue))
+             (t1 tokens))
+        (if (null? node)
+            (bfs-loop qrest t1 i)
+            (let* ((r1 (take t1 (+ i 1)))
+                   (left-tok (list-ref-safe t1 0))
+                   (rest-after-tok (if (null? t1) '() (cdr t1)))
+                   (right-tok (list-ref-safe rest-after-tok 0))
+                   (rest-after-both (if (null? rest-after-tok) '() (cdr rest-after-tok)))
+                   (lval (token->value left-tok))
+                   (rval (token->value right-tok))
+                   (left-child (if (eq? lval 'null) '() (cons lval (cons '() '()))))
+                   (right-child (if (eq? rval 'null) '() (cons rval (cons '() '())))))
+              (set-car! (cdr node) left-child)
+              (set-cdr! (cdr node) right-child)
+              (bfs-loop (append qrest (list left-child) (list right-child))
+                        rest-after-both
+                        (+ i 2)))))))
+
+(define (list-ref-safe lst n)
+  (cond ((null? lst) 'null)
+        ((= n 0) (car lst))
+        (else (list-ref-safe (cdr lst) (- n 1)))))
+
+;; Final clean implementation using BFS level computation (no need to actually build tree nodes with mutation issues)
+;; We'll instead compute per-level sums directly from tokens using BFS over token indices.
+
+(define (solve tokens)
+  (let ((n (length tokens)))
+    (if (= n 0)
+        '()
+        (let ((root-val (token->value (car tokens))))
+          (if (eq? root-val 'null)
+              '(0)
+              (bfs-averages tokens)))))
+
+(define (bfs-averages tokens)
+  (let ((n (length tokens)))
+    (bfs-iter tokens 0 1 '() '())))
+
+;; queue is list of (node-index . level) — but easier: process levels by range
+;; Level 0: index 0; its children at indices 1,2
+;; Level k: indices [start, end) where start = 2^k -1, count = 2^k, bounded by n
+;; We compute level by tracking current-level index range.
+
+(define (bfs-iter tokens level start results)
+  (let ((n (length tokens))
+        (level-size (expt 2 level))
+        (end (min (length tokens) (+ start (expt 2 level)))))
+    (if (>= start n)
+        (reverse results)
+        (let ((end-real (min n end)))
+          (let ((level-data (compute-level tokens start end-real)))
+            (bfs-iter tokens (+ level 1) end-real (cons (level-average level-data) results)))))))
+
+(define (compute-level tokens start end)
+  (compute-level-iter tokens start end 0 0))
+
+(define (compute-level-iter tokens i end sum cnt)
+  (if (>= i end)
+      (cons sum cnt)
+      (let* ((tok (list-ref tokens i))
+             (val (token->value tok)))
+        (if (eq? val 'null)
+            (compute-level-iter tokens (+ i 1) end sum cnt)
+            (compute-level-iter tokens (+ i 1) end (+ sum val) (+ cnt 1))))))
+
+(define (level-average pair)
+  (let ((sum (car pair))
+        (cnt (cdr pair)))
+    (/ sum cnt)))
+
+;; Read CASE line from stdin (we embed tests, so just define cases directly)
+;; The harness provides embedded test inputs via "CASE0 input=..." comments.
+;; We parse each test and output result.
+
+(define (format-avg x)
+  (let ((s (number->string x)))
+    ;; Ensure at least 5 decimal places
+    (if (contains? s ".")
+        (let* ((parts (split-dot s))
+               (int-part (car parts))
+               (frac-part (cdr parts)))
+          (string-append int-part "." (pad-right frac-part 5 #\0)))
+        (string-append s ".00000"))))
+
+(define (contains? s c)
+  (cond ((= (string-length s) 0) #f)
+        ((char=? (string-ref s 0) c) #t)
+        (else (contains? (substring s 1 (string-length s)) c))))
+
+(define (split-dot s)
+  (split-dot-iter s 0 ""))
+
+(define (split-dot-iter s i acc)
+  (cond ((= i (string-length s)) (cons acc ""))
+        ((char=? (string-ref s i) #\.)
+         (cons acc (substring s (+ i 1) (string-length s))))
+        (else
+         (split-dot-iter s (+ i 1) (string-append acc (string (string-ref s i)))))))
+
+(define (string c)
+  (make-string 1 c))
+
+(define (pad-right s n c)
+  (if (>= (string-length s) n)
+      s
+      (pad-right (string-append s (string c)) n c)))
+
+(define (display-avg-list lst)
+  (cond ((null? lst) (display ""))
+        ((null? (cdr lst))
+         (display (format-avg (car lst))))
+        (else
+         (display (format-avg (car lst)))
+         (display " ")
+         (display-avg-list (cdr lst)))))
+
+;; Compute averages (real numbers) for given tokens and return list of numbers
+(define (compute-averages tokens)
+  (reverse (bfs-iter tokens 0 1 '())))
+
+;; Embedded test inputs
+(define (run-test i tokens)
+  (let ((avgs (compute-averages tokens)))
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display-avg-list avgs)
+    (newline)))
+
+(run-test 0 (list "3" "9" "20" "null" "null" "15" "7"))
+(run-test 1 (list "1" "null" "2"))
+(run-test 2 (list "-1" "null" "2" "null" "3" "null" "4" "null" "5"))
+(run-test 3 (list "0" "0" "0" "0" "0"))
+(run-test 4 (list "5"))
+(run-test 5 (list "10" "5" "15" "3" "7" "null" "20"))

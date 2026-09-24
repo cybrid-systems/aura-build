@@ -1,0 +1,65 @@
+(define pick 0)
+(define n 0)
+
+(define (set-pick p) (set! pick p))
+(define (set-n v) (set! n v))
+
+(define (guess num)
+  (cond ((< num pick) -1)
+        ((> num pick) 1)
+        (else 0)))
+
+(define (solve)
+  (define lo 1)
+  (define hi n)
+  (let loop ()
+    (if (> lo hi)
+        lo
+        (let ((mid (quotient (+ lo hi) 2)))
+          (let ((g (guess mid)))
+            (cond ((= g 0) mid)
+                  ((= g -1) (begin (set! hi (- mid 1)) (loop)))
+                  (else (begin (set! lo (+ mid 1)) (loop)))))))))
+
+(define (show-list xs)
+  (display "(")
+  (let loop ((xs xs) (first #t))
+    (cond ((null? xs) (display ")"))
+          (else
+           (if first (set! first #f) (display " "))
+           (display (car xs))
+           (loop (cdr xs) first)))))
+
+(define (display-value v)
+  (cond ((number? v) (display v))
+        ((string? v) (display v))
+        ((equal? v #t) (display "#t"))
+        ((equal? v #f) (display "#f"))
+        ((null? v) (display "()"))
+        ((list? v) (show-list v))
+        (else (display v))))
+
+;; Test cases
+(set-n 1) (set-pick 1)
+(display "CASE0=") (display-value (solve)) (newline)
+
+(set-n 2) (set-pick 1)
+(display "CASE1=") (display-value (solve)) (newline)
+
+(set-n 2) (set-pick 2)
+(display "CASE2=") (display-value (solve)) (newline)
+
+(set-n 10) (set-pick 6)
+(display "CASE3=") (display-value (solve)) (newline)
+
+(set-n 10) (set-pick 1)
+(display "CASE4=") (display-value (solve)) (newline)
+
+(set-n 10) (set-pick 10)
+(display "CASE5=") (display-value (solve)) (newline)
+
+(set-n 1000) (set-pick 500)
+(display "CASE6=") (display-value (solve)) (newline)
+
+(set-n 1000) (set-pick 999)
+(display "CASE7=") (display-value (solve)) (newline)

@@ -1,0 +1,61 @@
+(define (length-lst xs)
+  (if (null? xs) 0 (+ 1 (length-lst (cdr xs)))))
+
+(define (list-ref lst i)
+  (if (= i 0)
+      (car lst)
+      (list-ref (cdr lst) (- i 1))))
+
+(define (peak-index arr)
+  ;; binary search on list
+  (define n (length-lst arr))
+  (define (lo-hi lo hi)
+    (if (= lo hi)
+        lo
+        (let ((mid (quotient (+ lo hi) 2)))
+          (if (> (list-ref arr mid) (list-ref arr (+ mid 1)))
+              (lo-hi lo mid)
+              (lo-hi (+ mid 1) hi)))))
+  (lo-hi 0 (- n 1)))
+
+(define (solve arr)
+  (peak-index arr))
+
+;; Print helper for list of numbers (space-separated)
+(define (print-list lst)
+  (display "[")
+  (define (iter x first?)
+    (if (null? x)
+        (display "")
+        (begin
+          (if first? (display "") (display ", "))
+          (display (car x))
+          (iter (cdr x) #f))))
+  (iter lst #t)
+  (display "]"))
+
+;; Embedded test cases
+(define case0 '(0 1 2 4 7 5 3 1))
+(define case1 '(0 1 2 3 4 5 6 7 8 9 8 7 6 5 4 3 2 1))
+(define case2 '(0 1 2 3 4 5 6 7 8 9 10 9 8 7 6 5 4 3 2 1 0))
+(define case3 '(1 3 5 7 6 4 2))
+(define case4 '(0 2 4 6 8 10 12 11))
+(define case5 '(1 2 3 4 5 4 3 2 1))
+(define case6 '(5 10 15 20 25 20))
+(define case7 '(1 2 3 4 5 6 7 8 7 6 5 4 3 2 1))
+
+(define (run-case i arr)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve arr))
+  (newline))
+
+(run-case 0 case0)
+(run-case 1 case1)
+(run-case 2 case2)
+(run-case 3 case3)
+(run-case 4 case4)
+(run-case 5 case5)
+(run-case 6 case6)
+(run-case 7 case7)

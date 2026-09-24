@@ -1,0 +1,333 @@
+;; Build a tree from level-order list (using null for missing)
+;; Tree node: (val left right) as a list, or '() for null
+
+(define (build-tree level-order)
+  (if (null? level-order)
+      '()
+      (let* ((first (car level-order))
+             (root (if (null? first) '() (list first '() '()))))
+        (if (null? first)
+            '()
+            (let ((queue (list root))
+                  (idx 1))
+              (define (put-child q i v)
+                (if (null? q)
+                    q
+                    (let ((parent (car q))
+                          (rest (cdr q)))
+                      (cond
+                        ((null? i) rest)
+                        ((= i 0)
+                         (if (null? v)
+                             rest
+                             (let ((child (list v '() '())))
+                               (set-car! parent (list (car parent) child (cadr (cdr parent))))
+                               (append rest (list child)))))
+                        ((= i 1)
+                         (if (null? v)
+                             rest
+                             (let ((child (list v '() '())))
+                               (set-car! parent (list (car parent) (car (cdr parent)) child))
+                               (append rest (list child)))))
+                        (else rest)))))
+              ;; placeholder: we'll use mutation helpers
+              (define (set-left p c)
+                (set-car! p (list (car p) c (cadr (cdr p)))))
+              (define (set-right p c)
+                (set-car! p (list (car p) (car (cdr p)) c)))
+              (let loop ((q (list root))
+                         (i 1))
+                (cond
+                  ((null? q) root)
+                  ((>= i (length level-order)) root)
+                  (else
+                   (let ((parent (car q))
+                         (rest (cdr q)))
+                     (let ((lv (list-ref level-order i))
+                           (rv (list-ref level-order (+ i 1))))
+                       (if (null? lv)
+                           '()
+                           (set-left parent (list lv '() '())))
+                       (if (null? rv)
+                           '()
+                           (set-right parent (list rv '() '())))
+                       (let ((new-q rest))
+                         (if (not (null? lv))
+                             (set! new-q (append new-q (list (car (cdr (car parent)))))))
+                         (if (not (null? rv))
+                             (set! new-q (append new-q (list (cadr (cdr (car parent)))))))
+                         (loop new-q (+ i 2))))))))))))))
+
+;; A simpler approach: build tree using cons cells that we can mutate
+;; Node representation: a pair (mutable) where (car node) = val, (cdr node) = list (left . right)
+;; Actually let's use a vector-like list: (val left right) and rebuild with set-car!
+
+;; Let me restart with a cleaner representation
+(define (make-node v) (list v '() '()))
+
+(define (node-val n) (car n))
+(define (node-left n) (car (cdr n)))
+(define (node-right n) (car (cdr (cdr n))))
+(define (set-left! n c) (set-car! (cdr n) c))
+(define (set-right! n c) (set-car! (cdr (cdr n)) c))
+
+(define (build-tree2 lo)
+  (if (or (null? lo) (null? (car lo)))
+      '()
+      (let ((root (make-node (car lo))))
+        (let ((queue (list root))
+              (i 1))
+          (let loop ((q queue) (idx i))
+            (cond
+              ((null? q) root)
+              ((>= idx (length lo)) root)
+              (else
+               (let ((parent (car q))
+                     (rest (cdr q)))
+                 (let ((lv (list-ref lo idx))
+                       (rv (list-ref lo (+ idx 1))))
+                   (if (and (not (null? lv)) (not (null? (car (list lv '())))))
+                       (set-left! parent (make-node lv)))
+                   ;; null check: we treat any non-pair that is '() as null
+                   (if (null? lv)
+                       '()
+                       (set-left! parent (make-node lv)))
+                   (if (null? rv)
+                       '()
+                       (set-right! parent (make-node rv)))
+                   (let ((new-q rest))
+                     (if (not (null? lv))
+                         (set! new-q (append new-q (list (node-left parent)))))
+                     (if (not (null? rv))
+                         (set! new-q (append new-q (list (node-right parent)))))
+                     (loop new-q (+ idx 2))))))))))))
+
+;; Hmm, level-order uses 'null' as sentinel. In our embedded inputs, we use null (the symbol).
+;; Let's define: null in level-order list means absent child.
+
+;; Approach: collect leaves by computing height of each node (height = distance to nearest leaf, where leaf has height 0)
+;; Then group nodes by height.
+
+(define (height node)
+  (cond
+    ((null? node) -1)
+    ((and (null? (node-left node)) (null? (node-right node))) 0)
+    (else (+ 1 (max (height (node-left node))
+                    (height (node-right node)))))))
+
+(define result-list '())
+
+(define (collect node)
+  (cond
+    ((null? node) '())
+    (else
+     (let ((h (height node)))
+       (let ((existing (list-ref result-list h '())))
+         (list-set! result-list h (append existing (list (node-val node)))))
+       (collect (node-left node))
+       (collect (node-right node))))))
+
+;; But we need result-list to be a mutable list of lists, growing as needed
+;; Let's use a different approach: compute max height first, then fill
+
+(define (solve root)
+  (if (null? root)
+      '()
+      (let ((maxh (height root)))
+        (let ((buckets (make-list (+ maxh 1) '())))
+          (define (fill node)
+            (cond
+              ((null? node) '())
+              (else
+               (let ((h (height node)))
+                 (list-set! buckets h (append (list-ref buckets h) (list (node-val node))))
+                 (fill (node-left node))
+                 (fill (node-right node))))))
+          (fill root)
+          buckets))))
+
+;; We need make-list and list-set!
+;; In Aura, we can build lists of length n by repeated cons, but list-set! requires a proper pair structure.
+;; Use vectors? Aura may not have vectors. Let's implement list-set! manually using indices via set-car! chain.
+
+;; Alternative: build buckets as a linked structure we can mutate.
+;; Create buckets as: (cons '() (cons '() ...))
+;; For list-set!, we walk to index i and set-car!
+
+(define (make-buckets n)
+  (let loop ((k 0) (acc '()))
+    (if (= k n)
+        acc
+        (loop (+ k 1) (cons '() acc)))))
+
+(define (list-set! lst i v)
+  (if (= i 0)
+      (set-car! lst v)
+      (list-set! (cdr lst) (- i 1) v)))
+
+;; Now redefine solve using make-buckets and list-set!
+
+(define (solve root)
+  (if (null? root)
+      '()
+      (let ((maxh (height root)))
+        (let ((buckets (make-buckets (+ maxh 1))))
+          (define (fill node)
+            (cond
+              ((null? node) '())
+              (else
+               (let ((h (height node)))
+                 (list-set! buckets h (append (car (list-ref-pairs buckets h)) (list (node-val node))))
+                 (fill (node-left node))
+                 (fill (node-right node))))))
+          (fill root)
+          buckets))))
+
+;; I need list-ref-pairs that returns the pair at index i (so we can set-car! it)
+;; Actually list-set! above uses set-car! which mutates the pair. That's what we want.
+;; But (car (list-ref buckets h)) doesn't give a mutable reference in a way we can set directly.
+;; Actually (list-ref buckets h) returns the element at index h, which is itself a pair '().
+;; set-car! on that pair sets its car. So:
+;; (let ((bucket (list-ref buckets h)))
+;;   (set-car! bucket (append (car bucket) (list (node-val node)))))
+;; That's cleaner.
+
+(define (solve root)
+  (if (null? root)
+      '()
+      (let ((maxh (height root)))
+        (let ((buckets (make-buckets (+ maxh 1))))
+          (define (fill node)
+            (cond
+              ((null? node) '())
+              (else
+               (let ((h (height node)))
+                 (let ((bucket (list-ref buckets h)))
+                   (set-car! bucket (append (car bucket) (list (node-val node)))))
+                 (fill (node-left node))
+                 (fill (node-right node))))))
+          (fill root)
+          buckets))))
+
+;; Helper to display a list nicely
+(define (display-list lst)
+  (cond
+    ((null? lst) (display "[]"))
+    ((list? lst)
+     (display "[")
+     (define (loop l first?)
+       (cond
+         ((null? l) (display "]"))
+         (else
+          (if first? (display "") (display ","))
+          (display (car l))
+          (loop (cdr l) #f))))
+     (loop lst #t))
+    (else (display lst))))
+
+(define (display-result lst)
+  (cond
+    ((null? lst) (display "[]"))
+    (else
+     (display "[")
+     (define (loop l first?)
+       (cond
+         ((null? l) (display "]"))
+         (else
+          (if first? (display "") (display ","))
+          (display-list (car l))
+          (loop (cdr l) #f))))
+     (loop lst #t))))
+
+;; Now the test cases. Each level_order is a list containing numbers and 'null.
+;; build-tree consumes the level-order list.
+
+(define (build-tree lo)
+  (if (or (null? lo) (null? (car lo)))
+      '()
+      (let ((root (make-node (car lo))))
+        (let ((queue (list root))
+              (i 1))
+          (let loop ((q queue) (idx i))
+            (cond
+              ((null? q) root)
+              ((>= idx (length lo)) root)
+              (else
+               (let ((parent (car q))
+                     (rest (cdr q))
+                     (lv (list-ref lo idx))
+                     (rv (list-ref lo (+ idx 1))))
+                 (if (null? lv)
+                     '()
+                     (set-left! parent (make-node lv)))
+                 (if (null? rv)
+                     '()
+                     (set-right! parent (make-node rv)))
+                 (let ((new-q rest))
+                   (if (not (null? lv))
+                       (set! new-q (append new-q (list (node-left parent)))))
+                   (if (not (null? rv))
+                       (set! new-q (append new-q (list (node-right parent)))))
+                   (loop new-q (+ idx 2)))))))))))
+
+(define CASE0 '())
+(define CASE1 '(1))
+(define CASE2 '(1 2 3))
+(define CASE3 '(1 2 3 4 5))
+(define CASE4 '(1 2 null 3 null 4 null 5))
+(define CASE5 '(1 2 3 null null 4 5))
+(define CASE6 '(1 2 3 4 null null 5 null null null null null null null null 6))
+(define CASE7 '(5 4 6 1 2 null 7))
+
+;; Note: 'null' is a symbol in our embedding. (null? 'null) returns #f in our scheme-like language.
+;; Hmm, this is a problem. In Aura, what is the symbol for null in level-order?
+;; The problem statement uses "null" in JSON-like notation. In our Lisp, the symbol null is just a symbol.
+;; (null? 'null) -> #f because 'null is not the empty list.
+;; So our null check (null? lv) where lv is 'null would be #f, treating 'null as a value!
+;;
+;; We need to check if lv is the symbol 'null. Let me adjust.
+
+(define (is-null? x)
+  (cond
+    ((null? x) #t)
+    ((eq? x 'null) #t)
+    (else #f)))
+
+;; Rebuild build-tree using is-null?
+
+(define (build-tree lo)
+  (if (or (null? lo) (is-null? (car lo)))
+      '()
+      (let ((root (make-node (car lo))))
+        (let ((queue (list root))
+              (i 1))
+          (let loop ((q queue) (idx i))
+            (cond
+              ((null? q) root)
+              ((>= idx (length lo)) root)
+              (else
+               (let ((parent (car q))
+                     (rest (cdr q))
+                     (lv (list-ref lo idx))
+                     (rv (list-ref lo (+ idx 1))))
+                 (if (is-null? lv)
+                     '()
+                     (set-left! parent (make-node lv)))
+                 (if (is-null? rv)
+                     '()
+                     (set-right! parent (make-node rv)))
+                 (let ((new-q rest))
+                   (if (not (is-null? lv))
+                       (set! new-q (append new-q (list (node-left parent)))))
+                   (if (not (is-null? rv))
+                       (set! new-q (append new-q (list (node-right parent)))))
+                   (loop new-q (+ idx 2)))))))))))
+
+(display "CASE0=") (display-result (solve (build-tree CASE0))) (newline)
+(display "CASE1=") (display-result (solve (build-tree CASE1))) (newline)
+(display "CASE2=") (display-result (solve (build-tree CASE2))) (newline)
+(display "CASE3=") (display-result (solve (build-tree CASE3))) (newline)
+(display "CASE4=") (display-result (solve (build-tree CASE4))) (newline)
+(display "CASE5=") (display-result (solve (build-tree CASE5))) (newline)
+(display "CASE6=") (display-result (solve (build-tree CASE6))) (newline)
+(display "CASE7=") (display-result (solve (build-tree CASE7))) (newline)

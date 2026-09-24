@@ -1,0 +1,45 @@
+(define (len xs)
+  (if (null? xs) 0 (+ 1 (len (cdr xs)))))
+
+(define (list-ref xs i)
+  (if (= i 0) (car xs) (list-ref (cdr xs) (- i 1))))
+
+(define (solve nums)
+  (let ((n (len nums)))
+    (let loop ((lo 0) (hi (- n 1)))
+      (if (= lo hi)
+          lo
+          (let ((mid (quotient (+ lo hi) 2))
+                (a (list-ref nums lo))
+                (b (list-ref nums hi))
+                (c (list-ref nums mid)))
+            (cond
+              ((< a b) lo)
+              ((= a b)
+               ;; shrink: skip duplicates on both ends
+               (let shrink ((l lo) (h hi))
+                 (if (or (= l h) (not (= (list-ref nums l) (list-ref nums h))))
+                     (loop l h)
+                     (shrink (+ l 1) (- h 1)))))
+              ((<= c a) (loop mid hi))
+              (else (loop (+ mid 1) hi))))))))
+
+;; Display helper for a number
+(define (display-case i result)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display result)
+  (newline))
+
+;; Run all test cases
+(display-case 0 (solve '(1 3 5 7 9)))
+(display-case 1 (solve '(2 2 2 0 1)))
+(display-case 2 (solve '(5 5 5 5 5)))
+(display-case 3 (solve '(3 1 2 3 3)))
+(display-case 4 (solve '(1)))
+(display-case 5 (solve '(2 1)))
+(display-case 6 (solve '(1 2 3)))
+(display-case 7 (solve '(3 3 1 3)))
+(display-case 8 (solve '(10 1 10 10 10)))
+(display-case 9 (solve '(4 4 4 0 4 4 4)))

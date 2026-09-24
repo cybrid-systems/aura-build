@@ -1,0 +1,48 @@
+;; First Bad Version - Binary Search solution
+;; Minimizes API calls while avoiding integer overflow
+
+(define (solve n is-bad-version)
+  ;; Standard binary search for the first true in [1, n]
+  (let ((lo 1)
+        (hi n))
+    (let loop ((lo lo) (hi hi))
+      (if (>= lo hi)
+          lo
+          ;; Use lo + (hi - lo) / 2 to avoid overflow
+          (let ((mid (+ lo (quotient (- hi lo) 2))))
+            (if (is-bad-version mid)
+                (loop lo mid)
+                (loop (+ mid 1) hi)))))))
+
+;; Test case data: each entry is (n . bad)
+(define test-cases
+  (list (cons 5 4)
+        (cons 1 1)
+        (cons 2126753390 1702766719)
+        (cons 2 2)
+        (cons 2 1)
+        (cons 100 1)
+        (cons 100 100)
+        (cons 2147483647 2147483647)))
+
+;; Display helper for a single result
+(define (display-result idx n bad)
+  ;; Build the isBadVersion predicate closed over `bad`
+  (let ((is-bad (lambda (v) (>= v bad))))
+    (let ((result (solve n is-bad)))
+      (display "CASE")
+      (display idx)
+      (display "=")
+      (display result)
+      (newline))))
+
+;; Iterate through test cases
+(define (run-tests cases idx)
+  (if (null? cases)
+      'done
+      (begin
+        (let ((pair (car cases)))
+          (display-result idx (car pair) (cdr pair)))
+        (run-tests (cdr cases) (+ idx 1)))))
+
+(run-tests test-cases 0)

@@ -1,0 +1,113 @@
+;; Count Complete Tree Nodes in Aura
+
+(define nil 'nil)
+
+;; Node represented as (cons val (cons left right))
+(define (node-val n) (car n))
+(define (node-left n) (car (cdr n)))
+(define (node-right n) (cdr (cdr n)))
+(define (make-node v l r) (cons v (cons l r)))
+
+;; Left depth: walk left edges until null
+(define (ldepth n)
+  (if (null? n) 0
+      (+ 1 (ldepth (node-left n)))))
+
+;; Right depth: walk right edges until null
+(define (rdepth n)
+  (if (null? n) 0
+      (+ 1 (rdepth (node-right n)))))
+
+;; Count nodes: if full tree (left depth == right depth) then 2^d - 1
+(define (count-nodes n)
+  (if (null? n) 0
+      (let ((d (ldepth n)))
+        (if (= d (rdepth n))
+            (- (expt 2 d) 1)
+            (+ 1 (count-nodes (node-left n))
+                  (count-nodes (node-right n)))))))
+
+;; Build tree from level-order list.
+;; 'null' represents absent node.
+(define (val-of x)
+  (if (string? x) (string->number x) x))
+
+(define (build-tree lst)
+  (let ((len (length lst)))
+    (if (= len 0) nil
+        (let ((root (make-node (val-of (car lst)) nil nil))
+              (index 1))
+          (define (mk n)
+            (if (null? n) 0
+                (let ((cnt 0))
+                  (set! cnt (+ cnt 1))
+                  (if (<= (+ index cnt) len)
+                      (let ((v (list-ref lst (+ index cnt -1))))
+                        (set! index (+ index cnt))
+                        (set! n (make-node (node-val n)
+                                           (if (equal? v 'null) nil (make-node (val-of v) nil nil))
+                                           (begin (set! cnt 0) 'placeholder)))
+                        0)
+                      0))))
+          root))))
+
+;; Simpler: index-based build
+(define (build-tree2 lst)
+  (let ((n (length lst)))
+    (if (= n 0) nil
+        (define nodes (make-vector n))
+        (define i 0)
+        (define (build idx)
+          (if (>= idx n) nil
+              (let ((v (list-ref lst idx)))
+                (if (equal? v 'null) nil
+                    (let ((node (make-node (val-of v) nil nil)))
+                      (vector-set! nodes idx node)
+                      (set! node-left! node (build (+ (* 2 idx) 1)))
+                      (set! node-right! node (build (+ (* 2 idx) 2)))
+                      node)))))
+        (build 0))))
+
+;; Vector helpers for Aura - use list instead
+;; Let's redo without vectors
+
+(define (build-tree3 lst)
+  (let ((n (length lst)))
+    (if (= n 0) nil
+        (let ((nodes (list n 'placeholder)))
+          (define (put idx node)
+            (if (= idx 0) (begin (set-car! nodes node) 'ok)
+                (begin (set-car! (cdr nodes) 'placeholder) 'ok))) ;; not used
+          (define (build idx)
+            (if (>= idx n) nil
+                (let ((v (list-ref lst idx)))
+                  (if (equal? v 'null) nil
+                      (let ((node (make-node (val-of v) nil nil)))
+                        (set-car! (cdr (cdr node)) (build (+ (* 2 idx) 1)))
+                        (set-car! (cdr node) (build (+ (* 2 idx) 2)))
+                        node)))))
+          (build 0)))))
+
+;; Cleaner version using mutation
+(define (solve lst)
+  (count-nodes (build-tree3 lst)))
+
+;; Wrapper for solve taking root list
+(define (solve-root root-list) (solve root-list))
+
+;; Test cases
+(define (run-test name lst)
+  (begin
+    (display name)
+    (display "=")
+    (display (solve lst))
+    (newline)))
+
+(run-test "CASE0" '())
+(run-test "CASE1" '(1))
+(run-test "CASE2" '(1 2 3 4 5 6))
+(run-test "CASE3" '(1 2 3 4 5 null 7))
+(run-test "CASE4" '(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15))
+(run-test "CASE5" '(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16))
+(run-test "CASE6" '(1 null 2 null 3 null 4 null 5))
+(run-test "CASE7" '(1 2 null 3 null 4 null 5))

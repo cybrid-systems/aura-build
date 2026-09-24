@@ -1,0 +1,65 @@
+;; Search in Rotated Sorted Array II - O(log n) avg, handles duplicates
+
+(define (search nums target)
+  ;; binary search on rotated sorted array with duplicates
+  (define (helper left right)
+    (if (> left right)
+        #f
+        (let ((mid (quotient (+ left right) 2))
+              (m (list-ref nums mid))
+              (l (list-ref nums left))
+              (r (list-ref nums right)))
+          (cond
+            ((= m target) #t)
+            ((= l r) (helper (+ left 1) right))
+            ((<= l m)
+             (if (and (>= target l) (< target m))
+                 (helper left (- mid 1))
+                 (helper (+ mid 1) right)))
+            (else
+             (if (and (> target m) (<= target r))
+                 (helper (+ mid 1) right)
+                 (helper left (- mid 1))))))))
+  (helper 0 (- (length nums) 1)))
+
+(define (solve nums target)
+  (search nums target))
+
+(define (display-list xs)
+  (display "[")
+  (let loop ((rest xs) (first #t))
+    (if (null? rest)
+        (display "]")
+        (begin
+          (if first (set! first #f) (display ","))
+          (display (car rest))
+          (loop (cdr rest) first)))))
+
+;; Embedded test inputs
+(define tests
+  (list
+    (list (list 4 5 6 7 0 1 2) 0)
+    (list (list 4 5 6 7 0 1 2) 3)
+    (list (list 2 5 6 0 0 1 2) 0)
+    (list (list 2 5 6 0 0 1 2) 3)
+    (list (list 1) 0)
+    (list (list 1) 1)
+    (list '() 5)
+    (list (list 1 1 1 1 1) 1)
+    (list (list 1 1 1 1 1) 2)
+    (list (list 3 1) 1)))
+
+(define (run-tests lst i)
+  (if (null? lst)
+      'done
+      (begin
+        (let ((tc (car lst))
+              (idx i))
+          (display "CASE")
+          (display idx)
+          (display "=")
+          (display (solve (car tc) (cadr tc)))
+          (newline))
+        (run-tests (cdr lst) (+ i 1)))))
+
+(run-tests tests 0)

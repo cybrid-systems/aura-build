@@ -1,0 +1,121 @@
+;; Find Leaves of Binary Tree - Aura solution
+;; Represent a node as a list: (val left right), where left/right are nodes or '()
+;; level_order input uses '() for null and integers for values
+
+(define (make-node v l r) (list v l r))
+(define (node? x) (and (pair? x) (number? (car x))))
+(define (val-of n) (car n))
+(define (left-of n) (cadr n))
+(define (right-of n) (caddr n))
+
+;; Build tree from level-order list with '() as nulls
+(define (build-tree lst)
+  (define (take n l)
+    (if (= n 0) '()
+        (cons (car l) (take (- n 1) (cdr l)))))
+  (if (null? lst) '()
+      (let* ((root (make-node (car lst) '() '()))
+             (nodes (list root))
+             (rest (cdr lst)))
+        (define (loop i items r)
+          (if (or (null? items) (null? r))
+              root
+              (let* ((cur (car items))
+                     (rest-items (cdr items))
+                     (lch '())
+                     (rch '()))
+                (if (null? (car r))
+                    (set! lch '())
+                    (begin
+                      (set! lch (make-node (car r) '() '()))
+                      (set! items (cons lch items))))
+                (set! r (cdr r))
+                (if (null? (car r))
+                    (set! rch '())
+                    (begin
+                      (set! rch (make-node (car r) '() '()))
+                      (set! items (cons rch items))))
+                (set! r (cdr r))
+                (set! left-of cur lch)
+                (set! right-of cur rch)
+                (loop (+ i 1) rest-items r))))
+        (loop 1 nodes rest))))
+
+;; Compute height and collect leaves by height
+;; height of a leaf is 0; result is list of lists where index i holds leaves of height i
+(define (collect-helper n)
+  ;; returns (height . levels-list)
+  (if (null? n)
+      (cons -1 '())
+      (let* ((hl (collect-helper (left-of n)))
+             (hr (collect-helper (right-of n)))
+             (hl-h (car hl))
+             (hr-h (car hr))
+             (my-h (+ 1 (if (> hl-h hr-h) hl-h hr-h)))
+             (ll (cdr hl))
+             (lr (cdr hr)))
+        (define (add-val lst h v)
+          (define (helper i l)
+            (if (= i 0)
+                (cons (cons v (car l)) (cdr l))
+                (cons (car l) (helper (- i 1) (cdr l)))))
+          (helper h lst))
+        (let ((merged '()))
+          (define (gather-l i l acc)
+            (if (null? l) acc
+                (gather-l (+ i 1) (cdr l) (cons (car l) acc))))
+          (set! merged
+                (let loop ((i 0) (a ll) (b lr) (acc '()))
+                  (if (and (null? a) (null? b))
+                      (reverse acc)
+                      (let ((la (if (null? a) '() (car a)))
+                            (lb (if (null? b) '() (car b))))
+                        (loop (+ i 1)
+                              (if (null? a) '() (cdr a))
+                              (if (null? b) '() (cdr b))
+                              (cons (append la lb) acc)))))))
+        (cons my-h (add-val merged my-h (val-of n))))))
+
+(define (solve root)
+  (if (null? root) '()
+      (cdr (collect-helper root))))
+
+;; Display helper for nested lists
+(define (display-list lst)
+  (display "[")
+  (let loop ((l lst) (first #t))
+    (cond ((null? l) (display "]"))
+          (else
+           (if first (set! first #f) (display ","))
+           (let ((x (car l)))
+             (cond ((null? x) (display "[]"))
+                   ((and (pair? x) (number? (car x)))
+                    (display-list x))
+                   (else (display x))))
+           (loop (cdr l) first)))))
+
+;; Test cases
+(define cases
+  (list
+    (list '())
+    (list 1)
+    (list 1 2 3)
+    (list 1 2 3 4 5)
+    (list 1 2 '() 3 '() 4 '() 5)
+    (list 1 2 3 '() '() 4 5)
+    (list 1 2 3 4 '() '() 5 '() '() '() '() '() '() '() '() 6)
+    (list 5 4 6 1 2 '() 7)))
+
+(define (run-cases cs i)
+  (if (null? cs) '()
+      (begin
+        (let* ((root (build-tree (car cs)))
+               (res (solve root)))
+          (display "CASE")
+          (display i)
+          (display "=")
+          (display-list res)
+          (newline))
+        (run-cases (cdr cs) (+ i 1)))))
+
+(run-cases cases 0)

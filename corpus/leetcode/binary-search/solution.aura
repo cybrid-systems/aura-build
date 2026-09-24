@@ -1,0 +1,66 @@
+;; Iterative binary search on a sorted array.
+;; Returns the index of target, or -1 if absent.
+
+(define (value-at arr i)
+  (list-ref arr i))
+
+(define (bsearch arr target n)
+  ;; Iterative binary search using let-bindings for lo/hi.
+  (let ((lo 0)
+        (hi (- n 1)))
+    (let ((result
+            (let ((step
+                    (let ((mid (+ lo (quotient (- hi lo) 2))))
+                      (cond
+                        ((= hi lo)
+                         (if (= (value-at arr lo) target) lo -1))
+                        ((= (value-at arr mid) target) mid)
+                        ((< (value-at arr mid) target)
+                         (bsearch-range arr target (+ mid 1) hi))
+                        (else
+                         (bsearch-range arr target lo (- mid 1)))))))
+              step)))
+      result)))
+
+;; Range-restricted search used internally.
+(define (bsearch-range arr target lo hi)
+  (if (> lo hi)
+      -1
+      (let ((mid (+ lo (quotient (- hi lo) 2))))
+        (let ((v (value-at arr mid)))
+          (cond
+            ((= v target) -1)
+            ((< v target) (bsearch-range arr target (+ mid 1) hi))
+            ((> v target) (bsearch-range arr target lo (- mid 1)))
+            (else -1))))))
+
+(define (solve arr target)
+  (bsearch arr target (length arr)))
+
+;; ---- Test harness ----
+(define (run-case i arr target)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve arr target))
+  (newline))
+
+(let ((cases (list
+               (list (list 1 3 5 7 9) 7)
+               (list (list 1) 1)
+               (list (list 1) 0)
+               (list (list 1) 2)
+               (list (list 1 2 3 4 5) 3)
+               (list (list -5 -3 -1 0 2 4) -4)
+               (list (list -5 -3 -1 0 2 4) 4)
+               (list (list 1 2 2 2 3 4) 2))))
+  (let ((n (length cases))
+        (idx 0))
+    (define (loop i cases-left)
+      (if (null? cases-left)
+          'done
+          (begin
+            (let ((c (car cases-left)))
+              (run-case i (car c) (car (cdr c))))
+            (loop (+ i 1) (cdr cases-left)))))
+    (loop 0 cases)))

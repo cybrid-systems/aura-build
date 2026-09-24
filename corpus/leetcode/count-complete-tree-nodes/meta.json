@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:38:28Z",
+      "ts_local": "2026-09-24 22:38:28 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2344,
+        "total_characters": 0,
+        "prompt_tokens": 1110,
+        "completion_tokens": 1234,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.072,
+      "tests_passed": 4,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=1\nCASE1=1\nCASE2=6\nCASE3=5\nCASE4=15\nCASE5=16\nCASE6=5\nCASE7=5\n\"done\"\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:38:36Z",
+      "ts_local": "2026-09-24 22:38:36 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2876,
+        "total_characters": 0,
+        "prompt_tokens": 1110,
+        "completion_tokens": 1766,
+        "prompt_tokens_details": {
+          "cached_tokens": 1109
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.102,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 15:10: unbound variable: build\n  did you mean 'nil'?\n   |\n 15 |         (build 0))))\n   |          ^^^^^\nerror: 5:17: unbound variable: expt\n",
+      "stdout_snippet": "CASE0=CASE1=CASE2=CASE3=CASE4=CASE5=CASE6=CASE7=<error>\n"
+    }
+  ],
+  "slug": "count-complete-tree-nodes",
+  "title": "Count Complete Tree Nodes",
+  "category": "trees",
+  "updated_at": "2026-09-24T14:38:36Z",
+  "updated_at_local": "2026-09-24 22:38:36 CST"
+}

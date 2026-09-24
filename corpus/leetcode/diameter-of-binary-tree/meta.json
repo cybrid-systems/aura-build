@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:38:18Z",
+      "ts_local": "2026-09-24 22:38:18 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 4245,
+        "total_characters": 0,
+        "prompt_tokens": 1168,
+        "completion_tokens": 3077,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.022,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 16:53: parse error: unexpected ')'\n",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:38:23Z",
+      "ts_local": "2026-09-24 22:38:23 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2302,
+        "total_characters": 0,
+        "prompt_tokens": 1168,
+        "completion_tokens": 1134,
+        "prompt_tokens_details": {
+          "cached_tokens": 1167
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.068,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "warning: unbalanced parentheses in input\nerror: 5:12: unbound variable: else\n  did you mean 'solve'?\n   |\n  5 |           (else j))))\n   |            ^^^^\n⚠ program returned an uncalled function\n",
+      "stdout_snippet": "#<procedure>\n"
+    }
+  ],
+  "slug": "diameter-of-binary-tree",
+  "title": "Diameter of Binary Tree",
+  "category": "trees",
+  "updated_at": "2026-09-24T14:38:23Z",
+  "updated_at_local": "2026-09-24 22:38:23 CST"
+}

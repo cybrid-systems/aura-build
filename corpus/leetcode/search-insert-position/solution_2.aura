@@ -1,0 +1,36 @@
+(define (len xs)
+  (if (null? xs) 0 (+ 1 (len (cdr xs)))))
+
+(define (ref xs i)
+  (if (= i 0) (car xs) (ref (cdr xs) (- i 1))))
+
+(define (binary-search nums target lo hi n)
+  (if (>= lo hi)
+      lo
+      (let ((mid (quotient (+ lo hi) 2)))
+        (cond
+          ((< (ref nums mid) target) (binary-search nums target (+ mid 1) hi n))
+          ((> (ref nums mid) target) (binary-search nums target lo mid n))
+          (else mid)))))
+
+(define (solve nums target)
+  (let ((n (len nums)))
+    (if (= n 0)
+        0
+        (binary-search nums target 0 n n))))
+
+(define (run-case i nums target)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve nums target))
+  (newline))
+
+(run-case 0 '(1 3 5 6) 5)
+(run-case 1 '(1 3 5 6) 2)
+(run-case 2 '(1 3 5 6) 7)
+(run-case 3 '(1 3 5 6) 0)
+(run-case 4 '(1) 0)
+(run-case 5 '(1) 1)
+(run-case 6 '(1) 2)
+(run-case 7 '() 0)

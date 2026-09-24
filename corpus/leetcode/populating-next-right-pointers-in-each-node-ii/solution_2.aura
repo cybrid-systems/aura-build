@@ -1,0 +1,217 @@
+(define (make-node v) (define n '()) (define val 'uninit) (define left 'uninit) (define right 'uninit) (define nxt 'uninit) (set! n (cons 'node-frame (cons val (cons left (cons right (cons nxt '())))))) (set-car! (cdr n) v) (set-cdr! (cdr (cdr (cdr n))) (list 'right-slots)) n)
+
+;; Simpler: use a list of fields and mutate via set-car! / set-cdr!
+;; Node = (val . (left . (right . (next . ()))))  — but closures awkward.
+;; Use pair-of-pairs: (cons val (cons left (cons right (cons next '()))))
+
+(define (mk v)
+  (define n (cons v (cons '() (cons '() (cons '() '())))))
+  n)
+
+(define (node-val n) (car n))
+(define (node-left n) (car (cdr n)))
+(define (node-right n) (car (cdr (cdr n))))
+(define (node-next n) (car (cdr (cdr (cdr n)))))
+
+(define (set-left! n v) (set-car! (cdr n) v))
+(define (set-right! n v) (set-car! (cdr (cdr n)) v))
+(define (set-next! n v) (set-car! (cdr (cdr (cdr n))) v))
+
+(define (build-tree vals)
+  (define n (length vals))
+  (if (= n 0)
+      '()
+      (begin
+        (define nodes (map (lambda (v) (if (= v -1) '() (mk v))) vals))
+        (define root (car nodes))
+        (define (link i)
+          (if (>= i n) '()
+              (begin
+                (define node (list-ref nodes i))
+                (if (null? node) '()
+                    (begin
+                      (define l (vector (list-ref nodes (+ (* 2 i) 1)) 'x))
+                      (define r (vector (list-ref nodes (+ (* 2 i) 2)) 'x))
+                      (if (and (< (+ (* 2 i) 1) n)
+                               (not (null? (vector-ref l 0))))
+                          (set-left! node (vector-ref l 0))
+                          'skip)
+                      (if (and (< (+ (* 2 i) 2) n)
+                               (not (null? (vector-ref r 0))))
+                          (set-right! node (vector-ref r 0))
+                          'skip))
+                    'skip))
+                (link (+ i 1)))))
+        (link 0)
+        root)))
+
+(define (connect root)
+  (define dummy (mk 0))
+  (define cur dummy)
+  (define level-start dummy)
+  (define head (mk 0))
+  (set-cdr! head (cons level-start '()))
+  (define (process-level)
+    (set! cur dummy)
+    (set! level-start dummy)
+    (set-car! (cdr dummy) '())
+    (set-car! (cdr (cdr dummy)) '())
+    (set-car! (cdr (cdr (cdr dummy))) '())
+    (define p level-start)
+    (define loop
+      (lambda (n)
+        (if (null? n) 'done
+            (let ((ln (node-left n)) (rn (node-right n)))
+              (if (not (null? ln))
+                  (begin (set-next! cur ln)
+                         (set! cur ln))
+                  'skip)
+              (if (not (null? rn))
+                  (begin (set-next! cur rn)
+                         (set! cur rn))
+                  'skip))
+            (loop (node-next n)))))
+    (loop (node-next level-start)))
+  (define dummy-node dummy)
+  (define ls (node-next level-start))
+  'placeholder)
+
+;; Restart connect with cleaner implementation
+(define (connect root)
+  (if (null? root) 'done
+      (let ((dummy (mk 0))
+            (cur dummy)
+            (level-next dummy))
+        (letrec ((advance (lambda (n)
+          (if (null? n) 'done
+              (begin
+                (if (not (null? (node-left n)))
+                    (begin (set-next! cur (node-left n)) (set! cur (node-left n))) 'skip)
+                (if (not (null? (node-right n)))
+                    (begin (set-next! cur (node-right n)) (set! cur (node-right n))) 'skip)
+                (advance (node-next n)))))))
+        (letrec ((run-level (lambda (start)
+          (if (null? start) 'done
+              (begin
+                (set! cur dummy)
+                (set-car! (cdr dummy) '())
+                (set-car! (cdr (cdr dummy)) '())
+                (set-car! (cdr (cdr (cdr dummy))) '())
+                (advance start)
+                (run-level (node-next dummy)))))))
+        (run-level root))))))
+
+;; Cleaner top-level
+(define (connect root)
+  (if (null? root) root
+      (let ((dummy (mk 0)))
+        (let ((cur dummy))
+          (letrec ((advance (lambda (n)
+            (if (null? n) 'done
+                (begin
+                  (if (not (null? (node-left n)))
+                      (begin (set-next! cur (node-left n)) (set! cur (node-left n))) 'skip)
+                  (if (not (null? (node-right n)))
+                      (begin (set-next! cur (node-right n)) (set! cur (node-right n))) 'skip)
+                  (advance (node-next n)))))))
+          (letrec ((run (lambda (start)
+            (if (null? start) root
+                (begin
+                  (set! cur dummy)
+                  (set-car! (cdr dummy) '())
+                  (set-car! (cdr (cdr dummy)) '())
+                  (set-car! (cdr (cdr (cdr dummy))) '())
+                  (advance start)
+                  (run (node-next dummy)))))))
+          (run root)))))))
+
+(define (level-order root)
+  (define result '())
+  (define (helper nodes)
+    (if (null? nodes) 'done
+        (begin
+          (set! result (append result (map (lambda (n) (if (null? n) '() n)) nodes)))
+          (helper (apply append (map (lambda (n)
+                                       (list (if (null? n) '() (node-left n))
+                                             (if (null? n) '() (node-right n))))
+                                     nodes))))))
+  (helper (list root))
+  result)
+
+(define (display-result n)
+  (define nv (cond ((null? n) 0) ((number? n) n) (else (node-val n))))
+  (display nv))
+
+(define (display-level nodes)
+  (if (null? nodes) 'done
+      (begin
+        (display-result (car nodes))
+        (display " ")
+        (let ((n (car nodes)))
+          (if (or (null? n) (= -1 n)) (display "0 ")
+              (let ((nx (node-next n)))
+                (if (null? nx) (display "0 ") (display (node-val nx) (display " "))))))
+        (display-level (cdr nodes)))))
+
+(define (display-tree root)
+  (if (null? root)
+      (display "0")
+      (begin
+        (display (node-val root)) (display " ")
+        (display-val-or-zero (node-next root)) (display " ")
+        (letrec ((flatten (lambda (nodes)
+          (if (null? nodes) '()
+              (append
+                (map (lambda (n) (if (null? n) '() n)) nodes)
+                (flatten (apply append (map (lambda (n)
+                   (list (if (null? n) '() (node-left n))
+                         (if (null? n) '() (node-right n))))
+                 nodes))))))))
+        (define lst (flatten (list root)))
+        (define (helper remaining)
+          (if (null? remaining) 'done
+              (begin
+                (display (node-val (car remaining))) (display " ")
+                (display-val-or-zero (node-next (car remaining))) (display " ")
+                (helper (cdr remaining)))))
+        (helper (cdr lst))))))
+
+(define (display-val-or-zero n)
+  (if (null? n) (display "0") (display (node-val n))))
+
+(define (solve vals)
+  (let ((root (build-tree vals)))
+    (connect root)
+    (display-tree-case root)))
+
+(define (display-tree-case root)
+  (if (null? root) (display "0")
+      (begin
+        (display (node-val root)) (display " ")
+        (display-val-or-zero (node-next root)) (display " ")
+        (letrec ((flatten (lambda (nodes)
+          (if (null? nodes) '()
+              (append
+                (map (lambda (n) (if (null? n) '() n)) nodes)
+                (flatten (apply append (map (lambda (n)
+                   (list (if (null? n) '() (node-left n))
+                         (if (null? n) '() (node-right n))))
+                 nodes))))))))
+        (define lst (flatten (list root)))
+        (define (helper remaining)
+          (if (null? remaining) 'done
+              (begin
+                (display (node-val (car remaining))) (display " ")
+                (display-val-or-zero (node-next (car remaining))) (display " ")
+                (helper (cdr remaining)))))
+        (helper (cdr lst))))))
+
+;; Run cases
+(display "CASE0=") (display-tree-case (begin (define r (build-tree '(1 2 3 4 5 -1 7))) (connect r) r)) (newline)
+(display "CASE1=") (display-tree-case (begin (define r (build-tree '(1 2 3 4 5 6 7))) (connect r) r)) (newline)
+(display "CASE2=") (display-tree-case (begin (define r (build-tree '(1 -1 2 -1 3 -1 4 -1 5))) (connect r) r)) (newline)
+(display "CASE3=") (display-tree-case (begin (define r (build-tree '(1 2 3 -1 -1 -1 -1))) (connect r) r)) (newline)
+(display "CASE4=") (display-tree-case (begin (define r (build-tree '(1))) (connect r) r)) (newline)
+(display "CASE5=") (display-tree-case (begin (define r (build-tree '(-1))) (connect r) r)) (newline)
+(display "CASE6=") (display-tree-case (begin (define r (build-tree '(1 2 -1 3 -1 4 -1))) (connect r) r)) (newline)
+(display "CASE7=") (display-tree-case (begin (define r (build-tree '(3 9 20 -1 -1 15 7))) (connect r) r)) (newline)

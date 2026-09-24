@@ -1,0 +1,123 @@
+;; Count nodes in a complete binary tree in better than O(n) time.
+;; Approach:
+;;  - If the tree is empty, return 0.
+;;  - Compute left depth (follow left children) and right depth (follow right children).
+;;  - If equal, tree is a perfect (full) binary tree of depth d, return 2^d - 1.
+;;  - Otherwise, recursively count nodes in left and right subtrees and add 1.
+
+(define (make-node val left right) (list 'node val left right))
+
+(define (node-val n) (car (cdr n)))
+(define (node-left n) (car (cdr (cdr n))))
+(define (node-right n) (car (cdr (cdr (cdr n)))))
+(define (node? x)
+  (if (null? x) #f
+      (if (pair? x)
+          (if (equal? (car x) 'node) #t #f)
+          #f)))
+
+(define (left-depth n)
+  (if (null? n) 0
+      (+ 1 (left-depth (node-left n)))))
+
+(define (right-depth n)
+  (if (null? n) 0
+      (+ 1 (right-depth (node-right n)))))
+
+(define (pow2 n)
+  ;; returns 2^n
+  (if (= n 0) 1
+      (* 2 (pow2 (- n 1)))))
+
+(define (count-nodes n)
+  (if (null? n) 0
+      (let ((ld (left-depth n))
+            (rd (right-depth n)))
+        (if (= ld rd)
+            (- (pow2 ld) 1)
+            (+ 1 (count-nodes (node-left n)) (count-nodes (node-right n)))))))
+
+;; Build a tree from a level-order list using an index.
+;; 'null' (string) or None marker means absent node.
+(define (build-tree arr)
+  (let ((len (length arr)))
+    (if (= len 0) '()
+        (let ((root (make-node (car arr) '() '())))
+          (let loop ((i 1) (nodes (list root)) (queue (list root)))
+            (if (null? queue) root
+                (let ((cur (car queue)))
+                  (let ((rest-q (cdr queue)))
+                    (let ((new-q rest-q)
+                          (cur-left '())
+                          (cur-right '()))
+                      (let ((has-left (< i len)))
+                        (let ((next-i (if has-left (+ i 1) i)))
+                          (let ((cur-left (if has-left
+                                              (let ((v (list-ref arr i)))
+                                                (if (null-marker? v) '()
+                                                    (let ((nd (make-node v '() '())))
+                                                      (set-car! (cdr (cdr cur)) nd)
+                                                      nd)))
+                                              '())))
+                            (let ((has-right (< next-i len)))
+                              (let ((next-i2 (if has-right (+ next-i 1) next-i)))
+                                (let ((cur-right (if has-right
+                                                     (let ((v (list-ref arr next-i)))
+                                                       (if (null-marker? v) '()
+                                                           (let ((nd (make-node v '() '())))
+                                                             (set-car! (cdr (cdr (cdr cur))) nd)
+                                                             nd)))
+                                                     '())))
+                                  (let ((new-q2 (append (if (null? cur-left) new-q (cons cur-left new-q))
+                                                       (if (null? cur-right) '() (list cur-right)))))
+                                    (loop next-i2 (cons cur nodes) new-q2)))))))))))))))))
+
+(define (null-marker? v)
+  (cond
+    ((null? v) #t)
+    ((string? v) (if (equal? v "null") #t #f))
+    ((equal? v 'null) #t)
+    (else #f)))
+
+;; list-ref helper
+(define (list-ref lst i)
+  (cond ((null? lst) (error "list-ref out of bounds"))
+        ((= i 0) (car lst))
+        (else (list-ref (cdr lst) (- i 1)))))
+
+(define (append a b)
+  (if (null? a) b (cons (car a) (append (cdr a) b))))
+
+(define (length lst)
+  (if (null? lst) 0 (+ 1 (length (cdr lst)))))
+
+(define (solve root)
+  (count-nodes root))
+
+;; ----- Test cases -----
+(define cases
+  (list
+    (list '())
+    (list 1)
+    (list 1 2 3 4 5 6)
+    (list 1 2 3 4 5 'null 7)
+    (list 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15)
+    (list 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16)
+    (list 1 'null 2 'null 3 'null 4 'null 5)
+    (list 1 2 'null 3 'null 4 'null 5)))
+
+(define (run-cases cases)
+  (let loop ((cs cases) (i 0))
+    (if (null? cs) 'done
+        (let ((arr (car cs)))
+          (let ((root (build-tree arr)))
+            (let ((res (solve root)))
+              (begin
+                (display "CASE")
+                (display i)
+                (display "=")
+                (display res)
+                (newline)
+                (loop (cdr cs) (+ i 1)))))))))
+
+(run-cases cases)

@@ -1,0 +1,32 @@
+(define (len xs)
+  (if (null? xs) 0 (+ 1 (len (cdr xs)))))
+
+(define (list-ref xs i)
+  (if (= i 0) (car xs) (list-ref (cdr xs) (- i 1))))
+
+(define (solve arr target)
+  (let ((n (len arr)))
+    (let loop ((lo 0) (hi (- n 1)))
+      (if (> lo hi)
+          -1
+          (let ((mid (+ lo (quotient (- hi lo) 2))))
+            (let ((v (list-ref arr mid)))
+              (cond ((= v target) mid)
+                    ((< v target) (loop (+ mid 1) hi))
+                    (else (loop lo (- mid 1))))))))))
+
+(define (display-case i result)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display result)
+  (newline))
+
+(display-case 0 (solve '(1 3 5 7 9) 7))
+(display-case 1 (solve '(1) 1))
+(display-case 2 (solve '(1) 0))
+(display-case 3 (solve '(1) 2))
+(display-case 4 (solve '(1 2 3 4 5) 3))
+(display-case 5 (solve '(-5 -3 -1 0 2 4) -4))
+(display-case 6 (solve '(-5 -3 -1 0 2 4) 4))
+(display-case 7 (solve '(1 2 2 2 3 4) 2))

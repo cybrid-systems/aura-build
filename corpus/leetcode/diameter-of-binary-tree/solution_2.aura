@@ -1,0 +1,115 @@
+;; Diameter of Binary Tree
+;; Tree representation: a node is a list (val left right), or '() for null.
+
+(define (make-node val left right) (list val left right))
+(define (node-val n) (car n))
+(define (node-left n) (cadr n))
+(define (node-right n) (caddr n))
+(define (null-node? n) (or (null? n) (equal? n '())))
+
+;; Global max diameter (mutable)
+(define *max-diam* 0)
+
+(define (depth n)
+  (if (null-node? n)
+      0
+      (+ 1 (max (depth (node-left n)) (depth (node-right n))))))
+
+(define (update-diam n)
+  (if (null-node? n)
+      0
+      (let ((dl (depth (node-left n)))
+            (dr (depth (node-right n)))
+            (cur (+ dl dr)))
+        (begin
+          (set! *max-diam* (max *max-diam* cur))
+          (+ 1 (max dl dr))))))
+
+(define (solve n)
+  (begin
+    (set! *max-diam* 0)
+    (let ((_ (update-diam n)))
+      *max-diam*)))
+
+;; Parsing helpers
+(define (peek-next s i)
+  (if (>= i (string-length s))
+      '()
+      (string-ref s i)))
+
+(define (skip-spaces s i)
+  (let loop ((j i))
+    (cond ((>= j (string-length s)) j)
+          ((char=? (string-ref s j) #\space) (loop (+ j 1)))
+          (else j))))
+
+(define (read-token s i)
+  ;; reads until space, returns (token . next-index)
+  (let ((len (string-length s)))
+    (let loop ((j i) (acc '()))
+      (cond ((>= j len) (cons (list->string (reverse acc)) j))
+            ((char=? (string-ref s j) #\space)
+             (cons (list->string (reverse acc)) j))
+            (else (loop (+ j 1) (cons (string-ref s j) acc)))))))
+
+(define (parse-tree s i)
+  (let ((j (skip-spaces s i)))
+    (let ((c (peek-next s j)))
+      (cond ((char=? c #\() 
+             ;; parse ( val left right )
+             (let ((k (+ j 1)))
+               (let ((tok1 (read-token s (skip-spaces s k))))
+                 (let ((val-str (car tok1))
+                       (k1 (cdr tok1)))
+                   (let ((left-res (parse-tree s k1)))
+                     (let ((left (car left-res))
+                           (k2 (cdr left-res)))
+                       (let ((right-res (parse-tree s k2)))
+                         (let ((right (car right-res))
+                               (k3 (cdr right-res)))
+                           ;; skip closing )
+                           (cons (make-node (string->number val-str) left right)
+                                 (+ k3 1))))))))))
+            ((char=? c #\N)
+             ;; expect "None"
+             (cons '() (+ j 4)))
+            (else '())))))
+
+(define (parse-root s)
+  (car (parse-tree s 0)))
+
+;; Display helpers
+(define (display-list xs)
+  (display "(")
+  (let loop ((ys xs) (first #t))
+    (cond ((null? ys) (display ")"))
+          (else
+           (begin
+             (if (not first) (display " ") (set! first #f))
+             (let ((v (car ys)))
+               (cond ((list? v) (display-list v))
+                     ((null? v) (display "None"))
+                     (else (display v))))
+             (loop (cdr ys) #f))))))
+
+(define (display-result r)
+  (display r))
+
+;; Test cases
+(define CASE0 (parse-root "(1 (2 (4 None None) (5 None None)) (3 None None))"))
+(define CASE1 (parse-root "(1 None None)"))
+(define CASE2 (parse-root "(1 (2 None None) None)"))
+(define CASE3 (parse-root "(1 (2 (4 None None) None) (3 (5 None None) None))"))
+(define CASE4 (parse-root "None"))
+(define CASE5 (parse-root "(1 (2 (3 (4 None None) None) None) None)"))
+(define CASE6 (parse-root "(1 (2 (4 None None) (5 None None)) (3 (6 None None) (7 None None)))"))
+(define CASE7 (parse-root "(0)"))
+
+(display "CASE0=") (display-result (solve CASE0)) (newline)
+(display "CASE1=") (display-result (solve CASE1)) (newline)
+(display "CASE2=") (display-result (solve CASE2)) (newline)
+(display "CASE3=") (display-result (solve CASE3)) (newline)
+(display "CASE4=") (display-result (solve CASE4)) (newline)
+(display "CASE5=") (display-result (solve CASE5)) (newline)
+(display "CASE6=") (display-result (solve CASE6)) (newline)
+(display "CASE7=") (display-result (solve CASE7)) (newline)

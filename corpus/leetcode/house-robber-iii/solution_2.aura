@@ -1,0 +1,28 @@
+(define (solve TREE)
+  ;; Returns (rob skip) for the tree built from level-order TREE.
+  (let* ((len (length TREE))
+         (first (if (null? TREE) -1 (car TREE))))
+    (if (or (null? TREE) (< first 0))
+        0
+        ;; Build node list (0..len-1) in level order. A node i exists iff TREE[i]>=0.
+        ;; Children of i: 2i+1, 2i+2.
+        ;; For each node, compute (rob skip) bottom-up.
+        (let* ((n len)
+               (rob (make-vector n 0))
+               (skip (make-vector n 0)))
+          ;; fill arrays indexed 0..n-1
+          (do ((i (- n 1) (- i 1))) ((< i 0))
+            (let* ((v (list-ref TREE i))
+                   (l (let ((idx (+ (* i 2) 1))) (if (>= idx n) -1 (list-ref TREE idx))))
+                   (r (let ((idx (+ (* i 2) 2))) (if (>= idx n) -1 (list-ref TREE idx))))))
+              ;; If v < 0 this node doesn't exist; leave arrays as 0.
+              (if (>= v 0)
+                  (let ((lr (if (>= l 0) (vector-ref rob (+ (* i 2) 1)) 0))
+                        (ls (if (>= l 0) (vector-ref skip (+ (* i 2) 1)) 0))
+                        (rr (if (>= r 0) (vector-ref rob (+ (* i 2) 2)) 0))
+                        (rs (if (>= r 0) (vector-ref skip (+ (* i 2) 2)) 0)))
+                    (vector-set! rob i (+ v ls rs))
+                    (vector-set! skip i (max lr rr ls rs))))))
+          (max (vector-ref rob 0) (vector-ref skip 0))))))
+
+;; Aura lacks vectors? Use lists/association via alist. Below provides list-based equivalent.

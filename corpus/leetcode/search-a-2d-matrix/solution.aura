@@ -1,0 +1,109 @@
+;; Helper: get element at flat index i in matrix (treating it as m*n flat array)
+(define (get-at matrix i n)
+  (if (null? matrix)
+      #f
+      (let ((row (car matrix)))
+        (if (< i n)
+            (list-ref row i)
+            (get-at (cdr matrix) (- i n) n)))))
+
+;; Helper: list-ref using recursion
+(define (list-ref lst i)
+  (if (= i 0)
+      (car lst)
+      (list-ref (cdr lst) (- i 1))))
+
+;; Length of a list
+(define (my-length lst)
+  (if (null? lst) 0 (+ 1 (my-length (cdr lst)))))
+
+;; Binary search: returns #t if target found in matrix (flat-indexed), #f otherwise
+(define (search-helper matrix target n lo hi)
+  (if (>= lo hi)
+      #f
+      (let ((mid (quotient (+ lo hi) 2))
+            (elem (get-at matrix (quotient (+ lo hi) 2) n)))
+        (cond ((= elem target) #t)
+              ((< elem target) (search-helper matrix target n (+ mid 1) hi))
+              (else (search-helper matrix target n lo mid))))))
+
+(define (solve target matrix)
+  (if (null? matrix)
+      #f
+      (let ((first-row (car matrix)))
+        (if (null? first-row)
+            #f
+            (let ((n (my-length first-row))
+                  (total (* (my-length matrix) n)))
+              (search-helper matrix target n 0 total)))))
+
+;; Helper to display a boolean
+(define (display-bool b)
+  (if b (display "True") (display "False")))
+
+;; Test cases
+;; CASE0
+(let ((m0 '((1 3 5 7) (10 11 16 20) (23 30 34 60))))
+  (display "CASE0=")
+  (display-bool (solve 5 m0))
+  (newline))
+
+;; CASE1
+(let ((m1 '((1 3 5 7) (10 11 16 20) (23 30 34 60))))
+  (display "CASE1=")
+  (display-bool (solve 13 m1))
+  (newline))
+
+;; CASE2
+(let ((m2 '((1 3 5 7) (10 11 16 20) (23 30 34 60))))
+  (display "CASE2=")
+  (display-bool (solve 1 m2))
+  (newline))
+
+;; CASE3
+(let ((m3 '((1 3 5 7) (10 11 16 20) (23 30 34 60))))
+  (display "CASE3=")
+  (display-bool (solve 60 m3))
+  (newline))
+
+;; CASE4
+(let ((m4 '((1 3 5 7) (10 11 16 20) (23 30 34 60))))
+  (display "CASE4=")
+  (display-bool (solve 0 m4))
+  (newline))
+
+;; CASE5
+(let ((m5 '((7))))
+  (display "CASE5=")
+  (display-bool (solve 7 m5))
+  (newline))
+
+;; CASE6
+(let ((m6 '((1 2 3))))
+  (display "CASE6=")
+  (display-bool (solve 2 m6))
+  (newline))
+
+;; CASE7
+(let ((m7 '((1) (3) (5))))
+  (display "CASE7=")
+  (display-bool (solve 3 m7))
+  (newline))
+
+;; CASE8
+(let ((m8 '((1) (3) (5))))
+  (display "CASE8=")
+  (display-bool (solve 4 m8))
+  (newline))
+
+;; CASE9
+(let ((m9 '(())))
+  (display "CASE9=")
+  (display-bool (solve 1 m9))
+  (newline))
+
+;; CASE10
+(let ((m10 '()))
+  (display "CASE10=")
+  (display-bool (solve 1 m10))
+  (newline))

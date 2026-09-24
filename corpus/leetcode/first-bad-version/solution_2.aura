@@ -1,0 +1,31 @@
+(define (first-bad-version-helper lo hi is-bad-version)
+  (if (= lo hi)
+      lo
+      (let ((mid (+ lo (quotient (- hi lo) 2))))
+        (if (is-bad-version mid)
+            (first-bad-version-helper lo mid is-bad-version)
+            (first-bad-version-helper (+ mid 1) hi is-bad-version)))))
+
+(define (solve n is-bad-version)
+  (first-bad-version-helper 1 n is-bad-version))
+
+(define (make-is-bad bad)
+  (lambda (v) (>= v bad)))
+
+(define (run-case i n bad)
+  (let ((is-bad (make-is-bad bad))
+        (result (solve n (make-is-bad bad))))
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display result)
+    (newline)))
+
+(run-case 0 5 4)
+(run-case 1 1 1)
+(run-case 2 2126753390 1702766719)
+(run-case 3 2 2)
+(run-case 4 2 1)
+(run-case 5 100 1)
+(run-case 6 100 100)
+(run-case 7 2147483647 2147483647)
