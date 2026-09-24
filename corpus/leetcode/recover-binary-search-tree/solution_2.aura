@@ -1,0 +1,85 @@
+;; Build tree from level-order list using index-based recursion
+(define (build-tree arr)
+  (build-helper arr 0))
+
+(define (build-helper arr i)
+  (if (>= i (length arr))
+      'null
+      (let ((v (list-ref arr i)))
+        (if (null? v)
+            'null
+            (list v
+                  (build-helper arr (+ (* 2 i) 1))
+                  (build-helper arr (+ (* 2 i) 2)))))))
+
+;; Iterative in-order traversal to find swapped nodes
+(define (find-swapped root)
+  (let ((first #f) (second #f) (prev 'init))
+    (define (reset-prev) prev)
+    ;; helper: process a node visit, updating first/second based on inversion
+    (define (visit node)
+      (let ((val (car node)))
+        (when (and (not (eq? prev 'init))
+                   (< val prev))
+          (begin
+            (if (not first)
+                (set! first (cons prev val))
+                (set! second (cons prev val)))
+            ))
+        (set! prev val)))
+    ;; iterative in-order: use a stack
+    (let ((stack '())
+          (curr root)
+          (done #f))
+      (while (not done)
+             (cond ((null? curr)
+                    (cond ((null? stack)
+                           (set! done #t))
+                          (else
+                           (set! curr (car stack))
+                           (set! stack (cdr stack))
+                           (visit curr)
+                           (set! curr (cadr curr)))))
+                   (else
+                    (set! stack (cons curr stack))
+                    (set! curr (car curr)))))))
+    (list first second)))
+
+;; Actually, the above while/cond has issues with side effects. Let me restructure cleanly.
+
+(define (solve root)
+  ;; iterative in-order with prev tracking
+  (let ((first #f) (second #f) (prev #f) (prev-set #f))
+    (define (process node)
+      (let ((val (car node)))
+        (when (and prev-set (< val prev))
+          (if (not first)
+              (set! first (cons prev val))
+              (set! second (cons prev val))))
+        (set! prev val)
+        (set! prev-set #t)))
+    (let ((stack '())
+          (node root)
+          (done #f))
+      (while (not done)
+             (cond ((null? node)
+                    (cond ((null? stack) (set! done #t))
+                          (else
+                           (set! node (car stack))
+                           (set! stack (cdr stack))
+                           (process node)
+                           (set! node (cadr node))))))
+             (else
+              (set! stack (cons node stack))
+              (set! node (car node))))))
+    ;; Swap values: first is (prev-val . curr-val) at first inversion
+    ;; second at second inversion: in this problem only the swapped-pair values matter
+    (let ((a (car first)) (b (cdr first)))
+      (cond (second
+             (let ((a2 (car second)) (b2 (cdr second)))
+               (set-car! first b2)
+               (set-cdr! first a2)))
+            (else
+             (set-car! first b)
+             (set-cdr! first a))))
+    root))

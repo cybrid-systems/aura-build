@@ -1,5 +1,60 @@
 {
-  "variants": [],
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:37:15Z",
+      "ts_local": "2026-09-24 22:37:15 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2789,
+        "total_characters": 0,
+        "prompt_tokens": 1209,
+        "completion_tokens": 1580,
+        "prompt_tokens_details": {
+          "cached_tokens": 528
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.182,
+      "tests_passed": 0,
+      "tests_total": 9,
+      "stderr_snippet": "error: 1:1: parse error: expected expression, got invalid character\n   |\n  1 | # Path Sum solver in Aura\n   | ^\nerror: internal error: eval_flat: unsupported node type\nerror: 2:3: unbound variable: We\n   |\n  2 | # We'll represent node as a 3-tuple via\n   |   ^^^^^\nerror: 1:7: unbound variable: val\n   |\n  1 | (cons val (cons left right))\n   |       ^^^\nerror: 1:1: parse error: expected expression, got invalid character\n   |\n  1 | # nil is empty list '\n   | ^\nerror: 7:41: unbound variable: loop\n  ",
+      "stdout_snippet": "CASE0=truetrue\nCASE1=truetrue\nCASE2=truetrue\nCASE3=truetrue\nCASE4=truetrue\nCASE5=truetrue\nCASE6=truetrue\nCASE7=truetrue\nCASE8=truetrue\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:37:54Z",
+      "ts_local": "2026-09-24 22:37:54 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 3777,
+        "total_characters": 0,
+        "prompt_tokens": 1209,
+        "completion_tokens": 2568,
+        "prompt_tokens_details": {
+          "cached_tokens": 1208
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": -1,
+      "timeout": true,
+      "duration_s": 20.022,
+      "tests_passed": 0,
+      "tests_total": 9,
+      "stderr_snippet": "error: 1:1: parse error: expected expression, got invalid character\n   |\n  1 | # Tree node:\n   | ^\nerror: 1:2: unbound variable: node\n   |\n  1 | (node val left right)\n   |  ^^^^\nerror: 2:3: unbound variable: Recursive\n   |\n  2 | # Recursive path sum check\n   |   ^^^^^^^^^\ntype: 3:30: type error: argument 0: expected (__t563 -> __t567), got Pair\n  blamed: caller (compile)\nerror: 1:1: parse error: expected expression, got invalid character\n   |\n  1 | # Build tree from level-order tokens\n   | ^\n",
+      "stdout_snippet": ""
+    }
+  ],
   "slug": "path-sum",
   "title": "Path Sum",
   "category": "trees",
@@ -28,5 +83,6 @@
     },
     "ts": "2026-09-24T14:33:54Z"
   },
-  "updated_at": "2026-09-24T14:33:54Z"
+  "updated_at": "2026-09-24T14:37:54Z",
+  "updated_at_local": "2026-09-24 22:37:54 CST"
 }

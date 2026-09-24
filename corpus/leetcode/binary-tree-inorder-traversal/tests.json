@@ -1,0 +1,174 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "aura": {
+        "tree": {
+          "value": 1,
+          "left": {
+            "value": 2,
+            "left": null,
+            "right": null
+          },
+          "right": {
+            "value": 3,
+            "left": null,
+            "right": null
+          }
+        }
+      }
+    },
+    "expected": "[2,1,3]"
+  },
+  {
+    "id": 1,
+    "input": {
+      "aura": {
+        "tree": {
+          "value": null,
+          "left": null,
+          "right": null
+        }
+      }
+    },
+    "expected": "[]"
+  },
+  {
+    "id": 2,
+    "input": {
+      "aura": {
+        "tree": {
+          "value": 1,
+          "left": null,
+          "right": null
+        }
+      }
+    },
+    "expected": "[1]"
+  },
+  {
+    "id": 3,
+    "input": {
+      "aura": {
+        "tree": {
+          "value": 1,
+          "left": {
+            "value": 2,
+            "left": {
+              "value": 4,
+              "left": null,
+              "right": null
+            },
+            "right": {
+              "value": 5,
+              "left": null,
+              "right": null
+            }
+          },
+          "right": {
+            "value": 3,
+            "left": null,
+            "right": {
+              "value": 6,
+              "left": null,
+              "right": null
+            }
+          }
+        }
+      }
+    },
+    "expected": "[4,2,5,1,3,6]"
+  },
+  {
+    "id": 4,
+    "input": {
+      "aura": {
+        "tree": null
+      }
+    },
+    "expected": "[]"
+  },
+  {
+    "id": 5,
+    "input": {
+      "aura": {
+        "tree": {
+          "value": -5,
+          "left": {
+            "value": -10,
+            "left": null,
+            "right": null
+          },
+          "right": {
+            "value": 0,
+            "left": null,
+            "right": null
+          }
+        }
+      }
+    },
+    "expected": "[-10,-5,0]"
+  },
+  {
+    "id": 6,
+    "input": {
+      "aura": {
+        "tree": {
+          "value": 1,
+          "left": {
+            "value": 2,
+            "left": {
+              "value": 4,
+              "left": null,
+              "right": null
+            },
+            "right": null
+          },
+          "right": {
+            "value": 3,
+            "left": null,
+            "right": null
+          }
+        }
+      }
+    },
+    "expected": "[4,2,1,3]"
+  },
+  {
+    "id": 7,
+    "input": {
+      "aura": {
+        "tree": {
+          "value": 5,
+          "left": {
+            "value": 3,
+            "left": {
+              "value": 1,
+              "left": null,
+              "right": null
+            },
+            "right": {
+              "value": 4,
+              "left": null,
+              "right": null
+            }
+          },
+          "right": {
+            "value": 8,
+            "left": {
+              "value": 7,
+              "left": null,
+              "right": null
+            },
+            "right": {
+              "value": 9,
+              "left": null,
+              "right": null
+            }
+          }
+        }
+      }
+    },
+    "expected": "[1,3,4,5,7,8,9]"
+  }
+]

@@ -1,0 +1,67 @@
+(define (list-get lst i)
+  (if (= i 0) (car lst) (list-get (cdr lst) (- i 1))))
+
+(define (list-set lst i v)
+  (if (= i 0)
+      (cons v (cdr lst))
+      (cons (car lst) (list-set (cdr lst) (- i 1) v))))
+
+(define (list-length lst)
+  (if (null? lst) 0 (+ 1 (list-length (cdr lst)))))
+
+(define (make-history ops)
+  ;; Returns list of results (strings) from back/forward operations
+  (let ((history '())
+        (cur -1)
+        (results '()))
+    (define (process rest)
+      (if (null? rest)
+          results
+          (let ((op (car rest)))
+            (cond
+              ;; Visit operation: first arg is "Visit", second is url
+              ((equal? (car op) "Visit")
+               (let ((url (cadr op)))
+                 ;; Truncate forward history: keep only up to current+1
+                 (let ((new-len (+ cur 2)))
+                   (set! history
+                         (let loop ((lst history) (k 0) (acc '()))
+                           (if (= k new-len)
+                               (reverse (cons url acc))
+                               (loop (cdr lst) (+ k 1) (cons (car lst) acc))))))
+                   (set! cur (- new-len 1))
+                   (process (cdr rest)))))
+              ((equal? (car op) "Back")
+               (let ((steps (cadr op)))
+                 (set! cur (max 0 (- cur steps)))
+                 (set! results (cons (list-get history cur) results))
+                 (process (cdr rest))))
+              ((equal? (car op) "Forward")
+               (let ((steps (cadr op)))
+                 (set! cur (min (- (list-length history) 1) (+ cur steps)))
+                 (set! results (cons (list-get history cur) results))
+                 (process (cdr rest))))
+              (else (process (cdr rest)))))))
+    (process ops)
+    (reverse results)))
+
+(define (display-results results)
+  (if (null? results)
+      (display "")
+      (begin
+        (display (car results))
+        (newline)
+        (display-results (cdr results)))))
+
+(define (solve case-id ops)
+  (let ((results (make-history ops)))
+    (display (string-append "CASE" (number->string case-id) "="))
+    (newline)
+    (display-results results)))
+
+;; Main: process all embedded test cases
+(solve 0 '(("Visit" "leetcode.com") ("Visit" "google.com") ("Visit" "facebook.com") ("Visit" "youtube.com") ("Back" "1") ("Back" "1") ("Forward" "1") ("Visit" "linkedin.com") ("Forward" "2") ("Back" "2") ("Back" "7")))
+(solve 1 '(("Visit" "home.io") ("Back" "3") ("Forward" "5")))
+(solve 2 '(("Visit" "a.com") ("Visit" "b.com") ("Visit" "c.com") ("Forward" "2") ("Back" "2") ("Visit" "d.com") ("Forward" "1") ("Back" "1") ("Back" "1") ("Forward" "3")))
+(solve 3 '(("Visit" "root") ("Visit" "p1") ("Visit" "p2") ("Visit" "p3") ("Back" "1") ("Visit" "p4") ("Forward" "10") ("Back" "10")))
+(solve 4 '(("Visit" "x") ("Visit" "y") ("Back" "1") ("Back" "1") ("Back" "1") ("Forward" "1") ("Visit" "z") ("Forward" "1") ("Back" "1")))

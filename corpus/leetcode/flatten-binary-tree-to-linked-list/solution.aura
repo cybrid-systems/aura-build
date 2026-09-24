@@ -1,0 +1,351 @@
+;; Flatten Binary Tree to Linked List in Aura
+;; Reads embedded test cases (level-order with -1 for null), flattens
+;; the tree in preorder, then prints each flattened tree in level-order.
+
+(define (make-node val left right)
+  (list val left right))
+
+(define (node-val n) (car n))
+(define (node-left n) (cadr n))
+(define (node-right n) (caddr n))
+(define (set-node-left! n v) (set-car! (cdr n) v))
+(define (set-node-right! n v) (set-car! (cddr n) v))
+
+(define (parse-level-order vals)
+  ;; vals is a list of numbers, with -1 for null. Returns root node or '().
+  (if (null? vals)
+      '()
+      (let ((n (length vals)))
+        (let ((nodes (make-vector n '())))
+          (define (build i)
+            (if (>= i n)
+                '()
+                (let ((v (list-ref vals i)))
+                  (if (= v (-1))
+                      (begin
+                        (vector-set! nodes i '())
+                        '())
+                      (begin
+                        (vector-set! nodes i (make-node v '() '()))
+                        (let ((cur (vector-ref nodes i)))
+                          (let ((li (+ (* 2 i) 1))
+                                (ri (+ (* 2 i) 2)))
+                            (if (< li n)
+                                (set-node-left! cur (build li))
+                                '())
+                            (if (< ri n)
+                                (set-node-right! cur (build ri))
+                                '()))
+                          cur)))))
+          (build 0)))))
+
+(define (flatten root)
+  ;; Standard recursive preorder flattening using a helper that returns
+  ;; the last node of the flattened chain (initially the root itself).
+  (if (null? root)
+      '()
+      (let ((dummy (make-node 0 '() root)))
+        (define (helper cur prev)
+          (if (null? cur)
+              prev
+              (begin
+                (set-node-left! cur '())
+                (if (not (null? prev))
+                    (set-node-right! prev cur)
+                    '())
+                (let ((right-sub (node-right cur)))
+                  (let ((right-already-ok (null? (node-right cur))))
+                    ;; Continue: first traverse left (now empty), then right.
+                    (define (cont node)
+                      (if (null? node)
+                          (helper right-sub cur)
+                          (helper node cur)))
+                    ;; Because we set left to '(), the "next in preorder" is the
+                    ;; original right subtree. So we just descend right.
+                    (helper (node-right cur) cur))))))
+        (helper root '())
+        (node-right dummy))))
+
+(define (preorder-collect root)
+  (if (null? root)
+      '()
+      (cons (node-val root)
+            (append (preorder-collect (node-left root))
+                    (preorder-collect (node-right root))))))
+
+(define (flatten-preorder root)
+  ;; Build nodes for the flattened linked list (right-skewed) from the
+  ;; preorder traversal of the original tree.
+  (let ((vals (preorder-collect root)))
+    (define (build vs prev)
+      (if (null? vs)
+          prev
+          (let ((nd (make-node (car vs) '() '())))
+            (if (not (null? prev))
+                (set-node-right! prev nd)
+                '())
+            (build (cdr vs) nd))))
+    (let ((dummy (make-node 0 '() '())))
+      (build vals dummy)
+      (node-right dummy))))
+
+(define (flatten-in-place root)
+  ;; Actually flatten the given tree in place: reassign each node's
+  ;; left/right so the structure matches preorder.
+  (let ((vals (preorder-collect root)))
+    (define (assign node vs)
+      (if (null? node)
+          vs
+          (begin
+            (set-node-left! node '())
+            (if (null? vs)
+                (begin
+                  (set-node-right! node '())
+                  '())
+                (let ((next-val (car vs))
+                      (rest (cdr vs)))
+                  ;; Find the node in the original tree whose val == next-val.
+                  ;; Since values may repeat, we walk the original right spine
+                  ;; using the preorder list as a guide. Simpler: rebuild via
+                  ;; preorder traversal reusing current node.
+                  (set-node-right! node '())
+                  next-val)))))
+    ;; Simpler approach: traverse preorder and relink nodes directly.
+    (define (relink node)
+      (if (null? node)
+          '()
+          (let ((left-sub (node-left node))
+                (right-sub (node-right node)))
+            (set-node-left! node '())
+            (if (null? left-sub)
+                '()
+                (begin
+                  (set-node-right! node left-sub)
+                  (let ((tail (relink-right chain node)))
+                    tail))))))
+    ;; To keep things straightforward and correct, rebuild nodes
+    ;; from preorder values but reuse the original nodes in order.
+    (define nodes-list '())
+    (define (collect node)
+      (if (null? node)
+          '()
+          (begin
+            (collect (node-left node))
+            (collect (node-right node))
+            (cons node '()))))
+    ;; Above collect is postorder; we need preorder of nodes:
+    (define (collect-pre node)
+      (if (null? node)
+          '()
+          (cons node (append (collect-pre (node-left node))
+                             (collect-pre (node-right node))))))
+    (let ((nodes (collect-pre root)))
+      (define (link-all ns)
+        (cond
+          ((null? ns) '())
+          ((null? (cdr ns))
+           (let ((only (car ns)))
+             (set-node-left! only '())
+             (set-node-right! only '())
+             '()))
+          (else
+           (let ((first (car ns))
+                 (second (cadr ns)))
+             (set-node-left! first '())
+             (set-node-right! first second)
+             (link-all (cdr ns))))))
+      (link-all nodes)
+      root)))
+
+(define (tree-to-level-order root)
+  ;; Convert tree back to level-order list of values (using -1 for nulls),
+  ;; limited to the actual number of nodes.
+  (if (null? root)
+      '()
+      (let ((result '())
+            (queue (list (cons root 0))))
+        (define (enqueue q item) (append q (list item)))
+        (define (dequeue q)
+            (if (null? q)
+                (cons '() '())
+                (cons (car q) (cdr q))))
+        ;; BFS collecting nodes by index, then build level-order list
+        (let ((indexed '()))
+          (define (bfs q)
+            (if (null? q)
+                '()
+                (let ((p (car q))
+                      (rest (cdr q)))
+                  (let ((node (car p))
+                        (idx (cdr p)))
+                    (set! indexed (append indexed (list p)))
+                    (if (not (null? (node-left node)))
+                        (set! q (append q (list (cons (node-left node) (+ (* 2 idx) 1)))))
+                        '())
+                    (if (not (null? (node-right node)))
+                        (set! q (append q (list (cons (node-right node) (+ (* 2 idx) 2)))))
+                        '())
+                    (bfs rest)))))
+          (bfs queue)
+          ;; Sort by index
+          (define (sort-idx lst)
+            (if (null? lst)
+                '()
+                (let ((min-pair '()))
+                  (define (find-min l best)
+                    (if (null? l)
+                        best
+                        (let ((it (car l)))
+                          (if (or (null? best) (< (cdr it) (cdr best)))
+                              (find-min (cdr l) it)
+                              (find-min (cdr l) best)))))
+                  (let ((m (find-min lst '())))
+                    (cons m (sort-idx (remove m lst equal?)))))))
+          ;; Use a simpler iterative sort by collecting into a vector
+          (let ((len (length indexed)))
+            (if (= len 0)
+                '()
+                (let ((vec (make-vector len '())))
+                  (define (fill lst i)
+                    (if (null? lst)
+                        '()
+                        (begin
+                          (vector-set! vec i (car lst))
+                          (fill (cdr lst) (+ i 1)))))
+                  (fill indexed 0)
+                  (define (swap! a i j)
+                    (let ((t (vector-ref vec i)))
+                      (vector-set! vec i (vector-ref vec j))
+                      (vector-set! vec j t)))
+                  (define (sift-down start size)
+                    (define (sift i)
+                      (let ((l (+ (* 2 i) 1))
+                            (r (+ (* 2 i) 2))
+                            (largest size))
+                        (set! largest i)
+                        (if (and (< l size)
+                                 (< (cdr (vector-ref vec l)) (cdr (vector-ref vec largest))))
+                            (set! largest l)
+                            '())
+                        (if (and (< r size)
+                                 (< (cdr (vector-ref vec r)) (cdr (vector-ref vec largest))))
+                            (set! largest r)
+                            '())
+                        (if (not (= largest i))
+                            (begin
+                              (swap! '() i largest)
+                              (sift largest))
+                            '())))
+                    (sift start))
+                  ;; Build heap
+                  (let ((k (quotient len 2)))
+                    (define (build-heap i)
+                      (if (< i 0)
+                          '()
+                          (begin
+                            (sift-down i len)
+                            (build-heap (- i 1))))))
+                    (build-heap (- k 1))
+                    ;; Extract min repeatedly
+                    (let ((sorted '()))
+                      (define (extract n)
+                        (if (= n 0)
+                            '()
+                            (begin
+                              (set! sorted (append sorted (list (vector-ref vec 0))))
+                              (vector-set! vec 0 (vector-ref vec (- n 1)))
+                              (sift-down 0 (- n 1))
+                              (extract (- n 1)))))
+                      (extract len)
+                      ;; sorted now contains pairs (node . idx) in order
+                      (let ((max-idx (cdr (car (reverse sorted)))))
+                        ;; Trim trailing -1s: but we need exactly len values
+                        ;; For the output, emit values for indices 0..max-idx.
+                        (define (emit pairs)
+                          (if (null? pairs)
+                              '()
+                              (let ((p (car pairs))
+                                    (rest (cdr pairs)))
+                                (let ((node (car p))
+                                      (idx (cdr p)))
+                                  (cons (node-val node)
+                                        ;; Pad with -1 if previous indices missing
+                                        (emit-with-padding pairs 0 idx))))))
+                        ;; Simpler: build an array indexed by idx
+                        (let ((arr (make-vector (+ max-idx 1) (-1))))
+                          (define (fill-arr pairs)
+                            (if (null? pairs)
+                                '()
+                                (begin
+                                  (let ((p (car pairs)))
+                                    (vector-set! arr (cdr p) (node-val (car p))))
+                                  (fill-arr (cdr pairs)))))
+                          (fill-arr sorted)
+                          (define (vec->list v n)
+                            (if (= n 0)
+                                '()
+                                (cons (vector-ref v (- n 1))
+                                      (vec->list v (- n 1)))))
+                          (vec->list arr (+ max-idx 1)))))))))))
+
+(define (display-list lst)
+  (define (loop l first?)
+    (if (null? l)
+        '()
+        (begin
+          (if first? '() (display " "))
+          (display (car l))
+          (loop (cdr l) #f))))
+  (loop lst #t))
+
+(define (solve vals)
+  ;; vals is the input list of values (with -1 for nulls), or '() for empty.
+  (let ((root (parse-level-order vals)))
+    (flatten-in-place root)
+    (let ((out (tree-to-level-order root)))
+      (display-list out)
+      (newline))))
+
+;; Embedded test cases
+(solve '())
+(solve '(1))
+(solve '(1 2 3))
+(solve '(1 2 5 3 4 -1 6))
+(solve '(1 2 -1 3 -1 4 -1 5))
+(solve '(1 -1 2 -1 3 -1 4 -1 5))
+(solve '(1 2 3 4 5 6 7))
+(solve '(0))
+
+;; Print labeled outputs
+(define (run-cases cases)
+  (define (loop cs i)
+    (if (null? cs)
+        '()
+        (begin
+          (display "CASE")
+          (display i)
+          (display "=")
+          (solve (car cs))
+          (loop (cdr cs) (+ i 1))))))
+  (loop cases 0))
+
+;; Note: the harness expects the program to emit CASEi=<result> lines.
+;; Since solve already prints with newline, we instead print with label.
+(define (solve-labeled vals idx)
+  (let ((root (parse-level-order vals)))
+    (flatten-in-place root)
+    (let ((out (tree-to-level-order root)))
+      (display "CASE")
+      (display idx)
+      (display "=")
+      (display-list out)
+      (newline)))))
+
+(solve-labeled '() 0)
+(solve-labeled '(1) 1)
+(solve-labeled '(1 2 3) 2)
+(solve-labeled '(1 2 5 3 4 -1 6) 3)
+(solve-labeled '(1 2 -1 3 -1 4 -1 5) 4)
+(solve-labeled '(1 -1 2 -1 3 -1 4 -1 5) 5)
+(solve-labeled '(1 2 3 4 5 6 7) 6)
+(solve-labeled '(0) 7)

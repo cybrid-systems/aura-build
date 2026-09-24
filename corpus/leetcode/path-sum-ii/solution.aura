@@ -1,0 +1,41 @@
+;; Helpers for trees
+(define (make-node val l r) (cons val (cons l r)))
+(define (node-val n) (car n))
+(define (node-l n) (cadr n))
+(define (node-r n) (cddr n))
+
+(define (parse-int s)
+  (let ((len (string-length s)))
+    (let loop ((i 0) (neg #f) (n 0))
+      (cond ((= i len) (if neg (- n) n))
+            ((char=? (string-ref s i) #\-) (loop (+ i 1) #t n))
+            (else
+             (let ((c (string-ref s i)))
+               (loop (+ i 1) neg (+ (* n 10) (- (char->integer c) 48)))))))))
+
+(define (split-comma s)
+  (let ((len (string-length s)))
+    (let loop ((i 0) (start 0) (acc '()))
+      (cond ((= i len)
+             (let ((piece (substring s start len)))
+               (reverse (cons piece acc))))
+            ((char=? (string-ref s i) #\,)
+             (let ((piece (substring s start i)))
+               (loop (+ i 1) (+ i 1) (cons piece acc))))
+            (else (loop (+ i 1) start acc))))))
+
+(define (mem? x lst)
+  (cond ((null? lst) #f)
+        ((equal? (car lst) x) #t)
+        (else (mem? x (cdr lst)))))
+
+;; Build tree from flat encoding.
+;; Returns root node, or '() if NIL/empty.
+(define (build-tree root-val l-val r-val values l-children r-children)
+  (if (equal? root-val "")
+      '()
+      (let ((v (parse-int root-val)))
+        (let loop ((i 0))
+          (if (= i (length values))
+              (let-values (((l r) (resolve-helper i ...))) ...)
+              ...)))))

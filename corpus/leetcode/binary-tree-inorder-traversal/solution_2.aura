@@ -1,0 +1,27 @@
+(define (display-list xs)
+  (display "[")
+  (let loop ((xs xs) (first? #t))
+    (cond
+      ((null? xs) (display "]"))
+      (else
+       (if first? (set! first? #f) (begin (display ", ") (display " ")))
+       (display (car xs))
+       (loop (cdr xs) first?)))))
+
+(define (tree->list node)
+  (if (null? node)
+      '()
+      (append (tree->list (cdr (cdr node)))   ; left
+              (cons (car node) '())            ; value
+              (tree->list (car (cdr (cdr node))))))) ; right
+
+(define (solve aura)
+  (let ((tree (cdr (car aura))))
+    (if (null? tree)
+        '()
+        (tree->list tree))))
+
+;; Embedded test cases
+(define case0 (cons (cons 'aura (cons (cons 'tree (cons (cons 'value 1)
+              (cons (cons 'value 2 (cons '() (cons '())))
+                    (cons (cons 'value 3 (cons '() (cons '()))) '())))) '())) '()))

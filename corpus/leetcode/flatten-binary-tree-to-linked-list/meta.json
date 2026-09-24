@@ -1,5 +1,60 @@
 {
-  "variants": [],
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:37:45Z",
+      "ts_local": "2026-09-24 22:37:45 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 4356,
+        "total_characters": 0,
+        "prompt_tokens": 1275,
+        "completion_tokens": 3081,
+        "prompt_tokens_details": {
+          "cached_tokens": 528
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.407,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 1:2: unbound variable: solve-labeled\n   |\n  1 | (solve-labeled '() 0)\n   |  ^^^^^^^^^^^^^\nerror: 1:2: unbound variable: solve-labeled\n   |\n  1 | (solve-labeled '(1) 1)\n   |  ^^^^^^^^^^^^^\nerror: 1:2: unbound variable: solve-labeled\n   |\n  1 | (solve-labeled '(1 2 3) 2)\n   |  ^^^^^^^^^^^^^\nerror: 1:2: unbound variable: solve-labeled\n   |\n  1 | (solve-labeled '(1 2 5 3 4 -1 6) 3)\n   |  ^^^^^^^^^^^^^\nerror: 1:2: unbound variable: solve-labeled\n   |\n  1 | (solve-labeled '(1 2 -1 3 -1 4 -1 5) ",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:38:05Z",
+      "ts_local": "2026-09-24 22:38:05 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 5275,
+        "total_characters": 0,
+        "prompt_tokens": 1275,
+        "completion_tokens": 4000,
+        "prompt_tokens_details": {
+          "cached_tokens": 1274
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.03,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "warning: unbalanced parentheses in input\nerror: no complete S-expression in program source\nusage: /workspace/aura-grok/build_soft4055/aura [options] [file.aura …]\n       /workspace/aura-grok/build_soft4055/aura -e '(+ 1 2)'\n       echo '(+ 1 2)' | /workspace/aura-grok/build_soft4055/aura\n       /workspace/aura-grok/build_soft4055/aura < file.aura\n\nPrograms are read from stdin when no file/-e is given.\nDenseness / span host env (soft multi-module probes):\n  export AURA_BIN=…/build/aura   absolute",
+      "stdout_snippet": ""
+    }
+  ],
   "slug": "flatten-binary-tree-to-linked-list",
   "title": "Flatten Binary Tree to Linked List",
   "category": "trees",
@@ -28,5 +83,6 @@
     },
     "ts": "2026-09-24T14:35:00Z"
   },
-  "updated_at": "2026-09-24T14:35:00Z"
+  "updated_at": "2026-09-24T14:38:05Z",
+  "updated_at_local": "2026-09-24 22:38:05 CST"
 }

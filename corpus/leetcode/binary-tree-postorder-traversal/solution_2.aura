@@ -1,0 +1,40 @@
+(define (make-tree v l r) (list v l r))
+(define (tree-val t) (car t))
+(define (tree-left t) (cadr t))
+(define (tree-right t) (caddr t))
+(define (empty-tree? t) (or (null? t) (equal? t '())))
+
+(define (postorder t)
+  (if (empty-tree? t)
+      '()
+      (append (postorder (tree-left t))
+              (postorder (tree-right t))
+              (list (tree-val t)))))
+
+(define (solve root)
+  (postorder root))
+
+(define (display-list xs)
+  (display "[")
+  (let loop ((xs xs) (first #t))
+    (cond ((null? xs) (display "]"))
+          (else
+           (if first (set! first #f) (display ", "))
+           (display (car xs))
+           (loop (cdr xs) #t)))))
+
+(define (display-result r)
+  (if (or (null? r) (equal? r '()))
+      (display "[]")
+      (display-list r)))
+
+;; Test cases
+(display "CASE0=") (display-result (solve '())) (newline)
+(display "CASE1=") (display-result (solve (make-tree 1 '() '()))) (newline)
+(display "CASE2=") (display-result (solve (make-tree 1 (make-tree 2 '() '()) (make-tree 3 '() '())))) (newline)
+(display "CASE3=") (display-result (solve (make-tree 1 (make-tree 2 (make-tree 3 (make-tree 4 '() '()) '()) '()) '()))) (newline)
+(display "CASE4=") (display-result (solve (make-tree 1 '() (make-tree 2 '() (make-tree 3 '() (make-tree 4 '() '())))))) (newline)
+(display "CASE5=") (display-result (solve (make-tree 1 (make-tree 2 (make-tree 4 '() '()) (make-tree 5 '() '())) (make-tree 3 '() '())))) (newline)
+(display "CASE6=") (display-result (solve (make-tree 1 (make-tree 2 '() '()) '()))) (newline)
+(display "CASE7=") (display-result (solve (make-tree 1 '() (make-tree 2 '() '())))) (newline)
+(display "CASE8=") (display-result (solve (make-tree 1 (make-tree 2 (make-tree 4 '() '()) (make-tree 5 '() '())) (make-tree 3 (make-tree 6 '() '()) (make-tree 7 '() '()))))) (newline)

@@ -1,0 +1,145 @@
+;; Tree node: (node val left right) or the symbol 'None
+
+(define (tokenize s)
+  (let loop (i 0 chars (string->list s) acc '())
+    (cond ((null? chars) (reverse acc))
+          ((char=? (car chars) #\space) (loop (+ i 1) (cdr chars) acc))
+          ((char=? (car chars) #\() (loop (+ i 1) (cdr chars) acc))
+          ((char=? (car chars) #\)) (loop (+ i 1) (cdr chars) acc))
+          (else
+             (let collect ((cs chars))
+               (cond ((null? cs) (reverse acc))
+                     ((or (char=? (car cs) #\space)
+                          (char=? (car cs) #\()
+                          (char=? (car cs) #\)))
+                      (reverse acc))
+                     (else (collect (cdr cs))))))))))
+
+(define (parse-tree tokens)
+  (if (equal? (car tokens) 'None)
+      'None
+      (let ((node (car tokens))
+            (rest (cdr tokens)))
+        rest)))
+
+;; Build tree from tokens - tokens start with val or None
+(define (build-tree tokens)
+  (if (equal? (car tokens) 'None)
+      (list 'None (cdr tokens))
+      (let* ((val (car tokens))
+             (rest1 (cdr tokens))
+             (left-result (build-tree rest1))
+             (left (car left-result))
+             (rest2 (cdr left-result))
+             (right-result (build-tree rest2))
+             (right (car right-result))
+             (rest3 (cdr right-result)))
+        (list (list 'node val left right) rest3))))
+
+;; Diameter computation: returns (height, max-diameter)
+(define (diameter node)
+  (if (equal? node 'None)
+      (list 0 0)
+      (let ((left-d (diameter (car (cdr (cdr node))))))
+        ;; node = (node val left right); left = cdr cdr
+        ))
+
+  )
+
+;; Let me redo - using proper structure access
+;; node is either 'None or (val left right) as a list
+(define (left-of node) (car (cdr node)))
+(define (right-of node) (car (cdr (cdr node))))
+(define (val-of node) (car node))
+
+(define (diameter2 node)
+  (if (equal? node 'None)
+      (list 0 0)
+      (let* ((ld (diameter2 (left-of node)))
+             (lh (car ld))
+             (lm (car (cdr ld)))
+             (rd (diameter2 (right-of node)))
+             (rh (car rd))
+             (rm (car (cdr rd)))
+             (my-d (+ lh rh))
+             (best (if (> lm rm) lm rm)))
+        (list (+ 1 (if (> lh rh) lh rh))
+              (if (> my-d best) my-d best)))))
+
+(define (solve root-rep)
+  ;; root-rep is a string
+  (let* ((toks (tokenize root-rep))
+         (parsed (symbol-from (car toks)))
+         (rest-toks (cdr toks)))
+    ;; Actually, need to build tree properly. tokens are symbol-like strings.
+    ;; Let me re-tokenize as strings then convert.
+    (solve-str root-rep)))
+
+(define (symbol-from s) s)
+
+;; Let me restart parsing more carefully.
+;; tokens are strings: "None", "(", ")", or numbers like "1"
+;; I'll represent them as strings, then compare.
+
+(define (tokenize2 s)
+  (let ((chars (string->list s)))
+    (let loop ((cs chars) (cur '()) (acc '()))
+      (cond ((null? cs)
+             (if (null? cur) (reverse acc)
+                 (reverse (cons (list->string (reverse cur)) acc))))
+            ((or (char=? (car cs) #\space) (char=? (car cs) #\()
+                  (char=? (car cs) #\)))
+             (let ((new-acc (if (null? cur) acc
+                                (cons (list->string (reverse cur)) acc))))
+               (if (or (char=? (car cs) #\() (char=? (car cs) #\)))
+                   (loop (cdr cs) '() new-acc)
+                   (loop (cdr cs) '() new-acc))))
+            (else (loop (cdr cs) (cons (car cs) cur) acc))))))
+
+;; Build tree from string tokens. Returns (tree . remaining-tokens)
+;; Grammar: tree ::= "None" | val tree tree
+(define (build tokens)
+  (if (string=? (car tokens) "None")
+      (cons 'None (cdr tokens))
+      (let* ((v (car tokens))
+             (r1 (cdr tokens))
+             (b1 (build r1))
+             (left (car b1))
+             (r2 (cdr b1))
+             (b2 (build r2))
+             (right (car b2))
+             (r3 (cdr b2)))
+        (cons (list v left right) r3))))
+
+(define (solve-str s)
+  (let* ((toks (tokenize2 s))
+         (result (build toks))
+         (tree (car result)))
+    (car (cdr (diameter2 tree)))))
+
+;; Helper for tree access now that node = (val left right)
+(define (left-of node) (car (cdr node)))
+(define (right-of node) (car (cdr (cdr node))))
+
+(define (diameter2 node)
+  (if (equal? node 'None)
+      (list 0 0)
+      (let* ((ld (diameter2 (left-of node)))
+             (lh (car ld))
+             (lm (car (cdr ld)))
+             (rd (diameter2 (right-of node)))
+             (rh (car rd))
+             (rm (car (cdr rd)))
+             (my-d (+ lh rh))
+             (best (if (> lm rm) lm rm)))
+        (list (+ 1 (if (> lh rh) lh rh))
+              (if (> my-d best) my-d best)))))
+
+(define (display-list lst)
+  (display "(")
+  (let loop ((l lst))
+    (cond ((null? l) (display ")"))
+          ((pair? (car l))
+           (begin (display-list (car l)) (display " ")))
+          (else (display (car l)) (display " "))))
+  (newline))

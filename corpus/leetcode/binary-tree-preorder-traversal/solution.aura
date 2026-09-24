@@ -1,0 +1,52 @@
+(define (vec-len v)
+  (let ((n 0))
+    (let loop ((i 0))
+      (if (>= i (vector-length v))
+          n
+          (begin (set! n (+ n 1)) (loop (+ i 1)))))))
+
+(define (vec-ref-safe v i)
+  (if (or (< i 0) (>= i (vector-length v)))
+      #f
+      (vector-ref v i)))
+
+(define (preorder v i n acc)
+  (if (>= i n)
+      acc
+      (let ((val (vector-ref v i)))
+        (if (null? val)
+            acc
+            (let ((new-acc (cons val acc)))
+              (let ((left-acc (preorder v (+ (* i 2) 1) n new-acc)))
+                (preorder v (+ (* i 2) 2) n left-acc)))))))
+
+(define (solve root)
+  (let ((n (vector-length root)))
+    (reverse (preorder root 0 n '()))))
+
+(define (display-list xs)
+  (display "(")
+  (let loop ((rest xs) (first #t))
+    (cond ((null? rest)
+           (display ")"))
+          (else
+           (if first (set! first #f) (display " "))
+           (display (car rest))
+           (loop (cdr rest) first)))))
+
+(define (run-case i v)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (let ((result (solve v)))
+    (display-list result))
+  (newline))
+
+(run-case 0 #(1 #f 2 #f 3))
+(run-case 1 #(1 2 3 4 5 6 7))
+(run-case 2 #(1))
+(run-case 3 #(1 2 #f 3 #f 4 #f 5))
+(run-case 4 #(10 5 15 #f 7 12 20))
+(run-case 5 #(3 1 2))
+(run-case 6 #(4 2 6 1 3 5 7))
+(run-case 7 #(0 -1 1 -2 2 -3 3))

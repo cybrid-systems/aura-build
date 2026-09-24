@@ -1,0 +1,181 @@
+;; Path Sum II solver in Aura
+;; Tree nodes are represented as (node value left right) where
+;; left/right are themselves nodes or '() for empty.
+
+(define (cadr p) (car (cdr p)))
+(define (caddr p) (car (cdr (cdr p))))
+(define (cadddr p) (car (cdr (cdr (cdr p)))))
+
+;; Build tree from env description.
+;; The env is an association list ((key . value) ...).
+;; ROOT = root index (as string). V_i = value of node i.
+;; L_i / R_i = child indices of node i (as strings, possibly blank).
+;; A child index string refers to a V_j entry.
+
+(define (lookup key alist)
+  (cond ((null? alist) #f)
+        ((equal? (car (car alist)) key) (cdr (car alist)))
+        (else (lookup key (cdr alist)))))
+
+;; Convert a string index to a number; return '() for blank/invalid
+(define (str->index-or-null s)
+  (if (or (null? s) (equal? s "") (equal? s #f))
+      '()
+      (string->number s)))
+
+;; Build node k as (val (build-node L) (build-node R))
+(define (build-node k env)
+  (let ((v (string->number (lookup (string-append "V_" (number->string k)) env))))
+    (let ((ls (lookup (string-append "L_" (number->string k)) env))
+          (rs (lookup (string-append "R_" (number->string k)) env)))
+      (let ((li (str->index-or-null ls))
+            (ri (str->index-or-null rs)))
+        (list v
+              (if (null? li) '() (build-node li env))
+              (if (null? ri) '() (build-node ri env)))))))
+
+(define (build-tree env)
+  (let ((root-str (lookup "ROOT" env)))
+    (if (or (null? root-str) (equal? root-str "") (equal? root-str #f))
+        '()
+        (let ((root-idx (string->number root-str)))
+          (if (null? root-idx)
+              '()
+              (build-node root-idx env))))))
+
+;; Path-sum helpers
+(define (node-val n) (car n))
+(define (node-left n) (cadr n))
+(define (node-right n) (caddr n))
+
+(define (leaf? n)
+  (and (not (null? n))
+       (null? (node-left n))
+       (null? (node-right n))))
+
+;; Append an element to a list
+(define (snoc x xs)
+  (append xs (list x)))
+
+;; Traverse and collect paths
+(define (collect node remaining path acc)
+  (cond ((null? node) acc)
+        ((leaf? node)
+         (if (= (+ remaining (node-val node)) 0)
+             (snoc (snoc (node-val node) path) acc)
+             acc))
+        (else
+         (let ((new-path (snoc (node-val node) path))
+               (new-rem (- remaining (node-val node)))
+               (left-result (collect (node-left node) (- remaining (node-val node)) new-path acc)))
+           (collect (node-right node) (- remaining (node-val node)) new-path left-result)))))
+
+(define (path-sum-ii root target)
+  (let ((paths (collect root target '() '())))
+    ;; Reverse paths for natural root-to-leaf order, and reverse each path's elements
+    (define (rev1 lst)
+      (define (rev-acc lst acc)
+        (if (null? lst) acc (rev-acc (cdr lst) (cons (car lst) acc))))
+      (rev-acc lst '()))
+    (rev1 (map rev1 paths))))
+
+;; Print helpers
+(define (print-list-of-lists lol)
+  (display "(")
+  (define (print-paths rest)
+    (cond ((null? rest) (display ")"))
+          (else
+           (display "(")
+           (define (print-elems xs)
+             (cond ((null? xs) (display ")"))
+                   (else
+                    (display (car xs))
+                    (if (null? (cdr xs))
+                        (display " ")
+                        (begin (display " ") (print-elems (cdr xs)))))))
+           (print-elems (car rest))
+           (if (null? (cdr rest))
+               (display ")")
+               (begin (display " ") (print-paths (cdr rest)))))))
+  (print-paths lol)
+  (newline))
+
+(define (solve input)
+  (let ((env (cdr (assoc 'env input)))
+        (target (cdr (assoc 'target input))))
+    (let ((root (build-tree env)))
+      (path-sum-ii root target))))
+
+;; Embedded cases - env is an association list.
+(define cases
+  (list
+   ;; CASE0: empty tree
+   (cons 'env '()) 
+   ;; CASE1: single node 5, target 5
+   (list (cons 'env (list (cons "ROOT" "0")))
+         (cons 'target 5))
+   ;; CASE2: single node 5, target 1
+   (list (cons 'env (list (cons "ROOT" "0")))
+         (cons 'target 1))
+   ;; CASE3
+   (list (cons 'env (list
+         (cons "ROOT" "0")
+         (cons "V_0" "10") (cons "V_1" "5") (cons "V_2" "15")
+         (cons "V_3" "3") (cons "V_4" "7")
+         (cons "L_0" "1") (cons "R_0" "2")
+         (cons "L_1" "3") (cons "R_1" "4")
+         (cons "L_2" "") (cons "R_2" "")))
+         (cons 'target 22))
+   ;; CASE4
+   (list (cons 'env (list
+         (cons "ROOT" "0")
+         (cons "V_0" "-2") (cons "V_1" "-3") (cons "V_2" "2")
+         (cons "V_3" "1") (cons "V_4" "-1") (cons "V_5" "3")
+         (cons "L_0" "1") (cons "R_0" "2")
+         (cons "L_1" "") (cons "R_1" "3")
+         (cons "L_2" "4") (cons "R_2" "5")))
+         (cons 'target -1))
+   ;; CASE5
+   (list (cons 'env (list
+         (cons "ROOT" "0")
+         (cons "V_0" "0") (cons "V_1" "0") (cons "V_2" "0")
+         (cons "L_0" "1") (cons "R_0" "2")
+         (cons "L_1" "") (cons "R_1" "")
+         (cons "L_2" "") (cons "R_2" "")))
+         (cons 'target 0))
+   ;; CASE6
+   (list (cons 'env (list
+         (cons "ROOT" "0")
+         (cons "V_0" "1") (cons "V_1" "2") (cons "V_2" "3")
+         (cons "V_3" "4") (cons "V_4" "5") (cons "V_5" "6") (cons "V_6" "7")
+         (cons "L_0" "1") (cons "R_0" "2")
+         (cons "L_1" "3") (cons "R_1" "4")
+         (cons "L_2" "5") (cons "R_2" "6")
+         (cons "L_3" "") (cons "R_3" "")
+         (cons "L_4" "") (cons "R_4" "")
+         (cons "L_5" "") (cons "R_5" "")
+         (cons "L_6" "") (cons "R_6" "")))
+         (cons 'target 7))
+   ;; CASE7
+   (list (cons 'env (list
+         (cons "ROOT" "0")
+         (cons "V_0" "-1") (cons "V_1" "-2") (cons "V_2" "-3")
+         (cons "L_0" "1") (cons "R_0" "2")
+         (cons "L_1" "") (cons "R_1" "")
+         (cons "L_2" "") (cons "R_2" "")))
+         (cons 'target 0))))
+
+;; Driver
+(define (run-cases lst idx)
+  (if (null? lst) '()
+      (begin
+        (let ((c (car lst)))
+          ;; Normalize: if c has 'env key directly, wrap; else assume already wrapped
+          (let ((input (if (assoc 'env c) c (cons 'env c))))
+            (display "CASE")
+            (display idx)
+            (display "=")
+            (print-list-of-lists (solve input)))))
+      (run-cases (cdr lst) (+ idx 1))))
+
+(run-cases cases 0)

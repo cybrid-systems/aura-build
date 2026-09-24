@@ -1,0 +1,32 @@
+{
+  "variants": [],
+  "slug": "merge-two-binary-trees",
+  "title": "Merge Two Binary Trees",
+  "category": "trees",
+  "ref": {
+    "llm": {
+      "ok": true,
+      "error": "",
+      "usage": {
+        "total_tokens": 1893,
+        "total_characters": 0,
+        "prompt_tokens": 1175,
+        "completion_tokens": 718,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "model": "MiniMax-M3"
+    },
+    "run": {
+      "ref_ok": false,
+      "exit_code": 1,
+      "stderr": "Traceback (most recent call last):\n  File \"/workspace/aura-build/corpus/leetcode/merge-two-binary-trees/ref.py\", line 68, in <module>\n    result = solve(case['t1'], case['t2'])\n  File \"/workspace/aura-build/corpus/leetcode/merge-two-binary-trees/ref.py\", line 28, in solve\n    merged = merge(t1, t2)\n  File \"/workspace/aura-build/corpus/leetcode/merge-two-binary-trees/ref.py\", line 26, in merge\n    return [val_a + val_b, merge(la, lb), merge(ra, rb)]\n                                          ~~~~~",
+      "duration_s": 0.03,
+      "timeout": false,
+      "n_tests": 0
+    },
+    "ts": "2026-09-24T14:38:16Z"
+  },
+  "updated_at": "2026-09-24T14:38:16Z"
+}

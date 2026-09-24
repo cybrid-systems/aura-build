@@ -1,0 +1,145 @@
+;; Number of Islands - BFS flood fill in Aura
+
+(define (null? x) (if (eq? x '()) #t #f))
+
+;; Helper: convert string to list of chars
+(define (string->list s)
+  (let ((len (string-length s)))
+    (define (loop i)
+      (if (= i len)
+          '()
+          (cons (string-ref s i) (loop (+ i 1)))))
+    (loop 0)))
+
+(define (string-length s)
+  ;; Aura doesn't have built-in string-length; implement via the runtime if available
+  ;; We'll assume it's provided. If not, fallback:
+  (if (defined? 'string-length) 
+      (string-length s)
+      ;; Fallback: count via conversion
+      (length (string->list s))))
+
+(define (length lst)
+  (if (null? lst) 0 (+ 1 (length (cdr lst)))))
+
+(define (list-ref lst i)
+  (if (= i 0) (car lst) (list-ref (cdr lst) (- i 1))))
+
+(define (list-set! lst i v)
+  (if (= i 0)
+      (set-car! lst v)
+      (list-set! (cdr lst) (- i 1) v)))
+
+;; BFS flood fill
+;; grid is a list of rows; each row is a mutable pair-list of chars
+;; We modify in place: replace '1' chars with '0' chars
+;; We need a queue implemented as a pair (front . back) using lists
+
+(define (make-queue) (cons '() '()))
+(define (queue-empty? q) (null? (car q)))
+(define (enqueue q x) 
+  (let ((node (cons x '())))
+    (let ((front (car q)) (back (cdr q)))
+      (if (null? back)
+          (begin (set-car! q (cons node front)) (set-cdr! q node) q)
+          (begin (set-cdr! back node) (set-cdr! q node) q)))))
+(define (dequeue q)
+  (let ((front (car q)))
+    (let ((node (car front)) (rest (cdr front)))
+      (set-car! q rest)
+      (if (null? rest) (set-cdr! q '()))
+      (car node))))
+
+;; Check if a char equals "1"
+(define (char=? c d) (equal? c d))
+
+;; Get cell at (r,c) in grid (list of mutable lists)
+(define (get-cell grid r c)
+  (list-ref (list-ref grid r) c))
+
+;; Set cell at (r,c) to v in grid
+(define (set-cell grid r c v)
+  (list-set! (list-ref grid r) c v))
+
+;; BFS from (r,c), marking visited by setting to "0"
+(define (bfs grid H W r c)
+  (let ((q (make-queue)))
+    (set-cell grid r c "0")
+    (enqueue q (cons r c))
+    (let loop ()
+      (if (queue-empty? q) '()
+          (let ((p (dequeue q)))
+            (let ((pr (car p)) (pc (cdr p)))
+              ;; neighbors
+              (define (try nr nc)
+                (if (and (>= nr 0) (< nr H) (>= nc 0) (< nc W))
+                    (if (char=? (get-cell grid nr nc) "1")
+                        (begin
+                          (set-cell grid nr nc "0")
+                          (enqueue q (cons nr nc)))
+                          '())
+                    '()))
+              (try (- pr 1) pc)
+              (try (+ pr 1) pc)
+              (try pr (- pc 1))
+              (try pr (+ pc 1))
+              (loop)))))))
+
+(define (solve H W grid)
+  ;; Convert grid: list of strings -> list of mutable lists of chars
+  (define (build-rows i)
+    (if (= i H)
+        '()
+        (cons (list->mutable (string->list (list-ref grid i)))
+              (build-rows (+ i 1)))))
+  ;; Note: Aura may not have list->mutable; our string->list returns a proper list
+  ;; which consists of pairs, so it's mutable via set-car!.
+  (let ((g (build-rows 0)))
+    (define (outer r count)
+      (if (= r H)
+          count
+          (let loop-c (c 0)
+            (if (= c W)
+                (outer (+ r 1) count)
+                (if (char=? (get-cell g r c) "1")
+                    (begin
+                      (bfs g H W r c)
+                      (loop-c (+ c 1) (+ count 1)))
+                    (loop-c (+ c 1) count))))))
+    (outer 0 0)))
+
+;; Display helper for the result
+(define (display-result n)
+  (display "CASE")
+  (display n)
+  (display "=")
+  (display (solve-from-index n))
+  (newline))
+
+;; Embedded test inputs - execute each
+(define inputs
+  (list
+    (list 4 5 (list "11110" "11010" "11000" "00000"))
+    (list 4 5 (list "11000" "11000" "00100" "00011"))
+    (list 1 1 (list "1"))
+    (list 1 1 (list "0"))
+    (list 1 4 (list "1111"))
+    (list 3 3 (list "101" "010" "101"))
+    (list 4 4 (list "1100" "1110" "0110" "0001"))
+    (list 3 3 (list "000" "000" "000"))))
+
+(define (solve-from-index i)
+  (let ((inp (list-ref inputs i)))
+    (solve (car inp) (car (cdr inp)) (car (cdr (cdr inp))))))
+
+;; Print all cases
+(let loop ((i 0))
+  (if (< i 8)
+      (begin
+        (display "CASE")
+        (display i)
+        (display "=")
+        (display (solve-from-index i))
+        (newline)
+        (loop (+ i 1)))
+      '()))

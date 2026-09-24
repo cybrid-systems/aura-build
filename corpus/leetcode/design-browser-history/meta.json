@@ -1,5 +1,66 @@
 {
-  "variants": [],
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:37:02Z",
+      "ts_local": "2026-09-24 22:37:02 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2606,
+        "total_characters": 0,
+        "prompt_tokens": 1369,
+        "completion_tokens": 1237,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 512
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.124,
+      "tests_passed": 0,
+      "tests_total": 5,
+      "stderr_snippet": "error: 2:40: parse error: expected expression, got identifier 'steps'\n   |\n  2 |   (let loop ((cur (bh-current bh)) ((k steps)))\n   |                                        ^^^^^\nerror: 2:40: parse error: expected expression, got identifier 'steps'\n   |\n  2 |   (let loop ((cur (bh-current bh)) ((k steps)))\n   |                                        ^^^^^\nerror: invalid closure: eval_flat: invalid closure\nerror: invalid closure: eval_flat: invalid closure\nerror: invalid closure: eval_flat: inval",
+      "stdout_snippet": "CASE0=\nCASE1=\nCASE2=\nCASE3=\nCASE4=\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:37:15Z",
+      "ts_local": "2026-09-24 22:37:15 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2565,
+        "total_characters": 0,
+        "prompt_tokens": 1369,
+        "completion_tokens": 1196,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 1280
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.016,
+      "tests_passed": 0,
+      "tests_total": 5,
+      "stderr_snippet": "error: 46:23: parse error: unexpected ')'\n",
+      "stdout_snippet": ""
+    }
+  ],
   "slug": "design-browser-history",
   "title": "Design Browser History",
   "category": "linked_list",
@@ -28,5 +89,6 @@
     },
     "ts": "2026-09-24T14:33:25Z"
   },
-  "updated_at": "2026-09-24T14:33:25Z"
+  "updated_at": "2026-09-24T14:37:15Z",
+  "updated_at_local": "2026-09-24 22:37:15 CST"
 }

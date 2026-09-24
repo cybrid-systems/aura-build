@@ -1,0 +1,61 @@
+(define (solve root)
+  ;; root is a mutable list of nodes: each node is a list (val left right)
+  ;; where left/right are either #f or indices (we'll use the node pair directly)
+  ;; Actually let's use: node = list containing val, left-pointer, right-pointer
+  ;; We'll implement using a recursive helper that walks preorder
+  (define (flatten node)
+    (if (null? node)
+        '()
+        (let ((left (cadr node))
+              (right (caddr node))
+              (rest (flatten right)))
+          (if (null? left)
+              (begin
+                (set-car! (cdr node) '())
+                (cons node rest))
+              (let ((left-flat (flatten left)))
+                (set-car! (cdr node) '())
+                ;; Connect end of left-flat to right (which is already flattened as 'rest)
+                (if (null? left-flat)
+                    (cons node rest)
+                    (begin
+                      (set-car! (cddr node) '())
+                      ;; mutate last of left-flat's cdr to point to node itself? no, to original right's first
+                      ;; Actually, last of left-flat should point to first of rest
+                      (let loop ((lf left-flat))
+                        (if (null? (cdr lf))
+                            (set-cdr! lf rest)
+                            (loop (cdr lf))))
+                      (cons node left-flat)))))))
+  (flatten root))
+
+(define (tree-from-level lst)
+  (if (null? lst)
+      '()
+      (let* ((first-val (car lst))
+             (node (list first-val '() '()))
+             (rest (cdr lst)))
+        ;; Build children recursively
+        ;; left child from next elements, then right
+        ;; We need to know tree size to split. Simple approach: build all nodes then link.
+        ;; Easier: use index-based with arrays? Aura has vectors? Let's stick with cons cells.
+        ;; Strategy: build list of all nodes first, then link by index.
+        ;; ... but we need to know how many nodes to skip for left.
+        ;; Simpler: build a flat list of all node pairs, then do a second pass linking.
+        (cons node (tree-from-level rest)))))
+
+(define (build-tree lst)
+  (let ((nodes (build-all-nodes lst)))
+    (link-level-order nodes (length nodes))))
+
+(define (build-all-nodes lst)
+  (if (null? lst)
+      '()
+      (cons (list (car lst) '() '()) (build-all-nodes (cdr lst)))))
+
+(define (link-level-order nodes n)
+  ;; nodes is list of n node pairs. Link parents to children based on level-order.
+  (let loop ((i 0) (ns nodes))
+    (if (>= i n)
+        (car ns) ;; wait this doesn't work for empty
+        ...)))

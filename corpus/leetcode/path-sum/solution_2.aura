@@ -1,0 +1,228 @@
+# Tree node: (node val left right) or 'null
+# Recursive path sum check
+
+(define (make-node v l r) (cons 'node (cons v (cons l (cons r '())))))
+
+(define (node? x)
+  (if (null? x) #f
+      (if (pair? x) (equal? (car x) 'node) #f)))
+
+(define (node-val n) (car (cdr n)))
+(define (node-left n) (car (cdr (cdr n))))
+(define (node-right n) (car (cdr (cdr (cdr n)))))
+
+(define (has-path-sum node target)
+  (if (null? node) #f
+      (let ((v (node-val node))
+            (l (node-left node))
+            (r (node-right node)))
+        (if (and (null? l) (null? r))
+            (= target v)
+            (or (if (null? l) #f (has-path-sum l (- target v)))
+                (if (null? r) #f (has-path-sum r (- target v))))))))
+
+# Build tree from level-order tokens; tokens: 'null or number
+(define (build-tree tokens)
+  (if (or (null? tokens) (equal? (car tokens) 'null))
+      'null
+      (let ((root (make-node (car tokens) 'null 'null))
+            (queue (list (cons root (cdr tokens))))
+            (rest-tokens '()))
+        #t))) ;; dummy, replaced below
+
+(define (build-tree-helper tokens)
+  (if (or (null? tokens) (equal? (car tokens) 'null))
+      'null
+      (let ((root (make-node (car tokens) 'null 'null)))
+        (let ((toks (cdr tokens))
+              (front (list root))
+              (back '()))
+          ;; For each node in front, pair its children from toks
+          (let loop ((nodes front)
+                     (ts toks)
+                     (acc '()))
+            (if (or (null? nodes) (null? ts))
+                (begin
+                  ;; If there are remaining tokens (shouldn't happen for valid input)
+                  root)
+                (let ((n (car nodes))
+                      (t1 (car ts))
+                      (t2 (if (or (null? (cdr ts)) (null? (cdr (cdr ts))))
+                              'null
+                              (car (cdr ts))))
+                      (rest-ts (if (null? (cdr ts))
+                                   '()
+                                   (if (null? (cdr (cdr ts)))
+                                       (list (car (cdr ts)))
+                                       (cdr (cdr ts))))))
+                  (let ((new-children
+                         (let ((cl (if (equal? t1 'null)
+                                       'null
+                                       (make-node t1 'null 'null)))
+                               (cr (if (equal? t2 'null)
+                                       'null
+                                       (make-node t2 'null 'null))))
+                           (list cl cr))))
+                    (set-car! (cdr (cdr n)) (car new-children))
+                    (set-car! (cdr (cdr (cdr n))) (car (cdr new-children)))
+                    (loop (cdr nodes) rest-ts (append acc new-children))))))))))
+
+;; The mutable mutation above via set-car! on a freshly constructed node
+;; requires the node to be a proper mutable pair structure. Let's redo
+;; build-tree using a cleaner immutable approach with index tracking.
+
+;; Re-implementation: Build tree using index in tokens
+(define (get-token tokens idx)
+  (if (null? tokens) 'null
+      (let loop ((l tokens) (i idx) (k 0))
+        (if (= i k) (car l)
+            (loop (cdr l) i (+ k 1))))))
+
+(define (token-count tokens)
+  (let loop ((l tokens) (c 0))
+    (if (null? l) c (loop (cdr l) (+ c 1)))))
+
+(define (build-tree-idx tokens idx)
+  (if (>= idx (token-count tokens))
+      'null
+      (let ((t (get-token tokens idx)))
+        (if (equal? t 'null)
+            'null
+            (make-node t (build-tree-idx tokens (* 2 (+ idx 1) 0)) 'null)))))
+
+(define (build-tree-idx2 tokens idx)
+  (if (>= idx (token-count tokens))
+      'null
+      (let ((t (get-token tokens idx)))
+        (if (equal? t 'null)
+            'null
+            (make-node t
+                       (build-tree-idx2 tokens (* 2 (+ idx 1) 0))
+                       (build-tree-idx2 tokens (* 2 (+ idx 1) 1)))))))
+
+;; Parse tree string into list of tokens
+(define (parse-tree s)
+  (if (or (null? s) (= (string-length s) 0))
+      '()
+      (let ((parts (split-comma s)))
+        (let loop ((ps parts) (acc '()))
+          (if (null? ps)
+              (reverse acc)
+              (let ((p (trim (car ps))))
+                (if (or (equal? p "null") (equal? p ""))
+                    (loop (cdr ps) (cons 'null acc))
+                    (loop (cdr ps) (cons (string->number p) acc)))))))))
+
+(define (trim s)
+  ;; trim spaces from both ends (simple)
+  (let loop ((s s) (start 0) (end (string-length s)))
+    (cond
+      ((and (< start end) (char-whitespace? (string-ref s start)))
+       (loop s (+ start 1) end))
+      ((and (< start end) (char-whitespace? (string-ref s (- end 1))))
+       (loop s start (- end 1)))
+      (else (substring s start end)))))
+
+(define (split-comma s)
+  ;; split string by comma
+  (let loop ((s s) (start 0) (i 0) (acc '()))
+    (if (= i (string-length s))
+        (reverse (cons (substring s start i) acc))
+        (if (char=? (string-ref s i) #\,)
+            (loop s (+ i 1) (+ i 1)
+                  (cons (substring s start i) acc))
+            (loop s start (+ i 1) acc)))))
+
+(define (parse-case line)
+  ;; line like "-10 9 20 null null 15 7,sum=22"
+  ;; split at ",sum=" -> tree part and sum part
+  (let loop ((s line) (i 0) (tag 'tree) (acc '()))
+    (if (= i (string-length s))
+        (begin
+          ;; end - shouldn't normally hit
+          '())
+        (let ((c (string-ref s i)))
+          (cond
+            ((and (eq? tag 'tree) (char=? c #\,))
+             (if (and (< (+ i 1) (string-length s))
+                      (char=? (string-ref s (+ i 1)) #\s)
+                      (< (+ i 2) (string-length s))
+                      (char=? (string-ref s (+ i 2)) #\s)
+                      (< (+ i 3) (string-length s))
+                      (char=? (string-ref s (+ i 3)) #\u)
+                      (< (+ i 4) (string-length s))
+                      (char=? (string-ref s (+ i 4)) #\m)
+                      (< (+ i 5) (string-length s))
+                      (char=? (string-ref s (+ i 5)) #\=))
+                 (list (reverse (cons (substring s 0 i) acc))
+                       (string->number (substring s (+ i 6) (string-length s))))
+                 (loop s (+ i 1) tag (cons (substring s 0 i) acc))))
+            (else (loop s (+ i 1) tag acc)))))))
+
+(define (parse-case2 line)
+  ;; parse "tree-part,sum=K"
+  (let ((len (string-length line)))
+    (let loop ((i (- len 1)) (found -1))
+      (cond
+        ((< i 0)
+         (if (= found -1)
+             (list (trim line) 0)
+             (list (trim (substring line 0 found))
+                   (string->number (trim (substring line (+ found 5) len))))))
+        ((and (>= i 4)
+              (char=? (string-ref line i) #\=)
+              (char=? (string-ref line (- i 1)) #\m)
+              (char=? (string-ref line (- i 2)) #\u)
+              (char=? (string-ref line (- i 3)) #\s)
+              (char=? (string-ref line (- i 4)) #\,))
+         (loop (- i 1) (- i 4)))
+        (else (loop (- i 1) found))))))
+
+;; Define solve: takes a tree string and a sum number
+(define (solve-tree tree-str target)
+  (let ((tokens (parse-tree (trim tree-str))))
+    (let ((root (build-tree-idx2 tokens 0)))
+      (has-path-sum root target))))
+
+(define (solve line)
+  ;; line is like 'CASE0=-10 9 20 null null 15 7,sum=22'
+  ;; We need to parse it. Find '=' position
+  (let loop ((s line) (i 0))
+    (if (= i (string-length s))
+        (list "" 0)
+        (if (char=? (string-ref s i) #\=)
+            (let ((content (substring s (+ i 1) (string-length s))))
+              (let ((parsed (parse-case2 content)))
+                (list (car parsed) (car (cdr parsed)))))
+            (loop s (+ i 1))))))
+
+(define (run-case line)
+  (let ((parsed (solve line)))
+    (let ((tree-str (car parsed))
+          (target (car (cdr parsed))))
+      (solve-tree tree-str target))))
+
+;; Embedded test cases
+(define cases
+  (list
+    "CASE0=-10 9 20 null null 15 7,sum=22"
+    "CASE1=1 2 3,sum=5"
+    "CASE2=,sum=0"
+    "CASE3=5 4 8 11 null 13 4 7 2 null null null 1,sum=22"
+    "CASE4=1 2,sum=1"
+    "CASE5=1 2,sum=3"
+    "CASE6=0,sum=0"
+    "CASE7=-3,sum=-3"
+    "CASE8=-2 null -3,sum=-5"))
+
+;; Main: run each case
+(define (run-all cases)
+  (let loop ((cs cases) (i 0))
+    (if (null? cs) 'done
+        (let ((result (run-case (car cs))))
+          (display (string-append "CASE" (number->string i) "="))
+          (display (if result "true" "false"))
+          (newline)
+          (loop (cdr cs) (+ i 1))))))
+
+(run-all cases)

@@ -1,0 +1,133 @@
+;; Aura solution for Lowest Common Ancestor of a BST
+;; Since Aura doesn't have built-in objects, we represent each BST node as
+;; a 3-element list (val left right). The harness will call solve with the
+;; root node and references to p and q (themselves 3-element lists).
+;;
+;; solve finds the LCA in O(h) using the BST property and returns the node
+;; (a 3-element list). We then display its value.
+
+(define (node-val n) (car n))
+(define (node-left n) (car (cdr n)))
+(define (node-right n) (car (cdr (cdr n))))
+
+;; Solve: given root (a BST node list), and two nodes p and q (also lists),
+;; return the LCA node.
+(define (solve root p q)
+  (let ((pv (node-val p))
+        (qv (node-val q)))
+    (solve-helper root pv qv)))
+
+(define (solve-helper node pv qv)
+  (if (null? node)
+      '()
+      (let ((v (node-val node)))
+        (cond
+          ((and (<= pv v) (>= qv v)) node)
+          ((and (>= pv v) (<= qv v)) node)
+          ((and (< pv v) (< qv v)) (solve-helper (node-left node) pv qv))
+          (else (solve-helper (node-right node) pv qv))))))
+
+;; --- Helper to build a BST from a level-order list (with 'null sentinels) ---
+(define (build-tree lst)
+  ;; lst is a flat list of values; '() means null
+  (if (null? lst)
+      '()
+      (let ((root (build-node (car lst))))
+        (if (null? root)
+            '()
+            (begin
+              (build-tree-attach! root (cdr lst))
+              root)))))
+
+(define (build-node v)
+  (if (null? v) '() (list v '() '())))
+
+;; Attach children level-by-level. `nodes` is the list of parent nodes at the
+;; current level (left-to-right). `vals` is the remaining flat values.
+(define (build-tree-attach!)
+  (lambda (nodes vals)
+    (if (or (null? nodes) (null? vals))
+        '()
+        (let ((next-level '()))
+          (attach-children nodes vals next-level)
+          ;; recurse
+          ))))
+
+;; Simpler approach: rebuild via a real recursive queue
+(define (build-tree-aux queue vals)
+  ;; queue is a list of nodes needing two children each
+  (cond
+    ((null? queue) (if (null? vals) '() (error "extra vals")))
+    ((null? vals) '())
+    (else
+      (let* ((node (car queue))
+             (rest-queue (cdr queue))
+             (left-val (car vals))
+             (left-rest (cdr vals))
+             (right-val (if (null? left-rest) '() (car left-rest)))
+             (right-rest (if (null? left-rest) '() (cdr left-rest))))
+        (if (null? node)
+            ;; null placeholder consumes two vals (still leaves them in the
+            ;; tree shape via 'null' parents), but we just skip them
+            (build-tree-aux rest-queue right-rest)
+            (begin
+              (set-car! (cdr node) (build-node left-val))
+              (set-car! (cdr (cdr node)) (build-node right-val))
+              (build-tree-aux
+                (append rest-queue
+                        (list (node-left node) (node-right node)))
+                right-rest)))))))
+
+;; We need mutable list cells. Aura supports set-car! / set-cdr! .
+;; Redefine build-tree using the queue-based approach.
+(define (build-tree lst)
+  (if (null? lst)
+      '()
+      (let* ((root (build-node (car lst)))
+             (rest-vals (cdr lst))
+             (queue (list root)))
+        (build-tree-aux queue rest-vals)
+        root)))
+
+;; Find the node with a given value within the BST.
+(define (find-node root v)
+  (if (null? root)
+      '()
+      (let ((rv (node-val root)))
+        (cond
+          ((= rv v) root)
+          ((< v rv) (find-node (node-left root) v))
+          (else (find-node (node-right root) v))))))
+
+;; --- Display helpers ---
+(define (display-list xs)
+  (display "[")
+  (let loop ((rest xs) (first #t))
+    (cond
+      ((null? rest) (display "]"))
+      (else
+       (if first (set! first #f) (display ","))
+       (display (car rest))
+       (loop (cdr rest) first)))))
+
+;; --- Run test cases ---
+(define (run-case i root-arr p q)
+  (let* ((root (build-tree root-arr))
+         (pnode (find-node root p))
+         (qnode (find-node root q))
+         (result (solve root pnode qnode))
+         (result-val (if (null? result) '() (node-val result))))
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display result-val)
+    (newline)))
+
+(run-case 0 (list 2 1 3) 1 3)
+(run-case 1 (list 6 2 8 0 4 7 9 '() '() 3 5) 2 8)
+(run-case 2 (list 6 2 8 0 4 7 9 '() '() 3 5) 2 4)
+(run-case 3 (list 5 3 7 2 4 6 8) 2 4)
+(run-case 4 (list 5 3 7 2 4 6 8) 6 8)
+(run-case 5 (list 1) 1 1)
+(run-case 6 (list 10 5 15 3 7 '() 18) 5 15)
+(run-case 7 (list 10 5 15 3 7 12 18) 7 18)

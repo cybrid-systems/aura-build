@@ -1,0 +1,52 @@
+(define (make-node v l r) 
+  (cons 'node (cons v (cons l (cons r (cons '() '()))))))
+
+(define (node-val n) (car (cdr n)))
+(define (node-left n) (car (cdr (cdr n))))
+(define (node-right n) (car (cdr (cdr (cdr n)))))
+(define (node-next n) (cdr (cdr (cdr (cdr n)))))
+(define (set-node-next! n v) (set-cdr! (cdr (cdr (cdr n))) v))
+
+(define (build-tree vals)
+  (let ((n (length vals)))
+    (if (= n 0) '()
+        (let ((nodes (map (lambda (v) (if (= v -1) '() (make-node v '() '()))) vals)))
+          (let loop ((i 0))
+            (if (>= i n) (car nodes)
+                (let ((cur (list-ref nodes i)))
+                  (if (null? cur) (loop (+ i 1))
+                      (begin
+                        (let ((li (+ (* 2 i) 1)) (ri (+ (* 2 i) 2)))
+                          (if (< li n)
+                              (set-car! (cdr (cdr cur)) (list-ref nodes li)))
+                          (if (< ri n)
+                              (set-car! (cdr (cdr (cdr cur))) (list-ref nodes ri))))
+                        (loop (+ i 1))))))))))
+
+(define (connect root)
+  (if (null? root) '()
+      (let ((dummy (make-node 0 '() '())))
+        (let loop ((cur root) (prev dummy) (level-start dummy))
+          (if (null? cur)
+              (begin
+                (if (not (null? (cdr (cdr prev))))  ; if prev had a right child set
+                    (set-cdr! (cdr (cdr prev)))  ; noop, just pattern
+                    '())
+                )
+              (begin
+                ;; Connect prev's next to cur if prev is a real node
+                (if (and (not (null? prev)) (not (eq? prev dummy)))
+                    (set-cdr! (cdr (cdr (cdr prev))) cur)
+                    '())
+                (let ((next-cur
+                       (cond
+                         ((and (not (null? (car (cdr cur)))) (not (null? (car (cdr (cdr cur))))))
+                          (car (cdr cur)))
+                         ((not (null? (car (cdr cur))))
+                          (car (cdr cur)))
+                         ((not (null? (car (cdr (cdr cur)))))
+                          (car (cdr (cdr cur))))
+                         (else 
+                          (let find-next ((j (+ 1 (some-index-helper))))) 
+                          )))
+                  ...)
