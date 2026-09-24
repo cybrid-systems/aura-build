@@ -225,10 +225,16 @@ including zero-arity (define (stack-pop) ...).
 When verify stderr is present, treat it as the ground-truth failure reason.
 Pay special attention to lines starting with 'verify mismatch line N:' — fix those
 outputs first.
+Multi-file repair rules:
+- Prefer rewriting ONLY the implicated file(s) named in verify errors / mismatch hints;
+  omitted files are kept from the previous candidate.
+- Honor cross-file API contracts (callee signatures in other files) — do not rename
+  or invent helpers that break callers.
+- Never hardcode the expected KEY=value stdout in main alone when structure checks
+  require real helpers in the named modules.
 Single-file: return ONE corrected Aura program in a ```aura fence.
 Multi-file: return EACH required file in a named fence (```aura <filename>).
-Prefer rewriting only the failing file(s); omitted files are kept from the previous
-candidate. Keep fence order stable (table/lib before match before main/entry).
+Keep fence order stable (deps before match/order before exchange/main).
 """
 
 # Task registry: propose prompt + verify regex + empty-reply fallback.
@@ -2261,6 +2267,91 @@ def snapshot_orch_observation(
     return out
 
 
+
+def _define_signatures(source: str, *, limit: int = 40) -> str:
+    """Extract (define …) heads for compact interface context."""
+    sigs: list[str] = []
+    for line in (source or "").splitlines():
+        s = line.strip()
+        if s.startswith("(define ") or s.startswith("(define\t"):
+            sigs.append(s[:160])
+            if len(sigs) >= limit:
+                break
+    return "\n".join(sigs)
+
+
+def _implicated_files(
+    err: str,
+    file_list: list[str],
+    *,
+    prev_sources: dict[str, str] | None = None,
+) -> list[str]:
+    """Heuristic: which files verify implicated for targeted repair."""
+    low = (err or "").lower()
+    hit: list[str] = []
+    for fn in file_list:
+        stem = fn.rsplit(".", 1)[0].lower()
+        if fn.lower() in low or stem + ".aura" in low or f"/{fn.lower()}" in low:
+            hit.append(fn)
+    # Parse / unbound often cite line numbers after a file load order — bias to
+    # match/order/main/exchange when FILL/LEFT/STP/risk semantics fail.
+    semantic_map = [
+        (("fill1", "left1", "partial", "filled", "resting"), ["main.aura", "order.aura", "match.aura", "query.aura"]),
+        (("stp",), ["match.aura", "order.aura", "main.aura"]),
+        (("risk", "reject"), ["risk.aura", "order.aura", "main.aura"]),
+        (("cxl", "cancel"), ["order.aura", "book.aura", "main.aura"]),
+        (("halt", "resume", "rej_halt"), ["halt.aura", "order.aura", "exchange.aura", "main.aura"]),
+        (("dup", "idemp"), ["idemp.aura", "order.aura", "main.aura"]),
+        (("replay", "eq=", "eq\n", "snapshot"), ["replay.aura", "snapshot.aura", "exchange.aura", "journal.aura", "main.aura"]),
+        (("fees", "fee"), ["fee.aura", "settle.aura", "query.aura", "main.aura"]),
+        (("count",), ["main.aura"]),
+        (("parse error", "unbalanced", "unbound"), ["match.aura", "order.aura", "exchange.aura", "main.aura", "book.aura"]),
+    ]
+    for keys, files in semantic_map:
+        if any(k in low for k in keys):
+            for f in files:
+                if f in file_list and f not in hit:
+                    hit.append(f)
+    if not hit:
+        # Fall back to files that differ from empty / very small stubs
+        for fn in file_list:
+            body = (prev_sources or {}).get(fn) or ""
+            if body.strip():
+                hit.append(fn)
+            if len(hit) >= 6:
+                break
+    # Always include main/entry when present for stdout contract
+    for must in ("main.aura", "exchange.aura"):
+        if must in file_list and must not in hit:
+            hit.append(must)
+    return hit
+
+
+def _interface_contracts_blob(task_spec: dict[str, Any]) -> str:
+    """Compact API contract list from source_res / files."""
+    file_list = list(task_spec.get("files") or [])
+    src_res = task_spec.get("source_res") or []
+    lines: list[str] = []
+    if src_res:
+        for p in src_res:
+            pat = getattr(p, "pattern", str(p))
+            lines.append(f"- must match: {pat}")
+    # Exchange scenario checklist when applicable
+    expect = str(task_spec.get("expect") or "")
+    if "FILL1=partial" in expect or any(f == "match.aura" for f in file_list):
+        lines.append(
+            "Scenario anchors (do not hardcode stdout — compute via APIs):\n"
+            "  place A1 Alice buy 5 10 → rest; place B1 Bob sell 5 7 → fill 7;\n"
+            "  query-left A1 → 3 ⇒ FILL1=partial LEFT1=3; fee 1/qty/side ⇒ FEES=14;\n"
+            "  BIG Alice buy 9 100 → RISK=reject; A2 Alice sell 5 3 STP vs own → STP=0;\n"
+            "  cancel A1 → CXL=cancelled; halt → place B2 reject; resume; re-place A1 → DUP;\n"
+            "  snapshot+replay → REPLAY=ok EQ=1; COUNT=10 holds."
+        )
+    if not lines:
+        return ""
+    return "## Interface / scenario contracts\n" + "\n".join(lines) + "\n"
+
+
 def _build_propose_messages(
     task_spec: dict[str, Any],
     *,
@@ -2280,7 +2371,7 @@ def _build_propose_messages(
             {"role": "system", "content": SYSTEM_CODEGEN},
             {"role": "user", "content": user},
         ]
-    err = (prev_errors or "")[:3500]
+    err = (prev_errors or "")[:8000]
     expect = str(task_spec.get("expect") or "")
     src_res = task_spec.get("source_res") or []
     struct_hint = ""
@@ -2298,7 +2389,6 @@ def _build_propose_messages(
         )
     if multi:
         fence_hint = "\n".join(f"```aura {fn}\n...\n```" for fn in file_list)
-        prev_blocks = []
         src_map = dict(prev_sources or {})
         if not src_map and prev_source:
             parts = str(prev_source).split("; --- ")
@@ -2309,21 +2399,36 @@ def _build_propose_messages(
                     body = body.lstrip("\r\n")
                     if name:
                         src_map[name] = body
+        implicated = _implicated_files(err, file_list, prev_sources=src_map)
+        # Full bodies for implicated files; signatures only for the rest.
+        full_blocks: list[str] = []
+        sig_blocks: list[str] = []
         for fn in file_list:
-            body = (src_map.get(fn) or "")[:2500]
-            prev_blocks.append(f"```aura {fn}\n{body}\n```")
-        prev_blob = "\n\n".join(prev_blocks) if prev_blocks else (
+            body = src_map.get(fn) or ""
+            if fn in implicated:
+                # Soft Ready / MiniMax context budget: keep full small modules.
+                clipped = body if len(body) <= 12000 else (body[:12000] + "\n; ... truncated ...\n")
+                full_blocks.append(f"```aura {fn}\n{clipped}\n```")
+            else:
+                sigs = _define_signatures(body)
+                if sigs:
+                    sig_blocks.append(f"### {fn} (signatures only — do not rewrite unless needed)\n```aura\n{sigs}\n```")
+        prev_blob = "\n\n".join(full_blocks) if full_blocks else (
             f"```aura\n{(prev_source or '')[:3500]}\n```"
         )
+        sig_blob = ("\n\n## Other files — interface signatures\n" + "\n\n".join(sig_blocks) + "\n") if sig_blocks else ""
+        contracts = _interface_contracts_blob(task_spec)
         user_content = (
             f"{REPAIR_STEER}\nRequired exact output:\n{expect}\n"
             f"{struct_hint}{mismatch_hint}\n"
+            f"{contracts}"
             f"Required files (stable order): {', '.join(file_list)}.\n"
-            f"Emit named fences, e.g.:\n{fence_hint}\n"
-            "Prefer rewrite ONLY files implicated by verify errors; omitted "
-            "files are kept from the previous candidate.\n\n"
-            f"## Previous sources\n{prev_blob}\n\n"
-            f"## Verify errors / stdout\n```\n{err}\n```\n"
+            f"Implicated files to rewrite (prefer ONLY these fences): {', '.join(implicated) or '(none)'}.\n"
+            f"Emit named fences for rewritten files, e.g.:\n{fence_hint}\n"
+            "Omitted files are kept from the previous candidate.\n\n"
+            f"## Previous sources (implicated — full)\n{prev_blob}\n"
+            f"{sig_blob}\n"
+            f"## Verify errors / stdout (ground truth)\n```\n{err}\n```\n"
             f"(repair round={round_i} candidate={candidate_index})\n"
         )
     else:

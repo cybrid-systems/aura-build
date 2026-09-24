@@ -63,6 +63,6 @@
     "exchange-replay",
     "query-left"
   ],
-  "user_extra": "Fifteen-file mini-exchange. idemp/journal/ledger/fee/risk/book/match/order/settle/halt/snapshot/replay/query/exchange/main must define the GOAL.md APIs. order-place: idemp\u2192halt\u2192risk; fee 1/qty/side; STP skip same acct; replay journal place/cancel equals live snapshot. Named fences for all 15 files in order. Aura run: `aura idemp.aura journal.aura ledger.aura fee.aura risk.aura book.aura match.aura order.aura settle.aura halt.aura snapshot.aura replay.aura query.aura exchange.aura main.aura`.",
+  "user_extra": "Fifteen-file mini-exchange. Define GOAL.md APIs in the named files (idemp/journal/ledger/fee/risk/book/match/order/settle/halt/snapshot/replay/query/exchange/main). Critical contracts: order-place = idemp\u2192halt\u2192risk\u2192match\u2192rest; match-against price-time + STP (skip same acct); settle-fill fees both sides (fee-rate=1 per qty); query-left after A1 buy10 / B1 sell7 must be 3 \u21d2 FILL1=partial (not filled/resting); FEES=14; COUNT=10 holds. On repair: rewrite only implicated files; keep cross-file callee names; include verify stderr mismatches as ground truth. Named fences for all rewritten files. Aura run order equals dogfood.json files list.",
   "seed_from_stub": true
 }
