@@ -155,6 +155,13 @@ is observed. Details: [storm-still-incr.md](storm-still-incr.md).
 
 ## Self-evolve (Post-M5++)
 
+**Combat SSOT:** [self-evolve-combat.md](self-evolve-combat.md) — Soft session + fiber
+explore + fiber LLM + worldlines + dual sink (aura-build self-improve **and**
+Aura/stdlib issues). That is the path that combines live capabilities; do not
+claim stamp `self-evolve` is fiber-live.
+
+### Stamp path (L1 / simulated fitness — not combat)
+
 `aura-build self-evolve` is Aura-kernel-first:
 
 1. Kernel (`aura/self_evolve.aura`) dogfoods harness L1 canary + worldline select-best
@@ -166,3 +173,7 @@ is observed. Details: [storm-still-incr.md](storm-still-incr.md).
 
 Fail-closed: verify red or kernel `ok=false` ⇒ no commit/push. Python without
 `AURA_BIN` refuses (`kernel=python_deprecated`).
+
+Stamp path remains useful for L1 canary / commit-edge dogfood. **Combat** (Soft
+Ready attach → fiber explore → dual sink) is the new SSOT for self-evolution;
+see phases P0–P3 in [self-evolve-combat.md](self-evolve-combat.md).

@@ -196,6 +196,18 @@
 - [x] Never fake `incr_proven` / `fiber_live`
 - [ ] Live fiber-multi worldline materialize (still deferred — stamp + L1 dogfood first)
 
+### Next gate — self-evolve **combat** (SSOT)
+
+Stamp `self-evolve` ≠ Soft/fiber combat. Combat SSOT:
+**[self-evolve-combat.md](self-evolve-combat.md)**.
+
+- [x] **P0 Design** — combat inventory + loop + dual sink + phases merged
+- [ ] **P1 Wire** — `self-evolve combat` / thin orchestrator (Soft attach required;
+  traj + findings under `scratch/self_evolve_combat/`; `--no-push` default)
+- [ ] **P2 Dogfood round 1** — Soft Ready + fiber explore + fiber-llm closed loop;
+  wall ratios; Aura issues if Soft regresses vs #4053
+- [ ] **P3 Self-improve** — land aura-build fixes; leave Aura kernel issues open
+
 
 ## Post-M5++ — long-lived serve attach (optimal loop MVP)
 

@@ -157,6 +157,7 @@ Honesty:
 
 ## See also
 
+- [self-evolve-combat.md](self-evolve-combat.md) — combat self-evolve SSOT (Soft + fiber + dual sink)
 - [architecture.md](architecture.md) — layers
 - [storm-still-incr.md](storm-still-incr.md) — prove-or-refuse
 - [trajectory-protocol-v0.md](trajectory-protocol-v0.md) — `runtime.session_model`
