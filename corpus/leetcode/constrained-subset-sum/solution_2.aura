@@ -1,0 +1,19 @@
+(define (solve arr k)
+  (let* ((sorted (sort arr <))
+         (n (length sorted))
+         (prefix (make-prefix sorted))
+         (best 0)
+         (left 0))
+    (let loop ((right 0))
+      (if (>= right n)
+          best
+          (let ((current-max-sum (- (list-ref prefix (+ right 1))
+                                   (list-ref prefix left))))
+            (begin
+              (set! best (max best current-max-sum))
+              ;; shrink window until valid
+              (let shrink ((l left))
+                (if (and (< l right)
+                         (> (- (list-ref sorted right) (list-ref sorted l)) k))
+                    (shrink (+ l 1))
+                    (loop (+ right 1))))))))))

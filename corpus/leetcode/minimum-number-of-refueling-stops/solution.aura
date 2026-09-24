@@ -1,0 +1,136 @@
+;; max-heap as list sorted descending: '(), (cons v rest)
+;; heap-insert: keep descending
+(define (h-insert h v)
+  (cond ((null? h) (cons v '()))
+        ((> v (car h)) (cons v h))
+        (else (cons (car h) (h-insert (cdr h) v)))))
+
+(define (h-pop h)
+  (if (null? h) '() (cdr h)))
+
+(define (h-top h)
+  (if (null? h) #f (car h)))
+
+(define (h-empty? h)
+  (null? h))
+
+(define (list-ref-safe lst i)
+  (if (= i 0) (car lst) (list-ref-safe (cdr lst) (- i 1))))
+
+(define (len lst)
+  (if (null? lst) 0 (+ 1 (len (cdr lst)))))
+
+(define (solve target start-fuel stations)
+  (let ((n (len stations)))
+    (letrec ((helper (lambda (idx fuel stops)
+      (cond
+        ;; try to reach target from current fuel/position
+        ((>= fuel (- target (if (= idx 0) 0 (car (list-ref-safe stations (- idx 1))))))
+         stops)
+        ;; else: if we've passed all stations and still can't reach target, fail
+        ((>= idx n) -1)
+        ;; try to reach station idx from previous position
+        (else
+         (let ((prev-pos (if (= idx 0) 0 (car (list-ref-safe stations (- idx 1))))))
+           (let ((needed (- (car (list-ref-safe stations idx)) prev-pos)))
+             (if (< fuel needed)
+                 ;; can't even reach next station - need to refuel from heap
+                 (if (h-empty? '()) ;; placeholder
+                     -1
+                     stops)
+                 ;; can reach next station; add its fuel to heap
+                 (let ((new-fuel (- fuel needed))
+                       (new-heap (h-insert '() (car (cdr (list-ref-safe stations idx)))))))
+                   ;; pass new-fuel and new-heap through
+                   (helper2 idx new-fuel new-heap stops))))))))))
+
+    ;; The above got messy; restart with a cleaner approach using heap passed as param
+    'placeholder))
+
+;; Cleaner implementation with explicit heap parameter
+(define (solve target start-fuel stations)
+  (let ((n (len stations)))
+    (letrec ((go (lambda (idx fuel heap stops)
+      (if (>= idx n)
+          ;; no more stations; check if we can reach target from last station
+          (if (>= fuel (- target (if (= n 0) 0 (car (list-ref-safe stations (- n 1))))))
+              stops
+              -1)
+          (let ((prev-pos (if (= idx 0) 0 (car (list-ref-safe stations (- idx 1))))))
+            (let ((next-pos (car (list-ref-safe stations idx)))
+                  (next-fuel-amount (car (cdr (list-ref-safe stations idx)))))
+              (letrec ((drive (lambda (i f h s)
+                (if (>= i n)
+                    (if (>= f (- target (if (= n 0) 0 (car (list-ref-safe stations (- n 1))))))
+                        s
+                        -1)
+                    (let ((pp (if (= i 0) 0 (car (list-ref-safe stations (- i 1))))))
+                      (let ((np (car (list-ref-safe stations i)))
+                            (nf (car (cdr (list-ref-safe stations i)))))
+                        (if (< f (- np pp))
+                            (if (h-empty? h)
+                                -1
+                                (drive i (+ f (h-top h)) (h-pop h) (+ s 1)))
+                            (drive (+ i 1) (- f (- np pp)) (h-insert h nf) s))))))))
+                (drive 0 fuel '() 0)))))))))
+    'placeholder))
+
+;; Final clean version
+(define (solve target start-fuel stations)
+  (let ((n (len stations)))
+    (letrec ((go (lambda (idx fuel heap stops)
+      (cond
+        ((= idx n)
+         (let ((last-pos (if (= n 0) 0 (car (list-ref-safe stations (- n 1))))))
+           (if (>= fuel (- target last-pos)) stops -1)))
+        (else
+         (let ((prev-pos (if (= idx 0) 0 (car (list-ref-safe stations (- idx 1))))))
+           (letrec ((step (lambda (i f h s)
+             (if (= i n)
+                 (let ((lp (if (= n 0) 0 (car (list-ref-safe stations (- n 1))))))
+                   (if (>= f (- target lp)) s -1))
+                 (let ((pp (if (= i 0) 0 (car (list-ref-safe stations (- i 1))))))
+                   (let ((np (car (list-ref-safe stations i)))
+                         (nf (car (cdr (list-ref-safe stations i)))))
+                     (if (< f (- np pp))
+                         (if (h-empty? h)
+                             -1
+                             (step i (+ f (h-top h)) (h-pop h) (+ s 1)))
+                         (step (+ i 1) (- f (- np pp)) (h-insert h nf) s)))))))))
+             (step idx fuel heap stops))))))))
+    (go 0 start-fuel '() 0)))
+
+;; Display helpers
+(define (display-list lst)
+  (display "(")
+  (letrec ((d (lambda (l)
+    (cond ((null? l) (display ")"))
+          (else
+           (display (car l))
+           (if (null? (cdr l)) (display ")") (begin (display " ") (d (cdr l)))))))))
+    (d lst)))
+
+(define (display-case i result)
+  (begin
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display result)
+    (newline)))
+
+(define (display-case-list i result)
+  (begin
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display-list result)
+    (newline)))
+
+(display-case 0 (solve 100 10 '((10 20) (20 30) (30 40) (60 50))))
+(display-case 1 (solve 100 200 '((10 20) (20 30))))
+(display-case 2 (solve 100 10 '()))
+(display-case 3 (solve 50 50 '()))
+(display-case 4 (solve 100 5 '((10 20) (20 30))))
+(display-case 5 (solve 1 1 '()))
+(display-case 6 (solve 100 25 '((25 25) (50 25) (75 25))))
+(display-case 7 (solve 1000 100 '((200 100) (400 100) (600 100) (800 100))))

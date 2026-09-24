@@ -1,0 +1,46 @@
+(define (solve n capacity trips)
+  ;; Build events: (pos . delta)
+  ;; For half-open [start,end): pickup at start (+), dropoff at end (-)
+  ;; At same position, dropoffs first => sort by pos ascending, delta ascending (negative before positive)
+  (define events '())
+  (define (build rest)
+    (if (null? rest) '()
+        (let ((t (car rest)))
+          (let ((s (car t)) (e (cadr t)) (p (caddr t)))
+            (cons (cons s p) (cons (cons e (- p)) (build (cdr rest))))))))
+  (define ev (build trips))
+  (define sorted-ev
+    ;; simple insertion sort by (pos . delta)
+    (let loop ((xs ev) (acc '()))
+      (if (null? xs) acc
+          (let ((x (car xs)) (rest (cdr xs)))
+            (let insert ((a acc) (prev '()))
+              (cond
+                ((null? a)
+                 (loop rest (append (reverse (cons x prev)) '())))
+                ((or (< (car x) (car (car a)))
+                     (and (= (car x) (car (car a))) (< (cdr x) (cdr (car a)))))
+                 (let ((new-acc (append (reverse (cons x prev)) a)))
+                   (loop rest new-acc)))
+                (else (insert (cdr a) (cons (car a) prev)))))))))
+  (let loop ((evs sorted-ev) (cur 0) (ok #t))
+    (cond
+      ((not ok) "NO")
+      ((null? evs) "YES")
+      (else
+       (let ((c (+ cur (cdar evs))))
+         (if (> c capacity) "NO"
+             (loop (cdr evs) c ok)))))))
+
+;; Embedded test inputs
+(define (run)
+  (display "CASE0=") (display (solve 3 4 '((1 5 2) (2 4 3) (5 9 3)))) (newline)
+  (display "CASE1=") (display (solve 2 2 '((1 3 2) (3 5 2)))) (newline)
+  (display "CASE2=") (display (solve 2 3 '((1 5 2) (2 6 3)))) (newline)
+  (display "CASE3=") (display (solve 1 1 '((0 1000000000 1)))) (newline)
+  (display "CASE4=") (display (solve 3 5 '((1 4 3) (4 7 3) (2 5 2)))) (newline)
+  (display "CASE5=") (display (solve 2 5 '((2 5 3) (5 9 3)))) (newline)
+  (display "CASE6=") (display (solve 3 3 '((1 3 2) (3 5 2) (2 4 3)))) (newline)
+  (display "CASE7=") (display (solve 1 1 '((5 10 1)))) (newline))
+
+(run)

@@ -1,0 +1,147 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "n": 5,
+      "operations": [
+        [
+          "reserve",
+          null
+        ],
+        [
+          "reserve",
+          null
+        ],
+        [
+          "unreserve",
+          2
+        ],
+        [
+          "reserve",
+          null
+        ]
+      ]
+    },
+    "expected": "[1,2,2]"
+  },
+  {
+    "id": 1,
+    "input": {
+      "n": 1,
+      "operations": [
+        [
+          "reserve",
+          null
+        ],
+        [
+          "reserve",
+          null
+        ],
+        [
+          "unreserve",
+          1
+        ],
+        [
+          "reserve",
+          null
+        ]
+      ]
+    },
+    "expected": "[1,2,1]"
+  },
+  {
+    "id": 2,
+    "input": {
+      "n": 10,
+      "operations": [
+        [
+          "reserve",
+          null
+        ],
+        [
+          "reserve",
+          null
+        ],
+        [
+          "reserve",
+          null
+        ],
+        [
+          "reserve",
+          null
+        ],
+        [
+          "reserve",
+          null
+        ],
+        [
+          "unreserve",
+          3
+        ],
+        [
+          "reserve",
+          null
+        ],
+        [
+          "unreserve",
+          1
+        ],
+        [
+          "reserve",
+          null
+        ]
+      ]
+    },
+    "expected": "[1,2,3,4,5,3,1]"
+  },
+  {
+    "id": 3,
+    "input": {
+      "n": 3,
+      "operations": [
+        [
+          "unreserve",
+          1
+        ],
+        [
+          "reserve",
+          null
+        ]
+      ]
+    },
+    "expected": "[1]"
+  },
+  {
+    "id": 4,
+    "input": {
+      "n": 4,
+      "operations": [
+        [
+          "reserve",
+          null
+        ],
+        [
+          "unreserve",
+          1
+        ],
+        [
+          "reserve",
+          null
+        ],
+        [
+          "unreserve",
+          2
+        ],
+        [
+          "reserve",
+          null
+        ],
+        [
+          "reserve",
+          null
+        ]
+      ]
+    },
+    "expected": "[1,1,2,2]"
+  }
+]

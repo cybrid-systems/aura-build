@@ -1,0 +1,63 @@
+(define (vowel? c)
+  (or (equal? c #\a)
+      (equal? c #\e)
+      (equal? c #\i)
+      (equal? c #\o)
+      (equal? c #\u)))
+
+(define (string-length s)
+  (let loop ((i 0) (rest s))
+    (if (null? rest)
+        i
+        (loop (+ i 1) (cdr rest)))))
+
+(define (string-ref s i)
+  (if (= i 0)
+      (car s)
+      (string-ref (cdr s) (- i 1))))
+
+(define (solve s k)
+  (let ((n (string-length s)))
+    (if (or (< n k) (= k 0))
+        0
+        (let ((initial (let loop ((i 0) (cnt 0))
+                         (if (= i k)
+                               cnt
+                               (if (vowel? (string-ref s i))
+                                   (loop (+ i 1) (+ cnt 1))
+                                   (loop (+ i 1) cnt))))))
+          (let loop ((i k) (best initial) (cnt initial))
+            (if (= i n)
+                best
+                (let ((new-cnt (if (vowel? (string-ref s i))
+                                   (+ cnt 1)
+                                   cnt)))
+                  (let ((removed (if (vowel? (string-ref s (- i k)))
+                                    (- new-cnt 1)
+                                    new-cnt)))
+                    (let ((new-best (if (> removed best) removed best)))
+                      (loop (+ i 1) new-best removed))))))))))
+
+(define test-cases
+  (list
+    (list "abciiidef" 3)
+    (list "aeiou" 2)
+    (list "bcdfg" 3)
+    (list "a" 1)
+    (list "a" 2)
+    (list "aaaaa" 3)
+    (list "abcdefghijklmnopqrstuvwxyz" 5)
+    (list "leetcode" 0)))
+
+(define (run-cases cases i)
+  (if (null? cases)
+      '()
+      (begin
+        (display "CASE")
+        (display (number->string i))
+        (display "=")
+        (display (number->string (solve (car (car cases)) (car (cdr (car cases))))))
+        (newline)
+        (run-cases (cdr cases) (+ i 1)))))
+
+(run-cases test-cases 0)

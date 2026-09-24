@@ -1,0 +1,89 @@
+;; Gray Code solver in Aura
+;; Builds an n-bit Gray code by the classic recursive construction.
+
+(define (gray-code n)
+  (if (= n 0)
+      '(0)
+      (let ((prev (gray-code (- n 1)))
+            (mask (arithmetic-shift 1 (- n 1))))
+        (append prev
+                (map (lambda (x) (bitwise-xor x mask))
+                     (reverse-list prev))))))
+
+;; Helper: arithmetic shift left (since Aura has shift, but keep simple)
+(define (arithmetic-shift x n)
+  (if (<= n 0)
+      (let loop ((x x) (n n))
+        (if (= n 0)
+            x
+            (loop (quotient x 2) (+ n 1))))
+      (let loop ((x x) (n n))
+        (if (= n 0)
+            x
+            (loop (* x 2) (- n 1))))))
+
+;; bitwise-xor
+(define (bitwise-xor a b)
+  (let loop ((a a) (b b) (result 0) (bit 1))
+    (if (and (= a 0) (= b 0))
+        result
+        (let ((ab (modulo a 2))
+              (bb (modulo b 2))
+              (r  (modulo (+ ab bb) 2)))
+          (loop (quotient a 2)
+                (quotient b 2)
+                (+ result (* r bit))
+                (* bit 2))))))
+
+;; append two lists
+(define (append xs ys)
+  (if (null? xs)
+      ys
+      (cons (car xs) (append (cdr xs) ys))))
+
+;; map function
+(define (map f xs)
+  (if (null? xs)
+      '()
+      (cons (f (car xs)) (map f (cdr xs)))))
+
+;; reverse-list
+(define (reverse-list xs)
+  (reverse-iter xs '()))
+
+(define (reverse-iter xs acc)
+  (if (null? xs)
+      acc
+      (reverse-iter (cdr xs) (cons (car xs) acc))))
+
+;; solve: returns a list of n-bit gray codes
+(define (solve n)
+  (if (= n 0)
+      '(0)
+      (gray-code n)))
+
+;; Display a list of numbers space-separated
+(define (display-list xs)
+  (cond ((null? xs) (display ""))
+        ((null? (cdr xs)) (display (car xs)))
+        (else (display (car xs))
+              (display " ")
+              (display-list (cdr xs)))))
+
+;; Run all test cases
+(define (run-tests)
+  (let ((cases '(1 2 3 4 5 8 16 0)))
+    (let loop ((i 0) (cs cases))
+      (if (null? cs)
+          'done
+          (begin
+            (let ((n (car cs))
+                  (result (solve (car cs))))
+              (display "CASE")
+              (display (number->string i))
+              (display "=")
+              (display-list result)
+              (newline))
+            (loop (+ i 1) (cdr cs)))))))
+
+(run-tests)

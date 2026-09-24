@@ -1,0 +1,60 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:15:16Z",
+      "ts_local": "2026-09-24 23:15:16 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2988,
+        "total_characters": 0,
+        "prompt_tokens": 1396,
+        "completion_tokens": 1592
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.115,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 23:65: parse error: expected expression, got ')'\n   |\n 23 |                    (helper2 idx new-fuel new-heap stops))))))))))\n   |                                                                 ^\nerror: 26:5: parse error: expected expression, got ''\n   |\n 26 |     'placeholder))\n   |     ^^^^^^^^^^^^\nerror: 22:43: parse error: expected expression, got ')'\n   |\n 22 |              (step idx fuel heap stops))))))))\n   |                                           ^\nerror: 1:18: unbound variab",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:15:35Z",
+      "ts_local": "2026-09-24 23:15:35 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2568,
+        "total_characters": 0,
+        "prompt_tokens": 1396,
+        "completion_tokens": 1172,
+        "prompt_tokens_details": {
+          "cached_tokens": 1152
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.046,
+      "tests_passed": 6,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=2\nCASE1=0\nCASE2=-1\nCASE3=0\nCASE4=-1\nCASE5=0\nCASE6=2\nCASE7=-1\n"
+    }
+  ],
+  "slug": "minimum-number-of-refueling-stops",
+  "title": "Minimum Number of Refueling Stops",
+  "category": "greedy",
+  "updated_at": "2026-09-24T15:15:35Z",
+  "updated_at_local": "2026-09-24 23:15:35 CST"
+}

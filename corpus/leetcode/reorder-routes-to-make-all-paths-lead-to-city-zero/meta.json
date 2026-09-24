@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:15:33Z",
+      "ts_local": "2026-09-24 23:15:33 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1803,
+        "total_characters": 0,
+        "prompt_tokens": 1299,
+        "completion_tokens": 504,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.035,
+      "tests_passed": 3,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=0\nCASE1=0\nCASE2=0\nCASE3=0\nCASE4=0\nCASE5=0\nCASE6=0\nCASE7=0\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:15:49Z",
+      "ts_local": "2026-09-24 23:15:49 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2213,
+        "total_characters": 0,
+        "prompt_tokens": 1299,
+        "completion_tokens": 914,
+        "prompt_tokens_details": {
+          "cached_tokens": 1152
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.055,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 2:15: unbound variable: make-list\nerror: 2:15: unbound variable: make-list\nerror: 2:15: unbound variable: make-list\nerror: 2:15: unbound variable: make-list\nerror: 2:15: unbound variable: make-list\nerror: 2:15: unbound variable: make-list\nerror: 2:15: unbound variable: make-list\nerror: 2:15: unbound variable: make-list\n",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "reorder-routes-to-make-all-paths-lead-to-city-zero",
+  "title": "Reorder Routes to Make All Paths Lead to the City Zero",
+  "category": "graphs_bfs_dfs",
+  "updated_at": "2026-09-24T15:15:49Z",
+  "updated_at_local": "2026-09-24 23:15:49 CST"
+}

@@ -1,0 +1,81 @@
+;; Helper: reverse a list
+(define (rev xs)
+  (let loop ((xs xs) (acc '()))
+    (if (null? xs)
+        acc
+        (loop (cdr xs) (cons (car xs) acc)))))
+
+;; Helper: list length
+(define (len xs)
+  (let loop ((xs xs) (n 0))
+    (if (null? xs) n (loop (cdr xs) (+ n 1)))))
+
+;; Helper: list -> stack (just the list, top of stack = first element)
+(define (list->stack xs) xs)
+
+;; Helper: pop top of stack, returning (cons top rest)
+(define (stack-pop st)
+  (if (null? st)
+      (cons 0 '())
+      (cons (car st) (cdr st))))
+
+;; Convert a number to a digit list (forward order), avoiding leading zeros
+(define (number->digits n)
+  (if (= n 0)
+      '(0)
+      (let loop ((n n) (acc '()))
+        (if (= n 0)
+            acc
+            (loop (quotient n 10) (cons (modulo n 10) acc))))))
+
+;; Main solve: add two vectors a and b (forward-order digit lists)
+(define (solve a b)
+  (let* ((st-a (list->stack a))
+         (st-b (list->stack b))
+         (result
+          (let loop ((sa st-a) (sb st-b) (carry 0) (acc '()))
+            (cond
+              ((and (null? sa) (null? sb) (= carry 0))
+               (rev acc))
+              (else
+               (let* ((pa (stack-pop sa))
+                      (pb (stack-pop sb))
+                      (da (car pa))
+                      (db (car pb))
+                      (ra (cdr pa))
+                      (rb (cdr pb))
+                      (s (+ da db carry))
+                      (digit (modulo s 10))
+                      (new-carry (quotient s 10)))
+                 (loop ra rb new-carry (cons digit acc))))))))
+    result))
+
+;; Pretty-print a list as a vector-like form [a b c]
+(define (print-list xs)
+  (display "[")
+  (let loop ((xs xs) (first? #t))
+    (cond
+      ((null? xs)
+       (display "]"))
+      (else
+       (if first?
+           (display (car xs))
+           (begin (display " ") (display (car xs))))
+       (loop (cdr xs) #f))))
+  (newline))
+
+;; Run all cases
+(define (run-case i a b)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (print-list (solve a b)))
+
+(run-case 0 '(7 2 4) '(5 6))
+(run-case 1 '(2 4 3) '(5 6 4))
+(run-case 2 '(0) '(0))
+(run-case 3 '(9 9) '(1))
+(run-case 4 '(1) '(9 9 9))
+(run-case 5 '(9 9 9 9 9 9 9) '(9 9 9 9))
+(run-case 6 '(5 0 0) '(5 0 0))
+(run-case 7 '(1 2 3 4 5) '(6 7 8))

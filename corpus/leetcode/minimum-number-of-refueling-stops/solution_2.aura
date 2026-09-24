@@ -1,0 +1,111 @@
+;; Minimum Number of Refueling Stops
+;; Greedy with max-heap approach
+
+(define (max-of-three a b c)
+  (if (> a b)
+      (if (> a c) a c)
+      (if (> b c) b c)))
+
+;; Insert into heap maintaining max-heap property (as list, sorted descending)
+(define (heap-insert h x)
+  (cond ((null? h) (cons x '()))
+        ((> x (car h)) (cons x (cdr h)))
+        (else (cons (car h) (heap-insert (cdr h) x)))))
+
+;; Remove max from heap
+(define (heap-pop h)
+  (cdr h))
+
+(define (heap-peek h)
+  (car h))
+
+(define (heap-empty? h)
+  (null? h))
+
+;; solve: target, start-fuel, stations (list of (pos . fuel) pairs)
+(define (solve target start-fuel stations)
+  (solve-helper target start-fuel stations '() 0))
+
+(define (solve-helper target fuel stations heap stops)
+  (cond
+    ;; Check if we've reached target
+    ((>= fuel target) stops)
+    ;; No more stations and can't reach target
+    ((null? stations)
+     (if (heap-empty? heap)
+         -1
+         (let ((biggest (heap-peek heap)))
+           (solve-helper target (+ fuel biggest) '() (heap-pop heap) stops))))
+    ;; Check if we can reach the next station or target
+    ((>= fuel (car (car stations)))
+     ;; Pass the station, add its fuel to heap
+     (let ((next (car stations))
+           (rest (cdr stations)))
+       (solve-helper target fuel rest (heap-insert heap (cdr next)) stops)))
+    ;; Cannot reach next station; try to use previously passed stations
+    ((heap-empty? heap) -1)
+    (else
+     (let ((biggest (heap-peek heap)))
+       (solve-helper target (+ fuel biggest) stations (heap-pop heap) (+ stops 1))))))
+
+;; Display helpers
+(define (display-list lst)
+  (display "(")
+  (let loop ((l lst) (first? #t))
+    (cond ((null? l) (display ")"))
+          (else
+           (if first? (begin (display (car l)) (loop (cdr l) #f))
+               (begin (display " ") (display (car l)) (loop (cdr l) #f)))))))
+
+(define (display-stations lst)
+  (display "(")
+  (let loop ((l lst) (first? #t))
+    (cond ((null? l) (display ")"))
+          (else
+           (if first?
+               (begin (display "(") (display (car (car l))) (display " ") (display (cdr (car l))) (display ")")
+                      (loop (cdr l) #f))
+               (begin (display " (") (display (car (car l))) (display " ") (display (cdr (car l))) (display ")")
+                      (loop (cdr l) #f)))))))
+
+;; Test cases - stations as list of (pos . fuel) pairs
+
+;; CASE0: target=100, start=10, stations=[[10,20],[20,30],[30,40],[60,50]]
+(define result0
+  (solve 100 10 (list (cons 10 20) (cons 20 30) (cons 30 40) (cons 60 50))))
+(display "CASE0=") (display result0) (newline)
+
+;; CASE1: target=100, start=200, stations=[[10,20],[20,30]]
+(define result1
+  (solve 100 200 (list (cons 10 20) (cons 20 30))))
+(display "CASE1=") (display result1) (newline)
+
+;; CASE2: target=100, start=10, stations=[]
+(define result2
+  (solve 100 10 '()))
+(display "CASE2=") (display result2) (newline)
+
+;; CASE3: target=50, start=50, stations=[]
+(define result3
+  (solve 50 50 '()))
+(display "CASE3=") (display result3) (newline)
+
+;; CASE4: target=100, start=5, stations=[[10,20],[20,30]]
+(define result4
+  (solve 100 5 (list (cons 10 20) (cons 20 30))))
+(display "CASE4=") (display result4) (newline)
+
+;; CASE5: target=1, start=1, stations=[]
+(define result5
+  (solve 1 1 '()))
+(display "CASE5=") (display result5) (newline)
+
+;; CASE6: target=100, start=25, stations=[[25,25],[50,25],[75,25]]
+(define result6
+  (solve 100 25 (list (cons 25 25) (cons 50 25) (cons 75 25))))
+(display "CASE6=") (display result6) (newline)
+
+;; CASE7: target=1000, start=100, stations=[[200,100],[400,100],[600,100],[800,100]]
+(define result7
+  (solve 1000 100 (list (cons 200 100) (cons 400 100) (cons 600 100) (cons 800 100))))
+(display "CASE7=") (display result7) (newline)

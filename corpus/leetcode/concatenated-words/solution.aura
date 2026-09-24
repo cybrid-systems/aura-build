@@ -1,0 +1,79 @@
+(define (list->set lst)
+  (let loop ((lst lst) (acc '()))
+    (if (null? lst)
+        acc
+        (loop (cdr lst) (cons (car lst) acc)))))
+
+(define (set-member? s x)
+  (cond ((null? s) #f)
+        ((equal? (car s) x) #t)
+        (else (set-member? (cdr s) x))))
+
+(define (string-ref-at s i)
+  (substring s i (+ i 1)))
+
+(define (substring s start end)
+  (let loop ((i 0) (len (string-length s)) (acc '()))
+    (cond ((= i len) (list->string (reverse acc)))
+          ((and (>= i start) (< i end))
+           (loop (+ i 1) len (cons (string-ref s i) acc)))
+          (else (loop (+ i 1) len acc)))))
+
+(define (string-length s)
+  (let loop ((i 0))
+    (if (>= i (string-utf8-length s))
+        i
+        (loop (+ i 1)))))
+
+(define (can-form? word word-set memo)
+  (cond ((set-member? memo word) (cdr (assq-lookup memo word)))
+        (else
+         (let loop ((i 1) (len (string-length word)) (found #f))
+           (cond (found #t)
+                 ((>= i len) #f)
+                 (else
+                  (let ((prefix (substring word 0 i))
+                        (suffix (substring word i len)))
+                    (if (and (set-member? word-set prefix)
+                             (or (set-member? word-set suffix)
+                                 (can-form? suffix word-set memo)))
+                        #t
+                        (loop (+ i 1) len #f))))))
+         )))
+
+(define (assq-lookup memo key)
+  (cond ((null? memo) #f)
+        ((equal? (car (car memo)) key) (car memo))
+        (else (assq-lookup (cdr memo) key))))
+
+(define (solve words)
+  (let ((word-set (list->set words)))
+    (let loop ((ws words) (acc '()))
+      (if (null? ws)
+          (reverse acc)
+          (let ((w (car ws)))
+            (if (can-form? w word-set '())
+                (loop (cdr ws) (cons w acc))
+                (loop (cdr ws) acc)))))))
+
+(define (display-list lst)
+  (cond ((null? lst) (display "[]"))
+        (else
+         (display "[")
+         (display (car lst))
+         (let loop ((r (cdr lst)))
+           (if (null? r)
+               (display "]")
+               (begin
+                 (display ", ")
+                 (display (car r))
+                 (loop (cdr r))))))))
+
+(display "CASE0=") (display-list (solve '("cat" "dog" "catsdog" "dogcat" "catdog"))) (newline)
+(display "CASE1=") (display-list (solve '("a" "b" "ab" "abc" "abcd" "abcde"))) (newline)
+(display "CASE2=") (display-list (solve '())) (newline)
+(display "CASE3=") (display-list (solve '("single"))) (newline)
+(display "CASE4=") (display-list (solve '("a" "b" "c"))) (newline)
+(display "CASE5=") (display-list (solve '("ab" "bc" "abc"))) (newline)
+(display "CASE6=") (display-list (solve '("a" "aa" "aaa" "aaaa"))) (newline)
+(display "CASE7=") (display-list (solve '("cat" "rat" "catrat" "ratcatdog" "dog"))) (newline)

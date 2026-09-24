@@ -1,0 +1,146 @@
+(define (len lst)
+  (if (null? lst) 0 (+ 1 (len (cdr lst)))))
+
+(define (list-ref-safe lst i)
+  (if (= i 0) (car lst)
+      (list-ref-safe (cdr lst) (- i 1))))
+
+;; A heap entry is (sum i j)
+;; We need a binary min-heap keyed by sum.
+
+(define (heap-swap h i j)
+  ;; swap elements at positions i and j
+  (define (loop h i j)
+    (if (= i j) h
+        (let ((cur (list-ref-safe h i))
+              (jval (list-ref-safe h j)))
+          (set! h (list-set-nth h i jval))
+          (set! h (list-set-nth h j cur))
+          h)))
+  (loop h i j))
+
+(define (list-set-nth lst n v)
+  (if (= n 0)
+      (cons v (cdr lst))
+      (cons (car lst) (list-set-nth (cdr lst) (- n 1) v))))
+
+(define (heap-bubble-up h pos)
+  (if (= pos 0) h
+      (let ((parent (quotient (- pos 1) 2))
+            (cur (list-ref-safe h pos))
+            (par (list-ref-safe h parent)))
+        (if (< (car cur) (car par))
+            (let ((h2 (list-set-nth h parent cur)))
+              (set! h2 (list-set-nth h2 pos par))
+              (heap-bubble-up h2 parent))
+            h))))
+
+(define (heap-bubble-down h pos heap-size)
+  (let ((left (+ (* 2 pos) 1))
+        (right (+ (* 2 pos) 2))
+        (cur (list-ref-safe h pos))
+        (lval (if (< left heap-size) (list-ref-safe h left) cur))
+        (rval (if (< right heap-size) (list-ref-safe h right) cur)))
+    (cond
+      ((and (< (car lval) (car cur)) (<= (car lval) (car rval)))
+       (let ((h2 (list-set-nth h left cur)))
+         (set! h2 (list-set-nth h2 pos lval))
+         (heap-bubble-down h2 left heap-size)))
+      ((< (car rval) (car cur))
+       (let ((h2 (list-set-nth h right cur)))
+         (set! h2 (list-set-nth h2 pos rval))
+         (heap-bubble-down h2 right heap-size)))
+      (else h))))
+
+(define (heap-push h entry heap-size)
+  (set! h (list-set-nth h heap-size entry))
+  (heap-bubble-up h heap-size))
+
+(define (heap-pop-min h heap-size)
+  (let ((root (car h))
+        (last (list-ref-safe h (- heap-size 1)))
+        (h2 (cdr h)))
+    ;; shrink: overwrite position 0 with last
+    (set! h2 (cons last (cdr h2)))
+    (set! h2 (heap-bubble-down h2 0 (- heap-size 1)))
+    h2))
+
+(define (solve nums1 nums2 k)
+  (let ((n1 (len nums1))
+        (n2 (len nums2))
+        (result '())
+        (heap '())
+        (heap-size 0)
+        (count 0)
+        (limit (min k (* n1 n2))))
+    ;; build heap: first min(k, n1) entries: (nums1[i] + nums2[0], i, 0)
+    (define (build i)
+      (if (or (= i n1) (= i k))
+          'done
+          (begin
+            (let ((sum (+ (list-ref-safe nums1 i) (car nums2))))
+              (set! heap (heap-push heap (list sum i 0) heap-size))
+              (set! heap-size (+ heap-size 1)))
+            (build (+ i 1)))))
+    (build 0)
+    (define (extract)
+      (if (or (= count limit) (= heap-size 0))
+          'done
+          (let ((min-entry (car heap))
+                (h2 (heap-pop-min heap heap-size)))
+            (set! heap h2)
+            (set! heap-size (- heap-size 1))
+            ;; h2 is the new heap list, last element shifted to front then bubbled down
+            ;; but heap-pop-min shrinks to (- heap-size 1); need to keep size correct
+            (let ((s (list-ref-safe min-entry 0))
+                  (i (list-ref-safe min-entry 1))
+                  (j (list-ref-safe min-entry 2)))
+              (set! result (cons (list (list-ref-safe nums1 i) (list-ref-safe nums2 j)) result))
+              (set! count (+ count 1))
+              (if (< (+ j 1) n2)
+                  (begin
+                    (set! heap (heap-push heap (list (+ (list-ref-safe nums1 i) (list-ref-safe nums2 (+ j 1))) i (+ j 1)) heap-size))
+                    (set! heap-size (+ heap-size 1)))
+                  'nothing))
+            (extract))))
+    (extract)
+    (reverse result)))
+
+;; Display helpers
+(define (display-pair p)
+  (display "(")
+  (display (car p))
+  (display ",")
+  (display (car (cdr p)))
+  (display ")"))
+
+(define (display-list lst)
+  (display "[")
+  (define (loop l first?)
+    (if (null? l) (display "]")
+        (begin
+          (if first? (display "") (display ","))
+          (display-pair (car l))
+          (loop (cdr l) #f))))
+  (loop lst #t))
+
+;; Embedded test inputs
+(define CASE0_input {"nums1": [1, 7, 11], "nums2": [2, 4, 6], "k": 3})
+;; CASE1 - 10, etc.
+
+;; Run cases
+(define (run-case i nums1 nums2 k)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve nums1 nums2 k))
+  (newline))
+
+(run-case 0 '(1 7 11) '(2 4 6) 3)
+(run-case 1 '(1 7 11) '(2 4 6) 10)
+(run-case 2 '(1 2) '(3) 3)
+(run-case 3 '() '(1 2 3) 5)
+(run-case 4 '(1 1 2) '(1 2 3) 2)
+(run-case 5 '(1 2 3 4) '(1 2 3 4) 1)
+(run-case 6 '(5 6 7) '(1 2 3) 5)
+(run-case 7 '(1 1 1) '(1 1 1) 4)

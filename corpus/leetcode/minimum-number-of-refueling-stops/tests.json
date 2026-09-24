@@ -1,0 +1,139 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "target": 100,
+      "start_fuel": 10,
+      "stations": [
+        [
+          10,
+          20
+        ],
+        [
+          20,
+          30
+        ],
+        [
+          30,
+          40
+        ],
+        [
+          60,
+          50
+        ]
+      ]
+    },
+    "expected": "3"
+  },
+  {
+    "id": 1,
+    "input": {
+      "target": 100,
+      "start_fuel": 200,
+      "stations": [
+        [
+          10,
+          20
+        ],
+        [
+          20,
+          30
+        ]
+      ]
+    },
+    "expected": "0"
+  },
+  {
+    "id": 2,
+    "input": {
+      "target": 100,
+      "start_fuel": 10,
+      "stations": []
+    },
+    "expected": "-1"
+  },
+  {
+    "id": 3,
+    "input": {
+      "target": 50,
+      "start_fuel": 50,
+      "stations": []
+    },
+    "expected": "0"
+  },
+  {
+    "id": 4,
+    "input": {
+      "target": 100,
+      "start_fuel": 5,
+      "stations": [
+        [
+          10,
+          20
+        ],
+        [
+          20,
+          30
+        ]
+      ]
+    },
+    "expected": "-1"
+  },
+  {
+    "id": 5,
+    "input": {
+      "target": 1,
+      "start_fuel": 1,
+      "stations": []
+    },
+    "expected": "0"
+  },
+  {
+    "id": 6,
+    "input": {
+      "target": 100,
+      "start_fuel": 25,
+      "stations": [
+        [
+          25,
+          25
+        ],
+        [
+          50,
+          25
+        ],
+        [
+          75,
+          25
+        ]
+      ]
+    },
+    "expected": "3"
+  },
+  {
+    "id": 7,
+    "input": {
+      "target": 1000,
+      "start_fuel": 100,
+      "stations": [
+        [
+          200,
+          100
+        ],
+        [
+          400,
+          100
+        ],
+        [
+          600,
+          100
+        ],
+        [
+          800,
+          100
+        ]
+      ]
+    },
+    "expected": "-1"
+  }
+]

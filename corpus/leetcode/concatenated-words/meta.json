@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:15:49Z",
+      "ts_local": "2026-09-24 23:15:49 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2315,
+        "total_characters": 0,
+        "prompt_tokens": 1388,
+        "completion_tokens": 927,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.108,
+      "tests_passed": 1,
+      "tests_total": 8,
+      "stderr_snippet": "error: 3:16: unbound variable: string-utf8-length\nerror: 3:16: unbound variable: string-utf8-length\nerror: 3:16: unbound variable: string-utf8-length\nerror: 3:16: unbound variable: string-utf8-length\nerror: 3:16: unbound variable: string-utf8-length\nerror: 3:16: unbound variable: string-utf8-length\nerror: 3:16: unbound variable: string-utf8-length\n",
+      "stdout_snippet": "CASE0=CASE0=\nCASE1=\nCASE2=[]\nCASE3=\nCASE4=\nCASE5=\nCASE6=\nCASE7=\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:15:56Z",
+      "ts_local": "2026-09-24 23:15:56 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2575,
+        "total_characters": 0,
+        "prompt_tokens": 1388,
+        "completion_tokens": 1187,
+        "prompt_tokens_details": {
+          "cached_tokens": 1387
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.069,
+      "tests_passed": 4,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=[dogcat, catdog]\nCASE1=[ab]\nCASE2=[]\nCASE3=[]\nCASE4=[]\nCASE5=[]\nCASE6=[aa, aaa, aaaa]\nCASE7=[catrat, ratcatdog]\n"
+    }
+  ],
+  "slug": "concatenated-words",
+  "title": "Concatenated Words",
+  "category": "graphs_bfs_dfs",
+  "updated_at": "2026-09-24T15:15:56Z",
+  "updated_at_local": "2026-09-24 23:15:56 CST"
+}

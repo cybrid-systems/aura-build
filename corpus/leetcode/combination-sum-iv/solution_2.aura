@@ -1,0 +1,76 @@
+(define MOD 1000000007)
+
+(define (mod+ a b)
+  (let ((s (+ a b)))
+    (if (>= s MOD) (- s MOD) s)))
+
+(define (solve nums target)
+  ;; Build a vector of size target+1 as a list, dp[i] = number of ordered ways to sum to i.
+  (define (build-dp n)
+    (if (= n -1)
+        '()
+        (cons 0 (build-dp (- n 1)))))
+  (define dp (build-dp target))
+
+  (define (set-vec! lst i v)
+    (if (= i 0)
+        (set-car! lst v)
+        (set-vec! (cdr lst) (- i 1) v)))
+
+  (define (get-vec lst i)
+    (if (= i 0)
+        (car lst)
+        (get-vec (cdr lst) (- i 1))))
+
+  (set-vec! dp 0 1)
+
+  (define (outer i)
+    (if (> i target)
+        'done
+        (begin
+          (define (inner nums-rest)
+            (if (null? nums-rest)
+                (outer (+ i 1))
+                (let ((x (car nums-rest)))
+                  (if (> x i)
+                      (inner (cdr nums-rest))
+                      (begin
+                        (set-vec! dp i
+                          (mod+ (get-vec dp i)
+                                (get-vec dp (- i x))))
+                        (inner (cdr nums-rest)))))))
+          (inner nums))))
+
+  (outer 1)
+  (get-vec dp target))
+
+;; ---- Display helpers for lists ----
+(define (display-list lst)
+  (display "[")
+  (define (loop l)
+    (cond ((null? l) (display ""))
+          ((null? (cdr l))
+           (display (car l)))
+          (else
+           (display (car l))
+           (display " ")
+           (loop (cdr l)))))
+  (loop lst)
+  (display "]"))
+
+;; ---- Test cases ----
+(define (run-case i nums target)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve nums target))
+  (newline))
+
+(run-case 0 (list 1 2 3) 4)
+(run-case 1 (list 9) 3)
+(run-case 2 (list 1) 4)
+(run-case 3 (list 1 2) 3)
+(run-case 4 (list 2) 10)
+(run-case 5 (list 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20) 100)
+(run-case 6 (list 1) 1)
+(run-case 7 (list 1 2 3) 1)

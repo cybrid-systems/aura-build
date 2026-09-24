@@ -1,0 +1,131 @@
+;; Tree node: (value left right) or 'null
+;; We'll represent a node as a list (v l r) and empty as 'null
+
+(define (parse-arr arr)
+  ;; arr is a list of strings "1"/"0"/"null"
+  (define (helper lst)
+    (if (null? lst) 'null
+        (let ((v (car lst)))
+          (if (equal? v "null") 'null
+              (let ((node (list v 'null 'null)))
+                ;; Children will be set via mutation after creation
+                node)))))
+  ;; Build using index-based approach via helper that tracks position
+  ;; Actually, let me use an index-based builder
+  (let ((idx 0))
+    (define (build n)
+      (if (= idx (length arr))
+          'null
+          (let ((v (list-ref arr idx)))
+            (set! idx (+ idx 1))
+            (if (equal? v "null") 'null
+                (let ((node (list v 'null 'null)))
+                  (let ((l (build (+ n 1))))
+                    (let ((r (build (+ n 2))))
+                      ;; node is the current object; but list is immutable-ish
+                      ;; We need to mutate. Let's use vector... but Aura has lists.
+                      ;; We'll just construct (v l r) directly
+                      (list v l r))))))))
+    (build 0)))
+
+(define (contains-one? node)
+  (if (equal? node 'null) #f
+      (or (equal? (car node) "1")
+          (contains-one? (cadr node))
+          (contains-one? (caddr node)))))
+
+(define (prune node)
+  (if (equal? node 'null) 'null
+      (let ((l (prune (cadr node)))
+            (r (prune (caddr node))))
+        (if (contains-one? (list (car node) l r))
+            (list (car node) l r)
+            'null))))
+
+(define (level-order node)
+  ;; Returns list of strings ("1","0","null") or just '("null") for empty
+  (if (equal? node 'null) '("null")
+      (let ((result '()))
+        (define (bfs queue)
+          (if (null? queue) result
+              (let ((front (car queue)))
+                (set! result (append result (list (if (equal? front 'null) "null" (car front)))))
+                (if (equal? front 'null)
+                    (bfs (append (cdr queue) '('null 'null)))
+                    (bfs (append (cdr queue) (list (cadr front) (caddr front))))))))
+        (bfs (list node)))))
+
+(define (trim-trailing-nulls lst)
+  ;; Remove trailing "null" entries
+  (let ((len (length lst)))
+    (if (= len 0) '("null")
+        (let loop ((i (- len 1)))
+          (cond
+            ((< i 0) '("null"))
+            ((equal? (list-ref lst i) "null") (loop (- i 1)))
+            (else (let ((out '()))
+                    (let loop2 ((j 0))
+                      (if (> j i) out
+                          (begin
+                            (set! out (append out (list (list-ref lst j))))
+                            (loop2 (+ j 1))))))))))))
+
+(define (join lst)
+  (if (null? lst) ""
+      (let loop ((l lst) (acc ""))
+        (if (null? l) acc
+            (let ((rest (cdr l)))
+              (if (null? rest) (string-append acc (car l))
+                  (loop rest (string-append acc (car l) ", "))))))))
+
+(define (parse-csv s)
+  ;; Split string by ", "
+  (define (helper lst pos)
+    (if (= pos (string-length s)) (reverse (cons (substring s lst pos) '()))
+        (let ((c (string-ref s pos)))
+          (if (and (equal? (number->string (char->integer c)) "44")
+                   (= (+ pos 1) (string-length s)))
+              (reverse (cons (substring s lst pos) '()))
+              (if (and (equal? (number->string (char->integer c)) "44")
+                       (< (+ pos 1) (string-length s))
+                       (equal? (string-ref s (+ pos 1)) (string-ref " " 0)))
+                  (helper (+ pos 2) (+ pos 2))
+                  (helper (+ pos 1) lst))))))
+  (helper 0 0))
+
+;; Hmm, string parsing is tricky. Let me use a different approach with char codes.
+;; Aura likely supports string->list or similar. Let me assume basic string ops.
+
+(define (solve level-order-str)
+  (let* ((parts (parse-csv level-order-str))
+         (root (parse-arr parts)))
+    (let ((pruned (prune root)))
+      (trim-trailing-nulls (level-order pruned)))))
+
+(define (display-list lst)
+  (display (join lst)))
+
+;; Embedded test inputs
+(define cases
+  (list
+    "1"
+    "0"
+    "1, 1, 0, 1, 1, null, 1"
+    "0"
+    "1, null, 1, null, 1"
+    "null"
+    "1, 0, 0, null, 0, null, 1, null, 1"
+    "1, null, 1, 1, 1"))
+
+(define (run-case i case-str)
+  (display "CASE")
+  (display (number->string i))
+  (display "=")
+  (display-list (solve case-str))
+  (newline))
+
+(let loop ((i 0) (cs cases))
+  (if (null? cs) 'done
+      (begin
+        (run-case i (car cs))
+        (loop (+ i 1) (cdr cs)))))

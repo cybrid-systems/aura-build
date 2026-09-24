@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:16:17Z",
+      "ts_local": "2026-09-24 23:16:17 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 3129,
+        "total_characters": 0,
+        "prompt_tokens": 1450,
+        "completion_tokens": 1679,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": -1,
+      "timeout": true,
+      "duration_s": 20.007,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "warning: (define …) inside (while …) body (Issue #2571). Loop counters should usually be outer-define + (set! name …) each iteration; inner define is easy to misread as per-iteration init from other languages.\n",
+      "stdout_snippet": "CASE0="
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:16:23Z",
+      "ts_local": "2026-09-24 23:16:23 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2070,
+        "total_characters": 0,
+        "prompt_tokens": 1450,
+        "completion_tokens": 620,
+        "prompt_tokens_details": {
+          "cached_tokens": 1449
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 2.103,
+      "tests_passed": 8,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=7\nCASE1=0\nCASE2=1\nCASE3=3\nCASE4=1\nCASE5=85842053\nCASE6=1\nCASE7=1\n"
+    }
+  ],
+  "slug": "combination-sum-iv",
+  "title": "Combination Sum IV",
+  "category": "backtracking",
+  "updated_at": "2026-09-24T15:16:23Z",
+  "updated_at_local": "2026-09-24 23:16:23 CST"
+}

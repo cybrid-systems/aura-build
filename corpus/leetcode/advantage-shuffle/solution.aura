@@ -1,0 +1,103 @@
+(define (assoc k al)
+  (cond ((null? al) #f)
+        ((equal? (car (car al)) k) (car (cdr (car al))))
+        (else (assoc k (cdr al)))))
+
+(define (sort-pairs pairs)
+  ;; pairs is list of (index . value) sorted by value ascending using insertion sort
+  (define (insert p sorted)
+    (cond ((null? sorted) (cons p '()))
+          ((< (cdr p) (cdr (car sorted)))
+           (cons p sorted))
+          (else (cons (car sorted) (insert p (cdr sorted))))))
+  (define (loop rest acc)
+    (if (null? rest)
+        acc
+        (loop (cdr rest) (insert (car rest) acc))))
+  (loop pairs '()))
+
+(define (index->value sorted-alist)
+  ;; Build mapping from index to assigned value
+  (define (loop al)
+    (if (null? al)
+        '()
+        (cons (cons (car (car al)) (cdr (car al)))
+              (loop (cdr al)))))
+  (loop sorted-alist))
+
+(define (solve A B)
+  (let* ((n (length A))
+         (a-pairs (let loop ((i 0) (lst A) (acc '()))
+                    (if (null? lst)
+                        acc
+                        (loop (+ i 1) (cdr lst) (cons (cons i (car lst)) acc)))))
+         (sorted-a (sort-pairs a-pairs))
+         (b-pairs (let loop ((i 0) (lst B) (acc '()))
+                    (if (null? lst)
+                        acc
+                        (loop (+ i 1) (cdr lst) (cons (cons i (car lst)) acc)))))
+         (sorted-b (sort-pairs b-pairs))
+         (result '())
+         (a-ptr sorted-a)
+         (b-ptr sorted-b))
+    ;; greedy: for each B in ascending order, try to assign smallest A that beats it
+    ;; else assign smallest A (waste)
+    (set! result
+      (let loop ((rp result) (ap a-ptr) (bp b-ptr))
+        (cond ((null? bp) rp)
+              (else
+               (let* ((b-val (cdr (car bp)))
+                      (winner (let find-w ((ap ap))
+                                (cond ((null? ap) #f)
+                                      ((> (cdr (car ap)) b-val) (car ap))
+                                      (else (find-w (cdr ap)))))))
+                 (if winner
+                     (loop (cons (cons (car (car bp)) (cdr winner)) rp)
+                           (let skip ((ap2 ap))
+                             (if (equal? (car ap2) winner)
+                                 (cdr ap2)
+                                 (cons (car ap2) (skip (cdr ap2)))))
+                           (cdr bp))
+                     ;; waste smallest A
+                     (loop (cons (cons (car (car bp)) (cdr (car ap))) rp)
+                           (cdr ap)
+                           (cdr bp))))))))
+    ;; convert result alist to list in original order
+    (let loop ((i 0) (acc '()))
+      (if (>= i n)
+          (reverse acc)
+          (loop (+ i 1) (cons (assoc i result) acc))))))
+
+(define (display-list lst)
+  (display "[")
+  (let loop ((l lst) (first #t))
+    (cond ((null? l) (display ""))
+          (first (display (number->string (car l)))
+                 (loop (cdr l) #f))
+          (else (display ", ")
+                (display (number->string (car l)))
+                (loop (cdr l) #f))))
+  (display "]"))
+
+;; Test cases
+(define cases
+  (list
+    (list (list 2 7 11 15) (list 1 10 4 11))
+    (list (list 1 2 3) (list 1 2 3))
+    (list (list 1 2 3) (list 4 5 6))
+    (list (list 1 1 2 2) (list 1 2 1 2))
+    (list (list 5) (list 3))
+    (list (list 3) (list 5))
+    (list '() '())
+    (list (list 8 2 4 9 1 3) (list 5 1 4 7 3 6))))
+
+(let loop ((cs cases) (i 0))
+  (if (null? cs)
+      '()
+      (begin
+        (display "CASE")
+        (display (number->string i))
+        (display "=")
+        (display-list (solve (car (car cs)) (car (cdr (car cs)))))
+        (newline)
+        (loop (cdr cs) (+ i 1)))))

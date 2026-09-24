@@ -1,0 +1,45 @@
+(define (display-list xs)
+  (define (helper xs first?)
+    (if (null? xs)
+        (display "")
+        (begin
+          (if (not first?) (display " "))
+          (display (car xs))
+          (helper (cdr xs) #f))))
+  (helper xs #t))
+
+(define (gray-code n)
+  ;; Returns a list of integers forming a Gray code of length 2^n.
+  (if (= n 0)
+      '(0)
+      (let ((prev (gray-code (- n 1)))
+            (high-bit (arithmetic-shift-left 1 (- n 1))))
+        (define (add-bit xs)
+          (if (null? xs)
+              '()
+              (cons (+ (car xs) high-bit) (add-bit (cdr xs)))))
+        (append prev (reverse (add-bit prev))))))
+
+(define (solve n)
+  (gray-code n))
+
+;; Helper for bit shift since Aura may not have arithmetic-shift
+;; Implementing left shift manually
+(define (arithmetic-shift-left x k)
+  (if (= k 0) x (arithmetic-shift-left (* x 2) (- k 1))))
+
+(define (run-case case-num n)
+  (display "CASE")
+  (display case-num)
+  (display "=")
+  (display-list (solve n))
+  (newline))
+
+(run-case 0 1)
+(run-case 1 2)
+(run-case 2 3)
+(run-case 3 4)
+(run-case 4 5)
+(run-case 5 8)
+(run-case 6 16)
+(run-case 7 0)

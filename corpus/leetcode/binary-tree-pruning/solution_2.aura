@@ -1,0 +1,179 @@
+;; Binary Tree Pruning in Aura
+;; Build tree from level-order, prune subtrees with no 1s, print result.
+
+(define (caar p) (car (car p)))
+(define (cdar p) (cdr (car p)))
+(define (cadr p) (car (cdr p)))
+(define (cddr p) (cdr (cdr p)))
+(define (caddr p) (car (cdr (cdr p))))
+(define (cdddr p) (cdr (cdr (cdr p))))
+
+;; Tree node: (value left right) or 'null
+(define (make-node v l r) (list v l r))
+(define (node-v n) (car n))
+(define (node-l n) (cadr n))
+(define (node-r n) (caddr n))
+(define (set-node-l! n v) (set-car! (cdr n) v))
+(define (set-node-r! n v) (set-car! (cddr n) v))
+
+;; Parse a single token: number or "null"
+(define (parse-token s)
+  (if (equal? s "null") 'null
+      (string->number s)))
+
+;; Split a CSV string into tokens
+(define (split-csv s)
+  (let ((len (string-length s)))
+    (let loop ((i 0) (start 0) (acc '()))
+      (cond ((= i len)
+             (reverse (cons (substring s start i) acc)))
+            ((char=? (string-ref s i) #\,)
+             (loop (+ i 1) (+ i 1)
+                   (cons (substring s start i) acc)))
+            (else (loop (+ i 1) start acc))))))
+
+;; Parse header "CASE<i>=<n>" -> i, n
+(define (parse-header s)
+  (let ((parts (split-csv s)))
+    (let ((case-part (car parts))
+          (n-part (cadr parts)))
+      (let ((eq-idx (string-contains case-part #\=)))
+        (let ((idx-str (substring case-part (+ eq-idx 1) (string-length case-part))))
+          (values (string->number idx-str) (string->number n-part)))))))
+
+(define (string-contains s c)
+  (let loop ((i 0))
+    (cond ((= i (string-length s)) #f)
+          ((char=? (string-ref s i) c) i)
+          (else (loop (+ i 1))))))
+
+;; Build tree from level-order list of tokens (already parsed: 'null or number)
+(define (build-tree tokens)
+  (if (null? tokens) 'null
+      (let ((first (car tokens)))
+        (if (eq? first 'null) 'null
+            (let ((root (make-node first 'null 'null))
+                  (rest (cdr tokens)))
+              (let loop ((nodes (list root))
+                         (ts rest))
+                (if (or (null? nodes) (null? ts))
+                    root
+                    (let ((cur (car nodes))
+                          (rest-nodes (cdr nodes)))
+                      (let ((tok-l (car ts))
+                            (tok-r (cadr ts))
+                            (next-ts (cddr ts)))
+                        (let ((new-nodes rest-nodes))
+                          (let ((new-nodes
+                                 (if (eq? tok-l 'null) new-nodes
+                                     (let ((ln (make-node tok-l 'null 'null)))
+                                       (set-node-l! cur ln)
+                                       (append new-nodes (list ln))))))
+                            (let ((new-nodes
+                                   (if (eq? tok-r 'null) new-nodes
+                                       (let ((rn (make-node tok-r 'null 'null)))
+                                         (set-node-r! cur rn)
+                                         (append new-nodes (list rn))))))
+                              (loop new-nodes next-ts))))))))))))
+
+;; Prune: returns new subtree or 'null. Mutates subtree in place by returning 'null.
+(define (prune n)
+  (if (eq? n 'null) 'null
+      (let ((new-l (prune (node-l n)))
+            (new-r (prune (node-r n))))
+        (set-node-l! n new-l)
+        (set-node-r! n new-r)
+        (if (and (eq? new-l 'null) (eq? new-r 'null) (= (node-v n) 0))
+            'null
+            n))))
+
+;; BFS to level-order list
+(define (to-level-order n)
+  (if (eq? n 'null) '()
+      (let loop ((q (list n))
+                 (acc '()))
+        (if (null? q)
+            (reverse acc)
+            (let ((cur (car q))
+                  (rest-q (cdr q)))
+              (let ((lv (if (eq? (node-l cur) 'null) 'null (node-v (node-l cur))))
+                    (rv (if (eq? (node-r cur) 'null) 'null (node-v (node-r cur)))))
+                (loop (append rest-q
+                              (if (eq? (node-l cur) 'null) '() (list (node-l cur)))
+                              (if (eq? (node-r cur) 'null) '() (list (node-r cur))))
+                      (cons cur acc))))))))
+
+;; Find first non-null node's left/right token when tree at index i has null children
+;; This is tricky. Let's instead do a full BFS including nulls but only up to last non-null.
+(define (to-level-order-full n)
+  (if (eq? n 'null) '()
+      (let loop ((q (list n))
+                 (acc '())
+                 (found-last #f))
+        (if (null? q)
+            (reverse acc)
+            (let ((cur (car q))
+                  (rest-q (cdr q)))
+              (let ((lv (if (eq? (node-l cur) 'null) 'null (node-v (node-l cur))))
+                    (rv (if (eq? (node-r cur) 'null) 'null (node-v (node-r cur)))))
+                (let ((new-found (or found-last
+                                     (not (eq? lv 'null))
+                                     (not (eq? rv 'null)))))
+                  (loop (append rest-q
+                                (if (eq? (node-l cur) 'null) '() (list (node-l cur)))
+                                (if (eq? (node-r cur) 'null) '() (list (node-r cur))))
+                        (cons cur acc)))))))))
+
+;; Convert value to display string
+(define (val->str v)
+  (cond ((eq? v 'null) "null")
+        (else (number->string v))))
+
+;; Convert node to display string for level order
+(define (node->str n)
+  (number->string (node-v n)))
+
+;; Print level-order traversal of tree, comma-separated
+(define (print-level-order n)
+  (if (eq? n 'null)
+      (display "null")
+      (let loop ((q (list n))
+                 (first? #t))
+        (if (null? q)
+            'done
+            (let ((cur (car q))
+                  (rest-q (cdr q)))
+              (if first?
+                  (display (node->str cur))
+                  (begin (display ", ") (display (node->str cur))))
+              (loop (append rest-q
+                            (if (eq? (node-l cur) 'null) '() (list (node-l cur)))
+                            (if (eq? (node-r cur) 'null) '() (list (node-r cur))))
+                    #f))))))
+
+;; Main solve: takes level-order CSV string, returns pruned tree
+(define (solve level-order-str)
+  (let ((tokens (map parse-token (split-csv level-order-str))))
+    (let ((root (build-tree tokens)))
+      (prune root))))
+
+;; ---- Run test cases ----
+
+(define (run-case i level-order-str)
+  (let ((root (solve level-order-str)))
+    (display "CASE")
+    (display i)
+    (display "=")
+    (if (eq? root 'null)
+        (display "null")
+        (print-level-order root))
+    (newline)))
+
+(run-case 0 "1")
+(run-case 1 "0")
+(run-case 2 "1, 1, 0, 1, 1, null, 1")
+(run-case 3 "0")
+(run-case 4 "1, null, 1, null, 1")
+(run-case 5 "null")
+(run-case 6 "1, 0, 0, null, 0, null, 1, null, 1")
+(run-case 7 "1, null, 1, 1, 1")

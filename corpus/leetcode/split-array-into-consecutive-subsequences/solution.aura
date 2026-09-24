@@ -1,0 +1,102 @@
+(define (solve nums)
+  ;; Greedy: for each number, prefer extending an existing subsequence of length>=3,
+  ;; else start a new subsequence (only valid if we can complete length 3).
+  ;; We track: count[x] = frequency of x remaining; tails[x] = # of subsequences ending at x with length 1 or 2.
+  (define (build lst)
+    (if (null? lst) '()
+        (cons (car lst) (build (cdr lst)))))
+  ;; Initialize counts and tails as association lists sorted by key (since nums sorted, easier to scan).
+  (define n (length nums))
+  (define (make-counts lst)
+    (if (null? lst) '()
+        (let ((k (car lst)))
+          (let ((rest (make-counts (cdr lst))))
+            (cons (cons k (+ 1 (cdr (assoc k rest)))) rest)))))
+  (define counts
+    (let loop ((lst nums) (acc '()))
+      (if (null? lst) acc
+          (let ((k (car lst)))
+            (if (and (not (null? acc)) (= (caar acc) k))
+                (loop (cdr lst) (cons (cons k (+ 1 (cdar acc))) (cdr acc)))
+                (loop (cdr lst) (cons (cons k 1) acc)))))))
+  ;; tails is built during processing; store as alist
+  (define (empty-alist) '())
+  (define (lookup-alist k al)
+    (let ((p (assoc k al)))
+      (if p (cdr p) 0)))
+  (define (update-alist k v al)
+    (let loop ((rest al))
+      (cond ((null? rest) (list (cons k v)))
+            ((= (caar rest) k) (cons (cons k v) (cdr rest)))
+            (else (cons (car rest) (loop (cdr rest)))))))
+  (define (process lst counts tails)
+    (cond ((null? lst) #t)
+          (else
+           (let* ((x (car lst))
+                  (c (lookup-alist x counts)))
+             (if (= c 0)
+                 ;; shouldn't happen if counts correct
+                 (process (cdr lst) counts tails)
+                 (let ((t1 (lookup-alist (cons 'key (- x 1)) tails))  ; placeholder
+                       (t2 0))
+                   ;; count of tails ending at x-1 with length 1
+                   (let ((t1-real (lookup-alist (cons 'e (- x 1)) tails))))
+                   (let* ((key-prev (- x 1))
+                          (tails-at-prev (lookup-alist key-prev tails))
+                          (tails-at-prev-len2 (lookup-alist (cons 'l2 key-prev) tails)))
+                     ;; We'll just do simpler: tails stored as alist mapping key -> #(len1, len2)
+                     #t)))))))
+  ;; Simpler implementation using mutation-like via set! on alist
+  (define tails (empty-alist))
+  (define ok #t)
+  (define (set-tails! k v) (set! tails (update-alist k v tails)))
+  (define (get-tails k) (lookup-alist k tails))
+  (define (dec-count! k)
+    (set! counts (update-alist k (- (lookup-alist k counts) 1) counts)))
+  (define (loop lst)
+    (cond ((null? lst) #t)
+          ((not ok) #f)
+          (else
+           (let ((x (car lst)))
+             (if (= (get-count x) 0)
+                 (loop (cdr lst))
+                 (begin
+                   (dec-count! x)
+                   (let ((t (get-tails (- x 1))))
+                     (if (> t 0)
+                         (begin
+                           (set-tails! (- x 1) (- t 1))
+                           (set-tails! x (+ (get-tails x) 1)))
+                         (let ((c-next (get-count (+ x 1)))
+                               (c-next2 (get-count (+ x 2))))
+                           (if (and (>= c-next 1) (>= c-next2 1))
+                               (begin
+                                 (dec-count! (+ x 1))
+                                 (dec-count! (+ x 2))
+                                 (set-tails! (+ x 2) (+ (get-tails (+ x 2)) 1)))
+                               (begin
+                                 (set! ok #f)
+                                 #f))))))
+                 (loop (cdr lst)))))))
+  (define (get-count k) (lookup-alist k counts))
+  (set! ok #t)
+  (loop nums)
+  ok)
+
+;; Display helper
+(define (display-case i result)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (if result "T" "NIL"))
+  (newline))
+
+;; Tests
+(display-case 0 (solve '(1 2 3 3 4 4 5 5)))
+(display-case 1 (solve '(1 2 3 3 4 4 5 5 6)))
+(display-case 2 (solve '(1 2 3 4 5)))
+(display-case 3 (solve '(1 2 3 4)))
+(display-case 4 (solve '(1 1 2 2 3 3)))
+(display-case 5 (solve '(1 2 3)))
+(display-case 6 (solve '(1 2 3 5 6 7)))
+(display-case 7 (solve '()))

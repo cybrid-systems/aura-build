@@ -1,0 +1,35 @@
+(define (solve arr k)
+  (let* ((n (length arr))
+         (idxs (let loop ((i 0) (acc '()))
+                 (if (>= i n) acc (loop (+ i 1) (append acc (list i))))))
+         (sorted (sort-by arr idxs <)))
+    (let loop ((i 0) (left 0) (window-sum 0) (best 0) (dp '()))
+      (cond
+        ((>= i n) best)
+        (else
+         (let* ((end-val (list-ref sorted i)))
+           (let shrink ((l left))
+             (if (and (< l i) (> (- end-val (list-ref sorted l)) k))
+                 (shrink (+ l 1))
+                 (let* ((new-left l)
+                        (new-window-sum (+ window-sum 
+                                          (- 0 (sum-range sorted new-left (- i 1)))
+                                          end-val))
+                       )
+                   ; Actually this is getting complex - let me use a cleaner approach
+                   ))))))))
+
+; Simpler cleaner implementation:
+(define (sum-list lst)
+  (let loop ((l lst) (s 0))
+    (if (null? l) s (loop (cdr l) (+ s (car l))))))
+
+(define (sort-by vals idxs)
+  ; sort vals by idxs ordering - since both parallel, sort idxs and reorder vals
+  (let ((pairs (let loop ((vs vals) (is idxs) (acc '()))
+                 (if (null? vs) acc 
+                     (loop (cdr vs) (cdr is) (append acc (list (cons (car vs) (car is)))))))))
+    ; Aura doesn't have built-in sort - this is hard
+    '()))
+
+; Let me use a different approach - just sort the array directly

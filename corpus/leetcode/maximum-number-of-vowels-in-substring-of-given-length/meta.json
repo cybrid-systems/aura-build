@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:13:56Z",
+      "ts_local": "2026-09-24 23:13:56 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1532,
+        "total_characters": 0,
+        "prompt_tokens": 1089,
+        "completion_tokens": 443,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.023,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "warning: unbalanced parentheses in input\nerror: 2:30: unbound variable: c\n   |\n  2 |   (or (equal? c #\\a) (equal? c #\\e) (equal? c #\\i) (equal? c #\\o) (equal? c #\\u)))\n   |                              ^\n",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:14:01Z",
+      "ts_local": "2026-09-24 23:14:01 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1633,
+        "total_characters": 0,
+        "prompt_tokens": 1089,
+        "completion_tokens": 544,
+        "prompt_tokens_details": {
+          "cached_tokens": 1088
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.039,
+      "tests_passed": 3,
+      "tests_total": 8,
+      "stderr_snippet": "error: 3:15: unbound variable: c\n   |\n  3 |       (equal? c #\\e)\n   |               ^\n",
+      "stdout_snippet": "CASE0=0\nCASE1=0\nCASE2=0\nCASE3=0\nCASE4=0\nCASE5=0\nCASE6=0\nCASE7=0\n"
+    }
+  ],
+  "slug": "maximum-number-of-vowels-in-substring-of-given-length",
+  "title": "Maximum Number of Vowels in Substring of Given Length",
+  "category": "sliding_window",
+  "updated_at": "2026-09-24T15:14:01Z",
+  "updated_at_local": "2026-09-24 23:14:01 CST"
+}

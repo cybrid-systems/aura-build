@@ -1,0 +1,92 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "words": [
+        "cat",
+        "dog",
+        "catsdog",
+        "dogcat",
+        "catdog"
+      ]
+    },
+    "expected": "[\"catdog\",\"dogcat\"]"
+  },
+  {
+    "id": 1,
+    "input": {
+      "words": [
+        "a",
+        "b",
+        "ab",
+        "abc",
+        "abcd",
+        "abcde"
+      ]
+    },
+    "expected": "[\"ab\"]"
+  },
+  {
+    "id": 2,
+    "input": {
+      "words": []
+    },
+    "expected": "[]"
+  },
+  {
+    "id": 3,
+    "input": {
+      "words": [
+        "single"
+      ]
+    },
+    "expected": "[]"
+  },
+  {
+    "id": 4,
+    "input": {
+      "words": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "expected": "[]"
+  },
+  {
+    "id": 5,
+    "input": {
+      "words": [
+        "ab",
+        "bc",
+        "abc"
+      ]
+    },
+    "expected": "[]"
+  },
+  {
+    "id": 6,
+    "input": {
+      "words": [
+        "a",
+        "aa",
+        "aaa",
+        "aaaa"
+      ]
+    },
+    "expected": "[\"aa\",\"aaa\",\"aaaa\"]"
+  },
+  {
+    "id": 7,
+    "input": {
+      "words": [
+        "cat",
+        "rat",
+        "catrat",
+        "ratcatdog",
+        "dog"
+      ]
+    },
+    "expected": "[\"catrat\",\"ratcatdog\"]"
+  }
+]

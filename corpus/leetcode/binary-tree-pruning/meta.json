@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:14:32Z",
+      "ts_local": "2026-09-24 23:14:32 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 4681,
+        "total_characters": 0,
+        "prompt_tokens": 1339,
+        "completion_tokens": 3342,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.065,
+      "tests_passed": 3,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=null\nCASE1=null\nCASE2=null\nCASE3=null\nCASE4=null\nCASE5=null\nCASE6=null\nCASE7=null\n\"done\"\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:14:41Z",
+      "ts_local": "2026-09-24 23:14:41 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 3205,
+        "total_characters": 0,
+        "prompt_tokens": 1339,
+        "completion_tokens": 1866,
+        "prompt_tokens_details": {
+          "cached_tokens": 1338
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.141,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "warning: unbalanced parentheses in input\nerror: 5:51: parse error: expected expression, got ')'\n   |\n  5 |       (let ((eq-idx (string-contains case-part #\\=)))\n   |                                                   ^\n",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "binary-tree-pruning",
+  "title": "Binary Tree Pruning",
+  "category": "trees",
+  "updated_at": "2026-09-24T15:14:41Z",
+  "updated_at_local": "2026-09-24 23:14:41 CST"
+}

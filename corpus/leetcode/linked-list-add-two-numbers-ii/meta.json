@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:14:21Z",
+      "ts_local": "2026-09-24 23:14:21 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2463,
+        "total_characters": 0,
+        "prompt_tokens": 1262,
+        "completion_tokens": 1201,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.088,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 3:38: parse error: expected expression, got '('\n   |\n  3 |          (list #vector(7 2 4) #vector(5 6))\n   |                                      ^\n",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:14:27Z",
+      "ts_local": "2026-09-24 23:14:27 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2435,
+        "total_characters": 0,
+        "prompt_tokens": 1262,
+        "completion_tokens": 1173,
+        "prompt_tokens_details": {
+          "cached_tokens": 1261
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.035,
+      "tests_passed": 1,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=[2 9 4]\nCASE1=[7 0 8]\nCASE2=[0]\nCASE3=[0 0 1]\nCASE4=[0 0 0 1]\nCASE5=[8 9 9 9 0 0 0 1]\nCASE6=[0 1 0]\nCASE7=[7 9 1 5 5]\n"
+    }
+  ],
+  "slug": "linked-list-add-two-numbers-ii",
+  "title": "Add Two Numbers II",
+  "category": "linked_list",
+  "updated_at": "2026-09-24T15:14:27Z",
+  "updated_at_local": "2026-09-24 23:14:27 CST"
+}

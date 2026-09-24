@@ -1,0 +1,69 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:15:15Z",
+      "ts_local": "2026-09-24 23:15:15 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2416,
+        "total_characters": 0,
+        "prompt_tokens": 1206,
+        "completion_tokens": 1210,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 512
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.089,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 50:18: unbound variable: empty-alist\n   |\n 50 |   (define tails (empty-alist))\n   |                  ^^^^^^^^^^^\n",
+      "stdout_snippet": "CASE0=T\nCASE1=T\nCASE2=T\nCASE3=T\nCASE4=T\nCASE5=T\nCASE6=T\nCASE7=T\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:15:29Z",
+      "ts_local": "2026-09-24 23:15:29 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2223,
+        "total_characters": 0,
+        "prompt_tokens": 1206,
+        "completion_tokens": 1017,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 1024
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.064,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=NIL\nCASE1=NIL\nCASE2=NIL\nCASE3=NIL\nCASE4=T\nCASE5=T\nCASE6=T\nCASE7=NIL\n"
+    }
+  ],
+  "slug": "split-array-into-consecutive-subsequences",
+  "title": "Split Array into Consecutive Subsequences",
+  "category": "greedy",
+  "updated_at": "2026-09-24T15:15:29Z",
+  "updated_at_local": "2026-09-24 23:15:29 CST"
+}

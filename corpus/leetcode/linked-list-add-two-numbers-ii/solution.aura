@@ -1,0 +1,125 @@
+;; Add Two Numbers II
+;; Lists are vectors [v1 ... vn] (forward order).
+;; Solve: read each vector, reverse to add from least-significant end,
+;; build result digits, then reverse back.
+
+(define (vec->list v)
+  (let loop ((i 0))
+    (if (= i (vector-length v))
+        '()
+        (cons (vector-ref v i) (loop (+ i 1))))))
+
+(define (list-length xs)
+  (let loop ((xs xs) (n 0))
+    (if (null? xs) n (loop (cdr xs) (+ n 1)))))
+
+(define (reverse-list xs)
+  (let loop ((xs xs) (acc '()))
+    (if (null? xs) acc (loop (cdr xs) (cons (car xs) acc)))))
+
+(define (list->vector-rev xs)
+  ;; Reverse the list, store into a vector of the right length.
+  (let* ((n (list-length xs))
+         (vec (make-vector n))
+         (rev (reverse-list xs)))
+    (let loop ((xs rev) (i 0))
+      (if (null? xs)
+          vec
+          (begin
+            (vector-set! vec i (car xs))
+            (loop (cdr xs) (+ i 1)))))))
+
+;; Add two non-negative integers given as digit vectors in forward order.
+;; Returns a digit vector in forward order (no leading zeros unless value is 0).
+(define (add-vectors a b)
+  (let* ((la (vector-length a))
+         (lb (vector-length b))
+         (la-1 (- la 1))
+         (lb-1 (- lb 1))
+         (max-n (if (> la lb) la lb))
+         (digits (make-vector (+ max-n 1) 0))
+         (total (+ max-n 1))
+         (total-1 (- total 1)))
+    (let loop ((i 0) (carry 0))
+      (if (> i total-1)
+          (if (= carry 0)
+              (begin
+                (vector-set! digits 0 carry)
+                digits)
+              (begin
+                (vector-set! digits 0 carry)
+                digits))
+          (let* ((da (if (>= la-1 (- i)) (vector-ref a (- la-1 i)) 0))
+                 (db (if (>= lb-1 (- i)) (vector-ref b (- lb-1 i)) 0))
+                 (s (+ da db carry))
+                 (d (modulo s 10))
+                 (c (quotient s 10)))
+            (begin
+              (vector-set! digits (- total-1 i) d)
+              (loop (+ i 1) c)))))))
+
+;; Strip leading zeros from a forward-order digit vector unless the value is 0.
+(define (strip-leading-zeros v)
+  (let ((n (vector-length v)))
+    (let loop ((i 0) (start 0))
+      (cond
+        ((= i n) (make-vector 1 0))          ; all zeros -> single 0
+        ((= (vector-ref v i) 0) (loop (+ i 1) (+ start 1)))
+        (else
+         (let ((m (- n start)))
+           (let ((out (make-vector m)))
+             (let loop2 ((j 0))
+               (if (= j m)
+                   out
+                   (begin
+                     (vector-set! out j (vector-ref v (+ j start)))
+                     (loop2 (+ j 1))))))))))))
+
+(define (solve a b)
+  (strip-leading-zeros (add-vectors a b)))
+
+;; Vector -> Aura list (for printing)
+(define (vec->print-list v)
+  (let loop ((i 0))
+    (if (= i (vector-length v))
+        '()
+        (cons (vector-ref v i) (loop (+ i 1))))))
+
+(define (display-list xs)
+  (cond ((null? xs) (display "[]"))
+        (else
+         (display "[")
+         (display (car xs))
+         (let loop ((xs (cdr xs)))
+           (if (null? xs)
+               (display "]")
+               (begin
+                 (display " ")
+                 (display (car xs))
+                 (loop (cdr xs))))))))
+
+;; --- Test harness ---
+(define (run-case i a b)
+  (let ((r (solve a b)))
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display-list (vec->print-list r))
+    (newline)))
+
+(let ((cases
+        (list
+         (list #vector(7 2 4) #vector(5 6))
+         (list #vector(2 4 3) #vector(5 6 4))
+         (list #vector(0) #vector(0))
+         (list #vector(9 9) #vector(1))
+         (list #vector(1) #vector(9 9 9))
+         (list #vector(9 9 9 9 9 9 9) #vector(9 9 9 9))
+         (list #vector(5 0 0) #vector(5 0 0))
+         (list #vector(1 2 3 4 5) #vector(6 7 8)))))
+  (let loop ((cs cases) (i 0))
+    (if (null? cs)
+        '()
+        (begin
+          (run-case i (car (car cs)) (car (cdr (car cs))))
+          (loop (cdr cs) (+ i 1))))))
