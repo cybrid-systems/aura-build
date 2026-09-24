@@ -420,6 +420,14 @@ aura-build llm-dogfood --project examples/projects/mini-pubsub \
   --out trajectories/mini_pubsub_dogfood.jsonl --json
 aura-build llm-dogfood --task pubsub --max-rounds 16 --worldlines 3 --prefer-session --json
 ./examples/projects/mini-pubsub/verify.sh examples/projects/mini-pubsub/stub  # expect fail
+
+# mini-2pc (7-file 2PC magnitude jump — log+parts+vote+coord+recover)
+aura-build llm-dogfood --project examples/projects/mini-2pc \
+  --prefer-session --fiber-explore 3 --worldlines 3 --max-rounds 20 \
+  --out trajectories/mini_2pc_dogfood.jsonl --json
+aura-build llm-dogfood --task 2pc --max-rounds 20 --worldlines 3 --prefer-session --json
+aura-build llm-dogfood --task twopc --max-rounds 20 --worldlines 3 --prefer-session --json
+./examples/projects/mini-2pc/verify.sh examples/projects/mini-2pc/stub  # expect fail
 ```
 
 Tasks: `fib` (see `examples/minimax_fib_task.md`), `greet` (see
@@ -427,7 +435,8 @@ Tasks: `fib` (see `examples/minimax_fib_task.md`), `greet` (see
 named helpers + multi-line stdout), `kv` (see `examples/projects/mini-kv/` —
 `kv-set`/`kv-get` + GET_a/GET_b/MISS/GET_c), `queue` (see
 `examples/projects/mini-queue/` — 4-file lease/ack/expire), `pubsub` (see
-`examples/projects/mini-pubsub/` — 5-file topic/sub/pub/deliver). Prefer
+`examples/projects/mini-pubsub/` — 5-file topic/sub/pub/deliver), `2pc`/`twopc` (see
+`examples/projects/mini-2pc/` — 7-file two-phase commit). Prefer
 `llm-dogfood --project DIR` for new mini projects (`GOAL.md` + `stub.aura` +
 `verify.sh` / `dogfood.json`) so the TASKS registry stays thin. MiniMax is
 propose-only; project `verify.sh` (when present) is the fitness oracle;

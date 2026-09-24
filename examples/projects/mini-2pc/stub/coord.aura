@@ -1,0 +1,10 @@
+; Broken: always takes commit path regardless of votes
+(define (coord-init)
+  #t)
+(define (coord-run tx payload)
+  (collect-votes tx payload)
+  ; broken: always commit path
+  (log-append "commit")
+  (a-commit tx)
+  (b-commit tx)
+  "commit")

@@ -86,7 +86,7 @@ Precise Soft Ready diagnosis (fail bit map + why aura-build cannot clear it):
 
 ## Demoted: mini-* llm-dogfood toys
 
-`examples/projects/mini-*` + `llm-dogfood --task {fib,greet,calc,kv,stack,bank,router,cache,queue,pubsub,…}` are **CI fixtures / regression**
+`examples/projects/mini-*` + `llm-dogfood --task {fib,greet,calc,kv,stack,bank,router,cache,queue,pubsub,2pc,twopc,…}` are **CI fixtures / regression**
 for propose→verify→repair plumbing. They are **not** the primary workflow.
 
 Primary workflow = this loop: long-lived serve → in-session predicate → worldlines → traj → git publish.
@@ -123,6 +123,11 @@ aura-build llm-dogfood --project examples/projects/mini-queue \
 aura-build llm-dogfood --project examples/projects/mini-pubsub \
   --prefer-session --fiber-explore 3 --worldlines 3 \
   --max-rounds 16 --out trajectories/mini_pubsub_dogfood.jsonl --json
+
+# Magnitude jump: 7-file two-phase commit (log+parts+vote+coord+recover+main)
+aura-build llm-dogfood --project examples/projects/mini-2pc \
+  --prefer-session --fiber-explore 3 --worldlines 3 --max-rounds 20 \
+  --out trajectories/mini_2pc_dogfood.jsonl --json
 ```
 
 ## See also

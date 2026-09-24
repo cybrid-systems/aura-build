@@ -1,0 +1,50 @@
+{
+  "label": "2pc",
+  "files": [
+    "log.aura",
+    "part-a.aura",
+    "part-b.aura",
+    "vote.aura",
+    "coord.aura",
+    "recover.aura",
+    "main.aura"
+  ],
+  "entry": "main.aura",
+  "run_mode": "cli_multi",
+  "expect": "RUN1=commit\nSTATE1=committed\nRUN2=abort\nSTATE2=aborted\nLOG=abort\nRECOVER=aborted\nPOISON=abort\nCOUNT=5",
+  "expect_res": [
+    "RUN1\\s*=\\s*commit",
+    "STATE1\\s*=\\s*committed",
+    "RUN2\\s*=\\s*abort",
+    "STATE2\\s*=\\s*aborted",
+    "LOG\\s*=\\s*abort",
+    "RECOVER\\s*=\\s*aborted",
+    "POISON\\s*=\\s*abort",
+    "COUNT\\s*=\\s*5"
+  ],
+  "source_res": [
+    "\\(define\\s+\\(log-init\\b",
+    "\\(define\\s+\\(log-append\\b",
+    "\\(define\\s+\\(log-last\\b",
+    "\\(define\\s+\\(a-init\\b",
+    "\\(define\\s+\\(a-prepare\\b",
+    "\\(define\\s+\\(a-commit\\b",
+    "\\(define\\s+\\(a-abort\\b",
+    "\\(define\\s+\\(a-state\\b",
+    "\\(define\\s+\\(b-init\\b",
+    "\\(define\\s+\\(b-prepare\\b",
+    "\\(define\\s+\\(b-commit\\b",
+    "\\(define\\s+\\(b-abort\\b",
+    "\\(define\\s+\\(b-state\\b",
+    "\\(define\\s+\\(collect-votes\\b",
+    "\\(define\\s+\\(coord-init\\b",
+    "\\(define\\s+\\(coord-run\\b",
+    "\\(define\\s+\\(recover-from-log\\b",
+    "coord-run",
+    "recover-from-log",
+    "a-state",
+    "b-state"
+  ],
+  "user_extra": "log.aura MUST define (log-init), (log-append decision), (log-last). part-a.aura MUST define (a-init), (a-prepare tx payload) refusing payload \"poison\", (a-commit tx), (a-abort tx), (a-state). part-b.aura MUST define b-* equivalents refusing payload \"deny-b\". vote.aura MUST define (collect-votes tx payload) calling a-prepare and b-prepare; return \"commit\" iff both yes else \"abort\". coord.aura MUST define (coord-init) and (coord-run tx payload): collect votes; on commit log-append \"commit\" then a-commit+b-commit; else log-append \"abort\" then a-abort+b-abort; return decision. recover.aura MUST define (recover-from-log) finishing commit/abort from log-last; return committed|aborted|idle. main.aura MUST run the GOAL scenario and print RUN1/STATE1/RUN2/STATE2/LOG/RECOVER/POISON/COUNT=5. Named fences required for log.aura, part-a.aura, part-b.aura, vote.aura, coord.aura, recover.aura, main.aura in that order. Aura run: `aura log.aura part-a.aura part-b.aura vote.aura coord.aura recover.aura main.aura`.",
+  "seed_from_stub": true
+}

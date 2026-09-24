@@ -1,0 +1,15 @@
+; Broken: always yes (ignore deny-b); abort path commits
+(define b-st "idle")
+(define (b-init)
+  (set! b-st "idle"))
+(define (b-prepare tx payload)
+  ; broken: ignore deny-b refuse
+  (set! b-st "prepared")
+  "yes")
+(define (b-commit tx)
+  (set! b-st "committed"))
+(define (b-abort tx)
+  ; broken: still commit
+  (set! b-st "committed"))
+(define (b-state)
+  b-st)

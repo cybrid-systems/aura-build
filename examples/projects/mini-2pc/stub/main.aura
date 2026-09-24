@@ -1,0 +1,38 @@
+; Broken main — wrong COUNT; still calls coord-run / recover / state probes
+(define (show label val)
+  (display label)(display "=")(display val)(newline))
+(define (both-state want)
+  (if (and (equal? (a-state) want) (equal? (b-state) want))
+      want
+      "bad"))
+
+(log-init)
+(a-init)
+(b-init)
+(coord-init)
+
+(define r1 (coord-run "t1" "ok"))
+(show "RUN1" r1)
+(define s1 (both-state "committed"))
+(show "STATE1" s1)
+
+(define r2 (coord-run "t2" "deny-b"))
+(show "RUN2" r2)
+(define s2 (both-state "aborted"))
+(show "STATE2" s2)
+
+(define lg (log-last))
+(show "LOG" lg)
+
+(define rc (recover-from-log))
+(show "RECOVER" rc)
+
+(a-init)
+(b-init)
+(coord-init)
+
+(define r3 (coord-run "t3" "poison"))
+(show "POISON" r3)
+
+; wrong: claims all seven are abortish
+(show "COUNT" 7)

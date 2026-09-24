@@ -1,0 +1,9 @@
+; Broken: log-append is a no-op; log-last always "empty"
+(define decision-log '())
+(define (log-init)
+  (set! decision-log '()))
+(define (log-append decision)
+  ; broken: ignore append
+  #t)
+(define (log-last)
+  "empty")

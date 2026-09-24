@@ -1,0 +1,6 @@
+; Broken: always returns commit without calling prepares honestly
+(define (collect-votes tx payload)
+  ; still call prepares so parts move, but force commit decision
+  (a-prepare tx payload)
+  (b-prepare tx payload)
+  "commit")

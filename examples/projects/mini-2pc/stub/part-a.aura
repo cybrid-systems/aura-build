@@ -1,0 +1,15 @@
+; Broken: always yes on prepare (ignore poison); commit always
+(define a-st "idle")
+(define (a-init)
+  (set! a-st "idle"))
+(define (a-prepare tx payload)
+  ; broken: ignore poison refuse
+  (set! a-st "prepared")
+  "yes")
+(define (a-commit tx)
+  (set! a-st "committed"))
+(define (a-abort tx)
+  ; broken: still commit instead of abort
+  (set! a-st "committed"))
+(define (a-state)
+  a-st)

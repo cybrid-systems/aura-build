@@ -48,6 +48,8 @@ TASK_ROUTER = "router"
 TASK_CACHE = "cache"
 TASK_QUEUE = "queue"
 TASK_PUBSUB = "pubsub"
+TASK_2PC = "2pc"
+TASK_TWOPC = "twopc"
 DEFAULT_TASK = TASK_FIB
 DEFAULT_MAX_ROUNDS = 8
 DEFAULT_WORLDLINES = 3
@@ -307,6 +309,22 @@ TASKS: dict[str, dict[str, Any]] = {
         "verify_script": "examples/projects/mini-pubsub/verify.sh",
         "user": "",
         "expect": "SUBS=2\nPUB=2\nPOLL_A=hello\nPOLL_B=hello\nPOLL_MISS=miss\nAFTER_UNSUB=1\nPOLL_A2=miss\nPOLL_B2=world\nCOUNT=3",
+        "fallback": "",
+    },
+    TASK_2PC: {
+        "label": "2pc",
+        "project": "examples/projects/mini-2pc",
+        "verify_script": "examples/projects/mini-2pc/verify.sh",
+        "user": "",
+        "expect": "RUN1=commit\nSTATE1=committed\nRUN2=abort\nSTATE2=aborted\nLOG=abort\nRECOVER=aborted\nPOISON=abort\nCOUNT=5",
+        "fallback": "",
+    },
+    TASK_TWOPC: {
+        "label": "twopc",
+        "project": "examples/projects/mini-2pc",
+        "verify_script": "examples/projects/mini-2pc/verify.sh",
+        "user": "",
+        "expect": "RUN1=commit\nSTATE1=committed\nRUN2=abort\nSTATE2=aborted\nLOG=abort\nRECOVER=aborted\nPOISON=abort\nCOUNT=5",
         "fallback": "",
     },
 }
@@ -1165,6 +1183,14 @@ def _tool_rule_sources(
         or "lease_miss" in expect.lower()
         or "nack_status" in expect.lower()
     )
+    is_2pc = (
+        label in ("2pc", "twopc")
+        or "mini-2pc" in project
+        or "recover-from-log" in expect.lower()
+        or "poison" in expect.lower() and "run1" in expect.lower()
+        or "coord-run" in str(task_spec.get("user_extra") or "").lower()
+        or "recover-from-log" in str(task_spec.get("source_res") or "").lower()
+    )
     is_pubsub = (
         label == "pubsub"
         or "mini-pubsub" in project
@@ -1174,7 +1200,146 @@ def _tool_rule_sources(
         or "bus-init" in str(task_spec.get("source_res") or "").lower()
     )
 
-    if is_pubsub and files:
+    if is_2pc and files:
+        sources = {
+            "log.aura": (
+                "(define decision-log '())\n"
+                "(define (log-init)\n"
+                "  (set! decision-log '()))\n"
+                "(define (log-append decision)\n"
+                "  (set! decision-log (cons decision decision-log)))\n"
+                "(define (log-last)\n"
+                "  (if (null? decision-log)\n"
+                "      \"empty\"\n"
+                "      (car decision-log)))\n"
+            ),
+            "part-a.aura": (
+                "(define a-st \"idle\")\n"
+                "(define (a-init)\n"
+                "  (set! a-st \"idle\"))\n"
+                "(define (a-prepare tx payload)\n"
+                "  (if (equal? payload \"poison\")\n"
+                "      \"no\"\n"
+                "      (begin\n"
+                "        (set! a-st \"prepared\")\n"
+                "        \"yes\")))\n"
+                "(define (a-commit tx)\n"
+                "  (set! a-st \"committed\"))\n"
+                "(define (a-abort tx)\n"
+                "  (set! a-st \"aborted\"))\n"
+                "(define (a-state)\n"
+                "  a-st)\n"
+            ),
+            "part-b.aura": (
+                "(define b-st \"idle\")\n"
+                "(define (b-init)\n"
+                "  (set! b-st \"idle\"))\n"
+                "(define (b-prepare tx payload)\n"
+                "  (if (equal? payload \"deny-b\")\n"
+                "      \"no\"\n"
+                "      (begin\n"
+                "        (set! b-st \"prepared\")\n"
+                "        \"yes\")))\n"
+                "(define (b-commit tx)\n"
+                "  (set! b-st \"committed\"))\n"
+                "(define (b-abort tx)\n"
+                "  (set! b-st \"aborted\"))\n"
+                "(define (b-state)\n"
+                "  b-st)\n"
+            ),
+            "vote.aura": (
+                "(define (collect-votes tx payload)\n"
+                "  (let ((va (a-prepare tx payload)))\n"
+                "    (let ((vb (b-prepare tx payload)))\n"
+                "      (if (and (equal? va \"yes\") (equal? vb \"yes\"))\n"
+                "          \"commit\"\n"
+                "          \"abort\"))))\n"
+            ),
+            "coord.aura": (
+                "(define (coord-init)\n"
+                "  #t)\n"
+                "(define (coord-run tx payload)\n"
+                "  (let ((decision (collect-votes tx payload)))\n"
+                "    (if (equal? decision \"commit\")\n"
+                "        (begin\n"
+                "          (log-append \"commit\")\n"
+                "          (a-commit tx)\n"
+                "          (b-commit tx)\n"
+                "          \"commit\")\n"
+                "        (begin\n"
+                "          (log-append \"abort\")\n"
+                "          (a-abort tx)\n"
+                "          (b-abort tx)\n"
+                "          \"abort\"))))\n"
+            ),
+            "recover.aura": (
+                "(define (finish-commit)\n"
+                "  (if (equal? (a-state) \"prepared\") (a-commit \"r\") #t)\n"
+                "  (if (equal? (b-state) \"prepared\") (b-commit \"r\") #t))\n"
+                "(define (finish-abort)\n"
+                "  (if (or (equal? (a-state) \"prepared\") (equal? (a-state) \"idle\"))\n"
+                "      (a-abort \"r\")\n"
+                "      #t)\n"
+                "  (if (or (equal? (b-state) \"prepared\") (equal? (b-state) \"idle\"))\n"
+                "      (b-abort \"r\")\n"
+                "      #t))\n"
+                "(define (recover-from-log)\n"
+                "  (let ((d (log-last)))\n"
+                "    (cond\n"
+                "      ((equal? d \"commit\")\n"
+                "       (begin\n"
+                "         (finish-commit)\n"
+                "         (if (and (equal? (a-state) \"committed\") (equal? (b-state) \"committed\"))\n"
+                "             \"committed\"\n"
+                "             \"idle\")))\n"
+                "      ((equal? d \"abort\")\n"
+                "       (begin\n"
+                "         (finish-abort)\n"
+                "         (if (and (equal? (a-state) \"aborted\") (equal? (b-state) \"aborted\"))\n"
+                "             \"aborted\"\n"
+                "             \"idle\")))\n"
+                "      (#t \"idle\"))))\n"
+            ),
+            "main.aura": (
+                "(define (show label val)\n"
+                "  (display label)(display \"=\")(display val)(newline))\n"
+                "(define (both-state want)\n"
+                "  (if (and (equal? (a-state) want) (equal? (b-state) want))\n"
+                "      want\n"
+                "      \"bad\"))\n"
+                "(define (is-abortish v)\n"
+                "  (if (or (equal? v \"abort\") (equal? v \"aborted\")) 1 0))\n"
+                "(log-init)\n"
+                "(a-init)\n"
+                "(b-init)\n"
+                "(coord-init)\n"
+                "(define r1 (coord-run \"t1\" \"ok\"))\n"
+                "(show \"RUN1\" r1)\n"
+                "(define s1 (both-state \"committed\"))\n"
+                "(show \"STATE1\" s1)\n"
+                "(define r2 (coord-run \"t2\" \"deny-b\"))\n"
+                "(show \"RUN2\" r2)\n"
+                "(define s2 (both-state \"aborted\"))\n"
+                "(show \"STATE2\" s2)\n"
+                "(define lg (log-last))\n"
+                "(show \"LOG\" lg)\n"
+                "(define rc (recover-from-log))\n"
+                "(show \"RECOVER\" rc)\n"
+                "(a-init)\n"
+                "(b-init)\n"
+                "(coord-init)\n"
+                "(define r3 (coord-run \"t3\" \"poison\"))\n"
+                "(show \"POISON\" r3)\n"
+                "(show \"COUNT\" (+ (is-abortish r1)\n"
+                "                 (+ (is-abortish s1)\n"
+                "                    (+ (is-abortish r2)\n"
+                "                       (+ (is-abortish s2)\n"
+                "                          (+ (is-abortish lg)\n"
+                "                             (+ (is-abortish rc) (is-abortish r3))))))))\n"
+            ),
+        }
+        sources = {fn: sources[fn] for fn in files if fn in sources}
+    elif is_pubsub and files:
         sources = {
             "topic.aura": (
                 "(define topics '())\n"
