@@ -1,0 +1,7 @@
+(define idemp-keys '())
+(define (idemp-init)
+  (set! idemp-keys '()))
+(define (idemp-seen? key)
+  (if (member key idemp-keys) #t #f))
+(define (idemp-mark key)
+  (set! idemp-keys (cons key idemp-keys)))

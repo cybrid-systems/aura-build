@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 AB="${AB:-$ROOT/.venv/bin/aura-build}"
-AURA_BIN="${AURA_BIN:-/workspace/aura-grok/build_soft4048/aura}"
+AURA_BIN="${AURA_BIN:-/workspace/aura-grok/build_soft4054/aura}"
 export AURA_BIN
 OUT_DIR="${OUT_DIR:-scratch/self_evolve_combat}"
 PROJECT="${PROJECT:-examples/projects/mini-saga}"

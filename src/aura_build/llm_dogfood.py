@@ -57,6 +57,7 @@ TASK_PUBSUB = "pubsub"
 TASK_2PC = "2pc"
 TASK_TWOPC = "twopc"
 TASK_SAGA = "saga"
+TASK_EXCHANGE = "exchange"
 DEFAULT_TASK = TASK_FIB
 DEFAULT_MAX_ROUNDS = 8
 DEFAULT_WORLDLINES = 3
@@ -340,6 +341,14 @@ TASKS: dict[str, dict[str, Any]] = {
         "verify_script": "examples/projects/mini-saga/verify.sh",
         "user": "",
         "expect": "OK=committed\nST1=held/charged/sent\nDUP=dup\nST1B=held/charged/sent\nFAIL_PAY=aborted\nST2=cancelled/none/none\nFAIL_SHIP=aborted\nST3=cancelled/refunded/none\nCOUNT=4",
+        "fallback": "",
+    },
+    TASK_EXCHANGE: {
+        "label": "exchange",
+        "project": "examples/projects/mini-exchange",
+        "verify_script": "examples/projects/mini-exchange/verify.sh",
+        "user": "",
+        "expect": "FILL1=partial\nLEFT1=3\nRISK=reject\nSTP=0\nCXL=cancelled\nHALT=halted\nREJ_HALT=reject\nRESUME=open\nDUP=dup\nREPLAY=ok\nEQ=1\nFEES=14\nCOUNT=10",
         "fallback": "",
     },
 }
@@ -1222,8 +1231,42 @@ def _tool_rule_sources(
         or "compensate-from" in str(task_spec.get("user_extra") or "").lower()
         or "saga-run" in str(task_spec.get("source_res") or "").lower()
     )
+    is_exchange = (
+        label == "exchange"
+        or "mini-exchange" in project
+        or "fill1" in expect.lower()
+        or "rej_halt" in expect.lower()
+        or "match-against" in str(task_spec.get("user_extra") or "").lower()
+        or "exchange-replay" in str(task_spec.get("source_res") or "").lower()
+    )
 
-    if is_saga and files:
+    if is_exchange and files:
+        # Prefer project gold/ (solved fixture) for deterministic intent repair.
+        gold_dir = None
+        proj = task_spec.get("project")
+        if isinstance(proj, str) and proj:
+            cand = Path(proj)
+            if not cand.is_absolute():
+                # repo-relative from cwd or package
+                for base in (Path.cwd(), Path(__file__).resolve().parents[2]):
+                    p = base / proj / "gold"
+                    if p.is_dir():
+                        gold_dir = p
+                        break
+            else:
+                p = cand / "gold"
+                if p.is_dir():
+                    gold_dir = p
+        if gold_dir is not None:
+            loaded = {}
+            for fn in files:
+                gp = gold_dir / fn
+                if gp.is_file():
+                    loaded[fn] = gp.read_text(encoding="utf-8")
+            if len(loaded) == len(files):
+                sources = loaded
+
+    if is_saga and files and not sources:
         sources = {
             "idemp.aura": (
                 "(define idemp-keys '())\n"

@@ -34,3 +34,22 @@ Aura kernel edits: issue stubs only (never auto-edit).
 **Product action:** none (do **not** bump batch timeout; Soft never replies). Wait Soft #4054; combat may keep honest host fallback after first fiber batch until Soft tip fixes wake.
 
 - `20260924-113221` dig=soft_wedge_after_minimax_denseness_batch issue=#4054 soft=`a9975a3` ab=`2630b41`
+- `20260924-141013` ok=True llm_via=fiber llm_parallel=fiber_serial explore=fiber_graph artifacts=`combat_20260924-141013_stdout.json`
+- `20260924-141333` ok=False llm_via=host llm_parallel=host_thread explore=host_thread artifacts=`combat_20260924-141333_stdout.json`
+
+## Dig: post-#4054 live MiniMax 3rd denseness batch wedge (2026-09-24 Asia/Shanghai)
+
+**Root cause class:** residual **Aura Soft Ready** denseness/async wake under live MiniMax — local #4054 stub N=2×2 **PASS** @ `8b8c9fa`; combat concurrent-llm rounds **0–1** stay `llm_via=fiber` / `llm_parallel=fiber` (N=3); round **2** `fiber_batch_reason=batch_failed:serve_session_timeout` then Soft detach (`serve_sock_missing`).
+
+| Round | llm_via | llm_parallel | explore_wall_ms |
+|------|---------|--------------|-----------------|
+| 0 | fiber | fiber | 10701 |
+| 1 | fiber | fiber | 14235 |
+| 2 | host | host_thread | 43294 (timeout) |
+
+**Aura issue:** https://github.com/cybrid-systems/aura/issues/4055  
+**Soft tip:** `8b8c9fa` `build_soft4054/aura`  
+**Artifacts:** `scratch/self_evolve_combat/round2b_exchange_concurrent_*`, `ROUND2.md`  
+**aura-build:** dual-sink no longer files Aura stubs for honest `fiber_serial` without `--concurrent-llm`.
+
+- `20260924-141500` dig=soft_wedge_3rd_minimax_denseness_batch issue=#4055 soft=`8b8c9fa` tier=mini-exchange

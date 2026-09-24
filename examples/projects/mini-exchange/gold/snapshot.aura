@@ -1,0 +1,10 @@
+(define (count-xs xs)
+  (if (null? xs) 0 (+ 1 (count-xs (cdr xs)))))
+(define (snapshot-fp)
+  (string-append
+   "A:" (number->string (ledger-cash "Alice")) "/" (number->string (ledger-pos "Alice"))
+   "|B:" (number->string (ledger-cash "Bob")) "/" (number->string (ledger-pos "Bob"))
+   "|F:" (number->string (fee-total))
+   "|bids:" (number->string (count-xs (book-bids)))
+   "|asks:" (number->string (count-xs (book-asks)))
+   "|H:" (halt-state)))

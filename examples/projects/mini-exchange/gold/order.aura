@@ -1,0 +1,27 @@
+(define (order-init) #t)
+(define (order-place cloid acct side price qty)
+  (cond
+    ((idemp-seen? cloid) "dup")
+    ((equal? (halt-state) "halted") "reject")
+    ((equal? (risk-check acct side price qty) "reject") "reject")
+    (#t
+     (begin
+       (idemp-mark cloid)
+       (journal-append "place" cloid acct side price qty)
+       (let ((filled (match-against acct side price qty cloid)))
+         (journal-append "fill" cloid acct side filled qty)
+         (let ((rem (- qty filled)))
+           (if (> rem 0)
+               (book-add cloid acct side price rem)
+               #t)
+           (cond
+             ((= filled 0) "resting")
+             ((= filled qty) "filled")
+             (#t "partial"))))))))
+(define (order-cancel cloid)
+  (if (book-find cloid)
+      (begin
+        (book-remove cloid)
+        (journal-append "cancel" cloid "_" "_" 0 0)
+        "cancelled")
+      "missing"))

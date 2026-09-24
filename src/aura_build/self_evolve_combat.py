@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 # Soft Ready tip used by combat dogfood (honest inventory in SSOT doc).
-DEFAULT_SOFT_AURA_BIN = "/workspace/aura-grok/build_soft4048/aura"
+DEFAULT_SOFT_AURA_BIN = "/workspace/aura-grok/build_soft4054/aura"
 DEFAULT_OUT_DIR = Path("scratch/self_evolve_combat")
 DEFAULT_PROJECT = Path("examples/projects/mini-saga")
 DEFAULT_ENV_FILE = Path.home() / ".config" / "aura-build" / "minimax.env"
@@ -207,9 +207,15 @@ def classify_findings(
     # Honest fallback stamps that may indicate Soft body/size issues (ROUND1 class)
     if fiber_llm and llm_via == "host" and "fallback" in reason.lower():
         soft_signals.append("fiber_llm_fallback_to_host")
-    if llm_parallel == "fiber_serial" and hon.get("llm_parallel_ok") is False:
-        # Serial is honest stamp — note for Aura only if batch expected concurrent
-        soft_signals.append("llm_parallel_fiber_serial")
+    # fiber_serial is an honest stamp (not wall-parallel). Only dual-sink when
+    # combat *requested* concurrent LLM batch but Soft still serialized.
+    if (
+        hon.get("concurrent_llm")
+        and llm_parallel == "fiber_serial"
+        and hon.get("llm_parallel_ok") is False
+        and (hon.get("llm_calls_parallel") or 0) >= 2
+    ):
+        soft_signals.append("llm_parallel_fiber_serial_unexpected")
 
     tip = None
     if session_st:

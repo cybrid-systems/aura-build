@@ -1,0 +1,4 @@
+; Broken: always resting; cancel missing; no idemp/risk/halt
+(define (order-init) #t)
+(define (order-place cloid acct side price qty) "resting")
+(define (order-cancel cloid) "missing")

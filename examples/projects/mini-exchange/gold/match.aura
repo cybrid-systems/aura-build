@@ -1,0 +1,72 @@
+(define (o-oid o) (car o))
+(define (o-acct o) (car (cdr o)))
+(define (o-price o) (car (cdr (cdr (cdr o)))))
+(define (o-qty o) (car (cdr (cdr (cdr (cdr o))))))
+(define (o-seq o) (car (cdr (cdr (cdr (cdr (cdr o)))))))
+
+(define (best-ask-skip acct xs)
+  (define (walk rs b)
+    (if (null? rs)
+        b
+        (let ((o (car rs)))
+          (if (equal? (o-acct o) acct)
+              (walk (cdr rs) b)
+              (if (not b)
+                  (walk (cdr rs) o)
+                  (if (< (o-price o) (o-price b))
+                      (walk (cdr rs) o)
+                      (if (and (= (o-price o) (o-price b)) (< (o-seq o) (o-seq b)))
+                          (walk (cdr rs) o)
+                          (walk (cdr rs) b))))))))
+  (walk xs #f))
+
+(define (best-bid-skip acct xs)
+  (define (walk rs b)
+    (if (null? rs)
+        b
+        (let ((o (car rs)))
+          (if (equal? (o-acct o) acct)
+              (walk (cdr rs) b)
+              (if (not b)
+                  (walk (cdr rs) o)
+                  (if (> (o-price o) (o-price b))
+                      (walk (cdr rs) o)
+                      (if (and (= (o-price o) (o-price b)) (< (o-seq o) (o-seq b)))
+                          (walk (cdr rs) o)
+                          (walk (cdr rs) b))))))))
+  (walk xs #f))
+
+(define (match-buy acct price rem filled)
+  (if (<= rem 0)
+      filled
+      (let ((ask (best-ask-skip acct (book-asks))))
+        (if (not ask)
+            filled
+            (if (> (o-price ask) price)
+                filled
+                (let ((f (if (< rem (o-qty ask)) rem (o-qty ask))))
+                  (settle-fill acct (o-acct ask) (o-price ask) f)
+                  (if (= f (o-qty ask))
+                      (book-remove (o-oid ask))
+                      (book-set-qty (o-oid ask) (- (o-qty ask) f)))
+                  (match-buy acct price (- rem f) (+ filled f))))))))
+
+(define (match-sell acct price rem filled)
+  (if (<= rem 0)
+      filled
+      (let ((bid (best-bid-skip acct (book-bids))))
+        (if (not bid)
+            filled
+            (if (< (o-price bid) price)
+                filled
+                (let ((f (if (< rem (o-qty bid)) rem (o-qty bid))))
+                  (settle-fill (o-acct bid) acct (o-price bid) f)
+                  (if (= f (o-qty bid))
+                      (book-remove (o-oid bid))
+                      (book-set-qty (o-oid bid) (- (o-qty bid) f)))
+                  (match-sell acct price (- rem f) (+ filled f))))))))
+
+(define (match-against acct side price qty oid)
+  (if (equal? side "buy")
+      (match-buy acct price qty 0)
+      (match-sell acct price qty 0)))

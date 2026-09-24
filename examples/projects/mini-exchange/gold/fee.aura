@@ -1,0 +1,5 @@
+(define fee-tot 0)
+(define (fee-init) (set! fee-tot 0))
+(define (fee-rate) 1)
+(define (fee-charge n) (set! fee-tot (+ fee-tot n)))
+(define (fee-total) fee-tot)

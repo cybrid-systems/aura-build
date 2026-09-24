@@ -1,0 +1,36 @@
+(define (replay-clear-live)
+  (ledger-init)
+  (fee-init)
+  (book-init)
+  (halt-init)
+  (idemp-init)
+  (ledger-fund "Alice" 100 0)
+  (ledger-fund "Bob" 100 10))
+
+(define (replay-apply ev)
+  (let ((kind (car ev)))
+    (cond
+      ((equal? kind "place")
+       (let ((cloid (car (cdr ev)))
+             (acct (car (cdr (cdr ev))))
+             (side (car (cdr (cdr (cdr ev)))))
+             (price (car (cdr (cdr (cdr (cdr ev))))))
+             (qty (car (cdr (cdr (cdr (cdr (cdr ev))))))))
+         (idemp-mark cloid)
+         (let ((filled (match-against acct side price qty cloid)))
+           (let ((rem (- qty filled)))
+             (if (> rem 0)
+                 (book-add cloid acct side price rem)
+                 #t)))))
+      ((equal? kind "cancel")
+       (book-remove (car (cdr ev))))
+      (#t #t))))
+
+(define (replay-fold xs)
+  (if (null? xs) "ok"
+      (begin
+        (replay-apply (car xs))
+        (replay-fold (cdr xs)))))
+
+(define (replay-run)
+  (replay-fold (journal-oldest-first)))

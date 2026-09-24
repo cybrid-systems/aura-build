@@ -1,0 +1,9 @@
+; Broken: fund ignored; balances stuck at 0
+(define (ledger-init) #t)
+(define (ledger-fund acct cash pos) #t)
+(define (ledger-cash acct) 0)
+(define (ledger-pos acct) 0)
+(define (ledger-debit-cash acct n) #t)
+(define (ledger-credit-cash acct n) #t)
+(define (ledger-credit-pos acct n) #t)
+(define (ledger-debit-pos acct n) #t)

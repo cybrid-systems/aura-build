@@ -1,0 +1,4 @@
+(define halt-st "open")
+(define (halt-init) (set! halt-st "open"))
+(define (halt-set s) (set! halt-st s))
+(define (halt-state) halt-st)

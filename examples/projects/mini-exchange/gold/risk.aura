@@ -1,0 +1,10 @@
+(define (risk-check acct side price qty)
+  (let ((notional (* price qty))
+        (fee (* (fee-rate) qty)))
+    (cond
+      ((> notional 500) "reject")
+      ((equal? side "buy")
+       (if (< (ledger-cash acct) (+ notional fee)) "reject" "ok"))
+      ((equal? side "sell")
+       (if (< (ledger-pos acct) qty) "reject" "ok"))
+      (#t "reject"))))
