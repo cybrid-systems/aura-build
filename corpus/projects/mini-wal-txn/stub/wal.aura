@@ -1,0 +1,32 @@
+;; wal.aura
+;; Append-only write-ahead log (WAL) backed by a plain list.
+;; A WAL is built by cons'ing records onto the front; we expose only the
+;; append, length, records (oldest-first), and last-record operations so
+;; callers can never reach into the internal ordering by accident.
+
+(define (api make-wal)
+  ;; An empty WAL is simply the empty list.
+  '())
+
+(define (api wal-append wal rec)
+  ;; Append a record to the WAL. We cons onto the head; callers that want
+  ;; insertion order use wal-records to obtain an oldest-first view.
+  (cons rec wal))
+
+(define (api wal-length wal)
+  ;; Count the number of records currently in the WAL.
+  (cond
+    ((null? wal) 0)
+    (else (+ 1 (api wal-length (cdr wal))))))
+
+(define (api wal-records wal)
+  ;; Return the records of the WAL in oldest-first (chronological) order.
+  ;; Since we cons on append, the stored list is newest-first, so reverse.
+  (reverse wal))
+
+(define (api wal-last wal)
+  ;; Return the most recently appended record, or #f if the WAL is empty.
+  ;; Because we prepend, the newest record is the head of the list.
+  (cond
+    ((null? wal) #f)
+    (else (car wal))))

@@ -1,0 +1,107 @@
+;; cipher.aura — sealed (header . body) cons cells with truncated-hash tag.
+;;
+;; A "sealed" ciphertext is a cons cell:
+;;   (header . body)
+;; where header is a list describing the seal (key-version, payload-length,
+;; truncated-hash-of-(body ++ key-bytes)) and body is a list of bytes.
+;;
+;; We use a deterministic SHA-style truncation: fold the body bytes together
+;; with a per-key mixing constant, take a 32-bit accumulator, and render it
+;; as a fixed-width hex string. Verification recomputes the same string from
+;; the candidate body and the supplied key bytes; mismatch => #f.
+
+(define cipher-mask32 4294967295) ;; 2^32 - 1
+(define cipher-hex-chars
+  '("0" "1" "2" "3" "4" "5" "6" "7" "8" "9" "a" "b" "c" "d" "e" "f"))
+
+;; Render a 32-bit non-negative integer as an 8-character lowercase hex
+;; string. Works for any non-negative n < 2^32.
+(define (cipher-nibble->hex n)
+  (list-ref cipher-hex-chars (modulo n 16)))
+
+(define (cipher-byte->hex b)
+  (let ((hi (quotient (modulo b 256) 16))
+        (lo (modulo b 16)))
+    (string-append (cipher-nibble->hex hi) (cipher-nibble->hex lo))))
+
+(define (cipher-u32->hex n)
+  (let ((a (modulo n 256))
+        (b (modulo (quotient n 256) 256))
+        (c (modulo (quotient n 65536) 256))
+        (d (modulo (quotient n 16777216) 256)))
+    (string-append (cipher-byte->hex d)
+                   (cipher-byte->hex c)
+                   (cipher-byte->hex b)
+                   (cipher-byte->hex a))))
+
+;; Accumulate the body bytes together with the key bytes into a 32-bit
+;; value. The mixing is intentionally simple — we just need it to be
+;; sensitive to both inputs so that flipping any bit of the body changes
+;; the resulting tag, and so that the same body under a different key
+;; produces a different tag.
+(define (cipher-fold-bytes bs key-bytes acc)
+  (cond
+    ((null? bs) acc)
+    (else
+      (let* ((b (modulo (car bs) 256))
+             (shifted (modulo (* acc 31) (+ cipher-mask32 1)))
+             (acc2 (modulo (+ shifted b) (+ cipher-mask32 1))))
+        (cipher-fold-bytes (cdr bs) key-bytes acc2)))))
+
+(define (cipher-fold-key-bytes key-bytes acc)
+  (cond
+    ((null? key-bytes) acc)
+    (else
+      (let* ((b (modulo (car key-bytes) 256))
+             (shifted (modulo (* acc 16777619) (+ cipher-mask32 1)))
+             (acc2 (modulo (+ shifted b) (+ cipher-mask32 1))))
+        (cipher-fold-key-bytes (cdr key-bytes) acc2)))))
+
+(define (cipher-truncated-hash body key-bytes)
+  (let* ((seed 5381)
+         (acc1 (cipher-fold-bytes body key-bytes seed))
+         (acc2 (cipher-fold-key-bytes key-bytes acc1)))
+    (cipher-u32->hex (modulo acc2 (+ cipher-mask32 1)))))
+
+;; Public: (api-cipher-seal key bytes) -> (header . body)
+;;   key:    an alist (key-version . byte-list). The header stores the
+;;           version number and the key bytes used so that open can
+;;           recompute the tag without external context.
+;;   bytes:  a list of bytes (numbers) to seal.
+;; Returns a cons cell whose car is the header and whose cdr is the body.
+(define (api-cipher-seal key bytes)
+  (let* ((kv (car key))
+         (kb (cdr key))
+         (body bytes)
+         (tag (cipher-truncated-hash body kb)))
+    (cons (list 'seal kv (cipher-tag-byte-count body) tag) body)))
+
+;; helper: count of payload bytes in body (also stored in header for
+;; convenience but recomputable from the body itself).
+(define (cipher-tag-byte-count body)
+  (cond
+    ((null? body) 0)
+    (else (+ 1 (cipher-tag-byte-count (cdr body))))))
+
+;; Public: (api-cipher-open key ct) -> bytes or #f
+;;   key: an alist (key-version . byte-list). We verify that the header's
+;;        key-version matches the supplied key, and that the recomputed
+;;        tag equals the stored tag. If anything disagrees we return #f.
+(define (api-cipher-open key ct)
+  (let* ((header (car ct))
+         (body (cdr ct))
+         (h-kv (list-ref header 1))
+         (h-tag (list-ref header 3))
+         (k-kv (car key))
+         (k-bytes (cdr key))
+         (recomputed (if (= h-kv k-kv)
+                         (cipher-truncated-hash body k-bytes)
+                         #f)))
+    (if (and (string? recomputed) (string=? recomputed h-tag))
+        body
+        #f)))
+
+;; Public: (api-cipher-tag ct) -> string
+;; Returns the truncated-hash string stored in the header.
+(define (api-cipher-tag ct)
+  (list-ref (car ct) 3))

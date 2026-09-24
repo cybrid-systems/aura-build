@@ -1,0 +1,81 @@
+;; fuzzy-collector.aura
+;; Fuzzy dirty-page collector for the WAL checkpoint engine.
+;;
+;; A "fuzzy" checkpoint is one that does NOT flush dirty pages to
+;; disk before recording the checkpoint. Instead it just snapshots
+;; the set of pages that are currently dirty (have their dirty bit
+;; set in the page table) and remembers the LSN range the snapshot
+;; covers. Pages that are clean at checkpoint time are simply
+;; omitted from the snapshot — that's what makes it "fuzzy".
+;;
+;; This module is the bridge between `page-table` (which knows which
+;; pages are dirty right now) and `checkpoint` (which freezes that
+;; information into a durable structure). The collector maintains
+;; an accumulating list of dirty page IDs that get folded in each
+;; time `fuzzy-collect!` is called.
+;;
+;; Design notes:
+;;   * The collector keeps its own list so it does not have to peek
+;;     inside the page table's internals; `page-table` exposes
+;;     `dirty-pages` which we just consume.
+;;   * Accumulation rather than replacement lets us build up a
+;;     snapshot across multiple small collection steps if a caller
+;;     wants that. `fuzzy-reset!` clears the accumulator when a new
+;;     checkpoint window begins.
+;;   * `fuzzy-count` reports the current size of the accumulator so
+;;     callers (the engine) can decide when to cap it.
+;;
+;; The collector is deliberately stateless beyond its accumulator
+;; list; any "fuzziness" policy lives in the engine that drives it.
+;;
+;; API surface:
+;;   (api make-fuzzy-collector)        -> fuzzy-collector
+;;   (api fuzzy-collect! fc dirty-ids) -> side-effecting: extend fc
+;;   (api fuzzy-reset! fc)             -> side-effecting: clear fc
+;;   (api fuzzy-count fc)              -> integer
+
+(define (api make-fuzzy-collector)
+  ;; A fuzzy collector is just a single mutable cell holding the
+  ;; accumulated list of dirty page IDs. We use a one-element list
+  ;; as a poor man's box so we can mutate the head via set!.
+  (list '()))
+
+(define (api fuzzy-collect! fc dirty-ids)
+  ;; Fold the new dirty page IDs into the collector's accumulator.
+  ;; We preserve order so the snapshot is deterministic for tests;
+  ;; duplicates are removed because checkpoint dirty-page sets are
+  ;; documented as deduped.
+  (let ((current (car fc))
+        (seen    '()))
+    ;; Walk the existing accumulator first, seeding `seen` with the
+    ;; page IDs already collected so we don't re-add them.
+    (let loop ((rest current) (acc '()))
+      (cond
+        ((null? rest)
+         ;; Existing accumulator fully consumed; now fold in the
+         ;; new dirty IDs, skipping anything we've already seen.
+         (let fold ((in dirty-ids) (out acc))
+           (cond
+             ((null? in)
+              (set! fc (list out)))
+             ((member (car in) seen)
+              (fold (cdr in) out))
+             (else
+              (set! seen (cons (car in) seen))
+              (fold (cdr in) (cons (car in) out))))))
+        ((member (car rest) seen)
+         (loop (cdr rest) acc))
+        (else
+         (set! seen (cons (car rest) seen))
+         (loop (cdr rest) (cons (car rest) acc))))))
+
+(define (api fuzzy-reset! fc)
+  ;; Discard everything accumulated so far. Called by the engine
+  ;; after it has frozen the current snapshot into a checkpoint.
+  (set! fc (list '())))
+
+(define (api fuzzy-count fc)
+  ;; How many page IDs are currently in the accumulator. The engine
+  ;; uses this together with `config-fuzzy-cap` to decide whether to
+  ;; stop collecting and emit the checkpoint.
+  (length (car fc)))

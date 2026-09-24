@@ -1,0 +1,79 @@
+;; tamper.aura - Tampering primitives for the encrypted WAL.
+;;
+;; Two tamper operations are provided:
+;;   api-tamper-flip-bit : flips a single bit in the ciphertext body of a
+;;                         segment (by XORing byte 0 with 1). This causes
+;;                         the tag verification to fail on that segment.
+;;   api-tamper-key-version : rewrites the header of a segment to claim it
+;;                            was sealed under a different key version.
+;;                            This also causes verification failure since
+;;                            the key bytes used to seal don't match.
+;;
+;; Both functions return a new WAL (immutable update); the original WAL is
+;; not mutated.
+;;
+;; Segments are stored most-recent-first (head = newest). seg-idx is
+;; 1-indexed from the head (1 = newest segment).
+
+;; Walk to the nth element (1-indexed) of a list, returning (elem . rest-after).
+;; If idx > length, returns (#f . #f).
+(define (list-nth-cdr lst idx)
+  (cond ((null? lst) (cons #f #f))
+        ((= idx 1) (cons (car lst) (cdr lst)))
+        (else (list-nth-cdr (cdr lst) (- idx 1)))))
+
+;; Reconstruct a list with the nth element replaced by new-elem.
+;; idx is 1-indexed. Returns the original list if idx out of range.
+(define (list-replace-nth lst idx new-elem)
+  (cond ((null? lst) lst)
+        ((= idx 1) (cons new-elem (cdr lst)))
+        (else (cons (car lst) (list-replace-nth (cdr lst) (- idx 1) new-elem)))))
+
+;; Extract the segment at seg-idx (1-indexed from head).
+(define (wal-seg-at wal seg-idx)
+  (let ((p (list-nth-cdr wal seg-idx)))
+    (car p)))
+
+;; Build a new segment whose ciphertext body has byte 0 flipped.
+;; A segment is (seg-version lsn-start lsn-end seg-records ct).
+;; ct is (header . body). We XOR (car body) with 1 to flip the lowest bit.
+(define (flip-bit-in-seg seg)
+  (let ((sv (car seg))
+        (ls (car (cdr seg)))
+        (le (car (cdr (cdr seg))))
+        (sr (car (cdr (cdr (cdr seg)))))
+        (ct (car (cdr (cdr (cdr (cdr seg)))))))
+    (let ((header (car ct))
+          (body (cdr ct)))
+      (let ((new-body (cons (logxor (car body) 1) (cdr body))))
+        (list sv ls le sr (cons header new-body))))))
+
+;; Build a new segment whose header has the version slot rewritten.
+;; Header layout (from cipher.aura): (magic ver byte0 byte1 ... byte15).
+;; We replace the second element (index 1, the version) with new-v.
+(define (rewrite-header-version seg new-v)
+  (let ((sv (car seg))
+        (ls (car (cdr seg)))
+        (le (car (cdr (cdr seg))))
+        (sr (car (cdr (cdr (cdr seg)))))
+        (ct (car (cdr (cdr (cdr (cdr seg)))))))
+    (let ((header (car ct))
+          (body (cdr ct)))
+      (let ((new-header (cons (car header) (cons new-v (cdr (cdr header))))))
+        (list new-v ls le sr (cons new-header body))))))
+
+;; api-tamper-flip-bit: flip a bit in segment seg-idx's ciphertext body.
+;; Returns a new wal with that segment altered.
+(define (api-tamper-flip-bit wal seg-idx)
+  (let ((seg (wal-seg-at wal seg-idx)))
+    (if (null? seg)
+        wal
+        (list-replace-nth wal seg-idx (flip-bit-in-seg seg)))))
+
+;; api-tamper-key-version: rewrite the header of segment seg-idx to claim
+;; it was sealed under new-v. Returns a new wal.
+(define (api-tamper-key-version wal seg-idx new-v)
+  (let ((seg (wal-seg-at wal seg-idx)))
+    (if (null? seg)
+        wal
+        (list-replace-nth wal seg-idx (rewrite-header-version seg new-v)))))

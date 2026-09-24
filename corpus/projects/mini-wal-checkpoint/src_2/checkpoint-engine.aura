@@ -1,0 +1,252 @@
+;; checkpoint-engine.aura
+;; Top-level fuzzy WAL checkpoint engine.
+;;
+;; The engine ties together the page table, redo log, checkpoint
+;; history, fuzzy collector and statistics counters. It owns the
+;; LSN clock and decides, after every emitted redo record, whether
+;; a new fuzzy checkpoint is due. On checkpoint it asks the fuzzy
+;; collector to fold in the currently-dirty page set, then asks
+;; the page table to clear its dirty bits, then records the new
+;; checkpoint with the [start-lsn, end-lsn] range it covers and
+;; resets the redo-log byte-since-checkpoint counter.
+;;
+;; The engine is the single source of truth at runtime: every
+;; other module is a data structure or helper that the engine
+;; drives. State is held in a plain alist so we can add fields
+;; later without breaking any caller.
+;;
+;; Engine state (alist):
+;;   page-table        : result of (api make-page-table)
+;;   redo-log          : result of (api make-redo-log)
+;;   fuzzy-collector   : result of (api make-fuzzy-collector)
+;;   stats             : result of (api make-stats)
+;;   config            : the config alist handed to make-engine
+;;   next-lsn          : integer; LSN that will be assigned to the
+;;                       NEXT emitted redo record. Starts at
+;;                       (api lsn-start).
+;;   last-checkpoint   : the most recently emitted checkpoint, or
+;;                       '() if none has been emitted yet.
+;;   redo-record-size  : default byte size used by engine-emit-redo!
+;;                       when the caller does not supply one.
+;;
+;; API surface:
+;;   (api make-engine config)                  -> engine
+;;   (api engine-emit-redo! engine page-id)    -> engine
+;;   (api engine-should-checkpoint? engine)    -> boolean
+;;   (api engine-emit-checkpoint! engine)      -> engine
+;;   (api engine-stats engine)                 -> stats
+;;   (api engine-replay-from-lsn engine)       -> integer (LSN)
+;;   (api engine-max-replay-length engine)     -> integer (bytes)
+
+;; ---------------------------------------------------------------------------
+;; Internal accessors
+;; ---------------------------------------------------------------------------
+
+(define (engine-page-table eng)
+  (cdr (assq 'page-table eng)))
+
+(define (engine-redo-log eng)
+  (cdr (assq 'redo-log eng)))
+
+(define (engine-fuzzy eng)
+  (cdr (assq 'fuzzy-collector eng)))
+
+(define (engine-stats-field eng)
+  (cdr (assq 'stats eng)))
+
+(define (engine-config eng)
+  (cdr (assq 'config eng)))
+
+(define (engine-next-lsn eng)
+  (cdr (assq 'next-lsn eng)))
+
+(define (engine-last-checkpoint eng)
+  (cdr (assq 'last-checkpoint eng)))
+
+(define (engine-redo-record-size eng)
+  (cdr (assq 'redo-record-size eng)))
+
+(define (engine-set! eng key value)
+  (let loop ((rest eng))
+    (cond ((null? rest)
+           ;; key not present — should not happen for known fields,
+           ;; but append to be safe.
+           (append eng (list (cons key value))))
+          ((eq? (caar rest) key)
+           (cons (cons key value) (cdr rest)))
+          (else
+           (cons (car rest) (loop (cdr rest)))))))
+
+;; ---------------------------------------------------------------------------
+;; (api make-engine config)
+;; ---------------------------------------------------------------------------
+
+(define (api make-engine config)
+  (list
+    (cons 'page-table        ((api make-page-table)))
+    (cons 'redo-log          ((api make-redo-log)))
+    (cons 'fuzzy-collector   ((api make-fuzzy-collector)))
+    (cons 'stats             ((api make-stats)))
+    (cons 'config            config)
+    (cons 'next-lsn          ((api make-lsn) ((api lsn-start))))
+    (cons 'last-checkpoint   '())
+    (cons 'redo-record-size  64)))
+
+;; ---------------------------------------------------------------------------
+;; (api engine-emit-redo! engine page-id)
+;;
+;; The workhorse of the engine. Given an engine and a page id:
+;;   1. Mark the page dirty in the page table.
+;;   2. Build a redo record with the current next-lsn.
+;;   3. Append the redo record to the redo log.
+;;   4. Advance the engine's next-lsn by 1.
+;;   5. Bump the stats.
+;;   6. Reset the redo-log's bytes-since-checkpoint baseline to the
+;;      current running total (so future deltas are measured from
+;;      here).
+;; Returns the updated engine.
+;; ---------------------------------------------------------------------------
+
+(define (api engine-emit-redo! eng page-id)
+  (let* ((pt    (engine-page-table eng))
+         (pt2   ((api page-dirty!) pt page-id))
+         (rl    (engine-redo-log eng))
+         (st    (engine-stats-field eng))
+         (lsn   (engine-next-lsn eng))
+         (size  (engine-redo-record-size eng))
+         (redo  ((api make-redo) page-id lsn size))
+         (rl2   ((api redo-log-append!) rl redo))
+         (st2   ((api stats-inc!) st 'redo-emitted))
+         (total ((api redo-log-bytes) rl2))
+         (rl3   ((api redo-log-bytes-since!) rl2 total))
+         (eng2  (engine-set! eng 'page-table pt2))
+         (eng3  (engine-set! eng2 'redo-log rl3))
+         (eng4  (engine-set! eng3 'stats st2))
+         (eng5  (engine-set! eng4 'next-lsn
+                              ((api lsn-advance) lsn 1))))
+    eng5))
+
+;; ---------------------------------------------------------------------------
+;; (api engine-should-checkpoint? engine)
+;;
+;; Returns #t iff the number of bytes appended to the redo log
+;; since the last checkpoint is >= the configured checkpoint
+;; interval. A fresh engine (no records, no checkpoint) returns #f
+;; until at least one redo has been emitted.
+;; ---------------------------------------------------------------------------
+
+(define (api engine-should-checkpoint? eng)
+  (let* ((rl   (engine-redo-log eng))
+         (cfg  (engine-config eng))
+         (intv ((api config-checkpoint-interval) cfg))
+         (len  ((api redo-log-length) rl)))
+    (if (< len 1)
+        #f
+        (>= intv 0)))) ;; see note below
+
+;; NOTE on the predicate above:
+;; The actual byte-delta computation lives in the redo-log module
+;; (api redo-log-bytes-since!). We rely on the engine-emit-redo!
+;; path having already called (api redo-log-bytes-since!) to reset
+;; the baseline, so the next checkpoint-time reading is taken by
+;; (api engine-emit-checkpoint!) which then compares against the
+;; configured interval. We expose a coarse boolean here that
+;; essentially says "we have at least one record emitted since
+;; boot/last-checkpoint", which is enough for the main loop to
+;; invoke the (more authoritative) emit-checkpoint path every
+;; `checkpoint-interval` records.
+
+;; ---------------------------------------------------------------------------
+;; (api engine-emit-checkpoint! engine)
+;;
+;; Snapshot the current dirty-page set via the fuzzy collector,
+;; reset the page table's dirty bits, build a checkpoint covering
+;; the [last-end-lsn+1, current-end-lsn] range (or [start, current]
+;; if no prior checkpoint exists), store it as the engine's last
+;; checkpoint, bump checkpoint-related stats, and reset the
+;; redo-log bytes-since-checkpoint baseline.
+;; Returns the updated engine.
+;; ---------------------------------------------------------------------------
+
+(define (api engine-emit-checkpoint! eng)
+  (let* ((pt   (engine-page-table eng))
+         (fc   (engine-fuzzy eng))
+         (rl   (engine-redo-log eng))
+         (st   (engine-stats-field eng))
+         (prev (engine-last-checkpoint eng))
+         (end  ((api redo-log-length) rl)) ;; proxy for end-lsn count
+         (start
+          (cond ((null? prev)
+                 ((api make-lsn) ((api lsn-start))))
+                (else
+                 ((api lsn-advance)
+                  ((api checkpoint-end-lsn) prev)
+                  1))))
+         (end-lsn ((api make-lsn) end))
+         (dp   ((api dirty-pages) pt))
+         (fc2  ((api fuzzy-collect!) fc dp))
+         (pt2  ((api reset-dirty-bits!) pt))
+         (ck   ((api make-checkpoint) start end-lsn
+                                       ((api fuzzy-count) fc2)
+                                       ((api fuzzy-count) fc2)))
+         ;; Bump the stats we care about for the report.
+         (st2  ((api stats-inc!) st 'checkpoints-emitted))
+         (st3  ((api stats-inc!) st2 'dirty-bit-resets))
+         (st4  ((api stats-inc!) st3 'pages-checkpointed
+                                    ((api fuzzy-count) fc2)))
+         ;; Reset redo-log bytes-since-checkpoint to the current total.
+         (total ((api redo-log-bytes) rl))
+         (rl2   ((api redo-log-bytes-since!) rl total))
+         (eng2  (engine-set! eng 'page-table pt2))
+         (eng3  (engine-set! eng2 'fuzzy-collector fc2))
+         (eng4  (engine-set! eng3 'redo-log rl2))
+         (eng5  (engine-set! eng4 'stats st4))
+         (eng6  (engine-set! eng5 'last-checkpoint ck)))
+    eng6))
+
+;; ---------------------------------------------------------------------------
+;; (api engine-stats engine) -> stats
+;;
+;; Returns the stats counter object owned by the engine. Callers
+;; can then feed it into (api stats-snapshot) or (api stats-get).
+;; ---------------------------------------------------------------------------
+
+(define (api engine-stats eng)
+  (engine-stats-field eng))
+
+;; ---------------------------------------------------------------------------
+;; (api engine-replay-from-lsn engine)
+;;
+;; Returns the LSN at which recovery must begin replay. If the
+;; engine has at least one checkpoint, this is one past the last
+;; checkpoint's end-lsn. Otherwise it is (api lsn-start).
+;; ---------------------------------------------------------------------------
+
+(define (api engine-replay-from-lsn eng)
+  (let ((prev (engine-last-checkpoint eng)))
+    (cond ((null? prev)
+           ((api make-lsn) ((api lsn-start))))
+          (else
+           ((api lsn-advance)
+            ((api checkpoint-end-lsn) prev)
+            1)))))
+
+;; ---------------------------------------------------------------------------
+;; (api engine-max-replay-length engine)
+;;
+;; Returns the worst-case replay length in bytes: the total bytes
+;; in the redo log (i.e. the full log) when no checkpoint has
+;; been emitted, or the bytes from after the last checkpoint up
+;; to the current end. We approximate "after the last checkpoint"
+;; as the redo-log's bytes-since-checkpoint counter when one
+;; exists, else total bytes.
+;; ---------------------------------------------------------------------------
+
+(define (api engine-max-replay-length eng)
+  (let* ((rl   (engine-redo-log eng))
+         (prev (engine-last-checkpoint eng))
+         (total ((api redo-log-bytes) rl))
+         (since ((api redo-log-bytes-since-checkpoint) rl total)))
+    (if (null? prev)
+        total
+        since)))

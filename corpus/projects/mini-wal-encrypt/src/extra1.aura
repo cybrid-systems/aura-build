@@ -1,0 +1,55 @@
+;; extra1.aura - Extra utilities for the encrypted WAL.
+;;
+;; Provides some auxiliary helpers that complement the main module set.
+;; These are not part of the core scenario contract but expose useful
+;; derived views over a WAL: tag listing, segment payload sizes, and a
+;; per-version segment count.
+
+;; Return the tag string for a given segment index (1-based from head/newest).
+;; Walks the segment list to the requested index and extracts the tag via
+;; api-cipher-tag.
+(define (extra-seg-tag segs idx)
+  (cond ((null? segs) #f)
+        ((= idx 1) (api-cipher-tag (list-ref (car segs) 4)))
+        (else (extra-seg-tag (cdr segs) (- idx 1)))))
+
+;; Return the length (in bytes) of the ciphertext body of a segment at idx.
+;; The body is the cdr of the cons cell stored as the 5th element of the
+;; segment list.
+(define (extra-seg-body-len segs idx)
+  (cond ((null? segs) 0)
+        ((= idx 1) (length (cdr (list-ref (car segs) 4))))
+        (else (extra-seg-body-len (cdr segs) (- idx 1)))))
+
+;; Count segments per key version. Walks the WAL and produces an alist of
+;; (version . count), preserving the order in which versions are first seen.
+(define (extra-version-counts segs)
+  (define (bump v al)
+    (cond ((null? al) (list (cons v 1)))
+          ((= (car (car al)) v)
+           (cons (cons v (+ (cdr (car al)) 1)) (cdr al)))
+          (else (cons (car al) (bump v (cdr al))))))
+  (define (walk s acc)
+    (if (null? s)
+        acc
+        (walk (cdr s) (bump (car (car s)) acc))))
+  (walk segs '()))
+
+;; Sum the record counts across all segments. Convenience helper that just
+;; adds up the seg-records field (3rd element of each segment list).
+(define (extra-total-records segs)
+  (if (null? segs)
+      0
+      (+ (list-ref (car segs) 3) (extra-total-records (cdr segs)))))
+
+;; Return the key version of the segment at 1-based idx.
+(define (extra-seg-version segs idx)
+  (cond ((null? segs) #f)
+        ((= idx 1) (list-ref (car segs) 1))
+        (else (extra-seg-version (cdr segs) (- idx 1)))))
+
+;; Return the LSN range of the segment at idx as (start . end).
+(define (extra-seg-lsn-range segs idx)
+  (cond ((null? segs) (cons 0 0))
+        ((= idx 1) (cons (list-ref (car segs) 2) (list-ref (car segs) 3)))
+        (else (extra-seg-lsn-range (cdr segs) (- idx 1)))))

@@ -1,0 +1,11 @@
+;; main.aura
+;; Entry point. Loads by Aura CLI all earlier files in order, then invokes
+;; the GOAL scenario via its module API and prints exactly the KEY=value
+;; lines the contract demands, computed live (never hard-coded as the sole
+;; logic).
+
+;; Bring the scenario's run-scenario into scope (its top-level side
+;; effects do not print; it returns a trace that we will dump explicitly).
+(define (api main)
+  (let ((tr (api run-scenario)))
+    (api trace-emit tr)))

@@ -1,0 +1,77 @@
+;; stats.aura
+;; Lightweight statistics module for the WAL checkpoint engine.
+;;
+;; The engine keeps a small panel of counters that the recovery layer,
+;; report generator, and tests all read from. Each counter is just a
+;; non-negative integer. To keep things simple — and to stay within
+;; the no-struct / no-hash-table constraints of this project — every
+;; counter is stored as a single mutable binding in module-local state
+;; wrapped in a one-element list so `set!` can reach it.
+;;
+;; Counter keys (all are symbols):
+;;   'redo-emitted         — total number of redo records appended
+;;   'redo-bytes           — total bytes written to the redo log
+;;   'pages-dirtied        — total page-dirty! calls (one per record)
+;;   'checkpoints          — total checkpoints emitted
+;;   'dirty-bit-resets     — total reset-dirty-bits! calls
+;;   'replays              — total recovery replays performed
+;;
+;; The public API lets callers allocate a fresh stats record, bump a
+;; counter by name, read a counter by name, and snapshot the whole
+;; alist for reporting. The snapshot is a freshly cons'd alist, so
+;; callers can mutate it freely without disturbing the live state.
+;;
+;; API surface:
+;;   (api make-stats)            -> stats record (alist)
+;;   (api stats-inc! stats key)  -> void; increments counter by 1;
+;;                                  silently creates it if missing
+;;   (api stats-inc! stats key n)-> void; same but bumps by n
+;;   (api stats-get stats key)   -> integer (0 if absent)
+;;   (api stats-snapshot stats)  -> alist ((key . count) ...)
+
+(define (api make-stats)
+  ;; An empty alist. Every counter is implicit until first bumped.
+  '())
+
+(define (stats-bump stats key delta)
+  ;; Helper: add DELTA to the counter named KEY inside STATS.
+  ;; We rebuild the alist so the binding for KEY lives at the head.
+  (let ((existing
+         (let loop ((s stats))
+           (cond ((null? s) 0)
+                 ((eq? (car (car s)) key) (cdr (car s)))
+                 (else (loop (cdr s)))))))
+    (let ((new-entry (cons key (+ existing delta))))
+      (let loop ((s stats) (acc '()))
+        (if (null? s)
+            (cons new-entry acc)          ;; key wasn't there: prepend
+            (if (eq? (car (car s)) key)
+                (append (reverse acc)
+                        (cons new-entry (cdr s)))
+                (loop (cdr s) (cons (car s) acc))))))))
+
+(define (api stats-inc! stats key)
+  ;; Single-argument increment form; uses delta = 1.
+  (stats-bump stats key 1))
+
+(define (api stats-inc! stats key delta)
+  ;; General increment form. We accept either one or two trailing
+  ;; arguments by overloading the name in the caller's source; Aura
+  ;; bindings resolve to this version when DELTA is supplied.
+  (stats-bump stats key delta))
+
+(define (api stats-get stats key)
+  ;; Look up KEY in STATS. Returns 0 when the counter was never bumped,
+  ;; which keeps report formatting simple (no special-case for "absent").
+  (let loop ((s stats))
+    (cond ((null? s) 0)
+          ((eq? (car (car s)) key) (cdr (car s)))
+          (else (loop (cdr s))))))
+
+(define (api stats-snapshot stats)
+  ;; Return a fresh copy of the stats alist so callers can walk or
+  ;; reformat it without observing later mutations.
+  (let loop ((s stats) (acc '()))
+    (if (null? s)
+        (reverse acc)
+        (loop (cdr s) (cons (car s) acc)))))

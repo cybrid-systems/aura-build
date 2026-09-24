@@ -1,0 +1,38 @@
+;; stats.aura - Statistics over an encrypted WAL.
+;;
+;; Provides api-stats-active-key-range which, given a WAL, returns a cons cell
+;; (min-seg-with-current . max-seg-with-current) of the segment indices (1-based
+;; from the head, which is the newest segment) that were sealed under the
+;; current key version (the version of the most recently appended segment).
+;;
+;; Segments are stored most-recent-first (head = newest). So index 1 is the
+;; newest segment, index N is the oldest. The "current" key version is taken
+;; as the version of segment at index 1 (the head).
+;;
+;; If no segments are sealed under the current version, returns (0 . 0).
+
+;; Get the segment version of the segment at 1-based index idx (1 = newest).
+(define (seg-version-at segs idx)
+  (car (list-ref segs idx)))
+
+;; Walk the segment list and collect indices where seg-version matches target.
+(define (collect-matching segs target)
+  (define (loop i rest acc)
+    (cond ((null? rest) acc)
+          ((= (car (car rest)) target)
+           (loop (+ i 1) (cdr rest) (cons i acc)))
+          (else (loop (+ i 1) (cdr rest) acc))))
+  (loop 1 segs '()))
+
+;; Main exported function.
+(define (api-stats-active-key-range wal)
+  (cond ((null? wal) (cons 0 0))
+        (else
+         (let ((current-v (car (car wal)))
+               (matches (collect-matching wal current-v)))
+           (cond ((null? matches) (cons 0 0))
+                 (else
+                  ;; matches is a list of indices in ascending order.
+                  (let ((mn (car matches))
+                        (mx (car (reverse matches))))
+                    (cons mn mx))))))))

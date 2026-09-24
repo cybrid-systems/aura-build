@@ -1,0 +1,60 @@
+;; redo-record.aura
+;; Redo record representation for the fuzzy WAL checkpoint engine.
+;;
+;; A redo record is the unit of work stored in the redo log. It
+;; describes "at LSN L, page P was dirtied" along with the size in
+;; bytes the record occupies in the log. The size is used by the
+;; byte-based accounting in `redo-log` (which sums record sizes to
+;; report total bytes / bytes-since-checkpoint) and by the recovery
+;; layer when computing the replay scan window.
+;;
+;; Records are plain alists so they can be cheaply cons'd, walked,
+;; and inspected without any record/struct machinery. A record has
+;; the shape:
+;;   ((page-id . <int>) (lsn . <int>) (size . <int>))
+;;
+;; API surface:
+;;   (api make-redo page-id lsn size) -> redo-record
+;;   (api redo? x)                    -> boolean
+;;   (api redo-page-id r)             -> integer
+;;   (api redo-lsn r)                 -> integer
+;;   (api redo-size r)                -> integer
+
+(define (api make-redo page-id lsn size)
+  (list (cons 'page-id page-id)
+        (cons 'lsn     lsn)
+        (cons 'size    size)))
+
+(define (api redo? x)
+  (if (null? x)
+      #f
+      (let ((first-pair (car x)))
+        (if (not (pair? first-pair))
+            #f
+            (if (not (eq? (car first-pair) 'page-id))
+                #f
+                ;; Structural sanity: must be a 3-element alist with
+                ;; exactly the three keys we expect.
+                (let loop ((rest (cdr x)) (seen '()) (n 1))
+                  (if (null? rest)
+                      (= n 3)
+                      (let ((p (car rest)))
+                        (if (not (pair? p))
+                            #f
+                            (let ((k (car p)))
+                              (if (or (eq? k 'page-id)
+                                      (eq? k 'lsn)
+                                      (eq? k 'size))
+                                  (loop (cdr rest)
+                                        (cons k seen)
+                                        (+ n 1))
+                                  #f))))))))))
+
+(define (api redo-page-id r)
+  (cdr (assq 'page-id r)))
+
+(define (api redo-lsn r)
+  (cdr (assq 'lsn r)))
+
+(define (api redo-size r)
+  (cdr (assq 'size r)))

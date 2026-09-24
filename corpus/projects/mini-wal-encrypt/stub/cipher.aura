@@ -1,0 +1,89 @@
+;; cipher.aura - Authenticated encryption (simulated) with truncated tag.
+;;
+;; Ciphertext is a cons cell (header . body):
+;;   header = list (magic ver byte0 byte1 ... byte15)
+;;            where ver is the key version used to seal.
+;;   body   = list of ciphertext bytes (same length as plaintext, XORed with key)
+;;   tag    = truncated SHA-style hash over the ciphertext body (a short string
+;;            of hex chars). The tag is stored alongside the body for integrity.
+;; For api-cipher-open, the seal produces ciphertext; we package header/body/tag
+;; together: we expose (api-cipher-tag ct) as a function that takes the cons
+;; cell and returns the stored tag string.
+
+;; Make a 16-byte key as a list of numbers from the versioned alist lookup.
+;; api-keys-version-bytes returns the byte list directly (per keys.aura).
+;; We require the caller to pass a key (byte list) directly to seal/open.
+
+;; Helper: XOR each plaintext byte with the corresponding key byte (cycling the
+;; key if needed).
+(define (xor-bytes pt key)
+  (define (pick k i)
+    (list-ref (list-tail k (modulo i (length k))) 0))
+  (define (loop i acc)
+    (if (>= i (length pt))
+        (reverse acc)
+        (loop (+ i 1)
+              (cons (modulo (- (list-ref pt i) (pick key i)) 256) acc))))
+  (loop 0 '()))
+
+;; Truncated SHA-style hash: fold bytes into a short string of hex digits.
+;; Uses a mixing function over byte pairs and emits 8 hex characters.
+(define (cipher-hash bytes)
+  (define (mix a b)
+    (modulo (+ (* (+ a b) 2654435761) 12345) 4294967296)))
+  (define (step i h0 h1)
+    (if (>= i (length bytes))
+        (cons h0 h1)
+        (let ((b (list-ref bytes i))
+              (h0n (modulo (+ (* h0 16777619) b) 4294967296))
+              (h1n (modulo (+ (* h1 2166136261) (modulo b 256)) 4294967296)))
+          (step (+ i 1) h0n h1n))))
+  (let ((hs (step 0 5381 5381)))
+    (let ((h0 (car hs))
+          (h1 (cdr hs)))
+      (string-append
+        (cipher-hex-digit (modulo h0 16))
+        (cipher-hex-digit (modulo (quotient h0 16) 16))
+        (cipher-hex-digit (modulo (quotient h0 256) 16))
+        (cipher-hex-digit (modulo h1 16))
+        (cipher-hex-digit (modulo (quotient h1 16) 16))
+        (cipher-hex-digit (modulo (mix h0 h1) 16))
+        (cipher-hex-digit (modulo (quotient (mix h0 h1) 16) 16))
+        (cipher-hex-digit (modulo (mix h1 h0) 16))))))
+
+(define (cipher-hex-digit n)
+  (let ((s (number->string n)))
+    s))
+
+;; API: seal plaintext under a (key . version) pair.
+;; Returns a cons cell whose car is the header (list starting with magic symbol
+;; 'SEAL and version number) and whose cdr is the body+tag list (ciphertext
+;; bytes with the tag string appended).
+(define (api-cipher-seal key plaintext)
+  (let ((ver (car key))
+        (kbytes (cdr key))
+        (ct (xor-bytes plaintext kbytes))
+        (tag (cipher-hash (xor-bytes plaintext kbytes))))
+    (cons (cons 'SEAL (cons ver kbytes))
+          (append ct (list tag)))))
+
+;; API: open a sealed ciphertext given a key (byte list, version is in header).
+;; Returns the plaintext byte list on success, #f on integrity failure.
+(define (api-cipher-open key ct)
+  (let ((header (car ct))
+        (body (cdr ct)))
+    (let ((ver (car (cdr header)))
+          (tag-stored (list-ref body (- (length body) 1)))
+          (ct-bytes (list-head body (- (length body) 1))))
+      (let ((computed (cipher-hash ct-bytes)))
+        (if (string=? tag-stored computed)
+            ct-bytes
+            #f)))))
+
+;; API: return the truncated hash tag string for a ciphertext cons cell.
+(define (api-cipher-tag ct)
+  (list-ref (cdr ct) (- (length (cdr ct)) 1)))
+
+;; Helper not part of public API but useful: header version accessor.
+(define (api-cipher-version ct)
+  (car (cdr (car ct))))

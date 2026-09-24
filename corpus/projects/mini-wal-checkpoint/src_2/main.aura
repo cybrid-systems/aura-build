@@ -1,0 +1,231 @@
+;; main.aura
+;; Entry point for the fuzzy WAL checkpoint engine scenario.
+;;
+;; Wires together constants, config, page-table, redo-log, checkpoint,
+;; fuzzy-collector, stats, recovery, report and the checkpoint-engine.
+;; Drives a synthetic workload of 32 redo emissions with periodic fuzzy
+;; checkpoints, then prints the 13 KEY=value metric lines required by
+;; the stdout contract.
+
+;; ---------------------------------------------------------------------------
+;; Module references (already loaded by the Aura CLI in the order declared
+;; in the project manifest).
+;; ---------------------------------------------------------------------------
+
+;; --- constants.aura ---------------------------------------------------------
+(define min-page-id       (api min-page-id))
+(define max-page-id       (api max-page-id))
+(define lsn-start         (api lsn-start))
+(define checkpoint-interval (api checkpoint-interval))
+(define max-pages-per-fuzzy (api max-pages-per-fuzzy))
+
+;; --- config.aura ------------------------------------------------------------
+(define default-config    (api default-config))
+(define cfg-checkpoint-interval (api config-checkpoint-interval default-config))
+(define cfg-fuzzy-cap     (api config-fuzzy-cap default-config))
+
+;; --- lsn.aura ---------------------------------------------------------------
+(define lsn?       (api lsn?))
+(define lsn=?
+(define lsn-advance
+(define lsn-diff
+(define lsn<=?
+
+;; --- page-table.aura --------------------------------------------------------
+(define make-page-table   (api make-page-table))
+(define page-dirty!       (api page-dirty!))
+(define page-dirty?       (api page-dirty?))
+(define dirty-pages       (api dirty-pages))
+(define dirty-page-count
+(define reset-dirty-bits! (api reset-dirty-bits!))
+(define page-table-size
+
+;; --- redo-record.aura -------------------------------------------------------
+(define make-redo  (api make-redo))
+(define redo-page-id (api redo-page-id))
+(define redo-lsn    (api redo-lsn))
+(define redo-size   (api redo-size))
+
+;; --- redo-log.aura ----------------------------------------------------------
+(define make-redo-log       (api make-redo-log))
+(define redo-log-append!   (api redo-log-append!))
+(define redo-log-length    (api redo-log-length))
+(define redo-log-bytes     (api redo-log-bytes))
+(define redo-log-bytes-since! (api redo-log-bytes-since!))
+
+;; --- checkpoint.aura --------------------------------------------------------
+(define checkpoint-start-lsn    (api checkpoint-start-lsn))
+(define checkpoint-end-lsn      (api checkpoint-end-lsn))
+(define checkpoint-dirty-pages (api checkpoint-dirty-pages))
+
+;; --- fuzzy-collector.aura ---------------------------------------------------
+(define make-fuzzy-collector (api make-fuzzy-collector))
+(define fuzzy-collect!       (api fuzzy-collect!))
+(define fuzzy-reset!         (api fuzzy-reset!))
+(define fuzzy-count          (api fuzzy-count))
+
+;; --- stats.aura -------------------------------------------------------------
+(define make-stats     (api make-stats))
+(define stats-inc!     (api stats-inc!))
+(define stats-get      (api stats-get))
+(define stats-snapshot (api stats-snapshot))
+
+;; --- recovery.aura ----------------------------------------------------------
+(define recovery-replay-from      (api recovery-replay-from))
+(define recovery-scan-window      (api recovery-scan-window))
+(define recovery-reset-dirty-count (api recovery-reset-dirty-count))
+
+;; --- checkpoint-engine.aura -------------------------------------------------
+(define make-engine              (api make-engine))
+(define engine-emit-redo!        (api engine-emit-redo!))
+(define engine-should-checkpoint? (api engine-should-checkpoint?))
+(define engine-emit-checkpoint!  (api engine-emit-checkpoint!))
+(define engine-stats             (api engine-stats))
+(define engine-replay-from-lsn   (api engine-replay-from-lsn))
+(define engine-max-replay-length (api engine-max-replay-length))
+
+;; --- report.aura ------------------------------------------------------------
+(define report-stats    (api report-stats))
+(define report-snapshot (api report-snapshot))
+
+;; ---------------------------------------------------------------------------
+;; Tiny PRNG so the workload is deterministic (Aura has no random primitive).
+;; Linear congruential generator — good enough to spread page IDs and decide
+;; whether to checkpoint at each step. Not cryptographic.
+;; ---------------------------------------------------------------------------
+(define (lcg-next state)
+  (modulo (* 1103515245 (+ state 1)) 2147483648))
+
+;; Decide whether iteration `i` of the workload should trigger a checkpoint
+;; (besides the periodic check via engine-should-checkpoint?).
+;; We trigger a checkpoint at every checkpoint-interval boundary to mirror
+;; the scenario description: "every checkpoint-interval records ... ask
+;; engine-should-checkpoint?".
+(define (workload-should-checkpoint? i)
+  (and (> i 0)
+       (= (modulo i (max 1 checkpoint-interval)) 0)))
+
+;; ---------------------------------------------------------------------------
+;; Scenario driver
+;; ---------------------------------------------------------------------------
+(define N 32)
+
+(define (run-scenario)
+  (let* ((engine   (make-engine default-config))
+         (pt       (make-page-table))
+         (log      (make-redo-log))
+         (fc       (make-fuzzy-collector))
+         (st       (make-stats))
+         (last-checkpoint (cons #f #f))   ;; previous checkpoint (or #f)
+         (redos-emitted 0))
+    (let loop ((i 0))
+      (cond
+        ((>= i N) #f)   ;; done
+        (else
+         ;; 1) Pick a page id in [min-page-id, max-page-id] from the LCG
+         ;;    and decide a pseudo-random redo size.
+         (let* ((seed     (+ (* i 7) 3))
+                (seed1    (lcg-next seed))
+                (seed2    (lcg-next seed1))
+                (seed3    (lcg-next seed2))
+                (page-id  (+ min-page-id
+                              (modulo seed1
+                                      (+ (- max-page-id min-page-id) 1))))
+                (rsize    (+ 16 (modulo seed2 64))))
+           ;; 2) Mark the page dirty in the page table.
+           (page-dirty! pt page-id)
+           ;; 3) Append a redo record to the log via the engine so it
+           ;;    gets a real LSN assigned.
+           (engine-emit-redo! engine page-id rsize log)
+           (set! redos-emitted (+ redos-emitted 1))
+           ;; 4) At every checkpoint-interval iteration, consult the
+           ;;    engine and emit a fuzzy checkpoint when it agrees.
+           (when (workload-should-checkpoint? i)
+             (when (engine-should-checkpoint? engine log)
+               (engine-emit-checkpoint! engine pt log fc)
+               (set! last-checkpoint
+                     (cons #t (+ i 1))))))
+         (loop (+ i 1))))))
+
+  ;; After the workload loop, fold engine-stats into our stats struct so
+  ;; the report layer can format a single snapshot.
+  (let* ((est (engine-stats engine)))
+    (set! st est))
+
+  ;; Recovery probes
+  (let* ((anchor (engine-replay-from-lsn engine))
+        (replay-len (engine-max-replay-length engine)))
+    ;; We don't mutate any state here — we just keep the values alive so
+    ;; the report layer can include them via snapshot calls if needed.
+    (set! last-checkpoint
+          (cons (cons anchor replay-len) (cdr last-checkpoint))))
+
+  ;; ---- Gather raw values that drive the KEY=value lines ------------------
+  (let* (
+         ;; Log shape
+         (long        (redo-log-length log))
+         (lbytes      (redo-log-bytes log))
+
+         ;; Engine-side counters
+         (est         (engine-stats engine))
+         (pages-dirtied (stats-get est 'pages-dirtied))
+         (dirty-resets  (stats-get est 'dirty-reset))
+         (ckpts         (stats-get est 'checkpoints))
+
+         ;; Last checkpoint anchor (LSN) for the LAST_CHECKPOINT line.
+         ;; We ask the engine itself for its most recent end-lsn.
+         (last-ckpt-end
+           (let ((cp (stats-get est 'last-checkpoint)))
+             (if (null? cp)
+                 lsn-start
+                 (checkpoint-end-lsn cp))))
+
+         ;; Recovery-side
+         (recovery-anchor  (engine-replay-from-lsn engine))
+         (recovery-window  (engine-max-replay-length engine))
+
+         ;; Fuzzy snapshot at the end
+         (fuzzy-snap  (fuzzy-count fc))
+
+         ;; Engine LSN cursor = redo-log length so far (next LSN to assign)
+         (next-lsn    long)
+
+         ;; Page-table size in known pages (entries, not bytes)
+         (pt-size     (page-table-size pt))
+
+         ;; Build a snapshot alist with everything the report layer needs.
+         (snap (list
+                 (cons 'redo-records       long)
+                 (cons 'redo-bytes         lbytes)
+                 (cons 'pages-dirtied      pages-dirtied)
+                 (cons 'dirty-bit-reset    dirty-resets)
+                 (cons 'checkpoint-count   ckpts)
+                 (cons 'last-checkpoint-lsn last-ckpt-end)
+                 (cons 'next-lsn           next-lsn)
+                 (cons 'page-table-size    pt-size)
+                 (cons 'fuzzy-count        fuzzy-snap)
+                 (cons 'recovery-anchor    recovery-anchor)
+                 (cons 'recovery-window    recovery-window)
+                 (cons 'lsn-start          lsn-start)
+                 (cons 'max-page-id        max-page-id))))
+
+    ;; Emit the 13 KEY=value lines in the order required by the stdout
+    ;; contract.
+    (display (report-stats 'LSN               lbytes snap)) (newline)
+    (display (report-stats 'REDO_RECORDS      long   snap)) (newline)
+    (display (report-stats 'REDO_BYTES        lbytes snap)) (newline)
+    (display (report-stats 'PAGES_DIRTIED     pages-dirtied snap)) (newline)
+    (display (report-stats 'DIRTY_BIT_RESET   dirty-resets snap)) (newline)
+    (display (report-stats 'CHECKPOINT_COUNT  ckpts snap)) (newline)
+    (display (report-stats 'LAST_CHECKPOINT   last-ckpt-end snap)) (newline)
+    (display (report-stats 'FUZZY_DIRTY_PAGES fuzzy-snap snap)) (newline)
+    (display (report-stats 'PAGE_TABLE_SIZE   pt-size snap)) (newline)
+    (display (report-stats 'RECOVERY_ANCHOR   recovery-anchor snap)) (newline)
+    (display (report-stats 'RECOVERY_WINDOW   recovery-window snap)) (newline)
+    (display (report-stats 'NEXT_LSN          next-lsn snap)) (newline)
+    (display (report-stats 'CONFIG_INTERVAL   cfg-checkpoint-interval snap)) (newline))))
+
+;; ---------------------------------------------------------------------------
+;; Run it.
+;; ---------------------------------------------------------------------------
+(run-scenario)

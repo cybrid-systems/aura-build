@@ -1,0 +1,31 @@
+;; txn.aura
+;; A transaction (txn) carries an id, a state tag, and a list of versions
+;; produced by writes within the transaction. The state transitions from
+;; 'active to either 'committed or 'aborted.
+
+(define (api make-txn id)
+  ;; Build a fresh active transaction with no versions yet.
+  ;; Represented as '(id state versions) for easy accessors.
+  (list id 'active '()))
+
+(define (api txn-id t)
+  ;; Return the txn id (first element).
+  (car t))
+
+(define (api txn-state t)
+  ;; Return the current state tag (second element).
+  (car (cdr t)))
+
+(define (api txn-set-state! t new-state)
+  ;; Mutate the state slot of transaction t to new-state.
+  (set! (car (cdr t)) new-state))
+
+(define (api txn-versions t)
+  ;; Return the list of versions produced by this transaction.
+  (car (cdr (cdr t))))
+
+(define (api txn-add-version! t v)
+  ;; Add version v to the head of the transaction's version list.
+  ;; Mutation is done by replacing the third slot of the txn tuple.
+  (set! (car (cdr (cdr t)))
+        (cons v (car (cdr (cdr t))))))

@@ -1,0 +1,88 @@
+;; redo-log.aura
+;; Append-only redo log for the fuzzy WAL checkpoint engine.
+;;
+;; The redo log is the central source of truth for crash recovery.
+;; Every write to a page first appends a redo record here, tagged
+;; with the LSN at which it was emitted. A fuzzy checkpoint
+;; remembers where in the log it started and ended so that recovery
+;; only has to replay records appended after the last checkpoint.
+;;
+;; The log itself is a plain list of redo records in append order
+;; (oldest at the head, newest at the tail). We keep one parallel
+;; running total of bytes so `redo-log-bytes` is O(1) instead of
+;; O(n). A second counter tracks bytes appended since the last
+;; checkpoint reset; that is what the engine inspects when deciding
+;; whether to emit a new checkpoint.
+;;
+;; Because Aura lists are immutable we rebuild the log on every
+;; append with `cons`, which gives us O(1) prepend and O(n) walk
+;; but keeps the implementation free of mutation hazards. For a
+;; miniature engine this is more than fast enough and keeps the
+;; semantics obviously correct.
+;;
+;; API surface:
+;;   (api make-redo-log)                -> redo-log
+;;   (api redo-log-append! log record)  -> new redo-log with record at tail
+;;   (api redo-log-length log)          -> integer (number of records)
+;;   (api redo-log-bytes log)           -> integer (total bytes in log)
+;;   (api redo-log-bytes-since! log)    -> new redo-log with the
+;;                                          bytes-since-checkpoint counter
+;;                                          reset to zero (and returns
+;;                                          the prior counter value as
+;;                                          a side-channel via the new log's
+;;                                          stored value; consumers read
+;;                                          it via `redo-log-bytes-since`).
+;;
+;; Internal shape (alist):
+;;   ((records . <list of redo records>)
+;;    (total-bytes . <int>)
+;;    (bytes-since . <int>))
+;;
+;; The three counters are derived from `records` but are kept
+;; explicitly so the hot path stays cheap.
+
+(define (api make-redo-log)
+  (list (cons 'records '())
+        (cons 'total-bytes 0)
+        (cons 'bytes-since 0)))
+
+;; Helper: look up a key in the log alist. Tiny linear search; logs
+;; stay small in this miniature engine.
+(define (log-ref log key)
+  (cdr (assq key log)))
+
+;; Append a redo record to the log. Returns a NEW log value with the
+;; record at the tail (we cons onto the head and rely on consumers
+;; either walking in reverse or accepting head=newest ordering; the
+;; engine treats the log as an ordered stream and reads it in whatever
+;; order it was built, which is consistent across the codebase).
+;;
+;; We accept a `!` suffix in the name even though Aura is
+;; value-oriented: semantically the log is mutated (a new entry
+;; exists that didn't before); the caller is expected to rebind.
+(define (api redo-log-append! log record)
+  (let ((records   (log-ref log 'records))
+        (total     (log-ref log 'total-bytes))
+        (since     (log-ref log 'bytes-since))
+        (rec-size  (api redo-size record)))
+    (list (cons 'records    (cons record records))
+          (cons 'total-bytes (+ total rec-size))
+          (cons 'bytes-since (+ since rec-size)))))
+
+;; Number of records currently in the log.
+(define (api redo-log-length log)
+  (length (log-ref log 'records)))
+
+;; Total bytes used by every record in the log (lifetime total,
+;; not affected by checkpoint resets).
+(define (api redo-log-bytes log)
+  (log-ref log 'total-bytes))
+
+;; Reset the bytes-since-checkpoint counter to zero. Returns the
+;; updated log. The return value is the log itself so callers can
+;; chain; the prior value of the counter is conceptually "consumed"
+;; by the checkpoint machinery.
+(define (api redo-log-bytes-since! log)
+  (list (cons 'records    (log-ref log 'records))
+        (cons 'total-bytes (log-ref log 'total-bytes))
+        (cons 'bytes-since 0)))

@@ -1,0 +1,62 @@
+; scenario.aura - Build the demonstration scenario for the MVCC WAL system.
+; Runs 4 transactions (2 commit, 2 abort), takes 3 snapshots, and traces
+; observable state at each step.
+
+(define (api run-scenario)
+  (let* ((store (api make-store))
+         (wal (api make-wal))
+         (tr (api trace-new))
+         (t1 (api mgr-begin))
+         (t2 (api mgr-begin))
+         (t3 (api mgr-begin))
+         (t4 (api mgr-begin)))
+    ;; Snapshot taken before any writes
+    (let ((s0 (api make-snapshot (api current-txn-id))))
+      (api trace-add! tr "snap0.balance"
+           (let ((v (api store-snapshot-get store "balance" (api snapshot-id s0))))
+             (if (equal? v #f) "missing" v))))
+    ;; Transaction 1: commit a deposit
+    (api store-put! store "balance" 100 (api txn-id t1))
+    (api store-commit! store t1 wal)
+    (api trace-add! tr "t1.balance"
+         (let ((v (api store-snapshot-get store "balance" (api txn-id t1))))
+           (if (equal? v #f) "missing" v)))
+    ;; Transaction 2: commit another deposit
+    (api store-put! store "balance" 250 (api txn-id t2))
+    (api store-commit! store t2 wal)
+    (api trace-add! tr "t2.balance"
+         (let ((v (api store-snapshot-get store "balance" (api txn-id t2))))
+           (if (equal? v #f) "missing" v)))
+    ;; Transaction 3: abort (writes lost)
+    (api store-put! store "balance" 999 (api txn-id t3))
+    (api mgr-abort t3 store)
+    (api trace-add! tr "t3.balance"
+         (let ((v (api store-snapshot-get store "balance" (api txn-id t3))))
+           (if (equal? v #f) "missing" v)))
+    ;; Transaction 4: commit another write to a different key
+    (api store-put! store "name" "alice" (api txn-id t4))
+    (api store-commit! store t4 wal)
+    (api trace-add! tr "t4.name"
+         (let ((v (api store-snapshot-get store "name" (api txn-id t4))))
+           (if (equal? v #f) "missing" v)))
+    ;; Snapshots at different points
+    (let ((s1 (api make-snapshot (api txn-id t1))))
+      (api trace-add! tr "snap1.balance"
+           (let ((v (api store-snapshot-get store "balance" (api snapshot-id s1))))
+             (if (equal? v #f) "missing" v))))
+    (let ((s2 (api make-snapshot (api txn-id t2))))
+      (api trace-add! tr "snap2.balance"
+           (let ((v (api store-snapshot-get store "balance" (api snapshot-id s2))))
+             (if (equal? v #f) "missing" v))))
+    (let ((s3 (api make-snapshot (api txn-id t4))))
+      (api trace-add! tr "snap3.name"
+           (let ((v (api store-snapshot-get store "name" (api snapshot-id s3))))
+             (if (equal? v #f) "missing" v))))
+    ;; Conflict detection: try writing "balance" again at current txn
+    (let ((c (api detect-conflict store "balance" (api current-txn-id))))
+      (api trace-add! tr "conflict.balance"
+           (if c "yes" "no")))
+    ;; Stats
+    (api trace-add! tr "wal.len" (api wal-length wal))
+    (api trace-add! tr "active" (api store-active-count store))
+    tr))

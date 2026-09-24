@@ -1,0 +1,23 @@
+; snapshot.aura - Snapshot isolation utilities
+; A snapshot is a list: '(snapshot-id)
+; Visibility: a version is visible if its version-txn <= snapshot-id
+;              AND the writing transaction is committed.
+
+(define (api make-snapshot txn-id)
+  (list txn-id))
+
+(define (api snapshot-id s)
+  (car s))
+
+; Check whether a version is visible under a snapshot.
+; A version is visible if:
+;   1. Its version-txn is <= snapshot-id (write happened at or before snapshot)
+;   2. The op is not 'aborted (i.e., it's a normal put/op)
+; Note: full "committed" check requires the store; here we use op as a proxy
+; (op will be 'put for normal writes; aborts produce no committed version).
+(define (api snapshot-visible? snap version)
+  (let ((snap-id (snapshot-id snap))
+        (v-txn (version-txn version))
+        (v-op (version-op version)))
+    (and (<= v-txn snap-id)
+         (not (equal? v-op 'abort)))))

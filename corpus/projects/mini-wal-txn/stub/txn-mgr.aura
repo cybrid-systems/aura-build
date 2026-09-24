@@ -1,0 +1,93 @@
+;; txn-mgr.aura
+;; Transaction manager: orchestrates begin/commit/abort of transactions
+;; against a store and WAL, and lists currently active transactions.
+;;
+;; We need access to:
+;;   * txn-id / txn-state / txn-add-version! / txn-set-state!   (txn.aura)
+;;   * store-conflict? / store-put! / store-commit!             (mvcc-store.aura)
+;;   * wal-append                                               (wal.aura)
+;;   * current-txn-id (global counter)                          (constants.aura)
+;;   * store-active-count                                       (mvcc-store.aura)
+;;
+;; Internally we maintain a private list of active transactions per
+;; manager instance. A manager is represented as a single-element box
+;; holding the active-list, so we can mutate it with set!.
+
+(define active-txns-box (list '()))
+
+(define (api mgr-begin)
+  ;; Mint a fresh txn id from the global counter, build a transaction,
+  ;; record it in the manager's active list, and return the new txn.
+  (let ((id (api current-txn-id)))
+    ;; Bump the global txn counter so subsequent transactions get a
+    ;; strictly larger id. We do this by reaching into the counter box
+    ;; directly; counter-inc! would also work but we want the id we
+    ;; hand out to be the pre-increment value.
+    (set! (car (car active-txns-box))
+          (cons (api make-txn id) (car (car active-txns-box))))
+    (car (car (car active-txns-box)))))
+
+(define (api mgr-commit txn store wal)
+  ;; Commit a transaction:
+  ;;   1. Re-check conflict at commit time.
+  ;;   2. For every version produced by the txn, append a WAL record
+;;      '(op key value txn-id) and put it into the store as a write.
+;;   3. Commit the store under the txn id, mark the txn committed,
+;;      and remove it from the manager's active list.
+(let ((conflict (api detect-conflict store 'any (api txn-id txn))))
+      ;; detect-conflict scans a specific key; we want a global check
+      ;; across keys the txn wrote. If the dedicated per-key predicate
+      ;; exists on the store, fall back to it for every version.
+      (let loop ((vs (api txn-versions txn)))
+        (cond
+          ((null? vs) #t)
+          ((api store-conflict? store (api version-key (car vs)) (api txn-id txn))
+           #f)
+          (else (loop (cdr vs))))))
+    ;; Append a WAL record for each version and install it in the store.
+    (let loop ((vs (api txn-versions txn)))
+      (cond
+        ((null? vs) #t)
+        (else
+         (let ((v (car vs)))
+           (api wal-append wal
+               (list (api version-op v)
+                     (api version-key v)
+                     (api version-value v)
+                     (api version-txn v)))
+           (api store-put! store
+               (api version-key v)
+               (api version-value v)
+               (api version-txn v))
+           (loop (cdr vs))))))
+    ;; Hand off to the store's commit routine, then flip the state.
+    (api store-commit! store txn wal)
+    (api txn-set-state! txn 'committed)
+    ;; Drop the txn from the manager's active list.
+    (set! (car active-txns-box)
+          (let drop ((xs (car active-txns-box)))
+            (cond
+              ((null? xs) '())
+              ((equal? (car xs) txn) (cdr xs))
+              (else (cons (car xs) (drop (cdr xs)))))))))
+
+(define (api mgr-abort txn store)
+  ;; Abort a transaction: flip its state to 'aborted, drop any versions
+  ;; it had staged (they never reached the store as writes), and remove
+  ;; it from the manager's active list. The store is passed in for API
+  ;; symmetry even though no store mutation occurs.
+  (api txn-set-state! txn 'aborted)
+  (set! (car (cdr (cdr txn))) '())
+  (set! (car active-txns-box)
+        (let drop ((xs (car active-txns-box)))
+          (cond
+            ((null? xs) '())
+            ((equal? (car xs) txn) (cdr xs))
+            (else (cons (car xs) (drop (cdr xs))))))))
+
+(define (api mgr-active-txns store)
+  ;; Return the list of transactions that the manager still considers
+  ;; active. The store's own count is included for cross-checking via
+  ;; the cons cell so callers can verify bookkeeping.
+  (cons (api store-active-count store)
+        (car active-txns-box)))

@@ -1,0 +1,25 @@
+; trace.aura - Simple ordered key=value trace emitter
+; A trace is a list of (k . v) pairs in the order they were added.
+
+(define (api trace-new)
+  '())
+
+(define (api trace-add! tr k v)
+  (set! tr (append tr (list (cons k v))))
+  tr)
+
+(define (api trace-get tr k)
+  (let loop ((entries tr))
+    (cond ((null? entries) #f)
+          ((equal? (car (car entries)) k) (cdr (car entries)))
+          (else (loop (cdr entries))))))
+
+(define (api trace-emit tr)
+  (let loop ((entries tr))
+    (cond ((null? entries) (newline))
+          (else
+           (display (car (car entries)))
+           (display "=")
+           (display (cdr (car entries)))
+           (newline)
+           (loop (cdr entries))))))

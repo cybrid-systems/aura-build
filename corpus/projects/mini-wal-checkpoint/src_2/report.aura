@@ -1,0 +1,123 @@
+;; report.aura
+;; Reporting helpers for the fuzzy WAL checkpoint engine.
+;;
+;; The reporting layer converts raw engine state — stats counter,
+;; redo log length/bytes, checkpoint history, recovery scan window
+;; — into a flat list of `(key . value)` pairs that the main entry
+;; point can print line-by-line as `KEY=value`. We deliberately do
+;; not call `(display)` from inside this module so the formatting
+;; can be unit-tested without producing stdout, and so the main
+;; entry point can choose its own output strategy.
+;;
+;; Two flavors of report are provided:
+;;
+;;   1. `report-stats` takes the engine's stats alist directly and
+;;      returns a `(key . number)` pair for every metric that lives
+;;      inside stats (records appended, bytes appended, checkpoints
+;;      emitted, dirty resets, replays started, etc.). Keys are the
+;;      same names the stats module stores under.
+;;
+;;   2. `report-snapshot` is the full diagnostic dump. In addition to
+;;      the stats alist it accepts the redo log (for length/bytes),
+;;      the page table (for dirty count / table size), the
+;;      checkpoint history (for checkpoint count and last-checkpoint
+;;      summary), and the recovery scan window (for max replay
+;;      length). It walks each of those, calling the appropriate
+;;      accessors, and assembles the 13-line report in the exact
+;;      order the scenario requires.
+;;
+;; All values are returned as plain numbers (or booleans where
+;; appropriate). The caller is responsible for converting them to
+;; strings before printing.
+;;
+;; API surface:
+;;   (api report-stats stats)                          -> alist
+;;   (api report-snapshot stats redo-log page-table
+;;                         checkpoint-history
+;;                         recovery-window)            -> alist
+
+(define (api report-stats stats)
+  ;; Pass-through: stats-snapshot already returns an alist of
+  ;; (key . number) pairs in a stable order. The main entry point
+  ;; could call (stats-snapshot stats) directly, but routing it
+  ;; through report-stats keeps a single reporting seam in case
+  ;; we ever want to rename keys, filter metrics, or add
+  ;; derived counters (e.g. bytes/checkpoint).
+  (stats-snapshot stats))
+
+(define (api report-snapshot stats redo-log page-table
+                            checkpoint-history recovery-window)
+  ;; Build the 13-line report in scenario order. Each cons cell is
+  ;; (KEY . value). We pull numbers from the appropriate modules so
+  ;; nothing here is hardcoded — every value reflects actual state.
+  ;;
+  ;; Lines, in scenario order:
+  ;;   01 LSN             - LSN of the next record to be appended
+  ;;                       (i.e. one past the last emitted LSN).
+  ;;                       Computed from stats "next-lsn".
+  ;;   02 REDO_RECORDS    - total redo records appended so far.
+  ;;   03 REDO_BYTES      - total redo bytes on disk so far.
+  ;;   04 PAGES_DIRTIED   - number of pages touched since process
+  ;;                       start (lifetime counter from stats).
+  ;;   05 DIRTY_BIT_RESET - number of times dirty bits were cleared
+  ;;                       (i.e. checkpoint emissions) from stats.
+  ;;   06 CHECKPOINT_COUNT - number of checkpoints currently in
+  ;;                        history. Falls back to 0 if history
+  ;;                        is empty/#f.
+  ;;   07 LAST_CHECKPOINT_START_LSN - start LSN of the most recent
+  ;;                                 checkpoint, or 0 if none.
+  ;;   08 LAST_CHECKPOINT_END_LSN   - end LSN of the most recent
+  ;;                                 checkpoint, or 0 if none.
+  ;;   09 LAST_CHECKPOINT_PAGES     - dirty page count captured in
+  ;;                                 the most recent checkpoint,
+  ;;                                 or 0 if none.
+  ;;  10 TABLE_SIZE       - number of distinct pages known to the
+  ;;                       page table (clean + dirty).
+  ;;  11 DIRTY_PAGES      - number of dirty pages currently set.
+  ;;  12 REPLAY_FROM_LSN  - LSN at which recovery would begin
+  ;;                       replay (= end LSN of last checkpoint,
+  ;;                       or lsn-start if no checkpoint exists).
+  ;;  13 REPLAY_LENGTH    - max number of bytes recovery might
+  ;;                       scan, taken straight from the recovery
+  ;;                       scan window.
+  (let* ((snap           (stats-snapshot stats))
+         (next-lsn       (stats-get snap 'next-lsn))
+         (records        (redo-log-length redo-log))
+         (bytes          (redo-log-bytes redo-log))
+         (pages-dirtied  (stats-get snap 'pages-dirtied))
+         (dirty-resets   (stats-get snap 'dirty-bit-reset))
+         (cp-count       (if (null? checkpoint-history)
+                             0
+                             (length checkpoint-history)))
+         (last-cp        (if (null? checkpoint-history)
+                             #f
+                             (car checkpoint-history)))
+         (cp-start       (if last-cp
+                             (checkpoint-start-lsn last-cp)
+                             0))
+         (cp-end         (if last-cp
+                             (checkpoint-end-lsn last-cp)
+                             0))
+         (cp-pages       (if last-cp
+                             (length (checkpoint-dirty-pages last-cp))
+                             0))
+         (table-size     (page-table-size page-table))
+         (dirty-pages    (dirty-page-count page-table))
+         (replay-from    (if last-cp cp-end 0))
+         (replay-len     (if (number? recovery-window)
+                             recovery-window
+                             0)))
+    (list
+      (cons 'LSN                     next-lsn)
+      (cons 'REDO_RECORDS            records)
+      (cons 'REDO_BYTES              bytes)
+      (cons 'PAGES_DIRTIED           pages-dirtied)
+      (cons 'DIRTY_BIT_RESET         dirty-resets)
+      (cons 'CHECKPOINT_COUNT        cp-count)
+      (cons 'LAST_CHECKPOINT_START_LSN cp-start)
+      (cons 'LAST_CHECKPOINT_END_LSN   cp-end)
+      (cons 'LAST_CHECKPOINT_PAGES     cp-pages)
+      (cons 'TABLE_SIZE              table-size)
+      (cons 'DIRTY_PAGES             dirty-pages)
+      (cons 'REPLAY_FROM_LSN         replay-from)
+      (cons 'REPLAY_LENGTH           replay-len))))

@@ -1,0 +1,56 @@
+;; page-table.aura
+;; In-memory page directory for the fuzzy WAL checkpoint engine.
+;;
+;; A page table maps page IDs (integers in [min-page-id, max-page-id])
+;; to a single boolean: the dirty bit. When a redo record modifies a
+;; page, that page's dirty bit is set. A fuzzy checkpoint snapshots
+;; the set of pages whose dirty bit is currently set, then clears
+;; every dirty bit in one shot. Resetting the bits does not forget
+;; the pages themselves (the alist of known pages is preserved) so
+;; subsequent writes to the same pages can re-dirty them cheaply.
+;;
+;; The table is represented as an alist of (page-id . #t) pairs.
+;; A page is "known" if it appears as a key; "dirty" if its value is
+;; #t. We deliberately do NOT store clean pages in the alist, so
+;; `page-table-size` counts only pages that have ever been written
+;; to — a useful proxy for working-set size.
+;;
+;; API surface:
+;;   (api make-page-table)           -> empty page table (alist)
+;;   (api page-dirty! pt pid)        -> side-effect: mark pid dirty
+;;   (api page-dirty?  pt pid)       -> boolean
+;;   (api dirty-pages  pt)           -> list of dirty page ids
+;;   (api dirty-page-count pt)       -> integer count of dirty pages
+;;   (api reset-dirty-bits! pt)      -> side-effect: clear all dirty bits
+;;   (api page-table-size pt)        -> integer count of known pages
+
+(define (api make-page-table)
+  '())
+
+;; Internal helper: look up pid in an alist using equal? semantics.
+;; Returns the pair (cell) if found, or #f otherwise. Using assoc
+;; with equal? keeps the predicate symmetric with how other modules
+;; compare keys, even though we only ever store integer page ids.
+(define (page-table-lookup pt pid)
+  (cond ((null? pt) #f)
+        ((equal? (car (car pt)) pid) (car pt))
+        (else (page-table-lookup (cdr pt) pid))))
+
+;; Mark a page as dirty. If the page is already known we flip its
+;; bit to #t in place via set! on the cdr of the existing cell; if
+;; it is unknown we cons a fresh (pid . #t) cell onto the table.
+;; Returning the (possibly updated) alist keeps the function
+;; composable with code that prefers continuation-style updates,
+;; but the side-effect is what callers actually rely on.
+(define (api page-dirty! pt pid)
+  (let ((cell (page-table-lookup pt pid)))
+    (if cell
+        (begin
+          (set-cdr! cell #t)
+          pt)
+        (cons (cons pid #t) pt))))
+
+;; Is a given page currently flagged dirty? A page that has never
+;; been touched is by definition not dirty.
+(define (api page-dirty? pt pid)
+  (let ((cell (page-table-lookup pt pid)))

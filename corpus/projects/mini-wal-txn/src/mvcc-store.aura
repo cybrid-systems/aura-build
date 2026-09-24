@@ -1,0 +1,146 @@
+;; mvcc-store.aura
+;; The MVCC store is the central data structure that maps each key to its
+;; latest version (per visible-txn rules) and tracks which transactions
+;; have outstanding (uncommitted) writes. A store is represented as:
+;;
+;;   '((committed-alist) (active-alist))
+;;
+;; where:
+;;   committed-alist : list of (key . latest-version) pairs that have been
+;;                     committed, in oldest-first insertion order
+;;   active-alist    : list of (key . (writer-txn-id . version)) entries
+;;                     for keys written by transactions that are still
+;;                     active (i.e. not yet committed or aborted)
+;;
+;; All mutation goes through the public API so the invariants are kept.
+
+(define (api make-store)
+  ;; Construct an empty MVCC store. Two empty alists, no committed versions,
+  ;; no active writers yet.
+  (list '() '()))
+
+(define (store-committed-alist store)
+  ;; Helper: first slot of the store tuple holds committed versions.
+  (car store))
+
+(define (store-active-alist store)
+  ;; Helper: second slot of the store tuple holds active writers.
+  (car (cdr store)))
+
+(define (api store-put! store key value txn-id)
+  ;; Record a write of `key` -> `value` by transaction `txn-id` as an
+  ;; active (uncommitted) entry. If the same active txn already wrote the
+  ;; key, overwrite the value. The committed alist is untouched until
+  ;; commit time.
+  (let ((committed (store-committed-alist store))
+        (active    (store-active-alist store)))
+    (let ((existing (assoc key active)))
+      (cond
+        ((assoc key active)
+         ;; Replace the existing active entry for this key+writer.
+         (set! (cdr existing) (cons txn-id (api make-version key value txn-id 'put))))
+        (else
+         ;; No prior active write for this key; cons a new entry. The
+         ;; active-alist preserves insertion order (newest at head).
+         (set-car! (cdr store)
+                   (cons (cons key (cons txn-id (api make-version key value txn-id 'put)))
+                         active)))))
+    ;; Return the store for chaining convenience.
+    store))
+
+(define (api store-commit! store txn wal)
+  ;; Promote a transaction's active writes into the committed alist and
+  ;; append a commit record to the WAL. The txn argument carries its
+  ;; list of versions; we walk that list and, for each version whose
+  ;; producing txn matches, move it from active into committed.
+  (let ((txn-id   (api txn-id txn))
+        (versions (api txn-versions txn)))
+    (letrec
+      ((commit-one
+        (lambda (vs)
+          (cond
+            ((null? vs) #t)
+            (else
+             (let ((v (car vs)))
+               (cond
+                 ((= (api version-txn v) txn-id)
+                  ;; Move v from active into committed for its key.
+                  (let ((key (api version-key v)))
+                    ;; Remove any active entry for this key by this writer.
+                    (set-car! (cdr store)
+                              (remove-active-for (store-active-alist store) key txn-id))
+                    ;; Install/overwrite the committed entry for this key.
+                    (set-car! store (install-committed (store-committed-alist store) key v))))
+                 (else #t))
+               (commit-one (cdr vs))))))))
+      (commit-one versions)))
+  ;; Append a commit record to the WAL.
+  (api wal-append wal (list 'commit (api txn-id txn) '() '()))
+  store)
+
+(define (remove-active-for alist key txn-id)
+  ;; Helper for store-commit!: return alist with any (key . ...) entry
+  ;; whose txn-id equals the committing writer removed. Keeps entries
+  ;; from other active writers untouched.
+  (cond
+    ((null? alist) '())
+    (else
+     (let ((entry (car alist)))
+       (cond
+         ((and (equal? (car entry) key)
+               (= (car (cdr entry)) txn-id))
+          (remove-active-for (cdr alist) key txn-id))
+         (else
+          (cons entry (remove-active-for (cdr alist) key txn-id))))))))
+
+(define (install-committed alist key version)
+  ;; Helper for store-commit!: produce a new alist where the entry for
+  ;; `key` is (key . version). If an entry already exists, replace it;
+  ;; otherwise cons a fresh entry onto the head.
+  (cond
+    ((null? alist)
+     (cons (cons key version) '()))
+    (else
+     (let ((entry (car alist)))
+       (cond
+         ((equal? (car entry) key)
+          (cons (cons key version) (cdr alist)))
+         (else
+          (cons entry (install-committed (cdr alist) key version))))))))
+
+(define (api store-snapshot-get store key snapshot-txn)
+  ;; Look up the value of `key` as of `snapshot-txn` using snapshot
+  ;; isolation: walk the committed alist, find the latest version whose
+  ;; txn-id is <= snapshot-txn, and return its value. If no such version
+  ;; exists, return #f (no visible value).
+  (find-visible (store-committed-alist store) key snapshot-txn))
+
+(define (find-visible alist key snapshot-txn)
+  ;; Walk the committed alist looking for the latest version of `key`
+  ;; whose txn-id <= snapshot-txn. Because entries are stored in
+  ;; oldest-first insertion order, the first match (head-ward) is the
+  ;; latest for that key under the commit ordering we use.
+  (cond
+    ((null? alist) #f)
+    (else
+     (let ((entry (car alist)))
+       (cond
+         ((equal? (car entry) key)
+          (let ((v (cdr entry)))
+            (cond
+              ((<= (api version-txn v) snapshot-txn)
+               (api version-value v))
+              (else
+               (find-visible (cdr alist) key snapshot-txn)))))
+         (else
+          (find-visible (cdr alist) key snapshot-txn)))))))
+
+(define (api store-conflict? store key txn-id)
+  ;; Defer to the dedicated conflict detector so the rules stay in one
+  ;; place. The detector inspects both committed and active entries.
+  (api detect-conflict store key txn-id))
+
+(define (api store-active-count store)
+  ;; Count the number of currently-active (uncommitted) writers tracked
+  ;; by the store. Each active-alist entry corresponds to one writer.
+  (length (store-active-alist store)))

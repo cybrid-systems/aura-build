@@ -1,0 +1,73 @@
+; tier-hashmap.aura — hot, O(1)-ish tier backed by a simple association list.
+;
+; Implements the tier interface (see tier.aura) for kind 'hashmap.
+; In a real engine this would be a real hashmap with chaining; here we use
+; alists but expose the same API and contract so the rest of the engine is
+; agnostic to the backing store.
+
+; Build a fresh empty hashmap tier.
+(define (api hashmap-tier-new)
+  (list 'tier 'hashmap '() '()))
+
+; Helper: find the (key . value) cell for k in a map (an alist), or #f.
+(define (hashmap-find-cell map k)
+  (cond ((null? map) #f)
+        ((equal? (car (car map)) k) (car map))
+        (else (hashmap-find-cell (cdr map) k))))
+
+; Helper: bump a key's touch counter in a touch-count alist, returning a new
+; alist (does not mutate the input).
+(define (hashmap-bump-touch touches k)
+  (let ((cell (hashmap-find-cell touches k)))
+    (if cell
+        ;; Replace the cell with an incremented value.
+        (cons (cons k (+ (cdr cell) 1))
+              (hashmap-remove-key touches k))
+        ;; Brand-new key: count starts at 1 (this is the first touch).
+        (cons (cons k 1) touches))))
+
+; Helper: remove any existing cell for k from an alist. Order preserved.
+(define (hashmap-remove-key alist k)
+  (cond ((null? alist) '())
+        ((equal? (car (car alist)) k) (cdr alist))
+        (else (cons (car alist) (hashmap-remove-key (cdr alist) k)))))
+
+; Tier interface: step the tier with (key, delta).
+; Returns a *new* tier (immutable update). Maps k -> old + delta.
+; Also bumps k's touch counter.
+(define (api tier-step t k delta)
+  (let* ((kind (cadr t))
+         (map  (caddr t))
+         (touches (cadddr t))
+         (cell (hashmap-find-cell map k))
+         (old (if cell (cdr cell) 0))
+         (new-map (cons (cons k (+ old delta))
+                        (hashmap-remove-key map k)))
+         (new-touches (hashmap-bump-touch touches k)))
+    (list 'tier kind new-map new-touches)))
+
+; Tier interface: get the current value for k, or 0 if absent.
+(define (api tier-get t k)
+  (let ((cell (hashmap-find-cell (caddr t) k)))
+    (if cell (cdr cell) 0)))
+
+; Tier interface: list of keys currently stored in the tier.
+(define (api tier-keys t)
+  (let walk ((rest (caddr t)) (acc '()))
+    (if (null? rest)
+        (reverse acc)
+        (walk (cdr rest) (cons (car (car rest)) acc)))))
+
+; Tier interface: number of distinct keys in the tier.
+(define (api tier-size t)
+  (length (caddr t)))
+
+; Tier interface: should this key be promoted out of the hashmap tier?
+; In a real engine this would consult a high-water-mark of touches (e.g. > 8).
+; Here we use a small, deterministic threshold so the demo flow actually
+; demonstrates promotion without needing tons of events.
+(define (api tier-promote? t k)
+  (let ((cell (hashmap-find-cell (cadddr t) k)))
+    (if cell
+        (>= (cdr cell) 8)
+        #f)))

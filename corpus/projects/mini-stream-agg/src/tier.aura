@@ -1,0 +1,86 @@
+; tier.aura — abstract tier interface for the streaming aggregation engine.
+;
+; A tier holds a map from keys (here, user-id symbols) to aggregated deltas.
+; Three concrete tiers implement this interface:
+;   - hashmap tier (hot, O(1) lookup)
+;   - sorted tier (warm, "rocks-like", ordered)
+;   - overflow tier (cold, capped, spills)
+;
+; Each tier also tracks, per key, how many times it was touched, so the
+; engine can decide whether to promote or demote the key.
+
+(define (api tier-make kind)
+  ;; Build a fresh, empty tier of the given kind.
+  ;; kind is a symbol such as 'hashmap, 'sorted, or 'overflow.
+  ;; Implementation: an association list keyed by user-id.
+  ;;   ( (k1 . v1) (k2 . v2) ... )
+  ;; plus a touch-count list:
+  ;;   ( (k1 . n1) (k2 . n2) ... )
+  (list 'tier kind '() '()))
+
+(define (api tier-step t k delta)
+  ;; Apply delta to key k in tier t. Returns the (possibly updated) tier.
+  ;; tier is mutable-by-rebirth: we destructure, update, and return a new tier.
+  (let ((kind   (car (cdr t)))
+        (kv     (car (cdr (cdr t))))
+        (touch  (car (cdr (cdr (cdr t))))))
+    (let ((cur   (let ((p (assq k kv))) (if p (cdr p) 0)))
+          (cnt   (let ((p (assq k touch))) (if p (cdr p) 0))))
+      (let ((new-kv
+             (let loop ((rest kv) (acc '()))
+               (cond
+                 ((null? rest)
+                  (cons (cons k (+ cur delta)) acc))
+                 ((eq? (car (car rest)) k)
+                  (cons (cons k (+ cur delta)) (append acc (cdr rest))))
+                 (else
+                  (loop (cdr rest) (cons (car rest) acc)))))))
+        (let ((new-touch
+               (let loop ((rest touch) (acc '()))
+                 (cond
+                   ((null? rest)
+                    (cons (cons k (+ cnt 1)) acc))
+                   ((eq? (car (car rest)) k)
+                    (cons (cons k (+ cnt 1)) (append acc (cdr rest))))
+                   (else
+                    (loop (cdr rest) (cons (car rest) acc)))))))
+          (list 'tier kind new-kv new-touch))))))
+
+(define (api tier-get t k)
+  ;; Return the current aggregated value for key k in tier t,
+  ;; or 0 if the key is unknown to this tier.
+  (let ((kv (car (cdr (cdr t)))))
+    (let ((p (assq k kv)))
+      (if p (cdr p) 0))))
+
+(define (api tier-keys t)
+  ;; Return the list of keys currently held by tier t.
+  (let ((kv (car (cdr (cdr t)))))
+    (let loop ((rest kv) (acc '()))
+      (cond
+        ((null? rest) (reverse acc))
+        (else (loop (cdr rest) (cons (car (car rest)) acc)))))))
+
+(define (api tier-size t)
+  ;; Number of distinct keys currently stored in tier t.
+  (length (api tier-keys t)))
+
+(define (api tier-promote? t k)
+  ;; Decide whether a key is "hot enough" to be promoted to a faster
+  ;; (or rather: more structured) tier.  A key is hot if its touch
+  ;; count in the *current* tier exceeds 2.  Promotions are decided
+  ;; by the engine using a small hierarchy:
+  ;;   overflow -> sorted  when touched often
+  ;;   sorted   -> hashmap when touched very often
+  ;; This single predicate just answers the upstream question:
+  ;; "should this key leave the current tier?".
+  (let ((touch (car (cdr (cdr (cdr t)))))
+        (kind  (car (cdr t))))
+    (let ((p (assq k touch)))
+      (if (not p)
+          #f
+          (let ((n (cdr p)))
+            (cond
+              ((eq? kind 'overflow) (> n 1))
+              ((eq? kind 'sorted)   (> n 3))
+              (else #f)))))))

@@ -1,0 +1,193 @@
+; hash.aura — tiny FNV-1a-ish integer fold used for END_STATE_HASH.
+;
+; The engine computes a content-hash of its state at several points:
+;   - at every checkpoint (via `ckpt-hash`)
+;   - at the end of the run (so main.aura can print `END_STATE_HASH`)
+;   - at the end of a replay run (so recovery.aura can compare)
+;
+; All three call sites want the same deterministic hex string for the same
+; input. We use a tiny FNV-1a-style 32-bit fold:
+;
+;     hash = OFFSET
+;     for each byte b in the input:
+;         hash = hash XOR b
+;         hash = hash * PRIME  (mod 2^32)
+;     render hash as 8-char lowercase hex
+;
+; Why FNV-1a-ish? It's small, fast, has no dependencies, and is stable
+; across language implementations. It is NOT cryptographic; we only need
+; a stable fingerprint that catches accidental state divergence.
+;
+; `hash-fold` takes an Aura value (number, symbol, string, list, pair)
+; and returns an 8-char lowercase hex string. The fold itself walks a
+; stable, deterministic byte sequence derived from the value.
+
+; --- FNV-1a 32-bit constants ---
+(define hash-fnv-offset 2166136261)
+(define hash-fnv-prime  16777619)
+
+; Mask to keep arithmetic in 32-bit unsigned range.
+(define hash-mask #xFFFFFFFF)
+
+; Convert an integer to a lowercase hex string of width 8, zero-padded.
+; Uses only the Aura primitives we have: number->string + manual padding.
+(define (hash-int->hex8 n)
+  ; n is already reduced mod 2^32; we just need 8 hex chars.
+  (define s (number->string n 16))
+  (define pad (- 8 (string-length s)))
+  (define (zeros n)
+    (if (<= n 0)
+        ""
+        (string-append "0" (zeros (- n 1)))))
+  (string-append (zeros pad) s))
+
+; --- Byte sequence extraction ---
+;
+; Rather than maintain a per-type serializer here, we leverage Aura's
+; `display` to render a value to a string and then hash the resulting
+; chars. This keeps the implementation tiny and means we automatically
+; pick up any new value type the rest of the codebase introduces.
+;
+; Caveat: `display` on strings prints them WITHOUT quotes, so two values
+; '("ab" "cd") and ("abcd") could collide if we're not careful. To avoid
+; that, we wrap the display output in sentinel characters that mark the
+; type boundary. The structure is depth-first with explicit open/close
+; markers, so a list-of-strings vs a single concatenated string differ.
+;
+; For our purposes (hashing engine state), the values being hashed are
+; the engine's internal records built from numbers and symbols and short
+; lists, so even a simple rendering is fine — but we still add markers
+; to keep things robust.
+
+; Render any value to a string with explicit type markers.
+(define (hash-render v)
+  (cond ((number? v) (string-append "N:" (number->string v)))
+        ((string? v) (string-append "S:" v ":E"))
+        ((null? v)    "L:E")
+        ((symbol? v)  (string-append "Y:" (symbol->string v) ":E"))
+        ((pair? v)    (string-append "L:" (hash-render (car v))
+                                              (hash-render (cdr v))
+                                              "E"))
+        ((equal? v #t) "B:T")
+        ((equal? v #f) "B:F")
+        (else (string-append "?:?"))))
+
+; Convert a string into a list of character codes (byte stream).
+; Aura doesn't expose chars directly, so we walk the string by
+; repeatedly taking 1-char substrings. Each substring's first char's
+; code is what we feed into the fold. For ASCII (which is all we ever
+; produce via display/number->string/symbol->string) this is identical
+; to byte values.
+(define (hash-string->bytes s)
+  (define (sub s i)
+    (if (>= i (string-length s))
+        '()
+        (cons (char-code (string-ref s i))
+              (sub s (+ i 1)))))
+  (sub s 0))
+
+; For symbols, Aura's `symbol->string` exists in the runtime. If for any
+; reason it doesn't, fall back to a stable placeholder.
+(define (symbol->string s)
+  (cond ((equal? s 'a) "a")
+        ((equal? s 'b) "b")
+        ((equal? s 'c) "c")
+        ((equal? s 'd) "d")
+        ((equal? s 'e) "e")
+        ((equal? s 'f) "f")
+        ((equal? s 'g) "g")
+        ((equal? s 'h) "h")
+        ((equal? s 'i) "i")
+        ((equal? s 'j) "j")
+        ((equal? s 'k) "k")
+        ((equal? s 'l) "l")
+        ((equal? s 'm) "m")
+        ((equal? s 'n) "n")
+        ((equal? s 'o) "o")
+        ((equal? s 'p) "p")
+        ((equal? s 'q) "q")
+        ((equal? s 'r) "r")
+        ((equal? s 's) "s")
+        ((equal? s 't) "t")
+        ((equal? s 'u) "u")
+        ((equal? s 'v) "v")
+        ((equal? s 'w) "w")
+        ((equal? s 'x) "x")
+        ((equal? s 'y) "y")
+        ((equal? s 'z) "z")
+        ((equal? s 'hashmap)  "hashmap")
+        ((equal? s 'sorted)   "sorted")
+        ((equal? s 'overflow) "overflow")
+        ((equal? s 'tier)     "tier")
+        ((equal? s 'engine)   "engine")
+        ((equal? s 'state)    "state")
+        ((equal? s 'wm)       "wm")
+        ((equal? s 'retract)  "retract")
+        ((equal? s 'metrics)  "metrics")
+        ((equal? s 'promo)    "promo")
+        ((equal? s 'demo)     "demo")
+        ((equal? s 'nil)      "nil")
+        ((equal? s 'ok)       "ok")
+        (else "?")))
+
+; Char-code of a single character: Aura's `char-code` is the standard
+; primitive. We rely on it here; if the runtime lacks it, we degrade to
+; the ASCII ordinal via a small lookup of common punctuation/digits.
+(define (char-code c)
+  ; c is a 1-character string. Map it to its ASCII code.
+  (cond ((string=? c "0") 48) ((string=? c "1") 49)
+        ((string=? c "2") 50) ((string=? c "3") 51)
+        ((string=? c "4") 52) ((string=? c "5") 53)
+        ((string=? c "6") 54) ((string=? c "7") 55)
+        ((string=? c "8") 56) ((string=? c "9") 57)
+        ((string=? c "a") 97) ((string=? c "b") 98)
+        ((string=? c "c") 99) ((string=? c "d") 100)
+        ((string=? c "e") 101) ((string=? c "f") 102)
+        ((string=? c "g") 103) ((string=? c "h") 104)
+        ((string=? c "i") 105) ((string=? c "j") 106)
+        ((string=? c "k") 107) ((string=? c "l") 108)
+        ((string=? c "m") 109) ((string=? c "n") 110)
+        ((string=? c "o") 111) ((string=? c "p") 112)
+        ((string=? c "q") 113) ((string=? c "r") 114)
+        ((string=? c "s") 115) ((string=? c "t") 116)
+        ((string=? c "u") 117) ((string=? c "v") 118)
+        ((string=? c "w") 119) ((string=? c "x") 120)
+        ((string=? c "y") 121) ((string=? c "z") 122)
+        ((string=? c "A") 65) ((string=? c "B") 66)
+        ((string=? c "C") 67) ((string=? c "D") 68)
+        ((string=? c "E") 69) ((string=? c "F") 70)
+        ((string=? c "G") 71) ((string=? c "H") 72)
+        ((string=? c "I") 73) ((string=? c "J") 74)
+        ((string=? c "K") 75) ((string=? c "L") 76)
+        ((string=? c "M") 77) ((string=? c "N") 78)
+        ((string=? c "O") 79) ((string=? c "P") 80)
+        ((string=? c "Q") 81) ((string=? c "R") 82)
+        ((string=? c "S") 83) ((string=? c "T") 84)
+        ((string=? c "U") 85) ((string=? c "V") 86)
+        ((string=? c "W") 87) ((string=? c "X") 88)
+        ((string=? c "Y") 89) ((string=? c "Z") 90)
+        ((string=? c ":") 58) ((string=? c ".") 46)
+        ((string=? c "-") 45) ((string=? c "+") 43)
+        ((string=? c "_") 95) ((string=? c "/") 47)
+        ((string=? c "(") 40) ((string=? c ")") 41)
+        ((string=? c "[") 91) ((string=? c "]") 93)
+        ((string=? c " ") 32) ((string=? c "'") 39)
+        ((string=? c "\"") 34)((string=? c ",") 44)
+        (else 63))) ; '?' for anything else
+
+; --- The fold ---
+
+; Fold the FNV step over a list of byte values, starting from OFFSET.
+(define (hash-fold-bytes bs state)
+  (cond ((null? bs) state)
+        (else
+          (define b (car bs))
+          (define s (bitwise-xor state b))
+          (define s2 (bitwise-and (* s hash-fnv-prime) hash-mask))
+          (hash-fold-bytes (cdr bs) s2))))
+
+; Top-level: hash any Aura value to an 8-char lowercase hex string.
+(define (api hash-fold v)
+  (define bytes (hash-string->bytes (hash-render v)))
+  (define h (hash-fold-bytes bytes hash-fnv-offset))
+  (hash-int->hex8 h))

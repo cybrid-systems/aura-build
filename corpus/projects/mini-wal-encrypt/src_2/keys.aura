@@ -1,0 +1,63 @@
+;; keys.aura — keyring with versioned bytes for the encrypted WAL.
+;; Each version holds a small list of "bytes" (we just use numbers 0..255
+;; in this toy implementation). State is kept in a plain alist mapping
+;; version number -> byte-list.
+
+;; Number of distinct byte values per key (just enough to be "interesting").
+(define keys-byte-count 32)
+
+;; Build a deterministic byte sequence for a given version number using a
+;; simple LCG-like recurrence. We don't need cryptographic randomness — the
+;; goal is that different versions produce different byte sequences and
+;; that verification of a sealed segment can detect tampering via the
+;; cipher's truncated hash.
+(define (keys-mix-seed v)
+  ;; Combine the version number with a few fixed constants to spread bits.
+  (+ (* v 2654435761) 1013904223))
+
+(define (keys-make-bytes v)
+  ;; Generate `keys-byte-count' "bytes" deterministically from v.
+  (let ((seed (keys-mix-seed v))
+        (out '()))
+    (begin
+      (set! out
+        (let loop ((i 0) (acc '()) (s seed))
+          (if (= i keys-byte-count)
+              acc
+              (let ((next-s (modulo (+ (* s 1664525) 1013904223) 4294967296))
+                    (b (modulo next-s 256)))
+                (loop (+ i 1) (cons b acc) next-s)))))
+      (reverse out))))
+
+;; --- Public API ---------------------------------------------------------
+
+;; (api-keys-make-init) -> alist
+;; Returns an initial keyring with 2 versions: 1 and 2. Current version is 2.
+(define (api-keys-make-init)
+  (let ((k1 (cons 1 (keys-make-bytes 1)))
+        (k2 (cons 2 (keys-make-bytes 2))))
+    (list (cons 'current 2)
+          (cons 'versions (list k1 k2)))))
+
+;; (api-keys-current ks) -> version number
+;; Returns the version number marked as "current" in the keyring.
+(define (api-keys-current ks)
+  (cdr (assq 'current ks)))
+
+;; (api-keys-version-bytes ks v) -> byte list
+;; Looks up version v in the keyring. If missing, returns an empty list.
+(define (api-keys-version-bytes ks v)
+  (let ((pair (assq v (cdr (assq 'versions ks)))))
+    (if pair (cdr pair) '())))
+
+;; (api-keys-rotate ks) -> new keyring
+;; Adds a new version (current+1) and marks it as current. Existing versions
+;; are preserved so older sealed segments can still be verified.
+(define (api-keys-rotate ks)
+  (let ((cur (api-keys-current ks))
+        (new-v (+ cur 1))
+        (new-bytes (keys-make-bytes new-v))
+        (vers (cdr (assq 'versions ks))))
+    (cons (cons 'current new-v)
+          (cons 'versions
+                (append vers (list (cons new-v new-bytes)))))))

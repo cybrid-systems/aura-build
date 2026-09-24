@@ -1,0 +1,241 @@
+;; wal.aura - Write-ahead log with auto-segmentation, per-segment key version,
+;; and per-segment integrity verification.
+;;
+;; Segment structure (in-memory):
+;;   A segment is a list: (seg-version lsn-start lsn-end seg-records ct)
+;;     seg-version : integer key version used to seal this segment
+;;     lsn-start   : integer LSN of first record in this segment (inclusive)
+;;     lsn-end     : integer LSN of last record in this segment (inclusive)
+;;     seg-records : number of records in the segment
+;;     ct          : cons cell (header . body) as returned by api-cipher-seal
+;;
+;; A WAL is a list of segments (most recently appended at the head for O(1)
+;; cons).  The exported counter `api-wal-segs` walks the list and counts.
+;;
+;; LSNs are assigned monotonically starting from 1 for the first appended
+;; record.  Each record carries a 15-byte payload.
+;;
+;; We auto-split into segments of 15 records each, mirroring the scenario
+;; description.  The caller controls which key version is used per append
+;; call via `api-wal-append`'s `key-version` argument, so rotation is
+;; expressed by switching the argument between calls.
+
+(define SEG-RECORDS 15)   ; records per segment
+(define PAYLOAD-LEN 15)   ; bytes per record payload
+
+;; Build a payload byte list of length PAYLOAD-LEN based on the LSN.
+;; Deterministic so verify/lag tests are reproducible.
+(define (make-payload lsn)
+  (define (loop i acc)
+    (if (>= i PAYLOAD-LEN)
+        (reverse acc)
+        (loop (+ i 1)
+              (cons (modulo (+ lsn (* i 37)) 256) acc))))
+  (loop 0 '()))
+
+;; Look up the byte list for a key version from the keyring alist.
+;; ks is an alist: ((v . bytes) (v2 . bytes2) ...)
+(define (key-bytes-for ks v)
+  (cond ((null? ks) #f)
+        ((= (car (car ks)) v) (cdr (car ks)))
+        (else (key-bytes-for (cdr ks) v))))
+
+;; Create an empty WAL.
+(define (api-wal-new keys)
+  (cons 'wal '()))
+
+;; Count segments in the WAL.
+(define (api-wal-segs wal)
+  (let ((segs (cdr wal)))
+    (cond ((null? segs) 0)
+          (else (+ 1 (api-wal-segs (cons 'wal (cdr segs))))))))
+
+;; Total record count across all segments.
+(define (api-wal-records wal)
+  (let ((segs (cdr wal)))
+    (define (sum-segs ss)
+      (cond ((null? ss) 0)
+            (else (+ (list-ref (car ss) 3)   ; seg-records field
+                     (sum-segs (cdr ss))))))
+    (sum-segs segs)))
+
+;; Compute the LSN range (min-lsn . max-lsn).
+;; Wal is stored head=newest, so cdr walks oldest-first.
+(define (api-wal-lsn-range wal)
+  (let ((segs (cdr wal)))
+    (cond ((null? segs) (cons 0 0))
+          (else
+           (let ((oldest (car (reverse segs)))
+                 (newest (car segs)))
+             (cons (list-ref oldest 1)   ; lsn-start of oldest
+                   (list-ref newest 2))))))) ; lsn-end of newest
+
+;; Append a single record to the WAL.  Internally, if the current (head)
+;; segment has SEG-RECORDS records, we start a new segment.  We auto-seal
+;; each segment with api-cipher-seal using the key bytes for key-version.
+;; Returns an updated wal.
+;;
+;; This function takes the place of multiple records being appended in the
+;; scenario: the caller invokes api-wal-append once per record and passes
+;; the key-version it wants that record to use.  When the head segment
+;; fills, the next append automatically starts a fresh segment.
+(define (api-wal-append wal key-version bytes)
+  (let* ((segs (cdr wal))
+         (key-bytes (key-bytes-for key-version
+                                   ;; We need keys; but caller passes only
+                                   ;; wal.  Convention: wal holds a reference
+                                   ;; to the keyring in its car position
+                                   ;; when created via api-wal-new.  We must
+                                   ;; have keys available; the signature in
+                                   ;; the spec is (api-wal-append wal
+                                   ;; key-version bytes) without keys, so
+                                   ;; we need to retrieve key bytes another
+                                   ;; way.  Stash keys in (car wal) so we
+                                   ;; can look up.  api-wal-new sets it.
+                                   (car wal))))
+    (define (seal-seg seg)
+      ;; Build ciphertext for this segment using its version's key bytes.
+      ;; Concatenate all record payloads into a single byte list for
+      ;; sealing.
+      (let* ((version (list-ref seg 0))
+             (lsn-s   (list-ref seg 1))
+             (lsn-e   (list-ref seg 2))
+             (nrec    (list-ref seg 3))
+             (kb      (key-bytes-for (car wal) version))
+             (plain   (concat-records lsn-s nrec)))
+        (list version lsn-s lsn-e nrec (api-cipher-seal kb plain))))
+
+    (define (concat-records start-lsn n)
+      (define (loop i acc)
+        (if (>= i n)
+            (reverse acc)
+            (loop (+ i 1)
+                  (append acc (reverse (make-payload (+ start-lsn i))))
+                  ;; placeholder; we rebuild properly below
+                  )))
+      ;; Simpler: build directly.
+      (let loop ((i 0) (acc '()))
+        (if (>= i n)
+            (reverse acc)
+            (loop (+ i 1)
+                  (append (reverse (make-payload (+ start-lsn i))) acc)))))
+
+    (define (extend-head seg)
+      ;; seg = (version lsn-s lsn-e nrec payload-list)
+      ;; We don't store payload-list after sealing; for the in-progress
+      ;; (unsealed) head, we store the records as a list of byte lists.
+      ;; Strategy: keep unsealed head as (version lsn-s lsn-e nrec payloads)
+      ;; where payloads is a list of byte-lists.  When nrec reaches
+      ;; SEG-RECORDS on the next append, we seal it and start fresh.
+      ;; Here we just bump nrec, lsn-e, and cons the new payload.
+      (let* ((version (list-ref seg 0))
+             (lsn-s   (list-ref seg 1))
+             (lsn-e   (list-ref seg 2))
+             (nrec    (list-ref seg 3))
+             (loads   (list-ref seg 4)))
+        (list version lsn-s (max lsn-e (+ lsn-s nrec)) (+ nrec 1)
+              (append loads (list bytes)))))
+
+    (define (start-new-seg kv bytes2)
+      ;; Start a brand-new segment with one record.
+      (list kv (+ 1 (current-next-lsn wal)) (+ 1 (current-next-lsn wal)) 1
+            (list bytes2)))
+
+    (define (current-next-lsn w)
+      ;; The LSN to assign to the next record: if no segments, 1; else
+      ;; lsn-end-of-head + 1 (head is at car of segs list).
+      (let ((ss (cdr w)))
+        (if (null? ss) 0 (+ (list-ref (car ss) 2) 1))))
+
+    (cond
+     ;; Empty WAL: create the first segment with one record (unsealed).
+     ((null? segs)
+      (let ((new-seg (list key-version 1 1 1 (list bytes))))
+        (cons (car wal) (list new-seg))))
+
+     ;; Head segment exists and is unsealed (stored as 5-tuple with
+     ;; payload list) and has room.
+     ((and (not (null? segs))
+           (= (length (car segs)) 5)
+           (< (list-ref (car segs) 3) SEG-RECORDS))
+      (let* ((head (car segs))
+             (updated-head
+              (let* ((version (list-ref head 0))
+                     (lsn-s   (list-ref head 1))
+                     (nrec    (list-ref head 3))
+                     (loads   (list-ref head 4))
+                     (new-nrec (+ nrec 1))
+                     (new-lsn-e (+ lsn-s new-nrec -1)))
+                (list version lsn-s new-lsn-e new-nrec
+                      (append loads (list bytes)))))
+             ;; If we just filled the segment, seal it in place.
+             (final-head
+              (if (= (list-ref updated-head 3) SEG-RECORDS)
+                  (seal-seg updated-head)
+                  updated-head)))
+        (cons (car wal) (cons final-head (cdr segs)))))
+
+     ;; Head segment exists and is already sealed: every append starts
+     ;; a new segment.
+     (else
+      (let* ((ss (cdr wal))
+             (new-lsn (+ 1 (list-ref (car ss) 2)))
+             (new-seg (list key-version new-lsn new-lsn 1 (list bytes))))
+        (cons (car wal) (cons new-seg ss)))))))
+
+;; Walk the segs in order and seal any that are stored as 5-tuples with a
+;; payload list rather than a ciphertext cons.  Used at the end of a batch
+;; of appends to ensure every segment is sealed.
+(define (api-wal-finalize wal)
+  (let ((keys (car wal))
+        (segs (cdr wal)))
+    (define (finalize-one seg)
+      (cond
+       ;; Already sealed: 5-tuple with ciphertext cons in position 4
+       ((and (= (length seg) 5)
+             (pair? (list-ref seg 4))
+             (pair? (cdr (list-ref seg 4))))
+        seg)
+       ;; Unsealed: position 4 is a list of payload lists.
+       (else
+        (let* ((version (list-ref seg 0))
+               (lsn-s   (list-ref seg 1))
+               (lsn-e   (list-ref seg 2))
+               (nrec    (list-ref seg 3))
+               (loads   (list-ref seg 4))
+               (kb      (key-bytes-for keys version))
+               (plain   (let loop ((i 0) (acc '()))
+                          (if (>= i nrec)
+                              (reverse acc)
+                              (loop (+ i 1)
+                                    (append (reverse
+                                             (list-ref loads i))
+                                            acc))))))
+          (list version lsn-s lsn-e nrec (api-cipher-seal kb plain))))))
+    (cons keys (map finalize-one segs))))
+
+;; Seal version for a given segment index.  Index is 0-based, where 0 is
+;; the OLDEST segment (tail of the list).
+(define (api-wal-seal-version wal seg-idx)
+  (let* ((segs (cdr wal))
+         (ordered (reverse segs)))
+    (list-ref (list-ref ordered seg-idx) 0)))
+
+;; Verify integrity of every segment using api-cipher-open.  Returns a
+;; list of tampered segment indices (0-based, oldest-first order).
+;; A segment is considered tampered if api-cipher-open returns #f.
+(define (api-wal-verify wal keys)
+  (let ((segs (cdr wal)))
+    (define (verify-one idx ss)
+      (cond ((null? ss) '())
+            (else
+             (let* ((seg (car ss))
+                    (version (list-ref seg 0))
+                    (ct (list-ref seg 4))
+                    (kb (key-bytes-for keys version))
+                    (opened (api-cipher-open kb ct))
+                    (rest (verify-one (+ idx 1) (cdr ss))))
+               (if (or (eq? opened #f) (eq? (cdr opened) #f))
+                   (cons idx rest)
+                   rest)))))
+    (verify-one 0 segs)))

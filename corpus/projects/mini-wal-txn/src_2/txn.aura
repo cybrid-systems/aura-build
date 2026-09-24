@@ -1,0 +1,20 @@
+; txn.aura - Transaction record type
+; A transaction is a list: '(id state versions)
+
+(define (api make-txn id)
+  (list id 'active '()))
+
+(define (api txn-id t)
+  (car t))
+
+(define (api txn-state t)
+  (car (cdr t)))
+
+(define (api txn-versions t)
+  (car (cdr (cdr t))))
+
+(define (api txn-set-state! t new-state)
+  (set-car! (cdr t) new-state))
+
+(define (api txn-add-version! t v)
+  (set-car! (cdr (cdr t)) (cons v (txn-versions t))))

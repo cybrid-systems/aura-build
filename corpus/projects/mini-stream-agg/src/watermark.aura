@@ -1,0 +1,37 @@
+; watermark.aura — watermark / late-event handling for the streaming engine.
+;
+; The watermark represents the engine's progress in event-time. Events with a
+; timestamp at or beyond the current watermark are considered "on time" or
+; "late-but-bounded". Events whose timestamp is strictly less than the
+; current watermark are "late" arrivals — they arrived after the engine
+; already considered the watermark advanced past their event-time.
+;
+; In a real engine, late events trigger retraction: the engine looks up the
+; key's current value, computes the reverse delta, and writes a retraction
+; into the retract log. Here we just expose the watermark primitives the
+; engine uses to decide whether an event is late.
+;
+; State shape: a single number — the current event-time watermark.
+;
+; API:
+;   (wm-advance wm ts)  — return a new watermark advanced to ts if ts is
+;                         strictly greater than the current watermark;
+;                         otherwise return wm unchanged. (Watermarks are
+;                         monotonically non-decreasing.)
+;   (wm-is-late? wm ts) — return #t if ts is strictly less than the
+;                         current watermark, #f otherwise.
+;   (wm-current wm)     — return the current watermark value.
+
+; Advance the watermark to the given event-time, if it is strictly greater
+; than the current watermark. Watermarks only move forward.
+(define (api wm-advance wm ts)
+  (if (> ts wm) ts wm))
+
+; Is the given event-time a late arrival relative to the current watermark?
+; An event is late iff its timestamp is strictly less than the watermark.
+(define (api wm-is-late? wm ts)
+  (if (< ts wm) #t #f))
+
+; Return the current watermark value.
+(define (api wm-current wm)
+  wm)

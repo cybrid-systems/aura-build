@@ -1,0 +1,89 @@
+;; recovery.aura
+;; Recovery coordination layer for the fuzzy WAL checkpoint engine.
+;;
+;; On crash and restart the engine must know exactly where to begin
+;; replaying the redo log. That decision is driven by the most
+;; recent successful checkpoint:
+;;
+;;   * The checkpoint's start-LSN tells us the first LSN that has
+;;     NOT yet been guaranteed durable for every page it covers.
+;;     We replay from there.
+;;   * The checkpoint's end-LSN tells us the last LSN that was
+;;     observed during the checkpoint, so the replay window is
+;;     bounded by [start, current-tip].
+;;
+;; This module sits on top of `redo-log` and `checkpoint`. It is a
+;; pure coordinator: it does not own any persistent state itself,
+;; it just inspects the log, the page table, and the last
+;; checkpoint to compute three things the engine cares about:
+;;
+;;   * `recovery-replay-from` — the LSN at which replay should
+;;     start. Conventionally this is the start-LSN of the most
+;;     recent checkpoint. If no checkpoint exists yet, replay
+;;     starts from the very first LSN in the log (the tip-LSN of
+;;     an empty log, by convention `lsn-start`).
+;;   * `recovery-scan-window` — the number of LSN slots the
+;;     recovery scan must walk. This is the *maximum* replay length
+;;     and is computed as (current-tip-LSN - replay-from-LSN).
+;;     Even if the engine is asked for a tighter bound later, this
+;;     number represents the worst-case work recovery must do.
+;;   * `recovery-reset-dirty-count` — how many dirty bits were
+;;     cleared by the last checkpoint's reset pass. This is the
+;;     same number the engine reported via its stats; we expose
+;;     it here so the recovery layer can sanity-check that the
+;;     reset pass actually did work and so the report can echo it
+;;     back.
+;;
+;; All inputs come from the engine's exposed modules, so this
+;; layer is a thin pure-function coordinator with no side effects.
+;;
+;; API surface:
+;;   (api recovery-replay-from log checkpoint)  -> integer (LSN)
+;;   (api recovery-scan-window log checkpoint)  -> integer (LSNs)
+;;   (api recovery-reset-dirty-count stats)     -> integer
+
+(define (recovery-replay-from log checkpoint)
+  ;; Decide the LSN at which replay should start.
+  ;;
+  ;; If we have a checkpoint, that checkpoint's start-LSN is the
+  ;; earliest LSN that we are NOT sure has been durably applied to
+  ;; every page the checkpoint covered. Replay begins there.
+  ;;
+  ;; If we have no checkpoint, every record in the log is suspect
+  ;; and we must replay from the very first LSN. For an empty log
+  ;; the conventional answer is `lsn-start` (the engine treats
+  ;; lsn-start as the tip of an empty log).
+  (if (null? checkpoint)
+      (if (null? log)
+          (api lsn-start)
+          (api redo-lsn (car log)))
+      (api checkpoint-start-lsn checkpoint)))
+
+(define (recovery-scan-window log checkpoint)
+  ;; The replay scan window is the distance, in LSN slots, between
+  ;; where replay starts and where the log currently ends. That is
+  ;; the worst-case number of records recovery has to walk.
+  ;;
+  ;; start  := recovery-replay-from log checkpoint
+  ;; tip    := last record's LSN, or `lsn-start` for an empty log
+  ;; window := max(0, tip - start)
+  ;;
+  ;; We clamp at 0 because if for some reason the checkpoint is
+  ;; somehow ahead of the log tip (shouldn't happen, but be safe),
+  ;; we don't want to report a negative replay length.
+  (let ((start (recovery-replay-from log checkpoint))
+        (tip   (if (null? log)
+                   (api lsn-start)
+                   (api redo-lsn (api redo-log-last log)))))
+    (let ((raw (api lsn-diff tip start)))
+      (if (< raw 0) 0 raw))))
+
+(define (recovery-reset-dirty-count stats)
+  ;; The number of dirty bits cleared by the last checkpoint pass.
+  ;; The engine records this in its stats table under the key
+  ;; 'dirty-bit-reset (or whatever the engine chose); we just look
+  ;; it up and forward it. If the stats table doesn't carry that
+  ;; key yet (no checkpoint has ever fired), we report 0 — that's
+  ;; the truthful answer for "how many bits were reset so far".
+  (let ((v (api stats-get stats 'dirty-bit-reset)))
+    (if (null? v) 0 v)))

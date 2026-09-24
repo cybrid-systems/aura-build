@@ -1,0 +1,19 @@
+; wal.aura - Write-ahead log utilities
+; A WAL is a list of records (most recent first... or in order appended).
+
+(define (api make-wal)
+  '())
+
+(define (api wal-append wal rec)
+  (append wal (list rec)))
+
+(define (api wal-length wal)
+  (cond ((null? wal) 0)
+        (else (+ 1 (wal-length (cdr wal))))))
+
+(define (api wal-records wal)
+  wal)
+
+(define (api wal-last wal)
+  (cond ((null? wal) #f)
+        (else (car (reverse wal)))))

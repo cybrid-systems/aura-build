@@ -1,0 +1,125 @@
+;; scenario.aura
+;; The scenario that drives the whole mini-wal-txn demo. It builds the
+;; store, the WAL, a transaction manager context, and a trace, then runs
+;; four transactions (two committed, two aborted), takes three snapshots,
+;; runs the required steps, and finally returns the trace so main.aura
+;; can emit the KEY=value lines.
+
+;; All of the supporting module APIs we use are referenced through their
+;; (api ...) forms. Since every file is loaded into a shared top-level
+;; environment on a single Aura CLI invocation, the definitions from
+;; store.aura, txn-mgr.aura, trace.aura, wal.aura, txn.aura, snapshot.aura,
+;; records.aura, version.aura, conflict.aura, counters.aura, alists.aura
+;; and constants.aura are all available here.
+
+(define (api run-scenario)
+  ;; --- bootstrap core state ----------------------------------------------
+  (let ((wal     (api make-wal))
+        (store   (api make-store))
+        (trace   (api trace-new))
+        (mgr     ;; a tiny "manager" structure: counter + active list
+         (list (api counter-new) '())))
+
+    ;; --- helper: log a key=value pair through the trace -------------------
+    (define (log k v)
+      (api trace-add! trace k v))
+
+    ;; --- snapshot accessor used by the scenario ---------------------------
+    (define (snap-id s) (api snapshot-id s))
+
+    ;; === Step 1: begin/commit T1, write key "alpha" = "1" ================
+    ;; A transaction that will commit successfully. We log its begin and
+    ;; commit; the store records the new committed version of "alpha".
+    (let ((t1 (api make-txn 1)))
+      (log "T1_BEGIN" 1)
+      (let ((v1 (api make-version "alpha" "1" 1 'put)))
+        (api txn-add-version! t1 v1)
+        (api store-put! store "alpha" "1" 1)
+        ;; record on WAL
+        (set! wal
+              (api wal-append wal
+                   (list 'put "alpha" "1" 1))))
+      (api store-commit! store t1 wal)
+      (log "T1_COMMIT" 1))
+
+    ;; === Step 2: begin T2, write "beta" = "2", then ABORT =================
+    ;; An aborted transaction. We still record the put attempt in the WAL
+    ;; (the log is append-only; abort is recorded later as well), but the
+    ;; store must not show "beta" as committed.
+    (let ((t2 (api make-txn 2)))
+      (log "T2_BEGIN" 2)
+      (let ((v2 (api make-version "beta" "2" 2 'put)))
+        (api txn-add-version! t2 v2)
+        (api store-put! store "beta" "2" 2)
+        (set! wal
+              (api wal-append wal
+                   (list 'put "beta" "2" 2))))
+      (api mgr-abort t2 store)
+      (log "T2_ABORT" 2))
+
+    ;; === Step 3: begin/commit T3, write "gamma" = "3" =====================
+    (let ((t3 (api make-txn 3)))
+      (log "T3_BEGIN" 3)
+      (let ((v3 (api make-version "gamma" "3" 3 'put)))
+        (api txn-add-version! t3 v3)
+        (api store-put! store "gamma" "3" 3)
+        (set! wal
+              (api wal-append wal
+                   (list 'put "gamma" "3" 3))))
+      (api store-commit! store t3 wal)
+      (log "T3_COMMIT" 3))
+
+    ;; === Step 4: begin T4, write "alpha" = "two" (CONFLICT), then ABORT ==
+    ;; T4 attempts to overwrite the already-committed "alpha" from T1.
+    ;; detect-conflict returns #t here because a committed writer (T1)
+    ;; with a lower id has already touched the key -- wait, the conflict
+    ;; rule is "newer-committed writer" > writer-txn. T1's id is 1, T4's
+    ;; id is 4, so 1 is not strictly greater than 4. The conflict check
+    ;; itself may report no conflict from the version side, but the
+    ;; scenario still aborts T4 to demonstrate the abort path.
+    (let ((t4 (api make-txn 4)))
+      (log "T4_BEGIN" 4)
+      (let ((v4 (api make-version "alpha" "two" 4 'put)))
+        (api txn-add-version! t4 v4)
+        (api store-put! store "alpha" "two" 4)
+        (set! wal
+              (api wal-append wal
+                   (list 'put "alpha" "two" 4))))
+      (api mgr-abort t4 store)
+      (log "T4_ABORT" 4))
+
+    ;; === Step 5: snapshot at id=3 reads "alpha" = "1" ====================
+    ;; Snapshot isolation: a snapshot at txn-id 3 sees versions produced
+    ;; by committed transactions with id <= 3. T1 (id=1) committed
+    ;; "alpha" = "1", so the snapshot must observe that value.
+    (let ((s3 (api make-snapshot 3)))
+      (let ((val (api store-snapshot-get store "alpha" (snap-id s3))))
+        (log "SNAP3_ALPHA" val)))
+
+    ;; === Step 6: snapshot at id=5 reads "beta" = "<none>" =================
+    ;; "beta" was written by T2 (id=2), but T2 aborted, so no committed
+    ;; version of "beta" exists. The store returns a sentinel "<none>"
+    ;; to indicate absence under snapshot isolation.
+    (let ((s5 (api make-snapshot 5)))
+      (let ((val (api store-snapshot-get store "beta" (snap-id s5))))
+        (log "SNAP5_BETA" val)))
+
+    ;; === Step 7: snapshot at id=5 reads "gamma" = "3" ====================
+    ;; T3 (id=3) committed "gamma" = "3", and 3 <= 5, so the snapshot
+    ;; at id=5 sees it.
+    (let ((s5b (api make-snapshot 5)))
+      (let ((val (api store-snapshot-get store "gamma" (snap-id s5b))))
+        (log "SNAP5_GAMMA" val)))
+
+    ;; === Step 8: report final WAL length ==================================
+    ;; The WAL has accumulated four append-only records (one per put,
+    ;; including the aborted ones, because the WAL records attempts).
+    (log "WAL_LENGTH" (api wal-length wal))
+
+    ;; === Step 9: report number of active (uncommitted) transactions =======
+    ;; After T2 and T4 aborted and T1 and T3 committed, no transactions
+    ;; remain active, so this should be 0.
+    (log "ACTIVE_TXNS" (api store-active-count store))
+
+    ;; Return the trace so main.aura can emit the lines.
+    trace))

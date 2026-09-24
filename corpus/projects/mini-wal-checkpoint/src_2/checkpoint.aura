@@ -1,0 +1,59 @@
+;; checkpoint.aura
+;; Fuzzy checkpoint representation for the WAL checkpoint engine.
+;;
+;; A checkpoint is the engine's anchor for crash recovery. It records
+;; the LSN range it covers ([start-lsn, end-lsn]) and the set of page
+;; IDs that were dirty at the moment the checkpoint was taken. Because
+;; the engine emits *fuzzy* checkpoints, the dirty set only contains
+;; the pages touched since the previous checkpoint — pages that
+;; happened to be clean mid-checkpoint are simply absent from the set.
+;;
+;; The dirty set is stored as a plain list of page IDs (no duplicates,
+;; order not significant). The checkpoint itself is an alist so we
+;; can extend it later (e.g. add a timestamp or previous-checkpoint
+;; link) without breaking any consumer.
+;;
+;; API surface:
+;;   (api make-checkpoint start-lsn end-lsn dirty-pages) -> checkpoint
+;;   (api checkpoint? x)                                -> boolean
+;;   (api checkpoint-start-lsn cp)                      -> integer
+;;   (api checkpoint-end-lsn cp)                        -> integer
+;;   (api checkpoint-dirty-pages cp)                    -> list of page-ids
+
+;; Build a new checkpoint. We normalise the dirty-pages argument to a
+;; proper list and strip duplicates so downstream code can rely on a
+;; canonical shape even if callers pass oddities like '() or an alist.
+(define (api make-checkpoint start-lsn end-lsn dirty-pages)
+  (list (cons 'start-lsn    start-lsn)
+        (cons 'end-lsn      end-lsn)
+        (cons 'dirty-pages  (api-checkpoint-normalize-pages dirty-pages))))
+
+;; Strip duplicates from a page-id list while preserving the order in
+;; which pages first appear. We use member? (already available via the
+;; standard list library used elsewhere in this project) so we don't
+;; need any hash machinery.
+(define (api-checkpoint-normalize-pages pages)
+  (cond ((null? pages) '())
+        ((member (car pages) (cdr pages))
+         (api-checkpoint-normalize-pages (cdr pages)))
+        (else
+         (cons (car pages)
+               (api-checkpoint-normalize-pages (cdr pages))))))
+
+;; A checkpoint is recognised iff it is a non-empty alist whose first
+;; entry is tagged 'start-lsn. This is intentionally permissive about
+;; extra fields so future revisions can attach metadata without
+;; breaking older callers.
+(define (api checkpoint? x)
+  (and (pair? x)
+       (pair? (car x))
+       (eq? (car (car x)) 'start-lsn)))
+
+(define (api checkpoint-start-lsn cp)
+  (cdr (assq 'start-lsn cp)))
+
+(define (api checkpoint-end-lsn cp)
+  (cdr (assq 'end-lsn cp)))
+
+(define (api checkpoint-dirty-pages cp)
+  (cdr (assq 'dirty-pages cp)))

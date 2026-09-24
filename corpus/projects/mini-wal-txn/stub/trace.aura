@@ -1,0 +1,37 @@
+;; trace.aura
+;; A simple ordered key=value trace used by the scenario to emit the
+;; stdout contract at the end of the program. Internally a trace is just
+;; an alist of (key . value) pairs, kept in the order entries were added.
+
+(define (api trace-new)
+  ;; A fresh trace holds no entries yet.
+  '())
+
+(define (api trace-add! tr k v)
+  ;; Append a (k . v) entry onto the head of the trace list. Newest-first
+  ;; in memory, but trace-emit reverses to restore insertion order on
+  ;; output.
+  (cons (cons k v) tr))
+
+(define (api trace-get tr k)
+  ;; Look up the most-recently-added value associated with k. Scans the
+  ;; list (insertion order is newest-first because of cons above).
+  (cond
+    ((null? tr) #f)
+    ((equal? (car (car tr)) k) (cdr (car tr)))
+    (else (api trace-get (cdr tr) k))))
+
+(define (api trace-emit tr)
+  ;; Print every entry as a "KEY=value" line in the order originally added.
+  ;; We reverse the cons-built list so output matches insertion order.
+  (define (emit-loop entries)
+    (cond
+      ((null? entries) #t)
+      (else
+        (begin
+          (display (car (car entries)))
+          (display "=")
+          (display (cdr (car entries)))
+          (newline)
+          (emit-loop (cdr entries))))))
+  (emit-loop (reverse tr)))

@@ -1,0 +1,190 @@
+; metrics.aura — lightweight per-tier / per-event metrics.
+;
+; The metrics module tracks how many events each tier has absorbed, broken
+; down by kind (step / promotion / demotion / spill / restore) and per-key.
+; It is intentionally cheap to update and cheap to snapshot: a single
+; alist of counters keyed by the symbol (tier-kind . event-kind) plus a
+; per-key alist under each bucket.
+;
+; Internal layout:
+;   (metrics
+;     total               ; total events recorded (any kind)
+;     by-tier             ; alist (tier-symbol . tier-bucket)
+;     by-key              ; alist (key . n)   — total touches per key
+;     promotions          ; alist (from-tier . n)
+;     demotions           ; alist (to-tier . n)
+;     checkpoints         ; n — number of checkpoint records
+;     replays             ; n — number of replay records
+;   )
+; where tier-bucket is:
+;   (tier-bucket
+;     step-count          ; total step events for this tier
+;     spill-count         ; total spill events for this tier
+;     restore-count       ; total restore events
+;     by-key              ; alist (key . n) for this tier
+;   )
+;
+; API:
+;   (api metrics-make)            -> fresh empty metrics
+;   (api metrics-record m tier kind key) -> updated metrics after recording
+;                                          (tier, kind, key)
+;   (api metrics-snapshot m)      -> alist suitable for printing / hashing
+;
+; The `kind` argument is one of the symbols:
+;   'step, 'promote, 'demote, 'spill, 'restore, 'checkpoint, 'replay.
+; Anything else is recorded under 'other so we never lose data.
+
+; Build a fresh empty metrics value.
+(define (api metrics-make)
+  (list 'metrics 0 '() '() '() '() 0 0))
+
+; Helper: bump a counter in an alist by key, returning a fresh alist.
+(define (metrics-bump-by-key counts k)
+  (let ((cell (assoc k counts)))
+    (if cell
+        (let ((n (cdr cell)))
+          (cons (cons k (+ n 1))
+                (assoc-remove counts k)))
+        (cons (cons k 1) counts))))
+
+; Helper: remove an alist cell by key.
+(define (assoc-remove lst k)
+  (cond ((null? lst) '())
+        ((equal? (car (car lst)) k) (cdr lst))
+        (else (cons (car lst) (assoc-remove (cdr lst) k)))))
+
+; Helper: find a tier bucket in by-tier alist, or #f.
+(define (metrics-find-tier bytier tier)
+  (cond ((null? bytier) #f)
+        ((equal? (car (car bytier)) tier) (car bytier))
+        (else (metrics-find-tier (cdr bytier) tier))))
+
+; Helper: bump the appropriate per-kind counter inside a tier bucket.
+; Returns a fresh tier bucket.
+(define (metrics-bump-tier-bucket bucket kind key)
+  (let ((step (cdr (assq 'step-count bucket)))
+        (spill (cdr (assq 'spill-count bucket)))
+        (restore (cdr (assq 'restore-count bucket)))
+        (promote (cdr (assq 'promote-count bucket)))
+        (demote (cdr (assq 'demote-count bucket)))
+        (byk (cdr (assq 'by-key bucket))))
+    (let ((new-step   (if (equal? kind 'step) (+ step 1) step))
+          (new-spill  (if (equal? kind 'spill) (+ spill 1) spill))
+          (new-restore (if (equal? kind 'restore) (+ restore 1) restore))
+          (new-promote (if (equal? kind 'promote) (+ promote 1) promote))
+          (new-demote (if (equal? kind 'demote) (+ demote 1) demote)))
+      (list (car bucket)
+            (cons 'step-count new-step)
+            (cons 'spill-count new-spill)
+            (cons 'restore-count new-restore)
+            (cons 'promote-count new-promote)
+            (cons 'demote-count new-demote)
+            (cons 'by-key (metrics-bump-by-key byk key))))))
+
+; Build a brand-new empty tier bucket for `tier`.
+(define (metrics-new-tier-bucket tier)
+  (list tier
+        (cons 'step-count 0)
+        (cons 'spill-count 0)
+        (cons 'restore-count 0)
+        (cons 'promote-count 0)
+        (cons 'demote-count 0)
+        (cons 'by-key '())))
+
+; Record an event into the metrics.
+;   m    — metrics value
+;   tier — tier symbol ('hashmap, 'sorted, 'overflow) or #f for global kinds
+;   kind — event-kind symbol ('step, 'promote, 'demote, 'spill,
+;                            'restore, 'checkpoint, 'replay)
+;   key  — key the event pertains to (any value; usually a user-id or 'none)
+; Returns an updated metrics value.
+(define (api metrics-record m tier kind key)
+  (let ((total (cadr m))
+        (bytier (caddr m))
+        (bykey (cadddr m))
+        (promotions (list-ref m 4))
+        (demotions (list-ref m 5))
+        (ckpts (list-ref m 6))
+        (replays (list-ref m 7)))
+    (let ((new-total (+ total 1))
+          (new-bykey (metrics-bump-by-key bykey key))
+          (new-promotions
+            (if (equal? kind 'promote)
+                (metrics-bump-by-key promotions tier)
+                promotions))
+          (new-demotions
+            (if (equal? kind 'demote)
+                (metrics-bump-by-key demotions tier)
+                demotions))
+          (new-ckpts
+            (if (equal? kind 'checkpoint) (+ ckpts 1) ckpts))
+          (new-replays
+            (if (equal? kind 'replay) (+ replays 1) replays)))
+      (let ((new-bytier
+              (if (or (equal? kind 'checkpoint) (equal? kind 'replay))
+                  bytier
+                  (let ((existing (metrics-find-tier bytier tier)))
+                    (if existing
+                        (let ((bumped
+                                (metrics-bump-tier-bucket existing kind key)))
+                          (cons bumped
+                                (assoc-remove bytier tier)))
+                        (cons (metrics-bump-tier-bucket
+                                (metrics-new-tier-bucket tier)
+                                kind
+                                key)
+                              bytier))))))
+        (list 'metrics
+              new-total
+              new-bytier
+              new-bykey
+              new-promotions
+              new-demotions
+              new-ckpts
+              new-replays)))))
+
+; Build a snapshot alist from the metrics. The snapshot is a flat list of
+; (key . value) cells that checkpoint / main can render or hash:
+;   (total . n)
+;   ((tier-hashmap . step-count) . n)
+;   ((tier-hashmap . spill-count) . n)
+;   ...
+;   ((key . step-count) . n)
+;   (promotions . alist)
+;   (demotions  . alist)
+;   (checkpoints . n)
+;   (replays     . n)
+(define (api metrics-snapshot m)
+  (let ((total (cadr m))
+        (bytier (caddr m))
+        (bykey (cadddr m))
+        (promotions (list-ref m 4))
+        (demotions (list-ref m 5))
+        (ckpts (list-ref m 6))
+        (replays (list-ref m 7)))
+    (cons (cons 'total total)
+          (append
+            (metrics-snapshot-bytier bytier)
+            (list (cons 'by-key bykey)
+                  (cons 'promotions promotions)
+                  (cons 'demotions demotions)
+                  (cons 'checkpoints ckpts)
+                  (cons 'replays replays))))))
+
+; Helper: flatten by-tier into a list of ((tier . counter-name) . n).
+(define (metrics-snapshot-bytier bytier)
+  (cond ((null? bytier) '())
+        (else
+          (append
+            (metrics-snapshot-one-tier (car bytier))
+            (metrics-snapshot-bytier (cdr bytier))))))
+
+; Helper: flatten one tier bucket.
+(define (metrics-snapshot-one-tier bucket)
+  (let ((tier (car bucket))
+        (rest (cdr bucket)))
+    (let ((pairs
+            (map (lambda (cell)
+                   (cons (cons tier (car cell)) (cdr cell)))
+                 rest)))
+      pairs)))

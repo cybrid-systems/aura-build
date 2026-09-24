@@ -1,0 +1,75 @@
+; aggregator.aura — retract-safe sum/count aggregator.
+;
+; This is the per-key aggregation function used by the engine. Given a
+; key (user-id) and a delta (+n or -n, as carried by an event), it updates
+; the aggregator's state for that key. Because the engine supports
+; retraction (events can be replayed or arrive after the watermark and be
+; withdrawn), every operation must be reversible: applying +d then -d
+; must return to the original state.
+;
+; State shape: a single association list
+;   ( (k1 . sum1) (k2 . sum2) ... )
+; plus a parallel touch-count alist (so the engine can read per-key
+; activity). Finalizing a key returns its current sum and the number of
+; times the key has been touched (count of step invocations on it).
+
+; Build a fresh, empty aggregator.
+(define (api agg-make)
+  ;; state = (agg '() '())
+  ;;   map    = '()            ; (k . sum)
+  ;;   touches = '()           ; (k . n)
+  (list 'agg '() '()))
+
+; Helper: find (k . v) cell in alist, or #f.
+(define (agg-find map k)
+  (cond ((null? map) #f)
+        ((equal? (car (car map)) k) (car map))
+        (else (agg-find (cdr map) k))))
+
+; Helper: replace value at key in alist; if absent, cons a new cell.
+; Always returns a fresh alist (no mutation).
+(define (agg-update map k v)
+  (cond ((null? map) (cons (cons k v) map))
+        ((equal? (car (car map)) k)
+         (cons (cons k v) (cdr map)))
+        (else
+         (cons (car map) (agg-update (cdr map) k v)))))
+
+; Helper: bump touch count for k by 1; absent -> 1.
+(define (agg-bump touches k)
+  (let ((cell (agg-find touches k)))
+    (cond ((not cell) (cons (cons k 1) touches))
+          (else (agg-update touches k (+ (cdr cell) 1))))))
+
+; Apply a delta to key k at timestamp ts.
+; delta may be negative (retraction). Returns a NEW aggregator.
+(define (api agg-step agg k delta ts)
+  (let* ((map (cadr agg))
+         (touches (caddr agg))
+         (cell (agg-find map k))
+         (cur (if cell (cdr cell) 0))
+         (new (agg-update map k (+ cur delta)))
+         (new-touches (agg-bump touches k)))
+    (list 'agg new new-touches)))
+
+; Finalize a key: return (sum . touches) for k.
+; sum is the net delta applied to k so far; touches is the number of
+; step calls that mentioned k. If k was never seen, returns (0 . 0).
+(define (api agg-final agg k)
+  (let ((mcell (agg-find (cadr agg) k))
+        (tcell (agg-find (caddr agg) k)))
+    (cons (if mcell (cdr mcell) 0)
+          (if tcell (cdr tcell) 0))))
+
+; ---------------------------------------------------------------------------
+; Additional accessors used by checkpoint / recovery.
+;
+; These are not listed in the strict API table but other files in the
+; project rely on them. They are deliberately minimal.
+; ---------------------------------------------------------------------------
+
+; Return the raw sum-alist from the aggregator.
+(define (agg-map agg) (cadr agg))
+
+; Return the touch-count alist.
+(define (agg-touches agg) (caddr agg))

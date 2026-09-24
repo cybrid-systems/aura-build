@@ -1,0 +1,17 @@
+; version.aura - Versioned record type
+; A version is a list: '(key . (value txn-id op))
+
+(define (api make-version key value txn-id op)
+  (cons key (cons value (cons txn-id (cons op '())))))
+
+(define (api version-key v)
+  (car v))
+
+(define (api version-value v)
+  (car (cdr v)))
+
+(define (api version-txn v)
+  (car (cdr (cdr v))))
+
+(define (api version-op v)
+  (car (cdr (cdr (cdr v)))))

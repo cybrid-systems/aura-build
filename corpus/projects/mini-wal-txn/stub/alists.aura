@@ -1,0 +1,35 @@
+;; alists.aura
+;; Simple association list (alist) helpers used throughout the project.
+;; An alist is a list of (key . value) pairs.
+
+(define (api alist-set alist key val)
+  ;; Set key to val in alist. If key already exists, replace its value;
+  ;; otherwise cons a new pair onto the front of the list.
+  (cond
+    ((null? alist)
+     (cons (cons key val) '()))
+    ((equal? (car (car alist)) key)
+     (cons (cons key val) (cdr alist)))
+    (else
+     (cons (car alist)
+           (api alist-set (cdr alist) key val)))))
+
+(define (api alist-get alist key)
+  ;; Look up key in alist; return its value or #f if not present.
+  (cond
+    ((null? alist) #f)
+    ((equal? (car (car alist)) key) (cdr (car alist)))
+    (else (api alist-get (cdr alist) key))))
+
+(define (api alist-keys alist)
+  ;; Return a list of all keys in the alist, in order of appearance.
+  (cond
+    ((null? alist) '())
+    (else (cons (car (car alist))
+                (api alist-keys (cdr alist))))))
+
+(define (api alist-count alist)
+  ;; Number of entries in the alist.
+  (cond
+    ((null? alist) 0)
+    (else (+ 1 (api alist-count (cdr alist))))))

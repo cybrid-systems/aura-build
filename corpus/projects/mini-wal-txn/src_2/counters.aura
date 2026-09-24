@@ -1,0 +1,15 @@
+; counters.aura - Mutable integer counters
+
+(define (api counter-new)
+  0)
+
+(define (api counter-inc! c)
+  (set! c (+ c 1))
+  c)
+
+(define (api counter-value c)
+  c)
+
+(define (api counter-add! c n)
+  (set! c (+ c n))
+  c)

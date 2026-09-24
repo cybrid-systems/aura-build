@@ -1,0 +1,44 @@
+; conflict.aura - Conflict detection for concurrent writers
+; A conflict exists if:
+;   1. There is an uncommitted transaction that has written to the key, OR
+;   2. There is a committed transaction with txn-id > writer-txn that wrote to the key
+;      (i.e., a newer-committed writer touched the key)
+;
+; The store structure is assumed to be a list with two parts:
+;   - latest-alist: list of (key . latest-version) pairs
+;   - committed: list of (key . committed-version-list) or list of committed versions per key
+;
+; We use the store's stored structure to check for conflicts.
+
+; Helper: get the latest version for a key from the store's latest-alist
+(define (conflict-latest store key)
+  (let loop ((entries (car store)))
+    (cond ((null? entries) #f)
+          ((equal? (car (car entries)) key) (cdr (car entries)))
+          (else (loop (cdr entries))))))
+
+; Helper: check if there is an uncommitted writer on the key
+; Uncommitted writers are tracked in the store's active/pending area
+; We look at the second element of the store for uncommitted versions
+(define (conflict-has-uncommitted? store key writer-txn)
+  (let loop ((pending (car (cdr store))))
+    (cond ((null? pending) #f)
+          ((equal? (car (car pending)) key)
+           (let ((pending-txn (car (cdr (car pending)))))
+             (not (= pending-txn writer-txn))))
+          (else (loop (cdr pending))))))
+
+; Helper: check if a newer-committed writer touched the key
+; We look at the committed list (third element of store) for versions with txn > writer-txn
+(define (conflict-has-newer-committed? store key writer-txn)
+  (let loop ((committed (car (cdr (cdr store)))))
+    (cond ((null? committed) #f)
+          ((equal? (car (car committed)) key)
+           (> (car (cdr (car committed))) writer-txn))
+          (else (loop (cdr committed))))))
+
+; Main API: detect whether a conflict exists for writer-txn writing to key
+; Returns #t if there is an uncommitted writer OR a newer-committed writer
+(define (api detect-conflict store key writer-txn)
+  (or (conflict-has-uncommitted? store key writer-txn)
+      (conflict-has-newer-committed? store key writer-txn)))

@@ -1,0 +1,43 @@
+;; keys.aura - Keyring with versioned byte sequences
+;; Provides versioned keys for the WAL encryption scheme.
+
+;; Generate a deterministic byte sequence (as a list of numbers) for a key version.
+;; Uses a simple LCG-like deterministic scheme so different versions produce
+;; distinct but reproducible byte sequences.
+(define (key-bytes-for-version v)
+  (define (next-byte state)
+    (modulo (+ (* state 1103515245) 12345) 256))
+  (define (loop i acc state)
+    (if (>= i 16)
+        (reverse acc)
+        (let ((s (next-byte state)))
+          (loop (+ i 1) (cons s acc) (modulo (+ (* state 1103515245) 12345) 2147483647)))))
+  (loop 0 '() (+ (* v 2654435761) 1)))
+
+;; Look up bytes in an alist by version number.
+(define (alist-ref-by-version ks v)
+  (cond ((null? ks) #f)
+        ((= (car (car ks)) v) (cdr (car ks)))
+        (else (alist-ref-by-version (cdr ks) v))))
+
+;; Build initial keyring with 2 versions: v1 and v2.
+;; Returns alist of ((1 . bytes1) (2 . bytes2)).
+(define (api-keys-make-init)
+  (list (cons 1 (key-bytes-for-version 1))
+        (cons 2 (key-bytes-for-version 2))))
+
+;; Return the current (highest) version number in the keyring.
+(define (api-keys-current ks)
+  (cond ((null? ks) 0)
+        ((null? (cdr ks)) (car (car ks)))
+        (else (api-keys-current (cdr ks)))))
+
+;; Rotate keys: add a new version one greater than the current maximum.
+;; New bytes are derived deterministically from the new version number.
+(define (api-keys-rotate ks)
+  (let ((cur (api-keys-current ks)))
+    (append ks (list (cons (+ cur 1) (key-bytes-for-version (+ cur 1)))))))
+
+;; Retrieve bytes for a specific version; #f if version not present.
+(define (api-keys-version-bytes ks v)
+  (alist-ref-by-version ks v))

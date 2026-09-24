@@ -1,0 +1,5 @@
+; main.aura - Entry point: runs the GOAL scenario and prints KEY=value lines
+
+(define (api main)
+  (let ((trace (api run-scenario)))
+    (api trace-emit trace)))

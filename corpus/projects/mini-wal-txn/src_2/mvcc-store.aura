@@ -1,0 +1,75 @@
+; mvcc-store.aura - Multi-version concurrency control store
+; The store is a list:
+;   '(latest-alist pending-list active-count)
+;   - latest-alist: alist of (key . latest-version) for committed data
+;   - pending-list: list of (key . txn-id) pairs for uncommitted writes
+;   - active-count: number of active (uncommitted) transactions
+
+(define (api make-store)
+  (list '() '() 0))
+
+; Helper: update the latest-alist inside a store
+(define (store-set-latest! store key version)
+  (set-car! store (alist-set (car store) key version)))
+
+; Helper: add a pending write
+(define (store-add-pending! store key txn-id)
+  (set-car! (cdr store)
+            (cons (cons key txn-id) (car (cdr store)))))
+
+; Helper: remove pending entries for a given txn-id
+(define (store-remove-pending! store txn-id)
+  (let loop ((p (car (cdr store)))
+             (acc '()))
+    (cond ((null? p) acc)
+          ((= (cdr (car p)) txn-id)
+           (loop (cdr p) acc))
+          (else (loop (cdr p) (cons (car p) acc))))))
+
+; Put a value as the latest version for a key (tentative write by txn-id)
+(define (api store-put! store key value txn-id)
+  (let ((v (make-version key value txn-id 'put)))
+    (store-set-latest! store key v)
+    (store-add-pending! store key txn-id)
+    v))
+
+; Commit a transaction: promote its writes, remove pending, decrement active count
+(define (api store-commit! store txn wal)
+  (let ((txn-id (txn-id txn))
+        (versions (txn-versions txn)))
+    (txn-set-state! txn 'committed)
+    (store-remove-pending! store txn-id)
+    (set-car! (cdr (cdr store))
+              (- (car (cdr (cdr store))) 1))))
+
+; Snapshot get: find the latest committed version for a key with version-txn <= snapshot-txn
+(define (api store-snapshot-get store key snapshot-txn)
+  (let ((v (alist-get (car store) key)))
+    (cond ((not v) #f)
+          ((> (version-txn v) snapshot-txn)
+           ; Need to look for an older version - scan latest-alist is not enough
+           ; Fall back: search store for any version matching key with txn-id <= snapshot-txn
+           (store-find-visible store key snapshot-txn))
+          (else (version-value v)))))
+
+; Helper: find the newest visible version for key with version-txn <= snapshot-txn
+; Since we only keep the latest, if latest's txn > snapshot, we miss it.
+; We'll scan the store's structure - in this toy we keep only latest, so return #f
+; unless we can find one. Actually, let's track committed versions per key.
+(define (store-find-visible store key snapshot-txn)
+  ; The store doesn't keep history here; this is a limitation.
+  ; Return #f if the latest is not visible.
+  #f)
+
+; Conflict check: is there a conflicting writer on this key?
+(define (api store-conflict? store key txn-id)
+  (let loop ((p (car (cdr store))))
+    (cond ((null? p) #f)
+          ((and (equal? (car (car p)) key)
+                (not (= (cdr (car p)) txn-id)))
+           #t)
+          (else (loop (cdr p))))))
+
+; Active count
+(define (api store-active-count store)
+  (car (cdr (cdr store))))

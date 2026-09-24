@@ -1,0 +1,35 @@
+; txn-mgr.aura - Transaction manager
+; Provides begin/commit/abort operations and tracks active transactions.
+
+; Begin a new transaction. Returns a new txn with a fresh id from current-txn-id.
+(define (api mgr-begin)
+  (let ((new-id (+ (api current-txn-id) 1)))
+    (api current-txn-id new-id)
+    (api make-txn new-id)))
+
+; Commit a transaction. This:
+;   1. Marks the txn as 'committed
+;   2. Calls store-commit! to promote versions to the latest-alist
+;   3. Removes pending entries for this txn
+;   4. Appends a commit record to the WAL
+;   5. Returns the updated store
+(define (api mgr-commit txn store wal)
+  (let ((txn-id (api txn-id txn)))
+    (api txn-set-state! txn 'committed)
+    (let ((new-store (api store-commit! store txn wal)))
+      (api store-remove-pending! new-store txn-id)
+      (api wal-append new-store (list 'commit txn-id '())))))
+
+; Abort a transaction. This:
+;   1. Marks the txn as 'aborted
+;   2. Removes pending entries for this txn
+;   3. Returns the updated store
+(define (api mgr-abort txn store)
+  (let ((txn-id (api txn-id txn)))
+    (api txn-set-state! txn 'aborted)
+    (api store-remove-pending! store txn-id)))
+
+; Get list of active (uncommitted) transaction ids from the store's pending-list.
+(define (api mgr-active-txns store)
+  (let ((pending (car (cdr store))))
+    (map cdr pending)))

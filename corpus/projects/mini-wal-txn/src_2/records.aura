@@ -1,0 +1,14 @@
+; records.aura - WAL record accessors
+; A record is a list: '(op key value txn-id)
+
+(define (api record-op rec)
+  (car rec))
+
+(define (api record-key rec)
+  (car (cdr rec)))
+
+(define (api record-value rec)
+  (car (cdr (cdr rec))))
+
+(define (api record-txn rec)
+  (car (cdr (cdr (cdr rec)))))
