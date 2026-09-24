@@ -1,0 +1,147 @@
+;; Helper: parse tree from s-expression-like string
+(define (skip-spaces s i)
+  (if (and (< i (string-length s))
+           (or (char=? (string-ref s i) #\space)
+               (char=? (string-ref s i) #\tab)))
+      (skip-spaces s (+ i 1))
+      i))
+
+(define (parse-tree s i)
+  (skip-spaces s i)
+  (let ((c (string-ref s i)))
+    (if (char=? c #\))
+        (cons 'parse-error i)
+        (parse-node s i))))
+
+(define (parse-node s i)
+  ;; expects "node" at position i
+  (if (and (< (+ i 4) (string-length s))
+           (string=? (substring s i (+ i 4)) "node"))
+      (let ((i2 (skip-spaces s (+ i 4))))
+        (let ((r1 (parse-val s i2)))
+          (if (eq? (car r1) 'parse-error)
+              r1
+              (let ((i3 (cdr r1)))
+                (let ((r2 (parse-tree s i3)))
+                  (if (eq? (car r2) 'parse-error)
+                      r2
+                      (let ((i4 (cdr r2)))
+                        (let ((r3 (parse-tree s i4)))
+                          (if (eq? (car r3) 'parse-error)
+                              r3
+                              (let ((i5 (cdr r3)))
+                                ;; expect closing paren
+                                (if (and (< i5 (string-length s))
+                                         (char=? (string-ref s i5) #\)))
+                                    (cons (list 'node (car r1) (car r2) (car r3)) (+ i5 1))
+                                    (cons 'parse-error i5)))))))))))
+      (cons 'parse-error i)))
+
+(define (parse-val s i)
+  ;; parse an integer (with optional sign)
+  (let ((i2 (skip-spaces s i)))
+    (let ((start i2)
+          (len (string-length s)))
+      (letrec ((scan (lambda (j neg)
+                       (cond
+                         ((>= j len)
+                          (if (> j start)
+                              (cons (if neg (- (string->number (substring s start j)))
+                                       (string->number (substring s start j)))
+                                    j)
+                              (cons 'parse-error j)))
+                         ((or (char-numeric? (string-ref s j))
+                              (char=? (string-ref s j) #\-))
+                          (scan (+ j 1) (or neg (char=? (string-ref s j) #\-))))
+                         (else
+                          (if (> j start)
+                              (cons (if neg (- (string->number (substring s start j)))
+                                       (string->number (substring s start j)))
+                                    j)
+                              (cons 'parse-error j)))))))
+        (scan i2 #f)))))
+
+;; Extract CASE line from input
+(define (extract-case s)
+  ;; Find "CASEi=" then take rest of line
+  (letrec ((find-eq (lambda (j)
+                      (cond
+                        ((>= j (string-length s)) #f)
+                        ((char=? (string-ref s j) #\=) j)
+                        (else (find-eq (+ j 1)))))))
+    (let ((p (find-eq 0)))
+      (if p
+          (substring s (+ p 1))
+          ""))))
+
+;; Convert parsed tree to a structure: '(val left right) or 'nil
+(define (convert t)
+  (if (eq? t 'nil)
+      'nil
+      (list (cadr t) (convert (caddr t)) (cadddr t))))
+
+;; BFS level order, return list of levels (each level is list of vals), root-first
+(define (bfs node)
+  (if (eq? node 'nil)
+      '()
+      (letrec ((loop (lambda (queue acc)
+                       (if (null? queue)
+                           acc
+                           (let ((level queue))
+                             (let ((vals (map (lambda (n) (car n)) level)))
+                               (let ((kids (apply append
+                                                  (map (lambda (n)
+                                                         (let ((l (cadr n))
+                                                               (r (caddr n)))
+                                                           (if (eq? l 'nil)
+                                                               (if (eq? r 'nil) '() (list r))
+                                                               (if (eq? r 'nil) (list l) (list l r)))))
+                                                       level))))
+                                 (loop kids (cons vals acc)))))))))
+        (reverse (loop (list node) '())))))
+
+;; Reverse levels so deepest is first
+(define (solve root)
+  (reverse (bfs root)))
+
+;; Display levels as [[a b][c d]...]
+(define (display-levels levels)
+  (display "[")
+  (letrec ((loop (lambda (ls first)
+                   (if (null? ls)
+                       '()
+                       (begin
+                         (if (not first) (display " ") '())
+                         (display "[")
+                         (letrec ((loop2 (lambda (vs f)
+                                           (if (null? vs)
+                                               '()
+                                               (begin
+                                                 (if (not f) (display " ") '())
+                                                 (display (car vs))
+                                                 (loop2 (cdr vs) #f))))))
+                           (loop2 (car ls) #t))
+                         (display "]")
+                         (loop (cdr ls) #f))))))
+    (loop levels #t))
+  (display "]"))
+
+(define (run-case s)
+  (let ((tree-str (extract-case s)))
+    (if (or (= 0 (string-length tree-str)) (string=? tree-str "nil"))
+        (display "[]")
+        (let ((t (parse-tree tree-str 0)))
+          (if (eq? (car t) 'parse-error)
+              (display "[]")
+              (let ((root (convert (car t))))
+                (display-levels (solve root))))))))
+
+(define (run-all)
+  (display "CASE0=") (run-case "CASE0=nil") (newline)
+  (display "CASE1=") (run-case "CASE1=(node 1 nil nil)") (newline)
+  (display "CASE2=") (run-case "CASE2=(node 3 (node 9 nil nil) (node 20 (node 15 nil nil) (node 7 nil nil)))") (newline)
+  (display "CASE3=") (run-case "CASE3=(node 1 (node 2 (node 4 nil nil) nil) (node 3 nil (node 5 nil nil)))") (newline)
+  (display "CASE4=") (run-case "CASE4=(node 1 (node 2 (node 3 nil nil) (node 4 nil nil)) (node 5 nil nil))") (newline)
+  (display "CASE5=") (run-case "CASE5=(node 0 (node -5 nil nil) (node 5 nil (node -10 nil nil)))") (newline))
+
+(run-all)

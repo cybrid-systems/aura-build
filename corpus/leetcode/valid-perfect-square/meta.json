@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:53:33Z",
+      "ts_local": "2026-09-24 22:53:33 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1212,
+        "total_characters": 0,
+        "prompt_tokens": 1005,
+        "completion_tokens": 207,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.017,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "warning: unbalanced parentheses in input\nerror: no complete S-expression in program source\nusage: /workspace/aura-grok/build_soft4055/aura [options] [file.aura …]\n       /workspace/aura-grok/build_soft4055/aura -e '(+ 1 2)'\n       echo '(+ 1 2)' | /workspace/aura-grok/build_soft4055/aura\n       /workspace/aura-grok/build_soft4055/aura < file.aura\n\nPrograms are read from stdin when no file/-e is given.\nDenseness / span host env (soft multi-module probes):\n  export AURA_BIN=…/build/aura   absolute",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:53:37Z",
+      "ts_local": "2026-09-24 22:53:37 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1372,
+        "total_characters": 0,
+        "prompt_tokens": 1005,
+        "completion_tokens": 367,
+        "prompt_tokens_details": {
+          "cached_tokens": 1004
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.025,
+      "tests_passed": 8,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=#t\nCASE1=#t\nCASE2=#f\nCASE3=#t\nCASE4=#f\nCASE5=#t\nCASE6=#f\nCASE7=#t\n"
+    }
+  ],
+  "slug": "valid-perfect-square",
+  "title": "Valid Perfect Square",
+  "category": "binary_search",
+  "updated_at": "2026-09-24T14:53:37Z",
+  "updated_at_local": "2026-09-24 22:53:37 CST"
+}

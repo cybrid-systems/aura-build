@@ -1,0 +1,123 @@
+;; Sliding window: count subarrays with at most k distinct integers
+;; Uses association list as frequency map for simplicity.
+
+(define (assq-set! alist key value)
+  (let loop ((xs alist))
+    (cond ((null? xs)
+           ;; shouldn't happen if used correctly; but return new pair
+           (cons (cons key value) alist))
+          ((= (car (car xs)) key)
+           (set-car! (car xs) key)
+           (set-cdr! (car xs) value)
+           alist)
+          (else (loop (cdr xs))))))
+
+(define (assq-get alist key default)
+  (let loop ((xs alist))
+    (cond ((null? xs) default)
+          ((= (car (car xs)) key) (cdr (car xs)))
+          (else (loop (cdr xs))))))
+
+(define (alist-remove-one alist key)
+  ;; Decrement count for key; if becomes 0, remove entry.
+  (cond ((null? alist) alist)
+        ((= (car (car alist)) key)
+         (let ((v (cdr (car alist))))
+           (if (= v 1)
+               (cdr alist)
+               (begin
+                 (set-cdr! (car alist) (- v 1))
+                 alist))))
+        (else
+         (let ((rest (alist-remove-one (cdr alist) key)))
+           (set-cdr! alist rest)
+           alist))))
+
+;; Count subarrays with at most k distinct using sliding window.
+(define (at-most-k nums k)
+  (if (<= k 0)
+      0
+      (let ((n (length nums)))
+        (let loop ((right 0)
+                   (left 0)
+                   (distinct 0)
+                   (freq '())
+                   (total 0))
+          (if (>= right n)
+              total
+              ;; expand right
+              (let* ((x (list-ref nums right))
+                     (cur (assq-get freq x 0)))
+                (set! total (+ total (- right left) 1))
+                (let loop2 ((r (+ right 1))
+                            (d (+ distinct (if (= cur 0) 1 0)))
+                            (f (assq-set! freq x (+ cur 1)))
+                            (l left)
+                            (tt total))
+                  (cond ((>= r n)
+                         (begin
+                           (set! total tt)
+                           (loop (+ r 0) l d f tt)))
+                        ((<= d k)
+                         (let* ((xx (list-ref nums r))
+                                (cc (assq-get f xx 0)))
+                           (set! tt (+ tt (- r l) 1))
+                           (loop2 (+ r 1)
+                                  (+ d (if (= cc 0) 1 0))
+                                  (assq-set! f xx (+ cc 1))
+                                  l
+                                  tt)))
+                        (else
+                         ;; d > k, need to shrink left until d <= k
+                         (let shrink ((ll l)
+                                      (dd d)
+                                      (ff f)
+                                      (tt2 tt)
+                                      (rr r))
+                           (if (<= dd k)
+                               (begin
+                                 (set! total tt2)
+                                 (loop (+ rr 0) ll dd ff tt2))
+                               (let* ((ly (list-ref nums ll))
+                                      (lc (assq-get ff ly 0)))
+                                 (if (= lc 1)
+                                     (shrink (+ ll 1)
+                                             (- dd 1)
+                                             (alist-remove-one ff ly)
+                                             tt2
+                                             rr)
+                                     (shrink (+ ll 1)
+                                             dd
+                                             (assq-set! ff ly (- lc 1))
+                                             tt2
+                                             rr)))))))))))))
+
+(define (solve nums k)
+  (at-most-k nums k))
+
+;; ---- Test harness ----
+(define (display-list xs)
+  (display "(")
+  (let loop ((xs xs) (first? #t))
+    (cond ((null? xs) (display ")"))
+          (else
+           (if first? (set! first? #f) (display " "))
+           (display (car xs))
+           (loop (cdr xs) first?)))))
+
+(define (run-case i k nums)
+  (let ((r (solve nums k)))
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display r)
+    (newline)))
+
+(run-case 0 3 '(1 2 1 2 3))
+(run-case 1 2 '(1 2 1 2 3))
+(run-case 2 1 '(1 2 1 2 3))
+(run-case 3 0 '(1 2 3))
+(run-case 4 5 '(1 2 1 2 3))
+(run-case 5 2 '(1 1 1 1))
+(run-case 6 1 '(1 2 3 4 5))
+(run-case 7 3 '(1 2 3))

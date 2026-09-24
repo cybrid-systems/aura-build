@@ -1,0 +1,243 @@
+;; Logger Rate Limiter in Aura
+;; Implements a logger that suppresses duplicate messages within a 10-second window.
+
+;; ------------------------------------------------------------
+;; Association list helpers (treat message -> last_timestamp as alist)
+;; ------------------------------------------------------------
+
+(define (alist-get key alist)
+  (cond
+    ((null? alist) #f)
+    ((equal? (car (car alist)) key) (cdr (car alist)))
+    (else (alist-get key (cdr alist)))))
+
+(define (alist-set key value alist)
+  (cons (cons key value)
+        (alist-remove key alist)))
+
+(define (alist-remove key alist)
+  (cond
+    ((null? alist) '())
+    ((equal? (car (car alist)) key) (cdr alist))
+    (else (cons (car alist)
+                (alist-remove key (cdr alist))))))
+
+;; ------------------------------------------------------------
+;; Logger operations
+;; ------------------------------------------------------------
+
+(define (logger-init)
+  '())
+
+(define (should-print logger timestamp message)
+  (let ((last (alist-get message logger)))
+    (cond
+      ((not last)                        ; never printed -> print
+       (values #t (alist-set message timestamp logger)))
+      ((<= (- timestamp last) 10)        ; within window -> suppress
+       (values #f logger))
+      (else                              ; past window -> print
+       (values #t (alist-set message timestamp logger))))))
+
+;; ------------------------------------------------------------
+;; Parsing one SHOULD_PRINT line -> (timestamp . message-string)
+;; Format: SHOULD_PRINT <number> "<message>"
+;; ------------------------------------------------------------
+
+(define (skip-spaces s i)
+  (cond
+    ((>= i (string-length s)) i)
+    ((char=? (string-ref s i) #\space) (skip-spaces s (+ i 1)))
+    (else i)))
+
+(define (parse-number s i)
+  (let ((len (string-length s)))
+    (let loop ((j i) (acc 0))
+      (cond
+        ((>= j len) (values acc j))
+        ((char-whitespace? (string-ref s j)) (values acc j))
+        ((char=? (string-ref s j) #\") (values acc j))
+        (else
+          (loop (+ j 1)
+                (+ (* acc 10)
+                   (- (char->integer (string-ref s j))
+                      (char->integer #\0)))))))))
+
+(define (parse-quoted s i)
+  ;; assumes s[i] is a double quote; returns (msg . next-index)
+  (let ((len (string-length s)))
+    (let loop ((j (+ i 1)) (acc ""))
+      (cond
+        ((>= j len) (cons acc j))
+        ((char=? (string-ref s j) #\")
+         (cons acc (+ j 1)))
+        (else
+          (loop (+ j 1)
+                (string-append acc
+                                (string (string-ref s j)))))))))
+
+(define (parse-should-print line)
+  ;; returns (timestamp . message)
+  (let* ((n (string-length line))
+         (i (skip-spaces line 0)))
+    ;; skip "SHOULD_PRINT"
+    (let ((i2 (+ i 13)))
+      (let ((i3 (skip-spaces line i2)))
+        (let-values (((ts i4) (parse-number line i3)))
+          (let ((i5 (skip-spaces line i4)))
+            (let ((pair (parse-quoted line i5)))
+              (cons ts (car pair)))))))))
+
+;; ------------------------------------------------------------
+;; Display helpers
+;; ------------------------------------------------------------
+
+(define (display-true) (display "#t"))
+
+(define (display-false) (display "#f"))
+
+(define (display-bool b)
+  (if b (display-true) (display-false)))
+
+;; Convert a CASE number (integer) to its string form.
+(define (int->string n)
+  (cond
+    ((< n 0) (string-append "-" (int->string (- 0 n))))
+    ((< n 10) (string (char->integer #\0) (char->integer (+ n (char->integer #\0)))))
+    (else (string-append (int->string (quotient n 10))
+                         (string (char->integer (+ (modulo n 10)
+                                                   (char->integer #\0))))))))
+
+;; ------------------------------------------------------------
+;; Solve one case: list of lines -> result string ("#t"/"#f"/etc.)
+;; For this problem, results are booleans per SHOULD_PRINT.
+;; We accumulate them into a list of "T"/"F" strings.
+;; ------------------------------------------------------------
+
+(define (process-lines lines logger)
+  ;; returns (cons results-list new-logger)
+  (cond
+    ((null? lines) (cons '() logger))
+    (else
+      (let ((line (car lines)))
+        (cond
+          ((or (equal? line "INIT") (equal? (substring line 0 4) "INIT"))
+           (process-lines (cdr lines) (logger-init)))
+          ((string=? (substring line 0 12) "SHOULD_PRINT")
+           (let-values (((printed new-logger)
+                         (should-print logger
+                                       (car (parse-should-print line))
+                                       (cdr (parse-should-print line)))))
+             (let ((rest (process-lines (cdr lines) new-logger)))
+               (cons (cons (if printed "T" "F") (car rest))
+                     (cdr rest)))))
+          (else
+           (process-lines (cdr lines) logger)))))))
+
+(define (substring s start end)
+  ;; safe substring
+  (let ((len (string-length s)))
+    (let ((e (min end len)))
+      (let loop ((i start) (acc ""))
+        (if (>= i e) acc
+            (loop (+ i 1)
+                  (string-append acc (string (string-ref s i)))))))))
+
+(define (solve-case lines)
+  (let ((pair (process-lines lines (logger-init))))
+    (let ((results (car pair)))
+      (list->result-string results))))
+
+(define (list->result-string lst)
+  (cond
+    ((null? lst) "")
+    (else
+      (let ((head (car lst))
+            (rest (cdr lst)))
+        (if (null? rest)
+            head
+            (string-append head "," (list->result-string rest)))))))
+
+;; ------------------------------------------------------------
+;; Entry point: run all embedded cases.
+;; ------------------------------------------------------------
+
+(define (solve case-num lines)
+  (let ((result (solve-case lines)))
+    (begin
+      (display "CASE")
+      (display (int->string case-num))
+      (display "=")
+      (display result)
+      (newline))))
+
+;; ------------------------------------------------------------
+;; Embedded test inputs
+;; ------------------------------------------------------------
+
+(define case0-lines
+  (list "INIT"
+        "SHOULD_PRINT 1 \"foo\""
+        "SHOULD_PRINT 2 \"bar\""
+        "SHOULD_PRINT 3 \"foo\""
+        "SHOULD_PRINT 8 \"foo\""
+        "SHOULD_PRINT 10 \"foo\""
+        "SHOULD_PRINT 11 \"foo\""))
+
+(define case1-lines (list "INIT"))
+
+(define case2-lines
+  (list "INIT"
+        "SHOULD_PRINT 0 \"a\""
+        "SHOULD_PRINT 5 \"b\""
+        "SHOULD_PRINT 9 \"c\""
+        "SHOULD_PRINT 20 \"d\""))
+
+(define case3-lines
+  (list "INIT"
+        "SHOULD_PRINT 0 \"msg\""
+        "SHOULD_PRINT 10 \"msg\""
+        "SHOULD_PRINT 20 \"msg\""))
+
+(define case4-lines
+  (list "INIT"
+        "SHOULD_PRINT 100 \"hi\""
+        "SHOULD_PRINT 100 \"hi\""
+        "SHOULD_PRINT 100 \"hi\""
+        "SHOULD_PRINT 109 \"hi\""
+        "SHOULD_PRINT 110 \"hi\""))
+
+(define case5-lines
+  (list "INIT"
+        "SHOULD_PRINT 1 \"x\""
+        "SHOULD_PRINT 1 \"y\""
+        "SHOULD_PRINT 5 \"x\""
+        "SHOULD_PRINT 11 \"y\""
+        "SHOULD_PRINT 11 \"x\""))
+
+(define case6-lines
+  (list "INIT"
+        "SHOULD_PRINT 1 \"hello world\""
+        "SHOULD_PRINT 1000000000 \"hello world\""
+        "SHOULD_PRINT 1000000005 \"hello world\""
+        "SHOULD_PRINT 1000000015 \"hello world\""))
+
+(define case7-lines
+  (list "INIT"
+        "SHOULD_PRINT 0 \"alpha\""
+        "SHOULD_PRINT 0 \"beta\""
+        "SHOULD_PRINT 10 \"alpha\""
+        "SHOULD_PRINT 10 \"beta\""
+        "SHOULD_PRINT 20 \"alpha\""
+        "SHOULD_PRINT 21 \"beta\""))
+
+;; Run all cases
+
+(solve 0 case0-lines)
+(solve 1 case1-lines)
+(solve 2 case2-lines)
+(solve 3 case3-lines)
+(solve 4 case4-lines)
+(solve 5 case5-lines)
+(solve 6 case6-lines)
+(solve 7 case7-lines)

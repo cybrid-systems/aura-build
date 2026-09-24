@@ -1,0 +1,96 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "s": "barfoothefoobarman",
+      "words": [
+        "foo",
+        "bar"
+      ]
+    },
+    "expected": "[0,9]"
+  },
+  {
+    "id": 1,
+    "input": {
+      "s": "wordgoodgoodgoodbestword",
+      "words": [
+        "word",
+        "good",
+        "best",
+        "good"
+      ]
+    },
+    "expected": "[8]"
+  },
+  {
+    "id": 2,
+    "input": {
+      "s": "barfoofoobarthefoobarman",
+      "words": [
+        "bar",
+        "foo",
+        "the"
+      ]
+    },
+    "expected": "[6,9,12]"
+  },
+  {
+    "id": 3,
+    "input": {
+      "s": "",
+      "words": [
+        "foo"
+      ]
+    },
+    "expected": "[]"
+  },
+  {
+    "id": 4,
+    "input": {
+      "s": "abcdef",
+      "words": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "expected": "[0]"
+  },
+  {
+    "id": 5,
+    "input": {
+      "s": "aaaaaaaaaa",
+      "words": [
+        "a",
+        "a",
+        "a"
+      ]
+    },
+    "expected": "[0,1,2,3,4,5,6,7]"
+  },
+  {
+    "id": 6,
+    "input": {
+      "s": "lingmindrotatom",
+      "words": [
+        "rot",
+        "atom",
+        "mind",
+        "ling"
+      ]
+    },
+    "expected": "[]"
+  },
+  {
+    "id": 7,
+    "input": {
+      "s": "abcabcabc",
+      "words": [
+        "abc",
+        "abc"
+      ]
+    },
+    "expected": "[0,3]"
+  }
+]

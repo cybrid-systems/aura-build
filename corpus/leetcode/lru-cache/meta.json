@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:52:05Z",
+      "ts_local": "2026-09-24 22:52:05 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 5756,
+        "total_characters": 0,
+        "prompt_tokens": 1756,
+        "completion_tokens": 4000,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.079,
+      "tests_passed": 0,
+      "tests_total": 7,
+      "stderr_snippet": "warning: unbalanced parentheses in input\n⚠ program returned an uncalled function\n",
+      "stdout_snippet": "#<procedure>\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:52:23Z",
+      "ts_local": "2026-09-24 22:52:23 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 4354,
+        "total_characters": 0,
+        "prompt_tokens": 1756,
+        "completion_tokens": 2598,
+        "prompt_tokens_details": {
+          "cached_tokens": 1755
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.214,
+      "tests_passed": 0,
+      "tests_total": 7,
+      "stderr_snippet": "error: 175:4: unbound variable: process-all\n   |\n175 |   (process-all ops))\n   |    ^^^^^^^^^^^\nerror: 173:16: unbound variable: results\nerror: 173:16: unbound variable: results\nerror: 173:16: unbound variable: results\nerror: 173:16: unbound variable: results\nerror: 173:16: unbound variable: results\nerror: 173:16: unbound variable: results\nerror: 173:16: unbound variable: results\n",
+      "stdout_snippet": "CASE0=CASE1=CASE2=CASE3=CASE4=CASE5=CASE6="
+    }
+  ],
+  "slug": "lru-cache",
+  "title": "LRU Cache",
+  "category": "hashing",
+  "updated_at": "2026-09-24T14:52:23Z",
+  "updated_at_local": "2026-09-24 22:52:23 CST"
+}

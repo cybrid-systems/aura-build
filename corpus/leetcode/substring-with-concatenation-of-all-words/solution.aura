@@ -1,0 +1,72 @@
+;; Helper: convert list to string for display
+(define (list->display x)
+  (display "[")
+  (let loop ((xs x))
+    (if (null? xs)
+        (display "")
+        (begin
+         (display (car xs))
+         (if (null? (cdr xs))
+             (display "")
+             (display ", "))
+         (loop (cdr xs)))))
+  (display "]"))
+
+;; Helper: check if a list is null
+(define (empty? xs) (null? xs))
+
+;; Helper: get length of string
+(define (str-len s)
+  (let loop ((i 0))
+    (if (and (< i (string-length s)) #t)
+        (if (char=? (string-ref s i) #\0)
+            0
+            (loop (+ i 1)))
+        i)))
+
+;; Helper: substring
+(define (substr s start len)
+  (let loop ((i 0) (acc ""))
+    (if (>= i len)
+        acc
+        (loop (+ i 1) (string-append acc (string (string-ref s (+ start i))))))))
+
+;; Main solve function
+(define (solve s words)
+  (let* ((n (string-length s))
+         (m (length words))
+         (w (if (null? words) 0 (string-length (car words))))
+         (total (* m w))
+         (result '()))
+    (define (check-window offset)
+      (let loop ((i offset) (matched 0))
+        (cond
+          ((>= (+ i (* m w)) (+ n 1))
+           (if (= matched m)
+               (set! result (append result (list offset)))
+               result))
+          (else
+           (let ((word (substr s i w)))
+             (if (word-in-list? word words)
+                 (loop (+ i w) (+ matched 1))
+                 result))))))
+    (define (word-in-list? word lst)
+      (cond ((null? lst) #f)
+            ((string=? word (car lst)) #t)
+            (else (word-in-list? word (cdr lst)))))
+    (let outer ((off 0))
+      (if (>= off w)
+          result
+          (begin
+           (check-window off)
+           (outer (+ off 1)))))))
+
+;; Test cases
+(display "CASE0=") (display (solve "barfoothefoobarman" (list "foo" "bar"))) (newline)
+(display "CASE1=") (display (solve "wordgoodgoodgoodbestword" (list "word" "good" "best" "good"))) (newline)
+(display "CASE2=") (display (solve "barfoofoobarthefoobarman" (list "bar" "foo" "the"))) (newline)
+(display "CASE3=") (display (solve "" (list "foo"))) (newline)
+(display "CASE4=") (display (solve "abcdef" (list "a" "b" "c"))) (newline)
+(display "CASE5=") (display (solve "aaaaaaaaaa" (list "a" "a" "a"))) (newline)
+(display "CASE6=") (display (solve "lingmindrotatom" (list "rot" "atom" "mind" "ling"))) (newline)
+(display "CASE7=") (display (solve "abcabcabc" (list "abc" "abc"))) (newline)

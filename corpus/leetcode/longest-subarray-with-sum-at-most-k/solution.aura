@@ -1,0 +1,47 @@
+;; Longest Subarray with Sum at Most K (sliding window, non-negative numbers)
+
+(define (solve nums k)
+  ;; returns length of longest contiguous subarray with sum <= k
+  (let ((n (length nums)))
+    (if (= n 0)
+        0
+        (let loop ((left 0) (right 0) (sum 0) (best 0))
+          (cond
+            ((>= right n) best)
+            (else
+             ;; try to extend right; shrink from left while sum > k
+             (let* ((new-sum (+ sum (list-ref nums right)))
+                    (l left)
+                    (s new-sum))
+               (let shrink-loop ((ll l) (ss s))
+                 (cond
+                   ((> ss k)
+                    ;; shrink: remove nums[ll] if ll < right+1
+                    (shrink-loop (+ ll 1) (- ss (list-ref nums ll))))
+                   (else
+                    ;; window [ll .. right] valid; update best, advance right
+                    (let ((len (- (+ right 1) ll)))
+                      (let ((new-best (if (> len best) len best)))
+                        (loop ll (+ right 1) ss new-best))))))))))))
+
+;; ---- I/O harness for embedded test cases ----
+
+(define (display-case i result)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display result)
+  (newline))
+
+(define (run-all)
+  (display-case 0 (solve '(1 2 3 4 5) 8))
+  (display-case 1 (solve '(1 2 3 4 5) 15))
+  (display-case 2 (solve '(5 5 5 5 5) 10))
+  (display-case 3 (solve '(1 1 1 1 1) 3))
+  (display-case 4 (solve '() 5))
+  (display-case 5 (solve '(0 0 0 0) -1))
+  (display-case 6 (solve '(3) 3))
+  (display-case 7 (solve '(4) 3))
+  (display-case 8 (solve '(2 2 2 2 2) 0)))
+
+(run-all)

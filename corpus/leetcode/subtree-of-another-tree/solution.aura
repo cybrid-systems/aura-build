@@ -1,0 +1,100 @@
+;; Parse a tree literal into a node map {:val v :left l :right r} or '()
+(define (parse-tree t)
+  (if (null? t)
+      '()
+      (let ((v (car t)) (l (cadr t)) (r (caddr t)))
+        (list 'node :val v :left (parse-tree l) :right (parse-tree r)))))
+
+;; Helpers to access node fields
+(define (node? x) (and (pair? x) (eq? (car x) 'node)))
+(define (node-val n) (cadr n))
+(define (node-left n) (caddr n))
+(define (node-right n) (cadddr n))
+
+(define (tree-equal a b)
+  (cond
+    ((and (null? a) (null? b)) #t)
+    ((or (null? a) (null? b)) #f)
+    ((and (node? a) (node? b))
+     (and (= (node-val a) (node-val b))
+          (tree-equal (node-left a) (node-left b))
+          (tree-equal (node-right a) (node-right b))))
+    (else #f)))
+
+(define (is-subtree root sub)
+  (cond
+    ((null? sub) #t)
+    ((null? root) #f)
+    ((tree-equal root sub) #t)
+    (else (or (is-subtree (node-left root) sub)
+              (is-subtree (node-right root) sub)))))
+
+;; Read CASE0 from environment
+(define case0 (getenv "CASE0"))
+
+;; Parse "(solve <root> <sub>)"
+(define (parse-solve s)
+  (let ((rest (cdr (read-all s))))
+    (list (car rest) (cadr rest))))
+
+;; Minimal tokenizer/reader for the tree literals
+(define (read-all s)
+  ;; Returns the entire parsed datum from string s
+  (let ((len (string-length s)))
+    (let loop ((i 0))
+      (cond ((>= i len) '())
+            ((char=? (string-ref s i) #\space) (loop (+ i 1)))
+            ((char=? (string-ref s i) #\() 
+             (cons (parse-list s i #\() (loop (+ 1 (skip-list s i)))))
+            (else (error "unexpected char"))))))
+
+(define (skip-list s i)
+  ;; Starting at i which is '(', return index after matching ')'
+  (let ((len (string-length s)) (depth 1))
+    (let loop ((k (+ i 1)))
+      (cond ((>= k len) (error "unbalanced"))
+            ((char=? (string-ref s k) #\() (loop (+ k 1) (+ depth 1)))
+            ((char=? (string-ref s k) #\))
+             (if (= depth 1) k (loop (+ k 1) (- depth 1))))
+            (else (loop (+ k 1) depth))))))
+
+(define (parse-list s i open)
+  ;; open is the opening paren char at i; parse items until matching ')'
+  (let ((len (string-length s)))
+    (let loop ((k (+ i 1)) (acc '()))
+      (cond ((>= k len) (error "unbalanced"))
+            ((char=? (string-ref s k) #\space) (loop (+ k 1) acc))
+            ((char=? (string-ref s k) #\()
+             (let ((item (parse-list s k #\())))
+               (loop (+ 1 (skip-list s k)) (append acc (list item)))))
+            ((char=? (string-ref s k) #\))
+             (reverse acc))
+            (else (parse-atom s k acc)))))))
+
+(define (parse-atom s k acc)
+  ;; Parse integer or symbol starting at index k
+  (let ((len (string-length s)))
+    (let loop ((j k) (chars '()))
+      (cond ((>= j len)
+             (loop2 (list->string (reverse chars)) acc j))
+            ((or (char=? (string-ref s j) #\space)
+                 (char=? (string-ref s j) #\)))
+             (loop2 (list->string (reverse chars)) acc j))
+            (else (loop (+ j 1) (cons (string-ref s j) chars)))))))
+
+(define (loop2 token-str acc next-i)
+  (let ((tok (string->number token-str)))
+    (if (number? tok)
+        (cons tok acc)
+        (cons tok acc))))
+
+;; Top-level: parse, solve, print
+(let* ((parsed (read-all case0))
+       (root-lit (car parsed))
+       (sub-lit (cadr parsed))
+       (root (parse-tree root-lit))
+       (sub  (parse-tree sub-lit))
+       (result (is-subtree root sub)))
+  (display "CASE0=")
+  (display (if result "true" "false"))
+  (newline))

@@ -1,0 +1,32 @@
+{
+  "variants": [],
+  "slug": "insert-delete-getrandom-o1",
+  "title": "Insert Delete GetRandom O(1)",
+  "category": "hashing",
+  "ref": {
+    "llm": {
+      "ok": true,
+      "error": "",
+      "usage": {
+        "total_tokens": 1728,
+        "total_characters": 0,
+        "prompt_tokens": 990,
+        "completion_tokens": 738,
+        "prompt_tokens_details": {
+          "cached_tokens": 989
+        }
+      },
+      "model": "MiniMax-M3"
+    },
+    "run": {
+      "ref_ok": false,
+      "exit_code": 1,
+      "stderr": "Traceback (most recent call last):\n  File \"/workspace/aura-build/corpus/leetcode/insert-delete-getrandom-o1/ref.py\", line 86, in <module>\n    result = solve(c['operations'], c['args'])\n  File \"/workspace/aura-build/corpus/leetcode/insert-delete-getrandom-o1/ref.py\", line 41, in solve\n    results.append(int(rs.getRandom()))\n                       ~~~~~~~~~~~~^^\n  File \"/workspace/aura-build/corpus/leetcode/insert-delete-getrandom-o1/ref.py\", line 29, in getRandom\n    return self.arr[random.randra",
+      "duration_s": 0.031,
+      "timeout": false,
+      "n_tests": 0
+    },
+    "ts": "2026-09-24T14:51:52Z"
+  },
+  "updated_at": "2026-09-24T14:51:52Z"
+}

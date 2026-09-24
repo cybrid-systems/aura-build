@@ -1,0 +1,217 @@
+;; LRU Cache implementation in Aura
+;; Uses doubly-linked list + association list as hash map (assoc-list lookup is O(n)
+;; but acceptable for embedded test sizes; would be replaced with hash-table for true O(1)).
+
+(define (solve ops)
+  ;; Returns list of values from get operations
+  ;; ops is a list of operation lists, e.g. (("init" 2) ("put" 1 1) ("get" 1) ...)
+  ;; State: cache is represented as (list keys vals head-key tail-key cap size)
+  ;;   keys, vals: parallel lists (position i holds entry at "index" i in dll)
+  ;;   head-key: key at front (most recent), tail-key: key at back (least recent)
+  ;;   For each key, we store its "prev" and "next" key by maintaining
+  ;;   prev-list and next-list parallel to keys/vals.
+  ;; A cleaner representation: a list of nodes, each node (list key value prev next)
+  ;; Lookup by key uses linear scan through nodes.
+
+  (define cap 0)
+  (define size 0)
+  ;; nodes = list of (key val prev next); order is irrelevant for correctness
+  (define nodes '())
+
+  ;; Helper: find a node by key, returns (list node rest-of-nodes) or #f
+  (define (find-key k ns)
+    (cond ((null? ns) #f)
+          ((equal? (car (car ns)) k) (list (car ns) ns))
+          (else
+           (let ((r (find-key k (cdr ns))))
+             (if r (list (car r) (cons (car ns) (car (cdr r)))) #f)))))
+
+  ;; Get the node struct; rebuild the prev/next indices after modification
+  ;; We'll represent the doubly linked list via a separate "order" list of keys,
+  ;; head = most recent, last = least recent.
+  ;; node info stored as (key value) in an alist for lookup.
+  ;; For O(1) we'd use a hash; here we use alist.
+
+  ;; Actually, let's redo with explicit structure stored as alist:
+  ;; data :: alist of (key . value)
+  ;; order :: list of keys, head = most recent
+  ;; For lookup, scan order to find key position, then move to front.
+
+  ;; Reset state for each call
+  (set! cap 0)
+  (set! size 0)
+  (set! nodes '())
+
+  (define data '())   ;; alist (k . v)
+  (define order '())  ;; list of keys, head is most recent
+
+  (define (lookup k)
+    (cond ((null? data) #f)
+          ((equal? (car (car data)) k) (cdr (car data)))
+          (else (lookup k (cdr data)))))
+
+  (define (alist-set k v al)
+    (cond ((null? al) (list (cons k v)))
+          ((equal? (car (car al)) k) (cons (cons k v) (cdr al)))
+          (else (cons (car al) (alist-set k v (cdr al))))))
+
+  (define (alist-remove k al)
+    (cond ((null? al) al)
+          ((equal? (car (car al)) k) (cdr al))
+          (else (cons (car al) (alist-remove k (cdr al))))))
+
+  (define (move-to-front k)
+    ;; remove k from order, then cons to front
+    (define (rem x lst)
+      (cond ((null? lst) lst)
+            ((equal? (car lst) x) (cdr lst))
+            (else (cons (car lst) (rem x (cdr lst))))))
+    (set! order (cons k (rem k order))))
+
+  (define (touch-existing k)
+    ;; key exists, move to front
+    (move-to-front k))
+
+  (define (do-get k)
+    (let ((v (lookup k)))
+      (if v
+          (begin (touch-existing k) v)
+          -1)))
+
+  (define (do-put k v)
+    (let ((existing (lookup k)))
+      (if existing
+          (begin
+            (set! data (alist-set k v data))
+            (touch-existing k))
+          (begin
+            (when (= size cap)
+              ;; evict least recent (last in order)
+              (let ((evict-key (car (reverse order))))
+                (set! order (reverse (cdr (reverse order)))))
+              ;; the above reverse is naive; let's just take last properly:
+              )
+            ;; Fix: properly remove last
+            (set! order
+                  (if (null? order)
+                      order
+                      (let loop ((lst order) (acc '()))
+                        (if (null? (cdr lst))
+                            (reverse acc)
+                            (loop (cdr lst) (cons (car lst) acc))))))
+            ;; Wait - this is getting tangled. Let me restart with cleaner approach.
+            'restart)))
+
+    ;; Restart with cleaner implementation
+    'needs-restart)
+
+  ;; The above nested approach is too messy. Let me write a clean version.
+  (define (process-all ops)
+    (define cap 0)
+    (define data '())
+    (define order '())
+
+    (define (alist-get k al)
+      (cond ((null? al) #f)
+            ((equal? (car (car al)) k) (cdr (car al)))
+            (else (alist-get k (cdr al)))))
+    (define (alist-update k v al)
+      (cond ((null? al) (list (cons k v)))
+            ((equal? (car (car al)) k) (cons (cons k v) (cdr al)))
+            (else (cons (car al) (alist-update k v (cdr al))))))
+    (define (alist-delete k al)
+      (cond ((null? al) al)
+            ((equal? (car (car al)) k) (cdr al))
+            (else (cons (car al) (alist-delete k (cdr al))))))
+
+    (define (last-elem lst)
+      (if (null? (cdr lst)) (car lst) (last-elem (cdr lst))))
+    (define (remove-last lst)
+      (if (null? (cdr lst)) '()
+          (cons (car lst) (remove-last (cdr lst)))))
+
+    (define (results '())
+
+      (define (touch k)
+        ;; move key k to front of order
+        (define (rem x l)
+          (cond ((null? l) l)
+                ((equal? (car l) x) (cdr l))
+                (else (cons (car l) (rem x (cdr l))))))
+        (set! order (cons k (rem k order))))
+
+      (define (get-op k)
+        (let ((v (alist-get k data)))
+          (if v
+              (begin (touch k)
+                     (set! results (cons v results)))
+              (set! results (cons -1 results)))))
+
+      (define (put-op k v)
+        (if (alist-get k data)
+            (begin
+              (set! data (alist-update k v data))
+              (touch k))
+            (begin
+              (when (= (length order) cap)
+                (let ((ek (last-elem order)))
+                  (set! data (alist-delete ek data))
+                  (set! order (remove-last order))))
+              (set! data (alist-update k v data))
+              (set! order (cons k order)))))
+
+      (define (process op)
+        (let ((cmd (list-ref op 0)))
+          (cond
+            ((equal? cmd "init")
+             (set! cap (list-ref op 1))
+             (set! data '())
+             (set! order '())
+             (set! results '()))
+            ((equal? cmd "get")
+             (get-op (list-ref op 1)))
+            ((equal? cmd "put")
+             (put-op (list-ref op 1) (list-ref op 2))))))
+
+      (map process ops)
+      (reverse results)))
+
+  (process-all ops))
+
+;; Helper to pretty-print a list
+(define (print-list xs)
+  (display "[")
+  (define (loop l first?)
+    (cond ((null? l) (display "]"))
+          (else
+           (if first? (display "") (display ","))
+           (display (car l))
+           (loop (cdr l) #f))))
+  (loop xs #t)
+  (newline))
+
+;; Test cases as embedded lists
+(define cases
+  (list
+   (list (list (list "init" 2) (list "put" 1 1) (list "put" 2 2) (list "get" 1) (list "put" 3 3) (list "get" 2) (list "put" 4 4) (list "get" 1) (list "get" 3) (list "get" 4)))
+   (list (list (list "init" 2) (list "put" 1 1) (list "put" 2 2) (list "get" 1) (list "put" 1 10) (list "get" 1) (list "put" 3 3) (list "get" 2) (list "get" 3)))
+   (list (list (list "init" 1) (list "put" 5 5) (list "get" 5) (list "put" 6 6) (list "get" 5) (list "get" 6)))
+   (list (list (list "init" 3) (list "put" 1 100) (list "put" 2 200) (list "put" 3 300) (list "get" 1) (list "get" 2) (list "get" 3) (list "get" 1) (list "get" 2) (list "get" 1) (list "get" 3) (list "get" 2)))
+   (list (list (list "init" 2) (list "get" 0) (list "get" 1) (list "put" 2 1) (list "get" 0) (list "get" 2) (list "put" 3 2) (list "get" 0) (list "get" 2) (list "get" 3)))
+   (list (list (list "init" 3) (list "put" 1 1) (list "put" 2 2) (list "put" 3 3) (list "put" 4 4) (list "put" 2 22) (list "put" 5 5) (list "get" 1) (list "get" 2) (list "get" 3) (list "get" 4) (list "get" 5) (list "get" 6)))
+   (list (list (list "init" 1) (list "put" 1 1) (list "put" 1 2) (list "put" 1 3) (list "get" 1) (list "put" 2 9) (list "get" 1) (list "get" 2)))))
+
+(define (run-case i case)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (let ((r (solve (car case))))
+    (print-list r)))
+
+(run-case 0 (list-ref cases 0))
+(run-case 1 (list-ref cases 1))
+(run-case 2 (list-ref cases 2))
+(run-case 3 (list-ref cases 3))
+(run-case 4 (list-ref cases 4))
+(run-case 5 (list-ref cases 5))
+(run-case 6 (list-ref cases 6))

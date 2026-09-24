@@ -1,0 +1,106 @@
+;; Helpers for list operations
+(define (length lst)
+  (if (null? lst) 0 (+ 1 (length (cdr lst)))))
+
+(define (list-ref lst i)
+  (if (= i 0) (car lst) (list-ref (cdr lst) (- i 1))))
+
+(define (substring s start end)
+  (let ((len (- end start)))
+    (let loop ((i 0) (acc '()))
+      (if (= i len)
+          (list->string (reverse acc))
+          (loop (+ i 1) (cons (string-ref s (+ start i)) acc))))))
+
+(define (string-equal? a b)
+  (= (string=? a b) #t))
+
+;; Check if all values in counts (assoc list) are zero
+(define (all-zero? counts)
+  (cond ((null? counts) #t)
+        ((not (= (cdr (car counts)) 0)) #f)
+        (else (all-zero? (cdr counts)))))
+
+;; Main solve function
+(define (solve s words)
+  (let* ((n (string-length s))
+         (m (length words))
+         (w (if (> m 0) (string-length (list-ref words 0)) 0))
+         (target-len (* m w)))
+    (if (or (= m 0) (= w 0) (< n target-len))
+        '()
+        ;; Build required counts as assoc list: ((word . count) ...)
+        (let ((req (build-req words)))
+          (let loop ((offset 0) (result '()))
+            (if (>= offset w)
+                (reverse result)
+                (let ((res (check-offset s req m w n offset)))
+                  (loop (+ offset 1) (append res result)))))))))
+
+(define (build-req words)
+  (let loop ((ws words) (acc '()))
+    (cond ((null? ws) acc)
+          ((assoc (car ws) acc)
+           (let* ((pair (assoc (car ws) acc))
+                  (new-val (+ (cdr pair) 1)))
+             (loop (cdr ws)
+                   (cons (cons (car ws) new-val)
+                         (remove-pair (car ws) acc)))))
+          (else (loop (cdr ws) (cons (cons (car ws) 1) acc))))))
+
+(define (remove-pair key lst)
+  (cond ((null? lst) '())
+        ((equal? (car (car lst)) key) (cdr lst))
+        (else (cons (car lst) (remove-pair key (cdr lst))))))
+
+(define (assoc key lst)
+  (cond ((null? lst) #f)
+        ((equal? (car (car lst)) key) (car lst))
+        (else (assoc key (cdr lst)))))
+
+(define (check-offset s req m w n offset)
+  (let loop ((i offset) (counts req) (matched 0) (acc '()))
+    (cond ((> (+ i (* m w)) n) (reverse acc))
+          (else
+           (let* ((window-end (+ i (* m w)))
+                  (valid? #t)
+                  (sub (substring s i window-end))
+                  (check-result (check-window sub req m w)))
+             (if check-result
+                 (loop (+ i w) req m (cons i acc))
+                 (loop (+ i w) req m acc)))))))
+
+(define (check-window sub req m w)
+  ;; Split sub into m chunks of length w and check if they form req
+  (let loop ((i 0) (counts req) (ok #t))
+    (cond ((not ok) #f)
+          ((= i m) (all-zero? counts))
+          (else
+           (let* ((word (substring sub (* i w) (* (+ i 1) w)))
+                  (pair (assoc word counts)))
+             (cond ((not pair) #f)
+                  ((= (cdr pair) 0) #f)
+                  (else
+                   (loop (+ i 1)
+                         (cons (cons word (- (cdr pair) 1))
+                               (remove-pair word counts))))))))))
+
+;; Display helper for lists of integers
+(define (display-list lst)
+  (display "[")
+  (let loop ((l lst) (first? #t))
+    (cond ((null? l) (display "]"))
+          (else
+           (if first? (set! first? #f) (display ","))
+           (display (car l))
+           (loop (cdr l) #f)))))
+
+;; Test harness
+(display "CASE0=") (display-list (solve "barfoothefoobarman" (list "foo" "bar"))) (newline)
+(display "CASE1=") (display-list (solve "wordgoodgoodgoodbestword" (list "word" "good" "best" "good"))) (newline)
+(display "CASE2=") (display-list (solve "barfoofoobarthefoobarman" (list "bar" "foo" "the"))) (newline)
+(display "CASE3=") (display-list (solve "" (list "foo"))) (newline)
+(display "CASE4=") (display-list (solve "abcdef" (list "a" "b" "c"))) (newline)
+(display "CASE5=") (display-list (solve "aaaaaaaaaa" (list "a" "a" "a"))) (newline)
+(display "CASE6=") (display-list (solve "lingmindrotatom" (list "rot" "atom" "mind" "ling"))) (newline)
+(display "CASE7=") (display-list (solve "abcabcabc" (list "abc" "abc"))) (newline)

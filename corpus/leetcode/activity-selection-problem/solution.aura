@@ -1,0 +1,35 @@
+;; Activity Selection Problem - Greedy by earliest finish time
+
+(define (solve)
+  ;; Read n
+  (define n (read))
+  (define acts '())
+  (define i 0)
+  (while (< i n)
+    (define s (read))
+    (define e (read))
+    (set! acts (append acts (list (list s e))))
+    (set! i (+ i 1)))
+  ;; Sort activities by end time, then by start time as tiebreaker
+  (set! acts (sort acts (lambda (a b)
+                          (if (< (cadr a) (cadr b)) #t
+                              (if (> (cadr a) (cadr b)) #f
+                                  (< (car a) (car b)))))))
+  ;; Greedy selection
+  (define count 0)
+  (define last-end -1)
+  (set! i 0)
+  (while (< i n)
+    (define act (list-ref acts i))
+    (if (>= (car act) last-end)
+        (begin
+          (set! count (+ count 1))
+          (set! last-end (cadr act))))
+    (set! i (+ i 1)))
+  (display count)
+  (newline))
+
+(define (main)
+  (solve))
+
+(main)

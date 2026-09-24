@@ -1,0 +1,124 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "root": null
+    },
+    "expected": "\"[]\""
+  },
+  {
+    "id": 1,
+    "input": {
+      "root": {
+        "val": 1,
+        "left": null,
+        "right": null
+      }
+    },
+    "expected": "\"[[1]]\""
+  },
+  {
+    "id": 2,
+    "input": {
+      "root": {
+        "val": 3,
+        "left": {
+          "val": 9,
+          "left": null,
+          "right": null
+        },
+        "right": {
+          "val": 20,
+          "left": {
+            "val": 15,
+            "left": null,
+            "right": null
+          },
+          "right": {
+            "val": 7,
+            "left": null,
+            "right": null
+          }
+        }
+      }
+    },
+    "expected": "\"[[15 7] [9 20] [3]]\""
+  },
+  {
+    "id": 3,
+    "input": {
+      "root": {
+        "val": 1,
+        "left": {
+          "val": 2,
+          "left": {
+            "val": 4,
+            "left": null,
+            "right": null
+          },
+          "right": null
+        },
+        "right": {
+          "val": 3,
+          "left": null,
+          "right": {
+            "val": 5,
+            "left": null,
+            "right": null
+          }
+        }
+      }
+    },
+    "expected": "\"[[4 5] [2 3] [1]]\""
+  },
+  {
+    "id": 4,
+    "input": {
+      "root": {
+        "val": 1,
+        "left": {
+          "val": 2,
+          "left": {
+            "val": 3,
+            "left": null,
+            "right": null
+          },
+          "right": {
+            "val": 4,
+            "left": null,
+            "right": null
+          }
+        },
+        "right": {
+          "val": 5,
+          "left": null,
+          "right": null
+        }
+      }
+    },
+    "expected": "\"[[3 4] [2 5] [1]]\""
+  },
+  {
+    "id": 5,
+    "input": {
+      "root": {
+        "val": 0,
+        "left": {
+          "val": -5,
+          "left": null,
+          "right": null
+        },
+        "right": {
+          "val": 5,
+          "left": null,
+          "right": {
+            "val": -10,
+            "left": null,
+            "right": null
+          }
+        }
+      }
+    },
+    "expected": "\"[[-10] [-5 5] [0]]\""
+  }
+]

@@ -1,0 +1,96 @@
+(define (make-codec)
+  (let ((counter 0)
+        (long-to-short '())
+        (short-to-long '())
+        (prefix "http://tiny.url/"))
+    (lambda (op)
+      (cond
+        ((equal? op 'encode) (lambda (url)
+           (let ((existing (assoc url long-to-short)))
+             (if existing
+                 (cdr existing)
+                 (let ((key (number->string counter))
+                       (short (string-append prefix (number->string counter))))
+                   (set! counter (+ counter 1))
+                   (set! long-to-short (cons (cons url short) long-to-short))
+                   (set! short-to-long (cons (cons short url) short-to-long))
+                   short)))))
+        ((equal? op 'decode) (lambda (short)
+           (let ((existing (assoc short short-to-long)))
+             (if existing (cdr existing) ""))))
+        (else (lambda (x) ""))))))
+
+(define (process-ops codec ops)
+  (cond
+    ((null? ops) '())
+    (else
+      (let* ((op (car ops))
+             (type (car op))
+             (url (cdr op))
+             (fn (codec type))
+             (result (fn url)))
+        (cons result (process-ops codec (cdr ops)))))))
+
+(define (display-list lst)
+  (cond
+    ((null? lst) (display ")") (newline))
+    (else
+      (display " ")
+      (display (car lst))
+      (display-list (cdr lst)))))
+
+(define (solve case-num ops)
+  (let ((codec (make-codec))
+        (results (process-ops (make-codec) ops)))
+    (display "CASE")
+    (display (number->string case-num))
+    (display "=")
+    (display results)
+    (newline)))
+
+;; CASE 0
+(solve 0
+  (list
+    (cons 'ENCODE "https://leetcode.com/problems/design-tinyurl")))
+
+;; CASE 1
+(solve 1
+  (list
+    (cons 'ENCODE "https://example.com/very/long/path")
+    (cons 'ENCODE "https://example.com/very/long/path")
+    (cons 'ENCODE "https://another.com")))
+
+;; CASE 2
+(solve 2
+  (list
+    (cons 'ENCODE "https://a.com")
+    (cons 'ENCODE "https://b.com")
+    (cons 'ENCODE "https://c.com")))
+
+;; CASE 3
+(solve 3
+  (list
+    (cons 'DECODE "http://tiny.url/1")))
+
+;; CASE 4
+(solve 4
+  (list
+    (cons 'ENCODE "https://x.com")
+    (cons 'DECODE "http://tiny.url/1")))
+
+;; CASE 5
+(solve 5
+  (list
+    (cons 'ENCODE "https://test.com/path?query=1")
+    (cons 'ENCODE "https://test.com/path?query=2")
+    (cons 'ENCODE "https://test.com/path?query=1")))
+
+;; CASE 6
+(solve 6 '())
+
+;; CASE 7
+(solve 7
+  (list
+    (cons 'ENCODE "https://single.com")
+    (cons 'ENCODE "https://single.com")
+    (cons 'ENCODE "https://single.com")))

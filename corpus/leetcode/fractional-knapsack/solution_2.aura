@@ -1,0 +1,73 @@
+(define (make-item w v) (cons w v))
+
+(define (item-w item) (car item))
+(define (item-v item) (cdr item))
+
+;; Compute value/weight as a real number, used for sorting.
+;; We avoid floating point in comparison by comparing cross products.
+
+(define (ratio-greater? a b)
+  ;; Return #t if v_a/w_a > v_b/w_b
+  (let ((wa (item-w a))
+     (va (item-v a))
+     (wb (item-w b))
+     (vb (item-v b)))
+    (> (* va wb) (* vb wa))))
+
+;; Insertion sort items by descending value/weight ratio.
+(define (sort-items items)
+  (define (insert x sorted)
+    (cond
+      ((null? sorted) (cons x '()))
+      ((ratio-greater? x (car sorted))
+       (cons x sorted))
+      (else (cons (car sorted) (insert x (cdr sorted))))))
+  (define (loop lst acc)
+    (if (null? lst)
+     acc
+     (loop (cdr lst) (insert (car lst) acc))))
+  (loop items '()))
+
+(define (solve n W items)
+  (let ((sorted (sort-items items))
+     (cap W)
+     (total 0.0))
+    (letrec ((loop (lambda (lst remaining)
+          (cond
+         ((null? lst) total)
+         ((<= remaining 0) total)
+         (else
+          (let ((it (car lst))
+             (rest (cdr lst))
+             (w (item-w (car lst)))
+             (v (item-v (car lst))))
+            (cond
+              ((<= w remaining)
+            (set! total (+ total (* 1.0 v)))
+            (set! remaining (- remaining w))
+            (loop rest remaining))
+              (else
+            (set! total (+ total (* 1.0 (/ (* 1.0 v) w)) remaining))
+            (set! remaining 0)
+            (loop rest remaining)))))))))
+      (loop sorted cap))))
+
+;; Helper to display floating point result
+(define (display-float x)
+  ;; Print with reasonable precision (1e-9 acceptable for 1e-6 error)
+  (display (number->string (exact->inexact x))))
+
+;; Test harness
+(define (run-case label n W items)
+  (display label)
+  (display "=")
+  (display-float (solve n W items))
+  (newline))
+
+(run-case "CASE0" 4 10 (list (make-item 5 10) (make-item 4 40) (make-item 6 30) (make-item 3 50)))
+(run-case "CASE1" 1 5 (list (make-item 10 100)))
+(run-case "CASE2" 3 50 (list (make-item 10 60) (make-item 20 100) (make-item 30 120)))
+(run-case "CASE3" 5 10 (list (make-item 2 3) (make-item 3 4) (make-item 4 5) (make-item 5 6) (make-item 1 1)))
+(run-case "CASE4" 2 0 (list (make-item 1 10) (make-item 2 20)))
+(run-case "CASE5" 3 100 (list (make-item 100 1) (make-item 100 2) (make-item 100 3)))
+(run-case "CASE6" 4 8 (list (make-item 3 9) (make-item 4 12) (make-item 5 15) (make-item 2 4)))

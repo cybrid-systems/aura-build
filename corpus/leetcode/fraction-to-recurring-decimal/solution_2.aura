@@ -1,0 +1,91 @@
+(define (abs n) (if (< n 0) (- 0 n) n))
+(define (sign n)
+  (cond ((< n 0) -1)
+        ((> n 0) 1)
+        (else 0)))
+
+(define (int->string n)
+  (cond ((= n 0) "0")
+        ((< n 0) (string-append "-" (int->string (- 0 n))))
+        (else
+         (let loop ((n n) (acc '()))
+           (if (= n 0)
+               (list->string (reverse acc))
+               (loop (quotient n 10) (cons (+ (char->integer '0') (modulo n 10)) acc)))))))
+
+(define (char c) c)
+(define (char->integer c) c)
+;; Helper: build digits list into reversed string
+(define (digits->string ds)
+  (list->string (reverse ds)))
+
+(define (solve numerator denominator)
+  (let* ((n numerator) (d denominator)
+         (sign-num (sign n)) (sign-den (sign d))
+         (result-sign (if (= (* sign-num sign-den) -1) "-" ""))
+         (an (abs n)) (ad (abs d))
+         (int-part (quotient an ad))
+         (rem1 (modulo an ad))
+         (frac-list '())
+         (seen '())
+         (repeating -1)
+         (loop-done #f)
+         (r rem1))
+    ;; do long division
+    (let loop ((rem r))
+      (if loop-done
+          '()
+          (begin
+            (set! frac-list (cons (char (+ (char->integer '0') (quotient (* rem 10) ad))) frac-list))
+            (let ((new-rem (modulo (* rem 10) ad)))
+              (cond ((= new-rem 0)
+                     (set! loop-done #t))
+                    ((assq new-rem seen)
+                     (set! repeating (- (length frac-list) 1))
+                     (set! loop-done #t))
+                    (else
+                     (set! seen (cons (cons new-rem (- (length frac-list) 1)) seen))
+                     (loop new-rem)))))))
+    ;; Build result string
+    (let* ((int-str (int->string int-part))
+           (frac-rev frac-list)
+           (frac-str (list->string frac-rev)))
+      (cond
+        ((null? frac-list)
+         (string-append result-sign int-str))
+        ((= repeating -1)
+         (string-append result-sign int-str "." frac-str))
+        (else
+         (let* ((before (substring frac-str 0 repeating))
+                (cycle-len (- (string-length frac-str) repeating))
+                (cycle (substring frac-str repeating cycle-len))
+                (frac-result (string-append before "(" (substring frac-str repeating (+ repeating cycle-len)) ")")))
+           ;; Fix: cycle substring length
+           (set! frac-result (string-append before "(" cycle ")"))
+           (string-append result-sign int-str "." frac-result)))))))
+
+(define (substring s start end)
+  (let loop ((i 0) (acc '()))
+    (if (>= i end)
+        (list->string (reverse acc))
+        (if (and (>= i start) (< i end))
+            (loop (+ i 1) (cons (string-ref s i) acc))
+            (loop (+ i 1) acc)))))
+
+;; Embedded test cases — call solve and print result
+(define (run-case n num den)
+  (begin
+    (display (string-append "CASE" (int->string n) "="))
+    (display (solve num den))
+    (newline)))
+
+(run-case 0 1 2)
+(run-case 1 2 1)
+(run-case 2 4 333)
+(run-case 3 0 5)
+(run-case 4 -1 2)
+(run-case 5 1 -2)
+(run-case 6 -1 -2)
+(run-case 7 -2147483648 -1)
+(run-case 8 1 6)
+(run-case 9 22 7)

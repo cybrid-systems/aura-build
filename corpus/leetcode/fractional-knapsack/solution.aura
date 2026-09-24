@@ -1,0 +1,88 @@
+;; Fractional knapsack solver
+;; Sort items by value/weight ratio descending, greedily fill knapsack.
+
+(define (make-item w v)
+  (cons w (cons v '())))
+
+(define (item-w i) (car i))
+(define (item-v i) (car (cdr i)))
+(define (item-ratio i) (/ (item-v i) (item-w i)))
+
+;; Sort a list of items in non-increasing order by ratio using insertion sort.
+(define (insert-by-ratio item sorted)
+  (cond
+    ((null? sorted) (cons item '()))
+    ((>= (item-ratio item) (item-ratio (car sorted)))
+     (cons item sorted))
+    (else (cons (car sorted) (insert-by-ratio item (cdr sorted))))))
+
+(define (sort-by-ratio items)
+  (if (null? items)
+      '()
+      (insert-by-ratio (car items) (sort-by-ratio (cdr items)))))
+
+;; Fractional knapsack solver
+(define (solve n W items)
+  (let ((sorted (sort-by-ratio items))
+        (cap W)
+        (total 0.0))
+    (let loop ((xs sorted) (c cap) (acc total))
+      (cond
+        ((null? xs) acc)
+        ((<= c 0) acc)
+        (else
+         (let ((wi (item-w (car xs)))
+               (vi (item-v (car xs))))
+           (cond
+             ((<= wi c)
+              (loop (cdr xs) (- c wi) (+ acc vi)))
+             (else
+              (loop (cdr xs) 0 (+ acc (* (/ vi wi) c)))))))))))
+
+;; Helper: build list of items from list of pairs
+(define (build-items pairs)
+  (if (null? pairs)
+      '()
+      (cons (make-item (car (car pairs)) (car (cdr (car pairs))))
+            (build-items (cdr pairs)))))
+
+;; Display float with decent precision
+(define (display-float x)
+  (display x))
+
+;; Run all cases
+(define (run-case n W pairs)
+  (let ((items (build-items pairs)))
+    (display "CASE")
+    (display (run-case-i))
+    (display "=")
+    (display-float (solve n W items))
+    (newline)))
+
+;; Counter for cases
+(define case-counter 0)
+(define (run-case-i)
+  (let ((c case-counter))
+    (set! case-counter (+ c 1))
+    c))
+
+;; CASE0: n=4, W=10
+(run-case 4 10 '((5 10) (4 40) (6 30) (3 50)))
+
+;; CASE1: n=1, W=5
+(run-case 1 5 '((10 100)))
+
+;; CASE2: n=3, W=50
+(run-case 3 50 '((10 60) (20 100) (30 120)))
+
+;; CASE3: n=5, W=10
+(run-case 5 10 '((2 3) (3 4) (4 5) (5 6) (1 1)))
+
+;; CASE4: n=2, W=0
+(run-case 2 0 '((1 10) (2 20)))
+
+;; CASE5: n=3, W=100
+(run-case 3 100 '((100 1) (100 2) (100 3)))
+
+;; CASE6: n=4, W=8
+(run-case 4 8 '((3 9) (4 12) (5 15) (2 4)))

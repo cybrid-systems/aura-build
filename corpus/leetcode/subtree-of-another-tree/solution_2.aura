@@ -1,0 +1,208 @@
+;; Subtree of Another Tree - Aura solution
+
+;; Tree representation: nodes are (val left right) or '()
+;; We need to parse s-expression input and check subtree.
+
+;; --- Parser for tree literals ---
+;; Tokenize then parse atoms
+(define (tokenize s)
+  (let loop ((i 0) (chars (string->list s)) (acc '()) (cur '()))
+    (cond
+      ((null? chars)
+       (if (null? cur)
+           (reverse acc)
+           (reverse (cons (list->string (reverse cur)) acc))))
+      (else
+       (let ((c (car chars)) (rest (cdr chars)))
+         (cond
+           ((or (char=? c #\space) (char=? c #\newline) (char=? c #\tab))
+            (if (null? cur)
+                (loop (+ i 1) rest acc '())
+                (loop (+ i 1) rest (cons (list->string (reverse cur)) acc) '())))
+           ((char=? c #\()
+            (loop (+ i 1) rest (cons "(" acc) '()))
+           ((char=? c #\))
+            (if (null? cur)
+                (loop (+ i 1) rest (cons ")" acc) '())
+                (loop (+ i 1) rest (cons ")" (cons (list->string (reverse cur)) acc)) '())))
+           (else
+            (loop (+ i 1) rest acc (cons c cur)))))))))
+
+(define (parse-tree tokens)
+  (let loop ((toks tokens))
+    (let ((tok (car toks)))
+      (cond
+        ((equal? tok "(")
+         (let ((first-tok (car (cdr toks))))
+           (cond
+             ((equal? first-tok ")")
+              '())  ;; empty tree ()
+             (else
+              ;; parse val left right )
+              (let* ((val (string->number first-tok))
+                     (rest1 (cdr (cdr toks)))
+                     (left (loop rest1))
+                     (after-left (advance rest1))
+                     (right (loop after-left))
+                     (after-right (advance after-left)))
+                (list val left right))))))
+        (else
+         (error "unexpected token in parse-tree"))))))
+
+;; helper: after parsing a tree, skip the closing paren
+(define (advance toks)
+  ;; toks starts right after parsed tree; should begin with ")"
+  (cdr toks))
+
+;; Top-level parse for "(solve <root> <sub>)"
+(define (parse-input s)
+  (let* ((toks (tokenize s))
+         (toks1 (cdr toks))        ;; skip (
+         (solve-tok (car toks1))   ;; "solve"
+         (toks2 (cdr toks1))
+         (root-tok-start toks2))
+    ;; parse root, then subroot
+    ;; root starts at car of root-tok-start, which must be "("
+    (let* ((root (parse-tree root-tok-start))
+           (after-root (advance root-tok-start))
+           (sub (parse-tree after-root))
+           (_ after-root))
+      (list root sub))))
+
+;; --- Tree operations ---
+;; A node is (val left right) ; empty tree is '()
+;; Accessors
+(define (val-of n) (car n))
+(define (left-of n) (car (cdr n)))
+(define (right-of n) (car (cdr (cdr n))))
+(define (empty-tree? t) (null? t))
+(define (node? t) (and (not (null? t)) (pair? t)))
+
+;; Equality of trees
+(define (same-tree? a b)
+  (cond
+    ((and (empty-tree? a) (empty-tree? b)) #t)
+    ((or (empty-tree? a) (empty-tree? b)) #f)
+    (else
+     (and (= (val-of a) (val-of b))
+          (same-tree? (left-of a) (left-of b))
+          (same-tree? (right-of a) (right-of b))))))
+
+;; Is sub a subtree of root?
+(define (subtree? root sub)
+  (cond
+    ((empty-tree? sub) #t)
+    ((empty-tree? root) #f)
+    (else
+     (or (same-tree? root sub)
+         (subtree? (left-of root) sub)
+         (subtree? (right-of root) sub)))))
+
+;; --- solve ---
+;; Reads CASE0 env var, parses, returns boolean
+(define (solve-from-case case-str)
+  (let* ((parsed (parse-input case-str))
+         (root (car parsed))
+         (sub (car (cdr parsed))))
+    (subtree? root sub)))
+
+;; Display boolean as "true" or "false"
+(define (display-bool b)
+  (display (if b "true" "false")))
+
+;; --- Main ---
+;; Read each CASE env var, call solve, print CASEi=<result>
+(define (run-case i)
+  (let ((var (string-append "CASE" (number->string i))))
+    (let ((val (getenv var)))
+      (if val
+          (let ((result (solve-from-case val)))
+            (display (string-append "CASE" (number->string i, "=")))
+            (display "=")
+            ;; actually format properly
+            (begin
+              (display (string-append "CASE" (number->string i)))
+              (display "=")
+              (display-bool result)
+              (newline)))
+          (display "")))))
+
+;; Fix display logic - simpler approach
+(define (run-case i)
+  (let ((var (string-append "CASE" (number->string i))))
+    (let ((val (getenv var)))
+      (if val
+          (let ((result (solve-from-case val)))
+            (display "CASE")
+            (display (number->string i))
+            (display "=")
+            (display-bool result)
+            (newline))
+          (display "")))))
+
+;; --- Test inputs ---
+;; CASE0: (solve (3 (4 (1 () ()) (2 () ())) (5 () ())) (4 (1 () ()) (2 () ())))
+;; expected: true
+;; CASE1: root has extra 0 node -> false
+;; CASE2: empty subroot -> true
+;; CASE3: both empty -> true
+;; CASE4: empty root, non-empty subroot -> false
+;; CASE5: deep tree, subroot at leaf -> true (if (3 ()) matches)
+;; CASE6: root (1 ()(2())) subroot (2 ()(3())) -> false (structure mismatch)
+;; CASE7: root (1 (2()())()) subroot (1()(2())) -> false
+
+;; We must embed inputs. Since we use getenv, but problem says stdin-less with embedded literals,
+;; let's actually embed test cases directly.
+
+(define (run-tests)
+  (let ((cases (list
+    "(solve (3 (4 (1 () ()) (2 () ())) (5 () ())) (4 (1 () ()) (2 () ())))"
+    "(solve (3 (4 (1 () ()) (2 () (0 () ()))) (5 () ())) (4 (1 () ()) (2 () ())))"
+    "(solve (1 (2 () ()) (3 () ())) ())"
+    "(solve () ())"
+    "(solve () (1 () ()))"
+    "(solve (1 () (2 () (3 () ()))) (3 () ()))"
+    "(solve (1 () (2 () ())) (2 () (3 () ())))"
+    "(solve (1 (2 () ()) ()) (1 () (2 () ())))")))
+    (let loop ((cs cases) (i 0))
+      (if (null? cs)
+          'done
+          (begin
+            (let ((result (solve-from-case (car cs))))
+              (display "CASE")
+              (display (number->string i))
+              (display "=")
+              (display-bool result)
+              (newline))
+            (loop (cdr cs) (+ i 1)))))))
+
+;; Wait - the problem says CASEi= is part of display, and uses getenv? Let me reread.
+;; "for each provided test input i=0..n-1, call solve and print: (display "CASEi=") ..."
+;; So we just iterate and print. Let's do it simply.
+
+;; Use embedded list of test strings:
+(define test-cases
+  (list
+    "(solve (3 (4 (1 () ()) (2 () ())) (5 () ())) (4 (1 () ()) (2 () ())))"
+    "(solve (3 (4 (1 () ()) (2 () (0 () ()))) (5 () ())) (4 (1 () ()) (2 () ())))"
+    "(solve (1 (2 () ()) (3 () ())) ())"
+    "(solve () ())"
+    "(solve () (1 () ()))"
+    "(solve (1 () (2 () (3 () ()))) (3 () ()))"
+    "(solve (1 () (2 () ())) (2 () (3 () ())))"
+    "(solve (1 (2 () ()) ()) (1 () (2 () ())))"))
+
+(define (main)
+  (let loop ((cs test-cases) (i 0))
+    (if (null? cs)
+        'done
+        (begin
+          (let ((result (solve-from-case (car cs))))
+            (display "CASE")
+            (display (number->string i))
+            (display "=")
+            (display-bool result)
+            (newline))
+          (loop (cdr cs) (+ i 1))))))
+
+(main)

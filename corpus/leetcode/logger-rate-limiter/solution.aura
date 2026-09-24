@@ -1,0 +1,109 @@
+(define (make-logger)
+  (let ((store '()))
+    (lambda (op)
+      (cond
+        ((equal? op 'reset) (set! store '()) #t)
+        ((equal? (car op) 'should-print)
+         (let* ((timestamp (car (cdr op)))
+                (message (car (cdr (cdr op))))
+                (prev (assoc message store)))
+           (cond
+             ((null? prev)
+              (set! store (cons (cons message timestamp) store))
+              #t)
+             (else
+              (let ((last-ts (cdr prev)))
+                (if (< (- timestamp last-ts) 10)
+                    #f
+                    (begin
+                      (set! store (cons (cons message timestamp)
+                                        (filter (lambda (p) (not (equal? (car p) message))) store)))
+                      #t)))))))
+        (else #f)))))
+
+(define (filter pred lst)
+  (cond
+    ((null? lst) '())
+    ((pred (car lst)) (cons (car lst) (filter pred (cdr lst))))
+    (else (filter pred (cdr lst)))))
+
+;; Process a list of lines, returning list of results
+(define (process-lines lines)
+  (let ((logger (make-logger)))
+    (map (lambda (line)
+           (cond
+             ((equal? line "INIT") (logger 'reset))
+             (else
+              (let ((parts (parse-should-print line)))
+                (logger (cons 'should-print parts)))))
+           )
+         lines)))
+
+(define (parse-should-print line)
+  ;; line format: SHOULD_PRINT <timestamp> "<message>"
+  ;; Extract timestamp (number after SHOULD_PRINT)
+  ;; and message (string in quotes)
+  (let* ((len (string-length line))
+         ;; find "SHOULD_PRINT " prefix
+         (after-sp-pos 13)
+         (rest1 (substring line after-sp-pos len))
+         (sp-pos (string-index rest1 #\space))
+         (ts-str (substring rest1 0 sp-pos))
+         (rest2 (substring rest1 (+ sp-pos 1) len))
+         (q1 (+ (string-index rest2 #\") 1))
+         (rest3 (substring rest2 q1 len))
+         (q2 (string-index rest3 #\"))
+         (msg (substring rest3 0 q2))
+         (ts (string->number ts-str)))
+    (list ts msg)))
+
+(define (string-index s ch)
+  (let ((len (string-length s)))
+    (let loop ((i 0))
+      (cond
+        ((>= i len) #f)
+        ((char=? (string-ref s i) ch) i)
+        (else (loop (+ i 1)))))))
+
+(define (substring s start end)
+  (let loop ((i (- (string-length s) 1)) (acc '()))
+    (cond
+      ((< i start) (list->string (reverse acc)))
+      ((>= i end) (loop (- i 1) acc))
+      (else (loop (- i 1) (cons (string-ref s i) acc))))))
+
+(define (solve case-input)
+  ;; case-input is association list: (("lines" . (list of strings)))
+  (let ((lines (cdr (assoc "lines" case-input))))
+    (process-lines lines)))
+
+(define (display-list lst)
+  (display "(")
+  (let loop ((l lst) (first #t))
+    (cond
+      ((null? l) (display ")"))
+      (else
+       (if first (set! first #f) (display " "))
+       (let ((v (car l)))
+         (cond
+           ((boolean? v) (display (if v "true" "false")))
+           ((number? v) (display (number->string v)))
+           ((string? v) (display v))
+           ((pair? v) (display-list v))
+           (else (display "null"))))
+       (loop (cdr l) first)))))
+
+;; Test cases
+(define (run-case i input)
+  (display (string-append "CASE" (number->string i) "="))
+  (display-list (solve input))
+  (newline))
+
+(run-case 0 '(("lines" "INIT" "SHOULD_PRINT 1 \"foo\"" "SHOULD_PRINT 2 \"bar\"" "SHOULD_PRINT 3 \"foo\"" "SHOULD_PRINT 8 \"foo\"" "SHOULD_PRINT 10 \"foo\"" "SHOULD_PRINT 11 \"foo\"")))
+(run-case 1 '(("lines" "INIT")))
+(run-case 2 '(("lines" "INIT" "SHOULD_PRINT 0 \"a\"" "SHOULD_PRINT 5 \"b\"" "SHOULD_PRINT 9 \"c\"" "SHOULD_PRINT 20 \"d\"")))
+(run-case 3 '(("lines" "INIT" "SHOULD_PRINT 0 \"msg\"" "SHOULD_PRINT 10 \"msg\"" "SHOULD_PRINT 20 \"msg\"")))
+(run-case 4 '(("lines" "INIT" "SHOULD_PRINT 100 \"hi\"" "SHOULD_PRINT 100 \"hi\"" "SHOULD_PRINT 100 \"hi\"" "SHOULD_PRINT 109 \"hi\"" "SHOULD_PRINT 110 \"hi\"")))
+(run-case 5 '(("lines" "INIT" "SHOULD_PRINT 1 \"x\"" "SHOULD_PRINT 1 \"y\"" "SHOULD_PRINT 5 \"x\"" "SHOULD_PRINT 11 \"y\"" "SHOULD_PRINT 11 \"x\"")))
+(run-case 6 '(("lines" "INIT" "SHOULD_PRINT 1 \"hello world\"" "SHOULD_PRINT 1000000000 \"hello world\"" "SHOULD_PRINT 1000000005 \"hello world\"" "SHOULD_PRINT 1000000015 \"hello world\"")))
+(run-case 7 '(("lines" "INIT" "SHOULD_PRINT 0 \"alpha\"" "SHOULD_PRINT 0 \"beta\"" "SHOULD_PRINT 10 \"alpha\"" "SHOULD_PRINT 10 \"beta\"" "SHOULD_PRINT 20 \"alpha\"" "SHOULD_PRINT 21 \"beta\"")))

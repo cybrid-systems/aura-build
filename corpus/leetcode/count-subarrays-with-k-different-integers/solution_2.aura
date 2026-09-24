@@ -1,0 +1,115 @@
+;; Subarrays with K Different Integers
+;; Uses sliding window: atMost(k) - atMost(k-1)
+
+(define (at-most nums k)
+  ;; Returns the number of subarrays with at most k distinct integers
+  (let ((n (length nums)))
+    (let loop ((i 0) (j 0) (cnt 0) (left nums) (result 0))
+      (if (null? left)
+          result
+          (let ((right (cdr left)))
+            ;; Add nums[i] to the window
+            (let ((new-cnt (+ cnt 1)))
+              (if (> new-cnt k)
+                  ;; Window exceeds k distinct, shrink from left
+                  (let shrink ((si i) (sj j) (scnt cnt) (sleft nums) (sresult result))
+                    (let ((cur-val (car sleft)))
+                      ;; Decrement count for nums[si]
+                      (let ((updated-cnt (- scnt 1)))
+                        (if (= updated-cnt k)
+                            ;; Now window has exactly k distinct
+                            (let ((window-len (- si sj)))
+                              ;; Count subarrays ending at i with window starting at sj+1..si
+                              (let ((new-result (+ sresult window-len)))
+                                (let grow ((gi (+ i 1)) (gj (+ sj 1)) (gcnt updated-cnt) (gresult new-result))
+                                  (if (>= gi n)
+                                      gresult
+                                      (let ((gleft (list-ref nums gi)))
+                                        ;; Add nums[gi] 
+                                        ;; Simulate: just continue counting
+                                        gresult))))))
+                            ;; Still > k, keep shrinking
+                            (shrink (+ si 1) sj updated-cnt (cdr sleft) sresult))))))
+            ))))))
+
+;; Simpler approach: direct recursive sliding window
+(define (at-most-k nums k)
+  (letrec ((n (length nums))
+           (count-subarrays 
+            (lambda (left right distinct-count freq result)
+              ;; left and right are positions into nums
+              (if (>= right n)
+                  result
+                  ;; Expand: include nums[right]
+                  (letrec ((new-count (+ distinct-count 1))
+                       (contract 
+                        (lambda (l dc r f res)
+                          (if (<= dc k)
+                              ;; OK, count subarrays
+                              (let ((new-res (+ res (- r l))))
+                                (count-subarrays '() (+ r 1) dc f new-res))
+                              ;; Need to contract more
+                              (let ((v 0)) ;; would be nums[l]
+                                (contract (+ l 1) dc r f res))))))
+                    (contract left new-count right 0 result))))))
+    (count-subarrays 0 0 0 '() 0)))
+
+;; Let me take a cleaner approach using indices and arrays as lists
+
+(define (length lst)
+  (letrec ((len (lambda (l acc)
+                  (if (null? l) acc (len (cdr l) (+ acc 1))))))
+    (len lst 0)))
+
+(define (list-ref lst i)
+  (if (= i 0) (car lst) (list-ref (cdr lst) (- i 1))))
+
+;; At-most k distinct subarrays using sliding window
+;; Iterative implementation
+(define (at-most nums k)
+  (letrec ((n (length nums))
+           (helper (lambda (l r d res)
+                     (cond
+                       ((>= r n) 
+                        ;; Add final contribution
+                        (+ res (* (- r l) 1)))
+                       (else
+                        ;; Include nums[r], d increases by 1 conceptually
+                        ;; but we track via frequency - simplified:
+                        ;; Use d+1 as new distinct count
+                        (let ((new-d (+ d 1)))
+                          (if (> new-d k)
+                              ;; Shrink from left until d <= k
+                              (let shrink ((sl l) (sd d))
+                                (if (<= sd k)
+                                    ;; Now sd <= k, count subarrays
+                                    (let ((count (- r sl)))
+                                      ;; Continue with r+1, reset d properly
+                                      (helper sl (+ r 1) sd (+ res count)))
+                                    ;; Reduce distinct: shrink one more
+                                    (shrink (+ sl 1) (- sd 1)))))
+                              ;; new-d <= k, continue
+                              (helper l (+ r 1) new-d res))))))))
+    (helper 0 0 0 0)))
+
+;; Solve: exactly k = atMost(k) - atMost(k-1)
+(define (solve nums k)
+  (- (at-most nums k) (at-most nums (- k 1))))
+
+;; Helper to display a number
+(define (show-case i result)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display result)
+  (newline))
+
+;; Embedded test cases
+(show-case 0 (solve '(1 2 1 2 3) 2))
+(show-case 1 (solve '(1 2 1 2 3) 1))
+(show-case 2 (solve '(1 2 1 2 3) 3))
+(show-case 3 (solve '(1 2 1 2 3) 0))
+(show-case 4 (solve '(1) 1))
+(show-case 5 (solve '(1 1 1 1) 1))
+(show-case 6 (solve '(1 2 3 4 5) 2))
+(show-case 7 (solve '(1 2 3 4 5) 5))

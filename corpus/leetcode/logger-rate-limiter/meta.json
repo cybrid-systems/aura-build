@@ -1,0 +1,69 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:51:58Z",
+      "ts_local": "2026-09-24 22:51:58 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 3017,
+        "total_characters": 0,
+        "prompt_tokens": 1651,
+        "completion_tokens": 1366,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 512
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.036,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "warning: unbalanced parentheses in input\n",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:52:22Z",
+      "ts_local": "2026-09-24 22:52:22 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 3652,
+        "total_characters": 0,
+        "prompt_tokens": 1651,
+        "completion_tokens": 2001,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 1408
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.038,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "warning: unbalanced parentheses in input\nerror: 5:6: unbound variable: else\n   |\n  5 |     (else i)))\n   |      ^^^^\n",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "logger-rate-limiter",
+  "title": "Logger Rate Limiter",
+  "category": "hashing",
+  "updated_at": "2026-09-24T14:52:22Z",
+  "updated_at_local": "2026-09-24 22:52:22 CST"
+}

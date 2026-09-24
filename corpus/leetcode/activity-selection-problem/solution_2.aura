@@ -1,0 +1,176 @@
+;; Activity Selection Problem - Greedy solution
+;; Select maximum number of non-overlapping activities by sorting by end time
+
+(define (solve)
+  (let* ((n (read-num))
+         (acts (read-acts n)))
+    (write-result (max-activities acts))))
+
+(define (read-num)
+  (string->number (read-token)))
+
+(define (read-token)
+  (let ((c (read-char)))
+    (if (or (eof-object? c) (char-whitespace? c))
+        (if (eof-object? c)
+            ""
+            (read-token))
+        (let loop ((c c) (acc ""))
+          (if (or (eof-object? c) (char-whitespace? c))
+              (begin (if (not (eof-object? c)) (unread-char c)) acc)
+              (loop (read-char) (string-append acc (string c))))))))
+
+(define (read-acts n)
+  (let loop ((i 0) (acc '()))
+    (if (>= i n)
+        (reverse acc)
+        (let ((s (read-num))
+              (e (read-num)))
+          (loop (+ i 1) (cons (cons s e) acc))))))
+
+(define (sort-acts acts)
+  ;; Sort by end time, then by start time as tie-breaker
+  (let ((sorted (sort-list acts (lambda (a b)
+                                   (let ((ea (cdr a)) (eb (cdr b)))
+                                     (if (= ea eb)
+                                         (< (car a) (car b))
+                                         (< ea eb)))))))
+    sorted))
+
+(define (sort-list lst cmp)
+  ;; Convert to mutable list for sort, use merge sort
+  (let* ((vec (list->vector lst))
+         (n (vector-length vec)))
+    (let msort ((lo 0) (hi n))
+      (if (<= (- hi lo) 1)
+          (begin
+            (vector-copy vec lo hi))
+          (let* ((mid (quotient (+ lo hi) 2))
+                 (left (msort lo mid))
+                 (right (msort mid hi))
+                 (result (make-vector (- hi lo) 0))
+                 (li 0) (ri 0) (ki 0))
+            (let merge-loop ((li 0) (ri 0) (ki 0))
+              (cond
+                ((and (< li (- mid lo)) (< ri (- hi mid)))
+                 (if (cmp (vector-ref left (+ lo li)) (vector-ref right (+ mid ri)))
+                     (begin
+                       (vector-set! result ki (vector-ref left (+ lo li)))
+                       (merge-loop (+ li 1) ri (+ ki 1)))
+                     (begin
+                       (vector-set! result ki (vector-ref right (+ mid ri)))
+                       (merge-loop li (+ ri 1) (+ ki 1)))))
+                ((< li (- mid lo))
+                 (vector-set! result ki (vector-ref left (+ lo li)))
+                 (merge-loop (+ li 1) ri (+ ki 1)))
+                ((< ri (- hi mid))
+                 (vector-set! result ki (vector-ref right (+ mid ri)))
+                 (merge-loop li (+ ri 1) (+ ki 1)))
+                (else
+                 (vector-copy result 0 (- hi lo))))
+              (begin (vector-copy result 0 (- hi lo))))))
+    (vector->list (vector-copy vec 0 n))))
+
+(define (max-activities acts)
+  (let ((sorted (sort-acts acts)))
+    (let loop ((rest sorted) (last-end 0) (count 0))
+      (cond
+        ((null? rest) count)
+        ((>= (car (car rest)) last-end)
+         (loop (cdr rest) (cdr (car rest)) (+ count 1)))
+        (else
+         (loop (cdr rest) last-end count))))))
+
+(define (write-result r)
+  (display r)
+  (newline))
+
+;; Simple stub implementations for vector operations
+(define (list->vector lst)
+  (let* ((len (length lst))
+         (v (make-vector len 0)))
+    (let loop ((l lst) (i 0))
+      (if (null? l)
+          v
+          (begin
+            (vector-set! v i (car l))
+            (loop (cdr l) (+ i 1)))))))
+
+(define (vector->list v)
+  (let ((len (vector-length v)))
+    (let loop ((i (- len 1)) (acc '()))
+      (if (< i 0)
+          acc
+          (loop (- i 1) (cons (vector-ref v i) acc))))))
+
+(define (vector-copy v start end)
+  (let* ((len (- end start))
+         (r (make-vector len 0)))
+    (let loop ((i 0))
+      (if (>= i len)
+          r
+          (begin
+            (vector-set! r i (vector-ref v (+ start i)))
+            (loop (+ i 1)))))))
+
+;; Test cases
+(define (run-tests)
+  (begin
+    ;; CASE0: 4 activities -> 3
+    (with-input "4\n1 3\n2 5\n4 7\n6 9"
+      (lambda ()
+        (display "CASE0=")
+        (display (solve))
+        (newline)))
+    ;; CASE1: 1 activity -> 1
+    (with-input "1\n0 1"
+      (lambda ()
+        (display "CASE1=")
+        (display (solve))
+        (newline)))
+    ;; CASE2: 3 activities -> 3
+    (with-input "3\n1 2\n2 3\n3 4"
+      (lambda ()
+        (display "CASE2=")
+        (display (solve))
+        (newline)))
+    ;; CASE3: 2 activities -> 1
+    (with-input "2\n1 5\n2 3"
+      (lambda ()
+        (display "CASE3=")
+        (display (solve))
+        (newline)))
+    ;; CASE4: 5 activities -> 2
+    (with-input "5\n0 5\n3 5\n4 6\n5 7\n6 8"
+      (lambda ()
+        (display "CASE4=")
+        (display (solve))
+        (newline)))
+    ;; CASE5: 4 activities -> 2
+    (with-input "4\n1 3\n1 3\n1 3\n3 5"
+      (lambda ()
+        (display "CASE5=")
+        (display (solve))
+        (newline)))
+    ;; CASE6: 6 activities -> 6
+    (with-input "6\n1 2\n2 3\n3 4\n4 5\n5 6\n6 7"
+      (lambda ()
+        (display "CASE6=")
+        (display (solve))
+        (newline)))
+    ;; CASE7: 3 activities -> 3
+    (with-input "3\n0 100\n1 2\n2 3"
+      (lambda ()
+        (display "CASE7=")
+        (display (solve))
+        (newline)))))
+
+(define (with-input str thunk)
+  (let ((old-input *current-input*))
+    (begin
+      (set! *current-input* (open-input-string str))
+      (thunk)
+      (close-input-port *current-input*)
+      (set! *current-input* old-input))))
+
+(run-tests)

@@ -1,0 +1,175 @@
+;; LRU Cache implementation using hash map + doubly linked list
+;; Uses mutable pairs so we can update prev/next pointers in O(1)
+
+(define (make-node key value prev next)
+  (cons (cons prev (cons value next)) key))
+
+(define (node-prev n) (car (car n)))
+(define (node-next n) (cdr (car n)))
+(define (node-val n) (car (cdr (car n))))
+(define (node-key n) (cdr n))
+
+(define (set-node-prev! n p) (set-car! (car n) p))
+(define (set-node-next! n x) (set-cdr! (car n) x))
+(define (set-node-val! n v) (set-car! (cdr (car n)) v))
+
+;; Helper: cdr of cdr
+(define (cddr x) (cdr (cdr x)))
+
+;; Create LRU cache as a mutable record stored in a global variable
+;; Using a single mutable pair: (size . ((map) head tail))
+;; We'll use set-car! / set-cdr! to mutate fields.
+
+(define (make-cache capacity)
+  ;; Build map as list; using a unique "sentinel" head/tail:
+  (let ((head (cons '() '()))   ; head is (prev . next) for sentinel
+        (tail (cons '() '())))
+    ;; initialize sentinels: head <-> tail
+    (set-car! head '())
+    (set-cdr! head tail)
+    (set-car! tail head)
+    (set-cdr! tail '())
+    (list capacity '() head tail)))
+
+(define (cache-cap c) (car c))
+(define (cache-map c) (car (cdr c)))
+(define (cache-head c) (car (cdr (cdr c))))
+(define (cache-tail c) (cdr (cdr (cdr c))))
+
+(define (set-cache-map! c m) (set-car! (cdr c) m))
+
+;; Remove node from its current position in the list
+(define (detach! node)
+  (let ((p (node-prev node))
+        (x (node-next node)))
+    (when (and p x)
+      (set-cdr! p x)
+      (set-car! x p))))
+
+;; Attach node right after head (becomes most recent)
+(define (attach-after-head! head node)
+  (let ((first (cdr head)))
+    (set-cdr! head node)
+    (set-node-prev! node head)
+    (set-node-next! node first)
+    (set-car! first node)))
+
+;; Find node for a key in map. Returns (find-key node) or #f.
+(define (find-node map key)
+  (cond ((null? map) #f)
+        ((equal? (car (car map)) key) (car map))
+        (else (find-node (cdr map) key))))
+
+;; Update map entry's value for key
+(define (map-put! map key val)
+  (cons (cons key val) (remove-key map key)))
+
+(define (remove-key map key)
+  (cond ((null? map) '())
+        ((equal? (car (car map)) key) (cdr map))
+        (else (cons (car map) (remove-key (cdr map) key)))))
+
+(define (set-map-entry! c key node)
+  (set-cache-map! c
+    (cons (cons key node)
+          (remove-key (cache-map c) key))))
+
+;; Get value for key; returns two values via pair: (found . value)
+(define (cache-get c key)
+  (let ((entry (find-node (cache-map c) key)))
+    (if entry
+        (let ((node (cdr entry)))
+          (detach! node)
+          (attach-after-head! (cache-head c) node)
+          (cons #t (node-val node)))
+        (cons #f -1))))
+
+;; Put key, value
+(define (cache-put c key value)
+  (let ((entry (find-node (cache-map c) key)))
+    (if entry
+        (let ((node (cdr entry)))
+          (set-node-val! node value)
+          (detach! node)
+          (attach-after-head! (cache-head c) node))
+        (begin
+          ;; Evict if at capacity
+          (when (= (length (cache-map c)) (cache-cap c))
+            (let ((tail (cache-tail c))
+                  (lru (car (cache-tail c))))
+              (when lru
+                (set-map-entry! c (node-key lru) #f)  ; remove from map
+                ;; remove the lru node from list
+                (let ((p (node-prev lru)))
+                  (set-cdr! p (cdr tail))
+                  (set-car! (cdr tail) p)))))
+          (let ((new-node (make-node key value '() '())))
+            (attach-after-head! (cache-head c) new-node)
+            (set-map-entry! c key new-node))))))
+
+;; Helper to update a map entry (since set-map-entry! above has a bug,
+;; let me rewrite cleanly)
+
+(define (cache-put c key value)
+  (let ((m (cache-map c)))
+    (let ((entry (find-node m key)))
+      (if entry
+          (let ((node (cdr entry)))
+            (set-node-val! node value)
+            (detach! node)
+            (attach-after-head! (cache-head c) node))
+          (begin
+            (when (= (length m) (cache-cap c))
+              ;; evict lru
+              (let* ((tail (cache-tail c))
+                     (lru (car tail)))
+                (when lru
+                  (set-cache-map! c (remove-key (cache-map c) (node-key lru)))
+                  (let ((p (node-prev lru)))
+                    (set-cdr! p (cdr tail))
+                    (set-car! (cdr tail) p)))))
+            (let ((new-node (make-node key value '() '())))
+              (attach-after-head! (cache-head c) new-node)
+              (set-cache-map! c
+                (cons (cons key new-node) (cache-map c)))))))))
+
+;; Process a list of operations, returning list of get-results
+(define (run-ops ops)
+  (let ((cache #f) (results '()))
+    (define (process op)
+      (let ((cmd (car op)))
+        (cond
+          ((equal? cmd "init")
+           (set! cache (make-cache (car (cdr op))))
+           (set! results results))
+          ((equal? cmd "put")
+           (cache-put cache (car (cdr op)) (car (cdr (cdr op)))))
+          ((equal? cmd "get")
+           (let ((r (cache-get cache (car (cdr op)))))
+             (set! results (cons (cdr r) results))))))
+    (for-each process (reverse ops))
+    ;; results accumulated in reverse; but we used set! which mutates
+    ;; Actually let me redo this differently
+    ))
+
+;; Simpler approach: explicit recursion over ops with accumulator
+(define (run-ops-aux ops cache results)
+  (if (null? ops)
+      (reverse results)
+      (let ((op (car ops)))
+        (let ((cmd (car op)))
+          (cond
+            ((equal? cmd "init")
+             (run-ops-aux (cdr ops) (make-cache (car (cdr op))) results))
+            ((equal? cmd "put")
+             (cache-put cache (car (cdr op)) (car (cdr (cdr op))))
+             (run-ops-aux (cdr ops) cache results))
+            ((equal? cmd "get")
+             (let ((r (cache-get cache (car (cdr op)))))
+               (run-ops-aux (cdr ops) cache (cons (cdr r) results)))))))))
+
+(define (run-ops ops) (run-ops-aux ops #f '()))
+
+;; Solve: input is a list of operations
+(define (solve input)
+  (run-ops input))

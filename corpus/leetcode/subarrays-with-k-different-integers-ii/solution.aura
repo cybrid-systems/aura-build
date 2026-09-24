@@ -1,0 +1,98 @@
+;; Sliding window: count subarrays with at most k distinct integers.
+;; Implemented with association lists as a frequency map.
+
+(define (make-map) '())
+
+(define (map-get m key)
+  (let ((p (assoc key m)))
+    (if p (cdr p) 0)))
+
+(define (map-set m key val)
+  (let ((p (assoc key m)))
+    (if p
+        (begin (set-cdr! p val) m)
+        (cons (cons key val) m))))
+
+(define (map-inc m key)
+  (map-set m key (+ (map-get m key) 1)))
+
+(define (map-dec m key)
+  (map-set m key (- (map-get m key) 1)))
+
+(define (count-distinct m)
+  (let loop ((rest m) (c 0))
+    (if (null? rest)
+        c
+        (loop (cdr rest) (+ c 1)))))
+
+(define (at-most-k nums k)
+  (if (<= k 0)
+      0
+      (let loop ((left 0) (right 0) (m (make-map)) (total 0))
+        (if (>= right (length nums))
+            total
+            (let* ((r-val (list-ref nums right))
+                   (m2 (map-inc m r-val)))
+              (let shrink ((l left) (mm m2))
+                (if (> (count-distinct mm) k)
+                    (let* ((l-val (list-ref nums l))
+                           (mm2 (map-dec mm l-val)))
+                      (shrink (+ l 1) mm2))
+                    (loop l (+ right 1) mm (+ total (- right l) 1))))))))))
+
+(define (solve nums k)
+  (at-most-k nums k))
+
+(define (display-list xs)
+  (display "(")
+  (let loop ((rest xs) (first #t))
+    (cond ((null? rest) (display ")"))
+          (else
+           (if first
+               (set! first #f)
+               (display " "))
+           (display (car rest))
+           (loop (cdr rest) first)))))
+
+(define (display-result r)
+  (display r))
+
+;; CASE 0: k=3, nums=[1,2,1,2,3]
+(display "CASE0=")
+(display-result (solve '(1 2 1 2 3) 3))
+(newline)
+
+;; CASE 1: k=2, nums=[1,2,1,2,3]
+(display "CASE1=")
+(display-result (solve '(1 2 1 2 3) 2))
+(newline)
+
+;; CASE 2: k=1, nums=[1,2,1,2,3]
+(display "CASE2=")
+(display-result (solve '(1 2 1 2 3) 1))
+(newline)
+
+;; CASE 3: k=0, nums=[1,2,3]
+(display "CASE3=")
+(display-result (solve '(1 2 3) 0))
+(newline)
+
+;; CASE 4: k=5, nums=[1,2,1,2,3]
+(display "CASE4=")
+(display-result (solve '(1 2 1 2 3) 5))
+(newline)
+
+;; CASE 5: k=2, nums=[1,1,1,1]
+(display "CASE5=")
+(display-result (solve '(1 1 1 1) 2))
+(newline)
+
+;; CASE 6: k=1, nums=[1,2,3,4,5]
+(display "CASE6=")
+(display-result (solve '(1 2 3 4 5) 1))
+(newline)
+
+;; CASE 7: k=3, nums=[1,2,3]
+(display "CASE7=")
+(display-result (solve '(1 2 3) 3))
+(newline)
