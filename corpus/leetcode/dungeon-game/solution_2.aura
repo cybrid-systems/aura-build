@@ -1,0 +1,101 @@
+;; Dungeon Game solution in Aura
+
+(define (length xs)
+  (if (null? xs) 0 (+ 1 (length (cdr xs)))))
+
+(define (list-ref xs i)
+  (if (= i 0) (car xs) (list-ref (cdr xs) i)))
+
+(define (min a b) (if (< a b) a b))
+(define (max a b) (if (> a b) a b))
+
+;; Build grid as list of rows, each row is a list of numbers
+(define (make-grid rows)
+  (if (null? rows) '()
+      (cons (car rows) (make-grid (cdr rows)))))
+
+(define (grid-rows g) g)
+(define (row-ref g i) (list-ref g i))
+(define (cell g i j)
+  (list-ref (list-ref g i) j))
+
+(define (nrows g) (length g))
+(define (ncols g) (length (list-ref g 0)))
+
+;; Compute min initial health using DP from bottom-right
+;; dp[i][j] = min health needed at cell (i,j) so that from here we can reach goal
+(define (solve grid)
+  (let* ((m (nrows grid))
+         (n (ncols grid)))
+    ;; We'll build dp from bottom row to top row, right to left
+    (letrec (
+      ;; compute dp value for cell (i,j) given the row below already computed
+      (compute-cell (lambda (i j dp-below)
+        (let* ((val (cell grid i j))
+               (ncols-loc n)
+               (move-right-needed 
+                 (if (< j (- ncols-loc 1))
+                     (list-ref (car dp-below) (+ j 1))
+                     #f))
+               (move-down-needed 
+                 (if (< i (- m 1))
+                     (list-ref (cdr dp-below) j)
+                     #f))
+               (next-needed 
+                 (cond
+                   ((and move-right-needed move-down-needed)
+                    (min move-right-needed move-down-needed))
+                   (move-right-needed move-right-needed)
+                   (move-down-needed move-down-needed)
+                   (else 1)))
+               (needed (- next-needed val)))
+          (if (< needed 1) 1 needed))))
+      
+      ;; compute one row's dp values from right to left
+      (compute-row (lambda (i dp-below)
+        (letrec ((loop (lambda (j acc)
+          (if (< j 0) acc
+              (loop (- j 1)
+                    (cons (compute-cell i j dp-below) acc))))))
+          (loop (- n 1) '()))))
+      
+      ;; compute dp for all rows from bottom to top
+      (compute-all (lambda (i acc-below)
+        (if (< i 0) acc-below
+            (let ((this-row (compute-row i acc-below)))
+              (compute-all (- i 1) (cons this-row acc-below))))))
+      
+      (final-dp (compute-all (- m 1) '()))
+    )
+    (list-ref (car final-dp) 0))))
+
+;; ---- Display helpers ----
+(define (display-list xs)
+  (display "[")
+  (letrec ((loop (lambda (xs first)
+    (cond ((null? xs) '())
+          (else
+           (if (not first) (display ",") '())
+           (display (car xs))
+           (loop (cdr xs) #f))))))
+    (loop xs #t))
+  (display "]"))
+
+;; ---- Test cases ----
+(define grid0 '((-2 -3 3) (-5 -10 1) (10 30 -5)))
+(define grid1 '((0)))
+(define grid2 '((-3)))
+(define grid3 '((1 2 3) (0 0 0)))
+(define grid4 '((-1 -1 -1) (-1 -1 -1) (-1 -1 -1)))
+(define grid5 '((100)))
+(define grid6 '((0 0 0) (0 0 0)))
+(define grid7 '((-2 1) (-3 1)))
+
+(display "CASE0=") (display (solve grid0)) (newline)
+(display "CASE1=") (display (solve grid1)) (newline)
+(display "CASE2=") (display (solve grid2)) (newline)
+(display "CASE3=") (display (solve grid3)) (newline)
+(display "CASE4=") (display (solve grid4)) (newline)
+(display "CASE5=") (display (solve grid5)) (newline)
+(display "CASE6=") (display (solve grid6)) (newline)
+(display "CASE7=") (display (solve grid7)) (newline)

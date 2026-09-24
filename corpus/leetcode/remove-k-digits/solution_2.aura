@@ -1,0 +1,70 @@
+(define (slist->string lst)
+  (if (null? lst)
+      ""
+      (string-append (string (car lst)) (slist->string (cdr lst)))))
+
+(define (string->list-of-chars s)
+  (let ((len (string-length s)))
+    (let loop ((i 0) (acc '()))
+      (if (>= i len)
+          (reverse acc)
+          (loop (+ i 1) (cons (string-ref s i) acc))))))
+
+(define (digit-char->num c)
+  (- (char->integer c) (char->integer #\0)))
+
+(define (solve num k)
+  (let* ((chars (string->list-of-chars num))
+         (n (length chars)))
+    (let loop ((i 0) (stack '()) (k-left k))
+      (cond
+        ((>= i n)
+         ;; finished; maybe trim k-left from end
+         (let loop2 ((s stack) (k2 k-left))
+           (if (or (= k2 0) (null? s))
+               s
+               (loop2 (cdr s) (- k2 1)))))
+        (else
+         (let* ((d (digit-char->num (list-ref chars i)))
+                (pop-loop
+                  (lambda (s kk)
+                    (if (and (> kk 0) (not (null? s))
+                             (> (car s) d))
+                        (pop-loop (cdr s) (- kk 1))
+                        (cons kk s)))))
+           (let* ((res (pop-loop stack k-left))
+                  (new-k (car res))
+                  (new-stack (cdr res)))
+             (loop (+ i 1) (cons d new-stack) new-k))))))
+    (let* ((final (let trim ((s (let loop ((i 0) (stack '()) (k-left k))
+                                (cond
+                                  ((>= i n)
+                                   (let loop2 ((ss stack) (k2 k-left))
+                                     (if (or (= k2 0) (null? ss))
+                                         ss
+                                         (loop2 (cdr ss) (- k2 1)))))
+                                  (else
+                                   (let* ((d (digit-char->num (list-ref chars i)))
+                                          (pop-loop
+                                            (lambda (ss kk)
+                                              (if (and (> kk 0) (not (null? ss))
+                                                       (> (car ss) d))
+                                                  (pop-loop (cdr ss) (- kk 1))
+                                                  (cons kk ss)))))
+                                     (let* ((res (pop-loop stack k-left))
+                                            (new-k (car res))
+                                            (new-stack (cdr res)))
+                                       (loop (+ i 1) (cons d new-stack) new-k)))))))
+                          (k2 0))
+                       (if (or (= k2 0) (null? s))
+                           s
+                           (trim (cdr s) (- k2 1)))))
+           (stripped
+             (let strip ((s final))
+               (cond
+                 ((null? s) '())
+                 ((= (car s) 0) (strip (cdr s)))
+                 (else s))))
+           (result (if (null? stripped) '(0) stripped))
+           (str (slist->string result)))
+      str)))

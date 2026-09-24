@@ -1,0 +1,162 @@
+;; Pacific Atlantic Water Flow
+;; Approach: BFS from Pacific edges and Atlantic edges inward (non-decreasing heights),
+;; then intersect reachable sets.
+
+(define (caar p) (car (car p)))
+(define (cadr p) (car (cdr p)))
+(define (cdar p) (cdr (car p)))
+(define (cddr p) (cdr (cdr p)))
+
+(define (make-grid m n)
+  (define g '())
+  (define i 0)
+  (cond ((= i m) g)
+        (else
+         (set! g (cons (make-list n #f) g))
+         (set! i (+ i 1))
+         (make-grid m n))))
+
+(define (grid-get g r c)
+  (list-ref (list-ref g r) c))
+
+(define (grid-set! g r c v)
+  (define row (list-ref g r))
+  (define new-row
+    (let loop ((i 0) (acc '()))
+      (cond ((= i n) (reverse acc))
+            ((= i c) (loop (+ i 1) (cons v acc)))
+            (else (loop (+ i 1) (cons (list-ref row i) acc))))))
+  (list-set! g r new-row))
+
+(define n 0)
+
+(define (bfs-reachable heights m n start-row start-col)
+  (define visited (make-grid m n))
+  (define queue '())
+  (define q-head '())
+  (define q-tail '())
+
+  ;; Initialize queue with edge cell(s)
+  (set! q-head (list (cons start-row start-col)))
+  (set! q-tail q-head)
+  (grid-set! visited start-row start-col #t)
+
+  (define (enqueue r c)
+    (set! q-tail (list-set! q-tail (length q-tail) (cons r c)))
+    (set! q-tail (cdr q-tail)))
+
+  ;; Actually, use a simple list as queue with pointer
+  ;; Redo: use a list and pop from front via accum
+  (define result '())
+  (set! result (cons (cons start-row start-col) result))
+
+  (let loop ((front q-head) (rest q-tail))
+    (cond ((null? front) 'done)
+          (else
+           (let ((cell (car front)) (rest2 (cdr front)))
+             (define r (car cell))
+             (define c (cdr cell))
+             (define h (list-ref (list-ref heights r) c))
+             ;; neighbors
+             (define neighbors '((0 . -1) (0 . 1) (-1 . 0) (1 . 0)))
+             (let nloop ((ns neighbors))
+               (cond ((null? ns) 'done)
+                     (else
+                      (let ((nb (car ns)))
+                        (define nr (+ r (car nb)))
+                        (define nc (+ c (cdr nb)))
+                        (cond ((and (>= nr 0) (< nr m) (>= nc 0) (< nc n))
+                               (cond ((not (grid-get visited nr nc))
+                                      (let ((nh (list-ref (list-ref heights nr) nc)))
+                                        (cond ((>= nh h)
+                                               (grid-set! visited nr nc #t)
+                                               (set! result (cons (cons nr nc) result))
+                                               (set! rest2 (append rest2 (list (cons nr nc)))))))))))))))))))
+
+           (loop rest2 rest2))))))
+
+  result))
+
+(define (solve heights)
+  (define m (length heights))
+  (cond ((= m 0) '())
+        (else
+         (define n (length (car heights))))
+         (set! n n)
+         ;; Compute reachable from Pacific (top row + left col)
+         ;; We start from each edge cell separately? Simpler: do multi-source BFS.
+         ;; Use a single BFS seeding all edge cells of Pacific.
+         (define pacific (bfs-multi heights m n
+                                    (lambda (r c) (or (= r 0) (= c 0)))))
+         (define atlantic (bfs-multi heights m n
+                                    (lambda (r c) (or (= r (- m 1)) (= c (- n 1))))))
+         ;; Intersect
+         (define answer '())
+         (let loop ((ps pacific))
+           (cond ((null? ps) answer)
+                 (else
+                  (define p (car ps))
+                  (define found
+                    (let inner ((as atlantic))
+                      (cond ((null? as) #f)
+                            ((and (= (caar as) (car p)) (= (cdar as) (cdr p))) (car as))
+                            (else (inner (cdr as)))))))
+                  (cond (found
+                         (set! answer (cons (list (car p) (cdr p)) answer)))))
+                  (loop (cdr ps))))))))
+
+;; Multi-source BFS: seed all cells matching predicate, then expand
+(define (bfs-multi heights m n pred?)
+  (define visited (make-grid m n))
+  (define queue '())
+  ;; Seed
+  (let seed ((r 0))
+    (cond ((= r m) 'done)
+          (else
+           (let inner ((c 0))
+             (cond ((= c n) 'done)
+                   (else
+                    (cond ((pred? r c)
+                           (grid-set! visited r c #t)
+                           (set! queue (append queue (list (cons r c)))))))
+                    (inner (+ c 1)))))
+           (seed (+ r 1)))))
+
+  ;; Process
+  (define result '())
+  (let seed2 ((r 0))
+    (cond ((= r m) 'done)
+          (else
+           (let inner ((c 0))
+             (cond ((= c n) 'done)
+                   (else
+                    (cond ((grid-get visited r c)
+                           (set! result (cons (cons r c) result)))))
+                    (inner (+ c 1)))))
+           (seed2 (+ r 1)))))
+
+  ;; BFS expansion: pop front repeatedly
+  (let process ((q queue))
+    (cond ((null? q) result)
+          (else
+           (define cell (car q))
+           (define rest-q (cdr q))
+           (define r (car cell))
+           (define c (cdr cell))
+           (define h (list-ref (list-ref heights r) c))
+           (define dirs '((-1 . 0) (1 . 0) (0 . -1) (0 . 1)))
+           (let dloop ((ds dirs))
+             (cond ((null? ds) 'done)
+                   (else
+                    (define d (car ds))
+                    (define nr (+ r (car d)))
+                    (define nc (+ c (cdr d)))
+                    (cond ((and (>= nr 0) (< nr m) (>= nc 0) (< nc n))
+                           (cond ((not (grid-get visited nr nc))
+                                 (define nh (list-ref (list-ref heights nr) nc))
+                                 (cond ((>= nh h)
+                                        (grid-set! visited nr nc #t)
+                                        (set! result (cons (cons nr nc) result))
+                                        (set! rest-q (append rest-q (list (cons nr nc)))))))))))
+                    (dloop (cdr ds)))))
+           (process rest-q)))))

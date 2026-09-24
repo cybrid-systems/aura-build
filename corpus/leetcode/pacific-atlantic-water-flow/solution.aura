@@ -1,0 +1,212 @@
+;; Pacific Atlantic Water Flow solution
+;; Performs BFS from Pacific edges and Atlantic edges, then intersects reachable cells.
+
+(define (list-length xs)
+  (if (null? xs) 0 (+ 1 (list-length (cdr xs)))))
+
+(define (list-ref xs i)
+  (if (= i 0) (car xs) (list-ref (cdr xs) (- i 1))))
+
+(define (make-2d m n init)
+  (let ((row (make-list n init)))
+    (make-list m row)))
+
+(define (grid-ref grid r c)
+  (list-ref (list-ref grid r) c))
+
+(define (grid-set! grid r c v)
+  (let loop ((cols (list '()))
+             (row-idx 0)
+             (row (list-ref grid r))
+             (result '()))
+    ;; This is overly complex; we'll use a different approach with mutable lists via set!
+    ;; Actually lists are immutable in Aura-like; but we have set! for bindings.
+    ;; We'll use vectors instead. But the problem gives lists.
+    ;; Let me use a simpler approach: just build new lists.
+    '()))
+
+;; Instead of mutation, build result by recursion with passed accumulator.
+;; BFS uses a queue (as a list). We'll do DFS with explicit stack.
+
+(define (reverse-list xs)
+  (let loop ((xs xs) (acc '()))
+    (if (null? xs) acc (loop (cdr xs) (cons (car xs) acc)))))
+
+(define (member? x xs)
+  (cond ((null? xs) #f)
+        ((equal? (car xs) x) #t)
+        (else (member? x (cdr xs)))))
+
+(define (append-l a b)
+  (if (null? a) b (cons (car a) (append-l (cdr a) b))))
+
+(define (in-list? x xs)
+  (cond ((null? xs) #f)
+        ((equal? (car xs) x) #t)
+        (else (in-list? x (cdr xs)))))
+
+;; BFS from a set of starting cells. heights is a list of lists.
+;; Returns a list of cells (each cell is a pair (r . c)) reachable from start.
+;; Walk condition: from (r,c) to (nr,nc) allowed only if heights[nr][nc] >= heights[r][c]
+;; (since water flows from high to low, going inward we need non-decreasing).
+(define (bfs-reachable heights m n starts)
+  ;; visited as list of cells
+  (let ((queue (reverse-list starts))  ;; so we pop in order
+        (visited '()))
+    (let loop ((queue queue)
+               (visited visited))
+      (if (null? queue) visited
+          (let* ((cell (car queue))
+                 (rest-q (cdr queue))
+                 (r (car cell))
+                 (c (cdr cell)))
+            (if (in-list? cell visited)
+                (loop rest-q visited)
+                (let ((new-visited (cons cell visited)))
+                  ;; explore neighbors
+                  (let ((nbrs
+                         (let ((acc '()))
+                           (let ((n1 (cons r (+ c 1))))
+                             (if (and (< (+ c 1) n)
+                                      (>= (grid-ref heights r (+ c 1))
+                                          (grid-ref heights r c)))
+                                 (set! acc (cons n1 acc))
+                                 acc))
+                           (let ((n2 (cons r (- c 1))))
+                             (if (and (>= (- c 1) 0)
+                                      (>= (grid-ref heights r (- c 1))
+                                          (grid-ref heights r c)))
+                                 (set! acc (cons n2 acc))
+                                 acc))
+                           (let ((n3 (cons (+ r 1) c)))
+                             (if (and (< (+ r 1) m)
+                                      (>= (grid-ref heights (+ r 1) c)
+                                          (grid-ref heights r c)))
+                                 (set! acc (cons n3 acc))
+                                 acc))
+                           (let ((n4 (cons (- r 1) c)))
+                             (if (and (>= (- r 1) 0)
+                                      (>= (grid-ref heights (- r 1) c)
+                                          (grid-ref heights r c)))
+                                 (set! acc (cons n4 acc))
+                                 acc))
+                           acc)))
+                    ;; filter neighbors not yet visited and add to queue
+                    (let loop2 ((nb nbrs) (acc '()))
+                      (if (null? nb) (append-l acc rest-q)
+                          (let ((cell2 (car nb)))
+                            (if (in-list? cell2 new-visited)
+                                (loop2 (cdr nb) acc)
+                                (loop2 (cdr nb) (cons cell2 acc))))))
+                    ;; actually we need to put new neighbors at end of queue
+                    (let ((new-queue
+                           (let loop2 ((nb nbrs) (q rest-q))
+                             (if (null? nb) q
+                                 (let ((cell2 (car nb)))
+                                   (if (in-list? cell2 new-visited)
+                                       (loop2 (cdr nb) q)
+                                       (loop2 (cdr nb) (append-l q (list cell2)))))))))
+                      (loop new-queue new-visited))))))))))
+
+;; main solver
+(define (solve heights)
+  (let ((m (list-length heights)))
+    (if (= m 0) '()
+        (let ((n (list-length (car heights))))
+          (if (= n 0) '()
+              (let ((pacific-starts
+                     (let ((acc '()))
+                       ;; top row
+                       (let loop ((c 0) (a acc))
+                         (if (= c n) a
+                             (loop (+ c 1) (cons (cons 0 c) a))))
+                       ;; left col
+                       (let loop ((r 1) (a acc))
+                         (if (= r m) a
+                             (loop (+ r 1) (cons (cons r 0) a))))
+                       acc)))
+                (let ((atlantic-starts
+                       (let ((acc '()))
+                         ;; bottom row
+                         (let loop ((c 0) (a acc))
+                           (if (= c n) a
+                               (loop (+ c 1) (cons (cons (- m 1) c) a))))
+                         ;; right col
+                         (let loop ((r 0) (a acc))
+                           (if (= r (- m 1)) a
+                               (loop (+ r 1) (cons (cons r (- n 1)) a))))
+                         acc)))
+                  (let ((p-set (bfs-reachable heights m n pacific-starts))
+                        (a-set (bfs-reachable heights m n atlantic-starts)))
+                    ;; intersect
+                    (let loop ((ps p-set) (acc '()))
+                      (if (null? ps) acc
+                          (let ((cell (car ps)))
+                            (if (in-list? cell a-set)
+                                (loop (cdr ps) (cons cell acc))
+                                (loop (cdr ps) acc)))))))))))))
+
+;; Display helpers for output - we need to print vectors like [r,c]
+(define (display-cell cell)
+  (display "[")
+  (display (car cell))
+  (display ",")
+  (display (cdr cell))
+  (display "]"))
+
+(define (display-list-of-cells xs)
+  (display "[")
+  (let loop ((xs xs) (first? #t))
+    (cond ((null? xs) (display "]"))
+          (else
+            (if first? (set! first? #f) (display ","))
+            (display-cell (car xs))
+            (loop (cdr xs) first?)))))
+
+;; Embedded test cases - call solve on each and print result.
+;; Note: Aura reads test inputs from embedded literals, no stdin needed.
+
+(define (run-cases)
+  (begin
+    ;; CASE 0
+    (display "CASE0=")
+    (display-list-of-cells
+     (solve '((1 2 2 3 5) (3 2 3 4 4) (2 4 5 3 1) (6 7 1 4 5) (5 1 1 2 4))))
+    (newline)
+
+    ;; CASE 1
+    (display "CASE1=")
+    (display-list-of-cells (solve '((1))))
+    (newline)
+
+    ;; CASE 2
+    (display "CASE2=")
+    (display-list-of-cells (solve '((1 2) (2 3))))
+    (newline)
+
+    ;; CASE 3
+    (display "CASE3=")
+    (display-list-of-cells (solve '((2 1) (1 2))))
+    (newline)
+
+    ;; CASE 4
+    (display "CASE4=")
+    (display-list-of-cells (solve '((1 2 3) (4 5 6) (7 8 9))))
+    (newline)
+
+    ;; CASE 5
+    (display "CASE5=")
+    (display-list-of-cells (solve '((10 10 10) (10 10 10) (10 10 10))))
+    (newline)
+
+    ;; CASE 6
+    (display "CASE6=")
+    (display-list-of-cells (solve '((1 2) (3 4))))
+    (newline)
+
+    ;; CASE 7
+    (display "CASE7=")
+    (display-list-of-cells (solve '((5 4 3) (4 3 2) (3 2 1))))
+    (newline)))
+
+(run-cases)

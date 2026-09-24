@@ -1,0 +1,12 @@
+(define (solve tasks)
+  (let* ((n (string-length tasks))
+         (counts (make-vector 26 0))
+         (ticks 0)
+         (queue '()))
+    ; count frequencies
+    (do ((i 0 (+ i 1))) ((= i n))
+      (let ((c (char-at tasks i)))
+        (vector-set! counts (- (char->int c) (char->int #\A))
+                     (+ (vector-ref counts (- (char->int c) (char->int #\A))) 1))))
+    ; simulate
+    ...))

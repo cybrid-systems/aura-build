@@ -1,0 +1,85 @@
+(define (string-ref s i)
+  (substring s i (+ i 1)))
+
+(define (string-length s)
+  (let loop ((i 0))
+    (if (= (string-ref s i) #\null) i (loop (+ i 1)))))
+
+(define (string-set s i c)
+  (string-append (substring s 0 i) (string c) (substring s (+ i 1) (string-length s))))
+
+(define (list->string lst)
+  (let loop ((l lst) (acc ""))
+    (if (null? l) acc (loop (cdr l) (string-append acc (string (car l)))))))
+
+(define (solve num k)
+  ;; Convert string to list of digits (as characters)
+  (define (string->list-of-chars s)
+    (let ((n (string-length s)))
+      (let loop ((i 0) (acc '()))
+        (if (>= i n) acc
+            (loop (+ i 1) (append acc (list (char->digit (string-ref s i)))))))))
+  
+  (define (char->digit c)
+    (- (char->integer c) 48))
+  
+  (define (digit->char d)
+    (integer->char (+ d 48)))
+  
+  (let* ((digits (string->list-of-chars num))
+         (n (length digits))
+         (k-remaining k))
+    ;; Build result using monotonic stack as list of digits
+    (let loop ((remaining digits)
+               (stack '())
+               (k k-remaining))
+      (cond
+        ((null? remaining)
+         ;; Done processing; may need to remove from end
+         (let ((trimmed (if (> k 0)
+                            (let trim-loop ((s stack) (k k))
+                              (if (or (= k 0) (null? s)) s
+                                  (trim-loop (cdr s) (- k 1))))
+                            stack)))
+           ;; Remove leading zeros
+           (let ((cleaned (let lead-loop ((s trimmed))
+                            (cond
+                              ((null? s) '(0))
+                              ((= (car s) 0) (lead-loop (cdr s)))
+                              (else s)))))
+             (if (null? cleaned) "0"
+                 (list->string (map digit->char cleaned))))))
+        (else
+         (let ((d (car remaining)))
+           (if (and (> k 0) (not (null? stack)) (< (car stack) d))
+               ;; Wait, we want to pop if previous > current
+               ;; Pop while top > current and k > 0
+               (let pop-loop ((s stack) (k k))
+                 (cond
+                   ((or (= k 0) (null? s))
+                    (loop (cdr remaining) (append s (list d)) k))
+                   ((null? (cdr s))
+                    (if (> (car s) d)
+                        (pop-loop '() (- k 1))
+                        (loop (cdr remaining) (append s (list d)) k)))
+                   ((> (car s) d)
+                    (pop-loop (cdr s) (- k 1)))
+                   (else
+                    (loop (cdr remaining) (append s (list d)) k))))
+               (loop (cdr remaining) (append stack (list d)) k))))))))
+
+(define (run-case i num k)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve num k))
+  (newline))
+
+(run-case 0 "1432219" 3)
+(run-case 1 "10200" 1)
+(run-case 2 "10" 2)
+(run-case 3 "112" 1)
+(run-case 4 "9" 1)
+(run-case 5 "100000" 1)
+(run-case 6 "1234567890" 9)
+(run-case 7 "10001" 4)

@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:42:45Z",
+      "ts_local": "2026-09-24 22:42:45 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1629,
+        "total_characters": 0,
+        "prompt_tokens": 1002,
+        "completion_tokens": 627,
+        "prompt_tokens_details": {
+          "cached_tokens": 528
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": -6,
+      "timeout": false,
+      "duration_s": 0.041,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "\n=== AURA CRASH: SIGABRT (signal 6) si_addr=0x3e8003edfe5 si_code=-6 ip=0x7f7fe9ca8d0c sp=0x7ffd544dbd50 ===\nFaulting IP: 0x7f7fe9ca8d0c (no symbol; -rdynamic missing or stripped)\nsi_addr 0x3e8003edfe5 is outside any loaded module (use-after-free or uninit ptr?)\nResolve with: addr2line -e aura -f -C <ip> <si_addr>\n\u0000=== END CRASH ===\n",
+      "stdout_snippet": "CASE0=555551540\nCASE1=632755510\nCASE2=63165154560\nCASE3=480\nCASE4=490\nCASE5=54280\nCASE6="
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:42:59Z",
+      "ts_local": "2026-09-24 22:42:59 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 4169,
+        "total_characters": 0,
+        "prompt_tokens": 1002,
+        "completion_tokens": 3167,
+        "prompt_tokens_details": {
+          "cached_tokens": 1001
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.144,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=#t\n"
+    }
+  ],
+  "slug": "maximum-swap",
+  "title": "Maximum Swap",
+  "category": "greedy",
+  "updated_at": "2026-09-24T14:42:59Z",
+  "updated_at_local": "2026-09-24 22:42:59 CST"
+}

@@ -1,0 +1,175 @@
+(define (solve begin-word end-word word-list)
+  (let* ((word-set (remove-duplicates word-list))
+         (contains-end? (member end-word word-set)))
+    (if (not contains-end?)
+        0
+        (if (equal? begin-word end-word)
+            1
+            (let* ((len (string-length begin-word))
+                   (queue (list (cons begin-word 1)))
+                   (visited (list begin-word))
+                   (result (bfs-search begin-word end-word word-set visited queue len)))
+              result)))))
+
+(define (bfs-search begin-word end-word word-set visited queue len)
+  (if (null? queue)
+      0
+      (let* ((front (car queue))
+             (word (car front))
+             (depth (cdr front))
+             (rest (cdr queue)))
+        (if (equal? word end-word)
+            depth
+            (let ((new-frontier (get-neighbors word len)))
+              (let loop ((nf new-frontier)
+                         (q rest)
+                         (v visited))
+                (if (null? nf)
+                    (bfs-search begin-word end-word word-set v q len)
+                    (let* ((nbr (car nf))
+                           (rest-nbr (cdr nf))
+                           (in-visited? (member nbr v))
+                           (in-set? (member nbr word-set)))
+                      (if (and (not in-visited?) in-set)
+                          (loop rest-nbr
+                                (append q (list (cons nbr (+ depth 1))))
+                                (cons nbr v))
+                          (loop rest-nbr q v))))))))))
+
+(define (get-neighbors word len)
+  (let loop ((i 0)
+             (acc '()))
+    (if (= i len)
+        acc
+        (let* ((prefix (substring word 0 i))
+               (suffix (substring word (+ i 1) len))
+               (pattern (string-append prefix "*" suffix))
+               (rest-acc (loop (+ i 1) acc)))
+          (cons pattern rest-acc)))))
+
+(define (substring s start end)
+  (let loop ((i 0)
+             (k 0)
+             (acc '()))
+    (if (= k (string-length s))
+        (list->string (reverse acc))
+        (let ((c (string-ref s k)))
+          (if (and (>= k start) (< k end))
+              (loop (+ i 1) (+ k 1) (cons c acc))
+              (loop i (+ k 1) acc))))))
+
+(define (remove-duplicates lst)
+  (cond ((null? lst) '())
+        ((member (car lst) (cdr lst)) (remove-duplicates (cdr lst)))
+        (else (cons (car lst) (remove-duplicates (cdr lst))))))
+
+(define (member x lst)
+  (cond ((null? lst) #f)
+        ((equal? x (car lst)) lst)
+        (else (member x (cdr lst)))))
+
+(define (append a b)
+  (if (null? a) b (cons (car a) (append (cdr a) b))))
+
+;; --- I/O helpers ---
+
+(define (parse-word-list s)
+  (split-string s ","))
+
+(define (split-string s delim)
+  (let ((len (string-length s)))
+    (let loop ((i 0)
+               (start 0)
+               (acc '()))
+      (if (= i len)
+          (reverse (cons (substring-i s start len) acc))
+          (let ((c (string-ref s i)))
+            (if (equal? (make-string-1 delim) (make-string-1 c))
+                (loop (+ i 1) (+ i 1) (cons (substring-i s start i) acc))
+                (loop (+ i 1) start acc)))))))
+
+(define (substring-i s start end)
+  (let loop ((k start)
+             (acc '()))
+    (if (= k end)
+        (list->string (reverse acc))
+        (loop (+ k 1) (cons (string-ref s k) acc)))))
+
+(define (make-string-1 c)
+  (list->string (list c)))
+
+(define (list->string lst)
+  (let loop ((l lst)
+             (acc '()))
+    (if (null? l)
+        (list->string-reverse acc 0 0)
+        (loop (cdr l) (cons (char->int (car l)) acc)))))
+
+(define (char->int c) c)
+
+(define (list->string-reverse lst n total)
+  (if (null? lst)
+      (build-string lst total)
+      lst))
+
+;; Use a simpler implementation: list of chars -> string
+(define (chars->string lst)
+  (reverse-string-helper lst (string-length "")))
+
+(define (string-length s)
+  (let loop ((i 0)) 
+    (if (>= i 1000) i 
+        (if (and (< i (max-len s)) (char-exists? s i)) 
+            (loop (+ i 1)) i)))
+
+(define (max-len s) 1000000)
+(define (char-exists? s i) #t)
+
+;; Simple string-length: use the convention that input strings have known lengths.
+;; For this problem, just iterate via substring.
+
+;; Final: solve each case by embedding input.
+;; We need explicit parsing of each case string.
+
+;; Cases data:
+(define case0-begin "hit")
+(define case0-end   "cog")
+(define case0-list  (list "hot" "dot" "dog" "lot" "log" "cog"))
+
+(define case1-begin "hit")
+(define case1-end   "cog")
+(define case1-list  (list "hot" "dot" "dog" "lot" "log"))
+
+(define case2-begin "a")
+(define case2-end   "c")
+(define case2-list  (list "a" "b" "c"))
+
+(define case3-begin "hot")
+(define case3-end   "dog")
+(define case3-list  (list "hot" "dog"))
+
+(define case4-begin "ab")
+(define case4-end   "cd")
+(define case4-list  (list "ab" "cb" "cd"))
+
+(define case5-begin "hit")
+(define case5-end   "hit")
+(define case5-list  (list "hit"))
+
+(define case6-begin "aaa")
+(define case6-end   "bbb")
+(define case6-list  (list "aab" "aba" "abb" "bbb"))
+
+(define case7-begin "qa")
+(define case7-end   "sq")
+(define case7-list  (list "si" "go" "se" "cm" "so" "ph" "mt" "db" "mb" "sb" "kr" "ln" "tm" "le" "av" "sm" "ar" "ci" "ca" "br" "ti" "ba" "to" "ra" "fa" "yo" "ow" "mh" "fp" "or" "ua" "lb" "ly" "ht" "wa" "er" "la" "sr" "dl" "ro" "wa" "ln" "ed" "ki" "hm" "wb" "el" "mb" "oa" "fa" "qy" "sq" "re" "rb" "fo" "sq" "ka" "oe" "po" "ho" "hb" "mr" "sc" "qd" "ti" "re" "bp" "ka" "ko" "si" "ho" "ca" "re" "qd" "lb" "ka" "qd" "re" "bp" "si" "ho" "ca" "re" "qd" "sq"))
+
+;; Output
+(display "CASE0=") (display (solve case0-begin case0-end case0-list)) (newline)
+(display "CASE1=") (display (solve case1-begin case1-end case1-list)) (newline)
+(display "CASE2=") (display (solve case2-begin case2-end case2-list)) (newline)
+(display "CASE3=") (display (solve case3-begin case3-end case3-list)) (newline)
+(display "CASE4=") (display (solve case4-begin case4-end case4-list)) (newline)
+(display "CASE5=") (display (solve case5-begin case5-end case5-list)) (newline)
+(display "CASE6=") (display (solve case6-begin case6-end case6-list)) (newline)
+(display "CASE7=") (display (solve case7-begin case7-end case7-list)) (newline)

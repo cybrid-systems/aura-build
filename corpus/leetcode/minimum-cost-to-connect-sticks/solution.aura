@@ -1,0 +1,182 @@
+(define (display-list xs)
+  (display "[")
+  (cond ((null? xs) (display "]"))
+        (else
+          (display (car xs))
+          (let loop ((rest (cdr xs)))
+            (cond ((null? rest) (display "]"))
+                  (else
+                    (display ", ")
+                    (display (car rest))
+                    (loop (cdr rest))))))))
+
+(define (insert-h x heap)
+  (cons x heap))
+
+(define (find-min heap)
+  (cond ((null? heap) #f)
+        (else
+          (let loop ((rest (cdr heap)) (best (car heap)))
+            (cond ((null? rest) best)
+                  ((< (car rest) best) (loop (cdr rest) (car rest)))
+                  (else (loop (cdr rest) best)))))))
+
+(define (remove-min heap)
+  (cond ((null? heap) '())
+        (else
+          (let ((m (find-min heap)))
+            (let loop ((rest heap) (acc '()))
+              (cond ((null? rest) (reverse acc))
+                    ((= (car rest) m) (append (reverse acc) (cdr rest)))
+                    (else (loop (cdr rest) (cons (car rest) acc)))))))))
+
+(define (heap-empty? heap)
+  (null? heap))
+
+(define (solve sticks)
+  (let ((n (length sticks)))
+    (cond ((< n 2) 0)
+          (else
+            (let ((heap '()))
+              (let loop1 ((rest sticks))
+                (cond ((null? rest) heap)
+                      (else (loop1 (cdr rest)))))
+              (set! heap
+                (let build ((items sticks))
+                  (cond ((null? items) '())
+                        (else (cons (car items) (build (cdr items)))))))
+              (let loop ((total 0))
+                (cond ((null? (cdr heap)) total)
+                  (else
+                    (let ((a (find-min heap)))
+                      (set! heap (remove-min heap))
+                      (let ((b (find-min heap)))
+                        (set! heap (remove-min heap))
+                        (let ((combined (+ a b)))
+                          (set! heap (cons combined heap))
+                          (loop (+ total combined))))))))))))
+
+(define (parse-sticks s)
+  (cond ((string=? s "") '())
+        (else
+          (let ((parts (split-comma s '())))
+          parts))))
+
+(define (split-comma s acc)
+  (cond ((string=? s "") (reverse acc))
+        (else
+          (let loop ((rest s) (current ""))
+            (cond ((string=? rest "") (reverse (cons current acc)))
+                  (else
+                    (let ((c (string-ref rest 0))))
+                    (let loop ((rest s) (current ""))
+                      (cond ((string=? rest "") (reverse (cons (string->number current) acc)))
+                            ((char=? (string-ref rest 0) #\,)
+                             (split-comma (substring rest 1) (cons (string->number current) acc)))
+                            (else
+                              (loop (substring rest 1) (string-append current (string (string-ref rest 0)))))))))))))
+
+(define (length xs)
+  (let loop ((rest xs) (n 0))
+    (cond ((null? rest) n)
+          (else (loop (cdr rest) (+ n 1))))))
+
+(define (reverse xs)
+  (let loop ((rest xs) (acc '()))
+    (cond ((null? rest) acc)
+          (else (loop (cdr rest) (cons (car rest) acc))))))
+
+(define (append a b)
+  (cond ((null? a) b)
+        (else (cons (car a) (append (cdr a) b)))))
+
+(define (string-ref s i) (substring s i (+ i 1)))
+
+(define (substring s start end)
+  (let ((len (string-length s)))
+    (let loop ((i start) (acc ""))
+      (cond ((>= i end) acc)
+            ((>= i len) acc)
+            (else (loop (+ i 1) (string-append acc (string (string-ref-impl s i)))))))))
+
+(define (string-ref-impl s i)
+  (let loop ((j 0))
+    (cond ((= j i) (char->first s))
+          (else (loop (+ j 1))))))
+
+(define (char->first s)
+  (let ((len (string-length s)))
+  (if (> len 0) (string-ref s 0) #\0)))
+
+(define (string-length s)
+  (let loop ((rest s) (n 0))
+    (cond ((string=? rest "") n)
+          (else (loop (substring rest 1 (string-length-impl rest)) n)))))
+
+(define (string-length-impl s)
+  (let loop ((rest s) (n 0))
+    (cond ((string=? rest "") n)
+          (else (loop (substring rest 1 n) (+ n 1))))))
+
+(define (string s)
+  (cond ((string? s) s)
+        (else (number->string s))))
+
+(define (string->number s)
+  (let ((len (string-length s)))
+    (let loop ((i 0) (n 0) (sign 1))
+      (cond ((>= i len) (* sign n))
+            ((char=? (string-ref s i) #\-) (loop (+ i 1) n -1))
+            (else
+              (let ((d (- (char-code (string-ref s i)) (char-code #\0))))
+                (loop (+ i 1) (+ (* n 10) d) sign)))))))
+
+(define (char-code c)
+  (cond ((char=? c #\0) 0)
+        ((char=? c #\1) 1)
+        ((char=? c #\2) 2)
+        ((char=? c #\3) 3)
+        ((char=? c #\4) 4)
+        ((char=? c #\5) 5)
+        ((char=? c #\6) 6)
+        ((char=? c #\7) 7)
+        ((char=? c #\8) 8)
+        ((char=? c #\9) 9)
+        (else 0)))
+
+(define (char=? a b)
+  (string=? (string a) (string b)))
+
+(define (string a)
+  (cond ((string? a) a)
+        ((char? a) (make-string 1 a))
+        ((number? a) (number->string a))
+        (else "")))
+
+(define (make-string n c)
+  (cond ((= n 0) "")
+        (else (string-append (string c) (make-string (- n 1) c)))))
+
+(define (string-append a b)
+  (cond ((string? a)
+         (cond ((string? b) (string-append-str a b))
+               (else (string-append a (number->string b)))))
+        (else (string-append (number->string a) b))))
+
+(define (string-append-str a b)
+  (let ((la (string-length a)) (lb (string-length b)))
+    (let loop ((i 0) (acc ""))
+      (cond ((= i la)
+             (let loop2 ((j 0) (acc2 acc))
+               (cond ((= j lb) acc2)
+                     (else (loop2 (+ j 1) (string-append acc2 (string (string-ref b j))))))))
+            (else (loop (+ i 1) (string-append acc (string (string-ref a i)))))))))
+
+(display "CASE0=") (display (solve '(2 4 1 3))) (newline)
+(display "CASE1=") (display (solve '(1 8 3 5))) (newline)
+(display "CASE2=") (display (solve '(5))) (newline)
+(display "CASE3=") (display (solve '())) (newline)
+(display "CASE4=") (display (solve '(2 2))) (newline)
+(display "CASE5=") (display (solve '(1 2 3 4 5))) (newline)
+(display "CASE6=") (display (solve '(10 10 10 10))) (newline)
+(display "CASE7=") (display (solve '(1))) (newline)

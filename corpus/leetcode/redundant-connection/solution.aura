@@ -1,0 +1,85 @@
+;; Redundant Connection solver using Union-Find.
+;; Finds the first edge (in input order) that creates a cycle.
+
+(define (make-parent n)
+  ;; parent vector: list 1..n each initially maps to itself
+  (let loop ((i 1) (acc '()))
+    (if (> i n)
+        acc
+        (loop (+ i 1) (cons i acc)))))
+
+(define (find parent x)
+  (cond ((null? parent) #f)
+        ((= (car parent) x) x)
+        (else (find (cdr parent) x))))
+
+(define (uf-find parent x)
+  ;; iterative find without path compression for simplicity
+  (let loop ((cur x))
+    (let ((p (find parent cur)))
+      (if (= p cur)
+          cur
+          (loop p)))))
+
+(define (uf-union parent a b)
+  ;; returns updated parent list and a boolean indicating if union happened
+  (let ((ra (uf-find parent a))
+        (rb (uf-find parent b)))
+    (if (= ra rb)
+        (cons parent #f)              ;; already connected -> cycle edge
+        (cons (replace-parent parent ra rb) #t))))
+
+(define (replace-parent parent old new)
+  ;; replace first occurrence of 'old' with 'new' in parent list
+  (cond ((null? parent) '())
+        ((= (car parent) old) (cons new (cdr parent)))
+        (else (cons (car parent) (replace-parent (cdr parent) old new)))))
+
+(define (solve n edges)
+  (let loop ((es edges) (parent (make-parent n)))
+    (if (null? es)
+        '(0 0)            ;; shouldn't happen for valid input
+        (let* ((edge (car es))
+               (u (car edge))
+               (v (cdr edge))
+               (result (uf-union parent u v)))
+          (if (cdr result)
+              (loop (cdr es) (car result))
+              (list u v))))))
+
+;; ---- display helpers ----
+
+(define (display-pair p)
+  (display (car p))
+  (display " ")
+  (display (cdr p)))
+
+;; Edge pairs in input are given as (u . v) dotted pairs / lists.
+;; Our solve returns (u v) as a two-element list (cons). display-pair works on either.
+
+;; ---- embedded test cases ----
+;; We represent edges as cons pairs.
+
+(define CASE0 3 '((1 . 2) (2 . 3) (1 . 3)))
+(define CASE1 4 '((1 . 2) (1 . 3) (1 . 4) (3 . 4)))
+(define CASE2 5 '((1 . 2) (2 . 3) (3 . 4) (4 . 5) (2 . 5)))
+(define CASE3 5 '((1 . 2) (2 . 3) (3 . 1) (1 . 4) (4 . 5)))
+(define CASE4 2 '((1 . 2) (1 . 2)))
+(define CASE5 6 '((1 . 2) (2 . 3) (3 . 4) (4 . 5) (5 . 6) (2 . 6)))
+(define CASE6 4 '((2 . 1) (3 . 1) (4 . 1) (2 . 4)))
+(define CASE7 7 '((1 . 2) (2 . 3) (3 . 4) (4 . 5) (5 . 6) (6 . 7) (3 . 7) (4 . 6)))
+
+(define (run-case n edges label)
+  (display label)
+  (display "=")
+  (display-pair (solve n edges))
+  (newline))
+
+(run-case 3 CASE0 "CASE0")
+(run-case 4 CASE1 "CASE1")
+(run-case 5 CASE2 "CASE2")
+(run-case 5 CASE3 "CASE3")
+(run-case 2 CASE4 "CASE4")
+(run-case 6 CASE5 "CASE5")
+(run-case 4 CASE6 "CASE6")
+(run-case 7 CASE7 "CASE7")

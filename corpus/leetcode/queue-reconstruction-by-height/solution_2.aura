@@ -1,0 +1,70 @@
+(define (solve people)
+  ;; Sort by height descending; for ties, keep stable order.
+  ;; Then insert each person at index k into the result list.
+  (let* ((sorted (sort-desc people))
+         (result '()))
+    (define (insert-at lst idx val)
+      (if (= idx 0)
+          (cons val lst)
+          (cons (car lst) (insert-at (cdr lst) (- idx 1) val))))
+    (define (loop lst)
+      (if (null? lst)
+          result
+          (begin
+            (set! result (insert-at result (cadar lst) (car lst)))
+            (loop (cdr lst)))))
+    (loop sorted)))
+
+(define (sort-desc lst)
+  ;; Insertion sort descending by height (car of pair).
+  (define (insert x sorted)
+    (cond ((null? sorted) (cons x '()))
+          ((> (car x) (caar sorted))
+           (cons x sorted))
+          (else (cons (car sorted) (insert x (cdr sorted))))))
+  (define (loop s rest)
+    (if (null? rest)
+        s
+        (loop (insert (car rest) s) (cdr rest))))
+  (loop '() lst))
+
+(define (display-list lst)
+  (display "[")
+  (define (loop l)
+    (cond ((null? l) #t)
+          (else
+           (display (car l))
+           (if (not (null? (cdr l))) (display " "))
+           (loop (cdr l)))))
+  (loop lst)
+  (display "]"))
+
+(define (display-people lst)
+  (display "[")
+  (define (loop l)
+    (cond ((null? l) #t)
+          (else
+           (display-list (car l))
+           (if (not (null? (cdr l))) (display " "))
+           (loop (cdr l)))))
+  (loop lst)
+  (display "]"))
+
+;; Test cases
+(define case0 '((7 0) (4 4) (7 1) (5 0) (6 1) (5 2)))
+(define case1 '())
+(define case2 '((1 0)))
+(define case3 '((5 0) (4 0) (3 0) (2 0) (1 0)))
+(define case4 '((6 0) (5 1) (4 2) (3 3) (2 4) (1 5)))
+(define case5 '((10 0) (10 1) (10 2) (10 3)))
+(define case6 '((100 0) (90 1) (80 2) (70 3) (60 4)))
+(define case7 '((5 0) (5 1) (5 2) (4 0) (4 1) (4 2) (3 0)))
+
+(display "CASE0=") (display-people (solve case0)) (newline)
+(display "CASE1=") (display-people (solve case1)) (newline)
+(display "CASE2=") (display-people (solve case2)) (newline)
+(display "CASE3=") (display-people (solve case3)) (newline)
+(display "CASE4=") (display-people (solve case4)) (newline)
+(display "CASE5=") (display-people (solve case5)) (newline)
+(display "CASE6=") (display-people (solve case6)) (newline)
+(display "CASE7=") (display-people (solve case7)) (newline)

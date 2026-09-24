@@ -1,0 +1,75 @@
+;; Course Schedule solution in Aura
+;; Uses DFS with three-color marking for cycle detection.
+
+(define (make-vector n val)
+  (let ((v '()))
+    (let loop ((i 0))
+      (if (= i n)
+          (list->vector (reverse v))
+          (loop (+ i 1))))))
+
+(define vec-set
+  (lambda (v i val)
+    (vector-set! v i val)))
+
+(define vec-ref
+  (lambda (v i)
+    (vector-ref v i)))
+
+;; Build adjacency list: for each node i, list of (a, b) means b -> a
+;; So we build for each b, the list of a's (outgoing neighbors).
+(define (build-graph N prereqs)
+  (let ((adj (make-vector N '())))
+    (let loop ((ps prereqs))
+      (if (null? ps)
+          adj
+          (let ((p (car ps)))
+            (let ((a (car p)) (b (cadr p)))
+              (vec-set adj b (cons a (vec-ref adj b)))
+              (loop (cdr ps))))))))
+
+;; Three-color DFS: 0 = unvisited, 1 = in stack (gray), 2 = done (black)
+(define (has-cycle? adj N)
+  (let ((color (make-vector N 0))
+        (result #f))
+    (define (dfs u)
+      (vec-set color u 1)
+      (let ((neighbors (vec-ref adj u)))
+        (let nloop ((ns neighbors))
+          (if (and (not result) (not (null? ns)))
+              (let ((v (car ns)))
+                (let ((c (vec-ref color v)))
+                  (cond
+                    ((= c 1) (set! result #t))
+                    ((= c 0)
+                     (dfs v)
+                     (nloop (cdr ns))))
+                    (else (nloop (cdr ns))))))
+              'done))))
+    (let outer ((u 0))
+      (cond
+        ((or result (= u N)) result)
+        ((= (vec-ref color u) 0)
+         (dfs u)
+         (outer (+ u 1)))
+        (else (outer (+ u 1)))))))
+
+(define (solve N prereqs)
+  (let ((adj (build-graph N prereqs)))
+    (if (has-cycle? adj N) #f #t)))
+
+;; Display a boolean
+(define (display-bool b)
+  (display (if b "true" "false")))
+
+;; Test cases
+(display "CASE0=") (display-bool (solve 2 '())) (newline)
+(display "CASE1=") (display-bool (solve 0 '())) (newline)
+(display "CASE2=") (display-bool (solve 1 '())) (newline)
+(display "CASE3=") (display-bool (solve 2 '((1 0)))) (newline)
+(display "CASE4=") (display-bool (solve 2 '((1 0) (0 1)))) (newline)
+(display "CASE5=") (display-bool (solve 3 '((1 0) (2 1)))) (newline)
+(display "CASE6=") (display-bool (solve 4 '((1 0) (2 0) (3 1) (3 2)))) (newline)
+(display "CASE7=") (display-bool (solve 5 '((1 0) (2 1) (3 2) (4 3) (0 4)))) (newline)
+(display "CASE8=") (display-bool (solve 3 '((0 1) (0 2) (1 2)))) (newline)
+(display "CASE9=") (display-bool (solve 6 '((2 0) (3 0) (4 1) (4 2) (5 3)))) (newline)

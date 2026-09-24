@@ -1,0 +1,130 @@
+(define (list-ref lst i)
+  (if (= i 0) (car lst) (list-ref (cdr lst) i)))
+
+(define (list-set lst i v)
+  (if (= i 0)
+      (cons v (cdr lst))
+      (cons (car lst) (list-set (cdr lst) (- i 1) v))))
+
+(define (string->list s)
+  (map (lambda (c) (- (char->integer c) 48))
+       (string->list-impl s)))
+
+(define (string->list-impl s)
+  (let ((len (string-length s)))
+    (build-list len (lambda (i) (string-ref s i)))))
+
+(define (build-list n f)
+  (if (= n 0) '() (cons (f 0) (build-list (- n 1) (lambda (i) (f (+ i 1)))))))
+
+(define (map f lst)
+  (if (null? lst) '() (cons (f (car lst)) (map f (cdr lst)))))
+
+(define (length lst)
+  (if (null? lst) 0 (+ 1 (length (cdr lst)))))
+
+(define (find-max-from-end digits start)
+  (let loop ((i (- (length digits) 1)) (max-val -1) (max-pos -1))
+    (if (< i start)
+        (cons max-val max-pos)
+        (let ((d (list-ref digits i)))
+          (if (> d max-val)
+              (loop (- i 1) d i)
+              (loop (- i 1) max-val max-pos))))))
+
+(define (digits->number digits)
+  (let loop ((ds digits) (acc 0))
+    (if (null? ds)
+        acc
+        (loop (cdr ds) (+ (* acc 10) (car ds))))))
+
+(define (solve s)
+  (let* ((digits (string->list s))
+         (len (length digits))
+         (result (solve-helper digits 0 len)))
+    (digits->number result)))
+
+(define (solve-helper digits pos len)
+  (cond
+    ((>= pos (- len 1)) digits)
+    (else
+     (let* ((current (list-ref digits pos))
+            (max-info (find-max-from-end digits (+ pos 1)))
+            (max-val (car max-info))
+            (max-pos (cdr max-info)))
+       (if (> max-val current)
+           (list-set digits pos max-val)  ; placeholder - need to actually swap both
+           (solve-helper digits (+ pos 1) len))))))
+
+(define (swap-two lst i j)
+  (let ((vi (list-ref lst i))
+        (vj (list-ref lst j)))
+    (let ((step1 (list-set lst i vj))
+          (step2 (list-set step1 j vi)))
+      step2)))
+
+(define (solve s)
+  (let* ((digits (string->list s))
+         (len (length digits))
+         (result (try-swap digits 0 len)))
+    (digits->number result)))
+
+(define (try-swap digits pos len)
+  (cond
+    ((>= pos (- len 1)) digits)
+    (else
+     (let* ((current (list-ref digits pos))
+            (max-info (find-max-from-end digits (+ pos 1)))
+            (max-val (car max-info))
+            (max-pos (cdr max-info)))
+       (if (> max-val current)
+           (swap-two digits pos max-pos)
+           (try-swap digits (+ pos 1) len))))))
+
+(define (display-list lst)
+  (display "[")
+  (let loop ((first? #t) (l lst))
+    (cond
+      ((null? l) (display "]"))
+      (else
+       (if first? (display " ") (display ", "))
+       (display (car l))
+       (loop #f (cdr l))))))
+
+(define (char->integer c)
+  (let loop ((i 0))
+    (cond
+      ((char=? i c) i)
+      (else (loop (+ i 1))))))
+
+(define (char=? n c)
+  (= n (char->integer c)))
+
+(define (string-length s)
+  (length (string->list-impl s)))
+
+(define (string-ref s i)
+  (list-ref (string->list-impl s) i))
+
+; Test cases
+(define (run-tests)
+  (let ((cases (list
+    (cons 0 "2736")
+    (cons 1 "9973")
+    (cons 2 "98368")
+    (cons 3 "0")
+    (cons 4 "1")
+    (cons 5 "10")
+    (cons 6 "1999999999")
+    (cons 7 "99999"))))
+    (map (lambda (pair)
+           (let ((i (car pair)) (s (cdr pair)))
+             (begin
+               (display "CASE")
+               (display i)
+               (display "=")
+               (display (solve s))
+               (newline))))
+         cases)))
+
+(run-tests)

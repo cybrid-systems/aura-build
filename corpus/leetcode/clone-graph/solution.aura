@@ -1,0 +1,185 @@
+;; Clone Graph - Aura solution
+;; Builds an undirected graph from an adjacency spec, then performs a DFS
+;; clone using a hash map from original node id -> cloned node id.
+
+;; ---------- Hash Map (association list) helpers ----------
+
+(define (make-map) '())
+
+(define (map-get m key)
+  (cond ((null? m) #f)
+        ((equal? (car (car m)) key) (cdr (car m)))
+        (else (map-get (cdr m) key))))
+
+(define (map-put m key value)
+  (cons (cons key value) m))
+
+;; ---------- Node representation ----------
+;; A node is a pair: (cons id neighbors)
+;;   id        : integer, the node's label (1..100)
+;;   neighbors : list of node pairs (neighbors of this node)
+
+(define (node-id n) (car n))
+(define (node-neighbors n) (cdr n))
+
+(define (make-node id nbrs)
+  (cons id nbrs))
+
+;; ---------- Build graph from spec ----------
+;; spec is an association list: ((1 . (2 3)) (2 . (1 3)) ...)
+;; After building, every neighbor reference is resolved to a node pair.
+
+(define (spec-lookup spec id)
+  (cond ((null? spec) #f)
+        ((equal? (car (car spec)) id) (cdr (car spec)))
+        (else (spec-lookup (cdr spec) id))))
+
+(define (build-graph-helper spec built id)
+  (let ((existing (assoc id built)))
+    (if existing
+        built
+        (let ((nbr-ids (spec-lookup spec id)))
+          (let ((new-node (make-node id '())))
+            (let ((built-with-node (cons (cons id new-node) built)))
+              (let ((resolved-nbrs
+                      (resolve-neighbors spec built-with-node nbr-ids '())))
+                (set-cdr! new-node resolved-nbrs)
+                built-with-node)))))))
+
+(define (resolve-neighbors spec built nbr-ids acc)
+  (if (null? nbr-ids)
+      (reverse acc)
+      (let ((first-id (car nbr-ids)))
+        (let ((built-after
+                (build-graph-helper spec built first-id)))
+          (let ((nbr (cdr (assoc first-id built-after))))
+            (resolve-neighbors spec built-after (cdr nbr-ids)
+                               (cons nbr acc)))))))
+
+(define (build-graph spec)
+  (let ((all-ids (map-keys spec)))
+    (let loop ((built '())
+               (ids all-ids))
+      (if (null? ids)
+          built
+          (loop (build-graph-helper spec built (car ids))
+                (cdr ids))))))
+
+(define (map-keys spec)
+  (if (null? spec)
+      '()
+      (cons (car (car spec)) (map-keys (cdr spec)))))
+
+(define (find-node-by-id graph id)
+  (cdr (assoc id graph)))
+
+;; ---------- Clone using DFS ----------
+;; Each node carries an id; we use id as the hash map key.
+;; cloned-map : alist mapping id -> cloned node pair
+
+(define (clone-dfs orig cloned-map)
+  (let ((id (node-id orig)))
+    (let ((existing (assoc id cloned-map)))
+      (if existing
+          cloned-map
+          (let ((cloned-node (make-node id '())))
+            (let ((mapped (cons (cons id cloned-node) cloned-map)))
+              (let loop ((nbrs (node-neighbors orig))
+                         (acc '()))
+                (if (null? nbrs)
+                    (begin
+                      (set-cdr! cloned-node (reverse acc))
+                      mapped)
+                    (let ((mapped-after (clone-dfs (car nbrs) mapped)))
+                      (let ((cloned-nbr (cdr (assoc (node-id (car nbrs))
+                                                    mapped-after))))
+                        (loop (cdr nbrs) (cons cloned-nbr acc))))))))))))
+
+(define (clone-graph orig)
+  (cdr (assoc (node-id orig)
+              (clone-dfs orig '()))))
+
+;; ---------- Serialize cloned graph for printing ----------
+;; Output each node id on its own line as "id: n1 n2 n3 ..."
+;; Nodes are listed in ascending id order to make output deterministic.
+
+(define (collect-cloned-ids graph)
+  (let ((ids (map (lambda (e) (car e)) graph)))
+    (sort-list ids <)))
+
+(define (sort-list lst cmp)
+  (if (null? lst)
+      '()
+      (let loop ((unsorted (cdr lst))
+                 (sorted (list (car lst))))
+        (if (null? unsorted)
+            sorted
+            (loop (cdr unsorted)
+                  (insert-sorted (car unsorted) sorted cmp))))))
+
+(define (insert-sorted x lst cmp)
+  (cond ((null? lst) (list x))
+        ((cmp x (car lst)) (cons x lst))
+        (else (cons (car lst) (insert-sorted x (cdr lst) cmp)))))
+
+(define (neighbor-ids nbrs)
+  (map node-id nbrs))
+
+(define (serialize-node cloned-graph id)
+  (let ((node (cdr (assoc id cloned-graph))))
+    (let ((ids (neighbor-ids (node-neighbors node))))
+      (let ((sorted-ids (sort-list ids <)))
+        (display id)
+        (display ":")
+        (display (format-list sorted-ids))
+        (newline)))))
+
+(define (format-list lst)
+  (let loop ((l lst)
+             (acc ""))
+    (cond ((null? l) acc)
+          ((null? acc) (loop (cdr l) (number->string (car l))))
+          (else (loop (cdr l)
+                      (string-append acc " " (number->string (car l))))))))
+
+(define (print-cloned-graph cloned-graph)
+  (let ((ids (collect-cloned-ids cloned-graph)))
+    (for-each (lambda (id) (serialize-node cloned-graph id))
+              ids)))
+
+;; ---------- Main driver ----------
+;; For each CASE we:
+;;   1. Parse the spec association list (literal in the program).
+;;   2. Build the graph (resolves neighbor references).
+;;   3. Find the start node.
+;;   4. Clone it.
+;;   5. Print "CASEi=" then the serialized cloned graph.
+
+(define (run-case case-num spec start-id)
+  (let ((graph (build-graph spec)))
+    (let ((start-node (find-node-by-id graph start-id)))
+      (let ((cloned (clone-graph start-node)))
+        (display "CASE")
+        (display (number->string case-num))
+        (display "=")
+        (print-cloned-graph cloned)))))
+
+;; ---------- Embedded test inputs ----------
+
+(define case0-spec '((1 . ())))
+(define case1-spec '((1 . (2)) (2 . (1))))
+(define case2-spec '((1 . (2 3)) (2 . (1 3)) (3 . (1 2))))
+(define case3-spec '((1 . (2)) (2 . (1 3)) (3 . (2 4)) (4 . (3))))
+(define case4-spec '((1 . (2 3 4 5)) (2 . (1)) (3 . (1)) (4 . (1)) (5 . (1))))
+(define case5-spec '((1 . (2 3)) (2 . (1 3)) (3 . (1 2 4)) (4 . (3))))
+(define case6-spec '((1 . (2)) (2 . (1))))
+(define case7-spec '((1 . (2)) (2 . (1))))
+
+(run-case 0 case0-spec 1)
+(run-case 1 case1-spec 1)
+(run-case 2 case2-spec 1)
+(run-case 3 case3-spec 1)
+(run-case 4 case4-spec 1)
+(run-case 5 case5-spec 1)
+(run-case 6 case6-spec 2)
+(run-case 7 case6-spec 2)

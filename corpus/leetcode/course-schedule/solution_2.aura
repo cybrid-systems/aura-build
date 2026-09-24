@@ -1,0 +1,118 @@
+;; Course Schedule - Kahn's BFS topological sort
+;; Returns #t if all courses can be finished, #f otherwise.
+
+(define (make-vector n fill)
+  (let ((v (make-vector n)))
+    (let loop ((i 0))
+      (if (< i n)
+          (begin (vector-set! v i fill) (loop (+ i 1)))
+          v))))
+
+;; We use association lists instead of vectors, since Aura prefers lists.
+(define (make-adj-list n)
+  (let loop ((i 0) (acc '()))
+    (if (< i n)
+        (loop (+ i 1) (cons '() acc))
+        acc)))
+
+(define (adj-set adj i lst)
+  (let loop ((idx 0) (acc '()))
+    (cond ((null? acc) (cons lst (cdr adj)))
+          ((= idx i) (cons lst (car acc) (cdr acc)))
+          (else (cons (car acc) (loop (+ idx 1) (cdr acc)))))))
+
+;; Build adjacency list and indegree count from prereqs
+;; prereqs is a list of pairs (a b) meaning edge b -> a, so a depends on b.
+(define (build-graph n prereqs adj indeg)
+  (if (null? prereqs)
+      (list adj indeg)
+      (let ((pair (car prereqs))
+            (rest (cdr prereqs)))
+        (let ((a (car pair))
+              (b (car (cdr pair))))
+          (let ((new-adj (adj-set adj b (cons a (list-ref adj b)))))
+            (build-graph n rest new-adj
+              ;; increment indegree of a (index a)
+              (let update ((idx 0) (src indeg))
+                (cond ((null? src) '())
+                      ((= idx a) (cons (+ (car src) 1) (cdr src)))
+                      (else (cons (car src) (update (+ idx 1) (cdr src))))))))))))
+
+;; Kahn's algorithm using list operations
+(define (kahn adj indeg n)
+  (let ((q (let collect ((idx 0) (acc '()))
+             (cond ((null? acc)
+                    (if (< idx n)
+                        (if (= (car indeg) 0)
+                            (cons idx (collect (+ idx 1) indeg))
+                            (collect (+ idx 1) (cdr indeg)))
+                        '())
+                   (else
+                    (if (= (car indeg) 0)
+                        (cons idx (collect (+ idx 1) (cons (car acc) (cdr acc)))))
+                    ;; Actually this gets messy; let's do it differently
+                    ))))
+    q))
+
+;; Simpler approach: collect zero-indegree nodes first, then process.
+(define (collect-zeros indeg n)
+  (let loop ((i 0) (src indeg) (acc '()))
+    (if (= i n)
+        (reverse acc)
+        (if (= (car src) 0)
+            (loop (+ i 1) (cdr src) (cons i acc))
+            (loop (+ i 1) (cdr src) acc)))))
+
+(define (neighbors adj i)
+  (list-ref adj i))
+
+(define (decrement-indeg indeg idx)
+  (let loop ((i 0) (src indeg) (acc '()))
+    (if (null? src)
+        (reverse acc)
+        (if (= i idx)
+            (loop (+ i 1) (cdr src) (cons (- (car src) 1) acc))
+            (loop (+ i 1) (cdr src) (cons (car src) acc))))))
+
+(define (solve n prereqs)
+  (let* ((init-adj (make-adj-list n))
+         (init-indeg (let f ((i 0) (acc '()))
+                       (if (= i n) (reverse acc)
+                           (f (+ i 1) (cons 0 acc)))))
+         (built (build-graph n prereqs init-adj init-indeg))
+         (adj (car built))
+         (indeg (car (cdr built))))
+    (letrec ((process (lambda (queue indeg visited)
+                        (if (null? queue)
+                            (= visited n)
+                            (let* ((node (car queue))
+                                   (rest-queue (cdr queue))
+                                   (neigh (neighbors adj node))
+                                   (result (proc-neigh neigh indeg rest-queue visited))))
+                      result)))
+             (proc-neigh (lambda (neigh indeg queue visited)
+                                   (if (null? neigh)
+                                       (process queue indeg visited)
+                                       (let* ((v (car neigh))
+                                              (rest (cdr neigh))
+                                              (new-indeg (decrement-indeg indeg v)))
+                                         (if (= (list-ref new-indeg v) 0)
+                                             (proc-neigh rest new-indeg (cons v queue) (+ visited 1))
+                                             (proc-neigh rest new-indeg queue visited)))))))
+      (process (collect-zeros indeg n) indeg (length (collect-zeros indeg n))))))
+
+;; Display helper
+(define (display-result r)
+  (if r (display "true") (display "false")))
+
+;; Test cases
+(display "CASE0=") (display-result (solve 2 '())) (newline)
+(display "CASE1=") (display-result (solve 0 '())) (newline)
+(display "CASE2=") (display-result (solve 1 '())) (newline)
+(display "CASE3=") (display-result (solve 2 '((1 0)))) (newline)
+(display "CASE4=") (display-result (solve 2 '((1 0) (0 1)))) (newline)
+(display "CASE5=") (display-result (solve 3 '((1 0) (2 1)))) (newline)
+(display "CASE6=") (display-result (solve 4 '((1 0) (2 0) (3 1) (3 2)))) (newline)
+(display "CASE7=") (display-result (solve 5 '((1 0) (2 1) (3 2) (4 3) (0 4)))) (newline)
+(display "CASE8=") (display-result (solve 3 '((0 1) (0 2) (1 2)))) (newline)
+(display "CASE9=") (display-result (solve 6 '((2 0) (3 0) (4 1) (4 2) (5 3)))) (newline)

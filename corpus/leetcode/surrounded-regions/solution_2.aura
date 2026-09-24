@@ -1,0 +1,127 @@
+(define (length lst)
+  (if (null? lst) 0 (+ 1 (length (cdr lst)))))
+
+(define (list-ref lst i)
+  (if (= i 0) (car lst) (list-ref (cdr lst) (- i 1))))
+
+(define (make-list-of n val)
+  (if (= n 0) '() (cons val (make-list-of (- n 1) val))))
+
+(define (solve board)
+  (let ((m (length board)))
+    (if (= m 0)
+        '()
+        (let ((row0 (list-ref board 0))
+              (n (length (list-ref board 0))))
+          (let ((grid (make-list-of m (make-list-of n #\X))))
+            (letrec ((copy-row
+                      (lambda (i)
+                        (if (= i m)
+                            '()
+                            (let ((src (list-ref board i)))
+                              (letrec ((fill
+                                                  (lambda (j)
+                                                       (if (= j n)
+                                                           '()
+                                                           (cons (list-ref src j)
+                                                                 (fill (+ j 1)))))))
+                                  (cons (fill 0) (copy-row (+ i 1)))))))))
+              (let ((g (copy-row 0)))
+                (letrec ((in-bounds?
+                          (lambda (r c)
+                            (and (>= r 0) (< r m) (>= c 0) (< c n))))
+                         (get-cell
+                          (lambda (r c)
+                            (list-ref (list-ref g c) r)))
+                         (set-cell!
+                          (lambda (r c v)
+                            (set! g (let ((old (list-ref g r)))
+                                      (let ((new (letrec ((rep
+                                                              (lambda (j acc)
+                                                                (if (= j n)
+                                                                    (reverse acc)
+                                                                    (if (= j c)
+                                                                        (rep (+ j 1) (cons v acc))
+                                                                        (rep (+ j 1) (cons (list-ref old j) acc)))))))
+                                                     (rep 0 '()))))
+                                        (set-car! (list-ref g r) 'placeholder)
+                                        'placeholder))))
+                         (dfs
+                          (lambda (r c)
+                            (if (not (in-bounds? r c))
+                                '()
+                                (if (not (equal? (get-cell r c) 'O))
+                                    '()
+                                    (begin
+                                      (set! g (let ((old (list-ref g r)))
+                                                (let ((new (letrec ((rep
+                                                                          (lambda (j acc)
+                                                                            (if (= j n)
+                                                                                (reverse acc)
+                                                                                (if (= j c)
+                                                                                    (rep (+ j 1) (cons #\S acc))
+                                                                                    (rep (+ j 1) (cons (list-ref old j) acc)))))))
+                                                                  (rep 0 '()))))
+                                                  (let ((cell-cons (list-ref g r)))
+                                                    (set-car! cell-cons new)
+                                                    cell-cons)
+                                                    'placeholder)))
+                                      (begin
+                                        (dfs (+ r 1) c)
+                                        (dfs (- r 1) c)
+                                        (dfs r (+ c 1))
+                                        (dfs r (- c 1))))))))
+                  (letrec ((mark-borders
+                            (lambda (r c)
+                              (cond
+                                ((and (= r 0) (= c n)) '())
+                                ((= r 0)
+                                 (if (equal? (get-cell 0 c) 'O) (dfs 0 c) '())
+                                 (mark-borders 0 (+ c 1)))
+                                ((and (= c 0) (= r m)) '())
+                                ((= c 0)
+                                 (if (equal? (get-cell r 0) 'O) (dfs r 0) '())
+                                 (mark-borders (+ r 1) 0))
+                                (else
+                                 (if (equal? (get-cell (- m 1) c) 'O) (dfs (- m 1) c) '())
+                                 (if (equal? (get-cell r (- n 1)) 'O) (dfs r (- n 1)) '())
+                                 (mark-borders r (+ c 1))))))))
+                    (mark-borders 0 0)
+                    (letrec ((flip-row
+                              (lambda (i)
+                                (if (= i m)
+                                    '()
+                                    (let ((src (list-ref g i)))
+                                      (letrec ((bld
+                                                  (lambda (j acc)
+                                                       (if (= j n)
+                                                           (list->string (reverse acc))
+                                                           (let ((cell (list-ref src j)))
+                                                             (bld (+ j 1)
+                                                                  (cons (cond
+                                                                          ((equal? cell 'O) #\X)
+                                                                          ((equal? cell #\S) #\O)
+                                                                          (else cell))
+                                                                        acc)))))))
+                                        (cons (bld 0 '()) (flip-row (+ i 1)))))))))
+                      (flip-row 0))))))))))))
+
+(define (list->string lst)
+  (letrec ((impl (lambda (l)
+                   (if (null? l)
+                       ""
+                       (string-append (string (car l)) (impl (cdr l)))))))
+    (impl lst)))
+
+(define (run-tests)
+  (begin
+    (display "CASE0=") (display (solve '("XXXX" "XOOX" "XXOX" "XOXX"))) (newline)
+    (display "CASE1=") (display (solve '("OOXX" "OOOO" "XXOO" "OOOO"))) (newline)
+    (display "CASE2=") (display (solve '("X"))) (newline)
+    (display "CASE3=") (display (solve '("OOOO"))) (newline)
+    (display "CASE4=") (display (solve '("XXXXX" "XOOOX" "XOXOX" "XOOOX" "XXXXX"))) (newline)
+    (display "CASE5=") (display (solve '("XOO" "OOO" "XOX"))) (newline)
+    (display "CASE6=") (display (solve '())) (newline)
+    (display "CASE7=") (display (solve '("OXOX" "XOXO" "OXOX" "XOXO"))) (newline)))
+
+(run-tests)

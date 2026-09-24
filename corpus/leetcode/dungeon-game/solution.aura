@@ -1,0 +1,34 @@
+(define (min a b) (if (< a b) a b))
+(define (max a b) (if (> a b) a b))
+
+(define (list-length xs)
+  (if (null? xs) 0 (+ 1 (list-length (cdr xs)))))
+
+(define (list-ref xs i)
+  (if (= i 0) (car xs) (list-ref (cdr xs) i)))
+
+(define (nth-row grid i)
+  (list-ref grid i))
+
+(define (solve grid)
+  (let ((m (list-length grid))
+        (n (if (null? grid) 0 (list-length (car grid)))))
+    (let ((dp (make-vector m n 0)))
+      (define (set-dp i j v) (vector-set! dp i j v))
+      (define (get-dp i j)
+        (if (or (>= i m) (>= j n)) 999999
+            (vector-ref dp i j)))
+      ;; fill from bottom-right
+      (let loop ((i (- m 1)))
+        (if (>= i 0)
+            (let loop2 ((j (- n 1)))
+              (if (>= j 0)
+                  (let ((cell (list-ref (list-ref grid i) j)))
+                    (if (and (= i (- m 1)) (= j (- n 1)))
+                        (set-dp i j (max 1 (- 1 cell)))
+                        (set-dp i j (max 1 (- (min (get-dp (+ i 1) j) (get-dp i (+ j 1))) cell))))
+                    (loop2 (- j 1)))
+                  (loop (- i 1))))))
+      (vector-ref dp 0 0))))
+
+;; ... test cases ...

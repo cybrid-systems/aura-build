@@ -1,0 +1,122 @@
+#!/usr/bin/aura
+
+;; Aura solution for "Surrounded Regions"
+;; Convert each row to a mutable vector of chars, BFS from border O's to mark safe,
+;; then flip remaining O's to X. Return fresh list of strings.
+
+(define (vec-set! v i c) (set! (vector-ref v i) c))
+
+(define (solve board)
+  (let ((m (length board)))
+    (if (= m 0)
+        '()
+        (let* ((n (string-length (car board)))
+               (grid (make-vector m '())))
+          ;; copy rows into vectors of single-char strings
+          (let loop ((i 0))
+            (if (= i m)
+                '()
+                (begin
+                  (let* ((row (list-ref board i))
+                         (v (make-vector n "X")))
+                    (let inner ((j 0))
+                      (if (= j n)
+                          '()
+                          (begin
+                            (vector-set! v j (substring row j (+ j 1)))
+                            (inner (+ j 1)))))
+                    (vector-set! grid i v))
+                  (loop (+ i 1)))))
+          ;; if any single row/column edge, do nothing to that side
+          ;; BFS from all border O's
+          (let ((queue '()))
+            ;; enqueue left/right border O's
+            (let ((i 0))
+              (let ((lim (if (= m 0) 0 m)))
+                (let outer ((r 0))
+                  (if (= r lim)
+                      '()
+                      (begin
+                        ;; left border col 0
+                        (if (string=? (vector-ref (vector-ref grid r) 0) "O")
+                            (begin
+                              (vector-set! (vector-ref grid r) 0 "S")
+                              (set! queue (append queue (list (list r 0))))))
+                        ;; right border col n-1
+                        (if (> n 0)
+                            (if (string=? (vector-ref (vector-ref grid r) (- n 1)) "O")
+                                (begin
+                                  (vector-set! (vector-ref grid r) (- n 1) "S")
+                                  (set! queue (append queue (list (list r (- n 1))))))))
+                        (outer (+ r 1)))))))
+            ;; enqueue top/bottom border O's
+            (let ((c 0))
+              (let ((lim2 (if (= n 0) 0 n)))
+                (let outer2 ((cc 0))
+                  (if (= cc lim2)
+                      '()
+                      (begin
+                        ;; top border row 0
+                        (if (string=? (vector-ref (vector-ref grid 0) cc) "O")
+                            (begin
+                              (vector-set! (vector-ref grid 0) cc "S")
+                              (set! queue (append queue (list (list 0 cc))))))
+                        ;; bottom border row m-1
+                        (if (> m 0)
+                            (if (string=? (vector-ref (vector-ref grid (- m 1)) cc) "O")
+                                (begin
+                                  (vector-set! (vector-ref grid (- m 1)) cc "S")
+                                  (set! queue (append queue (list (list (- m 1) cc)))))))
+                        (outer2 (+ cc 1))))))))
+            ;; BFS
+            (let bfs-loop ()
+              (if (null? queue)
+                  '()
+                  (let* ((cell (car queue))
+                         (queue (cdr queue))
+                         (r (car cell))
+                         (c (car (cdr cell))))
+                    (let try-dir ((k 0))
+                      (if (= k 4)
+                          '()
+                          (let* ((dr (list-ref (list -1 1 0 0) k))
+                                 (dc (list-ref (list 0 0 -1 1) k))
+                                 (nr (+ r dr))
+                                 (nc (+ c dc)))
+                            (if (and (>= nr 0) (< nr m) (>= nc 0) (< nc n)
+                                     (string=? (vector-ref (vector-ref grid nr) nc) "O"))
+                                (begin
+                                  (vector-set! (vector-ref grid nr) nc "S")
+                                  (set! queue (append queue (list (list nr nc))))))
+                            (try-dir (+ k 1))))))
+                    (bfs-loop)))
+            ;; flip and build result strings
+            (let result-loop ((r1 0) (acc '()))
+              (if (= r1 m)
+                  (reverse acc)
+                  (let row-loop ((c1 0) (chars '()))
+                    (if (= c1 n)
+                        (let ((s (list->string (reverse chars))))
+                          (result-loop (+ r1 1) (cons s acc)))
+                        (let* ((cur (vector-ref (vector-ref grid r1) c1))
+                               (final (cond
+                                        ((string=? cur "S") "O")
+                                        ((string=? cur "O") "X")
+                                        (else "X"))))
+                          (row-loop (+ c1 1) (cons final chars))))))))))))
+
+;; Helpers to build test cases (since Aura doesn't have JSON literals)
+;; We'll embed each board directly as a quoted list of strings.
+
+(define (run-cases)
+  (begin
+    (display "CASE0=") (display (solve (list "XXXX" "XOOX" "XXOX" "XOXX"))) (newline)
+    (display "CASE1=") (display (solve (list "OOXX" "OOOO" "XXOO" "OOOO"))) (newline)
+    (display "CASE2=") (display (solve (list "X"))) (newline)
+    (display "CASE3=") (display (solve (list "OOOO"))) (newline)
+    (display "CASE4=") (display (solve (list "XXXXX" "XOOOX" "XOXOX" "XOOOX" "XXXXX"))) (newline)
+    (display "CASE5=") (display (solve (list "XOO" "OOO" "XOX"))) (newline)
+    (display "CASE6=") (display (solve (list))) (newline)
+    (display "CASE7=") (display (solve (list "OXOX" "XOXO" "OXOX" "XOXO"))) (newline)))
+
+(run-cases)

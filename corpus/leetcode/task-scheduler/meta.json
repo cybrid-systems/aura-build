@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:42:09Z",
+      "ts_local": "2026-09-24 22:42:09 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2291,
+        "total_characters": 0,
+        "prompt_tokens": 995,
+        "completion_tokens": 1296,
+        "prompt_tokens_details": {
+          "cached_tokens": 528
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": -6,
+      "timeout": false,
+      "duration_s": 0.053,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 4:59: parse error: expected expression, got ')'\n   |\n  4 |       (let ((idx (- (char->integer c) (char->integer #\\A))))\n   |                                                           ^\n\n=== AURA CRASH: SIGABRT (signal 6) si_addr=0x3e8003edea8 si_code=-6 ip=0x7f06e0906d0c sp=0x7ffc21145b80 ===\nFaulting IP: 0x7f06e0906d0c (no symbol; -rdynamic missing or stripped)\nsi_addr 0x3e8003edea8 is outside any loaded module (use-after-free or uninit ptr?)\nResolve with: addr2line -e aura -f -C <ip> <s",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:42:32Z",
+      "ts_local": "2026-09-24 22:42:32 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 4995,
+        "total_characters": 0,
+        "prompt_tokens": 995,
+        "completion_tokens": 4000,
+        "prompt_tokens_details": {
+          "cached_tokens": 994
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.024,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "⚠ program returned an uncalled function\n",
+      "stdout_snippet": "#<procedure>\n"
+    }
+  ],
+  "slug": "task-scheduler",
+  "title": "Task Scheduler",
+  "category": "greedy",
+  "updated_at": "2026-09-24T14:42:32Z",
+  "updated_at_local": "2026-09-24 22:42:32 CST"
+}

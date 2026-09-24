@@ -1,0 +1,114 @@
+;; Course Schedule II - topological sort via Kahn's algorithm (BFS)
+
+(define (make-list n fill)
+  (let loop ((i 0) (acc '()))
+    (if (>= i n)
+        acc
+        (loop (+ i 1) (cons fill acc)))))
+
+(define (list-set lst i v)
+  ;; set element at index i in lst to v
+  (let loop ((idx 0) (xs lst) (acc '()))
+    (cond
+      ((null? xs) acc)
+      ((= idx i)
+       (loop (+ idx 1) (cdr xs) (append (reverse acc) (cons v (cdr xs)))))
+      (else (loop (+ idx 1) (cdr xs) (cons (car xs) acc))))))
+
+(define (append a b)
+  (if (null? a) b (cons (car a) (append (cdr a) b))))
+
+;; Kahn's algorithm
+;; adjacency: list of lists where adj[i] is a list of nodes that depend on i (outgoing edges)
+;; in-degree: list of in-degrees
+(define (kahn n adj in-degree)
+  (let loop ((queue (collect-zeros n in-degree))
+             (in-deg in-degree)
+             (adj-list adj)
+             (result '()))
+    (cond
+      ((null? queue)
+       (if (= (length result) n) result '()))
+      (else
+       (let ((u (car queue))
+             (rest-q (cdr queue))
+             (neighbors (list-ref adj-list u)))
+         ;; decrement in-degree of neighbors
+         (let loop2 ((ns neighbors)
+                     (id in-deg)
+                     (new-q rest-q))
+           (cond
+             ((null? ns)
+              (loop new-q id adj-list (append result (list u))))
+             (else
+              (let ((v (car ns))
+                    (rest-ns (cdr ns))
+                    (d (list-ref id v)))
+                (let ((d2 (- d 1)))
+                  (let ((id2 (list-set id v d2)))
+                    (if (= d2 0)
+                        (loop2 rest-ns id2 (append new-q (list v)))
+                        (loop2 rest-ns id2 new-q))))))))))))
+
+(define (collect-zeros n in-deg)
+  (let loop ((i 0) (acc '()))
+    (if (>= i n)
+        acc
+        (loop (+ i 1) (if (= (list-ref in-deg i) 0) (append acc (list i)) acc)))))
+
+(define (length lst)
+  (let loop ((l lst) (c 0))
+    (if (null? l) c (loop (cdr l) (+ c 1)))))
+
+(define (list-ref lst i)
+  (let loop ((idx 0) (xs lst))
+    (cond
+      ((null? xs) '())
+      ((= idx i) (car xs))
+      (else (loop (+ idx 1) (cdr xs))))))
+
+(define (solve n prerequisites)
+  (if (= n 0)
+      '()
+      (let* ((adj (make-list n '()))
+             (in-deg (make-list n 0)))
+        ;; build graph: prerequisite [a, b] means a -> b
+        (let loop-prereq ((ps prerequisites) (adj-c adj) (id-c in-deg))
+          (if (null? ps)
+              (kahn n adj-c id-c)
+              (let* ((p (car ps))
+                     (a (car p))
+                     (b (car (cdr p)))
+                     (new-adj (list-set adj-c a (append (list-ref adj-c a) (list b))))
+                     (new-id (list-set id-c b (+ (list-ref id-c b) 1))))
+                (loop-prereq (cdr ps) new-adj new-id)))))))
+
+;; Display helper for a list of numbers
+(define (display-list lst)
+  (display "[")
+  (let loop ((xs lst) (first #t))
+    (cond
+      ((null? xs) (display "]"))
+      (else
+       (if first (display (car xs)) (begin (display ",") (display (car xs))))
+       (loop (cdr xs) #f)))))
+
+(define (display-result n prerequisites i)
+  (let ((r (solve n prerequisites)))
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display-list r)
+    (newline)))
+
+;; Test cases
+(display-result 4 '((1 0) (2 0) (3 1) (3 2)) 0)
+(display-result 3 '((1 0) (2 1)) 1)
+(display-result 3 '() 2)
+(display-result 3 '((0 1) (1 2) (2 0)) 3)
+(display-result 2 '((0 0)) 4)
+(display-result 0 '() 5)
+(display-result 1 '() 6)
+(display-result 6 '((1 0) (2 0) (3 1) (4 1) (5 2) (5 3)) 7)
+(display-result 4 '((1 0) (2 0) (3 1) (3 2)) 8)
+(display-result 5 '((1 0) (2 0) (3 0) (4 0)) 9)

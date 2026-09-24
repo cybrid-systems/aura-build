@@ -1,0 +1,65 @@
+(define (make-node val) (cons val '()))
+(define (node-val n) (car n))
+(define (node-neighbors n) (cdr n))
+(define (set-neighbors! n ns) (set-cdr! n ns))
+
+(define (build-graph spec)
+  ;; spec is assoc list: (("1" ("2" "3")) ("2" ("1")) ...)
+  ;; first create all nodes, return assoc list of id->node
+  (let ((nodes '()))
+    (begin
+      (set! nodes (map (lambda (p) (cons (car p) (make-node (string->number (car p))))) spec))
+      ;; now wire neighbors
+      (map (lambda (entry)
+             (let ((id (car entry))
+                   (node (cdr entry))
+                   (nbr-ids (cdr (assoc (car entry) spec))))
+               (begin
+                 (set-neighbors! node
+                   (map (lambda (nid)
+                          (cdr (assoc nid spec)))
+                        nbr-ids))
+                 entry)))
+           nodes)
+      nodes)))
+
+(define (clone start-node visited)
+  ;; visited: assoc list original->cloned
+  (let ((existing (assoc start-node visited)))
+    (if existing
+        (cdr existing)
+        (let ((new-node (make-node (node-val start-node))))
+          (begin
+            (set! visited (cons (cons start-node new-node) visited))
+            (set-neighbors! new-node
+              (map (lambda (nbr)
+                     (clone nbr visited))
+                   (node-neighbors start-node)))
+            new-node)))))
+
+(define (solve start-node)
+  (clone start-node '()))
+
+(define (serialize n visited)
+  ;; produce sorted list of (val neighbors-vals...) for each node
+  ;; but this is complex; let's just print vals reachable
+  '())
+
+;; Verification: is clone a deep copy?
+;; In Aura, eq? compares references. We can check that the clone's cdr differs
+;; from original's cdr, but that only checks the first level. Better: traverse and
+;; confirm all node pairs differ.
+
+(define (deep-copy? orig clone-)
+  (cond
+    ((null? orig) #t)
+    ((eq? orig clone-) #f)
+    (else
+      (and (deep-copy-list? (node-neighbors orig) (node-neighbors clone-))))))
+
+(define (deep-copy-list? os cs)
+  (cond
+    ((null? os) (null? cs))
+    ((null? cs) #f)
+    (else (and (deep-copy? (car os) (car cs))
+               (deep-copy-list? (cdr os) (cdr cs))))))

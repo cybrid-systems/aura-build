@@ -1,0 +1,98 @@
+(define (solve events)
+  (let* ((n (length events))
+         (sorted (sort-events events)))
+    (attend-helper sorted '() 0)))
+
+(define (sort-events events)
+  (sort-helper events '()))
+
+(define (sort-helper events acc)
+  (if (null? events)
+      acc
+      (let* ((rest-evts (cdr events))
+             (inserted (insert-sorted (car events) acc)))
+        (sort-helper rest-evts inserted))))
+
+(define (insert-sorted evt evts)
+  (cond ((null? evts) (list evt))
+        ((<= (cadr evt) (cadr (car evts)))
+         (cons evt evts))
+        (else (cons (car evts) (insert-sorted evt (cdr evts))))))
+
+(define (attend-helper events available count)
+  (if (null? events)
+      count
+      (let* ((evt (car events))
+             (start (car evt))
+             (end (cadr evt))
+             (day (find-available available start end)))
+        (if day
+            (attend-helper (cdr events)
+                           (remove-available available day)
+                           (+ count 1))
+            (attend-helper (cdr events) available count)))))
+
+(define (find-available available start end)
+  (cond ((null? available) #f)
+        ((< (car available) start)
+         (find-available (cdr available) start end))
+        ((<= (car available) end)
+         (car available))
+        (else #f)))
+
+(define (remove-available available day)
+  (cond ((null? available) '())
+        ((= (car available) day) (cdr available))
+        (else (cons (car available) (remove-available (cdr available) day)))))
+
+;; Build available days from all event endpoints
+(define (build-available events)
+  (let ((days (collect-days events '())))
+    (sort-num days '())))
+
+(define (collect-days events acc)
+  (if (null? events)
+      acc
+      (collect-days (cdr events)
+                    (cons (caar events) (cons (cadar events) acc)))))
+
+(define (sort-num lst acc)
+  (if (null? lst) acc
+      (let ((rest (sort-num (cdr lst) acc)))
+        (insert-num (car lst) rest))))
+
+(define (insert-num x lst)
+  (cond ((null? lst) (list x))
+        ((<= x (car lst)) (cons x lst))
+        (else (cons (car lst) (insert-num x (cdr lst))))))
+
+(define (solve-full events)
+  (let ((available (build-available events)))
+    (attend-helper (sort-events events) available 0)))
+
+(define (display-list lst)
+  (display "(")
+  (display-list-h lst))
+(define (display-list-h lst)
+  (cond ((null? lst) (display ")"))
+        (else
+         (display (car lst))
+         (if (null? (cdr lst)) (display ")")
+             (begin (display " ") (display-list-h (cdr lst)))))))
+
+(solve-full '((1 2) (2 3) (3 4)))
+(newline)
+(solve-full '((1 4) (4 4) (2 2) (3 4) (1 1)))
+(newline)
+(solve-full '((1 100000)))
+(newline)
+(solve-full '())
+(newline)
+(solve-full '((1 1) (1 1) (1 1)))
+(newline)
+(solve-full '((1 2) (1 2) (3 3)))
+(newline)
+(solve-full '((1 5) (2 3) (3 4) (4 5)))
+(newline)
+(solve-full '((5 5) (1 5) (2 4) (3 3)))
+(newline)

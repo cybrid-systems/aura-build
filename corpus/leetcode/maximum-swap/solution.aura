@@ -1,0 +1,67 @@
+(define (digits->list s)
+  (let loop ((i 0) (acc '()))
+    (if (>= i (string-length s))
+        acc
+        (loop (+ i 1)
+              (append acc (list (- (char->integer (string-ref s i)) (char->integer #\0))))))))
+
+(define (list-length lst)
+  (let loop ((l lst) (n 0))
+    (if (null? l) n (loop (cdr l) (+ n 1)))))
+
+(define (list-ref lst i)
+  (let loop ((l lst) (n 0))
+    (if (= n i) (car l) (loop (cdr l) (+ n 1)))))
+
+(define (list-set lst i v)
+  (let loop ((l lst) (n 0) (acc '()))
+    (cond
+      ((null? l) (reverse acc))
+      ((= n i) (loop (cdr l) (+ n 1) (cons v acc)))
+      (else (loop (cdr l) (+ n 1) (cons (car l) acc))))))
+
+(define (digits->int lst)
+  (let loop ((l lst) (acc 0))
+    (if (null? l) acc (loop (cdr l) (+ (* acc 10) (car l))))))
+
+(define (last-index-of-max-from lst start)
+  (let ((len (list-length lst)))
+    (let loop ((i start) (maxv -1) (maxidx -1))
+      (if (>= i len)
+          maxidx
+          (let ((v (list-ref lst i)))
+            (if (>= v maxv)
+                (loop (+ i 1) v i)
+                (loop (+ i 1) maxv maxidx)))))))
+
+(define (max-swap s)
+  (let ((digits (digits->list s))
+        (len (string-length s)))
+    (let loop ((i 0))
+      (cond
+        ((>= i len) digits)
+        (else
+         (let ((cur (list-ref digits i)))
+           (let ((best-idx (last-index-of-max-from digits (+ i 1))))
+             (if (or (= best-idx -1) (<= (list-ref digits best-idx) cur))
+                 (loop (+ i 1))
+                 (list-set digits i (list-ref digits best-idx))))))))))
+
+(define (solve s)
+  (digits->int (max-swap s)))
+
+(define (run-case i s)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve s))
+  (newline))
+
+(run-case 0 "2736")
+(run-case 1 "9973")
+(run-case 2 "98368")
+(run-case 3 "0")
+(run-case 4 "1")
+(run-case 5 "10")
+(run-case 6 "1999999999")
+(run-case 7 "99999")

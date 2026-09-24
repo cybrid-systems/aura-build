@@ -1,0 +1,120 @@
+;; Create Maximum Number
+;; Greedy: pick max subsequence of length t from one array, merge two picks, try all splits.
+
+(define (length lst)
+  (if (null? lst) 0 (+ 1 (length (cdr lst)))))
+
+(define (list-ref lst i)
+  (if (= i 0) (car lst) (list-ref (cdr lst) (- i 1))))
+
+(define (max a b) (if (> a b) a b))
+(define (min a b) (if (< a b) a b))
+
+;; Pick max subsequence of length t preserving order (monotone stack)
+(define (max-subseq nums t)
+  (if (= t 0) '()
+      (let* ((n (length nums))
+             (drop (- n t)))
+        (let loop ((i 0) (stack '()) (d 0))
+          (cond
+            ((= i n)
+             ;; trim to length t
+             (let trim ((s stack) (k t))
+               (if (= k 0) '()
+                   (cons (car s) (trim (cdr s) (- k 1))))))
+            (else
+             (let* ((x (list-ref nums i))
+                    (new-d d)
+                    (new-stack stack))
+               (let inner ((s new-stack) (dd new-d))
+                 (if (and (not (null? s)) (or (>= dd drop) (< (car s) x)))
+                     (let ((popped (car s)))
+                       (if (>= dd drop)
+                           (begin
+                             (set! new-stack (cdr s))
+                             (set! new-d (+ dd 1))
+                             (inner (cdr s) (+ dd 1)))
+                           (if (< popped x)
+                               (begin
+                                 (set! new-stack (cdr s))
+                                 (set! new-d (+ dd 1))
+                                 (inner (cdr s) (+ dd 1)))
+                               (begin
+                                 (set! new-stack s)
+                                 (set! new-d dd)
+                                 #t))))
+                     (begin
+                       (set! new-stack s)
+                       (set! new-d dd)
+                       #t)))
+               (loop (+ i 1) (append new-stack (list x)) new-d))))))))
+
+;; Compare two lists lexicographically
+(define (greater? a b)
+  (cond
+    ((null? b) #f)
+    ((null? a) #t)
+    ((> (car a) (car b)) #t)
+    ((< (car a) (car b)) #f)
+    (else (greater? (cdr a) (cdr b)))))
+
+;; Merge two subsequences to form max number (greedy)
+(define (merge a b)
+  (let loop ((x a) (y b) (acc '()))
+    (cond
+      ((null? x) (append (reverse acc) y))
+      ((null? y) (append (reverse acc) x))
+      ((greater? x y)
+       (loop (cdr x) y (cons (car x) acc)))
+      (else
+       (loop x (cdr y) (cons (car y) acc))))))
+
+(define (gt-list? a b)
+  (greater? a b))
+
+(define (solve nums1 nums2 k)
+  (let* ((n1 (length nums1))
+         (n2 (length nums2))
+         (lo (max 0 (- k n2)))
+         (hi (min k n1)))
+    (let best-loop ((i lo) (best '()))
+      (if (> i hi)
+          best
+          (let* ((s1 (max-subseq nums1 i))
+                 (s2 (max-subseq nums2 (- k i)))
+                 (m (merge s1 s2)))
+            (best-loop (+ i 1)
+                       (if (gt-list? m best) m best)))))))
+
+;; Display a list as (a b c ...)
+(define (display-list lst)
+  (display "(")
+  (let loop ((l lst))
+    (cond
+      ((null? l) (display ")"))
+      (else
+       (display (car l))
+       (if (null? (cdr l))
+           (display ")")
+           (begin (display " ") (loop (cdr l))))))))
+
+;; Run cases
+(let ((cases
+       (list
+         (list (list 3 4 6 5) (list 9 1 2 5 8 3) 5)
+         (list (list 6 7) (list 6 0 4) 5)
+         (list (list 3 9) (list 8 9) 3)
+         (list (list 1 2 3 4 5) '() 3)
+         (list (list 9 1 2 5 8 3) (list 3 4 6 5) 5)
+         (list (list 5 5 1) (list 4 0 1) 3)
+         (list (list 2 5 6 4 4 0) (list 7 3 8 0 6 5 7 6 2) 15)
+         (list (list 1) (list 2) 2))))
+  (let run ((cs cases) (idx 0))
+    (if (null? cs) '()
+        (begin
+          (display "CASE")
+          (display idx)
+          (display "=")
+          (display-list (solve (car (car cs)) (car (cdr (car cs))) (car (cdr (cdr (car cs))))))
+          (newline)
+          (run (cdr cs) (+ idx 1))))))

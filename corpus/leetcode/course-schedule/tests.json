@@ -1,0 +1,177 @@
+[
+  {
+    "id": 0,
+    "input": {
+      "N": 2,
+      "prereqs": []
+    },
+    "expected": "true"
+  },
+  {
+    "id": 1,
+    "input": {
+      "N": 0,
+      "prereqs": []
+    },
+    "expected": "true"
+  },
+  {
+    "id": 2,
+    "input": {
+      "N": 1,
+      "prereqs": []
+    },
+    "expected": "true"
+  },
+  {
+    "id": 3,
+    "input": {
+      "N": 2,
+      "prereqs": [
+        [
+          1,
+          0
+        ]
+      ]
+    },
+    "expected": "true"
+  },
+  {
+    "id": 4,
+    "input": {
+      "N": 2,
+      "prereqs": [
+        [
+          1,
+          0
+        ],
+        [
+          0,
+          1
+        ]
+      ]
+    },
+    "expected": "false"
+  },
+  {
+    "id": 5,
+    "input": {
+      "N": 3,
+      "prereqs": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ]
+      ]
+    },
+    "expected": "true"
+  },
+  {
+    "id": 6,
+    "input": {
+      "N": 4,
+      "prereqs": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          0
+        ],
+        [
+          3,
+          1
+        ],
+        [
+          3,
+          2
+        ]
+      ]
+    },
+    "expected": "true"
+  },
+  {
+    "id": 7,
+    "input": {
+      "N": 5,
+      "prereqs": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          0,
+          4
+        ]
+      ]
+    },
+    "expected": "false"
+  },
+  {
+    "id": 8,
+    "input": {
+      "N": 3,
+      "prereqs": [
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    "expected": "true"
+  },
+  {
+    "id": 9,
+    "input": {
+      "N": 6,
+      "prereqs": [
+        [
+          2,
+          0
+        ],
+        [
+          3,
+          0
+        ],
+        [
+          4,
+          1
+        ],
+        [
+          4,
+          2
+        ],
+        [
+          5,
+          3
+        ]
+      ]
+    },
+    "expected": "true"
+  }
+]

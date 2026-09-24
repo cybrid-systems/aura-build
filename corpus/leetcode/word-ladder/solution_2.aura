@@ -1,0 +1,151 @@
+;; Helper: check if member of list (using equal?)
+(define (member-equal? x lst)
+  (cond ((null? lst) #f)
+        ((equal? (car lst) x) #t)
+        (else (member-equal? x (cdr lst)))))
+
+;; Helper: split string by comma
+(define (split-comma s)
+  (let ((len (string-length s)))
+    (let loop ((i 0) (start 0) (acc '()))
+      (cond ((= i len)
+             (reverse (cons (substring s start len) acc)))
+            ((char=? (string-ref s i) #\,)
+             (loop (+ i 1) (+ i 1)
+                   (cons (substring s start i) acc)))
+            (else
+             (loop (+ i 1) start acc))))))
+
+;; Helper: convert string to list of chars
+(define (string-to-chars s)
+  (let ((len (string-length s)))
+    (let loop ((i 0) (acc '()))
+      (if (= i len)
+          acc
+          (loop (+ i 1) (cons (string-ref s i) acc))))))
+
+;; Build intermediate-state -> words map
+(define (build-adj words)
+  (let ((adj '()))
+    (let loop ((ws words) (adj acc))
+      (cond ((null? ws) acc)
+            (else
+             (let ((w (car ws)))
+               (let ((chars (string-to-chars w)))
+                 (let ((clen (length chars)))
+                   (let inner ((j 0) (a acc))
+                     (cond ((= j clen) a)
+                           (else
+                            (let ((prefix (substring w 0 j))
+                                  (suffix (substring w (+ j 1) clen)))
+                              (let ((key (string-append prefix "*" suffix)))
+                                (let ((existing (assoc key a)))
+                                  (let ((new-a
+                                         (if existing
+                                             (let loop2 ((p a))
+                                               (cond ((null? p) a)
+                                                     ((equal? (car (car p)) key)
+                                                      (cons (cons key (cons w (cdr (car p)))) (cdr p)))
+                                                     (else (cons (car p) (loop2 (cdr p))))))
+                                             (cons (cons key (cons w '())) a))))
+                                    (inner (+ j 1) new-a)))))))))))
+             (loop (cdr ws) acc))))))
+
+;; Get neighbors of a word from adjacency map
+(define (neighbors w adj)
+  (let ((chars (string-to-chars w))
+        (len (string-length w)))
+    (let loop ((i 0) (i 0) (acc '()))
+      (cond ((= i len) acc)
+            (else
+             (let ((prefix (substring w 0 i))
+                   (suffix (substring w (+ i 1) len)))
+               (let ((key (string-append prefix "*" suffix)))
+                 (let ((bucket (assoc key adj)))
+                   (loop (+ i 1)
+                         (+ i 1)
+                         (if bucket
+                             (append (cdr bucket) acc)
+                             acc))))))))))
+
+;; BFS using intermediate states
+(define (bfs begin-word end-word adj)
+  (let ((visited '()))
+    (let loop ((queue (list (cons begin-word 1))) (visited '()))
+      (cond ((null? queue) 0)
+            (else
+             (let ((pair (car queue))
+                   (rest-q (cdr queue)))
+               (let ((word (car pair))
+                     (depth (cdr pair)))
+                 (cond
+                   ((equal? word end-word) depth)
+                   ((member-equal? word visited)
+                    (loop rest-q visited))
+                   (else
+                    (let ((new-visited (cons word visited)))
+                      (let ((nbrs (neighbors word adj)))
+                        (let loop2 ((ns nbrs) (rq rest-q))
+                          (cond ((null? ns) (loop rq new-visited))
+                                ((member-equal? (car ns) new-visited)
+                                 (loop2 (cdr ns) rq))
+                                (else
+                                 (loop2 (cdr ns)
+                                        (cons (cons (car ns) (+ depth 1)) rq))))))))))))))))
+
+(define (solve begin-word end-word word-list)
+  (cond ((equal? begin-word end-word) 1)
+        ((not (member-equal? end-word word-list)) 0)
+        (else
+         (let ((adj (build-adj word-list)))
+           (bfs begin-word end-word adj)))))
+
+;; Embedded test cases
+(define case0-begin "hit")
+(define case0-end "cog")
+(define case0-list '("hot" "dot" "dog" "lot" "log" "cog"))
+
+(define case1-begin "hit")
+(define case1-end "cog")
+(define case1-list '("hot" "dot" "dog" "lot" "log"))
+
+(define case2-begin "a")
+(define case2-end "c")
+(define case2-list '("a" "b" "c"))
+
+(define case3-begin "hot")
+(define case3-end "dog")
+(define case3-list '("hot" "dog"))
+
+(define case4-begin "ab")
+(define case4-end "cd")
+(define case4-list '("ab" "cb" "cd"))
+
+(define case5-begin "hit")
+(define case5-end "hit")
+(define case5-list '("hit"))
+
+(define case6-begin "aaa")
+(define case6-end "bbb")
+(define case6-list '("aab" "aba" "abb" "bbb"))
+
+(define case7-begin "qa")
+(define case7-end "sq")
+(define case7-list '("si" "go" "se" "cm" "so" "ph" "mt" "db" "mb" "sb" "kr" "ln" "tm" "le" "av" "sm" "ar" "ci" "ca" "br" "ti" "ba" "to" "ra" "fa" "yo" "ow" "mh" "fp" "or" "ua" "lb" "ly" "ht" "wa" "er" "la" "sr" "dl" "ro" "wa" "ln" "ed" "ki" "hm" "wb" "el" "mb" "oa" "fa" "qy" "sq" "re" "rb" "fo" "sq" "ka" "oe" "po" "ho" "hb" "mr" "sc" "qd" "ti" "re" "bp" "ka" "ko" "si" "ho" "ca" "re" "qd" "lb" "ka" "qd" "re" "bp" "si" "ho" "ca" "re" "qd" "sq"))
+
+(define (display-list lst)
+  (display "[")
+  (let loop ((l lst) (first #t))
+    (cond ((null? l) (display "]"))
+          (else
+           (if first (display (car l)) (begin (display ", ") (display (car l))))
+           (loop (cdr l) #f)))))
+
+(display "CASE0=") (display (solve case0-begin case0-end case0-list)) (newline)
+(display "CASE1=") (display (solve case1-begin case1-end case1-list)) (newline)
+(display "CASE2=") (display (solve case2-begin case2-end case2-list)) (newline)
+(display "CASE3=") (display (solve case3-begin case3-end case3-list)) (newline)
+(display "CASE4=") (display (solve case4-begin case4-end case4-list)) (newline)
+(display "CASE5=") (display (solve case5-begin case5-end case5-list)) (newline)
+(display "CASE6=") (display (solve case6-begin case6-end case6-list)) (newline)
+(display "CASE7=") (display (solve case7-begin case7-end case7-list)) (newline)

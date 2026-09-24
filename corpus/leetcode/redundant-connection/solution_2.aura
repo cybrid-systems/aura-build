@@ -1,0 +1,93 @@
+;; Redundant Connection — Union-Find solution
+;; Returns the LAST edge in input order that creates a cycle (i.e. whose
+;; endpoints are already in the same component).
+
+;; ---------- DSU helpers ----------
+(define (dsu-make n)
+  ;; parent[i] = i for i = 1..n, stored as a list (parent 1 ... parent n)
+  (let loop ((i 1) (acc '()))
+    (if (> i n)
+        (cons 'parent acc)
+        (loop (+ i 1) (cons i acc)))))
+
+(define (dsu-parent-ref parent x)
+  ;; parent is (parent 1 p2 ... pn). x is 1-indexed.
+  (let ((idx (+ x 1)))
+    (let loop ((p parent) (k 1))
+      (if (= k idx) (car p) (loop (cdr p) (+ k 1))))))
+
+(define (dsu-parent-set! parent x v)
+  (let ((idx (+ x 1)))
+    (let loop ((p parent) (k 1))
+      (if (= k idx)
+          (set-car! p v)
+          (loop (cdr p) (+ k 1))))))
+
+(define (dsu-find parent x)
+  (let ((px (dsu-parent-ref parent x)))
+    (if (= px x)
+        x
+        (let ((r (dsu-find parent px)))
+          (dsu-parent-set! parent x r)
+          r))))
+
+(define (dsu-union parent a b)
+  (let ((ra (dsu-find parent a))
+        (rb (dsu-find parent b)))
+    (= ra rb)))
+
+;; ---------- Edge utilities ----------
+(define (edge-u e) (car e))
+(define (edge-v e) (cdr e))
+
+;; ---------- Solve ----------
+(define (solve n edges)
+  ;; Iterate edges; the first one that closes a cycle is the redundant one.
+  ;; Since we want the LAST such edge in input order, keep overwriting.
+  (let ((parent (dsu-make n))
+        (answer (cons 0 0)))
+    (let loop ((es edges))
+      (if (null? es)
+          (list (car answer) (cdr answer))
+          (let* ((e (car es))
+                 (u (edge-u e))
+                 (v (edge-v e))
+                 (same (dsu-union parent u v)))
+            (if same
+                ;; Don't break — remember and keep scanning for last one.
+                (begin
+                  (set-car! answer u)
+                  (set-cdr! answer v)
+                  (loop (cdr es)))
+                (loop (cdr es))))))))
+
+;; ---------- Display helpers ----------
+(define (display-pair p)
+  (display (car p))
+  (display " ")
+  (display (cdr p)))
+
+;; ---------- Embedded test inputs ----------
+(define CASE0 '((1 . 2) (2 . 3) (1 . 3)))
+(define CASE1 '((1 . 2) (1 . 3) (1 . 4) (3 . 4)))
+(define CASE2 '((1 . 2) (2 . 3) (3 . 4) (4 . 5) (2 . 5)))
+(define CASE3 '((1 . 2) (2 . 3) (3 . 1) (1 . 4) (4 . 5)))
+(define CASE4 '((1 . 2) (1 . 2)))
+(define CASE5 '((1 . 2) (2 . 3) (3 . 4) (4 . 5) (5 . 6) (2 . 6)))
+(define CASE6 '((2 . 1) (3 . 1) (4 . 1) (2 . 4)))
+(define CASE7 '((1 . 2) (2 . 3) (3 . 4) (4 . 5) (5 . 6) (6 . 7) (3 . 7) (4 . 6)))
+
+(define (run-case name n edges)
+  (display name)
+  (display "=")
+  (display-pair (solve n edges))
+  (newline))
+
+(run-case "CASE0" 3 CASE0)
+(run-case "CASE1" 4 CASE1)
+(run-case "CASE2" 5 CASE2)
+(run-case "CASE3" 5 CASE3)
+(run-case "CASE4" 2 CASE4)
+(run-case "CASE5" 6 CASE5)
+(run-case "CASE6" 4 CASE6)
+(run-case "CASE7" 7 CASE7)

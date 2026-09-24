@@ -1,0 +1,18 @@
+def solve(N):
+    if N < 10:
+        return N
+    digits = list(str(N))
+    n = len(digits)
+    # Find first position i where digits[i] > digits[i+1]
+    i = 0
+    while i < n - 1 and digits[i] <= digits[i+1]:
+        i += 1
+    if i == n - 1:
+        return N  # already monotone increasing
+    
+    # digits[i] > digits[i+1], need to fix
+    # Decrement digits[i], set digits[i+1:] = '9'
+    # But after decrement, digits[i] might be < digits[i-1]
+    # Walk back to find proper position
+    while i > 0 and digits[i-1] > str(int(digits[i]) - 1 if digits[i] != '0' else ...):
+        ...
