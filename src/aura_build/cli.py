@@ -673,6 +673,34 @@ def _cmd_llm_dogfood(args: argparse.Namespace) -> int:
                 )
         except Exception as exc:
             print(f"llm-dogfood: session attach skipped ({exc}); cold verify", file=sys.stderr)
+    fiber_llm = bool(getattr(args, "fiber_llm", False))
+    if fiber_llm:
+        os.environ["AURA_BUILD_LLM_VIA"] = "fiber"
+        # Soft must inherit LLM_* / AURA_PATH at serve spawn time.
+        os.environ.setdefault("LLM_API_KEY", cfg.api_key)
+        os.environ.setdefault("LLM_BASE_URL", cfg.base_url)
+        os.environ.setdefault("LLM_MODEL", cfg.model)
+        bin_now = getattr(args, "aura_bin", None) or os.environ.get("AURA_BIN") or ""
+        if bin_now and not os.environ.get("AURA_PATH"):
+            lib = Path(bin_now).resolve().parent.parent / "lib"
+            if lib.is_dir():
+                os.environ["AURA_PATH"] = str(lib)
+        # Restart session so Soft child sees LLM_* (holder copies env at spawn).
+        if prefer:
+            try:
+                from aura_build.serve_session import start_session, stop_session
+                h = _root(args)
+                stop_session(harness_root=h)
+                start_session(
+                    aura_bin=getattr(args, "aura_bin", None),
+                    harness_root=h,
+                    force=True,
+                )
+            except Exception as exc:
+                print(
+                    f"llm-dogfood: fiber-llm session restart skipped ({exc})",
+                    file=sys.stderr,
+                )
     summary = run_closed_loop(
         task=getattr(args, "task", "fib") or "fib",
         project=getattr(args, "project", None),
@@ -688,6 +716,7 @@ def _cmd_llm_dogfood(args: argparse.Namespace) -> int:
         fiber_explore=getattr(args, "fiber_explore", None),
         explore_tools=getattr(args, "explore_tools", None),
         concurrent_llm=bool(getattr(args, "concurrent_llm", False)),
+        fiber_llm=fiber_llm,
     )
     hon = summary.get("honesty") or {}
     print(
@@ -711,6 +740,8 @@ def _cmd_llm_dogfood(args: argparse.Namespace) -> int:
         f" concurrent_llm={summary.get('concurrent_llm')}"
         f" llm_parallel_ok={summary.get('llm_parallel_ok')}"
         f" llm_parallel={summary.get('llm_parallel')}"
+        f" llm_via={summary.get('llm_via')}"
+        f" fiber_llm={summary.get('fiber_llm')}"
         f" orch_obs_ok={(summary.get('orch_observation') or {}).get('ok')}"
         f" repair_path={summary.get('repair_path')}"
         f" tools_used={summary.get('tools_used_selected')}"

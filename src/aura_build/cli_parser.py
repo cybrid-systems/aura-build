@@ -243,6 +243,16 @@ def build_parser() -> argparse.ArgumentParser:
             "(also AURA_BUILD_CONCURRENT_LLM=1); stamps concurrent_llm + llm_parallel_ok"
         ),
     )
+    _opt(
+        dog,
+        "--fiber-llm",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "route MiniMax propose through Soft fiber http-post when measured ok "
+            "(also AURA_BUILD_LLM_VIA=fiber); stamps llm_via=fiber; denseness≠LLM"
+        ),
+    )
     _common(dog, aura=True)
 
     sess = sub.add_parser(

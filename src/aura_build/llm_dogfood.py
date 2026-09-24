@@ -3,7 +3,7 @@
 Primary verify prefers a long-lived Aura ``--serve`` session when attached
 (``session_model=serve``); cold ``aura`` / ``verify.sh`` is the fallback
 (``shared_workspace_subprocess``). Orch episode recording prefers the Aura
-kernel (`llm-dogfood` cmd) when available; host owns MiniMax HTTP (propose-only).
+kernel (`llm-dogfood` cmd) when available; MiniMax propose defaults to host HTTP, optional Soft-fiber http-post when `--fiber-llm` / `AURA_BUILD_LLM_VIA=fiber` measures ok.
 
 mini-* tasks are CI fixtures / regression — see docs/optimal-dev-loop.md.
 """
@@ -33,6 +33,12 @@ from aura_build.minimax import (
     redact_secrets,
 )
 from aura_build.runtime import aura_subprocess_env, resolve_aura_bin
+from aura_build.fiber_llm import (
+    fiber_chat_completions,
+    fiber_chat_completions_batch,
+    fiber_llm_probe,
+    fiber_llm_requested,
+)
 from aura_build.schema import validate_episode
 
 SESSION_SHARED = "shared_workspace_subprocess"
@@ -1977,6 +1983,10 @@ def _propose_with_tools(
     prev_sources: dict[str, str] | None,
     candidate_index: int,
     tools: list[str],
+    serve_session: Any | None = None,
+    fiber_llm: bool = False,
+    fiber_scratch: Path | None = None,
+    prefetched: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Pick a propose strategy from available tools for this explorer worldline.
 
@@ -2012,6 +2022,10 @@ def _propose_with_tools(
                 prev_errors=prev_errors,
                 prev_sources=prev_sources,
                 candidate_index=candidate_index,
+                serve_session=serve_session,
+                fiber_llm=fiber_llm,
+                fiber_scratch=fiber_scratch,
+                prefetched=prefetched,
             )
             got = dict(got)
             got["tools_used"] = ["llm"]
@@ -2025,6 +2039,10 @@ def _propose_with_tools(
         prev_errors=prev_errors,
         prev_sources=prev_sources,
         candidate_index=candidate_index,
+        serve_session=serve_session,
+        fiber_llm=fiber_llm,
+        fiber_scratch=fiber_scratch,
+        prefetched=prefetched,
     )
     got = dict(got)
     used = list(last.get("tools_used") or [])
@@ -2200,6 +2218,86 @@ def snapshot_orch_observation(
     return out
 
 
+def _build_propose_messages(
+    task_spec: dict[str, Any],
+    *,
+    round_i: int,
+    prev_source: str | None,
+    prev_errors: str | None,
+    candidate_index: int,
+    prev_sources: dict[str, str] | None = None,
+) -> list[dict[str, str]]:
+    """Build MiniMax messages for one explorer propose (no HTTP)."""
+    base_user = str(task_spec["user"])
+    file_list = list(task_spec.get("files") or [])
+    multi = len(file_list) > 1
+    if round_i == 0 and not prev_errors:
+        user = base_user + f"\n(candidate index={candidate_index}; vary structure slightly)\n"
+        return [
+            {"role": "system", "content": SYSTEM_CODEGEN},
+            {"role": "user", "content": user},
+        ]
+    err = (prev_errors or "")[:3500]
+    expect = str(task_spec.get("expect") or "")
+    src_res = task_spec.get("source_res") or []
+    struct_hint = ""
+    if src_res:
+        pats = ", ".join(getattr(p, "pattern", str(p)) for p in src_res)
+        struct_hint = (
+            f"Required source patterns (all must match; use \\b so zero-arity "
+            f"(define (name) ...) works): {pats}\n"
+        )
+    mismatch_hint = ""
+    if "verify mismatch line" in (err or "").lower():
+        mismatch_hint = (
+            "Verify reported line mismatches — fix those exact KEY=value lines "
+            "(prefix rule, method 405, COUNT definition, etc.).\n"
+        )
+    if multi:
+        fence_hint = "\n".join(f"```aura {fn}\n...\n```" for fn in file_list)
+        prev_blocks = []
+        src_map = dict(prev_sources or {})
+        if not src_map and prev_source:
+            parts = str(prev_source).split("; --- ")
+            for part in parts:
+                if " ---\n" in part or " ---\r\n" in part:
+                    name, _, body = part.partition(" ---")
+                    name = name.strip()
+                    body = body.lstrip("\r\n")
+                    if name:
+                        src_map[name] = body
+        for fn in file_list:
+            body = (src_map.get(fn) or "")[:2500]
+            prev_blocks.append(f"```aura {fn}\n{body}\n```")
+        prev_blob = "\n\n".join(prev_blocks) if prev_blocks else (
+            f"```aura\n{(prev_source or '')[:3500]}\n```"
+        )
+        user_content = (
+            f"{REPAIR_STEER}\nRequired exact output:\n{expect}\n"
+            f"{struct_hint}{mismatch_hint}\n"
+            f"Required files (stable order): {', '.join(file_list)}.\n"
+            f"Emit named fences, e.g.:\n{fence_hint}\n"
+            "Prefer rewrite ONLY files implicated by verify errors; omitted "
+            "files are kept from the previous candidate.\n\n"
+            f"## Previous sources\n{prev_blob}\n\n"
+            f"## Verify errors / stdout\n```\n{err}\n```\n"
+            f"(repair round={round_i} candidate={candidate_index})\n"
+        )
+    else:
+        src = (prev_source or "")[:3500]
+        user_content = (
+            f"{REPAIR_STEER}\nRequired exact output:\n{expect}\n"
+            f"{struct_hint}{mismatch_hint}\n"
+            f"## Previous source\n```aura\n{src}\n```\n\n"
+            f"## Verify errors / stdout\n```\n{err}\n```\n"
+            f"(repair round={round_i} candidate={candidate_index})\n"
+        )
+    return [
+        {"role": "system", "content": SYSTEM_CODEGEN},
+        {"role": "user", "content": user_content},
+    ]
+
+
 def _propose(
     cfg: MiniMaxConfig,
     *,
@@ -2209,80 +2307,46 @@ def _propose(
     prev_errors: str | None,
     candidate_index: int,
     prev_sources: dict[str, str] | None = None,
+    serve_session: Any | None = None,
+    fiber_llm: bool = False,
+    fiber_scratch: Path | None = None,
+    prefetched: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    base_user = str(task_spec["user"])
+    messages = _build_propose_messages(
+        task_spec,
+        round_i=round_i,
+        prev_source=prev_source,
+        prev_errors=prev_errors,
+        candidate_index=candidate_index,
+        prev_sources=prev_sources,
+    )
     file_list = list(task_spec.get("files") or [])
     multi = len(file_list) > 1
-    if round_i == 0 and not prev_errors:
-        user = base_user + f"\n(candidate index={candidate_index}; vary structure slightly)\n"
-        messages = [
-            {"role": "system", "content": SYSTEM_CODEGEN},
-            {"role": "user", "content": user},
-        ]
-    else:
-        err = (prev_errors or "")[:3500]
-        expect = str(task_spec.get("expect") or "")
-        src_res = task_spec.get("source_res") or []
-        struct_hint = ""
-        if src_res:
-            pats = ", ".join(
-                getattr(p, "pattern", str(p)) for p in src_res
-            )
-            struct_hint = (
-                f"Required source patterns (all must match; use \\b so zero-arity "
-                f"(define (name) ...) works): {pats}\n"
-            )
-        mismatch_hint = ""
-        if "verify mismatch line" in (err or "").lower():
-            mismatch_hint = (
-                "Verify reported line mismatches — fix those exact KEY=value lines "
-                "(prefix rule, method 405, COUNT definition, etc.).\n"
-            )
-        if multi:
-            fence_hint = "\n".join(f"```aura {fn}\n...\n```" for fn in file_list)
-            prev_blocks = []
-            src_map = dict(prev_sources or {})
-            if not src_map and prev_source:
-                # best-effort split from joined "; --- name ---" form
-                parts = str(prev_source).split("; --- ")
-                for part in parts:
-                    if " ---\n" in part or " ---\r\n" in part:
-                        name, _, body = part.partition(" ---")
-                        name = name.strip()
-                        body = body.lstrip("\r\n")
-                        if name:
-                            src_map[name] = body
-            for fn in file_list:
-                body = (src_map.get(fn) or "")[:2500]
-                prev_blocks.append(f"```aura {fn}\n{body}\n```")
-            prev_blob = "\n\n".join(prev_blocks) if prev_blocks else (
-                f"```aura\n{(prev_source or '')[:3500]}\n```"
-            )
-            user_content = (
-                f"{REPAIR_STEER}\nRequired exact output:\n{expect}\n"
-                f"{struct_hint}{mismatch_hint}\n"
-                f"Required files (stable order): {', '.join(file_list)}.\n"
-                f"Emit named fences, e.g.:\n{fence_hint}\n"
-                "Prefer rewrite ONLY files implicated by verify errors; omitted "
-                "files are kept from the previous candidate.\n\n"
-                f"## Previous sources\n{prev_blob}\n\n"
-                f"## Verify errors / stdout\n```\n{err}\n```\n"
-                f"(repair round={round_i} candidate={candidate_index})\n"
-            )
+    llm_via = "host"
+    if prefetched is not None:
+        result = dict(prefetched)
+        llm_via = str(result.get("llm_via") or "fiber")
+    elif fiber_llm and serve_session is not None and fiber_scratch is not None:
+        result = fiber_chat_completions(
+            serve_session,
+            messages,
+            config=cfg,
+            scratch_dir=fiber_scratch,
+            thinking_disabled=True,
+        )
+        if result.get("ok"):
+            llm_via = "fiber"
         else:
-            src = (prev_source or "")[:3500]
-            user_content = (
-                f"{REPAIR_STEER}\nRequired exact output:\n{expect}\n"
-                f"{struct_hint}{mismatch_hint}\n"
-                f"## Previous source\n```aura\n{src}\n```\n\n"
-                f"## Verify errors / stdout\n```\n{err}\n```\n"
-                f"(repair round={round_i} candidate={candidate_index})\n"
-            )
-        messages = [
-            {"role": "system", "content": SYSTEM_CODEGEN},
-            {"role": "user", "content": user_content},
-        ]
-    result = chat_completions(messages, config=cfg, thinking_disabled=True)
+            # Honest fallback — do not claim fiber on failure
+            err = redact_secrets(str(result.get("error") or ""), cfg.api_key)
+            result = chat_completions(messages, config=cfg, thinking_disabled=True)
+            result = dict(result)
+            result["fiber_fallback_error"] = err
+            llm_via = "host"
+    else:
+        result = chat_completions(messages, config=cfg, thinking_disabled=True)
+    result = dict(result)
+    result["llm_via"] = llm_via
     content = (result.get("content") or "") if result.get("ok") else ""
     sources: dict[str, str] = {}
     source = ""
@@ -2404,6 +2468,7 @@ def run_closed_loop(
     fiber_explore: int | None = None,
     explore_tools: list[str] | str | None = None,
     concurrent_llm: bool | None = None,
+    fiber_llm: bool | None = None,
 ) -> dict[str, Any]:
     """Propose → verify → repair with optional fiber:spawn concurrent explore.
 
@@ -2454,6 +2519,9 @@ def run_closed_loop(
     )
     if concurrent_llm_mode:
         tools = ["llm"]
+    fiber_llm_mode = (
+        bool(fiber_llm) if fiber_llm is not None else fiber_llm_requested()
+    )
     hroot = harness_root or (repo / ".aura-build")
     hroot.mkdir(parents=True, exist_ok=True)
     honesty = load_honesty(hroot)
@@ -2526,6 +2594,18 @@ def run_closed_loop(
         fiber_explore_n = max(1, int(fiber_explore))
     # Cap explorers to worldlines slots
     fiber_explore_n = min(fiber_explore_n, max(1, int(worldlines)))
+    fiber_scratch = hroot / "fiber-llm-scratch"
+    fiber_llm_live = False
+    fiber_llm_probe_info: dict[str, Any] = {"ok": False, "reason": "not_run"}
+    if fiber_llm_mode and serve_sess is not None:
+        fiber_scratch.mkdir(parents=True, exist_ok=True)
+        fiber_llm_probe_info = fiber_llm_probe(
+            serve_sess, scratch_dir=fiber_scratch, config=cfg, timeout_s=60.0
+        )
+        fiber_llm_live = bool(fiber_llm_probe_info.get("ok"))
+        if not fiber_llm_live:
+            # Do not claim fiber LLM; host path remains.
+            fiber_llm_mode = False
     if not tools:
         tools = list(EXPLORE_TOOLS_DEFAULT) if (
             prefer_session is not False and multi_file_task
@@ -2653,11 +2733,59 @@ def run_closed_loop(
 
         n_explore = fiber_explore_n
 
+        # Optional Soft-fiber MiniMax batch (honest concurrent in-fiber HTTP).
+        round_llm_via = "host"
+        round_llm_parallel_fiber: str | None = None
+        fiber_prefetch: dict[int, dict[str, Any]] = {}
+        if fiber_llm_live and serve_sess is not None and "llm" in tools:
+            msgs_list: list[list[dict[str, str]]] = []
+            for i in range(n_explore):
+                prev_err_i = None
+                if round_i > 0 or last_errors:
+                    prev_err_i = last_errors
+                    if round_i > 0 and i > 0 and last_errors:
+                        prev_err_i = last_errors + f"\n(explorer variant {i})"
+                msgs_list.append(
+                    _build_propose_messages(
+                        task_spec,
+                        round_i=round_i,
+                        prev_source=last_source if (i == 0 or round_i > 0) else (
+                            last_source if i == 0 else None
+                        ),
+                        prev_errors=prev_err_i,
+                        prev_sources=last_sources if (round_i > 0 or last_errors) else None,
+                        candidate_index=i,
+                    )
+                )
+            if concurrent_llm_mode and n_explore >= 2:
+                batch = fiber_chat_completions_batch(
+                    serve_sess,
+                    msgs_list,
+                    config=cfg,
+                    scratch_dir=fiber_scratch,
+                    thinking_disabled=True,
+                    timeout_s=180.0,
+                )
+                if batch.get("ok") and len(batch.get("results") or []) == n_explore:
+                    for i, res in enumerate(batch["results"]):
+                        fiber_prefetch[i] = dict(res)
+                        fiber_prefetch[i]["llm_via"] = "fiber"
+                    round_llm_via = "fiber"
+                    round_llm_parallel_fiber = batch.get("llm_parallel") or "fiber"
+                else:
+                    # Fall through to per-explorer fiber oneshot / host
+                    round_llm_parallel_fiber = "fiber_serial"
+            # When not batched, per-explorer fiber oneshots below.
+
         def _explore_one(i: int) -> dict[str, Any]:
             """Propose+materialize+verify one explorer worldline (host side)."""
             cid = f"wl-{i}"
             cdir = ws_root / "candidates" / cid
             cdir.mkdir(parents=True, exist_ok=True)
+            pref = fiber_prefetch.get(i)
+            use_fiber = bool(fiber_llm_live and serve_sess is not None and pref is None)
+            # If prefetched, pass it; elif fiber live, oneshot inside _propose;
+            # else host.
             prop = _propose_with_tools(
                 cfg,
                 task_spec=task_spec,
@@ -2675,9 +2803,13 @@ def run_closed_loop(
                 prev_sources=last_sources if (round_i > 0 or last_errors) else None,
                 candidate_index=i,
                 tools=tools,
+                serve_session=serve_sess,
+                fiber_llm=bool(fiber_llm_live and pref is None),
+                fiber_scratch=fiber_scratch if fiber_llm_live else None,
+                prefetched=pref,
             )
             # Diversify repair errors for non-zero explorers
-            if round_i > 0 and i > 0 and last_errors and "llm" in (prop.get("tools_used") or []):
+            if round_i > 0 and i > 0 and last_errors and "llm" in (prop.get("tools_used") or []) and pref is None:
                 prop = _propose_with_tools(
                     cfg,
                     task_spec=task_spec,
@@ -2687,6 +2819,10 @@ def run_closed_loop(
                     prev_sources=last_sources,
                     candidate_index=i,
                     tools=tools,
+                    serve_session=serve_sess,
+                    fiber_llm=bool(fiber_llm_live),
+                    fiber_scratch=fiber_scratch if fiber_llm_live else None,
+                    prefetched=None,
                 )
             files = list(task_spec.get("files") or [])
             multi = bool(task_spec.get("multi_file")) and len(files) > 1
@@ -2742,6 +2878,7 @@ def run_closed_loop(
                         "model": cfg.model if "llm" in tools_used else None,
                         "llm_ok": bool(prop.get("ok")),
                         "llm_error": redact_secrets(prop.get("error") or "", cfg.api_key),
+                        "llm_via": prop.get("llm_via") or "host",
                     },
                     indent=2,
                     sort_keys=True,
@@ -2770,6 +2907,7 @@ def run_closed_loop(
                 "target_id": target_id,
                 "tools_used": tools_used,
                 "ver": ver,
+                "llm_via": prop.get("llm_via") or "host",
             }
 
         # Parallel host propose/verify across explorers (sock verify serializes
@@ -2788,11 +2926,21 @@ def run_closed_loop(
         explore_parallel = (
             "fiber_graph" if round_backend == "fiber_graph" else "host_thread"
         )
-        llm_parallel = "host_thread"  # MiniMax HTTP is always host-side today
         llm_wls = [
             r for r in results if "llm" in (r.get("tools_used") or [])
         ]
+        fiber_wls = [r for r in llm_wls if (r.get("llm_via") or "") == "fiber"]
+        if fiber_wls:
+            round_llm_via = "fiber"
         llm_parallel_ok = len(llm_wls) >= 2
+        # Honesty: llm_parallel=fiber only when in-fiber LLM was used by ≥2
+        # explorers AND a concurrent Soft-fiber batch measured this round.
+        if round_llm_parallel_fiber == "fiber" and len(fiber_wls) >= 2:
+            llm_parallel = "fiber"
+        elif fiber_wls:
+            llm_parallel = "fiber_serial"
+        else:
+            llm_parallel = "host_thread"
         llm_calls_parallel = len(llm_wls) if concurrent_llm_mode else (
             len(llm_wls) if llm_parallel_ok else 0
         )
@@ -2991,6 +3139,12 @@ def run_closed_loop(
                 "llm_calls_parallel": int(llm_calls_parallel),
                 "llm_parallel": llm_parallel,
                 "llm_parallel_ok": bool(llm_parallel_ok),
+                "llm_via": round_llm_via,
+                "fiber_llm_probe": {
+                    "ok": bool(fiber_llm_probe_info.get("ok")),
+                    "reason": fiber_llm_probe_info.get("reason"),
+                    "latency_ms": fiber_llm_probe_info.get("latency_ms"),
+                },
                 "explore_wall_ms": int(explore_wall_ms),
                 "orch_observation": dict(orch_obs),
                 "dogfood": {
@@ -3078,6 +3232,12 @@ def run_closed_loop(
                 "llm_calls_parallel": int(llm_calls_parallel),
                 "llm_parallel": llm_parallel,
                 "llm_parallel_ok": bool(llm_parallel_ok),
+                "llm_via": round_llm_via,
+                "fiber_llm_probe": {
+                    "ok": bool(fiber_llm_probe_info.get("ok")),
+                    "reason": fiber_llm_probe_info.get("reason"),
+                    "latency_ms": fiber_llm_probe_info.get("latency_ms"),
+                },
                 "explore_wall_ms": int(explore_wall_ms),
                 "orch_observation": {
                     "ok": bool(orch_obs.get("ok")),
@@ -3141,6 +3301,13 @@ def run_closed_loop(
         "llm_calls_parallel": last_round.get("llm_calls_parallel"),
         "llm_parallel": last_round.get("llm_parallel"),
         "llm_parallel_ok": bool(last_round.get("llm_parallel_ok")),
+        "llm_via": last_round.get("llm_via"),
+        "fiber_llm": bool(fiber_llm_live),
+        "fiber_llm_probe": {
+            "ok": bool(fiber_llm_probe_info.get("ok")),
+            "reason": fiber_llm_probe_info.get("reason"),
+            "latency_ms": fiber_llm_probe_info.get("latency_ms"),
+        },
         "orch_observation": last_round.get("orch_observation"),
         "repair_path": last_round.get("repair_path"),
         "worldline_backend": last_round.get("worldline_backend"),
