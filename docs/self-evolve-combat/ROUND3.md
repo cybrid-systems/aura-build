@@ -99,3 +99,8 @@ Parent steering: `487bcf3` / `319e4a7` GOAL-contract heal = gold under another n
 
 Trajectory fitness climbed 0.31→0.52→0.63→0.85→**1.0** (round 8) with Soft `llm_parallel=fiber` (8/9; 1×fiber_serial). **Not claimed green:** main hardcodes STP=0 and COUNT=10. Anti-hardcode product gate added; continuing ≤2 more attempts.
 
+
+### Run 3i — NOT fiber (host_thread) — `combat_20260924-183518` (18:35 CST)
+
+Soft fiber_llm_probe OK (~7s) then Soft sock/session timeout → `llm_parallel=host_thread` all rounds. **Do not count as fiber repro.** Aura #4056. Elite best_ever **0.6308** (round candidates dipped to ~0.52). Continuing ≥2 fiber runs after Soft/session fix attempt.
+

@@ -54,7 +54,7 @@ def fiber_llm_requested(
     )
 
 
-def ensure_http_post(serve_session: Any, *, timeout_s: float = 20.0) -> dict[str, Any]:
+def ensure_http_post(serve_session: Any, *, timeout_s: float = 90.0) -> dict[str, Any]:
     """Require std/llm + std/encoding (http-post, base64-encode). Never logs secrets."""
     if serve_session is None:
         return {"ok": False, "reason": "no_session"}
@@ -114,7 +114,7 @@ def fiber_llm_probe(
             "getenv_status": glen.get("status"),
             "getenv_value": glen.get("value"),
         }
-    inst = ensure_http_post(serve_session, timeout_s=min(20.0, timeout_s))
+    inst = ensure_http_post(serve_session, timeout_s=min(90.0, timeout_s))
     if not inst.get("ok"):
         return {
             "ok": False,
@@ -551,7 +551,7 @@ def fiber_chat_completions_batch(
             "fiber_llm_mode": one.get("fiber_llm_mode"),
             "body_inline": one.get("body_inline"),
         }
-    inst = ensure_http_post(serve_session)
+    inst = ensure_http_post(serve_session, timeout_s=90.0)
     if not inst.get("ok"):
         return {
             "ok": False,

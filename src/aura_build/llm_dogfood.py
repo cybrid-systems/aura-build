@@ -3776,6 +3776,8 @@ def run_closed_loop(
                 "round": round_i,
                 "selected_id": selected_id,
                 "fitness": best["eval"]["fitness"],
+                "elite_fitness": round(float(elite_fitness), 4),
+                "elite_id": elite_id,
                 "passed": best["eval"]["passed"],
                 "discarded": len(discarded),
                 "final_program": str(final_program),

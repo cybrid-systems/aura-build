@@ -93,3 +93,24 @@ After contract_heal revert, generic-only run `combat_20260924-182234` reported `
 
 **Product fix:** generic `_expect_literal_hardcode_hits` — fail structure when source shows/displays expect KEY=value as a literal (no gold). Prior best **honest** pure-MiniMax fitness remains **0.7385** (`combat_20260924-175921`) until a non-hardcode green.
 
+
+## Dig: combat_20260924-183518 host_thread every round (2026-09-24 ~18:35–18:48 CST)
+
+**Not a Soft fiber denseness repro.** After tip `9b425e1` anti-hardcode:
+
+| Field | Measured |
+|-------|----------|
+| `fiber_live` | true (denseness probe OK) |
+| `fiber_llm_probe` | ok ~6971ms `fiber_llm_chat_ok` |
+| `fiber_batch_reason` r0 | `http_post_or_b64_missing:serve_session_timeout:None` |
+| later rounds | `http_post_or_b64_missing:serve_sock_error:timed out:None` |
+| `llm_via` / `llm_parallel` | **host** / **host_thread** every combat round |
+
+Soft `--serve-async` stops answering sock/session RPC after a green in-fiber MiniMax probe when aura-build tries `ensure_http_post` + N=3 fiber batch. Honest host fallback.
+
+**Aura:** https://github.com/cybrid-systems/aura/issues/4056 (Soft tip `bd1c610` / `build_soft4055`).
+
+**Elite carry:** traj `best_ever` rose to **0.6308** and held while some later *round candidates* maxed at 0.5231 — historical elite fitness must be reported separately from selected-round fitness. Product now logs `elite_fitness` / `elite_id` per rounds_log entry.
+
+**aura-build mitigation (does not invent fiber):** longer Soft sock timeout for `ensure_http_post` (20s→90s) before host fallback.
+
