@@ -1,0 +1,69 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:53:53Z",
+      "ts_local": "2026-09-24 22:53:53 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2959,
+        "total_characters": 0,
+        "prompt_tokens": 1358,
+        "completion_tokens": 1601,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 512
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.015,
+      "tests_passed": 0,
+      "tests_total": 6,
+      "stderr_snippet": "error: 14:27: parse error: unexpected ')'\n",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:54:41Z",
+      "ts_local": "2026-09-24 22:54:41 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 5358,
+        "total_characters": 0,
+        "prompt_tokens": 1358,
+        "completion_tokens": 4000,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 1152
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.126,
+      "tests_passed": 0,
+      "tests_total": 6,
+      "stderr_snippet": "error: 13:32: unbound variable: s\n   |\n 13 |           ((char=? (string-ref s i) #\\) )\n   |                                ^\nerror: 67:11: unbound variable: dfs\n   |\n 67 |          (dfs l (+ depth 1) new-levels)\n   |           ^^^\nerror: 7:12: unbound variable: else\n   |\n  7 |           (else\n   |            ^^^^\nerror: 3:39: parse error: expected expression, got ')'\n   |\n  3 |   (let ((eq-pos (string-index line #\\=)))\n   |                                       ^\nerror: 2:19: unbound variable: r",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "binary-tree-level-order-traversal-ii",
+  "title": "Binary Tree Level Order Traversal II",
+  "category": "trees",
+  "updated_at": "2026-09-24T14:54:41Z",
+  "updated_at_local": "2026-09-24 22:54:41 CST"
+}

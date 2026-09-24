@@ -1,0 +1,77 @@
+;; Word Search solver using DFS with backtracking
+;; Board is represented as a flat list (row-major) of single-character strings
+;; Empty cells '.' are treated as non-matching
+
+(define (string-length s)
+  (let loop ((i 0))
+    (if (string=? (substring s i (+ i 1)) "")
+        i
+        (loop (+ i 1)))))
+
+(define (string-ref-impl s i)
+  (substring s i (+ i 1)))
+
+(define (board-ref board n i j)
+  (list-ref board (+ (* i n) j)))
+
+(define (set-list lst idx val)
+  (if (= idx 0)
+      (cons val (cdr lst))
+      (cons (car lst) (set-list (cdr lst) (- idx 1) val))))
+
+(define (dfs board m n i j idx word visited)
+  (if (= idx (string-length word))
+      #t
+      (if (and (>= i 0) (< i m) (>= j 0) (< j n))
+          (let ((pos (+ (* i n) j)))
+            (if (= (list-ref visited pos) 0)
+                (if (string=? (board-ref board n i j) (string-ref-impl word idx))
+                    (let ((visited (set-list visited pos 1)))
+                      (if (or (dfs board m n (+ i 1) j (+ idx 1) word visited)
+                              (dfs board m n (- i 1) j (+ idx 1) word visited)
+                              (dfs board m n i (+ j 1) (+ idx 1) word visited)
+                              (dfs board m n i (- j 1) (+ idx 1) word visited))
+                          #t
+                          #f))
+                    #f)
+                #f))
+          #f)))
+
+(define (solve m n board word)
+  (if (= (string-length word) 0)
+      #t
+      (let loop ((i 0) (found #f))
+        (if (or found (>= i m))
+            found
+            (let loop2 ((j 0) (found found))
+              (if (or found (>= j n))
+                  (loop (+ i 1) found)
+                  (let ((visited (make-list (* m n) 0)))
+                    (if (and (string=? (board-ref board n i j) (string-ref-impl word 0))
+                             (dfs board m n i j 0 word visited))
+                        (loop2 (+ j 1) #t)
+                        (loop2 (+ j 1) found))))))))))
+
+;; Convert board rows (lists) into flat list
+(define (flatten-board rows)
+  (let loop ((rows rows) (acc '()))
+    (if (null? rows)
+        (reverse acc)
+        (loop (cdr rows) (append acc (car rows))))))
+
+(define (run-case m n rows word)
+  (let ((board (flatten-board rows)))
+    (let ((result (solve m n board word)))
+      (display "CASE=")
+      (display (if result "YES" "NO"))
+      (newline))))
+
+;; Test cases
+(run-case 3 4 '("A" "B" "C" "E" "S" "F" "C" "S" "A" "D" "E" "E") "ABCCED")
+(run-case 3 4 '("A" "B" "C" "E" "S" "F" "C" "S" "A" "D" "E" "E") "SEE")
+(run-case 3 4 '("A" "B" "C" "E" "S" "F" "C" "S" "A" "D" "E" "E") "ABCB")
+(run-case 1 1 '("A") "A")
+(run-case 1 1 '("A") "AA")
+(run-case 2 2 '("." "A" "B" "C") "AC")
+(run-case 3 3 '("A" "B" "A" "B" "A" "B" "A" "B" "A") "ABABABABA")
+(run-case 2 2 '("A" "B" "C" "D") "")

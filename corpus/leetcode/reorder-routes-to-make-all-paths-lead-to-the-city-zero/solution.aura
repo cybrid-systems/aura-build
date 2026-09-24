@@ -1,0 +1,85 @@
+(define (make-adj n edges)
+  ;; adjacency list: vector of lists of (neighbor . needs_reverse?)
+  (define adj (make-vector n '()))
+  (define (process e)
+    (let ((u (car e)) (v (cadr e)))
+      ;; edge u -> v means traversing from u to v is the given direction
+      ;; from 0's perspective: going 0 -> ... -> u -> v is outgoing from u's parent
+      ;; if u is reachable from 0 and we go to v (which is v's outgoing away from 0)
+      ;; We add both directions with a flag: flag=1 means the given edge points AWAY from 0 (needs reversal)
+      ;; When we add v to adj[u], flag = 1 (given edge u->v is away from 0 perspective depending on which side u is)
+      ;; Actually: building adj such that each undirected edge stores (neighbor, cost)
+      ;; where cost=1 if the original directed edge goes from neighbor -> current node when starting BFS from 0
+      ;; It's easier: add u->v with flag 1 (meaning original is u->v, away from 0 if u is closer to 0)
+      ;; Wait, we need to think carefully.
+      ;;
+      ;; Standard approach: for each edge (u, v) meaning u -> v:
+      ;;   adj[u] gets (v, 0)  -- going u->v along original direction costs 0 (no reversal needed since this edge points away from 0 in tree if u is parent)
+      ;;   adj[v] gets (u, 1)  -- going v->u (reverse) costs 1
+      ;; Then BFS/DFS from 0 counts edges where flag is 1 (means the edge in tree points away from 0)
+      ;;
+      ;; Hmm wait, let's reconsider. The problem: every edge should point TOWARD 0.
+      ;; If original is u -> v, and in the tree u is closer to 0 (parent of v), then u->v points AWAY from 0, needs reversal (cost 1).
+      ;; If original is u -> v and v is closer to 0 (parent of u), then u->v already points TOWARD 0, no reversal.
+      ;;
+      ;; Strategy: build adjacency where for edge (u, v) originally u->v:
+      ;;   adj[u] push (v, 1)  -- because from u's perspective, v is downstream; the edge points away from 0 if u is parent
+      ;;   adj[v] push (u, 0)  -- because from v's perspective, u is upstream; the edge points toward 0 if u is parent
+      ;;
+      ;; Then DFS from 0: when we traverse an edge (current, neighbor, flag), if flag=1 it means the original edge was current->neighbor (away from 0), so reversal needed.
+      ;; When traversing (current, neighbor) with flag=0, original was neighbor->current (toward 0), no reversal.
+      (set! adj (vector-set! adj u (cons (cons v 0) (vector-ref adj u))))
+      (set! adj (vector-set! adj v (cons (cons u 1) (vector-ref adj v))))))
+  (let loop ((es edges))
+    (if (null? es)
+        adj
+        (begin
+          (process (car es))
+          (loop (cdr es))))))
+
+(define (dfs adj visited node count)
+  (set! visited (cons node visited))
+  (let loop ((nbrs (vector-ref adj node)))
+    (if (null? nbrs)
+        count
+        (let ((nb (car (car nbrs)))
+              (flag (cdr (car nbrs))))
+          (if (member nb visited)
+              (loop (cdr nbrs))
+              (let ((new-count (+ count flag)))
+                (set! count (loop-helper adj visited nb new-count))
+                (loop (cdr nbrs))))))))
+
+(define (loop-helper adj visited node count)
+  (dfs adj visited node count))
+
+(define (solve n edges)
+  (let ((adj (make-adj n edges))
+        (visited '()))
+    (dfs adj visited 0 0)))
+
+;; Display helper for integer
+(define (display-int x) (display (number->string x)))
+
+(define (run-case n edges idx)
+  (let ((result (solve n edges)))
+    (display (string-append "CASE" (number->string idx) "="))
+    (display-int result)
+    (newline)))
+
+;; Embedded test cases
+(define CASE0-EDGES (list (list 0 1) (list 1 3) (list 2 3) (list 4 3) (list 5 4)))
+(define CASE1-EDGES (list (list 1 0) (list 2 0) (list 3 1) (list 4 2)))
+(define CASE2-EDGES (list (list 0 1)))
+(define CASE3-EDGES (list (list 1 0)))
+(define CASE4-EDGES (list (list 0 1) (list 2 0) (list 3 2)))
+(define CASE5-EDGES (list (list 0 1) (list 1 2) (list 2 3) (list 3 4) (list 4 5) (list 5 6)))
+(define CASE6-EDGES (list (list 1 0) (list 2 1) (list 3 2) (list 4 3) (list 5 4) (list 6 5)))
+
+(run-case 6 CASE0-EDGES 0)
+(run-case 5 CASE1-EDGES 1)
+(run-case 2 CASE2-EDGES 2)
+(run-case 2 CASE3-EDGES 3)
+(run-case 4 CASE4-EDGES 4)
+(run-case 7 CASE5-EDGES 5)
+(run-case 7 CASE6-EDGES 6)

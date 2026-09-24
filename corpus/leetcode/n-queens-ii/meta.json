@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:55:55Z",
+      "ts_local": "2026-09-24 22:55:55 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1843,
+        "total_characters": 0,
+        "prompt_tokens": 1222,
+        "completion_tokens": 621,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": -1,
+      "timeout": true,
+      "duration_s": 20.004,
+      "tests_passed": 0,
+      "tests_total": 10,
+      "stderr_snippet": "timeout",
+      "stdout_snippet": ""
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:55:59Z",
+      "ts_local": "2026-09-24 22:55:59 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 1854,
+        "total_characters": 0,
+        "prompt_tokens": 1222,
+        "completion_tokens": 632,
+        "prompt_tokens_details": {
+          "cached_tokens": 1221
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.038,
+      "tests_passed": 0,
+      "tests_total": 10,
+      "stderr_snippet": "error: 10:14: unbound variable: else\n   |\n 10 |             (else (loop (+ i 1)))))))\n   |              ^^^^\nerror: 3:14: unbound variable: read-char\n   |\n  3 |     (if line\n   |              ^\n",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "n-queens-ii",
+  "title": "N-Queens II",
+  "category": "backtracking",
+  "updated_at": "2026-09-24T14:55:59Z",
+  "updated_at_local": "2026-09-24 22:55:59 CST"
+}

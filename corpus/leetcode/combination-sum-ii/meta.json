@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:56:14Z",
+      "ts_local": "2026-09-24 22:56:14 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2345,
+        "total_characters": 0,
+        "prompt_tokens": 1211,
+        "completion_tokens": 1134,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.096,
+      "tests_passed": 0,
+      "tests_total": 7,
+      "stderr_snippet": "warning: unbalanced parentheses in input\n⚠ program returned an uncalled function\n",
+      "stdout_snippet": "#<procedure>\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T14:56:21Z",
+      "ts_local": "2026-09-24 22:56:21 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2338,
+        "total_characters": 0,
+        "prompt_tokens": 1211,
+        "completion_tokens": 1127,
+        "prompt_tokens_details": {
+          "cached_tokens": 1210
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.017,
+      "tests_passed": 0,
+      "tests_total": 7,
+      "stderr_snippet": "error: 91:12: parse error: unexpected ')'\n",
+      "stdout_snippet": ""
+    }
+  ],
+  "slug": "combination-sum-ii",
+  "title": "Combination Sum II",
+  "category": "backtracking",
+  "updated_at": "2026-09-24T14:56:21Z",
+  "updated_at_local": "2026-09-24 22:56:21 CST"
+}

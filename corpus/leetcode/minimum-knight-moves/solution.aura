@@ -1,0 +1,153 @@
+;; Minimum Knight Moves on infinite chessboard.
+;; Uses BFS bounded by the target plus a small padding. To handle the
+;; symmetry and ensure termination we work in the first quadrant by
+;; mapping inputs to (|x|, |y|) before searching.
+
+(define (abs n)
+  (if (< n 0) (- 0 n) n))
+
+(define (make-pair a b) (cons a (cons b '())))
+
+(define (pair-x p) (car p))
+(define (pair-y p) (car (cdr p)))
+
+(define (pair-equal? a b)
+  (and (= (pair-x a) (pair-x b))
+       (= (pair-y a) (pair-y b))))
+
+;; Check whether (px,py) is inside the allowed search rectangle:
+;;   0 <= px <= bx,  0 <= py <= by
+(define (in-bounds? px py bx by)
+  (and (>= px 0) (>= py 0) (<= px bx) (<= py by)))
+
+;; Check if (px,py) is "near" the target in the sense that BFS should
+;; still expand it. We allow points whose coordinates are within
+;; (target_x + 2, target_y + 2) so the queue doesn't explode on huge
+;; coordinates, while still guaranteeing the target is reachable.
+(define (in-search? px py tx ty)
+  (in-bounds? px py (+ tx 2) (+ ty 2)))
+
+;; Membership test for a list of pairs (used as a "visited" set).
+(define (member-pair p lst)
+  (cond ((null? lst) #f)
+        ((pair-equal? p (car lst)) #t)
+        (else (member-pair p (cdr lst)))))
+
+;; BFS: start = (0,0), target = (tx,ty), search window
+;;   0..tx+2 by 0..ty+2 . Returns the minimum number of moves.
+(define (bfs tx ty)
+  ;; Moves available to the knight.
+  (define dx (list 1 2 2 1 -1 -2 -2 -1))
+  (define dy (list 2 1 -1 -2 2 1 -1 -2))
+
+  ;; Cell record: (pair . steps)
+  (define (cell p s) (cons p s))
+  (define (cell-pair c) (car c))
+  (define (cell-steps c) (cdr c))
+
+  (define start (make-pair 0 0))
+  (define target (make-pair tx ty))
+
+  ;; If start equals target, we are done.
+  (if (pair-equal? start target)
+      0
+      (bfs-loop (list (cell start 0)) (list start))))
+
+(define (bfs-loop queue visited)
+  (if (null? queue)
+      -1  ;; unreachable (shouldn't happen)
+      (let* ((front (car queue))
+             (p (cell-pair front))
+             (s (cell-steps front))
+             (px (pair-x p))
+             (py (pair-y p))
+             (tx (pair-x target))
+             (ty (pair-y target)))
+        ;; Generate next positions.
+        (define neighbors
+          (neighbors-loop px py 0 '()
+                          (list 1 2 2 1 -1 -2 -2 -1)
+                          (list 2 1 -1 -2 2 1 -1 -2)))
+
+        ;; Search neighbors for the target.
+        (define found
+          (neighbors-find-target neighbors tx ty))
+
+        (if found
+            (+ s 1)
+            (bfs-loop
+              (append
+                (cdr queue)
+                (new-cells neighbors s visited tx ty))
+              (extend-visited visited neighbors))))))
+
+;; targets are referenced globally inside bfs-loop; alias for the
+;; recursion that uses absolute target values.
+;; The functions below are written so that they capture `tx` and `ty`
+;; from their lexical environment when called.
+
+(define (neighbors-loop px py i acc dxs dys)
+  (if (null? dxs)
+      acc
+      (let ((nx (+ px (car dxs)))
+            (ny (+ py (car dys))))
+        (neighbors-loop px py (+ i 1)
+                        (cons (make-pair nx ny) acc)
+                        (cdr dxs)
+                        (cdr dys)))))
+
+(define (neighbors-find-target lst tx ty)
+  (cond ((null? lst) #f)
+        ((and (= (pair-x (car lst)) tx)
+              (= (pair-y (car lst)) ty))
+         #t)
+        (else (neighbors-find-target (cdr lst) tx ty))))
+
+(define (new-cells neighbors s visited tx ty)
+  (new-cells-loop neighbors s visited tx ty '()))
+
+(define (new-cells-loop neighbors s visited tx ty acc)
+  (if (null? neighbors)
+      acc
+      (let ((p (car neighbors)))
+        (if (and (in-search? (pair-x p) (pair-y p) tx ty)
+                 (not (member-pair p visited)))
+            (new-cells-loop (cdr neighbors) s
+                            (cons p visited) tx ty
+                            (cons (cell p (+ s 1)) acc))
+            (new-cells-loop (cdr neighbors) s visited tx ty acc)))))
+
+(define (extend-visited visited new-pairs)
+  (append visited new-pairs))
+
+;; Standard BFS append/cdr work directly here; however we need a real
+;; `append` and `member` for pairs. The default list operations above
+;; work because Aura provides cons/car/cdr.
+
+;; Solve entry point: take absolute values, run BFS.
+(define (solve x y)
+  (let ((ax (abs x))
+        (ay (abs y)))
+    (bfs ax ay)))
+
+;; ---- Driver ----
+;; Embedded test inputs.
+(define (run-case i x y)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve x y))
+  (newline))
+
+(run-case 0  0   0)
+(run-case 1  1   1)
+(run-case 2  2   2)
+(run-case 3  1   0)
+(run-case 4  2   1)
+(run-case 5 -1  -2)
+(run-case 6  5   5)
+(run-case 7 -3   7)
+(run-case 8  100 100)
+(run-case 9  0   2)
+(run-case 10 2   0)
+(run-case 11 1   2)

@@ -1,0 +1,86 @@
+import sys
+import json
+import heapq
+from collections import Counter
+
+def reorganize(s: str) -> str:
+    if not s:
+        return ""
+    n = len(s)
+    if n == 1:
+        return s
+    cnt = Counter(s)
+    # Check feasibility
+    max_allowed = (n + 1) // 2
+    if max(cnt.values()) > max_allowed:
+        return ""
+    # Max-heap of (-count, char)
+    heap = [(-c, ch) for ch, c in cnt.items()]
+    heapq.heapify(heap)
+    result = []
+    prev_count = 0
+    prev_char = ''
+    while heap:
+        count, ch = heapq.heappop(heap)
+        result.append(ch)
+        # The popped count is negative; increment toward 0 means we used one
+        if count + 1 < 0:
+            heapq.heappush(heap, (count + 1, ch))
+        # No need to track prev; we always pop a char and append immediately.
+        # Adjacency is guaranteed because we only push back after using one.
+    return ''.join(result)
+
+def solve(s: str) -> str:
+    return reorganize(s)
+
+CASES = [
+    {"s": ""},
+    {"s": "a"},
+    {"s": "aa"},
+    {"s": "aab"},
+    {"s": "aaab"},
+    {"s": "vvvlo"},
+    {"s": "abbabbaaab"},
+    {"s": "aaaaabbbbbcc"},
+    {"s": "abc"},
+    {"s": "bbbbbb"},
+    {"s": "baaba"},
+]
+
+def is_valid(t: str, original: str) -> bool:
+    if not t:
+        return original == ""
+    if sorted(t) != sorted(original):
+        return False
+    for i in range(len(t) - 1):
+        if t[i] == t[i+1]:
+            return False
+    return True
+
+if __name__ == '__main__':
+    out = []
+    for i, case in enumerate(CASES):
+        s = case["s"]
+        result = solve(s)
+        # Compute expected: if reorganized result is "" we just use "";
+        # else validate it's a valid rearrangement (sanity check).
+        if result == "":
+            # only valid when no rearrangement possible
+            n = len(s)
+            max_allowed = (n + 1) // 2
+            from collections import Counter as _C
+            c = _C(s)
+            if n == 0:
+                expected = ""
+            else:
+                expected = "" if max(c.values()) > max_allowed else "ANY_VALID"
+        else:
+            # Verify it is a valid rearrangement
+            assert is_valid(result, s), f"Invalid rearrangement for {s!r}: got {result!r}"
+            expected = "ANY_VALID"
+        out.append({
+            "id": i,
+            "input": {"s": s},
+            "expected": expected
+        })
+    print(json.dumps(out, separators=(',', ':'), ensure_ascii=False))

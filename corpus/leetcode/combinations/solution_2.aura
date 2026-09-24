@@ -1,0 +1,52 @@
+(define (length lst)
+  (if (null? lst) 0 (+ 1 (length (cdr lst)))))
+
+(define (solve n k)
+  (if (> k n)
+      '()
+      (let loop ((start 1) (current '()) (result '()))
+        (cond
+          ((= (length current) k)
+           (append result (list current)))
+          ((> (- k (length current)) (+ (- n start) 1))
+           result)
+          ((> start n) result)
+          (else
+           (let ((r1 (loop (+ start 1) (append current (list start)) result)))
+             (loop (+ start 1) current r1)))))))
+
+(define (display-combo combo)
+  (display "[")
+  (let loop ((c combo) (first #t))
+    (cond
+      ((null? c) (display "]"))
+      (else
+       (if first
+           (display (car c))
+           (begin (display " ") (display (car c))))
+       (loop (cdr c) #f)))))
+
+(define (display-result result)
+  (let loop ((r result) (first #t))
+    (cond
+      ((null? r) (void))
+      (else
+       (if first
+           (begin (display-combo (car r)) (loop (cdr r) #f))
+           (begin (display ",") (display-combo (car r)) (loop (cdr r) #f)))))))
+
+(define (run-case i n k)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display-result (solve n k))
+  (newline))
+
+(run-case 0 4 2)
+(run-case 1 1 1)
+(run-case 2 5 3)
+(run-case 3 3 1)
+(run-case 4 6 4)
+(run-case 5 5 5)
+(run-case 6 5 6)
+(run-case 7 2 2)

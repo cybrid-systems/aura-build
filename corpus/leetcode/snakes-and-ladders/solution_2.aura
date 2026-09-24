@@ -1,0 +1,118 @@
+(define (flatten-board board n)
+  ;; Build a flat list indexed 1..n*n where index 1 = square 1 (bottom-left)
+  ;; board is list of rows from row 0 (top) to row n-1 (bottom)
+  ;; Square numbering: bottom row left-to-right, then row above right-to-left, etc.
+  ;; Returns flat vector (list of length n*n+1, index 0 unused)
+  (let* ((total (* n n))
+         (vec (make-list (+ total 1) -1)))
+    (define (row-squares r)
+      ;; r is 0-indexed from top. We need to map to square numbers.
+      ;; Bottom row is r = n-1. Each row from bottom alternates direction.
+      ;; Let bottom_row = n - 1 - r (0 = bottom)
+      ;; Direction: if bottom_row is even, left-to-right; else right-to-left
+      (let* ((bottom_row (- (- n 1) r))
+             (left-to-right (even? bottom_row)))
+        (if left-to-right
+            (list-tabulate n (lambda (c) (+ (* bottom_row n) (+ c 1))))
+            (list-tabulate n (lambda (c) (+ (* (+ bottom_row 1) n) (- c)))))))
+    ;; Hmm, this is getting complex. Let me just compute the flat array directly.
+    (let ((flat (make-list (+ total 1) -1)))
+      (define (set-flat! i v)
+        (set! flat (list-set flat i v)))
+      (let loop ((r 0))
+        (if (= r n)
+            flat
+            (begin
+              (let ((row (list-ref board r)))
+                (let ((bottom_row (- (- n 1) r)))
+                  (let ((left-to-right? (even? bottom_row)))
+                    (let col-loop ((c 0))
+                      (if (= c n)
+                          #t
+                          (begin
+                            (let* ((square (+ (* bottom_row n)
+                                              (if left-to-right? (+ c 1) (- n c)))))
+                              (set! flat (list-set flat square (list-ref row c)))
+                              (col-loop (+ c 1)))))))))
+              (loop (+ r 1))))))))
+
+(define (list-set lst idx val)
+  (let loop ((i 0) (l lst) (acc '()))
+    (cond ((null? l) (reverse acc))
+          ((= i idx) (append (reverse acc) (cons val l)))
+          (else (loop (+ i 1) (cdr l) (cons (car l) acc))))))
+
+(define (list-tabulate n f)
+  (let loop ((i 0) (acc '()))
+    (if (= i n) (reverse acc) (loop (+ i 1) (cons (f i) acc)))))
+
+(define (make-list n val)
+  (let loop ((i 0) (acc '()))
+    (if (= i n) (reverse acc) (loop (+ i 1) (cons val acc)))))
+
+(define (list-ref lst i)
+  (let loop ((k 0) (l lst))
+    (if (= k i) (car l) (loop (+ k 1) (cdr l)))))
+
+(define (bfs flat total)
+  ;; flat is list indexed 1..total; visited array
+  (let* ((visited (make-list (+ total 1) #f))
+         (queue (list (cons 1 0))))
+    ;; Wait, we use a simple list as queue. For correctness, this works (just slower).
+    (set! visited (list-set visited 1 #t))
+    (let loop ((q queue))
+      (if (null? q) -1
+          (let* ((node (car q))
+                 (rest (cdr q))
+                 (u (car node))
+                 (d (cdr node)))
+            (if (= u total) d
+                (let ((new-q
+                       (let roll-loop ((k 1) (acc rest))
+                         (if (> (+ u k) total) acc
+                             (let* ((dest (+ u k))
+                                    (final (let ((v (list-ref flat dest)))
+                                             (if (= v -1) dest v))))
+                               (if (list-ref visited final)
+                                   (roll-loop (+ k 1) acc)
+                                   (begin
+                                     (set! visited (list-set visited final #t))
+                                     (roll-loop (+ k 1) (append acc (list (cons final (+ d 1))))))))))))
+                  (loop new-q)))))))
+
+(define (solve board n)
+  (let ((flat (flatten-board board n)))
+    (bfs flat (* n n))))
+
+(define (display-list lst)
+  (display "[")
+  (let loop ((l lst) (first? #t))
+    (cond ((null? l) (display "]"))
+          (first? (display (car l)) (loop (cdr l) #f))
+          (else (display ",") (display (car l)) (loop (cdr l) #f)))))
+
+;; Test cases
+(define CASE0-board '((-1 -1 -1 -1) (-1 -1 -1 -1) (-1 -1 -1 -1) (-1 14 -1 -1)))
+(define CASE1-board '((-1 -1 -1) (-1 9 -1) (-1 -1 -1)))
+(define CASE2-board '((-1 -1 -1 -1 -1 -1) (-1 -1 -1 -1 -1 -1) (-1 -1 -1 -1 -1 -1) (-1 -1 -1 -1 -1 -1) (-1 -1 -1 -1 -1 -1) (-1 -1 -1 -1 -1 -1)))
+(define CASE3-board '((-1 3) (-1 -1)))
+(define CASE4-board '((2 -1) (-1 -1)))
+(define CASE5-board '((-1 -1 -1 -1 -1) (-1 -1 -1 -1 -1) (-1 -1 -1 -1 -1) (-1 -1 -1 -1 -1) (-1 -1 -1 -1 -1)))
+(define CASE6-board '((-1 -1 2) (-1 -1 -1) (-1 -1 -1)))
+(define CASE7-board '((-1 -1 9) (-1 -1 -1) (-1 -1 -1)))
+
+(define (run-case i board n)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve board n))
+  (newline))
+
+(run-case 0 CASE0-board 4)
+(run-case 1 CASE1-board 3)
+(run-case 2 CASE2-board 6)
+(run-case 3 CASE3-board 2)
+(run-case 4 CASE4-board 2)
+(run-case 5 CASE5-board 5)
+(run-case 6 CASE6-board 3)
+(run-case 7 CASE7-board 3)

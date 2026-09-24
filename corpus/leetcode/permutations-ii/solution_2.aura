@@ -1,0 +1,79 @@
+;; Permutations II - Aura solution
+;; Generate all unique permutations of a list with duplicates.
+
+(define (length lst)
+  (if (null? lst) 0 (+ 1 (length (cdr lst)))))
+
+(define (append a b)
+  (if (null? a) b (cons (car a) (append (cdr a) b))))
+
+(define (map f lst)
+  (if (null? lst) '()
+      (cons (f (car lst)) (map f (cdr lst)))))
+
+;; Generate all unique permutations of a (possibly empty) sorted list `xs`.
+(define (permute xs)
+  (cond ((null? xs) (list '()))
+        ((null? (cdr xs)) (list xs))
+        (else
+         (let loop ((i 0) (acc '()))
+           (if (= i (length xs))
+               acc
+               (let ((x (car xs)))
+                 (if (= x (car (cdr xs)))
+                     ;; Skip duplicates: only use first occurrence at this position.
+                     (loop (+ i 1) acc)
+                     (let ((rest (cdr xs)))
+                       (let ((sub (permute rest)))
+                         (loop (+ i 1)
+                               (append acc
+                                       (map (lambda (p) (cons x p)) sub))))))))))))
+
+;; Sort a list of numbers using insertion sort (pure, returns new list).
+(define (isort xs)
+  (define (insert x sorted)
+    (cond ((null? sorted) (list x))
+          ((<= x (car sorted)) (cons x sorted))
+          (else (cons (car sorted) (insert x (cdr sorted))))))
+  (if (null? xs) '()
+      (insert (car xs) (isort (cdr xs)))))
+
+(define (sort xs) (isort xs))
+
+(define (solve nums)
+  (permute (sort nums)))
+
+;; Helper to display a list of numbers.
+(define (display-list lst)
+  (display "[")
+  (let loop ((xs lst) (first #t))
+    (cond ((null? xs) (display "]"))
+          (else
+           (if first (set! first #f) (display ","))
+           (display (car xs))
+           (loop (cdr xs) first)))))
+
+(define (display-list-of-lists lol)
+  (display "[")
+  (let loop ((xs lol) (first #t))
+    (cond ((null? xs) (display "]"))
+          (else
+           (if first (set! first #f) (display ","))
+           (display-list (car xs))
+           (loop (cdr xs) first)))))
+
+(define (run-case i nums)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display-list-of-lists (solve nums))
+  (newline))
+
+(run-case 0 '(1 1 2))
+(run-case 1 '(0 1))
+(run-case 2 '(1 2 3))
+(run-case 3 '(1 1 1))
+(run-case 4 '())
+(run-case 5 '(1))
+(run-case 6 '(2 2 1 1))
+(run-case 7 '(1 2 1 2))

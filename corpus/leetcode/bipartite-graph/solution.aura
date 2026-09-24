@@ -1,0 +1,66 @@
+(define (make-adj n edges)
+  (let ((adj (make-vector (+ n 1) '())))
+    (define (add-edge u v)
+      (vector-set! adj u (cons v (vector-ref adj u)))
+      (vector-set! adj v (cons u (vector-ref adj v))))
+    (let loop ((es edges))
+      (if (null? es) adj
+          (let ((e (car es)))
+            (add-edge (car e) (cadr e))
+            (loop (cdr es)))))))
+
+(define (bipartite? n adj)
+  (let ((color (make-vector (+ n 1) -1)))
+    (define (try-start s)
+      (vector-set! color s 0)
+      (let loop ((queue (list s)))
+        (if (null? queue) #t
+            (let ((u (car queue))
+                  (rest (cdr queue)))
+              (let inner ((nbs (vector-ref adj u)))
+                (if (null? nbs)
+                    (loop rest)
+                    (let ((v (car nbs)))
+                      (cond
+                        ((= (vector-ref color v) -1)
+                         (vector-set! color v (- 1 (vector-ref color u)))
+                         (inner (cdr nbs)))
+                        ((= (vector-ref color v) (vector-ref color u))
+                         #f)
+                        (else (inner (cdr nbs)))))))))))
+    (let outer ((v 1))
+      (cond ((> v n) #t)
+            ((= (vector-ref color v) -1)
+             (if (try-start v) (outer (+ v 1)) #f))
+            (else (outer (+ v 1)))))))
+
+(define (solve n edges)
+  (let ((adj (make-adj n edges)))
+    (bipartite? n adj)))
+
+(define (bool->str b) (if b "YES" "NO"))
+
+;; Embedded test cases
+(define cases
+  (list
+    (list 3 (list (list 1 2) (list 2 3) (list 1 3)))
+    (list 4 (list (list 1 2) (list 2 3) (list 3 4)))
+    (list 1 '())
+    (list 2 (list (list 1 2)))
+    (list 5 '())
+    (list 5 (list (list 1 2) (list 2 3) (list 3 4) (list 4 5) (list 5 1)))
+    (list 6 (list (list 1 2) (list 1 3) (list 2 4) (list 3 4) (list 5 6)))
+    (list 4 (list (list 1 2) (list 1 3) (list 1 4) (list 2 3) (list 2 4) (list 3 4)))))
+
+(define (run-cases cs i)
+  (if (null? cs) '()
+      (begin
+        (let ((c (car cs)))
+          (display "CASE")
+          (display (number->string i))
+          (display "=")
+          (display (bool->str (solve (car c) (cadr c))))
+          (newline))
+        (run-cases (cdr cs) (+ i 1)))))
+
+(run-cases cases 0)

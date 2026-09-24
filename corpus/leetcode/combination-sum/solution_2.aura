@@ -1,0 +1,58 @@
+(define (solve candidates target)
+  (let ((sorted (sort candidates <)))
+    (let ((results '()))
+      (define (backtrack start cur-sum path)
+        (cond ((= cur-sum target)
+               (set! results (cons (reverse path) results))
+               #t)
+              ((> cur-sum target)
+               #f)
+              (else
+               (let loop ((i start))
+                 (if (>= i (length sorted))
+                     'done
+                     (begin
+                       (let ((v (list-ref sorted i)))
+                         (if (<= (+ cur-sum v) target)
+                             (begin
+                               (backtrack i (+ cur-sum v) (cons v path))
+                               (loop (+ i 1)))
+                             (loop (+ i 1))))))))))
+      (backtrack 0 0 '())
+      results)))
+
+(define (sort lst cmp)
+  (define (insert x sorted-lst)
+    (cond ((null? sorted-lst) (list x))
+          ((cmp x (car sorted-lst)) (cons x sorted-lst))
+          (else (cons (car sorted-lst) (insert x (cdr sorted-lst))))))
+  (define (iter rest acc)
+    (if (null? rest) acc (iter (cdr rest) (insert (car rest) acc))))
+  (iter lst '()))
+
+(define (display-list xs)
+  (display "[")
+  (let loop ((l xs) (first #t))
+    (cond ((null? l) (display "]"))
+          (else
+           (if first (set! first #f) (display ","))
+           (display (car l))
+           (loop (cdr l) first)))))
+
+(define (display-combos combos)
+  (display "[")
+  (let loop ((l combos) (first #t))
+    (cond ((null? l) (display "]"))
+          (else
+           (if first (set! first #f) (display ","))
+           (display-list (car l))
+           (loop (cdr l) first)))))
+
+(display "CASE0=") (display-combos (solve '(2 3 6 7) 7)) (newline)
+(display "CASE1=") (display-combos (solve '(2 3 5) 8)) (newline)
+(display "CASE2=") (display-combos (solve '(2) 1)) (newline)
+(display "CASE3=") (display-combos (solve '(1) 1)) (newline)
+(display "CASE4=") (display-combos (solve '(1) 5)) (newline)
+(display "CASE5=") (display-combos (solve '(3 5 8 10) 11)) (newline)
+(display "CASE6=") (display-combos (solve '(2 4 6 8) 16)) (newline)
+(display "CASE7=") (display-combos (solve '(7 3 2 6) 7)) (newline)

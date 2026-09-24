@@ -1,0 +1,67 @@
+;; N-Queens II - count number of solutions using bitmask backtracking
+
+(define (total-n-queens n)
+  (let ((limit (- (arithmetic-shift 1 n) 1))
+        (count 0))
+    (define (solve row cols diag1 diag2)
+      (if (= cols limit)
+          (set! count (+ count 1))
+          (let ((available (bitwise-and (bitwise-not (bitwise-or cols diag1 diag2)) limit)))
+            (define (place pos)
+              (if (= pos 0)
+                  0
+                  (begin
+                    (solve (+ row 1)
+                           (bitwise-or cols pos)
+                           (bitwise-shift-left (bitwise-or diag1 pos) 1)
+                           (bitwise-shift-right (bitwise-or diag2 pos) 1))
+                    (place (bitwise-and (bitwise-shift-left pos 1) limit)))))
+            (place available))))
+    (solve 0 0 0 0)
+    count))
+
+;; I/O helpers
+(define (read-line)
+  ;; read a line from stdin (returns #f on EOF)
+  (let ((ch (read-char)))
+    (if (eof-object? ch)
+        #f
+        (let loop ((acc '()) (c ch))
+          (if (or (eof-object? c) (char=? c #\newline))
+              (list->string (reverse acc))
+              (loop (cons c acc) (read-char)))))))
+
+(define (parse-int s)
+  (let ((len (string-length s)))
+    (let loop ((i 0) (acc 0))
+      (cond ((>= i len) acc)
+            ((char-numeric? (string-ref s i))
+             (loop (+ i 1) (+ (* acc 10) (- (char->integer (string-ref s i)) (char->integer #\0)))))
+            (else (loop (+ i 1) acc))))))
+
+(define (extract-n line)
+  ;; find the integer after "n":
+  (let ((len (string-length line)))
+    (let loop ((i 0))
+      (cond ((>= i len) 0)
+            ((and (char=? (string-ref line i) #\n)
+                  (< (+ i 1) len)
+                  (char=? (string-ref line (+ i 1)) #\:))
+             (parse-int (substring line (+ i 3) len)))
+            (else (loop (+ i 1)))))))
+
+(define (solve n)
+  (total-n-queens n))
+
+;; Main: read cases until EOF
+(let loop ((i 0))
+  (let ((line (read-line)))
+    (if line
+        (let ((n (extract-n line)))
+          (display "CASE")
+          (display (number->string i))
+          (display "=")
+          (display (number->string (solve n)))
+          (newline)
+          (loop (+ i 1)))
+        0)))

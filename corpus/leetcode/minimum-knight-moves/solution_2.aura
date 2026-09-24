@@ -1,0 +1,180 @@
+;; Minimum Knight Moves - BFS with bounded window and symmetry
+;; Uses symmetry to fold to first quadrant, then BFS.
+
+(define (abs n)
+  (if (< n 0) (- 0 n) n))
+
+(define (min a b)
+  (if (< a b) a b))
+
+;; The 8 knight moves
+(define moves '((1 . 2) (2 . 1) (-1 . 2) (-2 . 1)
+                (1 . -2) (2 . -1) (-1 . -2) (-2 . -1)))
+
+;; BFS: returns list of (coord . dist) pairs? Actually we want BFS shortest path.
+;; We'll do iterative BFS using a queue represented as a list.
+;; Each queue item is (x . y) coords.
+;; We track visited as association list / set.
+
+;; Simple BFS implementation
+(define (make-queue) '())
+
+(define (queue-empty? q) (null? q))
+
+;; Add item to end of queue
+(define (enqueue q item) (append q (list item)))
+
+;; Pop front: (car q), (cdr q)
+(define (dequeue q) (car q))
+(define (queue-rest q) (cdr q))
+
+;; visited lookup
+(define (visited-get v key)
+  (cond ((null? v) #f)
+        ((equal? (car (car v)) key) (cdr (car v)))
+        (else (visited-get (cdr v) key))))
+
+(define (visited-put v key val)
+  (cons (cons key val) v))
+
+;; BFS limited to a bounding box. Returns number of steps to reach (tx, ty).
+;; tx, ty >= 0 assumed.
+(define (bfs tx ty)
+  (let* ((start (cons 0 0))
+         (initial-visited (list (cons start 0))))
+    (bfs-helper (list start) initial-visited tx ty)))
+
+(define (bfs-helper queue visited tx ty)
+  (cond ((queue-empty? queue) -1)
+        (else
+         (let* ((cur (dequeue queue))
+                (qrest (queue-rest queue))
+                (d (visited-get visited cur)))
+           (cond
+             ((equal? cur (cons tx ty)) d)
+             ((>= d 100) -1) ; safety cap, should not happen for reasonable inputs
+             (else
+              (let ((new-q (extend-queue qrest visited cur d tx ty)))
+                (bfs-helper (car new-q) (cdr new-q) tx ty))))))))
+
+(define (extend-queue q visited cur d tx ty)
+  (let ((cx (car cur))
+        (cy (cdr cur))
+        (nd (+ d 1)))
+    (let loop ((mvs moves) (q q) (v visited))
+      (cond ((null? mvs) (cons q v))
+            (else
+             (let* ((mv (car mvs))
+                    (dx (car mv))
+                    (dy (cdr mv))
+                    (nx (+ cx dx))
+                    (ny (+ cy dy))
+                    (ncoord (cons nx ny))
+                    ;; bound the search window: we only care about points within
+                    ;; [0, tx+2] x [0, ty+2] region (with small buffer)
+                    (in-bounds (and (>= nx -2) (>= ny -2)
+                                    (<= nx (+ tx 2)) (<= ny (+ ty 2)))))
+               (cond
+                 ((and in-bounds (not (visited-get v ncoord)))
+                  (loop (cdr mvs) (enqueue q ncoord) (visited-put v ncoord nd)))
+                 (else
+                  (loop (cdr mvs) q v)))))))))
+
+;; Actually the BFS above uses unbounded window which could be problematic.
+;; Let's use a smarter approach: known formula / DP-like.
+;; Known result: for (x,y) with x,y >= 0:
+;; The answer follows a pattern.
+;; Let me use a known approach: BFS with dynamic bounding.
+
+;; Let's redefine BFS more carefully with proper bounding.
+;; Actually, the known trick: minimum knight moves for (x,y) can be computed with BFS
+;; restricted to [0, max_x] x [0, max_y] where max_x, max_y bound the answer.
+
+;; For safety let's just use a known closed-form algorithm:
+;; Algorithm based on symmetry + BFS on a small region.
+
+;; Known solution: for (x,y) both non-negative,
+;; Define helper function using BFS bounded by [0..x] x [0..y] (with small padding).
+
+;; Let me write a cleaner bounded BFS.
+(define (bounded-bfs tx ty)
+  ;; We search within the box [0, tx] x [0, ty], with a small pad to handle
+  ;; boundary cases. Actually the standard approach uses pad of about 2.
+  (let ((xmax (+ tx 2))
+        (ymax (+ ty 2)))
+    (bounded-bfs-helper (list (cons 0 0))
+                        (list (cons (cons 0 0) 0))
+                        tx ty xmax ymax)))
+
+(define (bounded-bfs-helper queue visited tx ty xmax ymax)
+  (cond ((null? queue) -1)
+        (else
+         (let* ((cur (car queue))
+                (d (visited-get visited cur)))
+           (cond
+             ((equal? cur (cons tx ty)) d)
+             ((>= d (+ tx ty)) -1) ; cannot be more than x+y moves
+             (else
+              (let* ((cx (car cur))
+                     (cy (cdr cur))
+                     (nd (+ d 1)))
+                (let loop ((mvs moves) (new-q (cdr queue)) (new-v visited))
+                  (cond ((null? mvs)
+                         (bounded-bfs-helper new-q new-v tx ty xmax ymax))
+                        (else
+                         (let* ((mv (car mvs))
+                                (nx (+ cx (car mv)))
+                                (ny (+ cy (cdr mv)))
+                                (ncoord (cons nx ny))
+                                (ok (and (>= nx 0) (>= ny 0)
+                                         (<= nx xmax) (<= ny ymax))))
+                           (cond
+                             ((and ok (not (visited-get new-v ncoord)))
+                              (loop (cdr mvs)
+                                    (append new-q (list ncoord))
+                                    (visited-put new-v ncoord nd)))
+                             (else
+                              (loop (cdr mvs) new-q new-v))))))))))))))
+
+(define (solve x y)
+  (let ((ax (abs x))
+        (ay (abs y)))
+    ;; Ensure we search from origin to (ax, ay) but BFS box needs to reach (ax, ay).
+    ;; Actually origin (0,0) is included and (ax, ay) is the target.
+    ;; Bound box: [0, ax] x [0, ay].
+    (bounded-bfs ax ay)))
+
+;; Display helper - just print the number
+(define (display-case i result)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display result)
+  (newline))
+
+;; Test cases
+(define inputs
+  (list (cons 0 0)
+        (cons 1 1)
+        (cons 2 2)
+        (cons 1 0)
+        (cons 2 1)
+        (cons -1 -2)
+        (cons 5 5)
+        (cons -3 7)
+        (cons 100 100)
+        (cons 0 2)
+        (cons 2 0)
+        (cons 1 2)))
+
+(define (run-cases lst i)
+  (cond ((null? lst) 'done)
+        (else
+         (let* ((inp (car lst))
+                (x (car inp))
+                (y (cdr inp))
+                (r (solve x y)))
+           (display-case i r)
+           (run-cases (cdr lst) (+ i 1))))))
+
+(run-cases inputs 0)

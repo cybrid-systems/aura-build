@@ -1,0 +1,68 @@
+;; Helper to reverse a list
+(define (rev xs)
+  (let loop ((acc '()) (xs xs))
+    (if (null? xs) acc
+        (loop (cons (car xs) acc) (cdr xs)))))
+
+;; Append two lists
+(define (append a b)
+  (if (null? a) b (cons (car a) (append (cdr a) b))))
+
+;; Check if a list is null
+(define (nil? xs) (null? xs))
+
+;; Backtracking: generate combinations of size k from start..n
+;; Builds result in reverse order, then reverses at end
+(define (backtrack start end k current acc)
+  (cond
+    ((= (length-helper current) k)
+       (cons current acc))
+    ((> start end) acc)
+    ((> (+ start (- k (length-helper current))) (+ end 1))
+       acc)
+    (else
+      (let ((with-start (backtrack (+ start 1) end k
+                                    (cons start current) acc)))
+            (backtrack (+ start 1) end k current with-start)))))
+
+;; Length helper using accumulator
+(define (length-helper xs)
+  (let loop ((n 0) (xs xs))
+    (if (null? xs) n (loop (+ n 1) (cdr xs)))))
+
+(define (solve n k)
+  (let ((raw (backtrack 1 n k '() '())))
+    (rev raw)))
+
+;; Display a single combination list as [a b c]
+(define (display-combo xs)
+  (display "[")
+  (let loop ((first #t) (xs xs))
+    (if (null? xs) #f
+        (begin
+          (if first (set! first #f) (display " "))
+          (display (car xs))
+          (loop first (cdr xs)))))
+  (display "]"))
+
+;; Display list of combinations separated by commas
+(define (display-combos lst)
+  (let loop ((first #t) (lst lst))
+    (if (null? lst) #f
+        (begin
+          (if first (set! first #f) (display ","))
+          (display-combo (car lst))
+          (loop first (cdr lst))))))
+
+(define (display-result lst)
+  (display-combos lst))
+
+;; Main: run all cases
+(display "CASE0=") (display-result (solve 4 2)) (newline)
+(display "CASE1=") (display-result (solve 1 1)) (newline)
+(display "CASE2=") (display-result (solve 5 3)) (newline)
+(display "CASE3=") (display-result (solve 3 1)) (newline)
+(display "CASE4=") (display-result (solve 6 4)) (newline)
+(display "CASE5=") (display-result (solve 5 5)) (newline)
+(display "CASE6=") (display-result (solve 5 6)) (newline)
+(display "CASE7=") (display-result (solve 2 2)) (newline)

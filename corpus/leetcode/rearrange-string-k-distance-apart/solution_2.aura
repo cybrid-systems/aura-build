@@ -1,0 +1,148 @@
+(define (solve s k)
+  (let ((n (string-length s)))
+    (cond
+      ((= k 1) s)
+      (else
+       (let* ((counts (make-vector 26 0))
+              (result '()))
+         (begin
+           (count-chars s counts)
+           (if (any-too-frequent counts n k)
+               ""
+               (rearrange counts n k result))))))))
+
+(define (make-vector n init)
+  (if (= n 0) '() (cons init (make-vector (- n 1) init))))
+
+(define (vector-ref v i)
+  (if (= i 0) (car v) (vector-ref (cdr v) (- i 1))))
+
+(define (vector-set! v i val)
+  (if (= i 0)
+      (set-car! v val)
+      (vector-set! (cdr v) (- i 1) val)))
+
+(define (string-length s)
+  (cond ((null? s) 0) (else (+ 1 (string-length (cdr s))))))
+
+(define (string-ref s i)
+  (if (= i 0) (car s) (string-ref (cdr s) (- i 1))))
+
+(define (count-chars s counts)
+  (if (null? s) #t
+      (let ((idx (- (char->int (car s)) (char->int #\a))))
+        (begin
+          (vector-set! counts idx (+ (vector-ref counts idx) 1))
+          (count-chars (cdr s) counts)))))
+
+(define (char->int c)
+  (char->int-helper c 0))
+
+(define (char->int-helper c acc)
+  (if (char=? c (int->char acc)) acc
+      (char->int-helper c (+ acc 1))))
+
+(define (char=? c1 c2)
+  (cond
+    ((and (char-upper? c1) (char-lower? c1)) #f)
+    ((and (char-upper? c2) (char-lower? c2)) #f)
+    (else (eq? c1 c2))))
+
+(define (char-upper? c) #f)
+(define (char-lower? c) #t)
+
+(define (int->char n)
+  (list-ref char-list n))
+
+(define char-list
+  (list #\a #\b #\c #\d #\e #\f #\g #\h #\i #\j #\k #\l #\m #\n #\o #\p #\q #\r #\s #\t #\u #\v #\w #\x #\y #\z))
+
+(define (list-ref lst n)
+  (if (= n 0) (car lst) (list-ref (cdr lst) (- n 1))))
+
+(define (any-too-frequent counts n k)
+  (let ((max-allowed (+ (quotient (+ n (- k 1)) k) 1)))
+    (any-too-frequent-helper counts 0 max-allowed)))
+
+(define (any-too-frequent-helper counts i max-allowed)
+  (cond
+    ((= i 26) #f)
+    ((> (vector-ref counts i) max-allowed) #t)
+    (else (any-too-frequent-helper counts (+ i 1) max-allowed))))
+
+(define (rearrange counts n k result)
+  (let ((cool (make-vector 26 0)))
+    (rearrange-loop counts cool k 0 n '())))
+
+(define (rearrange-loop counts cool k pos n result)
+  (cond
+    ((= pos n) (list->string (reverse result)))
+    (else
+     (let ((best (find-best counts cool pos k)))
+       (cond
+         ((null? best) "")
+         (else
+          (let ((idx (car best)))
+            (begin
+              (vector-set! counts idx (- (vector-ref counts idx) 1))
+              (vector-set! cool idx (+ pos k))
+              (rearrange-loop counts cool k (+ pos 1) n
+                              (cons (int->char (+ idx (char->int #\a))) result))))))))))
+
+(define (char->int-zero c) 0)
+
+(define (find-best counts cool pos k)
+  (find-best-helper counts cool pos k 25 #f -1))
+
+(define (find-best-helper counts cool pos k i best-count best-idx)
+  (cond
+    ((< i 0)
+     (if (= best-idx -1) '() (list best-idx)))
+    (else
+     (let ((cnt (vector-ref counts i))
+           (avail (vector-ref cool i)))
+       (cond
+         ((or (= cnt 0) (> avail pos))
+          (find-best-helper counts cool pos k (- i 1) best-count best-idx))
+         ((> cnt best-count)
+          (find-best-helper counts cool pos k (- i 1) cnt i))
+         (else
+          (find-best-helper counts cool pos k (- i 1) best-count best-idx))))))))
+
+(define (reverse lst)
+  (reverse-helper lst '()))
+
+(define (reverse-helper lst acc)
+  (if (null? lst) acc (reverse-helper (cdr lst) (cons (car lst) acc))))
+
+(define (list->string lst)
+  (string-append-list lst ""))
+
+(define (string-append-list lst sep)
+  (cond ((null? lst) "")
+        ((null? (cdr lst)) (symbol->string (car lst)))
+        (else (string-append (symbol->string (car lst))
+                             (string-append-list (cdr lst) sep)))))
+
+(define (symbol->string sym)
+  (cond ((char? sym) (char->string sym))
+        (else (number->string sym))))
+
+(define (char? x) #f)
+
+(define (char->string c)
+  (make-string 1 c))
+
+(define (make-string n c)
+  (if (= n 0) "" (string-append (char->string c) (make-string (- n 1) c))))
+
+;; Main: run all test cases
+(begin
+  (display "CASE0=") (display (solve "aabbcc" 3)) (newline)
+  (display "CASE1=") (display (solve "aaabc" 3)) (newline)
+  (display "CASE2=") (display (solve "aabbccdde" 3)) (newline)
+  (display "CASE3=") (display (solve "a" 1)) (newline)
+  (display "CASE4=") (display (solve "aa" 2)) (newline)
+  (display "CASE5=") (display (solve "aabb" 2)) (newline)
+  (display "CASE6=") (display (solve "aaaa" 2)) (newline)
+  (display "CASE7=") (display (solve "abcdefghij" 3)) (newline))

@@ -1,0 +1,191 @@
+;; Solution for Binary Tree Level Order Traversal II
+
+;; ===== Parser =====
+;; Parse "(node 3 (node 9 nil nil) (node 20 nil nil))" style input.
+;; Tokens: '(', ')', 'node', 'nil', integers.
+
+(define (tokenize s)
+  (define (skip i)
+    (cond ((>= i (string-length s)) i)
+          ((char-whitespace? (string-ref s i)) (skip (+ i 1)))
+          (else i)))
+  (define (read-atom i acc)
+    (cond ((>= i (string-length s))
+           (values (list->string (reverse acc)) i))
+          ((char-whitespace? (string-ref s i))
+           (values (list->string (reverse acc)) i))
+          ((char=? (string-ref s i) #\( )
+           (values (list->string (reverse acc)) i))
+          ((char=? (string-ref s i) #\) )
+           (values (list->string (reverse acc)) i))
+          (else
+           (read-atom (+ i 1) (cons (string-ref s i) acc)))))
+  (let loop ((i 0) (toks '()))
+    (let ((i (skip i)))
+      (cond ((>= i (string-length s)) (reverse toks))
+            ((char=? (string-ref s i) #\( )
+             (loop (+ i 1) (cons "(" toks)))
+            ((char=? (string-ref s i) #\) )
+             (loop (+ i 1) (cons ")" toks)))
+            (else
+             (let-values (((tok ni) (read-atom i '())))
+               (loop ni (cons tok toks))))))))
+
+(define (string->number-safe s)
+  (let ((n (string->number s)))
+    (if n n 0)))
+
+;; Parse tokens into a tree structure.
+;; tree := 'nil | (list 'node int tree tree)
+(define (parse-tree toks)
+  (define (peek tk) (car tk))
+  (define (pop tk) (cdr tk))
+  (if (null? tk)
+      'nil
+      (let ((t (peek tk)))
+        (cond
+          ((equal? t "nil") 'nil)
+          ((equal? t "(")
+           ;; expect "node" int subtree subtree ")"
+           (let ((tk2 (pop tk)))
+             (let ((tk3 (pop tk2))) ; skip "node"
+               (let ((val (peek tk3)))
+                 (let ((tk4 (pop tk3)))
+                   (let-values (((left tk5) (parse-helper tk4)))
+                     (let-values (((right tk6) (parse-helper tk5)))
+                       ;; consume closing ")"
+                       (let ((tk7 (pop tk6)))
+                         (values (list 'node (string->number val) left right) tk7)))))))))
+          (else 'nil))))
+
+(define (parse-helper tk)
+  (if (null? tk)
+      (values 'nil tk)
+      (let ((t (car tk)))
+        (cond
+          ((equal? t "nil") (values 'nil (cdr tk)))
+          ((equal? t "(")
+           (let ((tk2 (cdr tk)))
+             (let ((tk3 (cdr tk2))) ; skip "node"
+               (let ((val (car tk3)))
+                 (let ((tk4 (cdr tk3)))
+                   (let-values (((left tk5) (parse-helper tk4)))
+                     (let-values (((right tk6) (parse-helper tk5)))
+                       (let ((tk7 (cdr tk6)))
+                         (values (list 'node (string->number val) left right) tk7)))))))))
+          (else (values 'nil tk))))))
+
+(define (parse-string s)
+  (let ((toks (tokenize s)))
+    (if (null? toks)
+        'nil
+        (let-values (((tree _) (parse-helper toks)))
+          tree))))
+
+;; ===== Algorithm =====
+;; DFS with depth tracking. Prepend each level so deepest ends up first.
+;; We track a list of levels (each level is a list of values).
+;; New levels are pushed onto the front.
+
+(define (solve root)
+  (define (dfs node depth levels)
+    (cond
+      ((null? node) levels)
+      (else
+       (let* ((v (cadr node))
+              (l (caddr node))
+              (r (cadddr node))
+              (new-levels
+                (if (< depth (length levels))
+                    (let loop ((ls levels) (i 0))
+                      (cond ((= i depth)
+                             (cons (list v) (car ls))
+                             (set! levels ls))
+                            (else (loop (cdr ls) (+ i 1))))))
+                    (cons (list v) levels))))
+         (dfs l (+ depth 1) new-levels)
+         (dfs r (+ depth 1) new-levels)))))
+  (dfs root 0 '()))
+
+;; ===== Pretty print =====
+;; Print a list of levels in [[a b] [c d]] format.
+
+(define (print-list-inline xs)
+  (display "[")
+  (let loop ((first? #t) (rest xs))
+    (cond ((null? rest) (display "]") #t)
+          (else
+           (if first? (display "") (display " "))
+           (display (car rest))
+           (loop #f (cdr rest))))))
+
+(define (print-result result)
+  (display "[")
+  (let loop ((first? #t) (rest result))
+    (cond ((null? rest) (display "]") #t)
+          (else
+           (if first? (display "") (display " "))
+           (print-list-inline (car rest))
+           (loop #f (cdr rest))))))
+
+;; ===== Main =====
+;; Read CASE line from stdin, parse, solve, print.
+
+(define (read-case-line)
+  (let loop ((ch (read-char)) (acc '()))
+    (cond ((eof-object? ch)
+           (list->string (reverse acc)))
+          ((char=? ch #\newline)
+           (list->string (reverse acc)))
+          (else
+           (loop (read-char) (cons ch acc))))))
+
+(define (extract-input line)
+  ;; Expect "CASEi=...."; return the part after "=".
+  (let ((eq-pos (string-index line #\=)))
+    (if eq-pos
+        (substring line (+ eq-pos 1) (string-length line))
+        line)))
+
+(define (string-index s c)
+  (let loop ((i 0))
+    (cond ((>= i (string-length s)) #f)
+          ((char=? (string-ref s i) c) i)
+          (else (loop (+ i 1))))))
+
+(define (substring s start end)
+  (let loop ((i (- end 1)) (acc '()))
+    (if (< i start)
+        (list->string acc)
+        (loop (- i 1) (cons (string-ref s i) acc)))))
+
+;; Extract integer values from "node" struct tags.
+;; Our parser produces (node val left right) — already integers.
+
+;; For solve, if tree is 'nil result is '().
+;; For JSON-like embedded inputs with quoted keys, we'd need different parsing.
+;; The harness provides inputs in the task's `(node ...)` S-expression format,
+;; so parse-string is sufficient.
+
+(define (run)
+  (let* ((line (read-case-line))
+         (input-str (extract-input line))
+         (trimmed
+           (let ((s input-str))
+             (let ((start 0) (end (string-length s)))
+               (let loop1 ((i 0))
+                 (cond ((>= i (string-length s)) #f)
+                       ((char-whitespace? (string-ref s i)) (loop1 (+ i 1)))
+                       (else i)))
+               (let ((start (or (loop1 0) 0)))
+                 (let loop2 ((i (- (string-length s) 1)))
+                   (cond ((< i start) (- i 1))
+                         ((char-whitespace? (string-ref s i)) (loop2 (- i 1)))
+                         (else i)))
+                 (let ((end (+ (loop2 (- (string-length s) 1)) 1)))
+                   (substring s start end))))))
+         (tree (parse-string trimmed)))
+    (print-result (solve tree))
+    (newline)))
+
+(run)

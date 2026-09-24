@@ -1,0 +1,267 @@
+;; Minimum Interval to Include Each Query
+;; Approach: sort intervals by left endpoint, sort queries with original indices.
+;; For each query in sorted order, push all intervals with l <= q into a min-heap keyed by right endpoint.
+;; Pop from heap while top's r < q (interval doesn't cover). Then answer = top's size if heap nonempty else -1.
+
+(define CASE0 '[[[1 4] [2 8] [3 6] [4 8]] [3 4 5 6 7 8]])
+(define CASE1 '[[[] [1 2 3]]])
+(define CASE2 '[[[[1 5]] [1 2 3 4 5 6]]])
+(define CASE3 '[[[[1 4] [2 4] [3 4] [4 4]] [4 3 2 1 5]]])
+(define CASE4 '[[[[1 10] [2 3] [5 5] [7 9]] [2 5 7 10 11]]])
+(define CASE5 '[[[[-5 -1] [0 0] [-3 3]] [-4 -2 0 1 -5 4]]])
+(define CASE6 '[[[[1 2] [1 2] [1 2]] [1 2 3]]])
+(define CASE7 '[[[[1 100]] [50]]])
+
+;; ---- helpers ----
+
+(define (caar p) (car (car p)))
+(define (cadr p) (car (cdr p)))
+(define (cdar p) (cdr (car p)))
+(define (cddr p) (cdr (cdr p)))
+(define (caddr p) (car (cdr (cdr p))))
+(define (cdddr p) (cdr (cdr (cdr p))))
+(define (cadddr p) (car (cdr (cdr (cdr (p))))))
+
+;; Insertion sort by car (ascending). Stable not strictly required.
+(define (insert-sorted lst x)
+  (cond
+    ((null? lst) (list x))
+    ((<= (car x) (car (car lst))) (cons x lst))
+    (else (cons (car lst) (insert-sorted (cdr lst) x)))))
+
+(define (sort-by-car lst)
+  (if (null? lst) '()
+      (insert-sorted (sort-by-car (cdr lst)) (car lst))))
+
+;; Min-heap of pairs (r-size . idx) keyed by r (the car).
+; We store nodes as cons (r . idx). Heap operations using array-of-cons in a list.
+
+(define (heap-make) '())
+
+(define (heap-empty? h) (null? h))
+
+(define (heap-size h) (length h))
+
+;; Bubble up: given heap as list and index i (0-based), restore heap property.
+(define (heap-up h i)
+  (if (<= i 0) h
+      (let ((p (quotient (- i 1) 2))
+            (node (list-ref h i))
+            (pnode (list-ref h p)))
+        (if (< (car node) (car pnode))
+            (heap-up (list-set h i pnode) p)
+            h))))
+
+(define (heap-down h i n)
+  (if (>= i n) h
+      (let ((l (+ (* 2 i) 1))
+            (r (+ (* 2 i) 2))
+            (cur (list-ref h i))
+            (smallest i))
+        (let ((s (if (and (< l n) (< (car (list-ref h l)) (car (list-ref h smallest))))
+                     l smallest)))
+          (let ((s2 (if (and (< r n) (< (car (list-ref h r)) (car (list-ref h s))))
+                        r s)))
+            (if (= s2 i) h
+                (heap-down (list-set h i (list-ref h s2)) s2 n)))))))
+
+;; list-set: replace element at index i in list with v (0-based).
+(define (list-set lst i v)
+  (if (= i 0)
+      (cons v (cdr lst))
+      (cons (car lst) (list-set (cdr lst) (- i 1) v))))
+
+;; list-ref
+(define (list-ref lst i)
+  (if (= i 0) (car lst) (list-ref (cdr lst) (- i 1))))
+
+(define (heap-push h node)
+  (let ((h2 (append h (list node))))
+    (heap-up h2 (- (length h2) 1))))
+
+(define (heap-pop-min h)
+  (if (null? h) (cons #f '())
+      (let ((n (length h))
+            (top (car h)))
+        (if (= n 1) (cons top '())
+            (let ((last (list-ref h (- n 1))))
+              (let ((h2 (heap-down (list-set h 0 last) 0 (- n 1))))
+                (cons top h2)))))))
+
+;; ---- core algorithm ----
+
+(define (solve intervals queries)
+  ;; pairs: (query . original-index), sorted by query ascending
+  (let ((nq (length queries)))
+    (if (= nq 0) '()
+        (let ((q-pairs
+               (let loop ((i 0) (qs queries) (acc '()))
+                 (if (null? qs) (reverse acc)
+                     (loop (+ i 1) (cdr qs) (cons (cons (car qs) i) acc)))))
+              (q-sorted (sort-by-car
+                         (let loop ((i 0) (qs queries) (acc '()))
+                           (if (null? qs) (reverse acc)
+                               (loop (+ i 1) (cdr qs) (cons (cons (car qs) i) acc)))))))
+          ;; sort intervals by left endpoint ascending: store as cons (l . r)
+          (define ivs
+            (let loop ((is intervals) (acc '()))
+              (if (null? is) (reverse acc)
+                  (loop (cdr is) (cons (cons (caar is) (cadar is)) acc)))))
+          (define ivs-sorted (sort-by-car ivs))
+          ;; heap holds (r . original-interval-idx) — actually we only need r and the corresponding l to compute size.
+          ;; But we can recompute size from l & r. We push (r . l) pairs.
+          (define hp (heap-make))
+          (define iv-idx 0)
+          (define in-ivs (length ivs-sorted))
+          (define n-ivs in-ivs)
+          (define ans (make-vector nq))
+          ;; Iterate queries in ascending order
+          (let loop-qs ((qrest q-sorted))
+            (if (null? qrest) '()
+                (let ((qp (car qrest))
+                      (q (car (car qrest)))
+                      (qidx (cdr (car qrest))))
+                  ;; Push all intervals with l <= q
+                  (let push-loop ((i iv-idx))
+                    (if (and (< i n-ivs) (<= (car (list-ref ivs-sorted i)) q))
+                        (let ((iv (list-ref ivs-sorted i)))
+                          (set! hp (heap-push hp (cons (cdr iv) (car iv))))
+                          (push-loop (+ i 1)))
+                        (begin
+                          (set! iv-idx i)
+                          'done)))
+                  ;; Pop intervals that don't cover q (r < q)
+                  (let pop-loop ()
+                    (if (not (heap-empty? hp))
+                        (let ((top (car hp)))
+                          (if (< (car top) q)
+                              (let ((r (heap-pop-min hp)))
+                                (if (car r) (begin (set! hp (cdr r)) (pop-loop))))
+                              'done))
+                        'done))
+                  ;; Get answer
+                  (let ((a (if (heap-empty? hp) -1
+                               (let ((top (car hp)))
+                                 (+ (- (car top) (cdr top)) 1)))))
+                    (vector-set! ans qidx a))
+                  (loop-qs (cdr qrest))))))
+      ans))))
+
+(define (make-vector n)
+  (let loop ((i 0) (acc '()))
+    (if (= i n) (list->vector (reverse acc))
+        (loop (+ i 1) (cons #f acc)))))
+
+(define (vector-set! v i val)
+  ;; v is a list-based vector from list->vector; mutate cons cell.
+  (let ((p (list-ref (vector->list v) i)))
+    (set-car! p val)))
+
+;; We need mutable pairs. In Aura, pairs are mutable via set-car!/set-cdr!.
+(define (set-car! p v) (cond ((pair? p) (set! (car p) v)) (else 'noop)))
+
+;; Hmm, Aura may not have set-car! directly. Let's use a different approach:
+;; represent answer as a vector of length n initialized with -1, but we build it via an
+;; association list indexed by original query index. Simpler: build results list directly
+;; during processing — but we need to preserve order. Since we iterate queries in sorted
+;; order, the answers come out unsorted.
+;;
+;; Approach: when we set answer for query index qidx, store in a list of pairs (qidx . val),
+;; then at end sort by qidx and extract.
+
+;; Let me restart with a cleaner version using assoc-list for answers.
+
+(define (solve intervals queries)
+  (let ((nq (length queries)))
+    (if (= nq 0) '()
+        (let* ((q-pairs
+                (let loop ((i 0) (qs queries) (acc '()))
+                  (if (null? qs) (reverse acc)
+                      (loop (+ i 1) (cdr qs) (cons (cons (car qs) i) acc)))))
+               (q-sorted (sort-by-car q-pairs)))
+          ;; sort intervals by left endpoint
+          (define ivs
+            (let loop ((is intervals) (acc '()))
+              (if (null? is) (reverse acc)
+                  (loop (cdr is) (cons (cons (caar is) (cadar is)) acc)))))
+          (define ivs-sorted (sort-by-car ivs))
+          (define n-ivs (length ivs-sorted))
+          ;; We'll use an assoc-list (qidx . ans) — since qidx is unique integer 0..nq-1,
+          ;; simple list is fine.
+          (define ans-alist '())
+          (define iv-idx 0)
+          (define hp '())  ; min-heap of (r . l) pairs, supported by heap-up/heap-down functions above
+          (let loop-qs ((qrest q-sorted))
+            (if (null? qrest) 'done
+                (let ((q (caar qrest))
+                      (qidx (cdar qrest)))
+                  ;; push intervals with l <= q
+                  (let push-loop ((i iv-idx))
+                    (cond
+                      ((>= i n-ivs) (begin (set! iv-idx i) 'done))
+                      ((<= (car (list-ref ivs-sorted i)) q)
+                       (let ((iv (list-ref ivs-sorted i)))
+                         (set! hp (heap-push hp (cons (cdr iv) (car iv))))
+                         (push-loop (+ i 1))))
+                      (else (begin (set! iv-idx i) 'done))))
+                  ;; pop intervals with r < q
+                  (let pop-loop ()
+                    (cond
+                      ((null? hp) 'done)
+                      ((< (car (car hp)) q)
+                       (set! hp (heap-pop hp))
+                       (pop-loop))
+                      (else 'done)))
+                  ;; answer
+                  (let ((a (if (null? hp) -1
+                               (+ (- (caar hp) (cdar hp)) 1))))
+                    (set! ans-alist (cons (cons qidx a) ans-alist)))
+                  (loop-qs (cdr qrest)))))
+          ;; sort ans-alist by qidx (it's built in reverse; reverse then... we want ascending qidx)
+          (define ans-sorted
+            (let loop ((xs ans-alist) (acc '()))
+              (if (null? xs) acc
+                  (loop (cdr xs) (cons (car xs) acc)))))
+          ;; extract values
+          (let extract ((xs ans-sorted) (acc '()))
+            (if (null? xs) (reverse acc)
+                (extract (cdr xs) (cons (cdar xs) acc))))))))
+
+;; heap-pop: pop and return new heap (without the popped element).
+(define (heap-pop h)
+  (if (null? h) '()
+      (let ((n (length h)))
+        (if (= n 1) '()
+            (let ((last-elt (list-ref h (- n 1))))
+              (heap-down (list-set h 0 last-elt) 0 (- n 1)))))))
+
+(define (display-list xs)
+  (cond ((null? xs) (display "()"))
+        (else (display "[")
+              (display (car xs))
+              (let loop ((rest (cdr xs)))
+                (if (null? rest) (display "]")
+                    (begin (display " ") (display (car rest)) (loop (cdr rest))))))))
+
+;; Test execution
+(define (run-case i case)
+  (let ((vals (cdr (vector->list case))))  ; case is a 1-element vector? Actually CASE0 is bound to the list directly.
+        ))
+
+;; CASE0..CASE7 are bound as variables holding the data list directly.
+(define (run i data)
+  (let ((intervals (car data))
+        (queries (cadr data)))
+    (let ((result (solve intervals queries)))
+      (display (string-append "CASE" (number->string i) "="))
+      (display-list result)
+      (newline))))
+
+(run 0 CASE0)
+(run 1 CASE1)
+(run 2 CASE2)
+(run 3 CASE3)
+(run 4 CASE4)
+(run 5 CASE5)
+(run 6 CASE6)
+(run 7 CASE7)

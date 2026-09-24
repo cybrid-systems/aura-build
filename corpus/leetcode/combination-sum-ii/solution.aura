@@ -1,0 +1,115 @@
+(define (list-copy lst)
+  (if (null? lst)
+      '()
+      (cons (car lst) (list-copy (cdr lst)))))
+
+(define (list-ref lst i)
+  (if (= i 0)
+      (car lst)
+      (list-ref (cdr lst) (- i 1))))
+
+(define (list-set lst i v)
+  (if (null? lst)
+      '()
+      (if (= i 0)
+          (cons v (cdr lst))
+          (cons (car lst) (list-set (cdr lst) (- i 1) v)))))
+
+(define (length lst)
+  (if (null? lst)
+      0
+      (+ 1 (length (cdr lst)))))
+
+(define (sort lst)
+  (define (insert x sorted)
+    (cond ((null? sorted) (cons x '()))
+          ((<= x (car sorted)) (cons x sorted))
+          (else (cons (car sorted) (insert x (cdr sorted))))))
+  (define (iter rest acc)
+    (if (null? rest)
+        acc
+        (iter (cdr rest) (insert (car rest) acc))))
+  (iter lst '()))
+
+(define (append a b)
+  (if (null? a)
+      b
+      (cons (car a) (append (cdr a) b))))
+
+(define (backtrack candidates start target path result)
+  (cond ((= target 0)
+         (set! result (append result (list (list-copy path)))))
+        ((< target 0) result)
+        (else
+         (let ((len (length candidates))
+               (i start))
+           (define (loop i)
+             (cond ((>= i len) result)
+                   (else
+                    (let ((v (list-ref candidates i)))
+                      (if (>= v target)
+                          (loop (+ i 1))
+                          (begin
+                            (set! path (append path (list v)))
+                            (set! result (backtrack candidates (+ i 1) (- target v) path result))
+                            (set! path (let ((p path))
+                                         (let ((ll (length p)))
+                                           (if (= ll 0)
+                                               p
+                                               (list-set p (- ll 1) '())))))
+                            (let ((j (+ i 1)))
+                              (define (skip j)
+                                (if (or (>= j len) (not (= (list-ref candidates j) v)))
+                                                    result
+                                                    (skip (+ j 1))))
+                              (set! result (skip j))
+                              (loop (+ i 1)))))))))
+           (loop i))))
+
+(define (combination-sum-ii candidates target)
+  (let ((sorted-cands (sort candidates))
+        (path '())
+        (result '()))
+    (backtrack sorted-cands 0 target path result)))
+
+(define (solve candidates target)
+  (combination-sum-ii candidates target))
+
+(define (display-list lst)
+  (cond ((null? lst)
+         (display "nil"))
+        ((pair? lst)
+         (if (pair? (car lst))
+         (begin (display "[") (display-list (car lst)) (display "]"))
+         (display (car lst)))
+         (if (null? (cdr lst))
+             '()
+             (begin (display " ") (display-list (cdr lst))))))
+  )
+
+(define (display-result r)
+  (display "[")
+  (display-list r)
+  (display "]"))
+
+; Test cases
+(define CASE0_INPUT `(("candidates" (10 1 2 7 6 1 5)) ("target" 8)))
+(define CASE1_INPUT `(("candidates" (2 5 2 1 2)) ("target" 5)))
+(define CASE2_INPUT `(("candidates" (1 1 1 1 1)) ("target" 3)))
+(define CASE3_INPUT `(("candidates" ()) ("target" 1)))
+(define CASE4_INPUT `(("candidates" (1)) ("target" 1)))
+(define CASE5_INPUT `(("candidates" (1 2 3 4 5)) ("target" 9)))
+(define CASE6_INPUT `(("candidates" (3 1 3 5 1 1)) ("target" 8)))
+
+(define (get-cands inp)
+  (car (cdr (assoc 'candidates inp))))
+(define (get-target inp)
+  (car (cdr (assoc 'target inp))))
+
+(display "CASE0=") (display-result (solve (get-cands CASE0_INPUT) (get-target CASE0_INPUT))) (newline)
+(display "CASE1=") (display-result (solve (get-cands CASE1_INPUT) (get-target CASE1_INPUT))) (newline)
+(display "CASE2=") (display-result (solve (get-cands CASE2_INPUT) (get-target CASE2_INPUT))) (newline)
+(display "CASE3=") (display-result (solve (get-cands CASE3_INPUT) (get-target CASE3_INPUT))) (newline)
+(display "CASE4=") (display-result (solve (get-cands CASE4_INPUT) (get-target CASE4_INPUT))) (newline)
+(display "CASE5=") (display-result (solve (get-cands CASE5_INPUT) (get-target CASE5_INPUT))) (newline)
+(display "CASE6=") (display-result (solve (get-cands CASE6_INPUT) (get-target CASE6_INPUT))) (newline)

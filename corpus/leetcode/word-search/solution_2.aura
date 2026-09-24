@@ -1,0 +1,65 @@
+(define (ref board i j)
+  (list-ref (list-ref board i) j))
+
+(define (in-bounds m n i j)
+  (and (>= i 0) (< i m) (>= j 0) (< j n)))
+
+(define (dfs board m n i j word idx visited)
+  (cond
+    ((null? word) #t)
+    ((= idx (string-length word)) #t)
+    ((not (in-bounds m n i j)) #f)
+    ((char=? (string-ref word idx) (string-ref (ref board i j) 0))
+     (let ((c (ref board i j)))
+       (set! (list-ref (list-ref board i) j) ".")
+       (let ((res
+              (or
+                (dfs board m n (+ i 1) j word (+ idx 1) visited)
+                (dfs board m n (- i 1) j word (+ idx 1) visited)
+                (dfs board m n i (+ j 1) word (+ idx 1) visited)
+                (dfs board m n i (- j 1) word (+ idx 1) visited))))
+         (set! (list-ref (list-ref board i) j) c)
+         res)))
+    (else #f)))
+
+(define (solve m n board word)
+  (cond
+    ((= 0 (string-length word)) #t)
+    (else
+      (let ((found #f)
+            (i 0))
+        (while (and (not found) (< i m))
+          (let ((j 0))
+            (while (and (not found) (< j n))
+              (when (char=? (string-ref word 0) (string-ref (ref board i j) 0))
+                (when (dfs board m n i j word 0 '())
+                  (set! found #t)))
+              (set! j (+ j 1))))
+          (set! i (+ i 1))))
+        found))))
+
+(define (bool->str b) (if b "YES" "NO"))
+
+(let ((b0 (list (list "A" "B" "C" "E") (list "S" "F" "C" "S") (list "A" "D" "E" "E"))))
+  (display "CASE0=") (display (bool->str (solve 3 4 b0 "ABCCED"))) (newline))
+
+(let ((b1 (list (list "A" "B" "C" "E") (list "S" "F" "C" "S") (list "A" "D" "E" "E"))))
+  (display "CASE1=") (display (bool->str (solve 3 4 b1 "SEE"))) (newline))
+
+(let ((b2 (list (list "A" "B" "C" "E") (list "S" "F" "C" "S") (list "A" "D" "E" "E"))))
+  (display "CASE2=") (display (bool->str (solve 3 4 b2 "ABCB"))) (newline))
+
+(let ((b3 (list (list "A"))))
+  (display "CASE3=") (display (bool->str (solve 1 1 b3 "A"))) (newline))
+
+(let ((b4 (list (list "A"))))
+  (display "CASE4=") (display (bool->str (solve 1 1 b4 "AA"))) (newline))
+
+(let ((b5 (list (list "." "A") (list "B" "C"))))
+  (display "CASE5=") (display (bool->str (solve 2 2 b5 "AC"))) (newline))
+
+(let ((b6 (list (list "A" "B" "A") (list "B" "A" "B") (list "A" "B" "A"))))
+  (display "CASE6=") (display (bool->str (solve 3 3 b6 "ABABABABA"))) (newline))
+
+(let ((b7 (list (list "A" "B") (list "C" "D"))))
+  (display "CASE7=") (display (bool->str (solve 2 2 b7 ""))) (newline))

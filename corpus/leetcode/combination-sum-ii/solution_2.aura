@@ -1,0 +1,121 @@
+(define (sort lst)
+  (let ((sorted '()))
+    (define (insert x l)
+      (cond ((null? l) (cons x '()))
+            ((<= x (car l)) (cons x l))
+            (else (cons (car l) (insert x (cdr l))))))
+    (define (loop l)
+      (if (null? l) sorted
+          (begin
+            (set! sorted (insert (car l) sorted))
+            (loop (cdr l)))))
+    (loop lst)))
+
+(define (length lst)
+  (if (null? lst) 0 (+ 1 (length (cdr lst)))))
+
+(define (list-ref lst i)
+  (if (= i 0) (car lst) (list-ref (cdr lst) (- i 1))))
+
+(define (take n lst)
+  (if (= n 0) '()
+      (cons (car lst) (take (- n 1) (cdr lst)))))
+
+(define (drop n lst)
+  (if (= n 0) lst (drop (- n 1) (cdr lst))))
+
+(define (append a b)
+  (if (null? a) b (cons (car a) (append (cdr a) b))))
+
+(define (reverse-helper lst acc)
+  (if (null? lst) acc
+      (reverse-helper (cdr lst) (cons (car lst) acc))))
+
+(define (my-reverse lst) (reverse-helper lst '()))
+
+(define (in-list? x lst)
+  (cond ((null? lst) #f)
+        ((= x (car lst)) #t)
+        (else (in-list? x (cdr lst)))))
+
+(define (display-list lst)
+  (display "[")
+  (define (loop l)
+    (cond ((null? l) (display ""))
+          ((null? (cdr l))
+           (display (number->string (car l))))
+          (else
+           (display (number->string (car l)))
+           (display ", ")
+           (loop (cdr l)))))
+  (loop lst)
+  (display "]"))
+
+(define (display-result lst)
+  (display "[")
+  (define (loop l)
+    (cond ((null? l) (display ""))
+          ((null? (cdr l))
+           (display-list (car l)))
+          (else
+           (display-list (car l))
+           (display ", ")
+           (loop (cdr l)))))
+  (loop lst)
+  (display "]"))
+
+(define (solve candidates target)
+  (let ((sorted-cands (sort candidates))
+        (n (length candidates))
+        (result '()))
+    (define (backtrack start remaining combo)
+      (cond ((= remaining 0)
+             (set! result (cons (my-reverse combo) result)))
+            ((< remaining 0) #f)
+            (else
+             (let ((i start))
+               (define (loop i)
+                 (cond ((>= i n) #f)
+                       (else
+                        (let ((c (list-ref sorted-cands i)))
+                          (cond ((> c remaining) #f)
+                                ((and (> i start)
+                                      (= c (list-ref sorted-cands (- i 1))))
+                                 (loop (+ i 1)))
+                                (else
+                                 (backtrack (+ i 1) (- remaining c)
+                                            (cons c combo))
+                                 (loop (+ i 1))))))))))
+             (loop start))))
+    (backtrack 0 target '())
+    result))
+
+(define CASE0_INPUT (list (cons "candidates" (list 10 1 2 7 6 1 5)) (cons "target" 8)))
+(define CASE1_INPUT (list (cons "candidates" (list 2 5 2 1 2)) (cons "target" 5)))
+(define CASE2_INPUT (list (cons "candidates" (list 1 1 1 1 1)) (cons "target" 3)))
+(define CASE3_INPUT (list (cons "candidates" (list)) (cons "target" 1)))
+(define CASE4_INPUT (list (cons "candidates" (list 1)) (cons "target" 1)))
+(define CASE5_INPUT (list (cons "candidates" (list 1 2 3 4 5)) (cons "target" 9)))
+(define CASE6_INPUT (list (cons "candidates" (list 3 1 3 5 1 1)) (cons "target" 8)))
+
+(define (lookup-case inp key)
+  (cond ((null? inp) #f)
+        ((equal? (car (car inp)) key) (cdr (car inp)))
+        (else (lookup-case (cdr inp) key))))
+
+(define (run-case i inp)
+  (let ((cands (lookup-case inp "candidates"))
+        (t (lookup-case inp "target")))
+    (let ((r (solve cands t)))
+      (display (string-append "CASE" (number->string i)))
+      (display "=")
+      (display-result r)
+      (newline))))
+
+(run-case 0 CASE0_INPUT)
+(run-case 1 CASE1_INPUT)
+(run-case 2 CASE2_INPUT)
+(run-case 3 CASE3_INPUT)
+(run-case 4 CASE4_INPUT)
+(run-case 5 CASE5_INPUT)
+(run-case 6 CASE6_INPUT)

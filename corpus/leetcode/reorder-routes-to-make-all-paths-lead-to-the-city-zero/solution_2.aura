@@ -1,0 +1,149 @@
+;; (solve n edges) -> minimum number of roads to reverse
+(define (solve n edges)
+  ;; adjacency: list of (neighbor . flag) where flag=1 if edge needs reversal
+  (define (cons-flag x y) (cons x y))
+  (define adj (make-vector n '()))
+  (define i 0)
+  ;; fill adjacency
+  (let loop ((es edges) (idx 0))
+    (if (null? es)
+        'done
+        (let ((e (car es)))
+          (let ((u (car e)) (v (car (cdr e))))
+            ;; edge u -> v: when starting from 0 and we go 0->...->u->v, v is reached from u
+            ;; if we traverse from u to v (i.e., u is closer to 0), this edge points away from 0, needs reversal
+            (vector-set! adj u (cons (cons v 1) (vector-ref adj u)))
+            ;; edge v -> u (reversed): when at v, going to u means edge already points toward 0
+            (vector-set! adj v (cons (cons u 0) (vector-ref adj v)))
+            (loop (cdr es) (+ idx 1))))))
+  ;; DFS from 0 counting flags
+  (define count 0)
+  (define visited (make-vector n #f))
+  (define (dfs node)
+    (vector-set! visited node #t)
+    (let loop ((nbrs (vector-ref adj node)))
+      (if (null? nbrs)
+          'done
+          (let ((p (car nbrs)))
+            (let ((nbr (car p)) (flag (cdr p)))
+              (if (vector-ref visited nbr)
+                  (loop (cdr nbrs))
+                  (begin
+                    (if (= flag 1) (set! count (+ count 1)) 'no)
+                    (dfs nbr)
+                    (loop (cdr nbrs)))))))))
+  (dfs 0)
+  count)
+
+(define (make-vector n fill)
+  (define v '())
+  (define i 0)
+  (let loop ((i 0))
+    (if (>= i n)
+        v
+        (begin
+          (set! v (cons fill v))
+          (loop (+ i 1))))))
+(define (vector-ref v i) (list-ref v i))
+(define (vector-set! v i x)
+  (define _ (list-set! v i x))
+  'done)
+
+(define (list-set! lst idx val)
+  (define (helper l i)
+    (if (= i idx)
+        (cons val (cdr l))
+        (cons (car l) (helper (cdr l) (+ i 1)))))
+  (if (= idx 0)
+      (cons val (cdr lst))
+      (helper lst idx)))
+
+;; Helper for vector-ref on list
+;; We need a different approach since vector-ref takes a list as the "vector"
+(define (vec-ref vec idx)
+  (list-ref vec idx))
+(define (vec-set vec idx val)
+  (define (helper l i)
+    (if (= i idx)
+        (cons val (cdr l))
+        (cons (car l) (helper (cdr l) (+ i 1)))))
+  (if (= idx 0)
+      (cons val (cdr vec))
+      (helper vec idx)))
+
+(define (list-ref lst idx)
+  (if (= idx 0)
+      (car lst)
+      (list-ref (cdr lst) (- idx 1))))
+
+;; Re-implement solve with proper helpers
+(define (solve n edges)
+  (define adj (build-list n (lambda (_) '())))
+  (define visited (build-list n (lambda (_) #f)))
+  ;; fill adjacency: adj[u] = cons((v . 1), adj[u])  edge u->v needs reversal when at u going to v
+  ;;                     cons((u . 0), adj[v])  edge u->v already toward 0 when at v going to u
+  (define (fill-adj es)
+    (if (null? es)
+        adj
+        (let ((e (car es)))
+          (let ((u (car e)) (v (car (cdr e))))
+            (let ((new-adj-u (list-set-nth adj u (cons (cons v 1) (list-ref adj u))))
+                  (new-adj-v (list-set-nth adj v (cons (cons u 0) (list-ref adj v)))))
+              (set! adj new-adj-u)
+              (set! adj new-adj-v)
+              (fill-adj (cdr es)))))))
+  (fill-adj edges)
+  (define count 0)
+  (define (mark node) (set! visited (list-set-nth visited node #t)))
+  (define (marked? node) (list-ref visited node))
+  (define (neighbors node) (list-ref adj node))
+  (define (dfs node)
+    (set! visited (list-set-nth visited node #t))
+    (let loop ((nbrs (list-ref adj node)))
+      (if (null? nbrs)
+          'done
+          (let ((p (car nbrs)))
+            (let ((nbr (car p)) (flag (cdr p)))
+              (if (list-ref visited nbr)
+                  (loop (cdr nbrs))
+                  (begin
+                    (if (= flag 1) (set! count (+ count 1)) 'no)
+                    (dfs nbr)
+                    (loop (cdr nbrs)))))))))
+  (dfs 0)
+  count)
+
+(define (build-list n f)
+  (define (helper i)
+    (if (= i n) '() (cons (f i) (helper (+ i 1)))))
+  (helper 0))
+
+(define (list-set-nth lst idx val)
+  (define (helper l i)
+    (if (= i idx)
+        (cons val (cdr l))
+        (cons (car l) (helper (cdr l) (+ i 1)))))
+  (if (= idx 0)
+      (cons val (cdr lst))
+      (helper lst idx)))
+
+(define (list-ref lst idx)
+  (if (= idx 0)
+      (car lst)
+      (list-ref (cdr lst) (- idx 1))))
+
+;; Test cases
+(define (run-case i n edges)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve n edges))
+  (newline))
+
+(run-case 0 6 '((0 1) (1 3) (2 3) (4 3) (5 4)))
+(run-case 1 5 '((1 0) (2 0) (3 1) (4 2)))
+(run-case 2 2 '((0 1)))
+(run-case 3 2 '((1 0)))
+(run-case 4 4 '((0 1) (2 0) (3 2)))
+(run-case 5 7 '((0 1) (1 2) (2 3) (3 4) (4 5) (5 6)))
+(run-case 6 7 '((1 0) (2 1) (3 2) (4 3) (5 4) (6 5)))

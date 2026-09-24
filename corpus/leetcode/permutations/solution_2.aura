@@ -1,0 +1,81 @@
+;; Permutations - backtracking solution
+;; Generates all permutations of a list of distinct integers.
+
+(define (append-all xs ys)
+  (if (null? xs)
+      ys
+      (cons (car xs) (append-all (cdr xs) ys)))
+
+(define (map f xs)
+  (if (null? xs)
+      '()
+      (cons (f (car xs)) (map f (cdr xs))))
+
+(define (filter p xs)
+  (if (null? xs)
+      '()
+      (if (p (car xs))
+          (cons (car xs) (filter p (cdr xs)))
+          (filter p (cdr xs))))
+
+;; Check if element x is in list xs
+(define (member? x xs)
+  (if (null? xs)
+      #f
+      (if (equal? x (car xs))
+          #t
+          (member? x (cdr xs)))))
+
+;; permutations: generate all permutations of nums
+;; Returns list of lists
+(define (permutations nums)
+  (if (null? nums)
+      '(())
+      (append-all
+        (map
+          (lambda (x)
+            (map (lambda (p) (cons x p))
+                 (permutations (filter (lambda (y) (not (equal? y x))) nums))))
+          nums)
+        '())))
+
+(define (solve nums)
+  (permutations nums))
+
+;; Helper to display a list of numbers space-separated
+(define (display-list lst)
+  (if (null? lst)
+      (display "")
+      (begin
+        (display (car lst))
+        (if (not (null? (cdr lst)))
+            (display " ")
+            (display ""))
+        (display-list (cdr lst)))))
+
+;; Helper to display list of lists (permutations) - each on own line
+(define (display-perms perms)
+  (if (null? perms)
+      (display "")
+      (begin
+        (display-list (car perms))
+        (newline)
+        (display-perms (cdr perms)))))
+
+;; Test cases
+(define (run-case i nums)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (newline)
+  (display-perms (solve nums))
+  (newline))
+
+(run-case 0 '(1 2 3))
+(run-case 1 '(0 1))
+(run-case 2 '(1))
+(run-case 3 '(5 4 3 2 1))
+(run-case 4 '(7))
+(run-case 5 '(-1 0 1))
+(run-case 6 '(10 20 30 40))
+(run-case 7 '(2 1))

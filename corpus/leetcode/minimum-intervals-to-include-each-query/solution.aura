@@ -1,0 +1,139 @@
+;; Solution for "Minimum Interval to Include Each Query"
+;; Uses sort + min-heap (simulated with a sorted list/insert) approach.
+
+(define (make-entry l r size)
+  (cons l (cons r size)))
+
+(define (entry-l e) (car e))
+(define (entry-r e) (cadr e))
+(define (entry-size e) (cddr e))
+
+;; Sort pairs by car (left) ascending
+(define (sort-by-left ints)
+  (let ((sorted (sort ints (lambda (a b) (< (car a) (car b)))))))
+    sorted))
+
+;; Sort queries with their original index
+(define (sort-queries qs)
+  (let loop ((i 0) (xs qs) (acc '()))
+    (if (null? xs)
+        (sort acc (lambda (a b) (< (car a) (car b))))
+        (loop (+ i 1) (cdr xs) (cons (cons (car xs) i) acc)))))
+
+;; --- Min-heap keyed on 'right' endpoint (smaller right = higher priority) ---
+;; Represent heap as a list of entries (entry ...). Insertion sorts into place
+;; to maintain ascending order by right endpoint. pop-min removes head.
+
+(define (heap-empty? h) (null? h))
+
+(define (heap-insert h e)
+  ;; e = (l . (r . size)); insert keeping ascending order by r
+  (letrec ((er (entry-r e)))
+    (insert-by-r h e er)))
+
+(define (insert-by-r h e er)
+  (cond
+    ((null? h) (cons e '()))
+    ((<= er (entry-r (car h))) (cons e h))
+    (else (cons (car h) (insert-by-r (cdr h) e er)))))
+
+(define (heap-peek h) (car h))
+
+(define (heap-pop-min h)
+  (cdr h))
+
+;; Pop entries whose r < current query (no longer relevant)
+(define (heap-clean h q)
+  (if (or (null? h) (>= (entry-r (car h)) q))
+      h
+      (heap-clean (cdr h) q)))
+
+;; --- Build solve ---
+(define (solve intervals queries)
+  (let* ((sorted-ints (sort-by-left intervals))
+         (sorted-qs   (sort-queries queries))
+         (len-q       (length queries))
+         (result-len  len-q)
+         (result-vec  (make-vector result-len -1))
+         (heap        '())
+         (i           0)
+         (j           0)
+         (n-i         (length sorted-ints))
+         (n-q         (length sorted-qs)))
+    ;; We will fill result-vec; then output as a vector afterwards.
+    ;; Sort intervals ascending by l; sort queries ascending by q with original index.
+    ;; Sweep: for each query (in ascending q), push all intervals with l <= q into heap
+    ;; (keyed by r). Pop exhausted entries (r < q). The heap-front (if any) covers q
+    ;; with minimum r; its size is the answer for that query.
+    (let loop ((qi 0) (i 0) (heap '()) (sorted-ints* sorted-ints) (sorted-qs* sorted-qs))
+      (cond
+        ((>= qi n-q) result-vec)
+        (else
+         (let* ((qpair  (list-ref sorted-qs* qi))
+                (q      (car qpair))
+                (orig-i (cdr qpair)))
+           (let advance-and-push ((i2 i) (heap2 heap) (ints sorted-ints*))
+             (if (and (< i2 n-i)
+                      (<= (car (list-ref ints i2)) q))
+                 (let ((intv (list-ref ints i2))
+                       (er (+ (- (cadr intv) (car intv)) 1)))
+                   (advance-and-push (+ i2 1) (heap-insert heap2 (make-entry (car intv) (cadr intv) er))
+                                     ints))
+                 (let* ((heap3 (heap-clean heap2 q))
+                        (ans   (if (null? heap3)
+                                   -1
+                                   (entry-size (heap-peek heap3)))))
+                   (vector-set! result-vec orig-i ans)
+                   (loop (+ qi 1) i2 heap3 ints sorted-qs*)))))))
+    result-vec)))
+
+;; --- Display helpers ---
+(define (vector->list v)
+  (let loop ((i (- (vector-length v) 1)) (acc '()))
+    (if (< i 0) acc (loop (- i 1) (cons (vector-ref v i) acc)))))
+
+(define (print-list xs)
+  (cond
+    ((null? xs) (display ""))
+    (else
+     (let loop ((xs xs) (first? #t))
+       (cond
+         ((null? xs) '())
+         (else
+          (if first?
+              (begin (display (car xs)) (loop (cdr xs) #f))
+              (begin (display " ") (display (car xs)) (loop (cdr xs) #f)))))))))
+
+(define (print-result v)
+  (display "[")
+  (print-list (vector->list v))
+  (display "]"))
+
+;; Cases
+(define CASE0 '( ((1 4) (2 8) (3 6) (4 8)) (3 4 5 6 7 8) ))
+(define CASE1 '( () (1 2 3) ))
+(define CASE2 '( ((1 5)) (1 2 3 4 5 6) ))
+(define CASE3 '( ((1 4) (2 4) (3 4) (4 4)) (4 3 2 1 5) ))
+(define CASE4 '( ((1 10) (2 3) (5 5) (7 9)) (2 5 7 10 11) ))
+(define CASE5 '( ((-5 -1) (0 0) (-3 3)) (-4 -2 0 1 -5 4) ))
+(define CASE6 '( ((1 2) (1 2) (1 2)) (1 2 3) ))
+(define CASE7 '( ((1 100)) (50) ))
+
+(define (run-case n case-data)
+  (let ((intervals (car case-data))
+        (queries   (cadr case-data))
+        (ans       (solve intervals queries)))
+    (display "CASE")
+    (display n)
+    (display "=")
+    (print-result ans)
+    (newline)))
+
+(run-case 0 CASE0)
+(run-case 1 CASE1)
+(run-case 2 CASE2)
+(run-case 3 CASE3)
+(run-case 4 CASE4)
+(run-case 5 CASE5)
+(run-case 6 CASE6)
+(run-case 7 CASE7)

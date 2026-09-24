@@ -1,0 +1,91 @@
+(define (solve nums)
+  ; Sort input so duplicates are adjacent
+  (define sorted (sort-list nums))
+  (define n (length sorted))
+  (define used (make-vector n #f))
+  (define result '())
+  (define current '())
+
+  (define (backtrack)
+    (if (= (length current) n)
+        (set! result (cons (reverse current) result))
+        (begin
+          (let loop ((i 0))
+            (if (< i n)
+                (begin
+                  (if (and (not (vector-ref used i))
+                           (or (= i 0)
+                               (not (equal? (list-ref sorted i) (list-ref sorted (- i 1))))
+                               (vector-ref used (- i 1))))
+                      (begin
+                        (set! current (cons (list-ref sorted i) current))
+                        (vector-set! used i #t)
+                        (backtrack)
+                        (vector-set! used i #f)
+                        (set! current (cdr current))))
+                  (loop (+ i 1))))))))
+
+  (backtrack)
+  result)
+
+(define (sort-list lst)
+  ; Insertion sort
+  (define (insert x sorted)
+    (cond ((null? sorted) (cons x '()))
+          ((<= x (car sorted)) (cons x sorted))
+          (else (cons (car sorted) (insert x (cdr sorted))))))
+  (define (iter lst acc)
+    (if (null? lst) acc (iter (cdr lst) (insert (car lst) acc))))
+  (iter lst '()))
+
+(define (make-vector n init)
+  (define (loop i acc)
+    (if (= i n) acc (loop (+ i 1) (cons init acc))))
+  (loop 0 '()))
+
+(define (vector-ref v i)
+  (list-ref v i))
+
+(define (vector-set! v i val)
+  (define (loop lst idx)
+    (cond ((null? lst) #f)
+          ((= idx i) (set-car! lst val))
+          (else (loop (cdr lst) (+ idx 1)))))
+  (loop v 0))
+
+; Display helper for a list of lists
+(define (display-perms perms)
+  (display "[")
+  (let loop ((p perms) (first #t))
+    (cond ((null? p) (display "]"))
+          (else
+           (if first (display "[") (display ", ["))
+           (let loop2 ((e (car p)) (f2 #t))
+             (cond ((null? e) (display "]"))
+                   (else
+                    (if f2 (display (car e)) (begin (display ", ") (display (car e))))
+                    (loop2 (cdr e) #f))))
+           (loop (cdr p) #f)))))
+
+; Test cases
+(define cases
+  (list (list 0 '(1 1 2))
+        (list 1 '(0 1))
+        (list 2 '(1 2 3))
+        (list 3 '(1 1 1))
+        (list 4 '())
+        (list 5 '(1))
+        (list 6 '(2 2 1 1))
+        (list 7 '(1 2 1 2))))
+
+(let loop ((cs cases))
+  (if (null? cs)
+      '()
+      (begin
+        (let ((c (car cs)))
+          (display "CASE")
+          (display (car c))
+          (display "=")
+          (display-perms (solve (cadr c)))
+          (newline))
+        (loop (cdr cs)))))

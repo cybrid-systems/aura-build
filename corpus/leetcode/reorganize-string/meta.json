@@ -1,0 +1,35 @@
+{
+  "variants": [],
+  "slug": "reorganize-string",
+  "title": "Reorganize String",
+  "category": "greedy",
+  "ref": {
+    "llm": {
+      "ok": true,
+      "error": "",
+      "usage": {
+        "total_tokens": 1504,
+        "total_characters": 0,
+        "prompt_tokens": 843,
+        "completion_tokens": 661,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "model": "MiniMax-M3"
+    },
+    "run": {
+      "ref_ok": false,
+      "exit_code": 1,
+      "stderr": "Traceback (most recent call last):\n  File \"/workspace/aura-build/corpus/leetcode/reorganize-string/ref.py\", line 79, in <module>\n    assert is_valid(result, s), f\"Invalid rearrangement for {s!r}: got {result!r}\"\n           ~~~~~~~~^^^^^^^^^^^\nAssertionError: Invalid rearrangement for 'aab': got 'aab'\n",
+      "duration_s": 0.03,
+      "timeout": false,
+      "n_tests": 0
+    },
+    "ts": "2026-09-24T14:54:14Z"
+  },
+  "updated_at": "2026-09-24T14:54:14Z"
+}
