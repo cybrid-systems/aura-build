@@ -231,6 +231,62 @@ def _parse_chat_file(path: Path, cfg: MiniMaxConfig) -> dict[str, Any]:
     }
 
 
+
+def _soft_string_payload(value: object) -> str:
+    """Unwrap Soft status string values (printed with surrounding quotes)."""
+    s = str(value or "").strip()
+    if len(s) >= 2 and s[0] == '"' and s[-1] == '"':
+        return s[1:-1]
+    return s
+
+
+def _parse_chat_json(raw: str, cfg: MiniMaxConfig) -> dict[str, Any]:
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        return {
+            "ok": False,
+            "content": "",
+            "model": cfg.model,
+            "error": redact_secrets(f"fiber_resp_parse:{exc}", cfg.api_key),
+            "provider": "minimax",
+            "llm_via": "fiber",
+        }
+    try:
+        content = str(payload["choices"][0]["message"]["content"] or "")
+    except (KeyError, IndexError, TypeError):
+        return {
+            "ok": False,
+            "content": "",
+            "model": cfg.model,
+            "error": "no_content_in_response",
+            "provider": "minimax",
+            "llm_via": "fiber",
+        }
+    return {
+        "ok": True,
+        "content": content,
+        "model": str(payload.get("model") or cfg.model),
+        "error": "",
+        "provider": "minimax",
+        "usage": payload.get("usage") if isinstance(payload.get("usage"), dict) else {},
+        "llm_via": "fiber",
+    }
+
+
+def _prefer_write_file(*, max_tokens: int) -> bool:
+    """Direct Soft status join is fine after aura-build #1; write-file for huge bodies.
+
+    Override with ``AURA_BUILD_FIBER_LLM_MODE=direct|write_file``.
+    """
+    mode = (os.environ.get("AURA_BUILD_FIBER_LLM_MODE") or "").strip().lower()
+    if mode in ("write_file", "write-file", "file"):
+        return True
+    if mode in ("direct", "join", "status"):
+        return False
+    return int(max_tokens) > 1024
+
+
 def fiber_chat_completions(
     serve_session: Any,
     messages: list[dict[str, str]],
@@ -242,14 +298,13 @@ def fiber_chat_completions(
     thinking_disabled: bool = True,
     timeout_s: float = 120.0,
 ) -> dict[str, Any]:
-    """One Soft-fiber MiniMax chat via file-backed http-post + write-file.
+    """One Soft-fiber MiniMax chat via http-post (direct join or write-file).
 
-    write-file keeps Soft status ``value`` short (no braces). Before aura-build
-    #1, Soft status lines with ``{`` inside ``value`` (JSON HTTP bodies) broke
-    the serve_session parser (``rfind``) and looked like a Soft hang — Soft
-    itself joins large plain strings fine. After #1, short-status *or* direct
-    join of content both parse; write-file remains the preferred hygiene /
-    performance path (scratch cleanup + smaller status line).
+    After aura-build #1, Soft status ``value`` may contain ``{`` (MiniMax JSON)
+    without wedging the client. Default: **direct** ``fiber:join`` of the HTTP
+    body when ``max_tokens <= 1024`` (no resp-file disk). write-file remains for
+    large ``max_tokens`` or ``AURA_BUILD_FIBER_LLM_MODE=write_file`` (hygiene /
+    short status). Soft Ready still serializes denseness HTTP (Aura #4053).
     """
     cfg = config or load_minimax_config()
     if serve_session is None:
@@ -285,16 +340,23 @@ def fiber_chat_completions(
     )
     body_path.write_text(json.dumps(body), encoding="utf-8")
     url = f"{cfg.base_url}/chat/completions"
-    # Paths as Aura string literals — no API key in code.
-    code = (
-        f'(fiber:join (fiber:spawn (lambda () '
-        f'(let ((r (http-post "{url}" (read-file "{body_path}") '
-        f'(getenv "LLM_API_KEY")))) '
-        f'(if (string? r) '
-        f'(begin (write-file "{resp_path}" r) '
-        f'(string-append "wrote=" (number->string (string-length r)))) '
-        f'"bad-nonstring")))))'
-    )
+    use_write = _prefer_write_file(max_tokens=max_tokens)
+    if use_write:
+        code = (
+            f'(fiber:join (fiber:spawn (lambda () '
+            f'(let ((r (http-post "{url}" (read-file "{body_path}") '
+            f'(getenv "LLM_API_KEY")))) '
+            f'(if (string? r) '
+            f'(begin (write-file "{resp_path}" r) '
+            f'(string-append "wrote=" (number->string (string-length r)))) '
+            f'"bad-nonstring")))))'
+        )
+    else:
+        code = (
+            f'(fiber:join (fiber:spawn (lambda () '
+            f'(http-post "{url}" (read-file "{body_path}") '
+            f'(getenv "LLM_API_KEY")))))'
+        )
     assert cfg.api_key not in code
     t0 = time.monotonic()
     try:
@@ -308,6 +370,7 @@ def fiber_chat_completions(
             "provider": "minimax",
             "llm_via": None,
             "latency_ms": int((time.monotonic() - t0) * 1000),
+            "fiber_llm_mode": "write_file" if use_write else "direct",
         }
     ms = int((time.monotonic() - t0) * 1000)
     if r.get("status") != "ok":
@@ -322,15 +385,20 @@ def fiber_chat_completions(
             "llm_via": None,
             "latency_ms": ms,
             "soft_value": redact_secrets(str(r.get("value") or ""), cfg.api_key)[:120],
+            "fiber_llm_mode": "write_file" if use_write else "direct",
         }
-    out = _parse_chat_file(resp_path, cfg)
+    if use_write:
+        out = _parse_chat_file(resp_path, cfg)
+    else:
+        out = _parse_chat_json(_soft_string_payload(r.get("value")), cfg)
     out["latency_ms"] = ms
     out["soft_value"] = redact_secrets(str(r.get("value") or ""), cfg.api_key)[:80]
-    # Best-effort cleanup (keep on failure for debug under scratch)
+    out["fiber_llm_mode"] = "write_file" if use_write else "direct"
     if out.get("ok"):
         try:
             body_path.unlink(missing_ok=True)
-            resp_path.unlink(missing_ok=True)
+            if use_write:
+                resp_path.unlink(missing_ok=True)
         except OSError:
             pass
     return out
@@ -354,7 +422,7 @@ def fiber_chat_completions_batch(
     ``llm_parallel`` is ``fiber`` when N≥2, Soft status ok, and wall time
     looks concurrent vs median oneshot latency; else ``fiber_serial`` when
     wall suggests serialization (Soft #4048 body mutex / workers=1).
-    write-file keeps status values brace-free (see ``fiber_chat_completions``).
+    Batch still uses write-file (short status). Soft Ready HTTP concurrency: Aura #4053 (g_http_post_async missing on Soft Ready — denseness serial).
     """
     cfg = config or load_minimax_config()
     n = len(messages_list)
@@ -482,8 +550,9 @@ def fiber_chat_completions_batch(
         parallel_note = "joined_ge2_wall_concurrency_unproven"
         if oneshot_median_ms is not None and oneshot_median_ms > 0:
             ratio = wall_ms / float(oneshot_median_ms)
-            # N=2: wall > ~1.6× oneshot → serial-ish; grows with N
-            if ratio > max(1.6, 0.7 * ok_n):
+            # Remasure Soft Ready #4053: N=2 ~1.34×, N=4 ~3.5×, N=8 ~5.2×.
+            # Prior max(1.6, 0.7*N) under-stamped N=8 as fiber; tighten.
+            if ratio > max(1.35, 0.55 * ok_n):
                 llm_parallel = "fiber_serial"
                 parallel_note = f"wall_{wall_ms}ms_{ratio:.2f}x_oneshot"
             else:

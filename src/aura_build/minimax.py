@@ -133,10 +133,11 @@ def load_minimax_config(
         or DEFAULT_MODEL
     )
 
-    # Inject into process env for child Aura llm:chat if used; do not print.
-    os.environ.setdefault("LLM_API_KEY", api_key)
-    os.environ.setdefault("LLM_BASE_URL", base)
-    os.environ.setdefault("LLM_MODEL", model)
+    # File key is authoritative. setdefault left a stale shorter LLM_API_KEY
+    # in Soft env (401 from MiniMax). Overwrite Soft-visible LLM_* from file.
+    os.environ["LLM_API_KEY"] = api_key
+    os.environ["LLM_BASE_URL"] = base
+    os.environ["LLM_MODEL"] = model
     os.environ.setdefault("MINIMAX_BASE_URL", base)
     os.environ.setdefault("MINIMAX_MODEL", model)
     os.environ.setdefault("MINIMAX_API_KEY_FILE", str(key_file))
