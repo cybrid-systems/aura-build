@@ -2305,8 +2305,14 @@ def _implicated_files(
         (("replay", "eq=", "eq\n", "snapshot"), ["replay.aura", "snapshot.aura", "exchange.aura", "journal.aura", "main.aura"]),
         (("fees", "fee"), ["fee.aura", "settle.aura", "query.aura", "main.aura"]),
         (("count",), ["main.aura"]),
-        (("parse error", "unbalanced", "unbound"), ["match.aura", "order.aura", "exchange.aura", "main.aura", "book.aura"]),
+        (("parse error", "unbalanced", "unbound", "warning: unbalanced"),
+         ["match.aura", "order.aura", "exchange.aura", "main.aura", "book.aura", "settle.aura"]),
     ]
+    # If FILL1 is wrong (filled/resting/other) force order/match/query/main into the set.
+    if "fill1" in low and "partial" in low:
+        for f in ("order.aura", "match.aura", "query.aura", "main.aura"):
+            if f in file_list and f not in hit:
+                hit.append(f)
     for keys, files in semantic_map:
         if any(k in low for k in keys):
             for f in files:
@@ -2345,7 +2351,12 @@ def _interface_contracts_blob(task_spec: dict[str, Any]) -> str:
             "  query-left A1 → 3 ⇒ FILL1=partial LEFT1=3; fee 1/qty/side ⇒ FEES=14;\n"
             "  BIG Alice buy 9 100 → RISK=reject; A2 Alice sell 5 3 STP vs own → STP=0;\n"
             "  cancel A1 → CXL=cancelled; halt → place B2 reject; resume; re-place A1 → DUP;\n"
-            "  snapshot+replay → REPLAY=ok EQ=1; COUNT=10 holds."
+            "  snapshot+replay → REPLAY=ok EQ=1; COUNT=10 holds.\n"
+            "Stub hardcodes to DELETE: FILL1=\"filled\", STP=7, COUNT=0 — replace with\n"
+            "  (define left1 (query-left \"A1\")) (define fill1 (if (= left1 3) \"partial\" \"other\"))\n"
+            "  and real STP/COUNT from APIs. order-place must return \"partial\" when rem>0.\n"
+            "If verify mentions unbalanced parentheses / parse error: fix ONLY that file's\n"
+            "parens first; do not rewrite unrelated modules in the same turn."
         )
     if not lines:
         return ""

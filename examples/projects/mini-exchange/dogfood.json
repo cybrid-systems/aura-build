@@ -63,6 +63,6 @@
     "exchange-replay",
     "query-left"
   ],
-  "user_extra": "Fifteen-file mini-exchange. Define GOAL.md APIs in the named files (idemp/journal/ledger/fee/risk/book/match/order/settle/halt/snapshot/replay/query/exchange/main). Critical contracts: order-place = idemp\u2192halt\u2192risk\u2192match\u2192rest; match-against price-time + STP (skip same acct); settle-fill fees both sides (fee-rate=1 per qty); query-left after A1 buy10 / B1 sell7 must be 3 \u21d2 FILL1=partial (not filled/resting); FEES=14; COUNT=10 holds. On repair: rewrite only implicated files; keep cross-file callee names; include verify stderr mismatches as ground truth. Named fences for all rewritten files. Aura run order equals dogfood.json files list.",
+  "user_extra": "Fifteen-file mini-exchange. Define GOAL.md APIs in named files. order-place=idemp\u2192halt\u2192risk\u2192match\u2192rest; match-against price-time + STP (skip same acct); settle-fill fees both sides (fee-rate=1/qty); after A1 buy10 + B1 sell7, query-left A1=3 \u21d2 FILL1 must be computed as partial (never hardcode filled/resting). FEES=14; COUNT=10. Delete stub hardcodes FILL1=filled / STP=7 / COUNT=0. On parse/unbalanced errors, fix that file's parentheses only. Named fences for rewritten files only.",
   "seed_from_stub": true
 }
