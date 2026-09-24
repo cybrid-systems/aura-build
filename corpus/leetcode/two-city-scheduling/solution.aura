@@ -1,0 +1,88 @@
+(define (make-pair a b) (cons a (cons b '())))
+
+(define (pair-car p) (car p))
+(define (pair-cadr p) (car (cdr p)))
+
+;; Build list of (saving = cost_B - cost_A, index)
+(define (build-savings cost n2 idx acc)
+  (if (= idx n2)
+      acc
+      (let ((ca (list-ref (list-ref cost idx) 0))
+            (cb (list-ref (list-ref cost idx) 1)))
+        (build-savings cost n2 (+ idx 1)
+                       (cons (cons (- cb ca) idx) acc)))))
+
+(define (saving-car p) (car p))
+(define (saving-cdr p) (cdr p))
+
+;; Insert sort by saving ascending
+(define (insert-sort lst)
+  (define (insert x sorted)
+    (cond ((null? sorted) (cons x '()))
+          ((< (saving-car x) (saving-car (car sorted)))
+           (cons x sorted))
+          (else (cons (car sorted) (insert x (cdr sorted))))))
+  (if (null? lst) '()
+      (insert (car lst) (insert-sort (cdr lst)))))
+
+(define (list-length- lst)
+  (if (null? lst) 0 (+ 1 (list-length- (cdr lst)))))
+
+(define (take lst k)
+  (if (= k 0) '()
+      (cons (car lst) (take (cdr lst) (- k 1)))))
+
+(define (drop lst k)
+  (if (= k 0) lst
+      (drop (cdr lst) (- k 1))))
+
+;; Check whether index is in list of indices
+(define (member-idx? idx lst)
+  (cond ((null? lst) #f)
+        ((= idx (car lst)) #t)
+        (else (member-idx? idx (cdr lst)))))
+
+;; Sum costs of going to city B for indices not in to-A list
+(define (sum-b cost to-a-list acc)
+  (cond ((null? cost) acc)
+        (else
+         (let ((i (- (list-length- cost) 1)))
+           (let ((cb (list-ref (list-ref cost i) 1)))
+             (sum-b (drop cost 1) to-a-list
+                    (if (member-idx? i to-a-list) acc (+ acc cb))))))))
+
+;; Sum costs of going to city A for indices in to-A list
+(define (sum-a cost to-a-list acc)
+  (cond ((null? to-a-list) acc)
+        (else
+         (let ((idx (car to-a-list)))
+           (let ((ca (list-ref (list-ref cost idx) 0)))
+             (sum-a cost (cdr to-a-list) (+ acc ca)))))))
+
+(define (solve n cost)
+  (let ((n2 (* n 2)))
+    (let ((savings (build-savings cost n2 0 '())))
+      (let ((sorted (insert-sort savings)))
+        (let ((to-a (take sorted n)))
+          (let ((to-a-idx (map saving-cdr to-a)))
+            (+ (sum-a cost to-a-idx 0)
+               (sum-b cost to-a-idx 0))))))))
+
+;; Tests
+(define test-cost0 (list (list 10 20) (list 30 200) (list 400 50) (list 30 20)))
+(define test-cost1 (list (list 10 20) (list 30 200)))
+(define test-cost2 (list (list 50 50) (list 50 50) (list 50 50) (list 50 50)))
+(define test-cost3 (list (list 1000 0) (list 1000 0) (list 1000 0) (list 1000 0)))
+(define test-cost4 (list (list 0 1000) (list 0 1000) (list 0 1000) (list 0 1000)))
+(define test-cost5 (list (list 1 2) (list 3 4) (list 5 6) (list 7 8) (list 9 10) (list 11 12)))
+(define test-cost6 (list (list 0 0) (list 0 0) (list 0 0) (list 0 0)))
+(define test-cost7 (list (list 10 10) (list 20 20) (list 30 30) (list 40 40)))
+
+(display "CASE0=") (display (solve 2 test-cost0)) (newline)
+(display "CASE1=") (display (solve 1 test-cost1)) (newline)
+(display "CASE2=") (display (solve 2 test-cost2)) (newline)
+(display "CASE3=") (display (solve 2 test-cost3)) (newline)
+(display "CASE4=") (display (solve 2 test-cost4)) (newline)
+(display "CASE5=") (display (solve 3 test-cost5)) (newline)
+(display "CASE6=") (display (solve 2 test-cost6)) (newline)
+(display "CASE7=") (display (solve 2 test-cost7)) (newline)

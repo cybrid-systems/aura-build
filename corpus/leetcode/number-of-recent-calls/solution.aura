@@ -1,0 +1,42 @@
+(define (length lst)
+  (if (null? lst)
+      0
+      (+ 1 (length (cdr lst)))))
+
+(define (queue-cleanup q lower-bound)
+  (cond ((null? q) q)
+        ((< (car q) lower-bound)
+         (queue-cleanup (cdr q) lower-bound))
+        (else q)))
+
+(define (process-all op-seq q acc)
+  (if (null? op-seq)
+      (reverse acc)
+      (let* ((t (car op-seq))
+                    (new-q (cons t (queue-cleanup q (- t 3000))))
+                    (cnt (length new-q)))
+        (process-all (cdr op-seq) new-q (cons cnt acc)))))
+
+(define (solve n op-seq)
+  (process-all op-seq '() '()))
+
+(define (display-list lst)
+  (define (helper lst)
+    (if (null? lst)
+        (display "")
+        (begin
+          (display (car lst))
+          (if (not (null? (cdr lst)))
+              (display " "))
+          (helper (cdr lst)))))
+  (helper lst)
+  (newline))
+
+(display "CASE0=") (display-list (solve 4 (list 1 100 3001 3002)))
+(display "CASE1=") (display-list (solve 1 (list 1)))
+(display "CASE2=") (display-list (solve 3 (list 1 2 3)))
+(display "CASE3=") (display-list (solve 5 (list 1 100 1000 3001 3100)))
+(display "CASE4=") (display-list (solve 6 (list 10 20 3010 3020 6000 6001)))
+(display "CASE5=") (display-list (solve 4 (list 3000 3001 3002 5999)))
+(display "CASE6=") (display-list (solve 3 (list 1 3001 3002)))
+(display "CASE7=") (display-list (solve 2 (list 2999 3000)))

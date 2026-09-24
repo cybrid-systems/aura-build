@@ -1,0 +1,106 @@
+(define (display-row row)
+  (display "[")
+  (let loop ((i 0) (xs row))
+    (if (null? xs)
+        (display "]")
+        (begin
+          (if (> i 0) (display ",") '())
+          (display (car xs))
+          (loop (+ i 1) (cdr xs))))))
+
+(define (display-screen scr)
+  (display "[")
+  (let loop ((i 0) (rows scr))
+    (if (null? rows)
+        (display "]")
+        (begin
+          (if (> i 0) (display ",") '())
+          (display-row (car rows))
+          (loop (+ i 1) (cdr rows))))))
+
+(define (screen-set screen r c v m n)
+  (if (= r 0)
+      (if (= c 0)
+          (set-car! (car screen) v)
+          (screen-set screen 0 (- c 1) v m n))
+      (screen-set (cdr screen) (- r 1) c v m n)))
+
+(define (screen-ref screen r c)
+  (if (= r 0)
+      (if (= c 0)
+          (car (car screen))
+          (screen-ref screen 0 (- c 1)))
+      (screen-ref (cdr screen) (- r 1) c)))
+
+(define (make-screen m n val)
+  (let ((row (make-list n val)))
+    (make-list m row)))
+
+(define (solve screen sr sc new_color)
+  (let* ((m (length screen))
+         (n (if (null? screen) 0 (length (car screen))))
+         (orig (screen-ref screen sr sc)))
+    (if (= orig new_color)
+        screen
+        (begin
+          (fill-helper screen sr sc orig new_color m n)
+          screen))))
+
+(define (fill-helper screen r c orig new_color m n)
+  (if (and (>= r 0) (< r m) (>= c 0) (< c n)
+           (= (screen-ref screen r c) orig))
+      (begin
+        (screen-set screen r c new_color m n)
+        (fill-helper screen (+ r 1) c orig new_color m n)
+        (fill-helper screen (- r 1) c orig new_color m n)
+        (fill-helper screen r (+ c 1) orig new_color m n)
+        (fill-helper screen r (- c 1) orig new_color m n))
+      '()))
+
+;; CASE0
+(let ((s0 '((1 1 1) (1 1 0) (1 0 1))))
+  (display "CASE0=")
+  (display-screen (solve s0 1 1 2))
+  (newline))
+
+;; CASE1
+(let ((s1 '((0 0 0) (0 0 0))))
+  (display "CASE1=")
+  (display-screen (solve s1 0 0 0))
+  (newline))
+
+;; CASE2
+(let ((s2 '((0 0 0) (0 0 0))))
+  (display "CASE2=")
+  (display-screen (solve s2 0 1 1))
+  (newline))
+
+;; CASE3
+(let ((s3 '((5))))
+  (display "CASE3=")
+  (display-screen (solve s3 0 0 9))
+  (newline))
+
+;; CASE4
+(let ((s4 '((1 2 1) (2 1 2) (1 2 1))))
+  (display "CASE4=")
+  (display-screen (solve s4 0 0 3))
+  (newline))
+
+;; CASE5
+(let ((s5 '((1 1 1 1 1) (1 1 1 1 1) (1 1 1 1 1))))
+  (display "CASE5=")
+  (display-screen (solve s5 1 2 7))
+  (newline))
+
+;; CASE6
+(let ((s6 '((0 1 0) (1 1 1) (0 1 0))))
+  (display "CASE6=")
+  (display-screen (solve s6 1 1 5))
+  (newline))
+
+;; CASE7
+(let ((s7 '((1 0) (0 1))))
+  (display "CASE7=")
+  (display-screen (solve s7 0 0 8))
+  (newline))

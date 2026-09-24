@@ -1,0 +1,70 @@
+(define MOD 1000000007)
+
+(define (mod a)
+  (let ((m (modulo a MOD)))
+    (if (< m 0) (+ m MOD) m)))
+
+(define (solve arr)
+  (let* ((n (length arr))
+         (L (make-list n 0))
+         (R (make-list n 0))
+         (stack '()))
+    ;; Compute L: previous less (strict)
+    (set! L '())
+    (set! stack '())
+    (let loop ((i 0) (acc '()))
+      (if (= i n)
+          (begin (set! L (reverse acc)) '())
+          (let* ((v (list-ref arr i))
+                 (new-acc
+                  (let inner ((st stack) (res 0))
+                    (if (null? st)
+                        res
+                        (if (< (car (car st)) v)
+                            res
+                            (inner (cdr st) (car (cdr (car st)))))))))
+            (loop (+ i 1) (cons new-acc acc)))))
+    ;; Compute R: next less-or-equal
+    (set! R '())
+    (set! stack '())
+    (let loop ((i (- n 1)) (acc '()))
+      (if (< i 0)
+          (begin (set! R acc) '())
+          (let* ((v (list-ref arr i))
+                 (new-res
+                  (let inner ((st stack))
+                    (if (null? st)
+                        n
+                        (if (<= (car (car st)) v)
+                            (car (cdr (car st)))
+                            (inner (cdr st)))))))
+            (loop (- i 1) (cons new-res acc)))))
+    ;; Sum contributions
+    (let ((res 0))
+      (let loop ((i 0))
+        (if (= i n)
+            (mod res)
+            (let* ((v (mod (list-ref arr i)))
+                   (cnt (* (- i (list-ref L i)) (- (list-ref R i) i)))
+                   (c (mod cnt)))
+              (set! res (mod (+ res (* v c))))
+              (loop (+ i 1))))))))
+
+(define (display-list xs)
+  (display "(")
+  (let loop ((l xs) (first? #t))
+    (cond ((null? l) (display ")"))
+          (else
+           (if first? (set! first? #f) (display " "))
+           (display (car l))
+           (loop (cdr l) #f)))))
+
+;; Test cases
+(display "CASE0=") (display (solve '(3 1 2 4))) (newline)
+(display "CASE1=") (display (solve '(1 2 3 4))) (newline)
+(display "CASE2=") (display (solve '(4 3 2 1))) (newline)
+(display "CASE3=") (display (solve '(2 1 3 1))) (newline)
+(display "CASE4=") (display (solve '(5))) (newline)
+(display "CASE5=") (display (solve '(-1 -2 -3))) (newline)
+(display "CASE6=") (display (solve '(0 0 0))) (newline)
+(display "CASE7=") (display (solve '(1000000000 -1000000000 0))) (newline)

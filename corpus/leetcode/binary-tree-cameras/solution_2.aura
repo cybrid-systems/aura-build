@@ -1,0 +1,124 @@
+(define (min3 a b c) (min a (min b c)))
+
+(define (solve parent left right)
+  (let* ((n (length parent))
+         (children (make-vector n '())))
+    ;; Build children adjacency list
+    (define (build-adj i)
+      (if (= i n)
+          '()
+          (begin
+            (when (and (>= (vector-ref parent i) 0)
+                       (< (vector-ref parent i) n))
+              (vector-set! children (vector-ref parent i)
+                           (cons i (vector-ref children (vector-ref parent i)))))
+            (build-adj (+ i 1)))))
+    (build-adj 0)
+
+    ;; DFS returning state pair: (covered-by-child, has-camera, needs-coverage)
+    ;; We'll use an association list or just compute greedily.
+    ;; Greedy: post-order; each node returns one of:
+    ;;   0 = NEEDS (needs parent to cover)
+    ;;   1 = COVERED (covered by child camera, don't need camera here)
+    ;;   2 = HAS_CAMERA (this node has a camera)
+    (define result 0)
+    (define (set-result! v) (set! result v))
+    
+    ;; We'll return a state number; track camera count globally.
+    (define cam-count 0)
+    
+    (define (dfs node)
+      (if (= node -1)
+          1  ;; null child is considered "covered"
+          (let ((childs (vector-ref children node)))
+            ;; recursively process each child
+            (define s1 (if (null? childs) 1 (dfs (car childs))))
+            (define rest (if (null? childs) '() (cdr childs)))
+            (define s2 (if (null? rest) 1 (dfs (car rest))))
+            ;; If any child NEEDS coverage, place camera here
+            (cond
+              ((or (= s1 0) (= s2 0))
+               (begin
+                 (set! cam-count (+ cam-count 1))
+                 2))  ;; HAS_CAMERA
+              ((or (= s1 2) (= s2 2))
+               1)  ;; COVERED by child camera
+              (else
+               0))))); NEEDS coverage from parent
+    
+    (define root-state (dfs (find-root parent n)))
+    ;; If root still needs coverage, place camera
+    (when (= root-state 0)
+      (set! cam-count (+ cam-count 1)))
+    cam-count))
+
+(define (find-root parent n)
+  (define (loop i)
+    (cond ((= i n) 0)
+          ((= (vector-ref parent i) -1) i)
+          (else (loop (+ i 1)))))
+  (loop 0))
+
+(define (length lst)
+  (if (null? lst) 0 (+ 1 (length (cdr lst)))))
+
+(define (make-vector n fill)
+  (define (loop i)
+    (if (= i n)
+        '()
+        (cons fill (loop (+ i 1)))))
+  (loop 0))
+
+(define (vector-ref v i)
+  (define (loop lst idx)
+    (if (= idx 0) (car lst) (loop (cdr lst) (- idx 1))))
+  (loop v i))
+
+(define (vector-set! v i val)
+  (define (loop lst idx)
+    (if (= idx 0)
+        (set-car! lst val)
+        (loop (cdr lst) (- idx 1))))
+  (loop v i))
+
+;; ---- Display helpers ----
+(define (display-list lst)
+  (display "[")
+  (define (loop l first?)
+    (if (null? l)
+        '()
+        (begin
+          (when (not first?) (display ","))
+          (display (car l))
+          (loop (cdr l) #f))))
+  (loop lst #t)
+  (display "]"))
+
+;; ---- Tests ----
+(define (run-case idx parent left right)
+  (display "CASE")
+  (display idx)
+  (display "=")
+  (display (solve parent left right))
+  (newline))
+
+(let ((p0 '(4 -1 4 0 1)) (l0 '(1 3 -1 -1 -1)) (r0 '(2 -1 -1 -1 -1)))
+  (run-case 0 p0 l0 r0))
+
+(let ((p1 '(-1 0 0)) (l1 '(1 2 -1)) (r1 '(-1 -1 -1)))
+  (run-case 1 p1 l1 r1))
+
+(let ((p2 '(-1)) (l2 '(-1)) (r2 '(-1)))
+  (run-case 2 p2 l2 r2))
+
+(let ((p3 '(-1 0)) (l3 '(1 -1)) (r3 '(-1 -1)))
+  (run-case 3 p3 l3 r3))
+
+(let ((p4 '(-1 0 0 1 1)) (l4 '(1 2 -1 -1 -1)) (r4 '(3 4 -1 -1 -1)))
+  (run-case 4 p4 l4 r4))
+
+(let ((p5 '(-1 0 0)) (l5 '(1 -1)) (r5 '(2 -1)))
+  (run-case 5 p5 l5 r5))
+
+(let ((p6 '(-1 0 1)) (l6 '(1 2 -1)) (r6 '(-1 -1 -1)))
+  (run-case 6 p6 l6 r6))

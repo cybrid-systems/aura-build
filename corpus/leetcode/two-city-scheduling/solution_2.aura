@@ -1,0 +1,103 @@
+;; Two City Scheduling - Greedy approach
+;; Sort people by (cost_B - cost_A), assign first n to City A, rest to City B
+
+(define (solve n cost)
+  ;; cost is a list of pairs (a b); we compute (b - a) and sort
+  (let* ((2n (* n 2))
+         ;; Build list of (diff index) where diff = b - a
+         (indexed (build-indexed 0 cost '()))
+         (sorted (sort-by-diff indexed))
+         (n-first (take sorted n))
+         (total-a (sum-a-costs n-first cost))
+         (total-b (sum-b-costs (drop sorted n) cost)))
+    (+ total-a total-b)))
+
+(define (build-indexed i cost acc)
+  (if (null? cost)
+      acc
+      (let* ((p (car cost))
+             (a (car p))
+             (b (car (cdr p)))
+             (diff (- b a)))
+        (build-indexed (+ i 1) (cdr cost) (cons (list diff i) acc)))))
+
+(define (sort-by-diff lst)
+  (merge-sort lst))
+
+(define (merge-sort lst)
+  (if (or (null? lst) (null? (cdr lst)))
+      lst
+      (let* ((split (split-list lst '() '()))
+             (left (car split))
+             (right (car (cdr split))))
+        (merge (merge-sort left) (merge-sort right)))))
+
+(define (split-list lst left right)
+     'placeholder)
+
+(define (split-helper lst left right n)
+  (if (or (null? lst) (= n 0))
+      (cons left (cons right '()))
+      (split-helper (cdr lst) (cons (car lst) left) right (- n 1))))
+
+(define (merge left right)
+  (cond ((null? left) right)
+        ((null? right) left)
+        ((< (car (car left)) (car (car right)))
+         (cons (car left) (merge (cdr left) right)))
+        (else
+         (cons (car right) (merge left (cdr right))))))
+
+(define (take lst n)
+  (if (= n 0)
+      '()
+      (cons (car lst) (take (cdr lst) (- n 1)))))
+
+(define (drop lst n)
+  (if (= n 0)
+      lst
+      (drop (cdr lst) (- n 1))))
+
+(define (sum-a-costs indices cost)
+  (sum-a-helper indices cost 0))
+
+(define (sum-a-helper indices cost acc)
+  (if (null? indices)
+      acc
+      (let* ((idx (car (cdr (car indices))))
+             (p (list-ref cost idx))
+             (a (car p)))
+        (sum-a-helper (cdr indices) cost (+ acc a)))))
+
+(define (sum-b-costs indices cost)
+  (sum-b-helper indices cost 0))
+
+(define (sum-b-helper indices cost acc)
+  (if (null? indices)
+      acc
+      (let* ((idx (car (cdr (car indices))))
+             (p (list-ref cost idx))
+             (b (car (cdr p))))
+        (sum-b-helper (cdr indices) cost (+ acc b)))))
+
+(define (list-ref lst i)
+  (if (= i 0)
+      (car lst)
+      (list-ref (cdr lst) (- i 1))))
+
+(define (length lst)
+  (if (null? lst) 0 (+ 1 (length (cdr lst)))))
+
+;; Wrapper: parse embedded test inputs as Aura literals
+(define (run-tests)
+  (begin
+    (display "CASE0=") (display (solve 2 '((10 20) (30 200) (400 50) (30 20)))) (newline)
+    (display "CASE1=") (display (solve 1 '((10 20) (30 200)))) (newline)
+    (display "CASE2=") (display (solve 2 '((50 50) (50 50) (50 50) (50 50)))) (newline)
+    (display "CASE3=") (display (solve 2 '((1000 0) (1000 0) (1000 0) (1000 0)))) (newline)
+    (display "CASE4=") (display (solve 2 '((0 1000) (0 1000) (0 1000) (0 1000)))) (newline)
+    (display "CASE5=") (display (solve 3 '((1 2) (3 4) (5 6) (7 8) (9 10) (11 12)))) (newline)
+    (display "CASE6=") (display (solve 2 '((0 0) (0 0) (0 0) (0 0)))) (newline)
+    (display "CASE7=") (display (solve 2 '((10 10) (20 20) (30 30) (40 40)))) (newline)))
+
+(run-tests)

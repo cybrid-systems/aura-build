@@ -1,0 +1,32 @@
+{
+  "variants": [],
+  "slug": "moving-average-from-data-stream",
+  "title": "Moving Average from Data Stream",
+  "category": "stack_queue",
+  "ref": {
+    "llm": {
+      "ok": true,
+      "error": "",
+      "usage": {
+        "total_tokens": 1853,
+        "total_characters": 0,
+        "prompt_tokens": 968,
+        "completion_tokens": 885,
+        "prompt_tokens_details": {
+          "cached_tokens": 374
+        }
+      },
+      "model": "MiniMax-M3"
+    },
+    "run": {
+      "ref_ok": false,
+      "exit_code": 1,
+      "stderr": "Traceback (most recent call last):\n  File \"/workspace/aura-build/corpus/leetcode/moving-average-from-data-stream/ref.py\", line 54, in <module>\n    r = solve(c['ops'])\n  File \"/workspace/aura-build/corpus/leetcode/moving-average-from-data-stream/ref.py\", line 31, in solve\n    results.append(ma.next(op[1]))\n                   ~~~~~~~^^^^^^^\n  File \"/workspace/aura-build/corpus/leetcode/moving-average-from-data-stream/ref.py\", line 16, in next\n    return int(self.sum())\n               ~~~~~~~~^^\nTy",
+      "duration_s": 0.028,
+      "timeout": false,
+      "n_tests": 0
+    },
+    "ts": "2026-09-24T15:02:42Z"
+  },
+  "updated_at": "2026-09-24T15:02:42Z"
+}

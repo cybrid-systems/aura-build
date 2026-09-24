@@ -1,0 +1,56 @@
+from collections import deque
+import json
+
+
+class MovingAverage:
+    def __init__(self, k):
+        self.k = k
+        self.q = deque(maxlen=k)
+        self.sum = 0
+
+    def next(self, v):
+        if len(self.q) == self.k:
+            self.sum -= self.q[0]
+        self.q.append(v)
+        self.sum += v
+        return int(self.sum())
+
+    def get_average(self):
+        if not self.q:
+            return 0
+        return int(self.sum() / len(self.q))
+
+
+def solve(ops):
+    ma = None
+    results = []
+    for op in ops:
+        if op[0] == 'M':
+            ma = MovingAverage(op[1])
+        elif op[0] == 'N':
+            results.append(ma.next(op[1]))
+        elif op[0] == 'G':
+            results.append(ma.get_average())
+    return results
+
+
+CASES = [
+    {"ops": [['M', 3], ['N', 1], ['N', 10], ['N', 3], ['G'], ['N', 5]]},
+    {"ops": [['M', 2], ['G']]},
+    {"ops": [['M', 1], ['N', 7], ['N', 3], ['N', -2]]},
+    {"ops": [['M', 5], ['N', 2], ['N', 4], ['N', 6], ['N', 8], ['N', 10],
+             ['N', 12], ['G'], ['N', 14]]},
+    {"ops": [['M', 3], ['N', 0], ['N', 0], ['N', 0], ['G']]},
+    {"ops": [['M', 3], ['N', -1], ['N', -2], ['N', -3], ['N', -4]]},
+    {"ops": [['M', 4], ['N', 5], ['G'], ['N', 10], ['G'], ['N', 15], ['G'],
+             ['N', 20], ['G'], ['N', 25], ['G'], ['N', 30], ['G']]},
+    {"ops": [['M', 2], ['N', 1]]},
+]
+
+
+if __name__ == '__main__':
+    out = []
+    for i, c in enumerate(CASES):
+        r = solve(c['ops'])
+        out.append({"id": i + 1, "input": c, "expected": json.dumps(r, separators=(',', ':'), ensure_ascii=False)})
+    print(json.dumps(out, separators=(',', ':'), ensure_ascii=False))

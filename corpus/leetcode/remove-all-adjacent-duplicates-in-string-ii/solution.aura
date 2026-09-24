@@ -1,0 +1,50 @@
+(define (list-length xs)
+  (if (null? xs) 0 (+ 1 (list-length (cdr xs)))))
+
+(define (list-ref xs n)
+  (if (= n 0) (car xs) (list-ref (cdr xs) (- n 1))))
+
+(define (make-list n c)
+  (if (= n 0) '() (cons c (make-list (- n 1) c))))
+
+(define (repeat-chars n c)
+  (if (= n 0) "" (string-append (make-string 1 c) (repeat-chars (- n 1) c))))
+
+(define (char->string c)
+  (make-string 1 c))
+
+(define (process s k stack)
+  (cond
+    ((null? s)
+     (let loop ((stk stack) (acc ""))
+       (if (null? stk)
+           acc
+           (let ((frame (car stk)))
+             (loop (cdr stk)
+                   (string-append (repeat-chars (cdr frame) (car frame)) acc))))))
+    (else
+     (let* ((c (car s))
+            (top (and (not (null? stack)) (car stack)))
+            (same (and top (char=? c (car top))))
+            (new-stack
+              (cond
+                ((and same (= (+ (cdr top) 1) k))
+                 (cdr stack))
+                (same
+                 (cons (cons (car top) (+ (cdr top) 1)) (cdr stack)))
+                (else
+                 (cons (cons c 1) stack)))))
+       (process (cdr s) k new-stack)))))
+
+(define (solve s k)
+  (process (string->list s) k '()))
+
+;; Test cases
+(display "CASE0=") (display (solve "deeedbbcccbdaa" 3)) (newline)
+(display "CASE1=") (display (solve "abcd" 2)) (newline)
+(display "CASE2=") (display (solve "aaa" 3)) (newline)
+(display "CASE3=") (display (solve "aa" 1)) (newline)
+(display "CASE4=") (display (solve "abc" 3)) (newline)
+(display "CASE5=") (display (solve "aabbcc" 2)) (newline)
+(display "CASE6=") (display (solve "abbccd" 2)) (newline)
+(display "CASE7=") (display (solve "abcdd" 2)) (newline)

@@ -1,0 +1,22 @@
+import heapq
+
+def solve(L: int, cuts: list[int]) -> int:
+    cuts_sorted = sorted(cuts)
+    # Build segments
+    boundaries = [0] + cuts_sorted + [L]
+    heap = []
+    for i in range(len(boundaries) - 1):
+        length = boundaries[i+1] - boundaries[i]
+        if length > 0:
+            heapq.heappush(heap, length)
+    
+    # Actually, with the halves model, we pop n times (one per cut)
+    # But initially we have n+1 segments. After n cuts we have 2n+1 segments.
+    # We pop n times: each pop adds length to answer and pushes 2 halves.
+    # Wait: if we pop length ℓ and push ℓ/2 twice, the sum in heap stays same.
+    # We need to pop n times total to perform n cuts.
+    
+    # Hmm but this gives wrong answer for the example. Let me check.
+    # Initial heap: [1,2,2,2]. Pop 1, ans=1, push 0.5, 0.5. Heap: [0.5, 0.5, 2, 2].
+    # Pop 0.5, ans=1.5, push 0.25, 0.25. ...
+    # That doesn't seem right.

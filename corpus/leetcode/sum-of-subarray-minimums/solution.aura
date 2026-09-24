@@ -1,0 +1,60 @@
+(define MOD 1000000007)
+
+(define (solve arr)
+  (let* ((n (length arr))
+         (vec (list->vector arr)))
+    ;; Convert to vector for O(1) access
+    (let ((left (make-vector n 0))
+          (right (make-vector n n)))
+      ;; Find L[k]: nearest strictly less to the left using monotonic stack
+      (let loop ((i 0) (stack '()))
+        (if (= i n)
+            'done
+            (begin
+              (let pop-loop ((s stack))
+                (if (and (not (null? s))
+                         (>= (vector-ref vec (car s)) (vector-ref vec i)))
+                    (pop-loop (cdr s))
+                    (vector-set! left i
+                      (if (null? s) -1 (car s)))))
+              (loop (+ i 1) (cons i stack)))))
+      ;; Find R[k]: nearest less-or-equal to the right using monotonic stack
+      (let loop ((i (- n 1)) (stack '()))
+        (if (< i 0)
+            'done
+            (begin
+              (let pop-loop ((s stack))
+                (if (and (not (null? s))
+                         (> (vector-ref vec (car s)) (vector-ref vec i)))
+                    (pop-loop (cdr s))
+                    (vector-set! right i
+                      (if (null? s) n (car s)))))
+              (loop (- i 1) (cons i stack)))))
+      ;; Compute total sum
+      (let loop ((i 0) (total 0))
+        (if (= i n)
+            total
+            (let* ((v (vector-ref vec i))
+                   (neg? (< v 0))
+                   (vm (if neg? (+ MOD (modulo v MOD)) (modulo v MOD)))
+                   (cnt (* (- i (vector-ref left i))
+                           (- (vector-ref right i) i)))
+                   (cntm (modulo cnt MOD))
+                   (contrib (modulo (* vm cntm) MOD)))
+              (loop (+ i 1) (modulo (+ total contrib) MOD))))))))
+
+(define (run-case arr i)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve arr))
+  (newline))
+
+(run-case '(3 1 2 4) 0)
+(run-case '(1 2 3 4) 1)
+(run-case '(4 3 2 1) 2)
+(run-case '(2 1 3 1) 3)
+(run-case '(5) 4)
+(run-case '(-1 -2 -3) 5)
+(run-case '(0 0 0) 6)
+(run-case '(1000000000 -1000000000 0) 7)

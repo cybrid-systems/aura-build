@@ -1,0 +1,178 @@
+;; Remove All Adjacent Duplicates in String II
+;; Approach: Use an association list as a stack. Each frame is a pair
+;; (char . count). Iterate through chars of s. If top frame's char
+;; matches current char, increment its count; else push a new frame.
+;; When count reaches k, pop the frame. After processing, rebuild
+;; the result string by repeating each char by its count.
+
+(define (caar p) (car (car p)))
+(define (cdar p) (cdr (car p)))
+
+(define (make-frame ch cnt)
+  (cons (cons ch cnt) '()))
+
+(define (frame-char frame) (car frame))
+(define (frame-count frame) (cdr frame))
+
+(define (push-frame stack frame)
+  (cons frame stack))
+
+(define (peek-stack stack) (car stack))
+
+(define (set-top-count! stack cnt)
+  (set-car! (car stack) (cons (caar stack) cnt)))
+
+(define (solve s k)
+  ;; s is a list of characters
+  (define stack '())
+  (define (loop chars)
+    (if (null? chars)
+        'done
+        (begin
+          (define ch (car chars))
+          (if (and (not (null? stack))
+                   (equal? (frame-char (peek-stack stack)) ch))
+              (begin
+                (set! stack
+                      (cons (cons ch
+                                  (+ (frame-count (peek-stack stack)) 1))
+                            (cdr stack)))
+                (if (= (frame-count (peek-stack stack)) k)
+                    (set! stack (cdr stack))
+                    'noop))
+              (set! stack (push-frame stack (make-frame ch 1))))
+          (loop (cdr chars)))))
+  (loop s)
+  ;; Build the result string by reversing the stack and repeating chars.
+  (define (reverse-stack st)
+    (define (rev acc xs)
+      (if (null? xs) acc (rev (cons (car xs) acc) (cdr xs))))
+    (rev '() st))
+  (define rev-stack (reverse-stack stack))
+  (define (build-result frames)
+    (if (null? frames)
+        ""
+        (string-append
+          (make-string (frame-count (car frames))
+                       (frame-char (car frames)))
+          (build-result (cdr frames)))))
+  (build-result rev-stack))
+
+;; Helper: make-string for aura not guaranteed; emulate via list-of-chars.
+;; We'll implement our own repeat+append on string.
+;; Simpler: rebuild as a list of chars then convert.
+
+(define (repeat-char ch n)
+  (define (loop i acc)
+    (if (= i 0)
+        acc
+        (loop (- i 1) (string-append acc (string ch)))))
+  (loop n ""))
+
+(define (build-list frames)
+  (define (loop fs acc)
+    (if (null? fs)
+        acc
+        (loop (cdr fs)
+              (append acc
+                      (list->string-list
+                        (repeat-char (frame-char (car fs))
+                                     (frame-count (car fs))))))))
+  (loop frames '()))
+
+;; Convert list of chars to a single string.
+(define (list->string lst)
+  (define (loop xs acc)
+    (if (null? xs)
+        acc
+        (loop (cdr xs) (string-append acc (string (car xs))))))
+  (loop lst ""))
+
+;; Convert a repeated single-char string to a list of chars.
+(define (list->string-list str)
+  (define (loop i acc)
+    (if (= i 0)
+        acc
+        (loop (- i 1) (cons (string-ref str 0) acc))))
+  (loop (string-length str) '()))
+
+;; Reference for string operations. If string-ref is not in aura,
+;; we'll redefine repeat differently. Let's instead build directly
+;; as list of chars throughout solve.
+
+;; ---- Rewrite solve to use lists of chars throughout ----
+
+(define (solve s k)
+  (define stack '()) ;; list of frames (cons char count)
+  (define (process chars)
+    (if (null? chars)
+        'done
+        (begin
+          (define ch (car chars))
+          (if (and (not (null? stack))
+                   (equal? (frame-char (car stack)) ch))
+              (begin
+                ;; increment top count
+                (set-car! stack
+                          (cons ch
+                                (+ (frame-count (car stack)) 1)))
+                (if (= (frame-count (car stack)) k)
+                    (set! stack (cdr stack))
+                    'noop))
+              (set! stack (cons (cons ch 1) stack)))
+          (process (cdr chars)))))
+  (process s)
+  ;; stack is reversed; build result by iterating in order.
+  (define (reverse-list xs)
+    (define (rev acc ys)
+      (if (null? ys) acc (rev (cons (car ys) acc) (cdr ys))))
+    (rev '() xs))
+  (define ordered (reverse-list stack))
+  ;; Expand frames to list of chars.
+  (define (expand frames acc)
+    (if (null? frames)
+        acc
+        (let ((c (frame-char (car frames)))
+              (n (frame-count (car frames))))
+          (define (rep i a)
+            (if (= i 0) a (rep (- i 1) (cons c a))))
+          (expand (cdr frames) (rep n acc)))))
+  (list->string (expand ordered '())))
+
+;; ---- Test harness ----
+
+(define test-cases
+  (list
+    (list "deeedbbcccbdaa" 3)
+    (list "abcd" 2)
+    (list "aaa" 3)
+    (list "aa" 1)
+    (list "abc" 3)
+    (list "aabbcc" 2)
+    (list "abbccd" 2)
+    (list "abcdd" 2)))
+
+;; Convert a string to list of characters.
+(define (string->list str)
+  (define (loop i acc)
+    (if (< i 0)
+        acc
+        (loop (- i 1) (cons (string-ref str i) acc))))
+  (loop (- (string-length str) 1) '()))
+
+(define (run-tests cases i)
+  (if (null? cases)
+      'done
+      (begin
+        (define tc (car cases))
+        (define s-str (car tc))
+        (define k-val (car (cdr tc)))
+        (define result (solve (string->list s-str) k-val))
+        (display (string-append "CASE"
+                                (number->string i)
+                                "="))
+        (display result)
+        (newline)
+        (run-tests (cdr cases) (+ i 1)))))
+
+(run-tests test-cases 0)

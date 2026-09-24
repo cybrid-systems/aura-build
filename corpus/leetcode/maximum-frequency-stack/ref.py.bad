@@ -1,0 +1,77 @@
+import json
+
+def solve(ops):
+    """
+    Simulate a maximum frequency stack.
+
+    ops: list of lists, where each inner list is either ["push", x] or ["pop"].
+    Returns a list of popped values (in order).
+    """
+    freq = {}           # x -> current frequency
+    group = {}          # freq -> list of elements with that frequency (in push order)
+    max_freq = 0
+    result = []
+
+    for op in ops:
+        if op[0] == "push":
+            x = op[1]
+            f = freq.get(x, 0) + 1
+            freq[x] = f
+            if f > max_freq:
+                max_freq = f
+                group[f] = []
+            group[f].append(x)
+        else:  # pop
+            # max_freq is guaranteed > 0 since there is always an element
+            top = group[max_freq].pop()
+            result.append(top)
+            freq[top] -= 1
+            if freq[top] == 0:
+                del freq[top]
+            if not group[max_freq]:
+                del group[max_freq]
+                max_freq -= 1
+
+    return result
+
+
+CASES = [
+    {
+        "ops": [["push", 1], ["push", 2], ["push", 2], ["push", 1], ["push", 1],
+                ["pop"], ["pop"], ["pop"]]
+    },
+    {
+        "ops": [["pop"]]
+    },
+    {
+        "ops": [["push", 5], ["push", 7], ["push", 5], ["push", 7], ["push", 4],
+                ["push", 5], ["pop"], ["pop"], ["pop"], ["pop"]]
+    },
+    {
+        "ops": [["push", 1], ["push", 1], ["push", 1], ["pop"], ["pop"], ["pop"]]
+    },
+    {
+        "ops": [["push", 1], ["push", 2], ["push", 3], ["pop"], ["pop"], ["pop"]]
+    },
+    {
+        "ops": [["push", 1], ["pop"], ["push", 1], ["push", 1], ["pop"], ["pop"]]
+    },
+    {
+        "ops": [["push", 2], ["push", 2], ["push", 1], ["push", 1], ["pop"], ["pop"],
+                ["pop"], ["pop"]]
+    },
+]
+
+
+if __name__ == "__main__":
+    out = []
+    for i, c in enumerate(CASES):
+        res = solve(c["ops"])
+        # canonical string is pipe-joined ints
+        canonical = "|".join(str(v) for v in res)
+        out.append({
+            "id": i,
+            "input": {"ops": c["ops"]},
+            "expected": canonical,
+        })
+    print(json.dumps(out, separators=(',', ':'), ensure_ascii=False))

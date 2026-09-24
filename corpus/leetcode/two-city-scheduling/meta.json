@@ -1,0 +1,63 @@
+{
+  "variants": [
+    {
+      "variant": 1,
+      "aura_file": "solution.aura",
+      "temperature": 0.3,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:04:55Z",
+      "ts_local": "2026-09-24 23:04:55 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2590,
+        "total_characters": 0,
+        "prompt_tokens": 1457,
+        "completion_tokens": 1133,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.101,
+      "tests_passed": 5,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=470\nCASE1=210\nCASE2=200\nCASE3=2000\nCASE4=2000\nCASE5=45\nCASE6=0\nCASE7=110\n"
+    },
+    {
+      "variant": 2,
+      "aura_file": "solution_2.aura",
+      "temperature": 0.7,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-24T15:05:01Z",
+      "ts_local": "2026-09-24 23:05:01 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2554,
+        "total_characters": 0,
+        "prompt_tokens": 1457,
+        "completion_tokens": 1097,
+        "prompt_tokens_details": {
+          "cached_tokens": 1456
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.075,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 3:14: parse error: expected expression, got '('\n   |\n  3 |   (let* ((2n (* n 2))\n   |              ^\nerror: 3:32: unbound variable: solve\n",
+      "stdout_snippet": "CASE0="
+    }
+  ],
+  "slug": "two-city-scheduling",
+  "title": "Two City Scheduling",
+  "category": "greedy",
+  "updated_at": "2026-09-24T15:05:01Z",
+  "updated_at_local": "2026-09-24 23:05:01 CST"
+}

@@ -1,0 +1,68 @@
+(define (display-list xs)
+  (display "[")
+  (let loop ((rest xs) (first #t))
+    (cond
+      ((null? rest) (display "]"))
+      (else
+        (unless first (display " "))
+        (display (car rest))
+        (loop (cdr rest) #f))))
+  (newline))
+
+(define (display-int-list xs)
+  (let loop ((rest xs) (first #t))
+    (cond
+      ((null? rest) (newline))
+      (else
+        (unless first (display " "))
+        (display (car rest))
+        (loop (cdr rest) #f)))))
+
+(define (solve prices)
+  (let loop ((ps prices)
+             (stack '())
+             (result '()))
+    (cond
+      ((null? ps)
+       (reverse result))
+      (else
+       (let* ((price (car ps))
+              (pop-loop
+                (lambda (st acc)
+                  (cond
+                    ((null? st) (cons 0 acc))
+                    ((<= (car (car st)) price)
+                     (pop-loop (cdr st) (+ acc (cdr (car st)))))
+                    (else (cons acc st))))))
+         (let* ((pop-result (pop-loop stack 0))
+                (extra (car pop-result))
+                (new-stack (cdr pop-result))
+                (span (+ extra 1)))
+           (loop (cdr ps)
+                 (cons (cons price span) new-stack)
+                 (cons span result))))))))
+
+;; Test cases
+(define test-cases
+  (list
+    (list 100 80 60 70 60 75)
+    (list 42)
+    (list 10 9 8 7 6)
+    (list 1 2 3 4 5)
+    (list 5 5 5 5)
+    (list 3 1 2 1 4 1)
+    (list 10 5)
+    (list 5 10)))
+
+(define (run-tests cases)
+  (let loop ((cs cases) (i 0))
+    (cond
+      ((null? cs) (display "Done"))
+      (else
+        (display "CASE")
+        (display i)
+        (display "=")
+        (display-int-list (solve (car cs)))
+        (loop (cdr cs) (+ i 1))))))
+
+(run-tests test-cases)

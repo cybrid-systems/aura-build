@@ -1,0 +1,74 @@
+;; Kth smallest element in a sorted matrix using binary search on value
+;; Each row and column is sorted in strictly increasing order.
+
+(define (count-leq mat n target)
+  ;; Count how many entries are <= target by walking from bottom-left.
+  ;; Move up when current > target, move right when current <= target.
+  (let loop ((i (- n 1)) (j 0) (count 0))
+    (cond
+      ((or (< i 0) (>= j n)) count)
+      ((<= (list-ref (list-ref mat i) j) target)
+        (loop i (+ j 1) (+ count (+ i 1))))
+      (else
+        (loop (- i 1) j count)))))
+
+(define (solve n matrix k)
+  (let* ((lo (list-ref (list-ref matrix 0) 0))
+         (hi (list-ref (list-ref matrix (- n 1)) (- n 1))))
+    (let loop ((l lo) (r hi))
+      (if (<= (- r l) 1)
+          r
+          (let ((mid (quotient (+ l r) 2)))
+            (if (>= (count-leq matrix n mid) k)
+                (loop l mid)
+                (loop (+ mid 1) r)))))))
+
+;; ---- Helpers for embedded test invocation ----
+
+(define (run-case i n mat-data k)
+  (let ((mat '())
+        (row-data '()))
+    ;; mat-data is a flat list: [r0c0 r0c1 ... r1c0 ...]
+    (let loop-rows ((r 0))
+      (if (= r n)
+          (begin)
+          (let loop-cols ((c 0) (row '()))
+            (if (= c n)
+                (begin
+                  (set! mat-data (cons (reverse row) mat-data))
+                  (loop-rows (+ r 1)))
+                (let* ((head (car mat-data))
+                       (tail (cdr mat-data)))
+                  (set! mat-data tail)
+                  (loop-cols (+ c 1) (cons head row)))))))
+    ;; The above nested loop is awkward in pure Aura; we instead
+    ;; rebuild mat from mat-data using index arithmetic.
+    ;; Simpler: convert mat-data (flat list) into nested rows.
+    (set! mat (build-mat n mat-data))
+    (display (string-append "CASE" (number->string i) "="))
+    (display (solve n mat k))
+    (newline)))
+
+(define (build-mat n data)
+  ;; data is a flat list length n*n. Build rows of n.
+  (let loop ((rest-data data) (rows '()) (r 0))
+    (if (= r n)
+        (reverse rows)
+        (let loop-col ((c 0) (row '()) (d rest-data))
+          (if (= c n)
+              (loop (drop d 0) (cons (reverse row) rows) (+ r 1))
+              (loop-col (+ c 1) (cons (car d) row) (cdr d)))))))
+
+(define (drop lst k)
+  (if (= k 0) lst (drop (cdr lst) (- k 1))))
+
+;; ---- Run the embedded test cases ----
+
+(display "CASE0=") (display (solve 3 '((1 5 9) (10 11 13) (12 13 15)) 8)) (newline)
+(display "CASE1=") (display (solve 2 '((1 2) (3 4)) 3)) (newline)
+(display "CASE2=") (display (solve 1 '((42)) 1)) (newline)
+(display "CASE3=") (display (solve 3 '((1 2 3) (4 5 6) (7 8 9)) 1)) (newline)
+(display "CASE4=") (display (solve 3 '((1 2 3) (4 5 6) (7 8 9)) 9)) (newline)
+(display "CASE5=") (display (solve 3 '((1 2 3) (4 5 6) (7 8 9)) 5)) (newline)
+(display "CASE6=") (display (solve 3 '((1 5 9) (10 11 13) (12 13 15)) 1)) (newline)
+(display "CASE7=") (display (solve 3 '((1 5 9) (10 11 13) (12 13 15)) 9)) (newline)

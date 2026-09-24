@@ -1,0 +1,46 @@
+(define (display-list xs)
+  (display "[")
+  (let loop ((xs xs) (first #t))
+    (cond
+      ((null? xs) (display "]"))
+      (else
+        (if first (set! first #f) (begin (display ", ") (display (car xs))))
+        (loop (cdr xs) first)))))
+
+(define (stock-span prices)
+  (let loop ((ps prices) (stack '()) (result '()))
+    (cond
+      ((null? ps) (reverse result))
+      (else
+        (let* ((price (car ps))
+               (span 1)
+               (popped
+                (let p-loop ((s stack) (acc 0))
+                  (cond
+                    ((null? s) acc)
+                    ((<= (car (car s)) price)
+                     (p-loop (cdr s) (+ acc (cdr (car s)))))
+                    (else acc)))))
+          (loop (cdr ps)
+                (cons (cons price (+ span popped)) stack)
+                (cons (+ span popped) result)))))))
+
+(define (solve prices)
+  (stock-span prices))
+
+;; CASE 0
+(display "CASE0=") (display (solve '(100 80 60 70 60 75))) (newline)
+;; CASE 1
+(display "CASE1=") (display (solve '(42))) (newline)
+;; CASE 2
+(display "CASE2=") (display (solve '(10 9 8 7 6))) (newline)
+;; CASE 3
+(display "CASE3=") (display (solve '(1 2 3 4 5))) (newline)
+;; CASE 4
+(display "CASE4=") (display (solve '(5 5 5 5))) (newline)
+;; CASE 5
+(display "CASE5=") (display (solve '(3 1 2 1 4 1))) (newline)
+;; CASE 6
+(display "CASE6=") (display (solve '(10 5))) (newline)
+;; CASE 7
+(display "CASE7=") (display (solve '(5 10))) (newline)

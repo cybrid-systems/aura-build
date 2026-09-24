@@ -1,0 +1,59 @@
+from functools import lru_cache
+from typing import List
+
+def solve(s: str, word_dict: List[str]) -> List[str]:
+    word_set = set(word_dict)
+    n = len(s)
+    
+    # Precompute can_break for pruning
+    can_break = [False] * (n + 1)
+    can_break[0] = True
+    for i in range(1, n + 1):
+        for j in range(i):
+            if can_break[j] and s[j:i] in word_set:
+                can_break[i] = True
+                break
+    
+    if not can_break[n]:
+        return []
+    
+    @lru_cache(maxsize=None)
+    def dfs(start: int) -> List[str]:
+        if start == n:
+            return [""]
+        results = []
+        for end in range(start + 1, n + 1):
+            word = s[start:end]
+            if word in word_set and can_break[end]:
+                sub_sentences = dfs(end)
+                for sub in sub_sentences:
+                    if sub:
+                        results.append(word + " " + sub)
+                    else:
+                        results.append(word)
+        return results
+    
+    return dfs(0)
+
+
+CASES = [
+    {"s": "catsanddog", "word_dict": ["cat", "cats", "and", "sand", "dog"]},
+    {"s": "pineapplepenapple", "word_dict": ["apple", "pen", "applepen", "pine", "pineapple"]},
+    {"s": "catsandog", "word_dict": ["cats", "dog", "sand", "and", "cat"]},
+    {"s": "a", "word_dict": ["a"]},
+    {"s": "aaaaa", "word_dict": ["a", "aa", "aaa"]},
+    {"s": "ab", "word_dict": ["a", "b"]},
+    {"s": "abc", "word_dict": ["abc"]},
+    {"s": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "word_dict": ["a", "aa", "aaa", "aaaa", "aaaaa"]},
+]
+
+
+if __name__ == '__main__':
+    import json
+    out = []
+    for i, case in enumerate(CASES):
+        result = solve(case["s"], case["word_dict"])
+        canonical = json.dumps(sorted(result), separators=(',', ':'), ensure_ascii=False)
+        out.append({"id": i, "input": case, "expected": canonical})
+    print(json.dumps(out, separators=(',', ':'), ensure_ascii=False))

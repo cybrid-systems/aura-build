@@ -1,0 +1,61 @@
+(define (make-pair p s t) (cons p (cons s t)))
+(define (pair-pos p) (car p))
+(define (pair-speed p) (car (cdr p)))
+(define (pair-time p) (cdr (cdr p)))
+
+(define (insert-sorted pair lst)
+  (if (null? lst)
+      (cons pair '())
+      (if (> (pair-pos pair) (pair-pos (car lst)))
+          (cons pair lst)
+          (cons (car lst) (insert-sorted pair (cdr lst))))))
+
+(define (sort-cars pairs)
+  (if (null? pairs)
+      '()
+      (insert-sorted (car pairs) (sort-cars (cdr pairs)))))
+
+(define (build-pair i n target pos-list spd-list)
+  (if (= i n)
+      '()
+      (cons (make-pair (list-ref pos-list i)
+                       (list-ref spd-list i)
+                       (/ (- target (list-ref pos-list i)) (list-ref spd-list i)))
+            (build-pair (+ i 1) n target pos-list spd-list))))
+
+(define (count-fleets sorted-pairs)
+  (let ((len (length sorted-pairs)))
+    (let loop ((i 0) (count 0) (max-time 0))
+      (if (= i len)
+          count
+          (let ((cur-time (pair-time (list-ref sorted-pairs i))))
+            (if (<= cur-time max-time)
+                (loop (+ i 1) count max-time)
+                (loop (+ i 1) (+ count 1) cur-time)))))))
+
+(define (solve n target position speed)
+  (count-fleets (sort-cars (build-pair 0 n target position speed))))
+
+;; list-ref helper
+(define (list-ref lst i)
+  (if (= i 0)
+      (car lst)
+      (list-ref (cdr lst) (- i 1))))
+
+;; Helper to display a single CASE
+(define (display-case i n target position speed)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve n target position speed))
+  (newline))
+
+;; Run all test cases
+(display-case 0 3 12 '(10 8 0) '(2 4 1))
+(display-case 1 1 10 '(0) '(1))
+(display-case 2 2 12 '(4 0) '(1 4))
+(display-case 3 2 12 '(10 0) '(2 1))
+(display-case 4 4 25 '(6 4 2 0) '(2 1 1 1))
+(display-case 5 3 100 '(10 20 30) '(1 1 1))
+(display-case 6 3 12 '(8 6 0) '(2 1 1))
+(display-case 7 5 12 '(10 8 0 5 3) '(2 4 1 1 2))

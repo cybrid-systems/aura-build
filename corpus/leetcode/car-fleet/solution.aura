@@ -1,0 +1,78 @@
+(define (make-pair p s)
+  (cons p s))
+
+(define (pair-pos p) (car p))
+(define (pair-spd p) (cdr p))
+
+(define (insert p lst)
+  (cond ((null? lst) (cons p '()))
+        ((< (pair-pos p) (pair-pos (car lst)))
+           (cons (car lst) (insert p (cdr lst))))
+        (else (cons p lst))))
+
+(define (sort-pairs lst)
+  (if (null? lst)
+      '()
+      (insert (car lst) (sort-pairs (cdr lst)))))
+
+(define (solve n target position speed)
+  ; Build pairs, then sort by position descending
+  (define pairs '())
+  (let loop ((i 0))
+    (if (= i n)
+        '()
+        (begin
+          (set! pairs (cons (make-pair (list-ref position i)
+                                       (list-ref speed i))
+                            pairs))
+          (loop (+ i 1)))))
+  (set! pairs (sort-pairs pairs))
+  ; pairs now ascending by position; iterate from end (highest pos first)
+  (let loop ((lst pairs) (max-time -1.0) (count 0))
+    (if (null? lst)
+        count
+        (let* ((p (car lst))
+               (pos (car p))
+               (spd (cdr p))
+               (t (/ (- target pos) spd)))
+          (if (<= t max-time)
+              (loop (cdr lst) max-time count)
+              (loop (cdr lst) t (+ count 1)))))))
+
+; Display helper for numbers
+(define (display-int x)
+  (display (number->string (exact->inexact x)))
+  (newline))
+
+; --- Test cases ---
+; CASE0: n=3, target=12, position=[10,8,0], speed=[2,4,1]
+(define r0 (solve 3 12 (list 10 8 0) (list 2 4 1)))
+(display "CASE0=") (display r0) (newline)
+
+; CASE1: n=1, target=10, position=[0], speed=[1]
+(define r1 (solve 1 10 (list 0) (list 1)))
+(display "CASE1=") (display r1) (newline)
+
+; CASE2: n=2, target=12, position=[4,0], speed=[1,4]
+(define r2 (solve 2 12 (list 4 0) (list 1 4)))
+(display "CASE2=") (display r2) (newline)
+
+; CASE3: n=2, target=12, position=[10,0], speed=[2,1]
+(define r3 (solve 2 12 (list 10 0) (list 2 1)))
+(display "CASE3=") (display r3) (newline)
+
+; CASE4: n=4, target=25, position=[6,4,2,0], speed=[2,1,1,1]
+(define r4 (solve 4 25 (list 6 4 2 0) (list 2 1 1 1)))
+(display "CASE4=") (display r4) (newline)
+
+; CASE5: n=3, target=100, position=[10,20,30], speed=[1,1,1]
+(define r5 (solve 3 100 (list 10 20 30) (list 1 1 1)))
+(display "CASE5=") (display r5) (newline)
+
+; CASE6: n=3, target=12, position=[8,6,0], speed=[2,1,1]
+(define r6 (solve 3 12 (list 8 6 0) (list 2 1 1)))
+(display "CASE6=") (display r6) (newline)
+
+; CASE7: n=5, target=12, position=[10,8,0,5,3], speed=[2,4,1,1,2]
+(define r7 (solve 5 12 (list 10 8 0 5 3) (list 2 4 1 1 2)))
+(display "CASE7=") (display r7) (newline)

@@ -1,0 +1,299 @@
+;; Slug: flatten-nested-list-iterator
+;; Aura solution implementing a lazy iterator over nested integer lists.
+;; Reads stdin line "CASEi=...", parses the nested list, then drives hasNext/next.
+
+;; ---------- Parser ----------
+;; parse-element : index-list-of-chars -> (values parsed-element new-index)
+;; We'll use a mutable index via a single-element list as a box.
+;; Actually we don't have boxes; we'll thread the index through recursion.
+;; To simplify, we'll use a global mutable counter.
+
+(define *p-pos* 0)
+(define (set-pos! n) (set! *p-pos* n))
+(define (peek s)
+  (if (>= *p-pos* (string-length s))
+      #\null
+      (string-ref s *p-pos*)))
+(define (advance!) (set! *p-pos* (+ *p-pos* 1)))
+(define (skip-spaces s)
+  (let loop ()
+    (let ((c (peek s)))
+      (if (or (char=? c #\space) (char=? c #\,))
+          (begin (advance!) (loop))
+          #t))))
+
+;; Parse a single element starting at current pos.
+;; Returns a list '(int n) or '(list xs).
+(define (parse-one s)
+  (skip-spaces s)
+  (let ((c (peek s)))
+    (cond
+      ((char=? c #\[)
+       (advance!) ; consume [
+       (let ((items '()))
+         (let loop ()
+           (skip-spaces s)
+           (let ((c2 (peek s)))
+             (if (char=? c2 #\])
+                 (begin (advance!) items)
+                 (let ((e (parse-one s)))
+                   (set! items (append items (list e)))
+                   (skip-spaces s)
+                   ;; After element, expect ',' or ']'
+                   (let ((c3 (peek s)))
+                     (cond
+                       ((char=? c3 #\,) (advance!) (loop))
+                       ((char=? c3 #\]) (advance!) items)
+                       (else (error "parse list")))))))))))
+      ((or (char>=? c #\0) (and (char=? c #\-) #t))
+       ;; Parse integer (possibly negative)
+       (let loop ((acc '()))
+         (let ((c2 (peek s)))
+           (if (or (char>=? c2 #\0) (char=? c2 #\-))
+               (begin
+                 (set! acc (append acc (list c2)))
+                 (advance!)
+                 (loop acc))
+               (begin
+                 (let ((numstr (list->string (reverse acc))))
+                   (list 'int (string->number numstr))))))))
+      (else (error "parse error")))))
+
+;; Parse the top-level list starting at pos 0.
+(define (parse-top s)
+  (set-pos! 0)
+  (parse-one s))
+
+;; ---------- Iterator ----------
+;; An iterator holds:
+;;  - a stack of "frames". Each frame is a list of elements remaining in that sublist.
+;;  - a current integer being held (when next() is called).
+;;
+;; Strategy:
+;;  - stack frames store the remaining elements of a nested list.
+;;  - When we need next, we keep unwinding: take the first element of the top frame;
+;;    if it's an integer, yield it (leave remaining list as-is);
+;;    if it's a nested list, push it onto stack and recurse.
+;;  - hasNext returns #t if there is an integer pending or one can be found.
+;;
+;; We'll represent the iterator state as a list: 'iter (stack) (pending-int-or-#f) (src)
+;; But to keep it simple and pure-functional, we implement:
+;;   (make-iter elements) -> an iter structure
+;;   (iter-next iter) -> (values int new-iter)
+;;   (iter-has-next? iter) -> boolean
+;; We'll store stack as a list of frames; each frame is a list of elements (not yet consumed).
+
+;; To keep performance reasonable and avoid O(n^2) appends, we build frames
+;; as plain lists in reverse-of-input order (so car is next element).
+
+(define (build-iter elements)
+  ;; elements is in parsed order. We want the stack top to have next element as car.
+  ;; We'll store each frame as the list of elements (left-to-right order).
+  ;; Pushing a sublist: we put it at top; next() will pop it (next = car).
+  ;; Since list append is O(n), we'll reverse input order at build time so car is next.
+  (let ((rev (reverse elements)))
+    (cons 'iter (cons rev '()))))
+
+(define (iter-top-frame iter)
+  (car (cdr iter)))
+
+(define (iter-set-top! iter new-top)
+  (set-car! (cdr iter) new-top))
+
+(define (iter-pending iter)
+  (car (cdr (cdr iter))))
+
+(define (iter-set-pending! iter p)
+  (set-car! (cdr (cdr iter)) p))
+
+;; Ensure the next integer is available. Returns #t if available, #f otherwise.
+;; As a side effect, updates pending and stack.
+(define (iter-prepare! iter)
+  (if (iter-pending iter)
+      #t
+      (let loop ()
+        (let ((top (iter-top-frame iter)))
+          (cond
+            ((null? top)
+             ;; pop empty frame, keep trying
+             ;; need to pop current frame: remove top element from stack
+             ;; stack is in (cdr iter): currently (top . rest)
+             (let ((stack (cdr iter)))
+               (if (null? stack)
+                   (begin
+                     (iter-set-top! iter '())
+                     #f)
+                   (begin
+                     (set-cdr! iter (cdr stack))
+                     (loop)))))
+            ((eq? (car (car top)) 'int)
+             (let ((v (car (cdr (car top)))))
+               (iter-set-pending! iter v)
+               ;; consume the head from top frame
+               (iter-set-top! iter (cdr top))
+               #t))
+            ((eq? (car (car top)) 'list)
+             (let ((sub (car (cdr (car top)))))
+               ;; Push sublist on top of current frame.
+               ;; We need sub in left-to-right order, but easier: reverse it so car is next.
+               (iter-set-top! iter (append (list (car top)) (reverse sub)))
+               ;; Actually we want to push sub ON TOP of remaining current frame.
+               ;; Let's restructure: new stack = sub-reversed :: current-frame-rest
+               (let ((rest (cdr top)))
+                 (let ((new-stack (append (reverse sub) (list rest))))
+                   ;; Wait that loses `rest`. Simpler: store stack as a list of frames.
+                   ;; Let's redo: change representation so stack is list of frames.
+                   #f)))
+            (else (error "unknown element")))))))
+
+;; Re-approach: change iterator representation to make it cleaner.
+;; New plan: store the stack as a list of FRAMES, each frame is the remaining
+;; elements of that sublist (in left-to-right order). Top of stack = first frame.
+;; To avoid costly append, we'll represent frames as lists with car = next element.
+;; We'll build them by reversing input sublists at construction time.
+;;
+;; Then prepare!:
+;;   - if pending exists, return it.
+;;   - else, look at top frame:
+;;       if empty -> pop frame, repeat.
+;;       if head is int -> set pending = int, advance top frame (cdr), return int.
+;;       if head is list -> push its elements (reversed) as a new top frame, repeat.
+;;
+;; Let's redo.
+
+(define (build-iter2 elements)
+  (let ((top (reverse elements)))
+    (list 'iter (list top))))
+
+(define (iter-stack iter)
+  (car (cdr iter)))
+
+(define (iter-set-stack! iter st)
+  (set-car! (cdr iter) st))
+
+(define (iter-pending2 iter)
+  (cadr (cdr iter)))
+
+(define (iter-set-pending2! iter p)
+  (set-car! (cdr (cdr iter)) p))
+
+(define (iter-prepare2! iter)
+  (if (iter-pending2 iter)
+      #t
+      (let loop ()
+        (let ((st (iter-stack iter)))
+          (cond
+            ((null? st) #f)
+            ((null? (car st))
+             (iter-set-stack! iter (cdr st))
+             (loop))
+            ((eq? (car (car (car st))) 'int)
+             (let ((v (car (cdr (car (car st))))))
+               (iter-set-pending2! iter v)
+               ;; advance top frame
+               (set-car! st (cdr (car st)))
+               #t))
+            ((eq? (car (car (car st))) 'list)
+             (let ((sub (car (cdr (car (car st))))))
+               ;; advance top frame (consume head)
+               (set-car! st (cdr (car st)))
+               ;; push new frame from sub (reverse so car is next element)
+               (let ((new-frame (reverse sub)))
+                 (iter-set-stack! iter (cons new-frame st))
+                 (loop))))
+            (else (error "iter unknown")))))))
+
+(define (iter-next2 iter)
+  (iter-prepare2! iter)
+  (let ((p (iter-pending2 iter)))
+    (if p
+        (begin
+          (iter-set-pending2! iter #f)
+          p)
+        (error "no next"))))
+
+(define (iter-has-next2? iter)
+  (iter-prepare2! iter))
+
+;; ---------- I/O and solve ----------
+(define (read-case-line)
+  ;; Read all input until newline, return the line after "CASEi=" prefix.
+  ;; We'll read chars one by one until newline using (read-char) simulation.
+  ;; Aura has read-char? We'll use read-line if available; fallback: build manually.
+  ;; Let's try read-line.
+  (let ((ln (read-line)))
+    ;; ln looks like "CASE0=[[1,1],2,[1,1]]"
+    ;; strip prefix up to '='
+    (let loop ((i 0))
+      (cond
+        ((>= i (string-length ln)) "")
+        ((char=? (string-ref ln i) #\=)
+         (substring ln (+ i 1) (string-length ln)))
+        (else (loop (+ i 1)))))))
+
+(define (substring s start end)
+  (let loop ((i (- end 1)) (acc '()))
+    (if (< i start)
+        (list->string (reverse acc))
+        (loop (- i 1) (cons (string-ref s i) acc)))))
+
+(define (solve)
+  (let* ((raw (read-case-line))
+         (elements (parse-top raw))
+         (iter (build-iter2 elements)))
+    (let loop ()
+      (if (iter-has-next2? iter)
+          (begin
+            (display (iter-next2 iter))
+            (newline)
+            (loop))
+          (begin
+            (display "END")
+            (newline))))))
+
+;; ---------- Harness ----------
+(define (run-case label input-str)
+  ;; Override stdin: Aura programs typically don't have easy stdin injection,
+  ;; so we'll redefine read-line to return a fixed line for each case.
+  ;; Simpler: call solve with a global *input-line* variable.
+  (set! *input-line* input-str)
+  (display label)
+  (display "=")
+  ;; Redirect: we don't actually need to capture output here;
+  ;; but per harness instruction, print CASEi=<result>. The "result" for this
+  ;; problem is multi-line. We'll print the full output concatenated by newlines.
+  ;; To keep simple, we'll re-implement the printing inline using solve logic.
+  (let* ((elements (parse-top input-str))
+         (iter (build-iter2 elements))
+         (parts '()))
+    (let loop ()
+      (if (iter-has-next2? iter)
+          (begin
+            (set! parts (append parts (list (number->string (iter-next2 iter)))))
+            (loop))
+          (set! parts (append parts (list "END")))))
+    (display (string-join parts "\n"))
+    (newline)))
+
+(define (string-join lst sep)
+  (if (null? lst)
+      ""
+      (let loop ((rest (cdr lst)) (acc (list (car lst))))
+        (if (null? rest)
+            (apply string-append (reverse acc))
+            (loop (cdr rest)
+                  (cons (car rest) (cons sep acc)))))))
+
+;; Override read-line for harness:
+(define *input-line* "")
+(define (read-line) *input-line*)
+
+;; Run all embedded cases:
+(run-case "CASE0" "[[1,1],2,[1,1]]")
+(run-case "CASE1" "[]")
+(run-case "CASE2" "[1,2,3,4,5]")
+(run-case "CASE3" "[[],[],[]]")
+(run-case "CASE4" "[[1,[2,[3,[4,[5]]]]]]")
+(run-case "CASE5" "[1]")
+(run-case "CASE6" "[[],[1],[[[2]]]]")
+(run-case "CASE7" "[0,-7,42]")
