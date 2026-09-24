@@ -675,6 +675,11 @@ def _score_from_stdout(
     structure_ok = True
     if source_res:
         structure_ok = all(bool(p.search(source_text or "")) for p in source_res)
+    hardcode_hits = _expect_literal_hardcode_hits(source_text, expect_text)
+    if hardcode_hits:
+        structure_ok = False
+        err_extra = "anti_hardcode: literal expect emits in source: " + ", ".join(hardcode_hits)
+        stderr = ((stderr or "") + "\n" + err_extra).strip()
     err_note = stderr or ""
     if not structure_ok and source_res:
         err_note = (err_note + "\n" + _structure_fail_note(source_res)).strip()
@@ -762,9 +767,15 @@ def _run_verify_script(
     structure_ok = True
     if source_res:
         structure_ok = all(bool(p.search(source_text)) for p in source_res)
+    hardcode_hits = _expect_literal_hardcode_hits(source_text, expect_text)
+    if hardcode_hits:
+        structure_ok = False
+        note = "anti_hardcode: literal expect emits in source: " + ", ".join(hardcode_hits)
+        stderr = (stderr + "\n" + note).strip()
     if passed and not structure_ok:
         passed = False
-        stderr = (stderr + "\n" + _structure_fail_note(source_res)).strip()
+        if source_res and not hardcode_hits:
+            stderr = (stderr + "\n" + _structure_fail_note(source_res)).strip()
     has_error = (not passed) and bool(
         re.search(r"(?i)\berror:|\bunbound variable\b", stdout + stderr)
     )
@@ -2564,6 +2575,46 @@ def _expect_line_hit_count(
     total = len(patterns)
     hits = sum(1 for p in patterns if p.search(stdout or ""))
     return hits, total
+
+
+
+def _expect_literal_hardcode_hits(
+    source_text: str,
+    expect_text: str | None,
+) -> list[str]:
+    """Detect show/display of expect KEY=value as a source literal (generic).
+
+    Catches ``(show "COUNT" 10)`` / ``(show "STP" 0)`` / ``(display "FEES=14")``
+    when that exact KEY=value is listed in expect. No gold fixtures.
+    """
+    if not expect_text or not (source_text or "").strip():
+        return []
+    expect_map: dict[str, str] = {}
+    for ln in str(expect_text).splitlines():
+        ln = ln.strip()
+        if not ln or "=" not in ln:
+            continue
+        k, _, v = ln.partition("=")
+        k, v = k.strip(), v.strip()
+        if k:
+            expect_map[k] = v
+    if not expect_map:
+        return []
+    hits: list[str] = []
+    src = source_text or ""
+    for key, val in expect_map.items():
+        lit = re.escape(val)
+        key_e = re.escape(key)
+        patterns = [
+            rf'\(show\s+"{key_e}"\s+{lit}\s*\)',
+            rf'\(show\s+"{key_e}"\s+"{lit}"\s*\)',
+            rf'\(display\s+"{key_e}={lit}"\s*\)',
+        ]
+        for pat in patterns:
+            if re.search(pat, src):
+                hits.append(f"{key}={val}")
+                break
+    return hits
 
 
 def _fitness_partial(

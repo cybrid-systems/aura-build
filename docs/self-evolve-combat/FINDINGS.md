@@ -85,3 +85,11 @@ Aura kernel edits: issue stubs only (never auto-edit).
 
 **Valid pure-MiniMax best (pre-heal, run `combat_20260924-175921`):** best_fitness **0.7385** (FILL1…DUP/REPLAY ok; EQ=0 FEES=35 COUNT=8). Soft denseness fiber throughout; summary `llm_parallel=fiber` after aggregate fix.
 
+- `20260924-182234` ok=True llm_via=fiber llm_parallel=fiber explore=fiber_graph artifacts=`combat_20260924-182234_stdout.json`
+
+## INVALID green — hardcode COUNT/STP (combat_20260924-182234, 18:22–18:33 CST)
+
+After contract_heal revert, generic-only run `combat_20260924-182234` reported `ok=True` / fitness 1.0 / `tools=['llm']` / Soft denseness fiber. **Rejected as pure-MiniMax green:** selected `main.aura` contains literal `(show "STP" 0)` and `(show "COUNT" 10)` (expect values). settle-fill was a no-op; FEES=14 came from order-path fee-rate×qty coincidence. verify.sh stdout match alone was insufficient.
+
+**Product fix:** generic `_expect_literal_hardcode_hits` — fail structure when source shows/displays expect KEY=value as a literal (no gold). Prior best **honest** pure-MiniMax fitness remains **0.7385** (`combat_20260924-175921`) until a non-hardcode green.
+

@@ -82,3 +82,14 @@ def test_repair_focus_stages_bottom_up():
         files, round_i=5, err="FILL1=filled expected partial", prev_sources=None
     )
     assert "main.aura" in late or "order.aura" in late
+
+
+def test_expect_literal_hardcode_hits_show_count():
+    from aura_build.llm_dogfood import _expect_literal_hardcode_hits
+
+    src = '(show "FILL1" (f))\n(show "STP" 0)\n(show "COUNT" 10)\n'
+    hits = _expect_literal_hardcode_hits(src, "FILL1=partial\nSTP=0\nCOUNT=10\n")
+    assert "STP=0" in hits and "COUNT=10" in hits
+    assert "FILL1=partial" not in hits  # computed, not literal partial string as sole arg matching... 
+    # (show "FILL1" (f)) should not hit FILL1=partial
+    assert _expect_literal_hardcode_hits('(show "COUNT" c)', "COUNT=10") == []

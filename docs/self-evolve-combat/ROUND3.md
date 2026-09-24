@@ -94,3 +94,8 @@ Parent steering: `487bcf3` / `319e4a7` GOAL-contract heal = gold under another n
 
 **Honest best pure MiniMax so far:** fitness **0.7385** @ `combat_20260924-175921` (not green). Next: ≤3 generic-only combat attempts.
 
+
+### Run 3h — generic-only after heal revert — `combat_20260924-182234` (18:22–18:33 CST)
+
+Trajectory fitness climbed 0.31→0.52→0.63→0.85→**1.0** (round 8) with Soft `llm_parallel=fiber` (8/9; 1×fiber_serial). **Not claimed green:** main hardcodes STP=0 and COUNT=10. Anti-hardcode product gate added; continuing ≤2 more attempts.
+
