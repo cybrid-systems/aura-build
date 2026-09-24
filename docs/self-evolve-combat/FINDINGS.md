@@ -114,3 +114,32 @@ Soft `--serve-async` stops answering sock/session RPC after a green in-fiber Min
 
 **aura-build mitigation (does not invent fiber):** longer Soft sock timeout for `ensure_http_post` (20s→90s) before host fallback.
 
+
+## Dig close-out — round3i host_thread (Aura #4056) + elite vs candidate (2026-09-24 CST)
+
+### Why `llm_parallel=host_thread` on combat_20260924-183518
+Not session-start failure. Soft `--serve-async` attached (`soft_ready_ok`, shared_ast probes OK). Measured sequence:
+
+1. `fiber_live=true`
+2. `fiber_llm_probe` **ok** ~6971ms (`fiber_llm_chat_ok`)
+3. Concurrent N=3 fiber MiniMax batch / `ensure_http_post` → Soft RPC fails:
+   - r0: `http_post_or_b64_missing:serve_session_timeout:None`
+   - later: `http_post_or_b64_missing:serve_sock_error:timed out:None`
+4. Honest fallback: `llm_via=host` / `llm_parallel=host_thread` every combat round
+
+**Aura issue:** https://github.com/cybrid-systems/aura/issues/4056 (Soft tip `bd1c610` / `build_soft4055`). Soft can wedge mid-combat at ~50% CPU with no sock reply (observed on 3j after several green fiber rounds).
+
+**Do not count 3i as a Soft fiber denseness repro.**
+
+### Elite carry vs round-candidate dips
+On 3i/3j, **selected-round max fitness can dip** (e.g. candidates 0.08–0.16) while **implied elite ceiling** stays flat once reached (3j: elite 0.5231 while a peer candidate scored 0.08). Elitist `elite_sources` / `elite_fitness` in `llm_dogfood` prevents propose base regression; rounds_log now records `elite_fitness`/`elite_id` (`7d94019`). Always report **elite_fitness separately** from per-round selected fitness.
+
+### Fiber runs after `9b425e1` (honest)
+| Run | Artifact | Soft denseness LLM | Best real cand | Elite (implied) | Notes |
+|-----|----------|--------------------|----------------|-----------------|-------|
+| 3i | `combat_20260924-183518` | **host_thread** all | ~0.63 (incl. noise) | ~0.6308 | Soft sock timeout after probe — **not fiber** |
+| 3j | `combat_20260924-185110` | fiber×6, fiber_serial×2, host_thread×2 | **0.5231** | **0.5231** | Soft #4056 mid-run hang; SIGTERM 143 after Soft CPU wedge |
+| 3k | `combat_20260924-191515` | fiber (in progress) | TBD | TBD | Second fiber attempt after Soft restart |
+
+**Honest pure-MiniMax best still:** **0.7385** @ `combat_20260924-175921` (fiber). Hardcode green `182234` and any contract_heal path remain **invalid**.
+

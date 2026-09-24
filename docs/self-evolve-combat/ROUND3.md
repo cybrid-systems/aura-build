@@ -104,3 +104,11 @@ Trajectory fitness climbed 0.31→0.52→0.63→0.85→**1.0** (round 8) with So
 
 Soft fiber_llm_probe OK (~7s) then Soft sock/session timeout → `llm_parallel=host_thread` all rounds. **Do not count as fiber repro.** Aura #4056. Elite best_ever **0.6308** (round candidates dipped to ~0.52). Continuing ≥2 fiber runs after Soft/session fix attempt.
 
+
+## Soft fiber dig + re-runs (post-9b425e1)
+
+- **3i host_thread:** Soft sock/session timeout after green fiber_llm_probe → Aura **#4056**. Not a fiber claim.
+- **Elite:** candidate fitness may dip; elite ceiling held (log `elite_fitness` per round @ `7d94019`).
+- **3j:** majority Soft fiber (`llm_parallel=fiber`); Soft later wedged (#4056); best real fitness **0.5231**; killed after hang.
+- **3k:** restarted Soft; early rounds `llm_parallel=fiber` (running).
+
