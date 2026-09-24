@@ -1,0 +1,49 @@
+{
+  "label": "mini-zone-map",
+  "files": [
+    "values.aura",
+    "column.aura",
+    "dictionary.aura",
+    "zone.aura",
+    "zonemap.aura",
+    "table.aura",
+    "pruner.aura",
+    "rng.aura",
+    "driver.aura",
+    "main.aura"
+  ],
+  "entry": "main.aura",
+  "run_mode": "cli_multi",
+  "expect": "",
+  "expect_res": [],
+  "source_res": [
+    "define\\s+\\(make-null\\b",
+    "define\\s+\\(make-column\\b",
+    "define\\s+\\(dict-create\\b",
+    "define\\s+\\(make-zone\\b",
+    "define\\s+\\(make-zonemap\\b",
+    "define\\s+\\(make-table\\b",
+    "define\\s+\\(pruner-stats\\b",
+    "define\\s+\\(make-rng\\b",
+    "define\\s+\\(build-dataset\\b"
+  ],
+  "expect_keys": [
+    "ZONES",
+    "ROWS",
+    "NULLS_COL_A",
+    "NULLS_COL_B",
+    "NDV_COL_A",
+    "NDV_COL_B",
+    "MIN_COL_A",
+    "MAX_COL_A",
+    "MIN_COL_B",
+    "MAX_COL_B",
+    "DICT_SIZE_COL_B",
+    "PRUNED_ZONES",
+    "SCANNED_ZONES",
+    "PRUNE_RATIO",
+    "RESULT_ROWS"
+  ],
+  "seed_from_stub": true,
+  "user_extra": "Multi-file project mini-zone-map; implement GOAL.md APIs; print KEY=value via main.aura using module calls."
+}

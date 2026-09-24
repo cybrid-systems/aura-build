@@ -1,0 +1,55 @@
+;; csv-types.aura
+;; Defines the core data types used by the CSV parser:
+;; - row: a list of cells with metadata
+;; - cell: a typed value (number, bool, or string)
+;; - EOF sentinel and predicate
+;;
+;; Aura does not have structs/records, so we use tagged lists (alists).
+;; A row is represented as: (cons 'row cells)
+;; A cell is represented as: (cons 'cell (cons kind value))
+
+(define tag-row 'row)
+(define tag-cell 'cell)
+(define tag-eof 'eof)
+
+;; Predicates
+(define (row? v)
+  (and (pair? v) (eq? (car v) tag-row)))
+
+(define (cell-record? v)
+  (and (pair? v) (eq? (car v) tag-cell)))
+
+;; Row API: (make-row cells) -> row
+;; cells must be a list of cell records.
+(define (make-row cells)
+  (cons tag-row cells))
+
+;; (row-cells r) -> list-of-cells
+(define (row-cells r)
+  (cdr r))
+
+;; Cell constructors (internal helpers, but exported via the API)
+(define (make-cell kind value)
+  (cons tag-cell (cons kind value)))
+
+(define (cell-value c)
+  (car (cdr c)))
+
+(define (cell-kind c)
+  (car (cdr c)))
+
+;; Convenience cell builders
+(define (cell-number n)
+  (make-cell 'number n))
+
+(define (cell-bool b)
+  (make-cell 'bool b))
+
+(define (cell-string s)
+  (make-cell 'string s))
+
+;; EOF sentinel and predicate
+(define eof-sentinel tag-eof)
+
+(define (eof? v)
+  (eq? v eof-sentinel))

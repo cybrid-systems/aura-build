@@ -3,12 +3,12 @@
   "ref": {
     "ref_ok": false,
     "exit_code": 1,
-    "stderr": "  File \"/workspace/aura-build/corpus/projects/mini-pratt-expr/ref/run_scenarios.py\", line 62\n    def api_ast?(x): return isinstance(x, tuple) and len(x) >= 1\n               ^\nSyntaxError: expected '('\n",
-    "duration_s": 0.022,
+    "stderr": "Traceback (most recent call last):\n  File \"/workspace/aura-build/corpus/projects/mini-pratt-expr/ref/run_scenarios.py\", line 379, in <module>\n    val = api_eval(ast, env)\n  File \"/workspace/aura-build/corpus/projects/mini-pratt-expr/ref/run_scenarios.py\", line 165, in api_eval\n    c = api_eval(w[1], env)  # w = (\"when\", cond, then)\n  File \"/workspace/aura-build/corpus/projects/mini-pratt-expr/ref/run_scenarios.py\", line 156, in api_eval\n    return api_apply_bin(op, api_eval(l, env), api_eval(r, ",
+    "duration_s": 0.031,
     "timeout": false,
     "n_lines": 0,
     "expect": ""
   },
-  "updated_at": "2026-09-24T14:56:31Z",
+  "updated_at": "2026-09-24T14:58:59Z",
   "variants": []
 }

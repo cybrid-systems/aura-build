@@ -1,42 +1,48 @@
 import re
 
 # ---------- token.aura ----------
-TOKEN_REGEX = re.compile(r'\s*(?:(\d+\.\d+|\d+)|(\'\')|(\'(?:[^\']|\'\')*\')|(NULL|TRUE|FALSE|AND|OR|NOT|CASE|WHEN|THEN|ELSE|END)|(<=|<>|>=|=|<|>|\+|-|\*|/)|\(|\)|,|[A-Za-z_][A-Za-z0-9_]*)', re.IGNORECASE)
+TOKEN_PATTERNS = [
+    ("WS",      re.compile(r"\s+")),
+    ("NUMBER",  re.compile(r"\d+(?:\.\d+)?")),
+    ("STRING",  re.compile(r"'[^']*'")),
+    ("IDENT",   re.compile(r"[A-Za-z_][A-Za-z0-9_]*")),
+    ("OP",      re.compile(r"<>|>=|<=|=|>|<|\+|-|\*|/|,")),
+    ("LPAREN",  re.compile(r"\(")),
+    ("RPAREN",  re.compile(r"\)")),
+]
 
-KEYWORDS = {'NULL','TRUE','FALSE','AND','OR','NOT','CASE','WHEN','THEN','ELSE','END'}
+KEYWORDS = {"AND", "OR", "NOT", "NULL", "TRUE", "FALSE", "CASE", "WHEN", "THEN", "ELSE", "END", "IS"}
 
 def api_tokenize(src):
     tokens = []
-    pos = 0
-    s = src.strip()
-    while pos < len(s):
-        m = TOKEN_REGEX.match(s, pos)
-        if not m:
-            raise ValueError(f"Lex error at: {s[pos:]!r}")
-        pos = m.end()
-        if m.group(1) is not None:
-            tokens.append(('NUM', m.group(1)))
-        elif m.group(2) is not None:
-            tokens.append(('STR', "''"))
-        elif m.group(3) is not None:
-            raw = m.group(3)
-            inner = raw[1:-1].replace("''", "'")
-            tokens.append(('STR', inner))
-        elif m.group(4) is not None:
-            kw = m.group(4).upper()
-            if kw == 'NULL':
-                tokens.append(('NULL', 'null'))
-            elif kw == 'TRUE':
-                tokens.append(('BOOL', 'true'))
-            elif kw == 'FALSE':
-                tokens.append(('BOOL', 'false'))
-            else:
-                tokens.append((kw, kw.lower()))
-        elif m.group(5) is not None:
-            tokens.append(('OP', m.group(5)))
-        else:
-            tok = m.group(6) or m.group(7) or m.group(8) or m.group(9)
-            tokens.append((tok, tok))
+    i = 0
+    while i < len(src):
+        # skip whitespace
+        m = TOKEN_PATTERNS[0][1].match(src, i)
+        if m:
+            i = m.end()
+            continue
+        matched = False
+        for name, pat in TOKEN_PATTERNS[1:]:
+            m = pat.match(src, i)
+            if m:
+                text = m.group(0)
+                if name == "IDENT" and text in KEYWORDS:
+                    tokens.append(("KW", text))
+                elif name == "IDENT":
+                    tokens.append(("IDENT", text))
+                elif name == "NUMBER":
+                    tokens.append(("NUM", text))
+                elif name == "STRING":
+                    tokens.append(("STR", text[1:-1]))
+                else:
+                    tokens.append((name, text))
+                i = m.end()
+                matched = True
+                break
+        if not matched:
+            raise SyntaxError(f"Unexpected char at {i}: {src[i]!r}")
+    tokens.append(("EOF", ""))
     return tokens
 
 def api_token_type(t):
@@ -46,344 +52,334 @@ def api_token_value(t):
     return t[1]
 
 # ---------- ast.aura ----------
-def api_make_num(n): return ('num', float(n))
-def api_make_str(s): return ('str', s)
-def api_make_null(): return ('null',)
-def api_make_bool(b): return ('bool', bool(b))
-def api_make_var(name): return ('var', name)
-def api_make_bin(op, l, r): return ('bin', op, l, r)
-def api_make_un(op, e): return ('un', op, e)
-def api_make_call(name, args): return ('call', name, args)
-def api_make_case(whens, otherwise):
-    if otherwise is None:
-        otherwise = api_make_null()
-    return ('case', whens, otherwise)
-def api_make_when(cond, then_v): return ('when', cond, then_v)
-def api_ast?(x): return isinstance(x, tuple) and len(x) >= 1
+def api_make_num(n):        return ("num", float(n) if "." in str(n) else n)
+def api_make_str(s):        return ("str", s)
+def api_make_null():        return ("null", None)
+def api_make_bool(b):       return ("bool", b)
+def api_make_var(name):     return ("var", name)
+def api_make_bin(op, l, r): return ("bin", op, l, r)
+def api_make_un(op, e):     return ("un", op, e)
+def api_make_call(name, args): return ("call", name, args)
+def api_make_case(whens, otherwise): return ("case", whens, otherwise)
+def api_make_when(cond, then): return ("when", cond, then)
+def api_ast(x): return x
 
 # ---------- env.aura ----------
 def api_env_empty():
     return {}
 
 def api_env_set(env, k, v):
-    env = dict(env)
     env[k] = v
     return env
 
 def api_env_get(env, k):
-    return env.get(k, False)
+    return env.get(k, None)
 
-# ---------- pratt.aura ----------
-# Precedence table
-PREFIX = {  'OP:+':('r', 70), 'OP:-':('r', 70), 'NOT':('r', 30), 'OP:NEG':('r', 70) }
-INFIX  = {  'OP:OR':('l', 10), 'OP:AND':('l', 20), 'OP:=':('l', 40), 'OP:<>':('l', 40),
-            'OP:<':('l', 40), 'OP:>':('l', 40), 'OP:<=':('l', 40), 'OP:>=':('l', 40),
-            'OP:+':('l', 50), 'OP:-':('l', 50), 'OP:*':('l', 60), 'OP:/':('l', 60) }
-def api_prefix_power(sym):
-    return PREFIX.get(sym, False)
-def api_infix_power(sym):
-    return INFIX.get(sym, False)
-
-class Parser:
-    def __init__(self, tokens, env):
-        self.toks = tokens
-        self.i = 0
-        self.env = env
-
-    def peek(self):
-        return self.toks[self.i] if self.i < len(self.toks) else (None, None)
-
-    def consume(self):
-        t = self.toks[self.i]
-        self.i += 1
-        return t
-
-    def parse(self):
-        result = self.expr(0)
-        if self.peek()[0] is not None:
-            raise ValueError(f"Unexpected token: {self.peek()}")
-        return result
-
-    def expr(self, min_p):
-        ttype, tval = self.peek()
-        if ttype is None:
-            raise ValueError("Unexpected end")
-        if ttype == 'OP' and ('OP:'+tval) in PREFIX:
-            sym = 'OP:'+tval
-            assoc, p = PREFIX[sym]
-            self.consume()
-            r = self.expr(p - 1 if assoc == 'r' else p)
-            return api_make_un(tval, r)
-        if ttype == 'NOT':
-            self.consume()
-            assoc, p = PREFIX['NOT']
-            r = self.expr(p)  # right assoc for NOT
-            return api_make_un('NOT', r)
-        if ttype == 'OP' and tval == '-':
-            sym = 'OP:-'
-            assoc, p = PREFIX[sym]
-            self.consume()
-            r = self.expr(p)
-            return api_make_un('neg', r)
-        if ttype == 'OP' and tval == '(':
-            self.consume()
-            e = self.expr(0)
-            if self.peek() != ('OP', ')'):
-                raise ValueError("Expected )")
-            self.consume()
-            return e
-        if ttype == 'NUM':
-            self.consume()
-            n = float(tval) if '.' in tval else int(tval)
-            # keep ints as ints, but evaluator will treat them as numeric
-            return api_make_num(n)
-        if ttype == 'STR':
-            self.consume()
-            return api_make_str(tval)
-        if ttype == 'NULL':
-            self.consume()
-            return api_make_null()
-        if ttype == 'BOOL':
-            self.consume()
-            return api_make_bool(tval == 'true')
-        if ttype == 'CASE':
-            return self.parse_case()
-        if ttype.isalpha() or ttype.isalnum():
-            # could be identifier (var or call)
-            name = tval
-            self.consume()
-            if self.peek() == ('OP', '('):
-                self.consume()
-                args = []
-                if self.peek() != ('OP', ')'):
-                    args.append(self.expr(0))
-                    while self.peek() == ('OP', ','):
-                        self.consume()
-                        args.append(self.expr(0))
-                if self.peek() != ('OP', ')'):
-                    raise ValueError("Expected ) in call")
-                self.consume()
-                return api_make_call(name, args)
-            return api_make_var(name)
-        raise ValueError(f"Unexpected token: {ttype} {tval}")
-
-    def parse_case(self):
-        self.consume()  # CASE
-        whens = []
-        while self.peek()[0] == 'WHEN':
-            self.consume()
-            cond = self.expr(0)
-            if self.peek()[0] != 'THEN':
-                raise ValueError("Expected THEN")
-            self.consume()
-            then_v = self.expr(0)
-            whens.append(api_make_when(cond, then_v))
-        otherwise = None
-        if self.peek()[0] == 'ELSE':
-            self.consume()
-            otherwise = self.expr(0)
-        if self.peek()[0] != 'END':
-            raise ValueError("Expected END")
-        self.consume()
-        return api_make_case(whens, otherwise)
-
-def api_parse(tokens, env):
-    p = Parser(tokens, env)
-    return p.parse()
-
-# ---------- binop / unop / call ----------
+# ---------- binop.aura ----------
 def api_apply_bin(op, a, b):
-    ta = api_type_of(a)
-    tb = api_type_of(b)
-    # NULL propagation
-    if ta == 'null' or tb == 'null':
-        if op == '=':
-            return api_make_bool(None if False else (ta == 'null') == (tb == 'null'))
-        if op in ('<','>','<=','>=','<>','='):
-            return api_make_null()
+    if a[0] == "null" or b[0] == "null":
         return api_make_null()
-    # Comparison
-    if op == '=':
-        return api_make_bool(api_num_of(a) == api_num_of(b) if ta=='num' else a == b)
-    if op == '<>':
-        return api_make_bool(not (api_num_of(a) == api_num_of(b) if ta=='num' else a == b))
-    if op in ('<','>','<=','>='):
-        x, y = api_num_of(a), api_num_of(b)
-        r = (x < y) if op == '<' else (x > y) if op == '>' else (x <= y) if op == '<=' else (x >= y)
-        return api_make_bool(r)
-    # Arithmetic / logical
-    if op == '+':
-        if ta == 'num' and tb == 'num':
-            return api_make_num(api_num_of(a) + api_num_of(b))
-        if ta == 'str' or tb == 'str':
-            return api_make_str(str(a[1] if ta=='str' else a) + str(b[1] if tb=='str' else b))
-        return api_make_null()
-    if op == '-':
-        return api_make_num(api_num_of(a) - api_num_of(b))
-    if op == '*':
-        return api_make_num(api_num_of(a) * api_num_of(b))
-    if op == '/':
-        y = api_num_of(b)
-        if y == 0:
-            return api_make_null()
-        return api_make_num(api_num_of(a) / y)
-    if op == 'AND':
+    if op == "+":
+        if a[0] == "str" or b[0] == "str":
+            return api_make_str(str(a[1]) + str(b[1]))
+        return api_make_num(a[1] + b[1])
+    if op == "-":  return api_make_num(a[1] - b[1])
+    if op == "*":  return api_make_num(a[1] * b[1])
+    if op == "/":
+        if b[1] == 0: return api_make_null()
+        return api_make_num(a[1] / b[1])
+    if op == "=":
+        v = (a[1] == b[1]) if a[0] == b[0] else False
+        # cross-type numeric compare
+        if a[0] in ("num",) and b[0] in ("num",):
+            v = (a[1] == b[1])
+        return api_make_bool(v)
+    if op == "<>":
+        v = (a[1] != b[1])
+        return api_make_bool(v)
+    if op == "<":  return api_make_bool(a[1] < b[1])
+    if op == ">":  return api_make_bool(a[1] > b[1])
+    if op == "<=": return api_make_bool(a[1] <= b[1])
+    if op == ">=": return api_make_bool(a[1] >= b[1])
+    if op == "AND":
         return api_make_bool(api_bool_of(a) and api_bool_of(b))
-    if op == 'OR':
+    if op == "OR":
         return api_make_bool(api_bool_of(a) or api_bool_of(b))
-    return api_make_null()
+    raise ValueError(f"unknown binop {op}")
 
+# ---------- unop.aura ----------
 def api_apply_un(op, a):
-    if op == 'NOT':
-        t = api_type_of(a)
-        if t == 'null':
-            return api_make_null()
+    if op == "NOT":
+        if a[0] == "null": return api_make_null()
         return api_make_bool(not api_bool_of(a))
-    if op == 'neg':
-        return api_make_num(-api_num_of(a))
-    return a
+    if op == "-":
+        if a[0] == "null": return api_make_null()
+        return api_make_num(-a[1])
+    raise ValueError(f"unknown unop {op}")
 
+# ---------- call.aura ----------
 def api_apply_call(name, args, env):
-    # Simple built-ins
-    if name.upper() == 'ABS':
-        return api_make_num(abs(api_num_of(api_eval_inline(args[0], env))))
-    if name.upper() == 'COALESCE':
-        for a in args:
-            v = api_eval_inline(a, env)
-            if api_type_of(v) != 'null':
-                return v
-        return api_make_null()
-    return api_make_null()
+    if name == "ABS":
+        if args[0][0] == "null": return api_make_null()
+        return api_make_num(abs(args[0][1]))
+    raise ValueError(f"unknown func {name}")
 
 # ---------- eval.aura ----------
-def api_num_of(v):
-    if v[0] == 'num':
-        return v[1]
-    if v[0] == 'bool':
-        return 1 if v[1] else 0
-    raise ValueError(f"Not a number: {v}")
+def api_type_of(v): return v[0]
+def api_bool_of(v): return bool(v[1]) if v[0] == "bool" else (v[1] if v[0] != "null" else None)
+def api_num_of(v):  return v[1] if v[0] == "num" else None
 
-def api_bool_of(v):
-    if v[0] == 'bool':
-        return v[1]
-    if v[0] == 'null':
-        return False
-    if v[0] == 'num':
-        return v[1] != 0
-    return bool(v[1])
-
-def api_type_of(v):
-    return v[0]
-
-def api_eval_inline(node, env):
-    if node[0] == 'num' or node[0] == 'str' or node[0] == 'null' or node[0] == 'bool':
-        return node
-    if node[0] == 'var':
-        v = api_env_get(env, node[1])
-        if v is False:
-            return api_make_null()
-        return v
-    if node[0] == 'bin':
+def api_eval(node, env):
+    tag = node[0]
+    if tag == "num":   return node
+    if tag == "str":   return node
+    if tag == "null":  return node
+    if tag == "bool":  return node
+    if tag == "var":   return env.get(node[1], api_make_null())
+    if tag == "bin":
         op, l, r = node[1], node[2], node[3]
-        # short-circuit AND/OR
-        if op == 'AND':
+        # short-circuit for AND/OR
+        if op == "AND":
             lv = api_eval(l, env)
-            if not api_bool_of(lv):
-                return api_make_bool(False)
+            if lv[0] == "null": return api_make_null()
+            if not api_bool_of(lv): return api_make_bool(False)
             rv = api_eval(r, env)
-            return api_apply_bin(op, lv, rv)
-        if op == 'OR':
+            if rv[0] == "null": return api_make_null()
+            return api_make_bool(api_bool_of(rv))
+        if op == "OR":
             lv = api_eval(l, env)
-            if api_bool_of(lv):
-                return api_make_bool(True)
+            if lv[0] == "null": return api_make_null()
+            if api_bool_of(lv): return api_make_bool(True)
             rv = api_eval(r, env)
-            return api_apply_bin(op, lv, rv)
+            if rv[0] == "null": return api_make_null()
+            return api_make_bool(api_bool_of(rv))
         return api_apply_bin(op, api_eval(l, env), api_eval(r, env))
-    if node[0] == 'un':
+    if tag == "un":
         return api_apply_un(node[1], api_eval(node[2], env))
-    if node[0] == 'call':
-        return api_apply_call(node[1], node[2], env)
-    if node[0] == 'case':
-        for w in node[1]:
-            c = api_eval(w[1], env)
+    if tag == "call":
+        ev_args = [api_eval(a, env) for a in node[2]]
+        return api_apply_call(node[1], ev_args, env)
+    if tag == "case":
+        whens, otherwise = node[1], node[2]
+        for w in whens:
+            c = api_eval(w[1], env)  # w = ("when", cond, then)
+            if c[0] == "null":
+                continue
             if api_bool_of(c):
                 return api_eval(w[2], env)
-        return api_eval(node[2], env)
-    return api_make_null()
+        return api_eval(otherwise, env) if otherwise is not None else api_make_null()
+    raise ValueError(f"unknown node {tag}")
 
-def api_eval(ast, env):
-    return api_eval_inline(ast, env)
+# ---------- pratt.aura ----------
+PREFIX_POWER = {
+    "NUM":   100, "STR": 100, "IDENT": 100, "KW_NULL": 100, "KW_TRUE": 100, "KW_FALSE": 100,
+    "KW_NOT":  90, "OP_MINUS": 90,
+    "LPAREN":  95,
+    "KW_CASE": 100,
+}
+INFIX_POWER = {
+    "OR":  10, "AND": 20,
+    "OP_EQ": 30, "OP_NEQ": 30, "OP_LT": 30, "OP_GT": 30, "OP_LE": 30, "OP_GE": 30,
+    "OP_PLUS": 40, "OP_MINUS": 40,
+    "OP_MUL": 50, "OP_DIV": 50,
+}
+def api_prefix_power(sym): return PREFIX_POWER.get(sym, 0)
+def api_infix_power(sym):  return INFIX_POWER.get(sym, 0)
 
-# ---------- count nodes ----------
+def classify_token(tok):
+    t, v = tok
+    if tok == ("EOF", ""): return "EOF"
+    if t == "NUM": return "NUM"
+    if t == "STR": return "STR"
+    if t == "LPAREN": return "LPAREN"
+    if t == "RPAREN": return "RPAREN"
+    if t == "KW":
+        if v == "NULL": return "KW_NULL"
+        if v == "TRUE": return "KW_TRUE"
+        if v == "FALSE": return "KW_FALSE"
+        if v == "NOT": return "KW_NOT"
+        if v == "AND": return "AND"
+        if v == "OR": return "OR"
+        if v == "CASE": return "KW_CASE"
+        if v == "WHEN": return "KW_WHEN"
+        if v == "THEN": return "KW_THEN"
+        if v == "ELSE": return "KW_ELSE"
+        if v == "END": return "KW_END"
+        if v == "IS": return "KW_IS"
+        return "KW_" + v
+    if t == "IDENT": return "IDENT"
+    if t == "OP":
+        if v == "+": return "OP_PLUS"
+        if v == "-": return "OP_MINUS"
+        if v == "*": return "OP_MUL"
+        if v == "/": return "OP_DIV"
+        if v == "=": return "OP_EQ"
+        if v == "<>": return "OP_NEQ"
+        if v == "<": return "OP_LT"
+        if v == ">": return "OP_GT"
+        if v == "<=": return "OP_LE"
+        if v == ">=": return "OP_GE"
+        if v == ",": return "OP_COMMA"
+    return "?"
+
+class Parser:
+    def __init__(self, tokens):
+        self.toks = tokens
+        self.pos = 0
+
+    def peek(self):
+        return self.toks[self.pos]
+
+    def advance(self):
+        t = self.toks[self.pos]
+        self.pos += 1
+        return t
+
+    def expect(self, *kinds):
+        tok = self.peek()
+        if classify_token(tok) not in kinds:
+            raise SyntaxError(f"expected {kinds}, got {tok}")
+        return self.advance()
+
+    def parse_expression(self, min_power):
+        # prefix
+        tok = self.peek()
+        kind = classify_token(tok)
+        left = None
+        if kind == "NUM":
+            v = api_token_value(tok)
+            n = float(v) if "." in v else int(v)
+            left = api_make_num(n)
+            self.advance()
+        elif kind == "STR":
+            left = api_make_str(api_token_value(tok))
+            self.advance()
+        elif kind == "KW_NULL":
+            left = api_make_null()
+            self.advance()
+        elif kind == "KW_TRUE":
+            left = api_make_bool(True)
+            self.advance()
+        elif kind == "KW_FALSE":
+            left = api_make_bool(False)
+            self.advance()
+        elif kind == "IDENT":
+            name = api_token_value(tok)
+            self.advance()
+            if self.peek()[0] == "LPAREN":
+                self.advance()
+                args = []
+                if classify_token(self.peek()) != "RPAREN":
+                    args.append(self.parse_expression(0))
+                    while classify_token(self.peek()) == "OP_COMMA":
+                        self.advance()
+                        args.append(self.parse_expression(0))
+                self.expect("RPAREN")
+                left = api_make_call(name, args)
+            else:
+                left = api_make_var(name)
+        elif kind == "LPAREN":
+            self.advance()
+            left = self.parse_expression(0)
+            self.expect("RPAREN")
+        elif kind == "KW_NOT":
+            self.advance()
+            rbp = api_prefix_power("KW_NOT")
+            operand = self.parse_expression(rbp)
+            left = api_make_un("NOT", operand)
+        elif kind == "OP_MINUS":
+            self.advance()
+            rbp = api_prefix_power("OP_MINUS")
+            operand = self.parse_expression(rbp)
+            left = api_make_un("-", operand)
+        elif kind == "KW_CASE":
+            self.advance()
+            whens = []
+            otherwise = None
+            while classify_token(self.peek()) == "KW_WHEN":
+                self.advance()
+                cond = self.parse_expression(0)
+                self.expect("KW_THEN")
+                then = self.parse_expression(0)
+                whens.append(api_make_when(cond, then))
+            if classify_token(self.peek()) == "KW_ELSE":
+                self.advance()
+                otherwise = self.parse_expression(0)
+            self.expect("KW_END")
+            left = api_make_case(whens, otherwise)
+        else:
+            raise SyntaxError(f"unexpected token {tok}")
+
+        # infix
+        while True:
+            tok = self.peek()
+            kind = classify_token(tok)
+            if kind == "EOF" or kind == "RPAREN" or kind == "KW_END" \
+               or kind == "KW_THEN" or kind == "KW_ELSE" or kind == "OP_COMMA":
+                break
+            lbp = api_infix_power(kind)
+            if lbp == 0 or lbp < min_power:
+                break
+            self.advance()
+            left = api_make_bin(kind_to_op(kind), left, self.parse_expression(lbp))
+        return left
+
+def kind_to_op(kind):
+    return {
+        "AND": "AND", "OR": "OR",
+        "OP_EQ": "=", "OP_NEQ": "<>", "OP_LT": "<", "OP_GT": ">",
+        "OP_LE": "<=", "OP_GE": ">=",
+        "OP_PLUS": "+", "OP_MINUS": "-",
+        "OP_MUL": "*", "OP_DIV": "/",
+    }[kind]
+
+def api_parse(tokens, env):
+    p = Parser(tokens)
+    return p.parse_expression(0)
+
+# ---------- helpers ----------
 def count_nodes(node):
-    if isinstance(node, tuple):
-        if node[0] == 'num' or node[0] == 'str' or node[0] == 'null' or node[0] == 'bool' or node[0] == 'var':
-            return 1
-        if node[0] == 'bin':
-            return 1 + count_nodes(node[2]) + count_nodes(node[3])
-        if node[0] == 'un':
-            return 1 + count_nodes(node[2])
-        if node[0] == 'call':
-            return 1 + sum(count_nodes(a) for a in node[2])
-        if node[0] == 'case':
-            n = 1
-            for w in node[1]:
-                n += count_nodes(w[1]) + count_nodes(w[2])
-            if node[2]:
-                n += count_nodes(node[2])
-            return n
-        if node[0] == 'when':
-            return count_nodes(node[1]) + count_nodes(node[2])
+    if node is None: return 0
+    tag = node[0]
+    if tag in ("num", "str", "null", "bool", "var"): return 1
+    if tag == "bin": return 1 + count_nodes(node[2]) + count_nodes(node[3])
+    if tag == "un":  return 1 + count_nodes(node[2])
+    if tag == "call":
+        return 1 + sum(count_nodes(a) for a in node[2])
+    if tag == "case":
+        c = sum(count_nodes(w[1]) + count_nodes(w[2]) for w in node[1])
+        return 1 + c + (count_nodes(node[2]) if node[2] is not None else 0)
+    if tag == "when":
+        return 1 + count_nodes(node[1]) + count_nodes(node[2])
     return 1
 
-# ---------- repr for typed value ----------
-def repr_value(v):
-    t = api_type_of(v)
-    if t == 'null':
-        return 'null'
-    if t == 'num':
-        n = v[1]
-        if isinstance(n, float) and n.is_integer():
-            return str(int(n))
-        return str(n)
-    if t == 'str':
-        return repr(v[1])
-    if t == 'bool':
-        return 'true' if v[1] else 'false'
+def repr_val(v):
+    if v[0] == "null": return "NULL"
+    if v[0] == "num":  return str(v[1])
+    if v[0] == "str":  return repr(v[1])
+    if v[0] == "bool": return "TRUE" if v[1] else "FALSE"
     return str(v)
 
-def upper_name(tok):
-    # Some tokens may already be uppercase keyword strings
-    return tok[1].upper()
-
 # ---------- main ----------
-def main():
-    samples = ["1 + 2 * 3", "-NOT NULL AND (x = NULL)", "CASE WHEN x > 0 THEN x ELSE -x END"]
-    env = api_env_set(api_env_empty(), 'x', api_make_num(3))
+if __name__ == "__main__":
+    samples = ["1 + 2 * 3",
+               "-NOT NULL AND (x = NULL)",
+               "CASE WHEN x > 0 THEN x ELSE -x END"]
 
-    lines = []
-    lines.append(f"SAMPLES={len(samples)}")
-    ok = True
-    tokens_lists = []
-    asts = []
+    env = api_env_set(api_env_empty(), "x", 3)
+
+    print(f"SAMPLES={len(samples)}")
+
     for i, expr in enumerate(samples):
-        tokens = api_tokenize(expr)
-        tokens_lists.append(tokens)
-        ast = api_parse(tokens, env)
-        asts.append(ast)
-        nodes = count_nodes(ast)
-        try:
-            val = api_eval(ast, env)
-        except Exception as e:
-            ok = False
-            val = ('null',)
-        lines.append(f"EXPR[{i}]={expr}")
-        lines.append(f"TOKENS[{i}]={len(tokens)}")
-        lines.append(f"NODES[{i}]={nodes}")
-        lines.append(f"EVAL[{i}]={api_type_of(val)} {repr_value(val)}")
-    lines.append(f"RESULT={'PASS' if ok else 'FAIL'}")
+        toks = api_tokenize(expr)
+        ast = api_parse(toks, env)
+        # drop EOF for token count
+        toks_no_eof = [t for t in toks if t != ("EOF", "")]
+        n = count_nodes(ast)
+        val = api_eval(ast, env)
+        print(f"EXPR[{i}]={expr}")
+        print(f"TOKENS[{i}]={len(toks_no_eof)}")
+        print(f"NODES[{i}]={n}")
+        print(f"EVAL[{i}]={api_type_of(val)} {repr_val(val)}")
 
-    print("\n".join(lines))
-
-if __name__ == '__main__':
-    main()
+    print("RESULT=PASS")
