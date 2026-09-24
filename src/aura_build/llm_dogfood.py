@@ -2695,8 +2695,7 @@ _EXCHANGE_SETTLE_CONTRACT = """(define (settle-init) #t)
     (ledger-debit-pos seller qty)))
 """
 
-_EXCHANGE_SNAPSHOT_CONTRACT = """(define (snapshot-init) #t)
-(define (count-xs xs)
+_EXCHANGE_SNAPSHOT_CONTRACT = """(define (count-xs xs)
   (if (null? xs) 0 (+ 1 (count-xs (cdr xs)))))
 (define (snapshot-fp)
   (string-append
@@ -2745,99 +2744,6 @@ _EXCHANGE_REPLAY_CONTRACT = """(define (replay-clear-live)
 (define (replay-run)
   (replay-fold (journal-oldest-first)))
 """
-_EXCHANGE_EXCHANGE_CONTRACT = """(define (exchange-init)
-  (idemp-init)
-  (journal-init)
-  (ledger-init)
-  (fee-init)
-  (book-init)
-  (halt-init)
-  (order-init)
-  (settle-init)
-  (ledger-fund "Alice" 100 0)
-  (ledger-fund "Bob" 100 10))
-(define (exchange-place cloid acct side price qty)
-  (order-place cloid acct side price qty))
-(define (exchange-cancel cloid)
-  (order-cancel cloid))
-(define (exchange-halt)
-  (halt-set "halted")
-  (halt-state))
-(define (exchange-resume)
-  (halt-set "open")
-  (halt-state))
-(define (exchange-snapshot) (snapshot-fp))
-(define (exchange-replay)
-  (replay-clear-live)
-  (replay-run))
-(define (exchange-eq a b)
-  (if (equal? a b) 1 0))
-"""
-
-_EXCHANGE_MAIN_CONTRACT = """(define (show label val)
-  (display label)(display "=")(display val)(newline))
-
-(exchange-init)
-(exchange-place "A1" "Alice" "buy" 5 10)
-(exchange-place "B1" "Bob" "sell" 5 7)
-(define left1 (query-left "A1"))
-(define fill1 (if (= left1 3) "partial" "other"))
-(show "FILL1" fill1)
-(show "LEFT1" left1)
-(define risk (exchange-place "BIG" "Alice" "buy" 9 100))
-(show "RISK" risk)
-(exchange-place "A2" "Alice" "sell" 5 3)
-(define stp 0)
-(show "STP" stp)
-(define cxl (exchange-cancel "A1"))
-(show "CXL" cxl)
-(define haltv (exchange-halt))
-(show "HALT" haltv)
-(define rej (exchange-place "B2" "Bob" "sell" 5 1))
-(show "REJ_HALT" rej)
-(define resv (exchange-resume))
-(show "RESUME" resv)
-(define dup (exchange-place "A1" "Alice" "buy" 5 1))
-(show "DUP" dup)
-(define snap (exchange-snapshot))
-(define rep (exchange-replay))
-(show "REPLAY" rep)
-(define eqv (exchange-eq snap (exchange-snapshot)))
-(show "EQ" eqv)
-(show "FEES" (query-fees))
-(define c 0)
-(if (equal? fill1 "partial") (set! c (+ c 1)) 0)
-(if (= left1 3) (set! c (+ c 1)) 0)
-(if (equal? risk "reject") (set! c (+ c 1)) 0)
-(if (= stp 0) (set! c (+ c 1)) 0)
-(if (equal? cxl "cancelled") (set! c (+ c 1)) 0)
-(if (equal? haltv "halted") (set! c (+ c 1)) 0)
-(if (equal? rej "reject") (set! c (+ c 1)) 0)
-(if (equal? resv "open") (set! c (+ c 1)) 0)
-(if (equal? dup "dup") (set! c (+ c 1)) 0)
-(if (= eqv 1) (set! c (+ c 1)) 0)
-(show "COUNT" c)
-"""
-
-
-
-
-def _strip_fee_charge_lines(src: str) -> str:
-    """Drop sole-statement ``(fee-charge ...)`` lines (LLM match often double-charges)."""
-    out: list[str] = []
-    for line in src.splitlines():
-        stripped = line.strip()
-        if (
-            stripped.startswith("(fee-charge")
-            and stripped.endswith(")")
-            and stripped.count("(") == stripped.count(")")
-        ):
-            continue
-        out.append(line)
-    body = "\n".join(out)
-    if src.endswith("\n") and not body.endswith("\n"):
-        body += "\n"
-    return body
 
 
 def _contract_heal_exchange(
@@ -2848,8 +2754,7 @@ def _contract_heal_exchange(
 ) -> tuple[dict[str, str], list[str]]:
     """Overwrite FEES/EQ modules with GOAL-contract bodies when those lines fail.
 
-    Keeps anti-hardcode on main/COUNT. Also strips ``fee-charge`` from match.aura
-    so settle remains the sole fee path (LLM match often double-charges).
+    Keeps anti-hardcode on main/COUNT. Match/order/ledger stay LLM-owned.
     """
     low = (err or "").lower()
     heals: list[str] = []
@@ -2867,11 +2772,6 @@ def _contract_heal_exchange(
         if "settle.aura" in files:
             out["settle.aura"] = _EXCHANGE_SETTLE_CONTRACT
             heals.append("settle.aura")
-        if "match.aura" in files and "match.aura" in out:
-            stripped = _strip_fee_charge_lines(out["match.aura"])
-            if stripped != out["match.aura"]:
-                out["match.aura"] = stripped
-                heals.append("match.aura:strip-fee-charge")
     if eq_wrong:
         if "snapshot.aura" in files:
             out["snapshot.aura"] = _EXCHANGE_SNAPSHOT_CONTRACT
@@ -2879,21 +2779,6 @@ def _contract_heal_exchange(
         if "replay.aura" in files:
             out["replay.aura"] = _EXCHANGE_REPLAY_CONTRACT
             heals.append("replay.aura")
-        if "exchange.aura" in files:
-            out["exchange.aura"] = _EXCHANGE_EXCHANGE_CONTRACT
-            heals.append("exchange.aura")
-    count_wrong = "expected 'count=10'" in low or (
-        "got 'count=" in low and "got 'count=10'" not in low and "count=" in low
-    )
-    if count_wrong or eq_wrong or fees_wrong:
-        # COUNT must be hold-tally; journal-count plateaus at 8 even when EQ/FEES green.
-        if "main.aura" in files and (
-            count_wrong
-            or "journal-count" in (out.get("main.aura") or "")
-            or '(show "COUNT" 10)' in (out.get("main.aura") or "")
-        ):
-            out["main.aura"] = _EXCHANGE_MAIN_CONTRACT
-            heals.append("main.aura:count-tally")
     return out, heals
 
 

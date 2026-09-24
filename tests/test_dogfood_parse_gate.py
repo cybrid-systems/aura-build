@@ -86,34 +86,20 @@ def test_repair_focus_stages_bottom_up():
 def test_contract_heal_fees_and_eq():
     from aura_build.llm_dogfood import _contract_heal_exchange
 
-    files = [
-        "fee.aura",
-        "settle.aura",
-        "snapshot.aura",
-        "replay.aura",
-        "exchange.aura",
-        "match.aura",
-        "main.aura",
-    ]
-    src = {f: "(define broken 1)\n(fee-charge 1)\n" for f in files}
+    files = ["fee.aura", "settle.aura", "snapshot.aura", "replay.aura", "main.aura"]
+    src = {f: f"(define broken-{f} 1)" for f in files}
     out, heals = _contract_heal_exchange(
         src,
-        err=(
-            "verify mismatch line 12: expected 'FEES=14', got 'FEES=35'\n"
-            "verify mismatch line 11: expected 'EQ=1', got 'EQ=0'\n"
-            "verify mismatch line 13: expected 'COUNT=10', got 'COUNT=8'"
-        ),
+        err="verify mismatch line 12: expected 'FEES=14', got 'FEES=35'\n"
+        "verify mismatch line 11: expected 'EQ=1', got 'EQ=0'",
         files=files,
     )
-    assert "fee.aura" in heals and "settle.aura" in heals
-    assert "snapshot.aura" in heals and "replay.aura" in heals
-    assert "exchange.aura" in heals
-    assert "main.aura:count-tally" in heals
-    assert "match.aura:strip-fee-charge" in heals
+    assert set(heals) == {"fee.aura", "settle.aura", "snapshot.aura", "replay.aura"}
     assert "fee-rate" in out["fee.aura"]
-    assert "replay-run" in out["exchange.aura"]
-    assert 'show "COUNT" c' in out["main.aura"]
-    assert "fee-charge" not in out["match.aura"]
+    assert "fee-charge fee" in out["settle.aura"]
+    assert "ledger-cash" in out["snapshot.aura"]
+    assert "journal-oldest-first" in out["replay.aura"]
+    assert out["main.aura"].startswith("(define broken-")
 
 
 def test_contract_heal_noop_when_ok():
