@@ -363,8 +363,71 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
 
 
 
+def _cmd_self_evolve_combat(args: argparse.Namespace) -> int:
+    """Soft+fiber combat loop (SSOT docs/self-evolve-combat.md)."""
+    from aura_build.self_evolve_combat import (
+        format_combat_line,
+        print_findings_stubs,
+        run_combat,
+        safe_json_dumps,
+    )
+
+    result = run_combat(
+        project=getattr(args, "project", None),
+        task=getattr(args, "task", None),
+        max_rounds=int(getattr(args, "max_rounds", 8) or 8),
+        worldlines=int(getattr(args, "worldlines", 3) or 3),
+        fiber_explore=getattr(args, "fiber_explore", None),
+        explore_tools=getattr(args, "explore_tools", None) or "rule,llm,intent",
+        concurrent_llm=bool(getattr(args, "concurrent_llm", False)),
+        fiber_llm=getattr(args, "fiber_llm", None),
+        env_file=getattr(args, "env_file", None),
+        out_dir=getattr(args, "out_dir", None),
+        traj_out=getattr(args, "out", None),
+        harness_root=_root(args),
+        aura_bin=getattr(args, "aura_bin", None),
+        start_session=bool(getattr(args, "start_session", False)),
+        stop_session_after=bool(getattr(args, "stop_session", False)),
+        push=bool(getattr(args, "push", False)),
+        dry_run=bool(getattr(args, "dry_run", False)),
+        json_out=bool(getattr(args, "json", False)),
+    )
+    print(format_combat_line(result))
+    print_findings_stubs(result.get("findings") or [])
+    if getattr(args, "json", False):
+        # Never echo API keys — summary may nest llm config; strip known secret fields.
+        safe = dict(result)
+        if isinstance(safe.get("summary"), dict):
+            summ = dict(safe["summary"])
+            llm = summ.get("llm")
+            if isinstance(llm, dict):
+                llm = {k: v for k, v in llm.items() if "key" not in k.lower()}
+                summ["llm"] = llm
+            safe["summary"] = summ
+        print(safe_json_dumps(safe))
+    reason = str(result.get("reason") or "")
+    if reason in (
+        "serve_attach_required",
+        "aura_bin_required_to_start_session",
+        "session_start_failed",
+        "serve_attach_failed_after_start",
+    ) and not result.get("dry_run"):
+        print(
+            f"self-evolve combat: refuse ({reason}); Soft serve_attach_ok required",
+            file=sys.stderr,
+        )
+        return 2
+    return 0 if result.get("ok") else 1
+
+
 def _cmd_self_evolve(args: argparse.Namespace) -> int:
-    """Aura self-evolve → host verify → optional commit/push."""
+    """Aura self-evolve → host verify → optional commit/push.
+
+    Nested ``combat`` subcommand dispatches to Soft+fiber combat (stamp path
+    unchanged when self_evolve_cmd is unset).
+    """
+    if getattr(args, "self_evolve_cmd", None) == "combat":
+        return _cmd_self_evolve_combat(args)
     root = _root(args)
     try:
         raw_sets = getattr(args, "sets", []) or []

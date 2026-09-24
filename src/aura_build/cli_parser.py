@@ -296,8 +296,8 @@ def build_parser() -> argparse.ArgumentParser:
     se = sub.add_parser(
         "self-evolve",
         help=(
-            "dogfood mutate this repo (harness L1 + worldlines), materialize winner, "
-            "verify, commit main; push unless --no-push (Aura kernel)"
+            "L1/stamp dogfood (default) or Soft+fiber combat "
+            "(`self-evolve combat`); stamp path unchanged"
         ),
     )
     _opt(se, "--prompt", default="self-evolve dogfood aura-build")
@@ -309,9 +309,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--verify",
         choices=("none", "smoke", "prove", "kernel"),
         default="smoke",
-        help="host verify after Aura materialize (default smoke)",
+        help="host verify after Aura materialize (default smoke; stamp path)",
     )
-    _opt(se, "--no-push", action="store_true", help="commit only / dry-run push skip")
+    _opt(se, "--no-push", action="store_true", help="commit only / dry-run push skip (stamp path)")
     _opt(se, "--no-commit", action="store_true", help="skip git commit (materialize+verify only)")
     _opt(
         se,
@@ -331,7 +331,98 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="KEY=VAL",
     )
     _common(se, aura=True)
-
+    se_sub = se.add_subparsers(dest="self_evolve_cmd", required=False)
+    combat = se_sub.add_parser(
+        "combat",
+        help=(
+            "Soft+fiber closed combat loop (SSOT docs/self-evolve-combat.md): "
+            "requires live serve_attach_ok; traj+findings; --no-push default; "
+            "dual-sink Aura issue stubs (no kernel edit)"
+        ),
+    )
+    _opt(
+        combat,
+        "--project",
+        type=Path,
+        default=None,
+        help="project dir (GOAL.md+verify); default examples/projects/mini-saga",
+    )
+    _opt(
+        combat,
+        "--task",
+        default=None,
+        help="optional built-in llm-dogfood task (ignored when --project set)",
+    )
+    _opt(combat, "--max-rounds", type=int, default=8)
+    _opt(combat, "--worldlines", type=int, default=3)
+    _opt(
+        combat,
+        "--fiber-explore",
+        type=int,
+        default=None,
+        help="explorer N (default: --worldlines); Soft denseness when measured",
+    )
+    _opt(
+        combat,
+        "--explore-tools",
+        default="rule,llm,intent",
+        help="comma tools: rule,llm,intent (default rule,llm,intent)",
+    )
+    _opt(
+        combat,
+        "--concurrent-llm",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="force explorers to llm-only for parallel MiniMax proposes",
+    )
+    _opt(
+        combat,
+        "--fiber-llm",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Soft in-fiber MiniMax when measured (default: on if minimax env-file "
+            "exists; --no-fiber-llm forces off)"
+        ),
+    )
+    _opt(combat, "--env-file", type=Path, default=None)
+    _opt(
+        combat,
+        "--out-dir",
+        type=Path,
+        default=None,
+        help="combat artifacts dir (default scratch/self_evolve_combat/)",
+    )
+    _opt(combat, "--out", type=Path, default=None, help="trajectory JSONL path")
+    _opt(
+        combat,
+        "--start-session",
+        action="store_true",
+        help="start Soft serve if not attached (needs AURA_BIN / --aura-bin)",
+    )
+    _opt(
+        combat,
+        "--stop-session",
+        action="store_true",
+        help="stop Soft session after combat (default: leave up)",
+    )
+    _opt(
+        combat,
+        "--push",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "push aura-build main only after verify green + product materialize "
+            "(default --no-push; never pushes Aura kernel)"
+        ),
+    )
+    _opt(
+        combat,
+        "--dry-run",
+        action="store_true",
+        help="CI-safe: check attach / plan only; no llm-dogfood (no live Soft required for refuse path)",
+    )
+    _common(combat, aura=True, harness=True)
 
     pursue = sub.add_parser(
         "pursue",

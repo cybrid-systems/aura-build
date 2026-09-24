@@ -15,7 +15,7 @@
 | Layer | Tip |
 |-------|-----|
 | Aura Soft Ready binary | `/workspace/aura-grok/build_soft4048/aura` @ **`a9975a3`** (#4053 denseness async http-post + body mutex unlock; #4048 Soft Ready denseness; #4047 Soft Ready profile) |
-| aura-build | main @ ~`f575779` (fiber-llm in-memory Soft join default; honesty stamps) |
+| aura-build | main @ tip after P1 wire (`self-evolve combat` CLI + ROUND1 fix `9cc096c`) |
 
 Rebuild Soft only if that binary is missing/outdated. Soft honesty banner stays **Soft Ready**.
 
@@ -113,11 +113,11 @@ Hard constraints (memory / three-layer):
 | Phase | What | Done when |
 |-------|------|-----------|
 | **P0 Design** | This doc + links from architecture / optimal-dev-loop / iteration-plan | Merged on main |
-| **P1 Wire combat mode** | Extend `self-evolve` **or** add `self-evolve combat` / thin orchestrator reusing `pursue`+`llm-dogfood`: requires Soft session attach; one closed loop on aura-build itself (or mini project + one self-repo harness mutate); writes combat traj + findings under `scratch/self_evolve_combat/`; `--no-push` default; promote path documented | CLI/script + green smoke |
+| **P1 Wire combat mode** | `aura-build self-evolve combat` thin host orchestrator (reuses `llm-dogfood` + Soft session APIs): requires Soft `serve_attach_ok` (or `--start-session`); one closed loop; traj + findings under `scratch/self_evolve_combat/` + `docs/self-evolve-combat/FINDINGS.md`; `--no-push` default (`--push` only after verify green + aura-build materialize); dual-sink Aura issue stubs (no kernel edit); stamp `self-evolve` unchanged | **CLI landed** — see §P1 below |
 | **P2 Dogfood round 1** | Soft Ready + fiber explore + fiber-llm on concrete goal (prefer escalate mini-saga **or** aura-build harness/doc honesty fix — not simulated stamp). Capture wall ratios; if Soft regresses vs #4053, file Aura issue | `ROUND1.md` + traj honesty stamps |
 | **P3 Self-improve** | Land aura-build fixes from round-1 failures; leave Aura issues open for kernel | Fixes on main; Aura issues filed |
 
-Cheap P1 stub OK: `scripts/self_evolve_combat.sh` documenting exact commands — do not block dogfood on a full rewrite of simulated-fitness `self_evolve.aura`.
+P1 CLI landed as `aura-build self-evolve combat` (`src/aura_build/self_evolve_combat.py`). `scripts/self_evolve_combat.sh` remains a thin wrapper calling the CLI. Aura kernel rewrite of simulated `self_evolve.aura` still **not** required.
 
 ---
 
@@ -126,6 +126,35 @@ Cheap P1 stub OK: `scripts/self_evolve_combat.sh` documenting exact commands —
 - [x] Doc merged on main with inventory + loop + dual sink + phases.
 - [x] Explicit: current stamp `self-evolve` = L1/stamp dogfood; **combat is the new SSOT path**.
 - Links: [architecture.md](architecture.md) Self-evolve section; [optimal-dev-loop.md](optimal-dev-loop.md) See also; [iteration-plan.md](iteration-plan.md) Post-M5++ self-evolve (combat = next gate).
+
+---
+
+## P1 CLI (landed)
+
+```bash
+export AURA_BIN=/workspace/aura-grok/build_soft4048/aura
+
+# Refuse without Soft attach (exit 2)
+aura-build self-evolve combat --json
+
+# Start Soft then combat (kills zombies when starting)
+aura-build self-evolve combat --start-session --project examples/projects/mini-cache \
+  --fiber-explore 3 --concurrent-llm --fiber-llm \
+  --env-file "$HOME/.config/aura-build/minimax.env" --json
+
+# CI-safe plan / refuse path (no live Soft required)
+aura-build self-evolve combat --dry-run --json
+
+# Stamp L1 path unchanged:
+aura-build self-evolve --prompt "…" --no-push
+```
+
+Flags: `--no-push` default (`--push` / `--no-push` BooleanOptionalAction); `--start-session`;
+`--stop-session`; `--out-dir` (default `scratch/self_evolve_combat/`); dual-sink writes
+`combat_*_AURA_ISSUE_STUB.md` for human/`gh issue create` — never auto-edits Aura.
+
+- [x] P1 CLI `aura-build self-evolve combat` on main (thin Python orchestrator).
+- [x] Refuse without `serve_attach_ok`; `--dry-run` CI-safe; stamp path unchanged.
 
 ---
 

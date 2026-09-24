@@ -50,7 +50,7 @@ No Soft Ready / fiber_live / `llm_parallel=fiber` invented from env. Local stub 
 
 ## Next
 
-- **P1 wire:** `aura-build self-evolve combat` CLI (Soft required, `--no-push` default, findings under `scratch/self_evolve_combat/`)
+- **P1 wire:** LANDED — `aura-build self-evolve combat` (Soft required, `--no-push` default, findings under `scratch/self_evolve_combat/`)
 - **P2 continue:** aura-build harness/doc honesty goal in same Soft session; denseness+`fiber_llm` same round; never claim N≥4 wall-parallel without measure
 - **P3:** Aura issues only for confirmed kernel/stdlib; keep aura-build honesty fixes on main
 

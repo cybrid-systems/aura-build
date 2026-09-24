@@ -202,8 +202,9 @@ Stamp `self-evolve` ≠ Soft/fiber combat. Combat SSOT:
 **[self-evolve-combat.md](self-evolve-combat.md)**.
 
 - [x] **P0 Design** — combat inventory + loop + dual sink + phases merged
-- [ ] **P1 Wire** — `self-evolve combat` / thin orchestrator (Soft attach required;
-  traj + findings under `scratch/self_evolve_combat/`; `--no-push` default)
+- [x] **P1 Wire** — `aura-build self-evolve combat` thin orchestrator (Soft
+  `serve_attach_ok` required; traj + findings under `scratch/self_evolve_combat/`;
+  `--no-push` default; dual-sink Aura issue stubs)
 - [x] **P2 Dogfood round 1** — Soft Ready + fiber explore + fiber-llm closed loop;
   wall ratios; Aura issues if Soft regresses vs #4053 (see `docs/self-evolve-combat/ROUND1.md`)
 - [ ] **P3 Self-improve** — land aura-build fixes; leave Aura kernel issues open
