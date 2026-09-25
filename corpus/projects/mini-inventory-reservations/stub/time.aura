@@ -1,0 +1,12 @@
+; time.aura — simulated monotonic clock for the inventory reservation system.
+
+(define *clock-ms* 0)
+
+(define (now-ms)
+  *clock-ms*)
+
+(define (advance-ms! delta)
+  (set! *clock-ms* (+ *clock-ms* delta)))
+
+(define (set-clock! ms)
+  (set! *clock-ms* ms))

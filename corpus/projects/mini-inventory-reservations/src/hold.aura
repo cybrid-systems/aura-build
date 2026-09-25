@@ -1,0 +1,22 @@
+; hold.aura — hold (reservation) record accessors and predicates.
+
+(define (make-hold id sku qty ttl-ms created-at)
+  (list 'hold id sku qty (+ created-at ttl-ms) created-at))
+
+(define (hold-id h)
+  (car (cdr h)))
+
+(define (hold-sku h)
+  (car (cdr (cdr h))))
+
+(define (hold-qty h)
+  (car (cdr (cdr (cdr h)))))
+
+(define (hold-expires-at h)
+  (car (cdr (cdr (cdr (cdr h))))))
+
+(define (hold-created-at h)
+  (car (cdr (cdr (cdr (cdr (cdr h)))))))
+
+(define (hold-expired? h now)
+  (>= now (hold-expires-at h)))

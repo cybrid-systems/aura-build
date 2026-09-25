@@ -1,0 +1,19 @@
+; format.aura
+; Money formatting helper.  The engine stores monetary values as exact
+; integer cents internally.  (fmt-money n) converts a cents value to a
+; decimal string rounded to 2 decimal places, matching the exact stdout
+; contract required by the scenario.
+
+(define (fmt-money n)
+  ; n is an integer number of cents (may be negative).
+  (let ((sign (if (< n 0) "-" ""))
+        (abs-n (if (< n 0) (- 0 n) n)))
+    (let ((dollars (quotient abs-n 100))
+          (cents   (modulo abs-n 100)))
+      (string-append
+        sign
+        (number->string dollars)
+        "."
+        (if (< cents 10)
+            (string-append "0" (number->string cents))
+            (number->string cents))))))

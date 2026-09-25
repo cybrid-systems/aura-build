@@ -1,0 +1,59 @@
+;; queue.aura
+;; A simple FIFO queue built on top of a plain list.
+;;
+;; A queue is represented as a pair (in out) where:
+;;   - in  is the "input" list: elements are kept in REVERSE order so that
+;;         cons-ing a new element onto in is O(1) (no traversal needed).
+;;   - out is the "output" list: elements appear in FIFO order. Items get
+;;         moved from in to out (in reverse) only when out is empty and we
+;;         need to dequeue — this amortizes dequeue to O(1).
+;;
+;; Empty queue: both lists are '().
+;; This is the classic Okasaki-style real-time queue, simplified for our
+;; functional setting (no mutation).
+;;
+;; Public API:
+;;   (make-q)            -> empty queue
+;;   (enqueue q elem)    -> q' with elem appended at the tail
+;;   (dequeue q)         -> (values q' head)  ; head is #f when empty
+;;   (queue-size q)      -> integer count of elements currently in q
+
+(define (make-q)
+  (cons '() '()))
+
+(define (queue-in q)
+  (car q))
+
+(define (queue-out q)
+  (cdr q))
+
+(define (queue-empty? q)
+  (and (null? (queue-in q))
+       (null? (queue-out q))))
+
+(define (queue-size-list lst)
+  (cond ((null? lst) 0)
+        (else (+ 1 (queue-size-list (cdr lst))))))
+
+(define (queue-size q)
+  (+ (queue-size-list (queue-in q))
+     (queue-size-list (queue-out q))))
+
+(define (reverse-list lst)
+  (define (rev acc rest)
+    (if (null? rest)
+        acc
+        (rev (cons (car rest) acc) (cdr rest))))
+  (rev '() lst))
+
+(define (enqueue q elem)
+  (cons (cons elem (queue-in q)) (queue-out q)))
+
+(define (dequeue q)
+  (if (and (null? (queue-out q)) (null? (queue-in q)))
+      (values q #f)
+      (if (null? (queue-out q))
+          (dequeue (cons '() (reverse-list (queue-in q))))
+          (let ((head (car (queue-out q)))
+                (new-out (cdr (queue-out q))))
+            (values (cons (queue-in q) new-out) head)))))

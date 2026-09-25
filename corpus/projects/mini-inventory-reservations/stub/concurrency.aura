@@ -1,0 +1,61 @@
+; concurrency.aura — stress / concurrency simulation: interleaved reservation attempts.
+
+; A "request" is a list: (sku qty)
+; api-stress-reserve walks the list of requests, attempting each reservation
+; in order. It also uses api-attempt-reserve from oversell.aura so that
+; oversell attempts are counted identically to the serial path.
+;
+; Returns an alist of results:
+;   'success    -> count of successful reservations
+;   'rejected   -> count of oversell-rejected reservations
+;   'total      -> total request count
+;   'success-holds -> list of hold ids that succeeded
+;   'rejected-skus -> list of (sku qty) tuples that were rejected
+
+(define (api-stress-reserve store requests now ttl-ms)
+  (let loop ((reqs requests)
+             (succ 0)
+             (rej 0)
+             (succ-holds '())
+             (rej-skus '()))
+    (cond ((null? reqs)
+            (list (cons 'success succ)
+                  (cons 'rejected rej)
+                  (cons 'total (+ succ rej))
+                  (cons 'success-holds succ-holds)
+                  (cons 'rejected-skus rej-skus)))
+          (else
+            (let* ((r (car reqs))
+                   (sku (car r))
+                   (qty (car (cdr r)))
+                   (hold (api-attempt-reserve store sku qty now ttl-ms)))
+              (if hold
+                  (loop (cdr reqs)
+                        (+ succ 1)
+                        rej
+                        (cons (hold-id hold) succ-holds)
+                        rej-skus)
+                  (loop (cdr reqs)
+                        succ
+                        (+ rej 1)
+                        succ-holds
+                        (cons (list sku qty) rej-skus))))))))
+
+(define (stress-results results)
+  ; Convenience accessor: returns an alist view of stress results.
+  results)
+
+(define (stress-success-count results)
+  (cdr (assq 'success results)))
+
+(define (stress-rejected-count results)
+  (cdr (assq 'rejected results)))
+
+(define (stress-total-count results)
+  (cdr (assq 'total results)))
+
+(define (stress-success-holds results)
+  (cdr (assq 'success-holds results)))
+
+(define (stress-rejected-skus results)
+  (cdr (assq 'rejected-skus results)))

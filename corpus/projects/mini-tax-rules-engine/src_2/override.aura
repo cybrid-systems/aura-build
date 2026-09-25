@@ -1,0 +1,53 @@
+;; override.aura -- Override helpers
+;; An override modifies a specific field of a rate for a given jurisdiction.
+;; Represented as an alist:
+;;   (("target" . "SF") ("field" . "rate") ("value" . 0.02) ("priority" . 10))
+;; Priority is an integer; higher priority overrides lower.
+;; The "field" is currently always "rate" but stored symbolically for extensibility.
+
+(define (make-override target-code field value priority)
+  (cons (cons "target" target-code)
+        (cons (cons "field" field)
+              (cons (cons "value" value)
+                    (cons (cons "priority" priority) '())))))
+
+(define (ov-target o)
+  (cdr (assq "target" o)))
+
+(define (ov-field o)
+  (cdr (assq "field" o)))
+
+(define (ov-value o)
+  (cdr (assq "value" o)))
+
+(define (ov-priority o)
+  (cdr (assq "priority" o)))
+
+;; Filter overrides that target a given jurisdiction code.
+(define (ov-for-target overrides code)
+  (cond ((null? overrides) '())
+        ((equal? (ov-target (car overrides)) code)
+         (cons (car overrides) (ov-for-target (cdr overrides) code)))
+        (else (ov-for-target (cdr overrides) code)))
+
+;; Find the highest-priority override among a list of overrides for a given field.
+;; Returns the value of the winning override, or #f if none.
+(define (ov-highest ovs field best-priority best-value)
+  (cond ((null? ovs) best-value)
+        ((equal? (ov-field (car ovs)) field)
+         (let ((p (ov-priority (car ovs))))
+           (if (and best-value (> p best-priority))
+               (ov-highest (cdr ovs) field p (ov-value (car ovs)))
+               (ov-highest (cdr ovs) field best-priority best-value))))
+        (else (ov-highest (cdr ovs) field best-priority best-value))))
+
+;; Apply overrides to a rate alist produced by rates/make-rate.
+;; For each override targeting the rate's code, if its priority beats the
+;; currently-tracked best, replace the corresponding field's value.
+;; Returns a new rate alist with overridden field(s).
+(define (apply-overrides rate overrides)
+  (let ((target-ovs (ov-for-target overrides (rate-code rate))))
+    (let ((best-rate (ov-highest target-ovs "rate" -1 (rate-value rate))))
+      (if (equal? best-rate (rate-value rate))
+          rate
+          (make-rate (rate-code rate) best-rate)))))

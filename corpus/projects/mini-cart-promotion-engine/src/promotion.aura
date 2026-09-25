@@ -1,0 +1,32 @@
+(define (api promotion-make kind code params)
+  (list kind code params))
+
+(define (api promotion-code p)
+  (car (cdr p)))
+
+(define (api promotion-kind p)
+  (car p))
+
+(define (api promotion-params p)
+  (car (cdr (cdr p))))
+
+(define (api promotion-excludes? p other-code)
+  (let ((params (api promotion-params p)))
+    (cond
+      ((null? params) #f)
+      ((equal? (car params) 'excludes)
+       (in-list other-code (cdr params)))
+      (else #f))))
+
+(define (in-list x xs)
+  (cond
+    ((null? xs) #f)
+    ((equal? (car xs) x) #t)
+    (else (in-list x (cdr xs)))))
+
+(define (api promotion-excludes-list p)
+  (let ((params (api promotion-params p)))
+    (cond
+      ((null? params) '())
+      ((equal? (car params) 'excludes) (cdr params))
+      (else '()))))

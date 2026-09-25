@@ -1,0 +1,15 @@
+;; rates.aura -- Rate record helpers
+;; A rate is represented as an alist: (("code" . "X") ("rate" . 0.05))
+;; Functions construct and access rate records.
+
+(define (make-rate code rate)
+  (cons (cons "code" code) (cons (cons "rate" rate) '())))
+
+(define (rate-code r)
+  (cdr (assq "code" r)))
+
+(define (rate-value r)
+  (cdr (assq "rate" r)))
+
+(define (add-rate alist r)
+  (cons r alist))

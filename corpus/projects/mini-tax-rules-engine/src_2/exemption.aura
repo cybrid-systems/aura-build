@@ -1,0 +1,76 @@
+;; exemption.aura -- Exemption helpers
+;; An exemption reduces or zeroes tax for a line based on its category
+;; and (optionally) other predicates. Represented as an alist:
+;;   (("code" . "FOOD") ("kind" . "exempt") ("amount" . 0) ("predicates" . (...)))
+;; kinds: "exempt" (zero out tax), "half" (half of tax), "amount" (subtract a flat amount)
+;; predicates: a list of (predicate-name . value) pairs used by ex-matches?
+
+(define (make-exemption code kind amount predicates)
+  (cons (cons "code" code)
+        (cons (cons "kind" kind)
+              (cons (cons "amount" amount)
+                    (cons (cons "predicates" predicates) '())))))
+
+(define (ex-code e)
+  (cdr (assq "code" e)))
+
+(define (ex-kind e)
+  (cdr (assq "kind" e)))
+
+(define (ex-amount e)
+  (cdr (assq "amount" e)))
+
+(define (ex-predicates e)
+  (cdr (assq "predicates" e)))
+
+;; Check that a single (key . value) predicate matches the line.
+;; Line is an alist with entries like ("category" . "FOOD"), ("exempt?" . #t), etc.
+(define (predicate-matches? pred line)
+  (let ((key (car pred))
+        (expected (cdr pred)))
+    (let ((entry (assq key line)))
+      (cond ((null? entry) #f)
+            ((equal? (cdr entry) expected) #t)
+            (else #f)))))
+
+;; An exemption matches a line if all of its predicates hold.
+;; If an exemption has no predicates, it matches every line.
+(define (ex-matches? e line)
+  (let ((preds (ex-predicates e)))
+    (cond ((null? preds) #t)
+          (else
+           (let loop ((p preds))
+             (cond ((null? p) #t)
+                   ((not (predicate-matches? (car p) line)) #f)
+                   (else (loop (cdr p)))))))))
+
+;; Filter a list of exemptions down to only those that match the line.
+(define (matching-exemptions line exemptions)
+  (cond ((null? exemptions) '())
+        ((ex-matches? (car exemptions) line)
+         (cons (car exemptions) (matching-exemptions line (cdr exemptions))))
+        (else (matching-exemptions line (cdr exemptions)))))
+
+;; Compute the reduction amount to subtract from a line's tax.
+;; taxable is the pre-exemption tax amount (line-amount * rate).
+;; Returns the amount to subtract.
+(define (exemption-reduction ex taxable)
+  (let ((kind (ex-kind ex))
+        (amount (ex-amount ex)))
+    (cond ((string=? kind "exempt") taxable)
+          ((string=? kind "half") (/ taxable 2))
+          ((string=? kind "amount") (if (> amount taxable) taxable amount))
+          (else 0))))
+
+;; Sum the reductions across all applicable exemptions,
+;; never subtracting more than the full taxable amount.
+(define (apply-exemptions line taxable exemptions)
+  (let ((matching (matching-exemptions line exemptions)))
+    (let loop ((xs matching) (remaining taxable) (total 0))
+      (cond ((null? xs) total)
+           ((<= remaining 0) total)
+           (else
+            (let ((deduct (exemption-reduction (car xs) remaining)))
+              (loop (cdr xs)
+                    (- remaining deduct)
+                    (+ total deduct))))))))

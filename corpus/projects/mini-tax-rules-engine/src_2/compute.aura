@@ -1,0 +1,95 @@
+;; compute.aura -- Tax computation helpers
+;; This module computes per-line tax and aggregates invoice totals,
+;; taking into account applicable exemptions for each line.
+;;
+;; Money is represented as a plain number (e.g. dollars). All arithmetic
+;; here is pure-functional and uses only basic operators from Aura.
+;;
+;; Exports:
+;;   (compute-line-tax line rate exemptions) -> tax amount for one line
+;;   (compute-invoice invoice graph overrides exemptions)
+;;       -> alist with ("line-taxes" ...) ("subtotal" . n) ("total-tax" . n)
+;;          ("grand-total" . n) ("effective-rate" . rate)
+
+;; Round to 2 decimal places by working in integer cents internally,
+;; then dividing back. This avoids floating-point drift in the displayed
+;; totals. We use round-half-up via (+ 0.5) then truncate via quotient.
+(define (to-cents x)
+  ;; Accept either an integer or a number with up to 2dp. We multiply by
+  ;; 100 and round half-away-from-zero. Negative values are not expected
+  ;; for tax amounts, but we handle them safely by using quotient on the
+  ;; rounded value when non-negative and an explicit branch when negative.
+  (let ((scaled (* x 100)))
+    (if (>= scaled 0)
+        (quotient (+ scaled 0.5) 1)
+        (- (quotient (+ (- 0 scaled) 0.5) 1)))))
+
+(define (from-cents c)
+  (/ c 100))
+
+;; Compute the tax for a single invoice line given the effective rate
+;; and the list of all known exemptions.
+;;
+;; Steps:
+;;   1. Determine taxable amount for the line: line-amount (from line.aura).
+;;   2. Determine whether the line is fully exempt via (apply-exemptions ...).
+;;      If so, taxable is reduced to 0.
+;;   3. Otherwise, taxable is the line amount (exemptions of kind "amount"
+;;      subtract a flat amount from the *tax*, not from the base; "half"
+;;      halves the *tax*).
+;;   4. Compute base tax = taxable * rate.
+;;   5. Apply any "amount" / "half" exemptions to the tax value.
+;;   6. Return a rounded (cents-precision) tax amount.
+;;
+;; The line's own "exempt" flag is honored as a courtesy shortcut
+;; (apply-exemptions already inspects this), so we don't double-handle it.
+(define (compute-line-tax line rate exemptions)
+  (let* ((amount    (line-amount line))
+         (taxable   (apply-exemptions line amount exemptions))
+         (base-tax  (* taxable rate))
+         (cat       (line-category line))
+         ;; Look for a "half" or "amount" exemption that actually matches
+         ;; this line, to apply to the tax (not to the base).
+         (matched   (filter (lambda (e) (ex-matches? e line)) exemptions))
+         (tax-after
+          (fold-left
+            (lambda (acc e)
+              (let ((k (ex-kind e)))
+                (cond
+                  ((string=? k "exempt") 0)
+                  ((string=? k "half")   (/ acc 2))
+                  ((string=? k "amount") (- acc (ex-amount e)))
+                  (else acc))))
+            base-tax
+            matched)))
+    (from-cents (to-cents tax-after))))
+
+;; Compute the per-line taxes, subtotal, total tax, and grand total for
+;; an entire invoice. The effective rate is resolved from the graph +
+;; overrides via resolver.aura so that callers receive both the rate
+;; used and the breakdown.
+;;
+;; Returns an alist:
+;;   (("line-taxes" . (tax1 tax2 ...))
+;;    ("subtotal" . n)
+;;    ("total-tax" . n)
+;;    ("grand-total" . n)
+;;    ("effective-rate" . rate-alist))
+;;
+;; The list of per-line taxes is aligned positionally with the invoice's
+;; lines (same order), so callers can pair them up if desired.
+(define (compute-invoice invoice graph overrides exemptions)
+  (let* ((jur-code   (inv-jur invoice))
+         (eff-rate   (resolve-rate graph jur-code overrides))
+         (eff-value  (rate-value eff-rate))
+         (lines      (inv-lines invoice))
+         (line-taxes (map (lambda (l) (compute-line-tax l eff-value exemptions))
+                          lines))
+         (subtotal   (fold-left + 0 (map line-amount lines)))
+         (total-tax  (fold-left + 0 line-taxes))
+         (grand      (+ subtotal total-tax)))
+    (cons (cons "line-taxes" line-taxes)
+          (cons (cons "subtotal" (from-cents (to-cents subtotal)))
+                (cons (cons "total-tax" (from-cents (to-cents total-tax)))
+                      (cons (cons "grand-total" (from-cents (to-cents grand)))
+                            (cons (cons "effective-rate" eff-rate) '())))))))

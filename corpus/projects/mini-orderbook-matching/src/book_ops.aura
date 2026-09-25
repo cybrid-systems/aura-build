@@ -1,0 +1,100 @@
+;; book_ops.aura
+;; Functional operations on the order book: adding resting orders and
+;; inspecting the best prices / top-of-book queues.
+;;
+;; The book is an alist-backed structure (see book.aura):
+;;   (ticker buyers sellers)
+;;   buyers / sellers are alists of (price . queue) entries, where queue
+;;   is a FIFO list of (id . qty) resting orders.
+;;
+;; Ordering invariants maintained here:
+;;   * buyers  sorted DESCENDING by price (best bid = head)
+;;   * sellers sorted ASCENDING  by price (best ask = head)
+;;
+;; All operations are functional: they return a new book value rather than
+;; mutating the old one.
+
+(define (find-level levels price)
+  (cond ((null? levels) #f)
+        ((= (car (car levels)) price) (car levels))
+        (else (find-level (cdr levels) price))))
+
+(define (replace-level levels price new-entry)
+  (cond ((null? levels) '())
+        ((= (car (car levels)) price)
+         (cons new-entry (cdr levels)))
+        (else
+         (cons (car levels)
+               (replace-level (cdr levels) price new-entry)))))
+
+;; Insert a level entry into a price-sorted alist.
+;; If ascending? is #t, levels are kept ascending; otherwise descending.
+(define (insert-level levels entry ascending?)
+  (cond ((null? levels) (list entry))
+        (ascending?
+         (if (< (car entry) (car (car levels)))
+             (cons entry levels)
+             (cons (car levels)
+                   (insert-level (cdr levels) entry ascending?))))
+         (else
+          (if (> (car entry) (car (car levels)))
+              (cons entry levels)
+              (cons (car levels)
+                    (insert-level (cdr levels) entry ascending?))))))
+
+;; Enqueue an (id . qty) order at the tail of the queue at the given level.
+(define (enqueue-into-level level id qty)
+  (let ((queue (cdr level)))
+    (cons (car level) (append queue (list (cons id qty))))))
+
+;; Add a resting order to the appropriate side of the book.
+;; side must be the symbol BUY or SELL.
+(define (add-resting book side price qty id)
+  (let ((ticker (car book))
+        (buyers (car (cdr book)))
+        (sellers (car (cdr (cdr book)))))
+    (cond ((eq? side 'BUY)
+           (let ((existing (find-level buyers price)))
+             (let ((new-buyers
+                    (if existing
+                        (replace-level buyers price
+                                       (enqueue-into-level existing id qty))
+                        (insert-level buyers
+                                      (cons price (list (cons id qty)))
+                                      #f))))
+               (list ticker new-buyers sellers)))
+          ((eq? side 'SELL)
+           (let ((existing (find-level sellers price)))
+             (let ((new-sellers
+                    (if existing
+                        (replace-level sellers price
+                                       (enqueue-into-level existing id qty))
+                        (insert-level sellers
+                                      (cons price (list (cons id qty)))
+                                      #t))))
+               (list ticker buyers new-sellers))))
+          (else book))))
+
+;; Best bid: the head of the buyers alist, or #f if empty.
+(define (best-bid book)
+  (let ((buyers (car (cdr book))))
+    (if (null? buyers)
+        #f
+        (car (car buyers)))))
+
+;; Best ask: the head of the sellers alist, or #f if empty.
+(define (best-ask book)
+  (let ((sellers (car (cdr (cdr book)))))
+    (if (null? sellers)
+        #f
+        (car (car sellers)))))
+
+;; Top bid: (price . queue) entry at head of buyers, or #f.
+(define (top-bid book)
+  (let ((buyers (car (cdr book))))
+    (if (null? buyers) #f (car buyers))))
+
+;; Top ask: (price . queue) entry at head of sellers, or #f.
+(define (top-ask book)
+  (let ((sellers (car (cdr (cdr book)))))
+    (if (null? sellers) #f (car sellers))))

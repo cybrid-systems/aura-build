@@ -1,0 +1,36 @@
+; oversell.aura — oversell attempt tracking and the guarded reservation entry point.
+
+; Oversell tracking is stored on the store alist under the key 'oversell-meta,
+; which is a single integer count of rejected reservation attempts.
+
+(define (oversell-meta store)
+  (let ((entry (assq 'oversell-meta store)))
+    (if entry
+        (cdr entry)
+        0)))
+
+(define (oversell-meta-set! store n)
+  (let loop ((s store) (acc '()))
+    (cond ((null? s)
+           (cons (cons 'oversell-meta n) acc))
+          ((eq? (car s) 'oversell-meta)
+           (append (reverse acc) (cons (cons 'oversell-meta n) (cdr s))))
+          (else
+           (loop (cdr s) (cons (car s) acc))))))
+
+(define (oversell-increment! store)
+  (oversell-meta-set! store (+ (oversell-meta store) 1)))
+
+(define (oversell-rejected-count store)
+  (oversell-meta store))
+
+; api-attempt-reserve — guarded reservation entry point used by the scenario.
+; Tries api-reserve; on success returns the hold; on failure (insufficient stock)
+; increments the oversell-rejected counter and returns #f.
+(define (api-attempt-reserve store sku qty now ttl-ms)
+  (let ((result (api-reserve store sku qty now ttl-ms)))
+    (if result
+        result
+        (begin
+          (oversell-increment! store)
+          #f))))

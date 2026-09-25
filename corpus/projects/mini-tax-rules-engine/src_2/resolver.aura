@@ -1,0 +1,57 @@
+;; resolver.aura -- Resolve the effective tax rate for a target jurisdiction
+;; Given a jurisdiction graph, a target jurisdiction code, and a list of
+;; overrides, traverse from the target up through ancestors, accumulate the
+;; rate components, then apply overrides to obtain the final effective rate.
+;;
+;; Traversal strategy:
+;;   - Find the target node within the graph.
+;;   - Walk its ancestors via jur-path (graph -> root).
+;;   - Sum the rate values from each node along the path to produce a base rate.
+;;   - Apply overrides that target any jurisdiction on the path.
+;;   - Return a rate object (alist) with the effective rate.
+
+(define (collect-rates-on-path path)
+  ;; path is a list of jurisdiction nodes from target up to root.
+  ;; Return a list of (code . rate-value) pairs.
+  (map (lambda (node)
+         (cons (jur-code node) (jur-rate node)))
+       path))
+
+(define (base-rate path)
+  ;; Sum all rate values along the path.
+  (let loop ((remaining path) (acc 0))
+    (cond ((null? remaining) acc)
+          (else
+           (loop (cdr remaining)
+                 (+ acc (jur-rate (car remaining))))))))
+
+(define (rules-from-path path)
+  ;; Convert path nodes into rule objects using make-rule + make-rate.
+  (map (lambda (node)
+         (make-rule (jur-code node)
+                    (make-rate (jur-code node) (jur-rate node))))
+       path))
+
+;; resolve-rate: traverse the graph to the target, compose ancestor rates
+;; into a single effective rate, and apply overrides whose target is on the path.
+(define (resolve-rate graph code overrides)
+  (let* ((node (jur-lookup graph code))
+         (path (if node
+                   (jur-path graph code)
+                   (list (make-jurisdiction code 0 '()))))
+         (br (base-rate path))
+         (rules (rules-from-path path))
+         (effective-rules (apply-overrides rules overrides)))
+    ;; Sum effective rate values across the (possibly overridden) rules.
+    (let loop ((rs effective-rules) (acc 0))
+      (cond ((null? rs) acc)
+            (else
+             (loop (cdr rs)
+                   (+ acc (rate-value (rule-rate (car rs))))))))))
+
+;; applicable-rate: same as resolve-rate but returns the effective rate as
+;; a rate object (with code = target-code) rather than a raw number, so
+;; callers that expect a rate record can use it directly.
+(define (applicable-rate graph target-code overrides)
+  (let ((effective (resolve-rate graph target-code overrides)))
+    (make-rate target-code effective)))

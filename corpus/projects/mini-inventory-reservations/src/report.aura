@@ -1,0 +1,83 @@
+; report.aura — reporting and counter accessors for the inventory reservation system.
+
+; All counters are stored as alist entries on the store under fixed keys.
+; Each entry is (cons 'counter-key . integer-value).
+;
+; Counter keys used here:
+;   'reservations-held     — count of successful reservations placed
+;   'reservations-expired  — count of holds expired by api-expire-sweep
+;   'reservations-released — count of holds released early by api-release
+;
+; Other modules (reservation, restock, oversell, concurrency) are responsible
+; for incrementing these via helpers below when their respective events happen.
+
+(define (report-meta-get store key)
+  (let ((entry (assq key store)))
+    (if entry
+        (cdr entry)
+        0)))
+
+(define (report-meta-set! store key value)
+  (let loop ((s store) (acc '()))
+    (cond ((null? s)
+           (cons (cons key value) acc))
+          ((eq? (car s) key)
+           (append (reverse acc) (cons (cons key value) (cdr s))))
+          (else
+           (loop (cdr s) (cons (car s) acc))))))
+
+; Increment helpers — exposed for use by other modules.
+(define (report-increment-held! store)
+  (report-meta-set! store
+                    'reservations-held
+                    (+ (report-meta-get store 'reservations-held) 1)))
+
+(define (report-increment-expired! store)
+  (report-meta-set! store
+                    'reservations-expired
+                    (+ (report-meta-get store 'reservations-expired) 1)))
+
+(define (report-increment-released! store)
+  (report-meta-set! store
+                    'reservations-released
+                    (+ (report-meta-get store 'reservations-released) 1)))
+
+; ---- Public reporting API (per Module table) ----
+
+; Number of successfully placed reservations.
+(define (api-reservations-held store)
+  (report-meta-get store 'reservations-held))
+
+; Number of holds expired via the TTL sweep.
+(define (api-reservations-expired store)
+  (report-meta-get store 'reservations-expired))
+
+; Number of holds released early (cancellation).
+(define (api-reservations-released store)
+  (report-meta-get store 'reservations-released))
+
+; Total reservation attempts considered = held + oversell-rejected.
+; (Expired and released are not new attempts; they are dispositions of holds.)
+(define (api-reservations-total store)
+  (+ (api-reservations-held store)
+     (oversell-rejected-count store)))
+
+; Current stock for a given SKU (0 if unseen).
+(define (api-stock-of store sku)
+  (let ((n (store-stock store sku)))
+    (if (number? n) n 0)))
+
+; Final count of active holds.
+; If 'sku is given as a second argument, count only that SKU's active holds;
+; otherwise count all active holds in the system.
+(define (api-final-active-holds store . opt-sku)
+  (let ((holds (store-holds store)))
+    (if (null? opt-sku)
+        (length holds)
+        (let ((target-sku (car opt-sku)))
+          (length (filter (lambda (h) (equal? (hold-sku h) target-sku))
+                          holds))))))
+
+; Total number of entries in the ledger.
+(define (api-ledger-entries store)
+  (length (store-ledger store)))

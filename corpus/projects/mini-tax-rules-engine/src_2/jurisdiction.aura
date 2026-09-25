@@ -1,0 +1,67 @@
+;; jurisdiction.aura -- Jurisdiction tree helpers
+;; A jurisdiction is an alist:
+;;   (("code" . "SF") ("rate" . 0.01) ("children" . ((("code" . "D1") ...) ...)))
+;; A graph is an alist of jurisdictions keyed by code (head-of-list element).
+
+(define (make-jurisdiction code rate children)
+  (cons (cons "code" code)
+        (cons (cons "rate" rate)
+              (cons (cons "children" children) '()))))
+
+(define (jur-code j)
+  (cdr (assq "code" j)))
+
+(define (jur-rate j)
+  (cdr (assq "rate" j)))
+
+(define (jur-children j)
+  (cdr (assq "children" j)))
+
+;; Look up a jurisdiction node by code within a jurisdiction value
+;; (returns the inner node alist, or #f).
+(define (jur-find-node node code)
+  (cond ((null? node) #f)
+        ((equal? (cdr (assq "code" node)) code) node)
+        (else
+         (let loop ((kids (jur-children node)))
+           (cond ((null? kids) #f)
+                 (else
+                  (let ((found (jur-find-node (car kids) code)))
+                    (if found found (loop (cdr kids))))))))))
+
+;; Public lookup: find jurisdiction in graph by code.
+(define (jur-lookup graph code)
+  (cond ((null? graph) #f)
+        (else
+         (let ((head (car graph)))
+           (cond ((equal? (jur-code head) code) head)
+                 (else
+                  (let ((found (jur-find-node head code)))
+                    (if found found (jur-lookup (cdr graph) code)))))))))
+
+;; Walk up the graph to collect (code, rate) pairs from country down to target.
+;; Returns an alist of entries: (("code" . "X") ("rate" . r)).
+(define (jur-collect-path node code acc)
+  (cond ((null? node) #f)
+        ((equal? (cdr (assq "code" node)) code)
+         (cons (cons "code" (cdr (assq "code" node)))
+               (cons (cons "rate" (cdr (assq "rate" node))) acc)))
+        (else
+         (let loop ((kids (jur-children node)))
+           (cond ((null? kids) #f)
+                 (else
+                  (let ((res (jur-collect-path (car kids) code acc)))
+                    (if res
+                        res
+                        (loop (cdr kids))))))))))
+
+;; Build path from country-level jurisdiction down to target code.
+;; We try each top-level jurisdiction in the graph as a possible root.
+(define (jur-path graph code)
+  (let loop ((gs graph) (acc '()))
+    (cond ((null? gs) #f)
+          (else
+            (let ((res (jur-collect-path (car gs) code acc)))
+              (if res
+                  res
+                  (loop (cdr gs) acc)))))))

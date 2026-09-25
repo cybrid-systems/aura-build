@@ -1,0 +1,99 @@
+(define (api eligible-promotions cart registry)
+  (filter-eligible cart registry))
+
+(define (api excluded-promotions cart registry eligible)
+  (compute-excluded registry eligible))
+
+(define (filter-eligible cart registry)
+  (cond
+    ((null? registry) '())
+    ((promotion-eligible? cart (car registry))
+     (cons (car registry) (filter-eligible cart (cdr registry))))
+    (else (filter-eligible cart (cdr registry)))))
+
+(define (compute-excluded registry eligible)
+  (cond
+    ((null? registry) '())
+    ((in-eligible? (car registry) eligible)
+     (compute-excluded (cdr registry) eligible))
+    (else
+      (let ((rest (compute-excluded (cdr registry) eligible)))
+        (if (mutual-exclusion? (car registry) eligible)
+            (cons (car registry) rest)
+            rest)))))
+
+(define (mutual-exclusion? promo eligible)
+  (cond
+    ((null? eligible) #f)
+    ((or (excludes-pair? promo (car eligible))
+         (excludes-pair? (car eligible) promo))
+     #t)
+    (else (mutual-exclusion? promo (cdr eligible)))))
+
+(define (excludes-pair? a b)
+  (let ((code-a (api promotion-code a))
+        (code-b (api promotion-code b)))
+    (and (not (equal? code-a code-b))
+         (api promotion-excludes? a code-b))))
+
+(define (promotion-eligible? cart promo)
+  (let ((kind (api promotion-kind promo)))
+    (cond
+      ((equal? kind 'percent) (percent-eligible? cart promo))
+      ((equal? kind 'fixed) (fixed-eligible? cart promo))
+      ((equal? kind 'bxgy) (bxgy-eligible? cart promo))
+      ((equal? kind 'threshold) (threshold-eligible? cart promo))
+      (else #t))))
+
+(define (percent-eligible? cart promo)
+  (let ((params (api promotion-params promo)))
+    (cond
+      ((null? params) #t)
+      ((and (equal? (car params) 'category)
+            (not (null? (cdr params))))
+       (cart-has-category? cart (car (cdr params))))
+      (else #t))))
+
+(define (cart-has-category? cart category)
+  (cond
+    ((null? cart) #f)
+    (else #t)))
+
+(define (fixed-eligible? cart promo)
+  (let ((params (api promotion-params promo)))
+    (cond
+      ((null? params) #t)
+      ((and (equal? (car params) 'min-subtotal)
+            (not (null? (cdr params))))
+       (>= (api cart-subtotal cart *current-catalog*) (car (cdr params))))
+      (else #t))))
+
+(define *current-catalog* '())
+
+(define (bxgy-eligible? cart promo)
+  (let ((params (api promotion-params promo)))
+    (cond
+      ((null? params) #t)
+      ((and (equal? (car params) 'category)
+            (not (null? (cdr params))))
+       (cart-has-category? cart (car (cdr params))))
+      (else #t))))
+
+(define (threshold-eligible? cart promo)
+  (let ((params (api promotion-params promo)))
+    (cond
+      ((null? params) #t)
+      ((and (equal? (car params) 'min-subtotal)
+            (not (null? (cdr params))))
+       (>= (api cart-subtotal cart *current-catalog*) (car (cdr params))))
+      (else #t))))
+
+(define (in-eligible? promo eligible)
+  (cond
+    ((null? eligible) #f)
+    ((equal? (api promotion-code promo) (api promotion-code (car eligible)))
+     #t)
+    (else (in-eligible? promo (cdr eligible)))))
+
+(define (set-catalog! cat)
+  (set! *current-catalog* cat))

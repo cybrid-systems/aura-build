@@ -1,0 +1,72 @@
+; scenario.aura — scripted scenario driving the inventory reservation system.
+;
+; Exports:
+;   (run-scenario store) — runs the deterministic script and returns the final store.
+
+; Helper: seed the store with initial stock for SKUs.
+(define (scenario-initial-stock! store seed)
+  ; seed is an alist of (sku-symbol . units)
+  (let loop ((s seed))
+    (if (null? s)
+        store
+        (let ((pair (car s)))
+          (store-set-stock! store (car pair) (cdr pair))
+          (loop (cdr s))))))
+
+; Helper: set the clock to an absolute time (in ms).
+(define (scenario-set-clock! ms)
+  (set-clock! ms))
+
+; Helper: run the reserve happy path (step 1).
+; Calls api-attempt-reserve from oversell.aura to count oversells.
+(define (scenario-step1 store)
+  (api-attempt-reserve store 'SKU_A 5 1000 500)
+  (api-attempt-reserve store 'SKU_A 5 1000 500)
+  (api-attempt-reserve store 'SKU_B 3 1000 500))
+
+; Helper: TTL expiry sweep (step 2).
+; Advance the clock past the first hold's expiry, then sweep.
+(define (scenario-step2 store)
+  (advance-ms! 600)         ; now becomes 1600
+  (api-expire-sweep store 1600))
+
+; Helper: cancel/release a still-active hold (step 3).
+; After step 1+2 we hold: one active SKU_A hold (qty 5), one active SKU_B hold (qty 3).
+; After step 2 the first SKU_A hold expired and was returned to stock.
+; We release the SKU_B hold by looking up an active hold id.
+(define (scenario-step3 store)
+  (let ((active-holds (api-active-holds store 'SKU_B)))
+    (if (null? active-holds)
+        store
+        (let ((h (car active-holds)))
+          (api-release store (hold-id h))))))
+
+; Helper: restock events (step 4 — first half).
+(define (scenario-step4 store)
+  (api-restock store 'SKU_A 10 'shipment 1700)
+  (api-restock store 'SKU_B 3  'return    1700)
+  (api-restock store 'SKU_C 2  'audit     1700))
+
+; Helper: run-scenario — drives the full script and returns the final store.
+(define (run-scenario store)
+  ; Initial seeding
+  (scenario-initial-stock! store
+                            (list (cons 'SKU_A 40)
+                                  (cons 'SKU_B 10)
+                                  (cons 'SKU_C 5)))
+  ; Set clock to 1000
+  (scenario-set-clock! 1000)
+
+  ; Step 1: reserve happy path
+  (scenario-step1 store)
+
+  ; Step 2: TTL expiry sweep
+  (scenario-step2 store)
+
+  ; Step 3: cancel/release
+  (scenario-step3 store)
+
+  ; Step 4: restock events
+  (scenario-step4 store)
+
+  store)

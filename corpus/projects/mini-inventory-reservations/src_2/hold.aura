@@ -1,0 +1,41 @@
+;; hold.aura — Hold record constructors and accessors.
+;;
+;; A hold represents a time-limited reservation of N units of a given SKU.
+;; It is an immutable list (Aura has no record/struct types), tagged so the
+;; accessors below can pull the fields out by position. The fields are:
+;;
+;;   tag       : the symbol 'hold (so we can recognise hold records)
+;;   id        : a unique integer identifier assigned at creation
+;;   sku       : the SKU symbol the hold is against
+;;   qty       : the number of units reserved
+;;   expires-at: absolute clock value (ms) at which the hold expires
+;;   created-at: absolute clock value (ms) when the hold was created
+;;
+;; These records are stored inside the store's 'holds alist (see
+;; state.aura). Mutation of the store is handled by the state module;
+;; here we only build and inspect the records.
+
+(define (make-hold id sku qty ttl-ms created-at)
+  ;; expires-at is computed from the creation moment + TTL.
+  (list 'hold id sku qty (+ created-at ttl-ms) created-at))
+
+(define (hold-id h)
+  ;; cadr skips the 'hold tag, then takes the id field.
+  (car (cdr h)))
+
+(define (hold-sku h)
+  ;; Third element of the record (after tag and id).
+  (car (cdr (cdr h))))
+
+(define (hold-qty h)
+  ;; Fourth element of the record.
+  (car (cdr (cdr (cdr h)))))
+
+(define (hold-expires-at h)
+  ;; Fifth element: absolute expiry timestamp in ms.
+  (car (cdr (cdr (cdr (cdr h))))))
+
+(define (hold-expired? h now)
+  ;; A hold is expired when the current clock is at or past its expiry.
+  ;; We use >= so that sweeping at exactly the expiry moment still counts.
+  (>= now (hold-expires-at h)))

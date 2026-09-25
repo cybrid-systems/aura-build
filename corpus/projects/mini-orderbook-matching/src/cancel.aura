@@ -1,0 +1,75 @@
+;; cancel.aura
+;; Cancel an existing resting order from the book by id.
+;;
+;; Public API:
+;;   (cancel-order book idmap id)
+;;     -> (values new-book new-idmap cancelled? removed-qty)
+;;
+;; `cancelled?`  is #t when the id was found and removed, #f otherwise.
+;; `removed-qty` is the resting quantity that was sitting at that id (0 if
+;; the order was not present, or the qty that was removed when present).
+;;
+;; Implementation notes:
+;;   * The book is (ticker buyers sellers) where each side is an alist of
+;;     (price . queue) entries, and each queue is a FIFO list of
+;;     (id . qty) resting orders (see book_ops.aura / queue.aura).
+;;   * We must scan BOTH sides of the book because we don't know which
+;;     side the id lives on. The scan is O(L) where L is total resting
+;;     order count across both sides — fine for the toy engine.
+;;   * For each side, we walk the alist. When we find a matching (price . q)
+;;     level, we rebuild its queue without the id. If the rebuilt queue is
+;;     empty we drop the price level entirely (keeps the book tidy).
+;;   * If neither side contains the id, the book and idmap are returned
+;;     unchanged and cancelled? is #f.
+;;   * On success, the id is removed from the idmap so future cancels /
+;;     modifications of the same id are no-ops.
+
+(define (cancel-from-queue q id)
+  (cond ((null? q) '())
+        ((equal? (car (car q)) id)
+         (cdr q))
+        (else (cons (car q) (cancel-from-queue (cdr q) id)))))
+
+(define (remove-id-from-side side id)
+  (cond ((null? side) '())
+        (else
+         (let* ((level (car side))
+                (price (car level))
+                (queue (cdr level))
+                (new-queue (cancel-from-queue queue id)))
+           (if (null? new-queue)
+               (remove-id-from-side (cdr side) id)
+               (cons (cons price new-queue)
+                     (remove-id-from-side (cdr side) id)))))))
+
+(define (find-qty-in-queue q id)
+  (cond ((null? q) 0)
+        ((equal? (car (car q)) id) (cdr (car q)))
+        (else (find-qty-in-queue (cdr q) id))))
+
+(define (find-qty-in-side side id)
+  (cond ((null? side) 0)
+        (else
+         (let ((qty (find-qty-in-queue (cdr (car side)) id)))
+           (if (> qty 0)
+               qty
+               (find-qty-in-side (cdr side) id))))))
+
+(define (cancel-order book idmap id)
+  (let* ((ticker (car book))
+         (buyers (car (cdr book)))
+         (sellers (cdr (cdr book)))
+         (qty-buyers (find-qty-in-side buyers id))
+         (qty-sellers (find-qty-in-side sellers id))
+         (total-qty (+ qty-buyers qty-sellers)))
+    (if (= total-qty 0)
+        (values book idmap #f 0)
+        (if (> qty-buyers 0)
+            (values (list ticker (remove-id-from-side buyers id) sellers)
+                    (idmap-remove idmap id)
+                    #t
+                    qty-buyers)
+            (values (list ticker buyers (remove-id-from-side sellers id))
+                    (idmap-remove idmap id)
+                    #t
+                    qty-sellers)))))

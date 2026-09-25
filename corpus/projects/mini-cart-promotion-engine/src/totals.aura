@@ -1,0 +1,21 @@
+;; totals.aura — compute subtotal, discount stack, and final totals
+
+;; Compute cart subtotal in cents via cart-subtotal
+(define (api compute-subtotal cart catalog)
+  (cart-subtotal cart catalog))
+
+;; Sum all discounts from the stacked promotion list
+(define (api compute-discount cart stacked)
+  (sum-discounts cart stacked))
+
+(define (sum-discounts cart stacked)
+  (cond
+    ((null? stacked) 0)
+    (else
+      (+ (eval-promotion cart (car stacked))
+         (sum-discounts cart (cdr stacked))))))
+
+;; Compute final total: subtotal minus discount (never below zero)
+(define (api compute-final subtotal discount)
+  (let ((net (- subtotal discount)))
+    (if (< net 0) 0 net)))

@@ -1,0 +1,29 @@
+;; idmap.aura
+;; Tracks which order ids are currently live in the book.
+;;
+;; An idmap is represented as a plain list of registered id strings.
+;; It supports register, remove, membership check, and count operations.
+;; All operations are functional: they return new idmap values rather
+;; than mutating the old one (matching the style of book_ops.aura).
+
+(define (make-idmap)
+  '())
+
+(define (idmap-register m id)
+  (if (member id m)
+      m
+      (cons id m)))
+
+(define (idmap-remove m id)
+  (cond ((null? m) '())
+        ((equal? (car m) id) (cdr m))
+        (else (cons (car m) (idmap-remove (cdr m) id)))))
+
+(define (idmap-has? m id)
+  (cond ((null? m) #f)
+        ((equal? (car m) id) #t)
+        (else (idmap-has? (cdr m) id))))
+
+(define (idmap-count m)
+  (cond ((null? m) 0)
+        (else (+ 1 (idmap-count (cdr m))))))

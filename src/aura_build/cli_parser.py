@@ -520,6 +520,15 @@ def build_parser() -> argparse.ArgumentParser:
     _opt(cg_burn, "--temperatures", default="0.3,0.7,0.95")
     _opt(cg_burn, "--limit", type=int, default=None, help="max problems this invocation")
     _opt(cg_burn, "--continuous", action="store_true", help="extend catalog / bump variants forever")
+    _opt(
+        cg_burn,
+        "--domains",
+        default=None,
+        help=(
+            "projects track only: comma-separated domains, or 'business' "
+            "(commerce,ledgers,event_sourcing,matching). Skips other backlog."
+        ),
+    )
     _opt(cg_burn, "--catalog-extend", type=int, default=40)
     _opt(
         cg_burn,

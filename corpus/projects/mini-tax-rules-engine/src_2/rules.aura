@@ -1,0 +1,30 @@
+;; rules.aura -- Rule helpers
+;; A rule binds a jurisdiction code to a rate object.
+;; Represented as an alist: (("jur" . "SF") ("rate" . <rate-alist>))
+;; Used by resolver to compose multiple jurisdiction rates along a path.
+
+(define (make-rule jur-code rate)
+  (cons (cons "jur" jur-code)
+        (cons (cons "rate" rate) '())))
+
+(define (rule-jur r)
+  (cdr (assq "jur" r)))
+
+(define (rule-rate r)
+  (cdr (assq "rate" r)))
+
+;; Merge two rule lists. When both lists contain a rule for the same
+;; jurisdiction code, the rule from list b takes precedence (override).
+;; Otherwise, concatenate and dedupe by jurisdiction code.
+(define (merge-rules a b)
+  (let ((codes-a (map rule-jur a)))
+    (append
+      ;; Keep a's rules whose codes are not in b
+      (filter (lambda (r) (not (member (rule-jur r) (map rule-jur b)))) a)
+      ;; All of b's rules (they override any same-coded rule from a)
+      b)))
+
+(define (filter pred lst)
+  (cond ((null? lst) '())
+        ((pred (car lst)) (cons (car lst) (filter pred (cdr lst))))
+        (else (filter pred (cdr lst)))))

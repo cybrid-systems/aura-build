@@ -1,0 +1,77 @@
+; exemption.aura
+; Exemption objects reduce or eliminate tax for a given invoice line.
+; An exemption is represented as a list:
+;   (code kind amount predicates)
+;     code       - string identifier (e.g. "FOOD", "BOOKS")
+;     kind       - symbol/string describing the exemption kind.
+;                  Recognised kinds:
+;                    "FULL"   -> remove all tax from the line
+;                    "HALF"   -> remove half the tax
+;                    "FIXED"  -> remove a fixed amount from the tax
+;                    "PERCENT"-> remove a percentage of the tax
+;     amount     - numeric amount associated with the kind
+;                  (cents for FIXED, fraction for HALF/PERCENT e.g. 0.5)
+;     predicates - list of (key . value) pairs that must all match
+;                  the line for the exemption to apply.
+;                  Recognised keys:
+;                    "category" -> matches (line-category l)
+;                    "id"       -> matches (line-id l)
+;                    "exempt"   -> matches (line-exempt? l)
+;
+; (apply-exemptions line taxable exemptions)
+;   taxable    - tax amount computed for the line before exemption
+;   exemptions - list of exemption objects
+;   Returns the reduced tax amount after applying every exemption
+;   whose predicates all match the line.
+
+(define (make-exemption code kind amount predicates)
+  (list code kind amount predicates))
+
+(define (ex-code e) (car e))
+(define (ex-kind e) (cadr e))
+(define (ex-amount e) (caddr e))
+(define (ex-preds e) (cadddr e))
+
+; Look up a predicate value in the line by key.
+(define (line-key-value line key)
+  (cond ((null? line) #f)
+        ((equal? (car line) key) (cdr line))
+        (else (line-key-value (cdr line) key))))
+
+; Check whether a single (key . expected) pair matches the line.
+(define (pred-matches? pair line)
+  (let ((k (car pair))
+        (v (cdr pair)))
+    (let ((actual (line-key-value line k)))
+      (cond ((equal? actual #f) #f)
+            ((number? v) (= (if (number? actual) actual 0) v))
+            ((string? v) (string=? (if (string? actual) actual "") v))
+            (else (equal? actual v))))))
+
+; (ex-matches? e line) -> #t iff every predicate of e matches the line.
+(define (ex-matches? e line)
+  (let ((preds (ex-preds e)))
+    (cond ((null? preds) #t)
+          ((pred-matches? (car preds) line)
+           (ex-matches? (make-exemption (ex-code e) (ex-kind e) (ex-amount e) (cdr preds)) line))
+          (else #f))))
+
+; Apply one exemption to a tax amount.
+(define (apply-one-exemption kind amount taxable)
+  (cond ((equal? kind "FULL") 0)
+        ((equal? kind "HALF") (- taxable (* taxable amount)))
+        ((equal? kind "FIXED") (- taxable amount))
+        ((equal? kind "PERCENT") (- taxable (* taxable amount)))
+        (else taxable)))
+
+; (apply-exemptions line taxable exemptions)
+; Walks the exemption list; whenever an exemption matches the line,
+; subtracts its effect from the running tax total.
+(define (apply-exemptions line taxable exemptions)
+  (cond ((null? exemptions) taxable)
+        (else
+         (let ((e (car exemptions)))
+           (let ((rest (apply-exemptions line taxable (cdr exemptions))))
+             (if (ex-matches? e line)
+                 (apply-one-exemption (ex-kind e) (ex-amount e) rest)
+                 rest))))))

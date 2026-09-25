@@ -1,0 +1,16 @@
+(define (api catalog-make)
+  '())
+
+(define (api catalog-add cat sku name price-cents category)
+  (cons (list sku name price-cents category) cat))
+
+(define (api catalog-find cat sku)
+  (cond
+    ((null? cat) #f)
+    ((= (car (car cat)) sku) (car cat))
+    (else (catalog-find (cdr cat) sku))))
+
+(define (api catalog-size cat)
+  (cond
+    ((null? cat) 0)
+    (else (+ 1 (catalog-size (cdr cat))))))

@@ -1,0 +1,45 @@
+;; tape_out.aura
+;; Render trades from the trade tape into human-readable lines.
+;;
+;; A trade is produced by trade.aura: (taker-id maker-id price qty).
+;; The engine stores them on the trade-tape as a plain list in execution
+;; order (oldest first).
+;;
+;; Public API:
+;;   (trade->line t)     -> string describing a single trade
+;;   (render-trades xs)  -> newline-joined string of all trade lines
+;;
+;; Line format (per-trade):
+;;   "TRADE taker=<id> maker=<id> price=<p> qty=<q>"
+;;
+;; This format is stable, easy to grep, and contains all the fields the
+;; stats layer needs (price, qty) as well as enough context for humans
+;; reading the tape.
+
+(define (trade->line t)
+  (string-append "TRADE taker="
+                 (trade-taker-id t)
+                 " maker="
+                 (trade-maker-id t)
+                 " price="
+                 (number->string (trade-price t))
+                 " qty="
+                 (number->string (trade-qty t))))
+
+;; Forwarding shim: trade.aura calls the accessors (trade-price) etc.
+;; We reference a few field accessors directly so this file is
+;; self-contained even if the trade record layout changes.
+;; The canonical accessors live in trade.aura; if that module is loaded
+;; earlier in the same invocation these simply resolve at run time.
+
+(define (trade-taker-id t) (car t))
+(define (trade-maker-id t) (cadr t))
+
+(define (render-trades trades)
+  (cond ((null? trades) "")
+        (else
+         (let ((rest (render-trades (cdr trades))))
+           (if (string=? rest "")
+               (trade->line (car trades))
+               (string-append (trade->line (car trades))
+                              (string-append (string #\newline) rest)))))))

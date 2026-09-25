@@ -1,0 +1,85 @@
+; main.aura
+; Scenario driver for the mini-tax-rules-engine.
+; Loads sample data via module APIs, resolves the effective rate
+; for the invoice jurisdiction, computes per-line tax, sums totals,
+; and prints KEY=value lines in the exact order required by the
+; stdout contract.
+
+(define (sum-lines lines)
+  ; sum of line-amount across a list of line objects
+  (cond ((null? lines) 0)
+        (else (+ (line-amount (car lines))
+                 (sum-lines (cdr lines))))))
+
+(define (sum-list xs)
+  (cond ((null? xs) 0)
+        (else (+ (car xs) (sum-list (cdr xs))))))
+
+(define (compute-taxes invoice rate exemptions)
+  ; Returns list of (id . tax-cents) pairs.
+  (cond ((null? (inv-lines invoice)) '())
+        (else
+         (let ((ln (car (inv-lines invoice))))
+           (cons (cons (line-id ln)
+                       (compute-line-tax ln rate exemptions))
+                 (compute-taxes
+                   (make-invoice (cdr (inv-lines invoice))
+                                 (inv-jur invoice))
+                   rate exemptions))))))
+
+(define (print-key-value key value)
+  (display key)
+  (display "=")
+  (display value)
+  (newline))
+
+(define (run-scenario)
+  (let* ((graph      (sample-graph))
+         (overrides  (sample-overrides))
+         (exemptions (sample-exemptions))
+         (invoice    (sample-invoice))
+         (jur        (inv-jur invoice))
+         (rate       (resolve-rate graph jur overrides))
+         (taxes      (compute-taxes invoice rate exemptions))
+         (subtotal   (sum-lines (inv-lines invoice)))
+         (total-tax  (sum-list (map cdr taxes)))
+         (grand      (+ subtotal total-tax)))
+    ; Header / metadata keys
+    (print-key-value "JURISDICTION" jur)
+    (print-key-value "RATE"         (fmt-money rate))
+    ; Per-line amounts
+    (print-key-value "LINE_BOOKS_AMOUNT"  (fmt-money (line-amount (car (inv-lines invoice)))))
+    (print-key-value "LINE_FOOD_AMOUNT"   (fmt-money (line-amount (cadr (inv-lines invoice)))))
+    (print-key-value "LINE_TOY_AMOUNT"    (fmt-money (line-amount (caddr (inv-lines invoice)))))
+    (print-key-value "LINE_MEDS_AMOUNT"   (fmt-money (line-amount (cadddr (inv-lines invoice)))))
+    ; Per-line taxes
+    (print-key-value "LINE_BOOKS_TAX"  (fmt-money (cdr (assq (string->symbol "BOOKS")
+                                                            (map (lambda (t)
+                                                                   (cons (string->symbol (car t))
+                                                                         (cdr t)))
+                                                                 taxes)))))
+    (print-key-value "LINE_FOOD_TAX"   (fmt-money (cdr (assq (string->symbol "FOOD")
+                                                            (map (lambda (t)
+                                                                   (cons (string->symbol (car t))
+                                                                         (cdr t)))
+                                                                 taxes)))))
+    (print-key-value "LINE_TOY_TAX"    (fmt-money (cdr (assq (string->symbol "TOY")
+                                                            (map (lambda (t)
+                                                                   (cons (string->symbol (car t))
+                                                                         (cdr t)))
+                                                                 taxes)))))
+    (print-key-value "LINE_MEDS_TAX"   (fmt-money (cdr (assq (string->symbol "MEDS")
+                                                            (map (lambda (t)
+                                                                   (cons (string->symbol (car t))
+                                                                         (cdr t)))
+                                                                 taxes)))))
+    ; Totals
+    (print-key-value "SUBTOTAL" (fmt-money subtotal))
+    (print-key-value "TAX"      (fmt-money total-tax))
+    (print-key-value "TOTAL"    (fmt-money grand))
+    ; Invoice line count for completeness
+    (print-key-value "LINE_COUNT" (number->string (length (inv-lines invoice))))
+    ; Effective rate breakdown keys (for transparency)
+    (print-key-value "EFFECTIVE_RATE" (fmt-money rate))))
+
+(run-scenario)

@@ -1,0 +1,154 @@
+;; evaluator.aura — evaluate individual promotions and dispatch
+
+;; Helper: look up a promotion param by key from a plist-like params list
+(define (eval-param params key default)
+  (cond
+    ((null? params) default)
+    ((equal? (car params) key) (car (cdr params)))
+    (else (eval-param (cdr (cdr params)) key default))))
+
+;; Helper: extract all params from a promotion
+(define (promo-params p)
+  (car (cdr (cdr p))))
+
+;; Helper: sum quantity of cart lines whose SKU is in given category
+(define (cart-category-qty cart catalog category)
+  (cond
+    ((null? cart) 0)
+    (else
+      (+ (line-category-qty (car cart) catalog category)
+         (cart-category-qty (cdr cart) catalog category)))))
+
+(define (line-category-qty line catalog category)
+  (let ((entry (catalog-find catalog (car line))))
+    (if (and entry (equal? (cadr (cdr (cdr entry))) category))
+        (cadr line)
+        0)))
+
+;; Helper: compute subtotal of cart lines in given category
+(define (cart-category-subtotal cart catalog category)
+  (cond
+    ((null? cart) 0)
+    (else
+      (+ (line-category-subtotal (car cart) catalog category)
+         (cart-category-subtotal (cdr cart) catalog category)))))
+
+(define (line-category-subtotal line catalog category)
+  (let ((entry (catalog-find catalog (car line))))
+    (if (and entry (equal? (cadr (cdr (cdr entry))) category))
+        (* (cadr entry) (cadr line))
+        0)))
+
+;; Percent-off evaluation
+;; params: (percent N) optionally (scope category)
+;; returns discount cents = subtotal-of-scope * N / 100
+(define (api eval-percent cart promo)
+  (let ((params (promo-params promo))
+        (catalog (eval-lookup-catalog)))
+    (let ((pct (eval-param params 'percent 0))
+          (scope (eval-param params 'scope 'all)))
+      (let ((base (if (equal? scope 'all)
+                      (compute-cart-subtotal-helper cart catalog)
+                      (cart-category-subtotal cart catalog scope))))
+        (quotient (* base pct) 100)))))
+
+;; Fixed-amount-off evaluation
+;; params: (amount N) (min-subtotal N)
+(define (api eval-fixed cart promo)
+  (let ((params (promo-params promo))
+        (catalog (eval-lookup-catalog)))
+    (let ((amount (eval-param params 'amount 0))
+          (min-sub (eval-param params 'min-subtotal 0))
+          (sub (compute-cart-subtotal-helper cart catalog)))
+      (if (>= sub min-sub) amount 0))))
+
+;; Buy-X-get-Y evaluation
+;; params: (buy N) (get N) (category cat)
+;; cheapest free unit(s) in category priced at catalog price
+(define (api eval-bxgy cart promo)
+  (let ((params (promo-params promo))
+        (catalog (eval-lookup-catalog)))
+    (let ((buy-n (eval-param params 'buy 0))
+          (get-n (eval-param params 'get 0))
+          (category (eval-param params 'category 'all)))
+      (let ((qty (if (equal? category 'all)
+                     (cart-total-qty cart)
+                     (cart-category-qty cart catalog category))))
+        (let ((sets (quotient qty (+ buy-n get-n)))
+              (unit-price (cheapest-unit-price cart catalog category)))
+          (* sets get-n unit-price))))))
+
+;; Threshold discount evaluation
+;; params: (amount N) (min-subtotal N)
+;; returns amount if subtotal > min-subtotal, else 0
+(define (api eval-threshold cart promo)
+  (let ((params (promo-params promo))
+        (catalog (eval-lookup-catalog)))
+    (let ((amount (eval-param params 'amount 0))
+          (min-sub (eval-param params 'min-subtotal 0))
+          (sub (compute-cart-subtotal-helper cart catalog)))
+      (if (> sub min-sub) amount 0))))
+
+;; Dispatch by promotion kind
+(define (api eval-promotion cart promo)
+  (let ((kind (promotion-kind promo)))
+    (cond
+      ((equal? kind 'percent) (api eval-percent cart promo))
+      ((equal? kind 'fixed) (api eval-fixed cart promo))
+      ((equal? kind 'bxgy) (api eval-bxgy cart promo))
+      ((equal? kind 'threshold) (api eval-threshold cart promo))
+      (else 0))))
+
+;; Helper: total quantity across cart
+(define (cart-total-qty cart)
+  (cond
+    ((null? cart) 0)
+    (else (+ (cadr (car cart)) (cart-total-qty (cdr cart))))))
+
+;; Helper: cheapest unit price in given category (or all)
+(define (cheapest-unit-price cart catalog category)
+  (let ((prices (collect-prices cart catalog category)))
+    (if (null? prices)
+        0
+        (cheapest prices 999999999))))
+
+(define (collect-prices cart catalog category)
+  (cond
+    ((null? cart) '())
+    (else
+      (let ((entry (catalog-find catalog (car (car cart)))))
+        (if (and entry (or (equal? category 'all)
+                           (equal? (cadr (cdr (cdr entry))) category)))
+            (cons (cadr entry) (collect-prices (cdr cart) catalog category))
+            (collect-prices (cdr cart) catalog category))))))
+
+(define (cheapest xs best)
+  (cond
+    ((null? xs) best)
+    ((< (car xs) best) (cheapest (cdr xs) (car xs)))
+    (else (cheapest (cdr xs) best))))
+
+;; Helper: cart subtotal (duplicates cart-subtotal to avoid circular load issues)
+(define (compute-cart-subtotal-helper cart catalog)
+  (cond
+    ((null? cart) 0)
+    (else
+      (+ (compute-line-subtotal (car cart) catalog)
+         (compute-cart-subtotal-helper (cdr cart) catalog)))))
+
+(define (compute-line-subtotal line catalog)
+  (let ((entry (catalog-find catalog (car line))))
+    (if entry
+        (* (cadr entry) (cadr line))
+        0)))
+
+;; Catalog lookup: a registry-like global. Since Aura has no module state,
+;; evaluator functions accept catalog implicitly via closure not available.
+;; We use a globally mutable list to hold the current catalog reference.
+(define *eval-catalog* '())
+
+(define (api eval-set-catalog cat)
+  (set! *eval-catalog* cat))
+
+(define (eval-lookup-catalog)
+  *eval-catalog*)

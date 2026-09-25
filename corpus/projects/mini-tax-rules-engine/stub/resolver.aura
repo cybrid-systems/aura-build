@@ -1,0 +1,68 @@
+; resolver.aura
+; Resolves the effective rate applicable to a target jurisdiction by:
+;   1. Walking the jurisdiction graph from the target up to the root,
+;      collecting rate codes attached at each node along the way.
+;   2. Looking up each collected rate code in a shared rates alist (passed
+;      in via overrides for now; here we just rebuild rules from the
+;      rates alist that is part of the graph context).
+;
+; For this mini engine we follow the scenario exactly:
+;   - rates live in the jurisdiction nodes as "rate codes" that name
+;     rate entries.  We assume the graph has a global rates alist accessible
+;     through overrides context (simplified: codes like "BASE_RATE",
+;     "STATE_RATE", "CITY_RATE" map to numeric values via the override list).
+;
+; To keep things pure and aligned with the API spec, we accept a list of
+; rate-objects ((code . value) ...) as a parameter, but for compatibility
+; we recover the rates alist from the override list itself by looking at
+; override entries that carry a "RATE" field.  For the simpler case used
+; by the scenario, the jurisdiction graph encodes rate values directly
+; (not codes).  We therefore support both styles by inspecting the first
+; jurisdiction: if its rate field is a number we use numbers directly,
+; if it is a string we resolve via a rates alist held in the closure.
+
+(define (resolve-rate graph target-code overrides)
+  ; Build the path of jurisdictions from root -> ... -> target.
+  (let ((path (jur-path graph target-code)))
+    ; Collect (jur-code . rate) entries for every node that has a rate.
+    (let loop ((nodes path) (acc '()))
+      (cond ((null? nodes)
+             ; Apply overrides to the collected rules.
+             (apply-overrides (reverse acc) overrides))
+            ((null? (jur-rate (car nodes))) (loop (cdr nodes) acc))
+            (else
+             (loop (cdr nodes)
+                   (cons (make-rule (jur-code (car nodes))
+                                    (jur-rate (car nodes)))
+                         acc)))))))
+
+(define (applicable-rate graph target-code overrides)
+  ; Returns the numeric effective rate value for a target jurisdiction.
+  ; Sums all rates along the path, then applies overrides.
+  (let ((base-rates
+         (let ((path (jur-path graph target-code)))
+           (let loop ((nodes path) (acc 0))
+             (cond ((null? nodes) acc)
+                  ((null? (jur-rate (car nodes)))
+                   (loop (cdr nodes) acc))
+                  (else
+                   (loop (cdr nodes)
+                         (+ acc
+                            (jur-rate (car nodes))))))))))
+    ; Apply numeric overrides: any override with field "RATE" for a
+    ; jurisdiction code that is an ancestor of target-code modifies
+    ; base-rates additively by (value - matched rate).  We compute the
+    ; delta between the original per-jurisdiction rate and the
+    ; override value and apply it.
+    (let loop2 ((ovs overrides) (running base-rates))
+      (cond ((null? ovs) running)
+            ((not (string=? (ov-field (car ovs)) "RATE"))
+             (loop2 (cdr ovs) running))
+            (else
+             ; Find the original rate at the override's target node
+             (let* ((tcode (ov-target (car ovs)))
+                    (node (jur-lookup graph tcode))
+                    (orig (if node (jur-rate node) 0))
+                    (new  (ov-value (car ovs))))
+               (loop2 (cdr ovs)
+                      (+ running (- new orig)))))))))

@@ -1,0 +1,82 @@
+; override.aura
+; Override objects let a child jurisdiction override a field of a rule
+; attached at an ancestor level.  An override is represented as a list:
+;   (target-code field value priority)
+;     target-code - jurisdiction code whose rule gets overridden
+;     field       - symbol/string naming the field to override (e.g. "RATE")
+;     value       - new value for the field (number, string, etc.)
+;     priority    - number; higher number wins when multiple overrides
+;                   target the same (target-code field) pair.
+;
+; (apply-overrides rules overrides) walks the override list and
+; patches matching entries in the rules alist.
+
+(define (make-override target-code field value priority)
+  (list target-code field value priority))
+
+(define (ov-target o) (car o))
+(define (ov-field o)  (cadr o))
+(define (ov-value o)  (caddr o))
+(define (ov-priority o) (cadddr o))
+
+; --- apply-overrides -------------------------------------------------------
+
+; Replace the value at key in alist with new-value.
+(define (alist-set alist key new-value)
+  (cond ((null? alist) (list (cons key new-value)))
+        ((equal? (car (car alist)) key)
+         (cons (cons key new-value) (cdr alist)))
+        (else (cons (car alist)
+                    (alist-set (cdr alist) key new-value)))))
+
+; Walk overrides and for each one whose target-code matches a key in rules
+; and whose priority beats (or ties) any existing override on the same field,
+; patch the rule.  We keep things simple: overrides are applied in order;
+; later overrides with strictly greater priority replace earlier ones.
+; Override entries themselves are stored on the rule under a special key
+; 'overrides' so that the resolver can inspect them.
+
+(define (apply-one-override rule ov)
+  (let* ((target (ov-target ov))
+         (field  (ov-field ov))
+         (value  (ov-value ov))
+         (prio   (ov-priority ov))
+         (existing (cdr (assoc 'overrides rule '()))))
+    ; existing is a list of (field . (value . priority)) entries
+    (let ((prev (assoc field existing '())))
+      (if (or (null? prev) (> prio (cdr (cdr prev)))))
+          ; higher or equal priority wins; we use > here for strict
+          (alist-set
+           (cons (cons field (cons value prio))
+                 (if (null? prev)
+                     existing
+                     (map (lambda (p)
+                            (if (equal? (car p) field)
+                                (cons field (cons value prio))
+                                p))
+                          existing)))
+           'overrides
+           (let ((new-list
+                  (if (null? prev)
+                      (cons (cons field (cons value prio)) existing)
+                      (map (lambda (p)
+                             (if (equal? (car p) field)
+                                 (cons field (cons value prio))
+                                 p))
+                           existing))))
+             new-list))))))
+
+; Public entry point.  `rules` is an alist keyed by jurisdiction code whose
+; values are rule objects (whatever shape; we only manipulate them as opaque
+; lists).  `overrides` is a list of override objects.  Returns a new alist.
+(define (apply-overrides rules overrides)
+  (define (walk rs ovs)
+    (if (null? ovs)
+        rs
+        (walk (map (lambda (entry)
+                     (if (equal? (car entry) (ov-target (car ovs)))
+                         (apply-one-override (cdr entry) (car ovs))
+                         entry))
+                   rs)
+             (cdr ovs))))
+  (walk rules overrides))

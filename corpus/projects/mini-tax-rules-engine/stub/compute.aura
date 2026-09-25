@@ -1,0 +1,52 @@
+; compute.aura
+; Top-level computation routines that combine rates, exemptions and
+; invoice lines into per-line tax and invoice totals.
+;
+; (compute-line-tax line rate exemptions)
+;   Computes the tax due on a single invoice line:
+;     1. Take the line's pre-tax amount.
+;     2. Apply any matching exemptions to determine the taxable amount.
+;     3. Multiply the taxable amount by the rate.
+;   Returns the tax in cents as an exact integer.
+;
+; (compute-invoice invoice graph overrides exemptions)
+;   Computes the effective rate for the invoice's jurisdiction by
+;   calling (resolve-rate ...) then, for every line, computes the
+;   per-line tax.  Returns an alist-style result:
+;     (("SUBTOTAL" . cents-subtotal)
+;      ("TAX"      . cents-total-tax)
+;      ("TOTAL"    . cents-grand-total)
+;      ("LINES"    . ((id . tax-cents) ...)))
+
+(define (compute-line-tax line rate exemptions)
+  (let ((amount (line-amount line))
+        (taxable (apply-exemptions line amount exemptions)))
+    (line-tax line rate taxable)))
+
+(define (compute-line-tax-list lines rate exemptions)
+  (cond ((null? lines) '())
+        (else
+         (let ((l (car lines)))
+           (cons (cons (line-id l)
+                       (compute-line-tax l rate exemptions))
+                 (compute-line-tax-list (cdr lines) rate exemptions))))))
+
+(define (sum-list xs)
+  (cond ((null? xs) 0)
+        (else (+ (car xs) (sum-list (cdr xs))))))
+
+(define (compute-invoice invoice graph overrides exemptions)
+  (let* ((jur-code (inv-jur invoice))
+         (lines (inv-lines invoice))
+         (rate (resolve-rate graph jur-code overrides))
+         (taxes (map (lambda (entry)
+                       (cdr entry))
+                     (compute-line-tax-list lines rate exemptions)))
+         (subtotal (sum-list (map line-amount lines)))
+         (tax-total (sum-list taxes))
+         (grand (+ subtotal tax-total)))
+    (list (cons "RATE" rate)
+          (cons "SUBTOTAL" subtotal)
+          (cons "TAX" tax-total)
+          (cons "TOTAL" grand)
+          (cons "LINES" (compute-line-tax-list lines rate exemptions)))))

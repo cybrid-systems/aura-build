@@ -1,0 +1,95 @@
+; hash.aura — checksum / hash mixing utilities for the reservation system.
+;
+; These functions compute various checksum-like values used in the stdout
+; contract to give a final integrity signature for the run.
+;
+; Exports:
+;   api-hash-reservations-total  — a stable hash of the total reservation count
+;   api-hash-oversell-blocked    — a stable hash of the oversell-blocked count
+;   api-hash-mix                — combine multiple integers into one mixed hash
+
+; Multiply two numbers mod 2^32, returning a non-negative integer.
+; Used internally by all hash functions to keep arithmetic simple and bounded.
+(define (hash-mul a b)
+  (let ((m (* a b)))
+    (let loop ((v m) (acc 0) (bits 0))
+      (if (< bits 32)
+          (loop (quotient v 2)
+                (+ (* acc 2) (modulo v 2))
+                (+ bits 1))
+          acc))))
+
+; XOR two integers into a single non-negative integer.
+(define (hash-xor a b)
+  (let loop ((aa a) (bb b) (acc 0) (shift 0))
+    (if (and (= aa 0) (= bb 0))
+        acc
+        (let ((ba (modulo aa 2))
+              (bb2 (modulo bb 2)))
+          (let ((bit (if (= ba bb2) 0 1)))
+            (loop (quotient aa 2)
+                  (quotient bb 2)
+                  (+ (* acc 2) (mod-shift bit shift))
+                  (+ shift 1)))))))
+
+; Helper for xor: compute bit * 2^shift, but only if bit is 1.
+(define (mod-shift bit shift)
+  (if (= bit 1)
+      (let loop ((s shift) (r 1))
+        (if (= s 0)
+            r
+            (loop (- s 1) (* r 2))))
+      0))
+
+; Mix two non-negative integers into a single 32-bit-style value.
+; Algorithm: result = (a * 0x9E3779B1 + b) truncated to 32 bits, then xor-folded.
+(define (hash-mix-two a b)
+  (let* ((m (hash-mul a 2654435761))
+         (s (+ m b)))
+    ; XOR-fold s into 32 bits: high half xor low half, repeated.
+    (let loop ((v s))
+      (if (< v 4294967296)
+          v
+          (loop (hash-xor (modulo v 4294967296)
+                          (quotient v 4294967296)))))))
+
+; Exported: api-hash-mix — combine a list of integer values into a single hash.
+; An empty list or empty input yields 0.
+(define (api-hash-mix n)
+  (let ((xs (if (null? n) '() n)))
+    (if (null? xs)
+        0
+        (let loop ((rest (cdr xs)) (acc (car xs)))
+          (if (null? rest)
+              acc
+              (loop (cdr rest) (hash-mix-two acc (car rest))))))))
+
+; Hash of the reservation total count.
+; Uses a fixed seed (0xCBF29CE4) and mixes in the total, then spreads bits.
+(define (api-hash-reservations-total total)
+  (let* ((seed 3421786308)            ; 0xCBF29CE4 — well-known FNV-1a offset basis-ish
+         (mixed (hash-mix-two seed total)))
+    (hash-spread mixed)))
+
+; Hash of the oversell-blocked count.
+; Uses a different fixed seed to differentiate from the reservations hash.
+(define (api-hash-oversell-blocked blocked)
+  (let* ((seed 2166136261)            ; 0x815C9F1C — FNV prime-ish seed
+         (mixed (hash-mix-two seed blocked)))
+    (hash-spread mixed)))
+
+; Spread bits in a value to avoid clustering. XOR with right-shifted self.
+; Truncated to 32 bits.
+(define (hash-spread v)
+  (let* ((v1 (hash-xor v (quotient v 2)))
+         (v2 (hash-xor v1 (quotient v1 4)))
+         (v3 (hash-xor v2 (quotient v2 8))))
+    ; Ensure result fits in 32 bits.
+    (let loop ((x v3) (acc 0) (bits 0))
+      (if (and (= x 0) (= bits 32))
+          acc
+          (if (= bits 32)
+              acc
+              (loop (quotient x 2)
+                    (+ (* acc 2) (modulo x 2))
+                    (+ bits 1)))))))

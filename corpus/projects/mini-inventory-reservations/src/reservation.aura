@@ -1,0 +1,64 @@
+; reservation.aura — reservation API: reserve, release, expire-sweep, active-holds.
+
+; Reserve a quantity of a SKU at a given time with a TTL.
+; Returns the newly created hold on success, or #f if there isn't enough stock.
+; On success: appends a ledger entry, decrements stock, adds hold to active list.
+; On failure (not enough stock): returns #f, does NOT increment oversell counter
+; (oversell accounting is handled by oversell.aura).
+(define (api-reserve store sku qty now ttl-ms)
+  (let ((current (store-stock store sku)))
+    (if (>= current qty)
+        (let ((hold-id (symbol->string
+                         (string->symbol
+                           (string-append "h"
+                             (number->string
+                               (length (store-holds store)))))))))
+          (let ((hold (make-hold hold-id sku qty ttl-ms now)))
+            (store-adjust! store sku (- 0 qty))
+            (store-hold-add! store hold)
+            (store-ledger-append!
+              store
+              (list 'reserve sku qty now hold-id ttl-ms))
+            hold))
+        #f)))
+
+; Release a hold by hold-id. Returns #t if found and released, #f otherwise.
+; On release: removes hold from active list, returns qty to stock, appends ledger.
+(define (api-release store hold-id)
+  (let ((holds (store-holds store)))
+    (let loop ((rest holds) (idx 0))
+      (cond ((null? rest) #f)
+            ((string=? (hold-id (car rest)) hold-id)
+             (let ((h (car rest)))
+               (store-hold-remove! store hold-id)
+               (store-adjust! store (hold-sku h) (hold-qty h))
+               (store-ledger-append!
+                 store
+                 (list 'release (hold-sku h) (hold-qty h) hold-id))
+               #t))
+            (else (loop (cdr rest) (+ idx 1)))))))
+
+; Sweep expired holds at a given time. Returns the count of holds expired.
+; For each expired hold: removes it, returns qty to stock, appends ledger entry.
+(define (api-expire-sweep store now)
+  (let ((holds (store-holds store)))
+    (let loop ((rest holds) (count 0))
+      (cond ((null? rest) count)
+            ((hold-expired? (car rest) now)
+             (let ((h (car rest)))
+               (store-hold-remove! store (hold-id h))
+               (store-adjust! store (hold-sku h) (hold-qty h))
+               (store-ledger-append!
+                 store
+                 (list 'expire (hold-sku h) (hold-qty h) (hold-id h) now)))
+             (loop (cdr rest) (+ count 1)))
+            (else (loop (cdr rest) count))))))
+
+; Count active holds for a given SKU.
+(define (api-active-holds store sku)
+  (let ((holds (store-holds store)))
+    (let loop ((rest holds) (count 0))
+      (cond ((null? rest) count)
+            ((string=? (hold-sku (car rest)) sku)
+             (loop (cdr rest) (+ count 1)))
+            (else (loop (cdr rest) count))))))

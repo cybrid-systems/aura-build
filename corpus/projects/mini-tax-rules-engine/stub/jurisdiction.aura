@@ -1,0 +1,46 @@
+; jurisdiction.aura
+; Hierarchical jurisdiction graph utilities.
+; A jurisdiction is represented as a list: (code rate children)
+;   code     - string code (e.g. "US", "CA", "SF")
+;   rate     - rate code (string) attached at this node, or #f if none
+;   children - list of child jurisdictions
+;
+; A jurisdiction graph is an alist: ((code . jur) ...)
+
+(define (make-jurisdiction code rate children)
+  (list code rate children))
+
+(define (jur-code j)
+  (car j))
+
+(define (jur-rate j)
+  (cadr j))
+
+(define (jur-children j)
+  (caddr j))
+
+(define (jur-lookup graph code)
+  (cond ((null? graph) #f)
+        ((equal? (car (car graph)) code) (cdr (car graph)))
+        (else (jur-lookup (cdr graph) code))))
+
+(define (jur-find-in-children children code)
+  (cond ((null? children) #f)
+        ((equal? (jur-code (car children)) code)
+         (car children))
+        (else (jur-find-in-children (cdr children) code))))
+
+(define (jur-path graph code)
+  ; Return the list of jurisdictions along the path from root down to
+  ; the jurisdiction with the given code, or '() if not found.
+  (define (walk path)
+    (let ((j (car path)))
+      (cond ((null? path) '())
+            ((equal? (jur-code j) code)
+             (reverse path))
+            (else
+             (let ((found (jur-find-in-children (jur-children j) code)))
+               (if found
+                   (reverse (cons found path))
+                   (walk (cdr path))))))))
+  (walk graph))

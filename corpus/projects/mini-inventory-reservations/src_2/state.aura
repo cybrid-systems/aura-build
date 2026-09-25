@@ -1,0 +1,161 @@
+;; The store is the central mutable state container for the inventory
+;; reservation system. It is represented as a single association list
+;; tagged by symbol keys so other modules can update pieces via set!
+;; without depending on record types (which Aura does not provide).
+;;
+;; Structure (alist of symbol -> value):
+;;   'stock    : alist of (sku . units) pairs            ;; current stock levels
+;;   'ledger   : list of entry records (each is a list) ;; ordered event log
+;;   'holds    : alist of (hold-id . hold-record)       ;; all known holds
+;;   'active   : alist of (sku . count)                 ;; active-hold counts
+;;   'counters : alist of (symbol . integer)            ;; various counters
+
+(define (make-store)
+  (list (cons 'stock '())
+        (cons 'ledger '())
+        (cons 'holds '())
+        (cons 'active '())
+        (cons 'counters '())))
+
+;; ---- helpers --------------------------------------------------------------
+
+(define (alist-ref alist key)
+  (cond ((null? alist) #f)
+        ((equal? (car (car alist)) key) (cdr (car alist)))
+        (else (alist-ref (cdr alist) key))))
+
+(define (alist-set alist key val)
+  (cond ((null? alist)
+         (list (cons key val)))
+        ((equal? (car (car alist)) key)
+         (cons (cons key val) (cdr alist)))
+        (else
+         (cons (car alist)
+               (alist-set (cdr alist) key val)))))
+
+(define (alist-remove alist key)
+  (cond ((null? alist) '())
+        ((equal? (car (car alist)) key) (cdr alist))
+        (else (cons (car alist)
+                    (alist-remove (cdr alist) key)))))
+
+;; ---- slot accessors -------------------------------------------------------
+
+(define (store-stock-alist s) :rtype list
+  (alist-ref s 'stock))
+
+(define (store-set-slot! s key val)
+  (set! s (alist-set s key val))
+  s)
+
+;; ---- public stock API -----------------------------------------------------
+
+;; (store-stock s sku) -> integer units currently recorded for sku
+(define (store-stock s sku)
+  (let ((entry (alist-ref (store-stock-alist s) sku)))
+    (if entry entry 0)))
+
+;; (store-set-stock! s sku n) -> sets absolute stock for sku, returns new store
+(define (store-set-stock! s sku n)
+  (let ((new-stock (alist-set (store-stock-alist s) sku n)))
+    (store-set-slot! s 'stock new-stock)))
+
+;; (store-adjust! s sku delta) -> adjusts stock by delta (may be negative),
+;; creating the entry if missing. Returns new store.
+(define (store-adjust! s sku delta)
+  (let ((current (store-stock s sku))
+        (new-val (+ current delta)))
+    (store-set-stock! s sku new-val)))
+
+;; ---- ledger ---------------------------------------------------------------
+
+;; (store-ledger s) -> list of entries (most recent last)
+(define (store-ledger s)
+  (alist-ref s 'ledger))
+
+;; (store-ledger-append! s entry) -> appends entry, returns new store
+(define (store-ledger-append! s entry)
+  (let ((cur (store-ledger s))
+        (new-cur (append (store-ledger s) (list entry))))
+    (store-set-slot! s 'ledger new-cur)))
+
+;; ---- holds ----------------------------------------------------------------
+
+;; (store-holds s) -> alist of (hold-id . hold)
+(define (store-holds s)
+  (alist-ref s 'holds))
+
+;; (store-hold-add! s hold) -> adds hold (hold is a record; id extracted via
+;; hold-id from hold.aura, but to avoid load-order coupling we accept the
+;; hold and use car of the hold list as the id when hold is a list).
+;; Caller is responsible for ensuring hold is non-#f.
+(define (store-hold-add! s hold)
+  (let* ((holds (store-holds s))
+         ;; hold-id is the first element of the hold record (a list).
+         (hid (car hold))
+         (new-holds (alist-set holds hid hold)))
+    (store-set-slot! s 'holds new-holds)))
+
+;; (store-hold-remove! s hid) -> removes hold by id, returns new store.
+;; Also decrements the per-sku active counter (if it exists).
+(define (store-hold-remove! s hid)
+  (let* ((holds (store-holds s))
+         (pair  (alist-ref holds hid))
+         (new-holds (alist-remove holds hid)))
+    (let ((s2 (store-set-slot! s 'holds new-holds)))
+      (if pair
+          (let* ((sku (car (cdr pair)))
+                 (active (alist-ref s2 'active))
+                 (cur (alist-ref active sku)))
+            (if cur
+                (let ((next (- cur 1)))
+                  (if (<= next 0)
+                      (store-set-slot! s2 'active
+                                       (alist-remove active sku))
+                      (store-set-slot! s2 'active
+                                       (alist-set active sku next))))
+                s2))
+          s2))))
+
+;; (store-active-count s sku) -> integer count of active holds for sku
+(define (store-active-count s sku)
+  (let ((entry (alist-ref (alist-ref s 'active) sku)))
+    (if entry entry 0)))
+
+;; ---- internal: active counter helpers (used by reservation code) ---------
+;; These are not in the required export table but other modules need them,
+;; so we expose them through the public API surface used internally.
+
+;; (store-active-incr! s sku) -> bumps active counter for sku by 1
+(define (store-active-incr! s sku)
+  (let ((active (alist-ref s 'active))
+        (cur (store-active-count s sku)))
+    (store-set-slot! s 'active
+                     (alist-set active sku (+ cur 1)))))
+
+;; (store-active-decr! s sku) -> decrements active counter for sku by 1
+(define (store-active-decr! s sku)
+  (let ((active (alist-ref s 'active))
+        (cur (store-active-count s sku)))
+    (if (<= cur 1)
+        (store-set-slot! s 'active
+                         (alist-remove active sku))
+        (store-set-slot! s 'active
+                         (alist-set active sku (- cur 1))))))
+
+;; (store-active-alist s) -> alist of (sku . count)
+(define (store-active-alist s)
+  (alist-ref s 'active))
+
+;; ---- counters (named integer slots) --------------------------------------
+
+(define (store-counter s name)
+  (let ((entry (alist-ref (alist-ref s 'counters) name)))
+    (if entry entry 0)))
+
+(define (store-counter-set! s name val)
+  (let ((cs (alist-ref s 'counters)))
+    (store-set-slot! s 'counters (alist-set cs name val))))
+
+(define (store-counter-add! s name delta)
+  (store-counter-set! s name (+ (store-counter s name) delta)))

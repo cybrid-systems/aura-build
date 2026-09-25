@@ -1,0 +1,32 @@
+;; book.aura
+;; The core order book data structure for the mini-orderbook matching engine.
+;;
+;; A book holds:
+;;   - ticker : a string symbol identifying the instrument
+;;   - buyers : an alist of price levels for BUY side.
+;;              Each entry is (price . queue) where queue is the FIFO list
+;;              of resting BUY orders at that price: (id qty) pairs.
+;;   - sellers: an alist of price levels for SELL side, same shape.
+;;
+;; Both sides are maintained as association lists sorted by price:
+;;   - buyers  sorted DESCENDING by price (best bid = first element)
+;;   - sellers sorted ASCENDING  by price (best ask = first element)
+;;
+;; All accessors are pure; mutations happen via book_ops.aura which returns
+;; new book values (functional style).
+
+(define (make-book ticker)
+  (list ticker '() '()))
+
+(define (book-ticker b)
+  (car b))
+
+(define (book-buyers b)
+  (car (cdr b)))
+
+(define (book-sellers b)
+  (car (cdr (cdr b))))
+
+(define (empty-book? b)
+  (and (null? (book-buyers b))
+       (null? (book-sellers b))))

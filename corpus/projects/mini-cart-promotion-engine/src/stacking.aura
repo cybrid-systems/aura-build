@@ -1,0 +1,23 @@
+(define (api stack-promotions eligible)
+  (sort-by-priority eligible))
+
+(define (api stacking-order kind)
+  (cond
+    ((equal? kind 'percent) 1)
+    ((equal? kind 'fixed) 2)
+    ((equal? kind 'bxgy) 3)
+    ((equal? kind 'threshold) 4)
+    (else 5)))
+
+(define (sort-by-priority promos)
+  (cond
+    ((null? promos) '())
+    (else (insert-sorted (car promos) (sort-by-priority (cdr promos))))))
+
+(define (insert-sorted promo sorted)
+  (cond
+    ((null? sorted) (cons promo '()))
+    ((<= (api stacking-order (api promotion-kind promo))
+         (api stacking-order (api promotion-kind (car sorted))))
+     (cons promo sorted))
+    (else (cons (car sorted) (insert-sorted promo (cdr sorted))))))

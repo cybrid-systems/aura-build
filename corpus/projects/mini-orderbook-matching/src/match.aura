@@ -1,0 +1,223 @@
+;; match.aura
+;; Core matching engine: takes an incoming order and matches it against the
+;; opposite side of the book, generating trades and filling the incoming
+;; order as much as possible. Any unfilled remainder rests in the book.
+;;
+;; Public API:
+;;   (match-order book idmap trade-tape incoming)
+;;     -> (values new-book new-idmap new-trade-tape filled-qty open-qty)
+;;
+;; `incoming` is an event object (see event.aura): (type side price qty id).
+;; Only the SIDE, PRICE, QTY, and ID matter here; TYPE is expected to be 'NEW
+;; (the engine routes CANCEL / MODIFY elsewhere).
+;;
+;; Side semantics:
+;;   * side = "BUY"  : incoming is a buyer. Match against sellers starting at
+;;                     the best ask (lowest sell price), while the ask is
+;;                     <= incoming price and qty remains. Each match consumes
+;;                     one maker order at the head of that price's FIFO queue.
+;;   * side = "SELL" : incoming is a seller. Match against buyers starting at
+;;                     the best bid (highest buy price), while the bid is
+;;                     >= incoming price and qty remains.
+;;
+;; For each match we emit a trade (see trade.aura) and append it to trade-tape.
+;; Filled quantity = sum of qty actually consumed from the opposite side.
+;; Open quantity   = whatever is left on the incoming order after matching;
+;;                   this is what rests in the book (or is discarded if zero).
+;;
+;; The book and idmap are treated functionally: we rebuild them as we consume
+;; levels / queue entries and return the updated structures at the end.
+
+(define (trade-side-book book side)
+  (if (string=? side "BUY")
+      (book-sellers book)
+      (book-buyers book)))
+
+(define (rest-side-book book side)
+  (if (string=? side "BUY")
+      (book-buyers book)
+      (book-sellers book)))
+
+(define (set-side-book book side levels)
+  (if (string=? side "BUY")
+      (list (book-ticker book) levels (book-sellers book))
+      (list (book-ticker book) (book-buyers book) levels)))
+
+;; queue helpers used during matching --------------------------------------
+
+;; Pull the head (id . qty) off a queue and return (values new-q head).
+;; If the queue is empty, returns (values q #f).
+(define (q-pop q)
+  (let ((in (car q)) (out (cdr q)))
+    (cond ((null? out)
+           ;; rotate: flip in onto out
+           (if (null? in)
+               (values q #f)
+               (let loop ((src in) (acc '()))
+                 (if (null? src)
+                     (let ((new-q (cons '() acc)))
+                       (let ((hd (car out-wait)))
+                         ;; acc is out in correct order; out-wait unused
+                         (values new-q hd)))
+                     (loop (cdr src) (cons (car src) acc))))))
+          (else
+           (let ((hd (car out)))
+             (values (cons in (cdr out)) hd))))))
+
+;; queue-empty? : true iff both in and out are empty.
+(define (q-empty? q)
+  (and (null? (car q)) (null? (cdr q))))
+
+;; level helper: find a level entry by price in an alist; return #f if absent.
+(define (find-level levels price)
+  (cond ((null? levels) #f)
+        ((= (car (car levels)) price) (car levels))
+        (else (find-level (cdr levels) price))))
+
+;; Remove a level entry (price . queue) from the opposite-side alist,
+;; preserving the existing sort order (we only ever remove the head level
+;; during matching, so this is just a cdr).
+(define (drop-head-level levels)
+  (cdr levels))
+
+;; Replace the head level's queue with a new queue. Since we only ever touch
+;; the best level during matching, this is also just a cons on the cdr.
+(define (replace-head-queue levels new-q)
+  (cons (cons (car (car levels)) new-q) (cdr levels)))
+
+;; Decide if an incoming BUY crosses the best ask.
+;; An incoming BUY at price P crosses the best ask A iff A <= P.
+(define (buy-crosses? incoming-price best-ask-price)
+  (if (null? best-ask-price)
+      #f
+      (<= best-ask-price incoming-price)))
+
+;; An incoming SELL at price P crosses the best bid B iff B >= P.
+(define (sell-crosses? incoming-price best-bid-price)
+  (if (null? best-bid-price)
+      #f
+      (>= best-bid-price incoming-price)))
+
+;; Core match loop ----------------------------------------------------------
+;;
+;; Loop state carried via parameters:
+;;   book        : current book (opposite side updated as we consume makers)
+;;   idmap       : current idmap (we drop maker ids as they fully fill)
+;;   tape        : accumulating list of trades (we'll reverse at the end)
+;;   qty-left    : how much of the incoming order still needs to be filled
+;;   filled      : how much has been filled so far
+;;   incoming    : the incoming event (unchanged)
+;;
+;; Termination: qty-left reaches 0 (fully filled) OR the opposite side has
+;; no price that crosses.
+
+(define (match-loop book idmap tape qty-left filled incoming)
+  (cond ((<= qty-left 0)
+         (values book idmap tape filled 0))
+        (else
+         (let ((opp (trade-side-book book (event-side incoming))))
+           (cond ((null? opp)
+                 (values book idmap tape filled qty-left))
+                 (else
+                  (let ((best-price (car (car opp)))
+                        (best-q     (cdr (car opp))))
+                   (cond ((q-empty? best-q)
+                          ;; empty queue at best price — drop level and recur
+                          (let ((book2 (set-side-book book (event-side incoming)
+                                                      (drop-head-level opp))))
+                            (match-loop book2 idmap tape qty-left filled incoming)))
+                         (else
+                          ;; check crossing
+                          (let ((crosses?
+                                 (if (string=? (event-side incoming) "BUY")
+                                     (buy-crosses? (event-price incoming) best-price)
+                                     (sell-crosses? (event-price incoming) best-price))))
+                            (cond ((not crosses?)
+                                   ;; no longer crosses — stop matching
+                                   (values book idmap tape filled qty-left))
+                                  (else
+                                   ;; peek head maker
+                                   (let-values (((new-best-q head) (q-pop best-q)))
+                                     (let ((maker-id (car head))
+                                           (maker-qty (cdr head)))
+                                       (let ((exec-qty (if (<= maker-qty qty-left)
+                                                           maker-qty
+                                                           qty-left)))
+                                         ;; emit trade: maker first, then taker
+                                         (let ((t (make-trade (event-id incoming)
+                                                               maker-id
+                                                               best-price
+                                                               exec-qty))))
+                                           (let ((tape2 (cons t tape)))
+                                             (let ((new-filled (+ filled exec-qty))
+                                                   (new-qty-left (- qty-left exec-qty)))
+                                               ;; update maker queue
+                                               (let ((remaining-maker (- maker-qty exec-qty)))
+                                                 (cond ((= remaining-maker 0)
+                                                        ;; maker fully filled: drop its id,
+                                                        ;; and if queue now empty, drop level
+                                                        (let ((idmap2 (idmap-remove idmap maker-id)))
+                                                          (cond ((q-empty? new-best-q)
+                                                                 (let ((book2 (set-side-book book
+                                                                                            (event-side incoming)
+                                                                                            (drop-head-level opp))))
+                                                                   (match-loop book2 idmap2 tape2 new-qty-left new-filled incoming)))
+                                                                (else
+                                                                 (let ((book2 (set-side-book book
+                                                                                            (event-side incoming)
+                                                                                            (replace-head-queue opp new-best-q))))
+                                                                   (match-loop book2 idmap2 tape2 new-qty-left new-filled incoming))))))
+                                                       (else
+                                                        ;; maker partially filled: keep id,
+                                                        ;; replace head with reduced qty
+                                                        (let ((updated-q (cons in (cons (cons maker-id remaining-maker) (cdr out-new)))))
+                                                          ;; The queue rotation above already
+                                                          ;; produced new-best-q with head
+                                                          ;; popped; we now need to push the
+                                                          ;; reduced maker back at the head.
+                                                          (let ((final-q (push-front new-best-q (cons maker-id remaining-maker))))
+                                                            (let ((book2 (set-side-book book
+                                                                                       (event-side incoming)
+                                                                                       (replace-head-queue opp final-q))))
+                                                              (match-loop book2 idmap tape2 new-qty-left new-filled incoming)))))))))))))))))))))))))
+
+;; push-front : prepend an element onto the "out" portion of a queue.
+;; We can't easily mutate, so we rebuild: (in . (elem . out)).
+;; If out is empty but in is non-empty, we must first rotate so out is
+;; non-empty (and elem becomes the new head after rotation).
+(define (push-front q elem)
+  (let ((in (car q)) (out (cdr q)))
+    (cond ((null? out)
+           (if (null? in)
+               (cons '() (list elem))
+               ;; rotate in onto out, then push elem at front
+               (let ((rot (reverse in)))
+                 (cons '() (cons elem rot)))))
+          (else
+           (cons in (cons elem out))))))
+
+;; Public entry point -------------------------------------------------------
+;;
+;; match-order:
+;;   1. Run the match loop against the opposite side.
+;;   2. If anything remains (open-qty > 0), rest it on the incoming side.
+;;   3. Register the taker id in the idmap (idempotent via idmap-register).
+;;   4. Return new book, new idmap, reversed trade tape, filled, open.
+
+(define (match-order book idmap trade-tape incoming)
+  (let-values (((book1 idmap1 tape1 filled open)
+                (match-loop book idmap '() (event-qty incoming) 0 incoming)))
+    (let ((final-tape (append trade-tape (reverse tape1))))
+      (cond ((<= open 0)
+             ;; fully filled — nothing to rest. Still register id for symmetry.
+             (values book1
+                     (idmap-register idmap1 (event-id incoming))
+                     final-tape
+                     filled
+                     0))
+            (else
+             ;; rest the remainder on the incoming side
+             (let ((book2 (add-resting book1
+                                       (event-side incoming)
+                  
+; truncated by extract_aura_sources

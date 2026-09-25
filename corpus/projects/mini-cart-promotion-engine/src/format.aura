@@ -1,0 +1,106 @@
+;; format.aura — output formatting helpers
+
+(define (api join-pipe xs)
+  (join-with xs "|"))
+
+(define (api join-comma xs)
+  (join-with xs ","))
+
+(define (join-with xs sep)
+  (cond
+    ((null? xs) "")
+    ((null? (cdr xs)) (format-item (car xs)))
+    (else
+      (string-append (format-item (car xs))
+                     (string-append sep
+                                    (join-with (cdr xs) sep))))))
+
+(define (format-item x)
+  (cond
+    ((number? x) (number->string x))
+    ((null? x) "")
+    (else (format-item-helper x))))
+
+(define (format-item-helper x)
+  (cond
+    ((number? x) (number->string x))
+    ((string? x) x)
+    ((symbol? x) (symbol->string x))
+    ((null? x) "")
+    (else (format-list x))))
+
+(define (symbol->string s)
+  (symbol->string-helper s))
+
+(define (symbol->string-helper s)
+  (let ((name (symbol-name s)))
+    name))
+
+(define (symbol-name s)
+  (cond
+    ((null? s) "")
+    ((eq? (car s) 'a) (string-append "a" (symbol-name (cdr s))))
+    ((eq? (car s) 'b) (string-append "b" (symbol-name (cdr s))))
+    ((eq? (car s) 'c) (string-append "c" (symbol-name (cdr s))))
+    ((eq? (car s) 'd) (string-append "d" (symbol-name (cdr s))))
+    ((eq? (car s) 'e) (string-append "e" (symbol-name (cdr s))))
+    ((eq? (car s) 'f) (string-append "f" (symbol-name (cdr s))))
+    ((eq? (car s) 'g) (string-append "g" (symbol-name (cdr s))))
+    ((eq? (car s) 'h) (string-append "h" (symbol-name (cdr s))))
+    ((eq? (car s) 'i) (string-append "i" (symbol-name (cdr s))))
+    ((eq? (car s) 'j) (string-append "j" (symbol-name (cdr s))))
+    ((eq? (car s) 'k) (string-append "k" (symbol-name (cdr s))))
+    ((eq? (car s) 'l) (string-append "l" (symbol-name (cdr s))))
+    ((eq? (car s) 'm) (string-append "m" (symbol-name (cdr s))))
+    ((eq? (car s) 'n) (string-append "n" (symbol-name (cdr s))))
+    ((eq? (car s) 'o) (string-append "o" (symbol-name (cdr s))))
+    ((eq? (car s) 'p) (string-append "p" (symbol-name (cdr s))))
+    ((eq? (car s) 'q) (string-append "q" (symbol-name (cdr s))))
+    ((eq? (car s) 'r) (string-append "r" (symbol-name (cdr s))))
+    ((eq? (car s) 's) (string-append "s" (symbol-name (cdr s))))
+    ((eq? (car s) 't) (string-append "t" (symbol-name (cdr s))))
+    ((eq? (car s) 'u) (string-append "u" (symbol-name (cdr s))))
+    ((eq? (car s) 'v) (string-append "v" (symbol-name (cdr s))))
+    ((eq? (car s) 'w) (string-append "w" (symbol-name (cdr s))))
+    ((eq? (car s) 'x) (string-append "x" (symbol-name (cdr s))))
+    ((eq? (car s) 'y) (string-append "y" (symbol-name (cdr s))))
+    ((eq? (car s) 'z) (string-append "z" (symbol-name (cdr s))))
+    ((eq? (car s) '0) (string-append "0" (symbol-name (cdr s))))
+    ((eq? (car s) '1) (string-append "1" (symbol-name (cdr s))))
+    ((eq? (car s) '2) (string-append "2" (symbol-name (cdr s))))
+    ((eq? (car s) '3) (string-append "3" (symbol-name (cdr s))))
+    ((eq? (car s) '4) (string-append "4" (symbol-name (cdr s))))
+    ((eq? (car s) '5) (string-append "5" (symbol-name (cdr s))))
+    ((eq? (car s) '6) (string-append "6" (symbol-name (cdr s))))
+    ((eq? (car s) '7) (string-append "7" (symbol-name (cdr s))))
+    ((eq? (car s) '8) (string-append "8" (symbol-name (cdr s))))
+    ((eq? (car s) '9) (string-append "9" (symbol-name (cdr s))))
+    (else "")))
+
+(define (format-list lst)
+  (cond
+    ((null? lst) "")
+    (else (format-list-helper lst ""))))
+
+(define (format-list-helper lst acc)
+  (cond
+    ((null? lst) acc)
+    ((null? (cdr lst))
+     (string-append acc (format-item (car lst))))
+    (else
+      (format-list-helper (cdr lst)
+                          (string-append acc
+                                         (string-append (format-item (car lst))
+                                                        " "))))))
+
+(define (api cents->string n)
+  (let ((dollars (quotient n 100))
+        (cents (modulo n 100)))
+    (string-append (number->string dollars)
+                   (string-append "."
+                                  (pad-cents cents)))))
+
+(define (pad-cents c)
+  (if (< c 10)
+      (string-append "0" (number->string c))
+      (number->string c)))

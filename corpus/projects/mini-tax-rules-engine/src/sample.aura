@@ -1,0 +1,87 @@
+; sample.aura
+; Sample data for the mini-tax-rules-engine scenario.
+;
+; Provides:
+;   (sample-graph)       - jurisdiction graph (US -> CA -> SF, US -> NY -> NYC)
+;                          with rate codes attached to nodes.
+;   (sample-overrides)   - list of override objects that bump specific
+;                          rate values for SF.
+;   (sample-exemptions)  - list of exemption objects (FOOD full, BOOKS half).
+;   (sample-invoice)     - invoice with 4 lines addressed to "SF".
+
+; --- helpers to build the graph in a readable way -----------------------
+
+; Each jurisdiction is (code rate children) where rate is either #f
+; or a list of rate codes that apply at that jurisdiction level.
+; We store rate codes as symbols/strings; the resolver interprets them
+; by summing the corresponding rate values.
+
+; Build a small jurisdiction record manually.
+(define (mk-jur code rate-children)
+  (list code rate-children '()))
+
+; Attach children to a jurisdiction node (mutates structure via list rebuild).
+(define (jur-with-children jur children)
+  (list (car jur) (cadr jur) children))
+
+; --- sample-graph --------------------------------------------------------
+
+(define (sample-graph)
+  ; US has rate BASE_RATE
+  (let* ((sf  (jur-with-children (mk-jur "SF" '("CITY_RATE")) '()))
+         (ca  (jur-with-children (mk-jur "CA" '("STATE_RATE")) (list sf)))
+         (nyc (jur-with-children (mk-jur "NYC" '("CITY_RATE")) '()))
+         (ny  (jur-with-children (mk-jur "NY" '("STATE_RATE")) (list nyc)))
+         (us  (jur-with-children (mk-jur "US" '("BASE_RATE")) (list ca ny))))
+    (list us)))
+
+; --- sample-overrides ----------------------------------------------------
+;
+; Overrides let us bump a named rate component to a specific value.
+; An override is (target-code field value priority).
+; Here we raise the SF CITY_RATE by an extra amount so the total in SF
+; exceeds the plain base+state+city sum.
+
+(define (sample-overrides)
+  (list
+    ; SF CITY_RATE override: set the city contribution to 0.02
+    (list "SF"  "CITY_RATE" 0.02  10)
+    ; SF BASE_RATE override: leave as default 0.05 but explicit
+    (list "US"  "BASE_RATE" 0.05   5)
+    ; SF STATE_RATE override: explicit 0.075
+    (list "CA"  "STATE_RATE" 0.075 5)))
+
+; --- sample-exemptions ---------------------------------------------------
+;
+; An exemption is (code kind amount predicates) where predicates is an
+; alist of (key . value) pairs that must match the line.
+
+(define (sample-exemptions)
+  (list
+    ; FOOD -> fully exempt from tax
+    (list "FOOD"  "FULL"   0 '((category . "FOOD")))
+    ; BOOKS -> half tax
+    (list "BOOKS" "HALF"   0.5 '((category . "BOOKS")))
+    ; ELECTRONICS -> none (explicitly listed so we can show absence)
+    (list "ELEC"  "NONE"   0   '((category . "ELECTRONICS")))))
+
+; --- sample-invoice ------------------------------------------------------
+;
+; Four lines addressed to "SF":
+;   L1 : 3 x $10.00 of FOOD        (fully exempt)
+;   L2 : 2 x $25.00 of BOOKS       (half tax)
+;   L3 : 1 x $50.00 of ELECTRONICS (no exemption)
+;   L4 : 4 x $5.00  of CLOTHING    (no exemption)
+;
+; Money is in cents.
+
+(define (sample-invoice)
+  (let* ((inv (make-invoice '() "SF")))
+    (add-line
+      (add-line
+        (add-line
+          (add-line inv
+            (make-line "L1" 3 1000 "FOOD" #t))
+          (make-line "L2" 2 2500 "BOOKS" #f))
+        (make-line "L3" 1 5000 "ELECTRONICS" #f))
+      (make-line "L4" 4 500 "CLOTHING" #f))))

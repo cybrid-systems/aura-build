@@ -1,0 +1,23 @@
+; invoice.aura
+; Invoice objects and basic invoice manipulation.
+;
+; An invoice is represented as a list: (lines jur-code)
+;   lines    - list of line objects (as defined in line.aura)
+;   jur-code - string jurisdiction code the invoice is addressed to
+;
+; Invoices are immutable from the perspective of their line list
+; until add-line is called, which returns a new invoice with the
+; additional line appended.
+
+(define (make-invoice lines jur-code)
+  (list lines jur-code))
+
+(define (inv-lines inv)
+  (car inv))
+
+(define (inv-jur inv)
+  (cadr inv))
+
+(define (add-line inv ln)
+  (make-invoice (append (inv-lines inv) (list ln))
+                (inv-jur inv)))

@@ -1,0 +1,55 @@
+{
+  "expect": "PIPELINE_VERSION=1.0.0\nSTAGES=validate,price,authorize,score,commit\nOUTCOME=COMMITTED\nORDER_ID=None\nITEMS_BILLED=4\nSUBTOTAL_CENTS=3698\nTAX_CENTS=324\nTOTAL_CENTS=4022\nPAYMENT_AUTH=AUTH-5E298B\nFRAUD_SCORE=43\nFRAUD_DECISION=ACCEPT\nROLLBACK_STAGES=NONE",
+  "lines": [
+    {
+      "key": "PIPELINE_VERSION",
+      "value": "1.0.0"
+    },
+    {
+      "key": "STAGES",
+      "value": "validate,price,authorize,score,commit"
+    },
+    {
+      "key": "OUTCOME",
+      "value": "COMMITTED"
+    },
+    {
+      "key": "ORDER_ID",
+      "value": "None"
+    },
+    {
+      "key": "ITEMS_BILLED",
+      "value": "4"
+    },
+    {
+      "key": "SUBTOTAL_CENTS",
+      "value": "3698"
+    },
+    {
+      "key": "TAX_CENTS",
+      "value": "324"
+    },
+    {
+      "key": "TOTAL_CENTS",
+      "value": "4022"
+    },
+    {
+      "key": "PAYMENT_AUTH",
+      "value": "AUTH-5E298B"
+    },
+    {
+      "key": "FRAUD_SCORE",
+      "value": "43"
+    },
+    {
+      "key": "FRAUD_DECISION",
+      "value": "ACCEPT"
+    },
+    {
+      "key": "ROLLBACK_STAGES",
+      "value": "NONE"
+    }
+  ],
+  "measured_from": "ref/run_scenarios.py",
+  "ts": "2026-09-25T00:03:10Z"
+}

@@ -1,0 +1,33 @@
+; rules.aura
+; Rule objects bind a jurisdiction code with a rate object.
+; A rule is represented as a list: (jur-code rate)
+;   jur-code - string jurisdiction code the rule applies to
+;   rate     - rate object (as defined in rates.aura)
+;
+; (merge-rules a b) combines two rules-alists; entries from `b` win
+; when the same jurisdiction code appears in both.
+
+(define (make-rule jur-code rate)
+  (list jur-code rate))
+
+(define (rule-jur r)
+  (car r))
+
+(define (rule-rate r)
+  (cadr r))
+
+(define (rules-lookup rules jur-code)
+  (cond ((null? rules) #f)
+        ((equal? (car (car rules)) jur-code) (car rules))
+        (else (rules-lookup (cdr rules) jur-code))))
+
+(define (merge-rules a b)
+  (cond ((null? b) a)
+        ((rules-lookup a (car (car b)))
+         (merge-rules (map (lambda (r)
+                             (if (equal? (car r) (car (car b)))
+                                 (car b)
+                                 r))
+                           a)
+                     (cdr b)))
+        (else (merge-rules (cons (car b) a) (cdr b)))))

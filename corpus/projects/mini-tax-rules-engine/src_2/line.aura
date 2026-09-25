@@ -1,0 +1,47 @@
+;; line.aura -- Invoice line helpers
+;; A line represents one item on an invoice.
+;; Represented as an alist:
+;;   (("id" . "L1") ("qty" . 2) ("unit-price" . 10.00) ("category" . "FOOD") ("exempt" . #f))
+;;
+;; Note: money is stored as a plain number (e.g. 10.00 represents dollars);
+;; the formatter in format.aura handles display rounding.
+
+(define (make-line id qty unit-price category exempt?)
+  (cons (cons "id" id)
+        (cons (cons "qty" qty)
+              (cons (cons "unit-price" unit-price)
+                    (cons (cons "category" category)
+                          (cons (cons "exempt" exempt?) '()))))))
+
+(define (line-id l)
+  (cdr (assq "id" l)))
+
+(define (line-qty l)
+  (cdr (assq "qty" l)))
+
+(define (line-unit-price l)
+  (cdr (assq "unit-price" l)))
+
+(define (line-category l)
+  (cdr (assq "category" l)))
+
+(define (line-exempt? l)
+  (cdr (assq "exempt" l)))
+
+;; Compute the gross amount for a line: qty * unit-price.
+(define (line-amount l)
+  (* (line-qty l) (line-unit-price l)))
+
+;; Compute the tax owed on a line given an effective rate value and the
+;; taxable portion (post-exemption). The taxable argument is the line
+;; amount after any exemption has been applied; the caller (compute.aura)
+;; is responsible for deciding the taxable base.
+(define (line-tax l rate-value taxable)
+  (* taxable rate-value))
+
+;; Build a display-ready alist for a line: (("id" . id) ("amount" . amount) ("tax" . tax))
+;; This is the per-line summary consumed by main.aura / format.aura.
+(define (line-display l tax)
+  (cons (cons "id" (line-id l))
+        (cons (cons "amount" (line-amount l))
+              (cons (cons "tax" tax) '()))))

@@ -1,0 +1,41 @@
+; restock.aura — restock event handling and tallies.
+
+; Internal counters stored on the store alist under the key 'restock-meta.
+; The meta is a list: (count units-totalled log)
+; where log is a list of restock entries: (sku units reason at-ms)
+
+(define (restock-meta store)
+  (let ((entry (assq 'restock-meta store)))
+    (if entry
+        (cdr entry)
+        '(0 0 ()))))
+
+(define (restock-meta-set! store meta)
+  (let loop ((s store) (acc '()))
+    (cond ((null? s)
+           (cons (cons 'restock-meta meta) acc))
+          ((eq? (car s) 'restock-meta)
+           (append (reverse acc) (cons (cons 'restock-meta meta) (cdr s))))
+          (else
+           (loop (cdr s) (cons (car s) acc))))))
+
+(define (api-restock store sku units reason at-ms)
+  ; Increase stock by units and record the event.
+  (store-set-stock! store sku (+ (store-stock store sku) units))
+  (store-ledger-append! store (list 'restock sku units reason at-ms))
+  (let* ((meta (restock-meta store))
+         (count (+ (car meta) 1))
+         (tot (+ (car (cdr meta)) units))
+         (log (append (car (cdr (cdr meta)))
+                      (list (list sku units reason at-ms)))))
+    (restock-meta-set! store (list count tot log)))
+  store)
+
+(define (api-restock-count store)
+  (car (restock-meta store)))
+
+(define (api-restock-units store)
+  (car (cdr (restock-meta store))))
+
+(define (api-restock-log store)
+  (car (cdr (cdr (restock-meta store)))))

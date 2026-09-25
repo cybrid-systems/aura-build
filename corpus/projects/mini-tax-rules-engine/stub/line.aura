@@ -1,0 +1,37 @@
+; line.aura
+; Invoice line objects and per-line tax arithmetic.
+;
+; A line is represented as a list: (id qty unit-price category exempt?)
+;   id        - string identifier for the line
+;   qty       - integer quantity
+;   unit-price- unit price in cents (integer)
+;   category  - string category (e.g. "FOOD", "BOOKS")
+;   exempt?   - boolean flag indicating baseline exemption status
+;
+; Money is stored as exact cents internally.  `line-tax` takes the
+; precomputed taxable amount (the result of `apply-exemptions` from
+; exemption.aura) and multiplies it by the rate, returning an integer
+; in cents.
+
+(define (make-line id qty unit-price category exempt?)
+  (list id qty unit-price category exempt?))
+
+(define (line-id l) (car l))
+(define (line-qty l) (cadr l))
+(define (line-unit-price l) (caddr l))
+(define (line-category l) (cadddr l))
+(define (line-exempt? l) (car (cddddr l)))
+
+(define (line-amount l)
+  (* (line-qty l) (line-unit-price l)))
+
+(define (line-tax l rate taxable)
+  (let ((amt (line-amount l)))
+    (round (* (* amt (- 1 taxable)) rate))))
+
+(define (line-display l tax)
+  (string-append (line-id l)
+                 ": amount="
+                 (number->string (line-amount l))
+                 " tax="
+                 (number->string tax)))

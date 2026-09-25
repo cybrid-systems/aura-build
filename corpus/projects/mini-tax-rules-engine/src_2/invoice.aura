@@ -1,0 +1,42 @@
+;; invoice.aura -- Invoice helpers
+;; An invoice groups a set of lines addressed to a single jurisdiction code.
+;; Represented as an alist:
+;;   (("lines" . (line1 line2 ...)) ("jur-code" . "SF"))
+;;
+;; Lines are stored in the order they were added. The invoice is mutable
+;; (via set!) but exposes a functional add-line that returns a new invoice
+;; sharing the same structure style as the rest of the engine.
+
+(define (make-invoice lines jur-code)
+  (cons (cons "lines" lines)
+        (cons (cons "jur-code" jur-code) '())))
+
+(define (inv-lines inv)
+  (cdr (assq "lines" inv)))
+
+(define (inv-jur inv)
+  (cdr (assq "jur-code" inv)))
+
+(define (inv-line-count inv)
+  (length (inv-lines inv)))
+
+;; add-line: return a new invoice whose lines list is the previous
+;; lines with ln appended. We rebuild the alist so the original
+;; invoice is not mutated (functional update).
+(define (add-line inv ln)
+  (make-invoice (append (inv-lines inv) (list ln))
+                (inv-jur inv)))
+
+;; inv-find-line: lookup a line by its id (helper used by main).
+(define (inv-find-line inv id)
+  (let loop ((ls (inv-lines inv)))
+    (cond ((null? ls) #f)
+          ((equal? (line-id (car ls)) id) (car ls))
+          (else (loop (cdr ls))))))
+
+;; inv-subtotal: sum of (qty * unit-price) across all lines.
+;; Used by main.aura to print subtotal without recomputing tax.
+(define (inv-subtotal inv)
+  (let loop ((ls (inv-lines inv)) (acc 0))
+    (cond ((null? ls) acc)
+          (else (loop (cdr ls) (+ acc (line-amount (car ls))))))))

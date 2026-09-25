@@ -67,6 +67,15 @@ DOMAINS = [
     "stream_processing",
 ]
 
+# Complex commercial workflows (orders, money, inventory, settlement).
+# `--domains business` burns these and does not resume WAL/parser backlog.
+BUSINESS_DOMAINS = (
+    "commerce",
+    "ledgers",
+    "event_sourcing",
+    "matching",
+)
+
 AURA_PRIMER = """Aura (Lisp-like) primer — NOT Python:
 (define x 1) (define (f a b) ...) (lambda (x) ...) (if t a b) (cond (t e) (else e))
 (let ((a 1)) ...) (begin ...) (set! x v)
@@ -372,6 +381,29 @@ def _run_subprocess(
 
 # ----- catalog -----
 
+def parse_domains(raw: str | None) -> tuple[str, ...] | None:
+    """None means every domain. ``business`` is the commercial subset."""
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text or text.lower() in ("all", "*"):
+        return None
+    if text.lower() in ("business", "biz"):
+        return BUSINESS_DOMAINS
+    parts = tuple(p.strip() for p in text.split(",") if p.strip())
+    unknown = [p for p in parts if p not in DOMAINS]
+    if unknown:
+        allowed = ", ".join(DOMAINS)
+        raise SystemExit(f"unknown --domains {unknown}; allowed: {allowed} or business")
+    return parts
+
+
+def domain_allowed(entry: dict[str, Any], domains: tuple[str, ...] | None) -> bool:
+    if not domains:
+        return True
+    return str(entry.get("domain") or "") in domains
+
+
 def generate_catalog_batch(
     *,
     domain: str,
@@ -381,10 +413,22 @@ def generate_catalog_batch(
     run_log: Path | None,
 ) -> list[dict[str, Any]]:
     avoid = ", ".join(sorted(existing)[:60])
+    business = ""
+    if domain in BUSINESS_DOMAINS:
+        business = (
+            "BUSINESS ONLY: commercial workflows with money, inventory, orders, tax, "
+            "fees, credit, settlement, compensation, or audit. Spirit (do not copy slugs): "
+            "checkout saga, tax jurisdiction, rebate accrual, clearing netting, "
+            "variation margin, OMS child slices, invoice dunning, credit-limit hold, "
+            "subscription proration, claims adjudication, trade allocation. "
+            "Prefer n_files 12-18. Do NOT propose storage engines, parsers, caches, "
+            "compilers, or network stacks.\n"
+        )
     user = (
         f"Domain: {domain}\nReturn ~{batch_size} distinct project ideas.\n"
         f"Avoid slugs: {avoid or '(none)'}\n"
         f"Allowed domains (use exactly '{domain}'): {', '.join(DOMAINS)}\n"
+        f"{business}"
         "Examples of spirit (do not copy slugs): mini-kv-wal, mini-sql, mini-regex, "
         "mini-json, mini-lru-ttl, mini-job-deps, mini-raft-log, mini-http-router, "
         "mini-inventory, mini-expr-vm, mini-ledger, mini-event-store, mini-ratelimit, "
@@ -527,6 +571,7 @@ class ProjectBurnConfig:
     stop_flag: Path | None = None
     auto_commit: bool = False
     commit_every: int = 5
+    domains: tuple[str, ...] | None = None
 
 
 def project_dir(corpus: Path, slug: str) -> Path:
@@ -1088,14 +1133,15 @@ def extend_catalog(bc: ProjectBurnConfig, cfg: MiniMaxConfig, extra: int) -> int
     rows = load_catalog(catalog_path)
     existing = {str(r["slug"]) for r in rows}
     before = len(rows)
-    for domain in DOMAINS:
+    domains = list(bc.domains or DOMAINS)
+    for domain in domains:
         if len(rows) - before >= extra:
             break
         batch = generate_catalog_batch(
             domain=domain,
             existing=existing,
             cfg=cfg,
-            batch_size=min(10, extra - (len(rows) - before)),
+            batch_size=min(8, extra - (len(rows) - before)),
             run_log=bc.run_log,
         )
         rows.extend(batch)
@@ -1109,7 +1155,15 @@ def maybe_auto_commit(bc: ProjectBurnConfig, *, note: str) -> None:
     repo = Path.cwd()
     try:
         subprocess.run(
-            ["git", "add", "corpus/projects", "src/aura_build/corpus_projects.py"],
+            [
+                "git",
+                "add",
+                "corpus/projects",
+                "src/aura_build/corpus_projects.py",
+                "src/aura_build/cli.py",
+                "src/aura_build/cli_parser.py",
+                "tests/test_corpus_projects_domains.py",
+            ],
             cwd=repo,
             check=False,
             capture_output=True,
@@ -1177,7 +1231,11 @@ def cmd_burn(bc: ProjectBurnConfig) -> int:
                     scratch=bc.scratch,
                 )
                 rows = load_catalog(catalog_path)
-            todo = [r for r in rows if project_needs_work(r, bc)]
+            todo = [
+                r
+                for r in rows
+                if domain_allowed(r, bc.domains) and project_needs_work(r, bc)
+            ]
             if not todo:
                 if not bc.continuous:
                     print(json.dumps({"event": "done_no_work", "track": "projects", "processed": processed}))
@@ -1202,6 +1260,7 @@ def cmd_burn(bc: ProjectBurnConfig) -> int:
                         "todo": len(todo),
                         "workers": bc.workers,
                         "variants": bc.variants,
+                        "domains": list(bc.domains) if bc.domains else "all",
                         "ts_local": _local_now(),
                     }
                 )
@@ -1233,7 +1292,11 @@ def cmd_burn(bc: ProjectBurnConfig) -> int:
                 print(json.dumps({"event": "limit_reached", "track": "projects", "processed": processed}))
                 break
             if not bc.continuous:
-                still = [r for r in load_catalog(catalog_path) if project_needs_work(r, bc)]
+                still = [
+                    r
+                    for r in load_catalog(catalog_path)
+                    if domain_allowed(r, bc.domains) and project_needs_work(r, bc)
+                ]
                 if not still:
                     print(json.dumps({"event": "pass_complete", "track": "projects", "processed": processed}))
                     break
@@ -1383,4 +1446,5 @@ def build_config_from_args(args: Any) -> ProjectBurnConfig:
         catalog_extend_batch=int(getattr(args, "catalog_extend", 20) or 20),
         auto_commit=bool(getattr(args, "auto_commit", False)),
         commit_every=int(getattr(args, "commit_every", 5) or 5),
+        domains=parse_domains(getattr(args, "domains", None)),
     )

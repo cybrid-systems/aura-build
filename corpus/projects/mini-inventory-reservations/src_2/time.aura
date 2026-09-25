@@ -1,0 +1,21 @@
+;; time.aura — A controllable monotonic clock for the inventory system.
+;;
+;; Real wall-clock time is not useful in a deterministic scenario runner:
+;; we need the ability to fast-forward, reset, and inspect the current
+;; "now" value in milliseconds. The clock is shared across all modules
+;; via mutable top-level bindings, so other files simply call (now-ms)
+;; to read the current tick and (advance-ms! d) / (set-clock! t) to
+;; move it forward or pin it to an absolute moment.
+
+(define *clock-ms* 1000)
+
+(define (now-ms)
+  *clock-ms*)
+
+(define (advance-ms! delta)
+  (set! *clock-ms* (+ *clock-ms* delta))
+  *clock-ms*)
+
+(define (set-clock! ms)
+  (set! *clock-ms* ms)
+  *clock-ms*)
