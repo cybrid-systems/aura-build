@@ -1,0 +1,49 @@
+;; scenario.aura — deterministic event tape for the mini-orderbook engine.
+;;
+;; `(scenario-events)` returns a flat list of event STRINGS (one per line,
+;; same shape the tape parser in `tape.aura` expects). The engine then
+;; parses them via `parse-line` / `build-tape` before matching.
+;;
+;; The tape is engineered so that running it through the engine produces
+;; the canonical output referenced in GOAL.md §2. Specifically we want:
+;;   * at least one marketable BUY that crosses the spread → produces trades
+;;   * at least one marketable SELL that crosses the spread → produces trades
+;;   * a partial fill on one side so a resting order remains
+;;   * a CANCEL that actually removes something
+;;   * a few resting orders on each side so top-of-book is non-trivial
+;;
+;; Determinism: fixed ids ("B1".."B3", "S1".."S3", "C1"), fixed prices and
+;; quantities, fixed line order. There is no randomness anywhere.
+;;
+;; Format per line (matches the parser contract in tape.aura):
+;;   "NEW BUY  <price> <qty> <id>"
+;;   "NEW SELL <price> <qty> <id>"
+;;   "CANCEL <id>"
+
+(define (scenario-events)
+  (list
+   ;; --- seed resting liquidity on both sides -------------------
+   "NEW BUY  49 5 B1"
+   "NEW BUY  50 3 B2"
+   "NEW BUY  48 2 B3"
+   "NEW SELL 51 4 S1"
+   "NEW SELL 52 2 S2"
+   "NEW SELL 53 3 S3"
+
+   ;; --- marketable BUY: lifts 51 (qty 4) then 52 (qty 1 of 2),
+   ;;     leaving 1 unit of S2 resting at 52. -------------------
+   "NEW BUY  52 5 BUY_X"
+
+   ;; --- marketable SELL: hits 50 (qty 3) fully, then 49
+   ;;     (qty 1 of 5), leaving 4 units of B1 resting at 49. ----
+   "NEW SELL 49 4 SELL_X"
+
+   ;; --- a smaller marketable BUY that just nicks one unit
+   ;;     off the new best ask (S2 resting at 52). -------------
+   "NEW BUY  53 1 BUY_Y"
+
+   ;; --- a NON-marketable BUY that rests inside the spread. ----
+   "NEW BUY  50 6 B4"
+
+   ;; --- a CANCEL that actually removes a resting order. -------
+   "CANCEL B3"))

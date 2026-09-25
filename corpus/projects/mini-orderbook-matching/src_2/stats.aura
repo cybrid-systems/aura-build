@@ -1,0 +1,43 @@
+;; stats.aura — aggregate statistics over a tape of trades.
+;;
+;; A trade (per trade.aura) is a 5-element list:
+;;   (taker-id maker-id price qty taker-side)
+;;
+;; Public API required by §3 of the spec:
+;;   (total-volume   trades)  → sum of trade quantities
+;;   (total-notional trades)  → sum of (price * qty) over all trades
+;;   (vwap           trades)  → total-notional / total-volume
+;;                              (returns 0 if there are no trades)
+;;
+;; All three operate on a flat list of trade records (the trade-tape as
+;; returned by run-engine). The implementations are pure walks over the
+;; list — no mutation, no hidden state.
+
+(define (stats-sum-volume trades)
+  ;; Fold + over the qty field of each trade.
+  (if (null? trades)
+      0
+      (+ (car (cdr (cdr (cdr (car trades)))))   ;; qty
+         (stats-sum-volume (cdr trades)))))
+
+(define (total-volume trades)
+  (stats-sum-volume trades))
+
+(define (stats-sum-notional trades)
+  ;; Fold + over price * qty for each trade.
+  (if (null? trades)
+      0
+      (let ((t (car trades)))
+        (+ (* (car (cdr (cdr t)))               ;; price
+              (car (cdr (cdr (cdr t))))         ;; qty
+           )
+           (stats-sum-notional (cdr trades))))))
+
+(define (total-notional trades)
+  (stats-sum-notional trades))
+
+(define (vwap trades)
+  (let ((vol (total-volume trades)))
+    (if (= vol 0)
+        0
+        (/ (total-notional trades) vol))))

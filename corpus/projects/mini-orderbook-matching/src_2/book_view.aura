@@ -1,0 +1,60 @@
+;; book_view.aura — render the top-of-book as a single-line string.
+;;
+;; Public API required by §3 of the spec:
+;;   (format-top-level book) → string like "49x3  |  51x2"
+;;
+;; The format is:
+;;   <best-bid-price>x<bid-qty>  |  <best-ask-price>x<ask-qty>
+;;
+;; Behaviour on empty sides:
+;;   * If the bid side is empty, render as "--" (no bid).
+;;   * If the ask side is empty, render as "--" (no ask).
+;;   * If both are empty, return "EMPTY BOOK" so something sensible shows.
+;;
+;; The book structure is defined in book.aura / book_ops.aura:
+;;   book = (ticker buyers sellers)
+;;   buyers  = alist of (price . queue-of-ids), descending price
+;;   sellers = alist of (price . queue-of-ids), ascending price
+;;
+;; We rely on the helpers exported by book_ops.aura:
+;;   (top-bid book) → (price . qty) or #f
+;;   (top-ask book) → (price . qty) or #f
+;;   (best-bid book) → price or #f
+;;   (best-ask book) → price or #f
+;;
+;; A queue here is the (front . back) pair from queue.aura; total size is
+;; the sum of lengths of front and back.
+
+;; ---------- helpers ----------
+
+;; Total number of elements across (front . back) queue representation.
+(define (queue-total q)
+  (let ((front (car q))
+        (back  (cdr q)))
+    (+ (length front) (length back))))
+
+;; Format a single "PxQ" (or "--") token for one side.
+(define (format-side pair)
+  (if pair
+      (let ((p (car pair))
+            (q (cdr pair)))
+        (string-append
+          (number->string p)
+          "x"
+          (number->string q)))
+      "--"))
+
+;; ---------- public API ----------
+
+(define (format-top-level book)
+  (let ((bid (top-bid book))
+        (ask (top-ask book)))
+    (cond
+      ;; Both sides missing — nothing to show.
+      ((and (not bid) (not ask))
+       "EMPTY BOOK")
+      (else
+       (string-append
+         (format-side bid)
+         "  |  "
+         (format-side ask))))))

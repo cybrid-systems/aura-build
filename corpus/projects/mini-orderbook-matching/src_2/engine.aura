@@ -1,0 +1,128 @@
+;; engine.aura — top-level driver that loops events through match/cancel/book_ops.
+;;
+;; (run-engine ticker events)
+;;   → (values final-book final-idmap trade-tape counters)
+;;
+;; The engine is a thin coordinator. It owns the long-lived state:
+;;   * book       — limit order book (from book.aura)
+;;   * idmap      — id → (price . qty) registry (from idmap.aura)
+;;   * trade-tape — list of trade records, appended to as matches occur
+;;   * counters   — running tally of NEW / CANCEL / FILLED / RESTING events
+;;
+;; For every event it decides:
+;;   * type == "NEW"    → match-order; if anything remains open, add-resting
+;;                        and register into the idmap. Bump counters.
+;;   * type == "CANCEL" → cancel-order; bump cancel counter only on success.
+;;   * anything else    → ignored (silently dropped — MODIFY isn't supported
+;;                        in this variant of the engine).
+;;
+;; We deliberately return the trade-tape from `run-engine` rather than
+;; printing inside the engine — the stats module and the scenario in
+;; main.aura consume the tape to compute real KEY=value answers.
+;;
+;; Dependencies (loaded earlier, in order):
+;;   event.aura, tape.aura, book.aura, book_ops.aura, idmap.aura,
+;;   queue.aura, match.aura, cancel.aura, trade.aura, tape_out.aura,
+;;   stats.aura, book_view.aura, counters.aura.
+
+(define (run-engine ticker events)
+  ;; Loop state carried through `let` bindings plus a list of remaining
+  ;; events. We seed book/idmap/trade-tape/counters once, then fold.
+  (let ((book        (book-ticker-init ticker))
+        (idmap       (idmap-init))
+        (trade-tape  '())
+        (counters    (counters-init))
+        (rest        events))
+    (let loop ((book       book)
+               (idmap      idmap)
+               (trade-tape trade-tape)
+               (counters   counters)
+               (evs        rest))
+      (cond
+        ((null? evs)
+         ;; No more events — return the four values the spec promises.
+         (values book idmap trade-tape counters))
+        (else
+         (let* ((ev     (car evs))
+                (tail   (cdr evs))
+                (type   (event-type ev))
+                (result (handle-event book idmap trade-tape counters ev)))
+           (receive-loop-result result tail)))))))
+
+;; --- small helpers kept inline so engine.aura is self-contained ---------
+
+;; Boot a fresh book for `ticker`. We assume `make-book` exists from book.aura.
+(define (book-ticker-init ticker)
+  (make-book ticker))
+
+;; Boot a fresh idmap. Assumes `make-idmap` exists from idmap.aura.
+(define (idmap-init)
+  (make-idmap))
+
+;; Boot a fresh counter set. Assumes `make-counters` exists from counters.aura.
+(define (counters-init)
+  (make-counters))
+
+;; Decide what to do with one event. Returns a 4-tuple of the new state
+;; (book idmap trade-tape counters). The caller unpacks it via the
+;; `receive-loop-result` shim below.
+(define (handle-event book idmap trade-tape counters ev)
+  (let ((type (event-type ev)))
+    (cond
+      ((string=? type "NEW")
+       (handle-new book idmap trade-tape counters ev))
+      ((string=? type "CANCEL")
+       (handle-cancel book idmap trade-tape counters ev))
+      (else
+       ;; MODIFY and anything else: drop on the floor, state unchanged.
+       (list book idmap trade-tape counters)))))
+
+;; NEW: match against the book, then rest any leftover on the appropriate
+;; side and register it in the idmap.
+(define (handle-new book idmap trade-tape counters ev)
+  (let ((side (event-side ev))
+        (id   (event-id   ev)))
+    ;; Bump the NEW counter up front — every incoming order counts, even
+    ;; ones that fill completely and never rest.
+    (let ((counters (bump-new! counters)))
+      (let-values (((book2 idmap2 tape2 filled open)
+                    (match-order book idmap trade-tape ev)))
+        (cond
+          ((= open 0)
+           ;; Fully filled. counters gets a FILLED tick (filled > 0).
+           (let ((counters
+                   (if (> filled 0)
+                       (bump-filled! counters)
+                       counters)))
+             (list book2 idmap2 tape2 counters)))
+          (else
+           ;; Partially filled or fully missed: rests on the book.
+           (let* ((qty-rest (if (> filled 0) open (event-qty ev)))
+                  (book3    (add-resting book2 side
+                                         (event-price ev) qty-rest id))
+                  (idmap3   (idmap-register idmap2 id
+                                           (event-price ev) qty-rest))
+                  (counters (bump-resting! counters))
+                  (counters (if (> filled 0)
+                                (bump-filled! counters)
+                                counters)))
+             (list book3 idmap3 tape2 counters))))))))
+
+;; CANCEL: try to remove `id` from book + idmap. Bump CANCEL only on
+;; success — a no-op cancel doesn't count.
+(define (handle-cancel book idmap trade-tape counters ev)
+  (let ((id (event-id ev)))
+    (let-values (((book2 idmap2 cancelled? cleaned)
+                  (cancel-order book idmap id)))
+      (let ((counters (if cancelled?
+                          (bump-cancel! counters)
+                          counters)))
+        (list book2 idmap2 trade-tape counters)))))
+
+;; Unpack the 4-tuple handle-event returns and recurse.
+(define (receive-loop-result result tail)
+  (let ((book       (list-ref result 0))
+        (idmap      (list-ref result 1))
+        (trade-tape (list-ref result 2))
+        (counters   (list-ref result 3)))
+    (loop book idmap trade-tape counters tail)))

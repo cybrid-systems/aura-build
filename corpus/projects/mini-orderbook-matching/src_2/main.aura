@@ -1,0 +1,125 @@
+;; main.aura — orchestrates the run and prints the 15 KEY=value lines.
+;;
+;; This file ties everything together. It assumes that every earlier file
+;; (event.aura, tape.aura, book.aura, book_ops.aura, idmap.aura, queue.aura,
+;; match.aura, cancel.aura, trade.aura, tape_out.aura, stats.aura,
+;; book_view.aura, counters.aura, engine.aura, scenario.aura) has already
+;; been loaded in order on the same Aura invocation, so all of their public
+;; APIs are in scope.
+;;
+;; The 15 KEY=value lines correspond to the spec §2 contract. We compute
+;; everything from the actual engine state — no hard-coded expected numbers.
+;; The exact set of keys (illustrative) is:
+;;
+;;   TRADES         = number of fills emitted by the engine
+;;   TOTAL_VOLUME   = sum of trade quantities
+;;   TOTAL_NOTIONAL = sum of trade price*qty
+;;   VWAP           = total-notional / total-volume, rounded to 2 dp
+;;   BEST_BID       = top of buyers (price only, or "" if empty)
+;;   BEST_ASK       = top of sellers (price only, or "" if empty)
+;;   TOP_LEVEL      = formatted top-of-book line (book_view)
+;;   NEW_COUNT      = counter for "NEW" events seen
+;;   CANCEL_COUNT   = counter for "CANCEL" events seen
+;;   FILLED_COUNT   = counter for orders that fully filled
+;;   RESTING_COUNT  = counter for orders that rested on the book
+;;   TRADES_RENDER  = newline-joined trade-tape string
+;;   TICKER         = the ticker symbol used by the book
+;;   BUY_LEVELS     = number of distinct bid price levels
+;;   SELL_LEVELS    = number of distinct ask price levels
+;;
+;; All 15 are printed in this fixed order so a downstream checker can diff
+;; them line-by-line against a reference.
+
+(define (count-levels side-list)
+  ;; side-list is an alist of (price . queue). Count distinct price entries.
+  (let loop ((xs side-list) (n 0))
+    (if (null? xs)
+        n
+        (loop (cdr xs) (+ n 1)))))
+
+(define (safe-best price-or-false)
+  ;; Convert a price-or-#f into a printable string. Use "" when no level.
+  (if (or (not price-or-false) (eq? price-or-false #f))
+      ""
+      (number->string price-or-false)))
+
+(define (round-2 x)
+  ;; Round a real number to 2 decimal places, returned as a number.
+  ;; We do this with integer arithmetic: round(x * 100) / 100.
+  ;; Aura has `round`, but to be defensive we floor via integer truncation.
+  (let ((scaled (round (* x 100))))
+    (/ scaled 100.0)))
+
+(define (fmt-float-2 x)
+  ;; Format a number to exactly 2 decimal places as a string.
+  ;; E.g. 12.345 → "12.35", 12.0 → "12.00".
+  (let* ((scaled (inexact->exact (round (* x 100))))
+         (whole (quotient scaled 100))
+         (frac  (modulo (abs scaled) 100))
+         (frac-str (if (< frac 10)
+                       (string-append "0" (number->string frac))
+                       (number->string frac))))
+    (string-append (number->string whole) "." frac-str)))
+
+(define (run-main)
+  (let* ((ticker     "AURA")
+         (raw        (scenario-events))
+         ;; The scenario may hand us event-strings (e.g. "NEW BUY 100 5 #a1")
+         ;; or pre-parsed event objects. The spec says scenario-events returns
+         ;; "deterministic list of event strings / parsed events", so we need
+         ;; to normalise. We treat anything that isn't an event object (i.e.
+         ;; whose first element is "NEW"/"CANCEL"/"MODIFY") as a line to parse
+         ;; through tape.aura's parse-line.
+         (event?     (lambda (x)
+                       (and (pair? x)
+                            (symbol? (car x)))))
+         (events     (let loop ((in raw) (out '()))
+                       (cond
+                         ((null? in) (reverse out))
+                         ((string? (car in))
+                          ;; parse-line returns a (possibly empty) list of events
+                          (let ((parsed (parse-line (car in))))
+                            (loop (cdr in)
+                                  (append (reverse parsed) out))))
+                         ((event? (car in))
+                          (loop (cdr in) (cons (car in) out)))
+                         (else
+                          (loop (cdr in) out))))))
+
+    ;; Run the engine.
+    (let-values (((final-book final-idmap trade-tape counters)
+                  (run-engine ticker events)))
+
+      ;; Stats from the trade tape.
+      (let* ((tv (total-volume  trade-tape))
+             (tn (total-notional trade-tape))
+             (vw (if (= tv 0) 0.0 (vwap trade-tape)))
+             (bb (best-bid final-book))
+             (ba (best-ask final-book))
+             (top (format-top-level final-book))
+             (trades-rendered (render-trades trade-tape))
+             (new-c   (counter-value counters 'new))
+             (cnx-c   (counter-value counters 'cancel))
+             (fill-c  (counter-value counters 'filled))
+             (rest-c  (counter-value counters 'resting))
+             (buy-lv  (count-levels (book-buyers final-book)))
+             (sell-lv (count-levels (book-sellers final-book))))
+
+        (display "TRADES=")         (display (length trade-tape))       (newline)
+        (display "TOTAL_VOLUME=")   (display tv)                          (newline)
+        (display "TOTAL_NOTIONAL=") (display tn)                          (newline)
+        (display "VWAP=")           (display (fmt-float-2 (round-2 vw)))  (newline)
+        (display "BEST_BID=")       (display (safe-best bb))              (newline)
+        (display "BEST_ASK=")       (display (safe-best ba))              (newline)
+        (display "TOP_LEVEL=")      (display top)                         (newline)
+        (display "NEW_COUNT=")      (display new-c)                       (newline)
+        (display "CANCEL_COUNT=")   (display cnx-c)                       (newline)
+        (display "FILLED_COUNT=")   (display fill-c)                      (newline)
+        (display "RESTING_COUNT=")  (display rest-c)                      (newline)
+        (display "TRADES_RENDER=")  (display trades-rendered)             (newline)
+        (display "TICKER=")         (display ticker)                      (newline)
+        (display "BUY_LEVELS=")     (display buy-lv)                      (newline)
+        (display "SELL_LEVELS=")    (display sell-lv)                     (newline)))))
+
+;; Kick it off.
+(run-main)

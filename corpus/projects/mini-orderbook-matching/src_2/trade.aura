@@ -1,0 +1,50 @@
+;; trade.aura — trade record structure and accessors.
+;;
+;; A trade is a single fill between a taker (the incoming order that
+;; crossed the spread) and a maker (the resting order it hit).
+;;
+;; We represent a trade as a 5-element list:
+;;   (taker-id maker-id price qty taker-side)
+;;
+;; `taker-side` is recorded so the tape renderer can echo it later; it is
+;; "BUY" or "SELL" depending on which side the taker came in on. We keep
+;; the maker-side implicit: it is the opposite of taker-side.
+;;
+;; Public API required by §3 of the spec:
+;;   (make-trade taker-id maker-id price qty)         → trade
+;;   (trade-taker t)                                   → taker-id
+;;   (trade-maker t)                                   → maker-id
+;;   (trade-price t)                                   → price
+;;   (trade-qty t)                                     → qty
+;;   (trade-notional t)                                → price * qty
+;;
+;; We deliberately avoid `define-record` / structs (not in Aura) and use
+;; a plain tagged list with positional elements. Accessors are O(1).
+
+;; Build a new trade record. Side is optional and defaults to "BUY" on the
+;; taker; callers that need to render the taker side can override via
+;; `make-trade-side` below.
+(define (make-trade taker-id maker-id price qty)
+  (list taker-id maker-id price qty "BUY"))
+
+;; Variant that records the taker-side explicitly. Useful from match.aura
+;; which knows whether the incoming order was BUY or SELL.
+(define (make-trade-side taker-id maker-id price qty taker-side)
+  (list taker-id maker-id price qty taker-side))
+
+;; Accessors.
+(define (trade-taker t) (car t))
+
+(define (trade-maker t) (car (cdr t)))
+
+(define (trade-price t) (car (cdr (cdr t))))
+
+(define (trade-qty t)   (car (cdr (cdr (cdr t)))))
+
+(define (trade-side t)  (car (cdr (cdr (cdr (cdr t))))))
+
+;; Notional = price * qty. We expose it as a function rather than storing it
+;; in the trade to keep the record minimal and avoid drift between the
+;; stored price/qty and a cached product.
+(define (trade-notional t)
+  (* (trade-price t) (trade-qty t)))

@@ -1,0 +1,41 @@
+;; tape_out.aura — render a list of trades as a human-readable tape.
+;;
+;; A trade here is whatever trade.aura produced; the canonical shape is
+;; (taker-id maker-id price qty taker-side), but we only rely on the
+;; accessors (trade-price, trade-qty, trade-taker, trade-maker) so this
+;; module is robust against minor representation tweaks.
+;;
+;; Public API required by §3 of the spec:
+;;   (trade->line t)     → single-line string for one trade
+;;   (render-trades ts)  → all lines joined with a newline separator
+;;
+;; Format chosen for readability + machine parseability:
+;;   "TAKER=... MAKER=... PRICE=... QTY=..."
+;; One trade per line, no trailing newline at the very end of the whole
+;; tape (we just newline-join). An empty tape renders to "".
+
+(define (trade->line t)
+  (string-append
+    "TAKER=" (number->string (trade-taker t))
+    " MAKER=" (number->string (trade-maker t))
+    " PRICE=" (number->string (trade-price t))
+    " QTY="   (number->string (trade-qty t))))
+
+(define (render-trades trades)
+  (if (null? trades)
+      ""
+      (let loop ((rest (cdr trades)) (acc (list (trade->line (car trades)))))
+        (if (null? rest)
+            (reverse-and-join acc "")
+            (loop (cdr rest)
+                  (cons (trade->line (car rest)) acc))))))
+
+(define (reverse-and-join pieces sep)
+  ;; pieces is a list of strings; join with `sep` between adjacent pairs.
+  (if (null? pieces)
+      ""
+      (let loop ((xs pieces) (acc (car pieces)))
+        (if (null? (cdr xs))
+            acc
+            (loop (cdr xs)
+                  (string-append acc sep (car (cdr xs))))))))

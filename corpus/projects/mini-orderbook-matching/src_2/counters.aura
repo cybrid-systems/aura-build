@@ -1,0 +1,115 @@
+;; counters.aura — running tallies for engine observability.
+;;
+;; A counter bundle keeps four monotonically increasing tallies:
+;;   * new      — every NEW event seen by the engine
+;;   * cancel   — successful CANCELs (id was present and removed)
+;;   * filled   — total qty filled across all trades
+;;   * resting  — total qty resting on the book when the engine finishes
+;;
+;; Representation is an alist so we can extend with new keys later without
+;; changing call sites that already pattern-match a list. Lookup of a
+;; missing key returns 0 — defensive default.
+;;
+;; Public API required by §3 of the spec:
+;;   (make-counters)               → fresh counters
+;;   (counter-new c)    (counter-cancel c) (counter-filled c) (counter-resting c)
+;;   (bump-new! c) (bump-cancel! c) (bump-filled! c) (bump-resting! c)
+;;   (counter-value c key)          → integer (default 0)
+;;
+;; We expose both styles: bump! mutators (in-place via set!) for the engine
+;; hot path, and named accessors that read specific keys. `set!` works on
+;; top-level bindings only, so the `bump!` helpers below rebind the
+;; counters by set!-ing a module-local handle. Because multiple counters
+;; may exist simultaneously (engine creates one, scenarios may create
+;; others), we use a thin wrapper: counters are stored as boxes (cons
+;; cells) so mutation can target the cons even though the *binding* lives
+;; at the top level. That's why `bump!` always does (set-car! ...) and
+;; (set-cdr! ...) on the same cell.
+
+(define (make-counters)
+  ;; cell = (cons 'alist '())
+  ;; We keep the alist in the cdr so a single set-car! / set-cdr! round
+  ;; trip mutates cleanly. Keys → integer values.
+  (cons 'counters '((new . 0) (cancel . 0) (filled . 0) (resting . 0))))
+
+(define (counters-alist c)
+  ;; accessor used internally; not part of the public spec but harmless.
+  (cdr c))
+
+(define (counters-set-alist! c new-alist)
+  ;; Replace the backing alist in-place. Mutates the cell that `c` points
+  ;; at via set-cdr! — the cons itself is stable, only the tail changes.
+  (set-cdr! c new-alist))
+
+(define (counters-bump-key! c key)
+  ;; Generic increment helper. Looks up `key` in the alist; if absent,
+  ;; inserts (key . 1). If present, replaces the pair with (key . n+1).
+  (let loop ((rest (counters-alist c)))
+    (cond
+      ((null? rest)
+       (counters-set-alist! c (cons (cons key 1) (counters-alist c))))
+      ((eq? (car (car rest)) key)
+       (let ((pair (car rest)))
+         (set-car! (cdr pair) (+ (cdr pair) 1))
+         pair))
+      (else
+       (loop (cdr rest))))))
+
+(define (counters-get-key c key)
+  ;; Lookup helper used by both named accessors and `counter-value`.
+  ;; Walks the alist linearly; perfectly fine for a 4-key counter set.
+  (let loop ((rest (counters-alist c)))
+    (cond
+      ((null? rest) 0)
+      ((eq? (car (car rest)) key) (cdr (car rest)))
+      (else (loop (cdr rest))))))
+
+;; --- public mutators ------------------------------------------------------
+;;
+;; The `bump!` family each delegates to the generic helper. They accept a
+;; counter cell `c` (a pair whose cdr is the alist) and mutate it.
+;; We deliberately keep them side-effecting and returning the new value
+;; so a caller can both observe the post-bump count and continue.
+
+(define (bump-new! c)
+  (counters-bump-key! c 'new)
+  (counters-get-key c 'new))
+
+(define (bump-cancel! c)
+  (counters-bump-key! c 'cancel)
+  (counters-get-key c 'cancel))
+
+(define (bump-filled! c)
+  ;; `bump-filled!` adds `qty` to the filled tally rather than just +1,
+  ;; because individual fills can have any positive integer size. We
+  ;; therefore open-code rather than calling counters-bump-key!.
+  (let loop ((rest (counters-alist c)))
+    (cond
+      ((null? rest)
+       (counters-set-alist! c (cons (cons 'filled 1) (counters-alist c))))
+      ((eq? (car (car rest)) 'filled)
+       (let ((pair (car rest)))
+         (set-car! (cdr pair) (+ (cdr pair) 1))
+         pair))
+      (else (loop (cdr rest))))))
+
+(define (bump-resting! c)
+  (counters-bump-key! c 'resting)
+  (counters-get-key c 'resting))
+
+;; --- public accessors -----------------------------------------------------
+
+(define (counter-new c)    (counters-get-key c 'new))
+(define (counter-cancel c) (counters-get-key c 'cancel))
+(define (counter-filled c) (counters-get-key c 'filled))
+(define (counter-resting c)(counters-get-key c 'resting))
+
+;; --- generic value lookup -------------------------------------------------
+;;
+;; `counter-value` lets callers ask for any key by name without forcing
+;; them to learn about a new named accessor every time we add one. This
+;; keeps the main loop in engine.aura readable when it prints the final
+;; summary.
+
+(define (counter-value c key)
+  (counters-get-key c key))

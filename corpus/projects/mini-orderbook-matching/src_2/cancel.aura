@@ -1,0 +1,83 @@
+;; cancel.aura — cancel a resting order by id.
+;;
+;; (cancel-order book idmap id)
+;;   → (values new-book new-idmap cancelled? cleaned-id)
+;;
+;; Semantics:
+;;   * Look up (price . qty) in `idmap` for `id`. If absent → #f, #f, #f, #f
+;;     (no cancellation possible, return inputs untouched).
+;;   * Otherwise, remove `id` from the appropriate side of the book at that
+;;     price level (buyers if the cancelled order was a buy, sellers if sell).
+;;     We don't actually know which side it was from the idmap alone — but
+;;     in our engine every order goes through match.aura first and rests on
+;;     exactly one side. The engine routes cancels after a lookup that knows
+;;     the side, so here we accept a hint? No: the spec says (cancel-order
+;;     book idmap id) → just book + idmap. So we search BOTH sides for the
+;;     id, remove it from whichever side finds it, and report success.
+;;   * Remove the idmap entry via idmap-remove (provided by idmap.aura).
+;;   * Return updated book, updated idmap, #t for cancelled?, and the
+;;     remaining qty that was resting (so the engine can adjust counters).
+;;
+;; The book representation comes from book_ops.aura; we use raw alist
+;; surgery here because cancelling isn't in book_ops.aura's listed public
+;; API. We mutate the buyers/sellers alists by reconstructing them.
+
+(load "book.aura")
+(load "book_ops.aura")
+(load "idmap.aura")
+
+(define (remove-id-from-level level id)
+  ;; level is either '() or (id1 . rest). Returns (new-level . removed?).
+  (cond
+    ((null? level)
+     (cons '() #f))
+    ((equal? (car level) id)
+     (cons (cdr level) #t))
+    (else
+     (let ((sub (remove-id-from-level (cdr level) id)))
+       (cons (cons (car level) (car sub)) (cdr sub))))))
+
+(define (remove-id-from-side side id)
+  ;; side is an alist of (price . queue-of-ids). Walk each level; first one
+  ;; that contains `id` has the id spliced out. If a level drains to '() we
+  ;; drop it from the alist entirely (matches book_ops.aura's invariant).
+  (cond
+    ((null? side)
+     (cons '() #f))
+    (else
+     (let* ((entry (car side))
+            (price (car entry))
+            (level (cdr entry))
+            (sub (remove-id-from-level level id))
+            (new-level (car sub))
+            (removed? (cdr sub)))
+       (cond
+         (removed?
+          (cond
+            ((null? new-level)
+             (cons (cdr side) #t))
+            (else
+             (cons (cons (cons price new-level) (cdr side)) #t))))
+         (else
+          (let ((rest (remove-id-from-side (cdr side) id)))
+            (cons (cons entry (car rest)) (cdr rest)))))))))
+
+(define (cancel-order book idmap id)
+  (cond
+    ((not (idmap-has? idmap id))
+     (values book idmap #f #f))
+    (else
+     (let* ((entry    (cdr (assq id idmap)))
+            (rest-qty (cdr entry))
+            (buyers-res  (remove-id-from-side (book-buyers book)  id))
+            (new-buyers (car buyers-res))
+            (hit-buy    (cdr buyers-res))
+            (sellers-res  (remove-id-from-side (book-sellers book) id))
+            (new-sellers (car sellers-res))
+            (hit-sell     (cdr sellers-res))
+            (hit (or hit-buy hit-sell))
+            (new-book
+              (cons (book-ticker book)
+                    (cons new-buyers (cons new-sellers '()))))
+            (new-idmap (idmap-remove idmap id)))
+       (values new-book new-idmap hit rest-qty)))))

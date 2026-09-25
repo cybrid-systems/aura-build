@@ -1,0 +1,271 @@
+;; match.aura — core price-time priority matching.
+;;
+;; (match-order book idmap trade-tape incoming)
+;;   → (values new-book new-idmap new-trade-tape filled-qty open-qty)
+;;
+;; `incoming` is an event object shaped by event.aura:
+;;   (type side price qty id)
+;;
+;; Only `type = "NEW"` events are matched; everything else is the caller's
+;; problem (engine.aura routes CANCEL/MODIFY elsewhere). We still tolerate any
+;; event gracefully and return filled=0, open=0.
+;;
+;; Matching rules:
+;;   * BUY  crosses against the best ASK while incoming.price >= best-ask and
+;;          qty > 0.
+;;   * SELL crosses against the best BID while incoming.price <= best-bid and
+;;          qty > 0.
+;;   * The resting order at the head of the chosen level is the maker.
+;;   * fill_qty  = min(incoming.qty, maker.qty)
+;;   * trade price = the RESTING (maker) price — standard convention.
+;;   * After fill, update both idmap entries (incoming partially-filled qty;
+;;          maker fully removed if its qty hits zero).
+;;   * If the maker queue drains, drop the empty price level.
+;;   * If `idmap-has?` is false for a resting id (e.g. it was cancelled
+;;     between book refresh and consume), we silently skip it: pop it from the
+;;     front of the queue, keep looking.
+;;   * Stop as soon as the book can't cross or the incoming is fully filled.
+;;   * Leftover qty rests on the book on the side it belongs to at its price.
+;;     If the resting side's book_ops refuses (price already present handled
+;;     there) we rely on idmap holding the truth.
+;;
+;; Dependencies: book_ops (add-resting, best-bid, best-ask), idmap
+;; (idmap-register!, idmap-update-qty!, idmap-remove!, idmap-has?,
+;; idmap-get), event accessors, trade (make-trade, trade-qty).
+
+(load "event.aura")
+(load "book_ops.aura")
+(load "idmap.aura")
+(load "trade.aura")
+
+;; ---------- helpers on the book ----------
+
+;; Drop the head of the makers queue if its id is no longer in idmap,
+;; recur until we either find a live maker or the level is empty.
+;; Returns: (updated-makers-alist . live-maker-or-#f)
+(define (skip-stale-makers makers idmap)
+  (let loop ((ms makers))
+    (cond
+      ((null? ms)
+       (cons '() #f))
+      (else
+       (let* ((level (car ms))
+              (price (car level))
+              (q (cdr level))
+              (head (car q))
+              (tail (cdr q)))
+         (if (idmap-has? idmap head)
+             (cons ms (cons price head))
+             ;; stale — drop this id from front, recurse on new (price . tail) alist
+             (loop (cons (cons price tail) (cdr ms)))))))))
+
+;; Find and remove a specific id from the front-skipping queue at `level`.
+;; Returns the updated alist entry (cons price new-q) or #f if id vanished.
+(define (queue-without-id q id)
+  (cond
+    ((null? q) '())
+    ((equal? (car q) id) (cdr q))
+    (else (cons (car q) (queue-without-id (cdr q) id)))))
+
+(define (remove-id-from-makers makers id)
+  (cond
+    ((null? makers) '())
+    (else
+     (let* ((level (car makers))
+            (price (car level))
+            (q (cdr level)))
+       (let ((new-q (queue-without-id q id)))
+         (cond
+           ((null? new-q)
+            ;; level drains — drop it entirely
+            (remove-id-from-makers (cdr makers) id))
+           (else
+            (cons (cons price new-q)
+                  (remove-id-from-makers (cdr makers) id)))))))))
+
+(define (remove-id-from-sellers sellers id)
+  (cond
+    ((null? sellers) '())
+    (else
+     (let* ((level (car sellers))
+            (price (car level))
+            (q (cdr level)))
+       (let ((new-q (queue-without-id q id)))
+         (cond
+           ((null? new-q)
+            (remove-id-from-sellers (cdr sellers) id))
+           (else
+            (cons (cons price new-q)
+                  (remove-id-from-sellers (cdr sellers) id)))))))))
+
+;; Replace the head price-level in `side` (buyers/sellers alist) with the
+;; result of (cons price new-tail). If new-tail is empty we drop the level.
+(define (replace-head-level side price new-tail)
+  (cond
+    ((null? side) '())
+    ((= (car (car side)) price)
+     (if (null? new-tail)
+         (cdr side)
+         (cons (cons price new-tail) (cdr side))))
+    (else
+     (cons (car side)
+           (replace-head-level (cdr side) price new-tail)))))
+
+;; ---------- main entry ----------
+
+(define (match-order book idmap trade-tape incoming)
+  (let* ((type  (event-type incoming))
+         (side  (event-side incoming))
+         (px    (event-price incoming))
+         (qty   (event-qty incoming))
+         (id    (event-id incoming))
+         (ticker (book-ticker book))
+         (buyers  (book-buyers book))
+         (sellers (book-sellers book)))
+
+    (define (cross-buy qty-left b s tt t-id t-px t-qty)
+      ;; taker is BUY: crosses against best ASK (lowest seller price).
+      (cond
+        ((<= qty-left 0)
+         (values b s tt (- t-qty qty-left) 0))
+        (else
+         (let ((ba (best-ask b))) ;; b is acting-as-book with sellers inside
+           ;; we used `b` as the book variable above; let's just rebind cleanly
+           (match-buy-loop b s tt t-id t-px t-qty qty-left)))))
+
+    ;; Actually: simpler — write a flat loop using lexical refs.
+    ;; We'll discard the helper above and just do straight-line code below.
+
+    (cond
+      ((not (equal? type "NEW"))
+       (values book idmap trade-tape 0 0))
+
+      ((equal? side "BUY")
+       (let buy-loop ((book-cur book)
+                      (imap idmap)
+                      (tt trade-tape)
+                      (qty-left qty))
+         (let ((ask (best-ask book-cur)))
+           (cond
+             ((or (not ask) (> ask px) (<= qty-left 0))
+              ;; stop: nothing to cross, or done.
+              (let* ((filled (- qty qty-left))
+                     (open   qty-left)
+                     (book2  (if (> open 0)
+                                 (add-resting book-cur "BUY" px open id)
+                                 book-cur))
+                     (imap2 (if (> open 0)
+                                (idmap-register! imap id px open)
+                                imap)))
+                (values book2 imap2 tt filled open)))
+             (else
+              ;; cross against best ask level
+              (let* ((sellers-cur (book-sellers book-cur))
+                     (top-level (car sellers-cur))
+                     (ask-px (car top-level))
+                     (ask-q  (cdr top-level))
+                     (skip-result (skip-stale-makers sellers-cur imap))
+                     (sellers-clean (car skip-result))
+                     (live (cdr skip-result)))
+                (cond
+                  ((null? live)
+                   ;; sellers all stale — rebuild book with cleaned sellers, retry
+                   (let ((book3 (list ticker (book-buyers book-cur) sellers-clean)))
+                     (buy-loop book3 imap tt qty-left)))
+                  ((> ask-px px)
+                   ;; shouldn't happen if best-ask is correct, but guard
+                   (let* ((filled (- qty qty-left))
+                          (open   qty-left)
+                          (book2  (if (> open 0)
+                                      (add-resting book-cur "BUY" px open id)
+                                      book-cur))
+                          (imap2 (if (> open 0)
+                                     (idmap-register! imap id px open)
+                                     imap)))
+                     (values book2 imap2 tt filled open)))
+                  (else
+                   (let* ((maker-px ask-px)
+                          (maker-id (car live))
+                          (maker-entry (idmap-get imap maker-id))
+                          (maker-qty (cdr maker-entry)))
+                     (let ((fill (min qty-left maker-qty)))
+                       (let* ((new-tt (cons (make-trade id maker-id maker-px fill) tt))
+                              (qty-after (- qty-left fill))
+                              (new-maker-qty (- maker-qty fill))
+                              (imap2
+                               (cond
+                                 ((= new-maker-qty 0)
+                                  ;; maker fully filled
+                                  (let ((imap-tmp (idmap-remove! imap maker-id)))
+                                    imap-tmp))
+                                 (else
+                                  (idmap-update-qty! imap maker-id new-maker-qty))))
+                              (sellers-tail (cdr live))
+                              (sellers-new
+                               (if (null? sellers-tail)
+                                   (cdr sellers-clean) ;; drop level entirely
+                                   (replace-head-level sellers-clean maker-px sellers-tail)))
+                              (book-new (list ticker (book-buyers book-cur) sellers-new)))
+                         (buy-loop book-new imap2 new-tt qty-after))))))))))))
+
+      ((equal? side "SELL")
+       (let sell-loop ((book-cur book)
+                       (imap idmap)
+                       (tt trade-tape)
+                       (qty-left qty))
+         (let ((bb (best-bid book-cur)))
+           (cond
+             ((or (not bb) (< bb px) (<= qty-left 0))
+              (let* ((filled (- qty qty-left))
+                     (open   qty-left)
+                     (book2  (if (> open 0)
+                                 (add-resting book-cur "SELL" px open id)
+                                 book-cur))
+                     (imap2 (if (> open 0)
+                                (idmap-register! imap id px open)
+                                imap)))
+                (values book2 imap2 tt filled open)))
+             (else
+              (let* ((buyers-cur (book-buyers book-cur))
+                     (top-level (car buyers-cur))
+                     (bid-px (car top-level))
+                     (skip-result (skip-stale-makers buyers-cur imap))
+                     (buyers-clean (car skip-result))
+                     (live (cdr skip-result)))
+                (cond
+                  ((null? live)
+                   (let ((book3 (list ticker buyers-clean (book-sellers book-cur))))
+                     (sell-loop book3 imap tt qty-left)))
+                  ((< bid-px px)
+                   (let* ((filled (- qty qty-left))
+                          (open   qty-left)
+                          (book2  (if (> open 0)
+                                      (add-resting book-cur "SELL" px open id)
+                                      book-cur))
+                          (imap2 (if (> open 0)
+                                     (idmap-register! imap id px open)
+                                     imap)))
+                     (values book2 imap2 tt filled open)))
+                  (else
+                   (let* ((maker-px bid-px)
+                          (maker-id (car live))
+                          (maker-entry (idmap-get imap maker-id))
+                          (maker-qty (cdr maker-entry)))
+                     (let ((fill (min qty-left maker-qty)))
+                       (let* ((new-tt (cons (make-trade id maker-id maker-px fill) tt))
+                              (qty-after (- qty-left fill))
+                              (new-maker-qty (- maker-qty fill))
+                              (imap2
+                               (cond
+                                 ((= new-maker-qty 0)
+                                  (idmap-remove! imap maker-id))
+                                 (else
+                                  (idmap-update-qty! imap maker-id new-maker-qty))))
+                              (buyers-tail (cdr live))
+                              (buyers-new
+                               (if (null? buyers-tail)
+                                   (cdr buyers-clean)
+                                   (replace-head-level buyers-clean maker-px buyers-tail)))
+                              (book-new (list ticker buyers-new (book-sellers book-cur))))
+                         (sell-loop book-new imap2 new-tt qty-after)))
+; truncated by extract_aura_sources
