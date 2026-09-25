@@ -1,0 +1,114 @@
+;; engine.aura
+;; The top-level engine: drives the order book through a deterministic list
+;; of events (NEW, CANCEL, MODIFY), routing each event through the matching
+;; and cancellation modules and tracking counters.
+;;
+;; Public API:
+;;   (run-engine ticker events)
+;;     -> (values final-book final-idmap trade-tape counters)
+;;
+;; `events` is a list of event objects (see event.aura / tape.aura):
+;;   - NEW    events  are routed to (match-order ...) in match.aura.
+;;   - CANCEL events  are routed to (cancel-order ...) in cancel.aura.
+;;   - MODIFY events  are modeled here as a cancel followed by a fresh NEW
+;;                    at the new price/qty, preserving the same id semantics
+;;                    that the scenario expects (we use the incoming id).
+;;
+;; Counters are bumped per the counters.aura contract:
+;;   - bump-new!     on every NEW (including MODIFY-via-cancel+new)
+;;   - bump-cancel!  on every CANCEL and MODIFY
+;;   - bump-filled!  per unit of quantity filled by match-order
+;;   - bump-resting! on any leftover (open-qty > 0) that rests in the book
+;;
+;; The engine is purely functional: every step returns new state values,
+;; and the final state is threaded through `let*`-style bindings. There is
+;; no global mutable state.
+
+(define (run-engine ticker events)
+  ;; Initial state: empty book for the given ticker, fresh idmap,
+  ;; empty trade tape, zeroed counters.
+  (let ((initial-book (make-book ticker))
+        (initial-idmap (make-idmap))
+        (initial-tape '())
+        (initial-counters (make-counters)))
+    (let-values (((final-book final-idmap final-tape final-counters)
+                  (engine-loop initial-book
+                               initial-idmap
+                               initial-tape
+                               initial-counters
+                               events)))
+      (values final-book final-idmap final-tape final-counters))))
+
+(define (engine-loop book idmap tape counters evts)
+  (cond ((null? evts)
+         (values book idmap tape counters))
+        (else
+         (let* ((e (car evts))
+                (type (event-type e)))
+           (cond ((equal? type 'NEW)
+                  (let-values (((b im tp c)
+                                (handle-new book idmap tape counters e)))
+                    (engine-loop b im tp c (cdr evts))))
+                 ((equal? type 'CANCEL)
+                  (let-values (((b im tp c)
+                                (handle-cancel book idmap tape counters e)))
+                    (engine-loop b im tp c (cdr evts))))
+                 ((equal? type 'MODIFY)
+                  (let-values (((b im tp c)
+                                (handle-modify book idmap tape counters e)))
+                    (engine-loop b im tp c (cdr evts))))
+                 (else
+                  ;; Unknown event type: skip without touching state.
+                  (engine-loop book idmap tape counters (cdr evts))))))))
+
+;; ---- per-event handlers ---------------------------------------------------
+
+;; NEW event: hand off to match-order. Bump new-counter. Bump filled-counter
+;; by the filled quantity. If there is an open (resting) remainder, bump
+;; resting-counter and register the id in the idmap.
+(define (handle-new book idmap tape counters e)
+  (let* ((new-count (bump-new! counters))
+         (side (event-side e))
+         (price (event-price e))
+         (qty (event-qty e))
+         (id (event-id e)))
+    (let-values (((b im tp filled open)
+                  (match-order book idmap tape e)))
+      (let ((c1 (bump-filled! new-count filled)))
+        (if (> open 0)
+            (let ((c2 (bump-resting! c1 open)))
+              (values b (idmap-register im id) tp c2))
+            (values b im tp c1))))))
+
+;; CANCEL event: hand off to cancel-order. Bump cancel-counter regardless of
+;; whether the id was actually present (the spec wants every CANCEL counted
+;; as an attempt). If removed, also remove from idmap.
+(define (handle-cancel book idmap tape counters e)
+  (let* ((c (bump-cancel! counters))
+         (id (event-id e)))
+    (let-values (((b im cancelled? removed-qty)
+                  (cancel-order book idmap id)))
+      (if cancelled?
+          (values b (idmap-remove im id) tape c)
+          (values b im tape c)))))
+
+;; MODIFY event: treat as a cancel of the old order followed by a NEW order
+;; at the new price/qty using the SAME id. Bump cancel-counter for the
+;; cancel step. Then dispatch the re-insert as a NEW (which will bump
+;; new-counter and fill/rest accounting via match-order).
+(define (handle-modify book idmap tape counters e)
+  (let* ((c1 (bump-cancel! counters))
+         (id (event-id e))
+         (side (event-side e))
+         (price (event-price e))
+         (qty (event-qty e)))
+    (let-values (((b0 im0 cancelled? removed-qty)
+                  (cancel-order book idmap id)))
+      (let ((im1 (if cancelled?
+                     (idmap-remove im0 id)
+                     im0)))
+        ;; Build a synthetic NEW event with the same id and route it.
+        (let ((new-evt (make-event 'NEW side price qty id)))
+          (let-values (((b im tp c2)
+                        (handle-new b0 im1 tape c1 new-evt)))
+            (values b im tp c2)))))))

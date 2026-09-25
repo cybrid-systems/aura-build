@@ -1,0 +1,46 @@
+;; book_view.aura
+;; Render a human-readable top-of-book summary string for the order book.
+;;
+;; Public API:
+;;   (format-top-level book) -> string
+;;
+;; The output format is:
+;;   "<bid-price>x<bid-qty>  |  <ask-price>x<ask-qty>"
+;;
+;; where <bid-price> and <bid-qty> describe the best (highest) BUY level
+;; and <ask-price> / <ask-qty> describe the best (lowest) SELL level.
+;;
+;; If one side is empty, that side is rendered as "----" (price) with no
+;; quantity, e.g. "51x2  |  ----" or "----  |  49x3".
+;;
+;; The bid quantity is the sum of resting quantities at the best bid level
+;; (sum over the FIFO queue at that price level), and likewise for the
+;; best ask. This gives a compact depth-at-top summary.
+;;
+;; This module depends on book_ops.aura for top-bid / top-ask accessors and
+;; book.aura for book structure inspection.
+
+(define (sum-qty qs)
+  ;; Sum the quantities in a FIFO queue of (id . qty) pairs.
+  (cond ((null? qs) 0)
+        (else (+ (cdr (car qs)) (sum-qty (cdr qs))))))
+
+(define (format-side levels)
+  ;; Render one side of the top-of-book given its alist of price levels.
+  ;; Returns a string like "51x2" or "----".
+  (if (null? levels)
+      "----"
+      (let ((entry (car levels)))
+        (let ((price (car entry))
+              (qty   (sum-qty (cdr entry))))
+          (string-append
+            (number->string price)
+            "x"
+            (number->string qty))))))
+
+(define (format-top-level book)
+  ;; Combine the BUY side (left) and SELL side (right) with a "  |  " pipe
+  ;; separator, per the contract in the module table.
+  (let ((bid-str (format-side (book-buyers book)))
+        (ask-str (format-side (book-sellers book))))
+    (string-append bid-str "  |  " ask-str)))

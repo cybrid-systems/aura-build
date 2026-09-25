@@ -1,0 +1,116 @@
+;; main.aura — Entry point for the mini-inventory-reservations scenario.
+;;
+;; Responsibilities:
+;;   • Build a fresh store (via state.aura's make-store).
+;;   • Seed it with the three starting SKU stock levels required by the
+;;     scenario: SKU_A=40, SKU_B=10, SKU_C=5.
+;;   • Set the logical clock to the starting `now = 1000`.
+;;   • Run the scripted scenario (scenario.aura's run-scenario).
+;;   • Print the 15 KEY=value stdout lines, in the exact order required
+;;     by the GOAL.md stdout contract, using the report/hash APIs.
+
+(define (main)
+  (let* ((store     (make-store))
+         ;; Seed stock levels for the three scenario SKUs.
+         (_seed1    (store-set-stock! store 'SKU_A 40))
+         (_seed2    (store-set-stock! store 'SKU_B 10))
+         (_seed3    (store-set-stock! store 'SKU_C 5))
+         ;; Pin the logical clock to the scenario's starting time.
+         (_clock    (set-clock! 1000))
+         ;; Run the full scripted scenario; this mutates `store` and
+         ;; returns it (with counters populated) for reporting.
+         (final     (run-scenario store)))
+
+    ;; ---- 1. now_ms --------------------------------------------------
+    ;; The final clock value, after all advance-ms! calls in the script.
+    (display "now_ms=")
+    (display (now-ms))
+    (newline)
+
+    ;; ---- 2..5. Per-SKU stock counters -------------------------------
+    (display "stock_sku_a=")
+    (display (api-stock-of final 'SKU_A))
+    (newline)
+
+    (display "stock_sku_b=")
+    (display (api-stock-of final 'SKU_B))
+    (newline)
+
+    (display "stock_sku_c=")
+    (display (api-stock-of final 'SKU_C))
+    (newline)
+
+    ;; ---- 6. active_holds_total --------------------------------------
+    (display "active_holds_total=")
+    (display (api-final-active-holds final))
+    (newline)
+
+    ;; ---- 7..10. Reservation lifecycle counters ----------------------
+    (display "reservations_held=")
+    (display (api-reservations-held final))
+    (newline)
+
+    (display "reservations_expired=")
+    (display (api-reservations-expired final))
+    (newline)
+
+    (display "reservations_released=")
+    (display (api-reservations-released final))
+    (newline)
+
+    (display "reservations_total=")
+    (display (api-reservations-total final))
+    (newline)
+
+    ;; ---- 11..12. Restock counters -----------------------------------
+    (display "restock_events=")
+    (display (api-restock-count final))
+    (newline)
+
+    (display "restock_units_total=")
+    (display (api-restock-units final))
+    (newline)
+
+    ;; ---- 13. oversell_blocked ---------------------------------------
+    (display "oversell_blocked=")
+    (display (oversell-rejected-count final))
+    (newline)
+
+    ;; ---- 14. ledger_entries -----------------------------------------
+    (display "ledger_entries=")
+    (display (api-ledger-entries final))
+    (newline)
+
+    ;; ---- 15. invariant_ok -------------------------------------------
+    ;; Run the full invariant sweep one last time and report whether
+    ;; everything still checks out. Use a side-effecting assert so any
+    ;; violation is visible; the boolean is what we print.
+    (let ((ok (api-check-invariant final)))
+      (api-assert-ok final)
+      (display "invariant_ok=")
+      (display (if ok "true" "false"))
+      (newline)
+
+      ;; ---- 16..18. Deterministic hashes of the headline counters ----
+      ;; These are NOT in the required stdout contract but the GOAL
+      ;; mentions the hash module, so we expose them as extra lines for
+      ;; debugging / cross-run stability.  They come last so they don't
+      ;; disturb the ordered contract above.
+      (display "hash_reservations_total=")
+      (display (api-hash-reservations-total (api-reservations-total final)))
+      (newline)
+
+      (display "hash_oversell_blocked=")
+      (display (api-hash-oversell-blocked (oversell-rejected-count final)))
+      (newline)
+
+      (display "hash_mix=")
+      (display (api-hash-mix (+ (api-reservations-total final)
+                                (oversell-rejected-count final))))
+      (newline))))
+
+;; Invoke main when this file is the last one loaded by the Aura CLI.
+;; Wrapping in a top-level call keeps things simple — Aura evaluates
+;; top-level expressions in order, so by the time we get here every
+;; module API referenced above has been defined.
+(main)

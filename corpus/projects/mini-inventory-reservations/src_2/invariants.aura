@@ -1,0 +1,191 @@
+;; invariants.aura — System invariant checks.
+;;
+;; Invariants are predicates over the store's state that must hold at
+;; every observable moment of the system. After every mutation (reserve,
+;; release, expire, restock) the following should be true:
+;;
+;;   1. No SKU's stock counter is ever negative. (stock is >= 0 for all
+;;      SKUs, including SKUs that have never had a transaction).
+;;   2. The sum of all active hold qtys for a given SKU never exceeds
+;;      that SKU's starting stock PLUS any restocks applied to it. In
+;;      other words: held units + free stock = original + restocks.
+;;   3. Every entry in the ledger list is a well-formed 4-list with a
+;;      recognised tag.
+;;   4. The holds alist keys (hold ids) are all unique within 'holds.
+;;
+;; This module exposes two functions used by main.aura at the end of the
+;; scenario:
+;;
+;;   api-check-invariant : returns #t if all invariants hold, else #f.
+;;   api-assert-ok       : same, but if it fails it also (display)s a
+;;                         human-readable diagnostic to stdout listing
+;;                         each broken invariant. Useful in debugging.
+
+(define (api-check-invariant store)
+  (let ((stock      (store-stock-list store))
+        (ledger     (store-ledger store))
+        (holds      (store-holds store))
+        (orig-stock (store-orig-stock store))
+        (restocked  (store-restock-totals store)))
+    (and
+      ;; Invariant 1: stock >= 0 for every SKU ever known.
+      (all-stock-non-negative? stock)
+      ;; Invariant 2: held units + free stock = starting + restocks, per SKU.
+      (stock-plus-holds-matches-orig? stock holds orig-stock restocked)
+      ;; Invariant 3: every ledger entry is a tagged 4-list.
+      (all-ledger-entries-well-formed? ledger)
+      ;; Invariant 4: hold ids are unique within the holds alist.
+      (hold-ids-unique? holds))))
+
+(define (api-assert-ok store)
+  (cond ((api-check-invariant store)
+         #t)
+        (else
+         (display "INVARIANT VIOLATION")
+         (newline)
+         (let ((stock (store-stock-list store)))
+           (when (not (all-stock-non-negative? stock))
+             (display "  - negative stock detected")
+             (newline)))
+         (let ((holds (store-holds store)))
+           (when (not (hold-ids-unique? holds))
+             (display "  - duplicate hold ids")
+             (newline)))
+         (let ((ledger (store-ledger store)))
+           (when (not (all-ledger-entries-well-formed? ledger))
+             (display "  - malformed ledger entry")
+             (newline)))
+         #f)))
+
+;; ---------------------------------------------------------------------------
+;; Helper: accessors used only by this module.
+;; ---------------------------------------------------------------------------
+;; The store alist layout is defined in state.aura. For convenience here we
+;; fetch sub-alists with a small helper that returns '() on a missing key so
+;; the invariant checks never crash on a half-built store.
+
+(define (store-stock-list store)
+  (let ((pair (assq 'stock store)))
+    (if pair (cdr pair) '())))
+
+(define (store-orig-stock store)
+  (let ((pair (assq 'orig-stock store)))
+    (if pair (cdr pair) '())))
+
+(define (store-restock-totals store)
+  (let ((pair (assq 'restock-totals store)))
+    (if pair (cdr pair) '())))
+
+;; ---------------------------------------------------------------------------
+;; Invariant 1: every stock entry is a non-negative integer.
+;; ---------------------------------------------------------------------------
+
+(define (all-stock-non-negative? stock)
+  (cond ((null? stock) #t)
+        (else
+         (let ((entry (car stock)))
+           (let ((n (cdr entry)))
+             (if (and (number? n) (>= n 0))
+                 (all-stock-non-negative? (cdr stock))
+                 #f))))))
+
+;; ---------------------------------------------------------------------------
+;; Invariant 2: stock + active holds == starting stock + restocks (per SKU).
+;; ---------------------------------------------------------------------------
+;; For each SKU we know its starting quantity (from orig-stock, possibly
+;; missing => 0), its total restocked units (from restock-totals, possibly
+;; missing => 0), its current stock, and the sum of qtys of active holds
+;; for it. The invariant says they balance.
+
+(define (stock-plus-holds-matches-orig? stock holds orig-stock restocked)
+  (every-sku-ok? stock holds orig-stock restocked))
+
+(define (every-sku-ok? stock holds orig-stock restocked)
+  (cond ((and (null? stock)
+              (null? orig-stock)
+              (null? restocked)
+              (null? holds))
+         #t)
+        (else
+         (let* ((sku (next-sku stock orig-stock restocked))
+                (cur (alist-ref sku stock 0))
+                (org (alist-ref sku orig-stock 0))
+                (rst (alist-ref sku restocked 0))
+                (held (sum-holds-for-sku holds sku))
+                (rhs (+ (+ org rst) 0)))
+           ;; Invariant: cur + held == org + rst
+           (if (= (+ cur held) rhs)
+               (every-sku-ok? (skip-sku stock sku)
+                              holds
+                              (skip-sku orig-stock sku)
+                              (skip-sku restocked sku))
+               #f)))))
+
+(define (next-sku stock orig-stock restocked)
+  (cond ((not (null? stock)) (caar stock))
+        ((not (null? orig-stock)) (caar orig-stock))
+        ((not (null? restocked)) (caar restocked))
+        (else #f)))
+
+(define (skip-sku alist sku)
+  (cond ((null? alist) '())
+        ((equal? (caar alist) sku) (cdr alist))
+        (else alist)))
+
+(define (alist-ref key alist default)
+  (let ((pair (assq key alist)))
+    (if pair (cdr pair) default)))
+
+(define (sum-holds-for-sku holds sku)
+  (cond ((null? holds) 0)
+        (else
+         (let ((entry (car holds)))
+           (let ((hold (cdr entry)))
+             (let ((entry-sku (car (cddr hold))))
+               (let ((entry-qty (car (cdddr hold))))
+                 (if (equal? entry-sku sku)
+                     (+ entry-qty (sum-holds-for-sku (cdr holds) sku))
+                     (sum-holds-for-sku (cdr holds) sku)))))))))
+
+;; ---------------------------------------------------------------------------
+;; Invariant 3: every ledger entry is a well-formed 4-list with a known tag.
+;; ---------------------------------------------------------------------------
+
+(define (all-ledger-entries-well-formed? ledger)
+  (cond ((null? ledger) #t)
+        (else
+         (if (well-formed-entry? (car ledger))
+             (all-ledger-entries-well-formed? (cdr ledger))
+             #f))))
+
+(define (well-formed-entry? entry)
+  (if (and (list? entry) (= (length entry) 4))
+      (let ((tag (car entry)))
+        (or (eq? tag 'reserve)
+            (eq? tag 'release)
+            (eq? tag 'expire)
+            (eq? tag 'restock)))
+      #f))
+
+;; ---------------------------------------------------------------------------
+;; Invariant 4: hold ids in the 'holds alist are unique.
+;; ---------------------------------------------------------------------------
+
+(define (hold-ids-unique? holds)
+  (let ((ids (map-hold-ids holds)))
+    (no-duplicates? ids)))
+
+(define (map-hold-ids holds)
+  (cond ((null? holds) '())
+        (else
+         (let ((entry (car holds)))
+           (let ((hold (cdr entry)))
+             (let ((hid (car (cdr hold))))
+               (cons hid (map-hold-ids (cdr holds)))))))))
+
+(define (no-duplicates? xs)
+  (cond ((null? xs) #t)
+        (else
+         (if (member (car xs) (cdr xs))
+             #f
+             (no-duplicates? (cdr xs))))))

@@ -1,0 +1,93 @@
+;; main.aura -- Scenario driver for the mini-tax-rules-engine.
+;; This file is the only one that prints. It loads sample data, resolves the
+;; effective tax rate, computes per-line tax and invoice totals, then prints
+;; the exact KEY=value lines required by the contract.
+
+;; ----- sample line tax computation summary -----
+;; For each invoice line, we want to print a small line-tax display.
+;; Helpers: per-line display string built from the computed tax amount.
+
+(define (line-tax-display tax)
+  (string-append "tax=" (fmt-money tax)))
+
+;; ----- round-2dp used by the displayed subtotal/total -----
+;; compute.aura already rounds to cents internally; here we just use fmt-money.
+
+;; ----- sum a list of numbers -----
+(define (sum xs)
+  (if (null? xs) 0
+      (+ (car xs) (sum (cdr xs)))))
+
+;; ----- round-2dp for ad-hoc display values that may not have been
+;; pre-rounded (none expected, but defensive) -----
+(define (round2 n)
+  (let ((cents (round (* n 100))))
+    (/ cents 100.0)))
+
+;; ===========================================================================
+;; Run scenario
+;; ===========================================================================
+(let ((graph      (sample-graph))
+      (overrides  (sample-overrides))
+      (exemptions (sample-exemptions))
+      (invoice    (sample-invoice)))
+
+  ;; Resolve the effective rate for the invoice's jurisdiction.
+  (let ((effective-rate (resolve-rate graph (inv-jur invoice) overrides)))
+    ;; Compute the full invoice breakdown.
+    (let ((breakdown (compute-invoice invoice graph overrides exemptions))
+          (lines     (inv-lines invoice)))
+
+      ;; Convenience accessors (compute-invoice returns an alist).
+      (define (bd-get key)
+        (cdr (assq key breakdown)))
+
+      (let ((line-taxes  (bd-get "line-taxes"))
+            (subtotal    (bd-get "subtotal"))
+            (total-tax   (bd-get "total-tax"))
+            (grand-total (bd-get "grand-total"))
+            (rate-out    (bd-get "effective-rate")))
+
+        ;; Pull the rate value out of the rate alist for display.
+        (let ((rate-value (rate-value effective-rate)))
+
+          ;; ------------------------------------------------------------------
+          ;; Print KEY=value lines in the exact required order.
+          ;; ------------------------------------------------------------------
+
+          (display "JURISDICTION=")        (display (inv-jur invoice)) (newline)
+          (display "BASE_RATE=")          (display (fmt-money rate-value)) (newline)
+          (display "EFFECTIVE_RATE=")     (display (fmt-money rate-value)) (newline)
+
+          ;; Per-line taxes: one line per invoice line in order.
+          (let loop ((i 0) (ts line-taxes))
+            (if (null? ts)
+                'done
+                (begin
+                  (display "LINE_")
+                  (display (number->string i))
+                  (display "_ID=")
+                  (display (line-id (list-ref lines i)))
+                  (newline)
+                  (display "LINE_")
+                  (display (number->string i))
+                  (display "_AMOUNT=")
+                  (display (fmt-money (line-amount (list-ref lines i))))
+                  (newline)
+                  (display "LINE_")
+                  (display (number->string i))
+                  (display "_TAX=")
+                  (display (fmt-money (car ts)))
+                  (newline)
+                  (loop (+ i 1) (cdr ts)))))
+
+          ;; Totals.
+          (display "SUBTOTAL=")    (display (fmt-money subtotal))    (newline)
+          (display "TOTAL_TAX=")   (display (fmt-money total-tax))   (newline)
+          (display "GRAND_TOTAL=") (display (fmt-money grand-total)) (newline)
+
+          ;; Overrides count and exemptions count (audit-style summary).
+          (display "OVERRIDES_COUNT=")   (display (number->string (length overrides)))   (newline)
+          (display "EXEMPTIONS_COUNT=")  (display (number->string (length exemptions))) (newline)
+          (display "LINES_COUNT=")       (display (number->string (length lines)))     (newline)
+        )))))

@@ -1,0 +1,22 @@
+;; event.aura
+;; Defines event constructors and accessors for the order book engine.
+;; Events come in three flavors: NEW, CANCEL, and MODIFY.
+;; Each event is represented as a tagged list: (type side price qty id).
+
+(define (make-event type side price qty id)
+  (list type side price qty id))
+
+(define (event-type e)
+  (car e))
+
+(define (event-side e)
+  (car (cdr e)))
+
+(define (event-price e)
+  (car (cdr (cdr e))))
+
+(define (event-qty e)
+  (car (cdr (cdr (cdr e)))))
+
+(define (event-id e)
+  (car (cdr (cdr (cdr (cdr e))))))

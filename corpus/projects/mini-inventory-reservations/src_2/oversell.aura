@@ -1,0 +1,80 @@
+;; oversell.aura — Oversell prevention + accounting.
+;;
+;; The "oversell" path is what happens when a reservation request arrives
+;; for a SKU whose available stock is less than the requested quantity.
+;; Instead of letting the stock counter go negative (which would silently
+;; over-promise units to customers), we must reject the attempt outright
+;; and record that an oversell was blocked. Two layers cooperate:
+;;
+;;   1. api-attempt-reserve — wraps api-reserve (from reservation.aura)
+;;      with a pre-flight availability check. If the current stock for
+;;      the requested SKU is < qty, we DO NOT call api-reserve; instead
+;;      we increment the per-store oversell-rejected counter and return
+;;      a distinct sentinel so callers can tell the outcome apart.
+;;
+;;   2. oversell-rejected-count / oversell-increment! — let other
+;;      modules (report.aura, scenario.aura) read and bump the counter
+;;      stored on the store.
+;;
+;; Sentinel values used by api-attempt-reserve:
+;;
+;;   'ok         — reservation succeeded; the hold-id is returned too
+;;                  (we return a (cons 'ok hold-id) pair from the
+;;                  successful branch so callers can pattern-match).
+;;   'oversell   — reservation was rejected because stock < qty
+;;
+;; Storing the oversell counter on the store keeps each store
+;; self-contained (useful if main.aura ever built multiple stores for
+;; comparison), while also making it accessible to the rest of the
+;; system via the standard store accessor conventions.
+
+(define (api-attempt-reserve store sku qty now ttl-ms)
+  ;; Probe the current stock level. We do NOT mutate anything on the
+  ;; rejection branch — the ledger stays clean for blocked attempts
+  ;; (the oversell counter is the sole record of the attempt).
+  (let ((available (store-stock store sku)))
+    (if (< available qty)
+        ;; Not enough stock: bump the oversell counter and signal
+        ;; rejection. We return the symbol 'oversell so the caller
+        ;; can branch on it without inspecting the store.
+        (begin
+          (oversell-increment! store)
+          'oversell)
+        ;; Enough stock: delegate to api-reserve for the real work
+        ;; (stock decrement, hold creation, ledger entry). On success
+        ;; api-reserve returns the new hold-id; we tag it with 'ok so
+        ;; the result is distinguishable from the rejection sentinel.
+        (let ((hid (api-reserve store sku qty now ttl-ms)))
+          (cons 'ok hid)))))
+
+(define (oversell-rejected-count store)
+  ;; Pull the (symbol . integer) pair out of the store's counters alist
+  ;; under the key 'oversell-rejected. If the counter has never been
+  ;; initialised we treat that as zero, which keeps freshly-built
+  ;; stores reportable without forcing every constructor to seed it.
+  (let ((entry (assq 'oversell-rejected
+                     (cdr (assq 'counters store)))))
+    (if entry
+        (cdr entry)
+        0)))
+
+(define (oversell-increment! store)
+  ;; Locate the counters alist, bump the 'oversell-rejected entry (or
+  ;; add it if missing), then splice the updated counters list back
+  ;; into the store. We mutate the store in place via set! on the
+  ;; top-level binding the caller already holds — the caller does not
+  ;; need a fresh handle back.
+  (let* ((counters-cell (assq 'counters store))
+         (old-counters  (cdr counters-cell))
+         (entry         (assq 'oversell-rejected old-counters))
+         (new-counters
+          (if entry
+              ;; Replace the existing (symbol . n) pair in place.
+              (map (lambda (pair)
+                     (if (eq? (car pair) 'oversell-rejected)
+                         (cons 'oversell-rejected (+ (cdr pair) 1))
+                         pair))
+                   old-counters)
+              ;; First-ever oversell: prepend a fresh entry.
+              (cons (cons 'oversell-rejected 1) old-counters))))
+    (set-cdr! counters-cell new-counters)))

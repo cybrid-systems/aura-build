@@ -1,0 +1,8 @@
+(define (make-event type side price qty id)
+  (list type side price qty id))
+
+(define (event-type e) (car e))
+(define (event-side e) (cadr e))
+(define (event-price e) (caddr e))
+(define (event-qty e) (cadddr e))
+(define (event-id e) (car (cddddr e)))

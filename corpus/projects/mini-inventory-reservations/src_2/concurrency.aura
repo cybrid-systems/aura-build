@@ -1,0 +1,84 @@
+;; concurrency.aura — Simulated concurrent reservation stress test.
+;;
+;; The Aura runtime is single-threaded, so true OS-level concurrency is
+;; not available. However, "concurrency" in the inventory scenario is
+;; modelled as a batch of reservation requests that all arrive at the
+;; same logical `now`, and we want to exercise the same code path that
+;; would be hit under contention: many calls to `api-attempt-reserve`
+;; in close succession, possibly against the same SKU, with mixed
+;; outcomes (some succeed, some get rejected as oversells).
+;;
+;; The stress harness here is deliberately simple: it takes a list of
+;; (sku . qty) "requests" and a timestamp, and sequentially feeds each
+;; request through `api-attempt-reserve` (from oversell.aura). For each
+;; request it records:
+;;
+;;   - the sku and qty that were asked for
+;;   - whether the attempt was accepted or rejected (oversell)
+;;   - the store's oversell-rejected counter delta caused by that call
+;;
+;; The returned "results" value is a plain association list keyed by
+;; symbol so that `stress-results` can pluck out named slices for the
+;; report. The shape is:
+;;
+;;   ((accepted . N)
+;;    (rejected . N)
+;;    (per-sku . ((SKU_A . (acc . rej)) (SKU_B . (acc . rej)) ...))
+;;    (requests . ((sku . qty . outcome) ...)))
+;;
+;; where `outcome` is the symbol 'ok or 'rejected. Downstream code
+;; (e.g. the final stdout report in main.aura) doesn't depend on the
+;; internal shape — only on (stress-results results 'accepted) etc. —
+;; but we document it here for clarity.
+
+(define (api-stress-reserve store requests now ttl-ms)
+  ;; Iterate the request list in order. For each (sku . qty) pair, call
+  ;; api-attempt-reserve, observe the oversell-rejected counter before
+  ;; and after, and classify the result.
+  (let ((accepted 0)
+        (rejected 0)
+        (per-sku '())
+        (log '()))
+    (define (bump-accepted! sku)
+      (set! accepted (+ accepted 1))
+      (let ((entry (assoc sku per-sku)))
+        (if entry
+            (let ((pair (cdr entry)))
+              (set-cdr! pair (cons (+ (car pair) 1) (cdr pair))))
+            (set! per-sku (cons (cons sku (cons 1 0)) per-sku)))))
+    (define (bump-rejected! sku)
+      (set! rejected (+ rejected 1))
+      (let ((entry (assoc sku per-sku)))
+        (if entry
+            (let ((pair (cdr entry)))
+              (set-cdr! pair (cons (car pair) (+ (cdr pair) 1))))
+            (set! per-sku (cons (cons sku (cons 0 1)) per-sku)))))
+    (define (classify req)
+      (let ((sku (car req))
+            (qty (cdr req))
+            (before (oversell-rejected-count store)))
+        (api-attempt-reserve store sku qty now ttl-ms)
+        (let ((after (oversell-rejected-count store)))
+          (if (> after before)
+              (begin
+                (bump-rejected! sku)
+                (set! log (cons (list sku qty 'rejected) log)))
+              (begin
+                (bump-accepted! sku)
+                (set! log (cons (list sku qty 'ok) log)))))))
+    (let loop ((rs requests))
+      (if (null? rs)
+          (list (cons 'accepted accepted)
+                (cons 'rejected rejected)
+                (cons 'per-sku per-sku)
+                (cons 'requests (reverse log)))
+          (begin
+            (classify (car rs))
+            (loop (cdr rs)))))))
+
+(define (stress-results results)
+  ;; Identity function: the results value is already an alist, and
+  ;; callers can assoc into it directly. Provided as a named handle
+  ;; so that report/scenario code reads naturally: (cdr (assoc 'accepted
+  ;; (stress-results r))).
+  results)

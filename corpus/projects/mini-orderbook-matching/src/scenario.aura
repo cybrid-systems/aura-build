@@ -1,0 +1,57 @@
+;; scenario.aura
+;; Deterministic tape of events for the mini-orderbook matching engine.
+;;
+;; Public API:
+;;   (scenario-events) -> list of event strings (one per tape line)
+;;
+;; The scenario is hand-crafted to exercise the engine:
+;;   * Builds a small book with bids and asks.
+;;   * Trades that cross the spread to generate fills.
+;;   * A cancel of a resting order.
+;;   * A partial fill leaving remainder resting.
+;;
+;; Lines are the textual tape that tape.aura::parse-line will parse.
+;; Order matters: events are processed sequentially by the engine.
+
+(define (scenario-events)
+  (list
+   ;; 1. Seed a few resting SELL orders (asks) at 50, 51, 52
+   "NEW SELL 50 3 S1"
+   "NEW SELL 51 2 S2"
+   "NEW SELL 52 4 S3"
+
+   ;; 2. Seed a few resting BUY orders (bids) at 49, 48, 47
+   "NEW BUY 49 5 B1"
+   "NEW BUY 48 2 B2"
+   "NEW BUY 47 3 B3"
+
+   ;; 3. Marketable BUY at 51 -> sweeps S1 (3) and partially S2 (2 of 2)
+   ;;    Filled = 5, trades at 50 and 51.
+   "NEW BUY 51 5 M1"
+
+   ;; 4. Marketable SELL at 48 -> hits B1 (5) at 49
+   ;;    Filled = 5, trade at 49.
+   "NEW SELL 48 5 M2"
+
+   ;; 5. Partial fill scenario: BUY at 52 for 6
+   ;;    Best ask is 52 (S3 has 4) -> fills 4, remainder 2 rests at 52.
+   "NEW BUY 52 6 M3"
+
+   ;; 6. Another marketable SELL at 47 for 3
+   ;;    Best bid is 49 (B1 was filled), so 48? B2 has 2 at 48, B3 has 3 at 47.
+   ;;    Fills B2 (2) then B3 (3) = 5 filled at 48 and 47.
+   "NEW SELL 47 5 M4"
+
+   ;; 7. Cancel a resting order. After prior trades, what's left resting?
+   ;;    B1 (5 at 49) was fully filled by M2.
+   ;;    S3 had 4 at 52; M3 consumed all 4 -> S3 is gone.
+   ;;    New resting from M3: BUY at 52 for qty 2 (id M3).
+   ;;    B3 (3 at 47) was fully filled by M4.
+   ;;    Resting: BUY 52 qty 2 (M3). Cancel it.
+   "CANCEL M3"
+
+   ;; 8. Add one more resting BUY to leave something in the book.
+   "NEW BUY 50 1 B4"
+
+   ;; 9. A marketable SELL at 50 for 1 to trade against B4.
+   "NEW SELL 50 1 M5"))

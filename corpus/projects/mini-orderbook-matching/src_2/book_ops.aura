@@ -1,0 +1,179 @@
+;; book_ops.aura — mutators on the limit-order-book structure.
+;;
+;; The book is (ticker buyers sellers):
+;;   buyers  = alist of (price . queue-of-ids), sorted DESCENDING by price
+;;            (best bid = highest price = head of list).
+;;   sellers = alist of (price . queue-of-ids), sorted ASCENDING by price
+;;            (best ask = lowest price = head of list).
+;; Each queue is a plain list of order ids in time priority: head = oldest,
+;; tail = newest.  queue.aura provides the enqueue/dequeue helpers.
+;;
+;; Public API required by §3 of the spec:
+;;   (add-resting book side price qty id) → book
+;;   (top-bid  book) → (price . qty) or #f
+;;   (top-ask  book) → (price . qty) or #f
+;;   (best-bid book) → price or #f
+;;   (best-ask book) → price or #f
+;;
+;; Notes on the API:
+;;   * `add-resting` accepts a `qty` for interface symmetry with the rest of
+;;     the engine.  The qty is not stored per-id — the *id map* (idmap.aura)
+;;     owns quantity.  This file just appends the id to the appropriate price
+;;     level queue and re-inserts the level in sorted order.
+;;   * When a level's queue becomes empty after removal we drop the level
+;;     entirely (per the convention stated in book.aura).
+;;   * Internal helpers (insert-level, remove-head-id, etc.) are not part of
+;;     the public spec but are necessary to keep add-resting / future
+;;     removers well-behaved.
+
+(load "book.aura")
+
+;; ---------------------------------------------------------------------------
+;; Internal helpers
+;; ---------------------------------------------------------------------------
+
+;; Sum a list of numbers.  Used to compute the displayed quantity at a level.
+(define (sum-list xs)
+  (let loop ((rest xs) (acc 0))
+    (if (null? rest)
+        acc
+        (loop (cdr rest) (+ acc (car rest))))))
+
+;; Insert (price . ids) into a sorted alist `levels` using `cmp` to order
+;; existing entries.  cmp receives the new price and an existing price and
+;; must return #t when the new entry should come BEFORE the existing one
+;; (i.e. the new price is "better" / higher priority).
+(define (insert-level levels entry cmp)
+  (let loop ((rest levels) (acc '()))
+    (cond
+      ((null? rest)
+       (append (reverse acc) (list entry)))
+      ((cmp (car entry) (car (car rest)))
+       (append (reverse acc) (cons entry rest)))
+      (else
+       (loop (cdr rest) (cons (car rest) acc))))))
+
+;; Remove the head id from the queue stored at `level` (which is
+;; (price . ids)).  Returns the updated (price . ids) pair, or #f if the
+;; level is now empty (so the caller can drop it).
+(define (remove-head-id level)
+  (let ((price (car level))
+        (ids   (cdr level)))
+    (if (null? ids)
+        #f
+        (let ((rest (cdr ids)))
+          (if (null? rest)
+              #f                       ; level drained
+              (cons price rest))))))
+
+;; Walk the alist and drop the first level whose price equals `price`.
+;; Returns the updated alist.  Levels that become empty as a result are
+;; removed entirely (remove-head-id returns #f in that case).
+(define (drop-level levels price)
+  (let loop ((rest levels) (acc '()))
+    (cond
+      ((null? rest)
+       (reverse acc))
+      ((= (car (car rest)) price)
+       (append (reverse acc) (cdr rest)))
+      (else
+       (loop (cdr rest) (cons (car rest) acc))))))
+
+;; ---------------------------------------------------------------------------
+;; add-resting — append an order id to the appropriate side at `price`.
+;; ---------------------------------------------------------------------------
+;;
+;; For BUY resting orders we need the bids sorted descending by price:
+;; the new entry comes before an existing one when (new-price > existing-price),
+;; or when prices are equal we place it AFTER the existing entry (so that
+;; older ids at that price stay at the head — time priority).
+;;
+;; For SELL resting orders we need asks sorted ascending by price:
+;; the new entry comes before an existing one when (new-price < existing-price),
+;; equal-price ties go AFTER the existing entry (time priority again).
+;;
+;; qty is accepted to satisfy the spec's signature but, per the design note
+;; above, is not actually stored on the book (the idmap owns quantities).
+
+(define (add-resting book side price qty id)
+  (let ((ticker  (book-ticker   book))
+        (buyers  (book-buyers   book))
+        (sellers (book-sellers  book)))
+    (cond
+      ;; --- BUY side: descending by price ------------------------------------
+      ((string=? side "BUY")
+       (let* ((levels buyers)
+              (existing (assoc price levels))
+              (new-level
+                (if existing
+                    (cons price (append (cdr existing) (list id)))
+                    (cons price (list id))))
+              (cmp-buy (lambda (new existing)
+                         (> new existing))))
+         (if existing
+             (make-book ticker
+                        (insert-level (drop-level levels price)
+                                      new-level
+                                      cmp-buy)
+                        sellers)
+             (make-book ticker
+                        (insert-level levels new-level cmp-buy)
+                        sellers))))
+      ;; --- SELL side: ascending by price -----------------------------------
+      ((string=? side "SELL")
+       (let* ((levels sellers)
+              (existing (assoc price levels))
+              (new-level
+                (if existing
+                    (cons price (append (cdr existing) (list id)))
+                    (cons price (list id))))
+              (cmp-sell (lambda (new existing)
+                          (< new existing))))
+         (if existing
+             (make-book ticker
+                        buyers
+                        (insert-level (drop-level levels price)
+                                      new-level
+                                      cmp-sell))
+             (make-book ticker
+                        buyers
+                        (insert-level levels new-level cmp-sell)))))
+      (else
+       ;; Unknown side: return the book unchanged so we never silently
+       ;; corrupt state on a malformed event.
+       book))))
+
+;; ---------------------------------------------------------------------------
+;; top-bid / top-ask — (price . qty) at the best level, or #f if empty.
+;; ---------------------------------------------------------------------------
+;;
+;; Quantity here means "number of resting orders" at that level (length of
+;; the id queue).  We deliberately do NOT multiply by per-order size
+;; because the idmap owns actual quantities; book_view.aura can decide how
+;; to display.  This keeps the book_ops surface pure and simple.
+
+(define (top-bid book)
+  (let ((buyers (book-buyers book)))
+    (if (null? buyers)
+        #f
+        (let ((level (car buyers)))
+          (cons (car level) (length (cdr level)))))))
+
+(define (top-ask book)
+  (let ((sellers (book-sellers book)))
+    (if (null? sellers)
+        #f
+        (let ((level (car sellers)))
+          (cons (car level) (length (cdr level)))))))
+
+;; ---------------------------------------------------------------------------
+;; best-bid / best-ask — just the price at the best level, or #f.
+;; ---------------------------------------------------------------------------
+
+(define (best-bid book)
+  (let ((tb (top-bid book)))
+    (if tb (car tb) #f)))
+
+(define (best-ask book)
+  (let ((ta (top-ask book)))
+    (if ta (car ta) #f)))

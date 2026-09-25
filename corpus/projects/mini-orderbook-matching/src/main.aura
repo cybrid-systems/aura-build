@@ -1,0 +1,90 @@
+;; main.aura
+;; Orchestrates the full mini-orderbook matching engine run:
+;;   1. Get deterministic events from (scenario-events)
+;;   2. Build initial book + idmap + counters + trade-tape
+;;   3. Run the engine
+;;   4. Compute stats, render top-of-book, read counters
+;;   5. Print the 15 KEY=value lines required by the stdout contract.
+
+;; ---- Run the engine through the public module API ------------------------
+
+(define ticker "AURA")
+
+(define events (scenario-events))
+
+(define book (make-book ticker))
+(define idmap (make-idmap))
+(define counters (make-counters))
+(define trade-tape '())
+
+;; run-engine returns (values final-book final-idmap trade-tape counters)
+(define-values final-book final-idmap final-trade-tape final-counters
+  (run-engine ticker events))
+
+;; ---- Compute derived statistics ------------------------------------------
+
+(define stats-tape final-trade-tape)
+
+(define tot-qty   (total-volume   stats-tape))
+(define tot-not   (total-notional stats-tape))
+(define vwap-val  (vwap           stats-tape))
+
+(define top-line (format-top-level final-book))
+
+;; ---- Counter lookups -----------------------------------------------------
+
+(define n-new     (counter-value final-counters 'new))
+(define n-cancel  (counter-value final-counters 'cancel))
+(define n-filled  (counter-value final-counters 'filled))
+(define n-resting (counter-value final-counters 'resting))
+(define n-trades  (counter-value final-counters 'trades))
+(define n-bids    (counter-value final-counters 'bids))
+(define n-asks    (counter-value final-counters 'asks))
+
+;; ---- Remaining book depth helpers ----------------------------------------
+;; Count resting BUY orders across every bid level.
+(define (count-resting-buyers buyers)
+  (cond ((null? buyers) 0)
+        (else
+         (+ (length (cdr (car buyers)))
+            (count-resting-buyers (cdr buyers))))))
+
+;; Count resting SELL orders across every ask level.
+(define (count-resting-sellers sellers)
+  (cond ((null? sellers) 0)
+        (else
+         (+ (length (cdr (car sellers)))
+            (count-resting-sellers (cdr sellers))))))
+
+(define n-resting-bids (count-resting-buyers  (book-buyers  final-book)))
+(define n-resting-asks (count-resting-sellers (book-sellers final-book)))
+
+(define n-live-ids (idmap-count final-idmap))
+
+;; ---- Best price lookups (0 if side empty) ----------------------------------
+
+(define best-bid-val
+  (let ((b (best-bid final-book)))
+    (if b (car b) 0)))
+
+(define best-ask-val
+  (let ((a (best-ask final-book)))
+    (if a (car a) 0)))
+
+;; ---- Print the 15 KEY=value lines in the required order -------------------
+
+(display (string-append "TICKER="   ticker))                (newline)
+(display (string-append "TOTAL_VOLUME="   (describe-num tot-qty)))   (newline)
+(display (string-append "TOTAL_NOTIONAL=" (describe-num tot-not)))   (newline)
+(display (string-append "VWAP="            (describe-num vwap-val))) (newline)
+(display (string-append "NUM_TRADES="      (describe-num n-trades))) (newline)
+(display (string-append "NUM_NEW="         (describe-num n-new)))    (newline)
+(display (string-append "NUM_CANCEL="      (describe-num n-cancel))) (newline)
+(display (string-append "NUM_FILLED="      (describe-num n-filled))) (newline)
+(display (string-append "NUM_RESTING="     (describe-num n-resting)))(newline)
+(display (string-append "RESTING_BIDS="    (describe-num n-resting-bids))) (newline)
+(display (string-append "RESTING_ASKS="    (describe-num n-resting-asks))) (newline)
+(display (string-append "BEST_BID="        (describe-num best-bid-val)))   (newline)
+(display (string-append "BEST_ASK="        (describe-num best-ask-val)))   (newline)
+(display (string-append "LIVE_IDS="        (describe-num n-live-ids)))     (newline)
+(display (string-append "TOP_BOOK="        top-line))                      (newline)

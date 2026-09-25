@@ -1,0 +1,120 @@
+;; scenario.aura — Drives the deterministic GOAL scenario.
+;;
+;; This module exposes a single entry point: (run-scenario store).
+;; It performs the scripted sequence of operations described in the
+;; GOAL.md "Scenario steps" section, using the APIs implemented by
+;; the other modules in this project (state, time, hold, reservation,
+;; restock, oversell, invariants, concurrency, report, hash).
+;;
+;; The function is deliberately split into named steps so the
+;; reader can map each step in the script back to the description
+;; in GOAL.md. It returns the (possibly mutated) store; the caller
+;; (main.aura) is responsible for printing the final KEY=value
+;; report from the store's counters.
+
+(define *scenario-step* 0)
+
+(define (scenario-log! label)
+  ;; Lightweight step tracer; useful when reading the scenario output.
+  (set! *scenario-step* (+ *scenario-step* 1))
+  (display "  [scenario step ")
+  (display *scenario-step*)
+  (display "] ")
+  (display label)
+  (newline))
+
+;; Seed a freshly-built store with the initial SKU stocks described
+;; in GOAL.md: SKU_A=40, SKU_B=10, SKU_C=5, and set the clock to 1000.
+(define (seed-initial-stock! store)
+  (store-set-stock! store 'SKU_A 40)
+  (store-set-stock! store 'SKU_B 10)
+  (store-set-stock! store 'SKU_C 5)
+  (set-clock! 1000))
+
+;; Step 1 — Reserve happy path.
+;; Reserve 5 units of SKU_A twice (TTL 500ms each) and 3 units of SKU_B
+;; once. We use api-attempt-reserve so oversell rejection would be
+;; visible, but all three should succeed against the seeded stock.
+(define (step-1-happy-reserve store)
+  (scenario-log! "reserve happy path: SKU_A x5 x5, SKU_B x3")
+  (api-attempt-reserve store 'SKU_A 5 (now-ms) 500)
+  (api-attempt-reserve store 'SKU_A 5 (now-ms) 500)
+  (api-attempt-reserve store 'SKU_B 3 (now-ms) 500))
+
+;; Step 2 — TTL expiry sweep.
+;; Advance the clock past the first SKU_A hold's expiry (created at
+;; now=1000 with TTL 500 → expires at 1500). We set clock to 1600 so
+;; we are comfortably past expiry, then sweep.
+(define (step-2-ttl-expiry store)
+  (scenario-log! "ttl expiry: advance to 1600, sweep")
+  (advance-ms! 600)                  ;; now = 1600
+  (api-expire-sweep store (now-ms)))
+
+;; Step 3 — Cancel/release a still-active hold on SKU_B.
+;; After step 1, SKU_B has one active hold of 3 units. We look up the
+;; first active hold id for SKU_B and release it.
+(define (step-3-release store)
+  (let ((active (api-active-holds store 'SKU_B)))
+    (if (null? active)
+        (scenario-log! "release: no active SKU_B hold? (unexpected)")
+        (let ((hid (car active)))
+          (scenario-log! "release: SKU_B hold via api-release")
+          (api-release store hid)))))
+
+;; Step 4 — Restock events.
+;; Three restocks: SKU_A +10 shipment, SKU_B +3 return, SKU_C +2
+;; (reason label truncated in the GOAL excerpt; we use 'adjustment
+;; as a reasonable default for the third reason).
+(define (step-4-restock store)
+  (scenario-log! "restock: SKU_A +10, SKU_B +3, SKU_C +2")
+  (api-restock store 'SKU_A 10 'shipment   (now-ms))
+  (api-restock store 'SKU_B 3  'return     (now-ms))
+  (api-restock store 'SKU_C 2  'adjustment (now-ms)))
+
+;; Step 5 — Oversell attempt.
+;; SKU_C has only 7 units free after the +2 restock; trying to take
+;; 99 should be rejected as an oversell.
+(define (step-5-oversell store)
+  (scenario-log! "oversell: try SKU_C qty=99 (should be rejected)")
+  (api-attempt-reserve store 'SKU_C 99 (now-ms) 500))
+
+;; Step 6 — Concurrency stress.
+;; Fire a batch of reservation requests at the same logical now to
+;; exercise the contention path. Mix of SKUs with quantities that
+;; should produce some successes and some oversell rejections.
+(define (step-6-stress store)
+  (scenario-log! "stress: mixed SKU_A/SKU_B/SKU_C batch")
+  (let ((batch (list (cons 'SKU_A 7)
+                     (cons 'SKU_A 8)
+                     (cons 'SKU_B 4)
+                     (cons 'SKU_B 100)   ;; oversell
+                     (cons 'SKU_C 3)
+                     (cons 'SKU_C 5)
+                     (cons 'SKU_C 99)))) ;; oversell
+    (api-stress-reserve store batch (now-ms) 500)))
+
+;; Step 7 — Final invariant sweep.
+;; After all mutations, verify the system invariants still hold.
+(define (step-7-invariants store)
+  (scenario-log! "invariants: final check")
+  (let ((ok (api-check-invariant store)))
+    (if (not ok)
+        (begin
+          (display "  !! invariant violation detected !!")
+          (newline))
+        (display "  invariants OK")
+        (newline))))
+
+(define (run-scenario store)
+  ;; Reset the scenario tracer at the start so repeated runs (e.g.
+  ;; if main.aura is reloaded) do not produce stale step numbers.
+  (set! *scenario-step* 0)
+  (seed-initial-stock! store)
+  (step-1-happy-reserve store)
+  (step-2-ttl-expiry    store)
+  (step-3-release       store)
+  (step-4-restock       store)
+  (step-5-oversell      store)
+  (step-6-stress        store)
+  (step-7-invariants    store)
+  store)

@@ -1,0 +1,33 @@
+;; stats.aura
+;; Aggregate statistics over a list of trades.
+;;
+;; Public API:
+;;   (total-volume trades)   -> sum of all (trade-qty t) over trades
+;;   (total-notional trades) -> sum of (trade-price t) * (trade-qty t)
+;;   (vwap trades)           -> volume-weighted average price
+;;                              (= total-notional / total-volume),
+;;                              or 0 if there are no trades.
+;;
+;; A trade is expected to satisfy the trade.aura interface:
+;;   (trade-price t) -> number
+;;   (trade-qty   t) -> number
+;;   (trade-notional t) -> number  (price * qty)
+;;
+;; All operations are O(n) over the trade list. We traverse once to compute
+;; volume and notional, then derive VWAP in constant time.
+
+(define (total-volume trades)
+  (cond ((null? trades) 0)
+        (else (+ (trade-qty (car trades))
+                 (total-volume (cdr trades))))))
+
+(define (total-notional trades)
+  (cond ((null? trades) 0)
+        (else (+ (trade-notional (car trades))
+                 (total-notional (cdr trades))))))
+
+(define (vwap trades)
+  (let ((vol (total-volume trades)))
+    (if (= vol 0)
+        0
+        (/ (total-notional trades) vol))))

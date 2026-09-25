@@ -1,0 +1,72 @@
+;; counters.aura
+;; Lightweight event counters for the engine.
+;;
+;; A "counters" value is a plain association list of (key . count) pairs,
+;; supporting increment-by-one operations in a functional style (each bump
+;; returns a new counters value). Keys used by the engine:
+;;
+;;   * "new"     — number of NEW orders processed
+;;   * "cancel"  — number of CANCEL orders processed
+;;   * "modify"  — number of MODIFY orders processed
+;;   * "filled"  — number of resting orders completely filled
+;;                 (i.e. they had no qty left at the end of a match step)
+;;   * "resting" — number of incoming orders that ended up resting in the
+;;                 book (either fully unfilled or partially filled with a
+;;                 remainder)
+;;   * "trades"  — number of trades generated (one bump per trade line)
+;;
+;; Public API:
+;;   (make-counters)                      -> fresh counters value (all zero)
+;;   (bump-new!      c)                   -> c' with "new"      incremented
+;;   (bump-cancel!   c)                   -> c' with "cancel"   incremented
+;;   (bump-filled!   c)                   -> c' with "filled"   incremented
+;;   (bump-resting!  c)                   -> c' with "resting"  incremented
+;;   (bump-trades!   c)                   -> c' with "trades"   incremented
+;;   (bump-key!      c key)               -> c' with `key`      incremented
+;;   (counter-value  c key)               -> integer count for `key` (0 if absent)
+
+(define (make-counters)
+  (list (cons "new" 0)
+        (cons "cancel" 0)
+        (cons "modify" 0)
+        (cons "filled" 0)
+        (cons "resting" 0)
+        (cons "trades" 0)))
+
+(define (alist-bump alist key)
+  (cond ((null? alist)
+         (list (cons key 1)))
+        ((string=? (car (car alist)) key)
+         (cons (cons key (+ (cdr (car alist)) 1))
+               (cdr alist)))
+        (else
+         (cons (car alist)
+               (alist-bump (cdr alist) key)))))
+
+(define (bump-key! c key)
+  (alist-bump c key))
+
+(define (bump-new! c)
+  (alist-bump c "new"))
+
+(define (bump-cancel! c)
+  (alist-bump c "cancel"))
+
+(define (bump-modify! c)
+  (alist-bump c "modify"))
+
+(define (bump-filled! c)
+  (alist-bump c "filled"))
+
+(define (bump-resting! c)
+  (alist-bump c "resting"))
+
+(define (bump-trades! c)
+  (alist-bump c "trades"))
+
+(define (counter-value c key)
+  (cond ((null? c) 0)
+        ((string=? (car (car c)) key)
+         (cdr (car c)))
+        (else
+         (counter-value (cdr c) key))))

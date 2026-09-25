@@ -1,0 +1,99 @@
+;; tape.aura — parse raw event strings into event objects.
+;;
+;; A tape line looks like:
+;;   "NEW BUY 100 5 T1"
+;;   "NEW SELL 101 3 T2"
+;;   "CANCEL T1"
+;;   "MODIFY T1 100 2"
+;;
+;; (parse-line line) → list of event objects (usually a single-element list,
+;; but multiple events could be returned in principle — callers iterate).
+;; (build-tape lines)  → list of event objects from a list of raw line strings.
+
+(load "event.aura")
+
+(define (tokenize line)
+  ;; Split a string into a list of whitespace-separated tokens.
+  ;; Trim leading/trailing whitespace by hand.
+  (let loop ((src line)
+             (chars->token '())
+             (acc '()))
+    (cond
+      ((and (null? src) (null? chars->token))
+       (reverse acc))
+      ((null? src)
+       (loop src
+             '()
+             (cons (list->string (reverse chars->token)) acc)))
+      ((char-whitespace? (car src))
+       (if (null? chars->token)
+           (loop (cdr src) '() acc)
+           (loop (cdr src)
+                 '()
+                 (cons (list->string (reverse chars->token)) acc))))
+      (else
+       (loop (cdr src)
+             (cons (car src) chars->token)
+             acc)))))
+
+(define (char-whitespace? c)
+  (or (char=? c #\space)
+      (char=? c #\tab)
+      (char=? c #\newline)
+      (char=? c #\return)))
+
+(define (list->string chars)
+  ;; Build a string from a list of characters using string-append.
+  (let loop ((cs chars) (acc ""))
+    (if (null? cs)
+        acc
+        (loop (cdr cs) (string-append acc (string (car cs)))))))
+
+(define (string->number-safe s)
+  ;; Parse an integer; returns 0 on failure (we don't expect malformed numeric input
+  ;; from scenario.aura, but be defensive).
+  (let ((n (string->number s)))
+    (if n n 0)))
+
+(define (parse-line line)
+  (let ((toks (tokenize line)))
+    (cond
+      ((null? toks) '())
+      ((string=? (car toks) "NEW")
+       ;; (NEW SIDE PRICE QTY ID)
+       (let ((side    (cadr toks))
+             (price-s (caddr toks))
+             (qty-s   (cadddr toks))
+             (id      (car (cddddr toks))))
+         (list (make-event 'NEW
+                           (if (string=? side "BUY") 'BUY 'SELL)
+                           (string->number-safe price-s)
+                           (string->number-safe qty-s)
+                           id))))
+      ((string=? (car toks) "CANCEL")
+       ;; (CANCEL ID)
+       (let ((id (cadr toks)))
+         (list (make-event 'CANCEL 'NONE 0 0 id))))
+      ((string=? (car toks) "MODIFY")
+       ;; (MODIFY ID PRICE QTY)
+       (let ((id      (cadr toks))
+             (price-s (caddr toks))
+             (qty-s   (cadddr toks)))
+         (list (make-event 'MODIFY
+                           'NONE
+                           (string->number-safe price-s)
+                           (string->number-safe qty-s)
+                           id))))
+      (else '()))))
+
+(define (build-tape lines)
+  ;; Convert a list of raw tape-line strings into a single flat list of
+  ;; event objects, preserving order.
+  (let loop ((ls lines) (acc '()))
+    (if (null? ls)
+        (reverse acc)
+        (let ((parsed (parse-line (car ls))))
+          (loop (cdr ls)
+                (if (null? parsed)
+                    acc
+                    (append (reverse parsed) acc)))))))

@@ -1,0 +1,159 @@
+;; reservation.aura — Core reservation, release and expiry API.
+;;
+;; This module exposes the three "reservation lifecycle" operations that
+;; the rest of the system builds on:
+;;
+;;   api-reserve        — place a new hold against a SKU, decrementing
+;;                        stock and recording the hold in the ledger.
+;;   api-release        — cancel an existing active hold by id, returning
+;;                        its units to stock.
+;;   api-expire-sweep   — scan all active holds and expire any whose
+;;                        ttl has elapsed, returning units to stock.
+;;   api-active-holds   — count the currently-active holds for a SKU.
+;;
+;; Important conventions
+;; ----------------------
+;; • Stock accounting:
+;;     On a successful reserve we subtract qty from the SKU's stock
+;;     immediately. If the hold later expires or is released, we add the
+;;     qty back. This means "stock on hand" at any moment is
+;;     "physical stock" plus "qty currently tied up in active holds";
+;;     in this module we treat the store's stock field as already
+;;     reflecting the post-reserve deduction, so the restock/cancel
+;;     paths must add back the qty themselves.
+;;
+;; • Hold ids:
+;;     We mint fresh ids from a private counter so that callers never
+;;     have to pick ids themselves. The counter lives at top-level
+;;     because Aura has no encapsulation.
+;;
+;; • Return shape:
+;;     All public functions return either the updated store (for the
+;;     mutation-style API the rest of the project uses) or a number
+;;     for the read-only count function. api-reserve additionally
+;;     returns the freshly-created hold so callers can capture its id.
+
+;; ---------------------------------------------------------------------------
+;; Private id counter — bumped on every successful reservation.
+;; ---------------------------------------------------------------------------
+(define *next-hold-id* 1)
+
+(define (next-hold-id)
+  (let ((id *next-hold-id*))
+    (set! *next-hold-id* (+ id 1))
+    id))
+
+;; ---------------------------------------------------------------------------
+;; api-reserve: try to reserve `qty` units of `sku` at clock `now`,
+;; valid for `ttl-ms` milliseconds.
+;;
+;; Returns the freshly-created hold record on success. If the SKU has no
+;; stock row yet (store-stock returns 0 by default), or there isn't
+;; enough stock, we still record nothing in the ledger and return #f so
+;; callers can distinguish "rejected" from "succeeded". The oversell
+;; guard module wraps this with its own counter; we don't touch it
+;; here.
+;; ---------------------------------------------------------------------------
+(define (api-reserve store sku qty now ttl-ms)
+  (let ((current (store-stock store sku)))
+    (cond
+      ((< current qty)
+       ;; Not enough stock — refuse without mutating anything.
+       #f)
+      (else
+       (let ((hid   (next-hold-id))
+             (exp   (+ now ttl-ms))
+             (h     (make-hold hid sku qty exp now)))
+         ;; Decrement stock for the held quantity.
+         (store-adjust! store sku (- qty))
+         ;; Add the hold to the active holds table.
+         (store-hold-add! store h)
+         ;; Append a ledger entry describing the reservation.
+         (store-ledger-append!
+          store
+          (list 'reserve sku qty hid now exp))
+         h)))))
+
+;; ---------------------------------------------------------------------------
+;; api-release: cancel an active hold by id.
+;;
+;; Walks the store's holds alist looking for the matching id. If found
+;; and the hold is still active (not already expired by the clock), we:
+;;   • return its qty back to the SKU's stock
+;;   • remove the hold from the holds alist
+;;   • append a 'release entry to the ledger
+;; Returns #t on success, #f if no such active hold was found.
+;; ---------------------------------------------------------------------------
+(define (api-release store hold-id)
+  (let ((holds (store-holds store)))
+    (let loop ((rest holds) (found #f))
+      (cond
+        ((null? rest)
+         found)
+        ((and (not found) (= (hold-id (cdar rest)) hold-id))
+         (let* ((h (cdar rest))
+                (sku (hold-sku h))
+                (qty (hold-qty h)))
+           ;; Only release if the hold is still active — an expired
+           ;; hold's units have already been returned by the sweep.
+           (if (hold-expired? h (now-ms))
+               (begin
+                 (store-hold-remove! store hold-id)
+                 (loop (cdr rest) #t))
+               (begin
+                 (store-adjust! store sku qty)
+                 (store-hold-remove! store hold-id)
+                 (store-ledger-append!
+                  store
+                  (list 'release sku qty hold-id (now-ms)))
+                 (loop (cdr rest) #t))))
+         #t)
+        (else
+         (loop (cdr rest) found))))))
+
+;; ---------------------------------------------------------------------------
+;; api-expire-sweep: scan every hold and expire those whose ttl has
+;; elapsed. Expired holds have their units returned to stock and are
+;; removed from the active-holds table.
+;;
+;; Returns the number of holds expired by this sweep (so callers can
+;; assert expected counts). The function is idempotent: running it
+;; again at the same `now` should expire zero additional holds.
+;; ---------------------------------------------------------------------------
+(define (api-expire-sweep store now)
+  (let ((holds (store-holds store))
+        (expired 0))
+    (let loop ((rest holds))
+      (cond
+        ((null? rest)
+         expired)
+        (else
+         (let* ((pair (car rest))
+                (hid  (car pair))
+                (h    (cdr pair)))
+           (if (hold-expired? h now)
+               (begin
+                 ;; Return the units, drop the hold, log it.
+                 (store-adjust! store (hold-sku h) (hold-qty h))
+                 (store-hold-remove! store hid)
+                 (store-ledger-append!
+                  store
+                  (list 'expire (hold-sku h) (hold-qty h)
+                        hid now))
+                 (loop (cdr rest))
+                 (set! expired (+ expired 1))))
+           (if (hold-expired? h now)
+               (begin
+                 ;; already handled above — keep loop happy
+                 (loop (cdr rest)))
+               (loop (cdr rest)))))))))
+
+;; ---------------------------------------------------------------------------
+;; api-active-holds: number of currently-active holds for a given SKU.
+;;
+;; This is just a thin wrapper over store-active-count — it lives here
+;; because it is part of the reservation lifecycle API surface rather
+;; than the lower-level store plumbing.
+;; ---------------------------------------------------------------------------
+(define (api-active-holds store sku)
+  (store-active-count store sku))

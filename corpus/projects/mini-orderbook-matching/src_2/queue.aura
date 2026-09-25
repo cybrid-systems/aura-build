@@ -1,0 +1,70 @@
+;; queue.aura — a tiny FIFO queue of arbitrary elements.
+;;
+;; A queue is represented as a pair (front . back), where:
+;;   front = list of elements (head = oldest, taken from head on dequeue)
+;;   back  = list of elements in REVERSE order (head = newest, i.e. last appended)
+;;
+;; This is the classic two-list / "banker's queue lite" representation:
+;;   - `enqueue` conses onto `back` (O(1))
+;;   - `dequeue` pops from `front` (O(1) amortised); when `front` empties we
+;;     reverse `back` onto `front` (one O(n) flip per drained cycle).
+;;
+;; The API is intentionally minimal:
+;;   (make-q)              → empty queue
+;;   (enqueue q elem)      → returns a NEW queue with elem appended (does not
+;;                          mutate q — keeps queue immutable like the rest of
+;;                          the book, since Aura works best with value-style
+;;                          updates and set!)
+;;   (dequeue q)           → elem or #f if empty; also returns the new queue
+;;                          via a second value so callers can re-bind
+;;   (queue-size q)        → integer, total number of pending elements
+;;   (queue-empty? q)      → #t / #f
+;;
+;; We expose `dequeue` returning multiple values: the popped element and the
+;; new queue. Other modules that need a more imperative style can still
+;; destructure `(receive (elem new-q) (dequeue q) ...)`.
+
+(define (make-q)
+  (cons '() '()))
+
+(define (queue-front q) (car q))
+(define (queue-back  q) (cdr q))
+
+(define (queue-empty? q)
+  (and (null? (queue-front q))
+       (null? (queue-back q))))
+
+(define (queue-size q)
+  (+ (length (queue-front q))
+     (length (queue-back q))))
+
+;; Normalise: if front is empty but back has stuff, flip back onto front
+;; so that dequeue can always pop from front in O(1).
+(define (queue-normalise q)
+  (if (null? (queue-front q))
+      (cons (reverse (queue-back q)) '())
+      q))
+
+(define (enqueue q elem)
+  ;; Append elem to the back-list. Since `back` is stored newest-first,
+  ;; we just cons onto it — O(1).
+  (let ((new-q (queue-normalise q)))
+    (cons (queue-front new-q)
+          (cons elem (queue-back new-q)))))
+
+;; Return two values: the popped element (or #f) and the resulting queue.
+;; Implemented via a small helper that returns a list, then `values`-flattens.
+(define (dequeue q)
+  (let ((new-q (queue-normalise q)))
+    (if (null? (queue-front new-q))
+        (values #f new-q)
+        (values (car (queue-front new-q))
+                (cons (cdr (queue-front new-q))
+                      (queue-back new-q))))))
+
+;; Convenience: peek at the head without removing. Returns #f if empty.
+(define (queue-peek q)
+  (let ((new-q (queue-normalise q)))
+    (if (null? (queue-front new-q))
+        #f
+        (car (queue-front new-q)))))

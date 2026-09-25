@@ -1,0 +1,100 @@
+;; tape.aura
+;; Parses raw tape lines into event objects and builds the full event tape.
+;;
+;; A tape line is a string. Supported forms (whitespace separated):
+;;   NEW BUY  <price> <qty> <ticker> <id>
+;;   NEW SELL <price> <qty> <ticker> <id>
+;;   CANCEL <id>
+;;   MODIFY <id> <new-qty>
+;;
+;; The 6th field (ticker) on NEW lines is accepted but ignored here — the engine
+;; uses its own ticker for the book it manages. This keeps the parser reusable
+;; across tickers while still being strict about shape.
+;;
+;; parse-line returns a list of event objects. For invalid/blank lines it
+;; returns '() so callers can filter cheaply. CANCEL and MODIFY always produce
+;; a single-element list.
+
+(define (parse-line line)
+  (if (or (null? line) (string=? line ""))
+      '()
+      (let ((toks (tokenize line)))
+        (if (null? toks)
+            '()
+            (let ((head (string-upcase (car toks))))
+              (cond
+                ((string=? head "NEW")
+                 (if (and (>= (length toks) 6)
+                          (or (string=? (string-upcase (car (cdr toks))) "BUY")
+                              (string=? (string-upcase (car (cdr toks))) "SELL")))
+                     (let ((side   (string-upcase (car (cdr toks))))
+                           (price  (string->number (car (cdr (cdr toks))))))
+                       (let ((qty    (string->number (car (cdr (cdr (cdr toks))))))
+                             (tid    (car (cdr (cdr (cdr (cdr toks))))))
+                             (id     (car (cdr (cdr (cdr (cdr (cdr toks))))))))
+                         (list (make-event "NEW" side price qty id))))
+                     '()))
+                ((string=? head "CANCEL")
+                 (if (>= (length toks) 2)
+                     (list (make-event "CANCEL" "-" 0 0 (car (cdr toks))))
+                     '()))
+                ((string=? head "MODIFY")
+                 (if (>= (length toks) 3)
+                     (let ((id  (car (cdr toks)))
+                           (qty (string->number (car (cdr (cdr toks))))))
+                       (list (make-event "MODIFY" "-" 0 qty id)))
+                     '()))
+                (else '())))))))
+
+;; build-tape maps parse-line across a list of raw strings and appends the
+;; resulting per-line event lists into a single flat list.
+
+(define (build-tape lines)
+  (let loop ((rest lines) (acc '()))
+    (if (null? rest)
+        (reverse acc)
+        (loop (cdr rest)
+              (append (parse-line (car rest)) acc)))))
+
+;; ---- string helpers (kept local so tape.aura is self-contained) ----
+
+(define (tokenize s)
+  ;; Split a string on ASCII whitespace into a list of non-empty tokens.
+  (let ((len (string-length s)))
+    (let loop ((i 0) (buf "") (out '()))
+      (cond
+        ((= i len)
+         (if (string=? buf "")
+             out
+             (cons buf out)))
+        ((char-whitespace? (string-ref s i))
+         (if (string=? buf "")
+             (loop (+ i 1) "" out)
+             (loop (+ i 1) "" (cons buf out))))
+        (else
+         (loop (+ i 1) (string-append buf (string (string-ref s))) out))))))
+
+(define (string c)
+  ;; Single-char -> 1-char string. Avoids dependency on rune utilities.
+  (let ((buf (make-string 1)))
+    (string-set! buf 0 c)
+    buf))
+
+(define (string-upcase s)
+  ;; ASCII-only uppercase for command/side normalization.
+  (let ((len (string-length s)))
+    (let ((out (make-string len)))
+      (let loop ((i 0))
+        (if (= i len)
+            out
+            (begin
+              (string-set! out i (char-upcase (string-ref s i)))
+              (loop (+ i 1))))))))
+
+(define (char-whitespace? c)
+  (or (char=? c #\space) (char=? c #\tab) (char=? c #\newline) (char=? c #\return)))
+
+(define (char-upcase c)
+  (if (and (char>=? c #\a) (char<=? c #\z))
+      (integer->char (- (char->integer c) 32))
+      c))

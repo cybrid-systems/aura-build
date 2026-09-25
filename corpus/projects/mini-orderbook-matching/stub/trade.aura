@@ -1,0 +1,36 @@
+;; trade.aura
+;; A trade represents an execution between a taker (incoming order) and a
+;; maker (resting order in the book). Trades are recorded in chronological
+;; order on the trade-tape, which is replayed at the end to compute
+;; statistics (volume, notional, VWAP).
+;;
+;; Public API:
+;;   (make-trade taker-id maker-id price qty) -> trade
+;;   (trade-taker-id t) -> string
+;;   (trade-maker-id t) -> string
+;;   (trade-price t)    -> number
+;;   (trade-qty t)      -> number
+;;   (trade-notional t) -> number  (= price * qty)
+;;
+;; A trade is represented as a 4-element list:
+;;   (taker-id maker-id price qty)
+;;
+;; All operations are pure and O(1).
+
+(define (make-trade taker-id maker-id price qty)
+  (list taker-id maker-id price qty))
+
+(define (trade-taker-id t)
+  (car t))
+
+(define (trade-maker-id t)
+  (car (cdr t)))
+
+(define (trade-price t)
+  (car (cdr (cdr t))))
+
+(define (trade-qty t)
+  (car (cdr (cdr (cdr t)))))
+
+(define (trade-notional t)
+  (* (trade-price t) (trade-qty t)))

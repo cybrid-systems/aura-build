@@ -1,0 +1,31 @@
+;; book.aura — the core limit-order-book data structure.
+;;
+;; A book is represented as a triple:
+;;   (ticker buyers sellers)
+;;
+;; `buyers`  is an alist of (price . queue-of-ids) sorted descending by price
+;;           (best bid first). Each value is a list of order ids in time priority
+;;           (oldest first → head of the list).
+;; `sellers` is an alist of (price . queue-of-ids) sorted ascending by price
+;;           (best ask first). Same time-priority convention.
+;;
+;; We keep it deliberately small: this file only owns the *structure* and
+;; the read-only accessors / predicates. Mutators live in book_ops.aura.
+;; We intentionally do NOT keep an empty list of ids in either side; if
+;; a price level drains it is removed from its alist by book_ops.aura.
+
+(define (make-book ticker)
+  (list ticker '() '()))
+
+(define (book-ticker b)
+  (car b))
+
+(define (book-buyers b)
+  (cadr b))
+
+(define (book-sellers b)
+  (caddr b))
+
+(define (empty-book? b)
+  (and (null? (book-buyers b))
+       (null? (book-sellers b))))

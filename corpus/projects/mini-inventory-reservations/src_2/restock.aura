@@ -1,0 +1,76 @@
+;; restock.aura — Restock event API.
+;;
+;; A restock event increases the available stock of a SKU by `units`
+;; (assumed to be a positive integer) and records the event in the store's
+;; ledger. Each restock is tagged with:
+;;
+;;   sku    : SKU symbol receiving the units
+;;   units  : how many units were added (always > 0)
+;;   reason : a short symbol or string describing why (e.g. 'shipment,
+;;            'return, 'adjustment, 'reconciliation)
+;;   at-ms  : the clock value when the restock was applied
+;;
+;; In addition to the per-event ledger entries, the module maintains
+;; module-level counters that other modules (and the final stdout report)
+;; can read without scanning the ledger:
+;;
+;;   *restock-count*  : how many restock events have been recorded
+;;   *restock-units*  : total units added across all restock events
+;;
+;; Both counters live in module-local mutable bindings and are incremented
+;; when `api-restock` succeeds. Reading them is done through small wrappers
+;; so callers cannot accidentally mutate them.
+;;
+;; This module depends on state.aura (for stock mutation and ledger
+;; append) but does NOT depend on reservation / hold modules; restock is
+;; an orthogonal operation.
+
+(define *restock-count* 0)
+(define *restock-units* 0)
+
+;; Internal helper: bump the two counters. Kept private to this module.
+(define (bump-restock-counters! units)
+  (set! *restock-count* (+ *restock-count* 1))
+  (set! *restock-units* (+ *restock-units* units)))
+
+;; api-restock: apply a restock event to the store.
+;;
+;; Arguments:
+;;   store  — the inventory store (alist from state.aura)
+;;   sku    — symbol naming the SKU receiving units
+;;   units  — positive integer; number of units to add
+;;   reason — symbol or string explaining the restock
+;;   at-ms  — clock value (ms) at which the restock is recorded
+;;
+;; Behaviour:
+;;   • If units is positive, increase the SKU's stock by units, append a
+;;     ledger entry tagged 'restock, and increment the counters.
+;;   • If units is zero or negative, do nothing and return #f (the ledger
+;;     and counters remain unchanged). We intentionally do not throw
+;;     because the scenario runner is supposed to be a fixed script.
+;;   • If the SKU has never been stocked before, store-adjust! will
+;;     implicitly create an entry at units (treat missing as 0). To keep
+;;     ledger entries tidy we still append the entry either way.
+;;
+;; Returns: the updated store (so the call can be chained).
+(define (api-restock store sku units reason at-ms)
+  (if (and (number? units) (> units 0))
+      (begin
+        (store-adjust! store sku units)
+        (store-ledger-append!
+          store
+          (list 'restock sku units reason at-ms))
+        (bump-restock-counters! units)
+        store)
+      store))
+
+;; api-restock-count: total number of restock events recorded so far.
+(define (api-restock-count store)
+  *restock-count*)
+
+;; api-restock-units: total units added by all restock events so far.
+;; Note: the `store` argument is accepted for API symmetry with the other
+;; counters (some of which read from the store) but the value lives in
+;; module-local state because we want O(1) reads.
+(define (api-restock-units store)
+  *restock-units*)

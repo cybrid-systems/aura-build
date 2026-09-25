@@ -1,0 +1,145 @@
+;; sample.aura -- Sample data for the tax-rules engine scenario.
+;;
+;; Exports a small but representative graph of jurisdictions, a handful of
+;; override objects (one local-municipality surcharge), a list of exemption
+;; objects, and an invoice with four lines addressed to SF.
+;;
+;; Nothing in this file should bake the engine's *final* numbers (effective
+;; rate, line taxes, grand total). Those are derived by main.aura through
+;; the public APIs of rates/jurisdiction/override/exemption/rules/resolver/
+;; line/invoice/compute. We supply only structural inputs.
+
+;; -------------------------------------------------------------------
+;; Rates -- base tax rate objects keyed by code
+;; -------------------------------------------------------------------
+;; Three rate components stack along the jurisdiction path:
+;;   US  : 5%  (federal layer)
+;;   CA  : 7.5% (state layer)
+;;   SF  : 1%  (city layer)
+;; In addition we define a couple of state/city rates for NY/NYC so the
+;; graph is well formed even if the scenario primarily exercises SF.
+
+(define (sample-rates)
+  (list
+    (make-rate "US_RATE"   0.050)
+    (make-rate "CA_RATE"   0.075)
+    (make-rate "SF_RATE"   0.010)
+    (make-rate "NY_RATE"   0.040)
+    (make-rate "NYC_RATE"  0.045)
+    (make-rate "DIST_RATE" 0.025)))
+
+;; -------------------------------------------------------------------
+;; Jurisdictions -- a hierarchical graph.
+;; Layout:
+;;   US
+;;    |-- CA
+;;    |    |-- SF   (terminal)
+;;    |    |-- SD   (a sibling district, unused by SF invoice)
+;;    |-- NY
+;;         |-- NYC  (terminal)
+;; -------------------------------------------------------------------
+;; Each jurisdiction carries the rate object that applies at its layer.
+
+(define (sample-graph)
+  (let* ((rates (sample-rates))
+         (us   (make-jurisdiction "US"  (lookup-rate rates "US_RATE")  '()))
+         (ca   (make-jurisdiction "CA"  (lookup-rate rates "CA_RATE")  '()))
+         (sf   (make-jurisdiction "SF"  (lookup-rate rates "SF_RATE")  '()))
+         (sd   (make-jurisdiction "SD"  (lookup-rate rates "CA_RATE")  '()))
+         (ny   (make-jurisdiction "NY"  (lookup-rate rates "NY_RATE")  '()))
+         (nyc  (make-jurisdiction "NYC" (lookup-rate rates "NYC_RATE") '())))
+    ;; link children
+    (set-jur-children! us  (list ca ny))
+    (set-jur-children! ca  (list sf sd))
+    (set-jur-children! ny  (list nyc))
+    (list (cons "US"  us)
+          (cons "CA"  ca)
+          (cons "SF"  sf)
+          (cons "SD"  sd)
+          (cons "NY"  ny)
+          (cons "NYC" nyc))))
+
+;; Local helper: build the alist of jurisdictions sharing the same
+;; underlying cons structure the engine expects. The other files
+;; reference rates via lookup-rate so the binding is computed at
+;; call time, not hard-coded into the graph literal.
+
+(define (lookup-rate rates code)
+  (let loop ((rs rates))
+    (cond
+      ((null? rs) (make-rate code 0))
+      ((string=? (rate-code (car rs)) code) (car rs))
+      (else (loop (cdr rs))))))
+
+;; A tiny setter used above to wire up the parent->children edges.
+;; Aura's set! works on top-level bindings; for the graph we keep the
+;; nodes in a single list but expose setters so the sample is readable.
+;; (If your runtime only supports functional construction, replace this
+;; with an explicit cons-graph below; the rest of the engine does not
+;; depend on identity.)
+(define (set-jur-children! jur kids)
+  (set! jur (make-jurisdiction
+              (jur-code jur)
+              (jur-rate jur)
+              kids))
+  jur)
+
+;; -------------------------------------------------------------------
+;; Overrides -- one explicit override active on the SF path.
+;; We attach an extra 0.5% local-municipality surcharge to SF,
+;; targeting the CITY_RATE field for the SF jurisdiction. Priority is
+;; expressed as an integer; higher numbers win.
+;; -------------------------------------------------------------------
+
+(define (sample-overrides)
+  (list
+    (make-override "SF"   "CITY_RATE"  0.005 10)))
+
+;; -------------------------------------------------------------------
+;; Exemptions -- three example exemptions exercising each "kind".
+;; -------------------------------------------------------------------
+;;   FOOD  : kind="exempt", amount=0   -> zeroes tax completely
+;;   BOOKS : kind="half",   amount=0   -> halves remaining tax
+;;   MEDS  : kind="amount", amount=1   -> subtracts a flat dollar amount
+;; Each carries a predicate list limiting it to the named category.
+
+(define (sample-exemptions)
+  (list
+    (make-exemption "FOOD_EX"  "exempt" 0   (list (cons "category" "FOOD")))
+    (make-exemption "BOOKS_EX" "half"   0   (list (cons "category" "BOOKS")))
+    (make-exemption "MEDS_EX"  "amount" 1.0 (list (cons "category" "MEDS")))))
+
+;; -------------------------------------------------------------------
+;; Invoice -- four lines addressed to SF.
+;; Lines are chosen so the scenario exercises every part of the
+;; engine:
+;;   L1 FOOD  qty 2 @ 10.00 -> exemption "exempt" zeroes tax
+;;   L2 BOOKS qty 1 @ 25.00 -> exemption "half"   halves tax
+;;   L3 MEDS  qty 3 @  8.50 -> exemption "amount" subtracts flat $
+;;   L4 TOY   qty 1 @ 40.00 -> no exemption, full rate applies
+;; The exempt? flag is a hint; the real decisions are made through
+;; (ex-matches?) against the exemption predicates.
+;; -------------------------------------------------------------------
+
+(define (sample-invoice)
+  (let ((empty (make-invoice '() "SF")))
+    (add-line empty
+      (make-line "L1" 2 10.00 "FOOD"  #t))
+    (add-line
+      (add-line empty
+        (make-line "L1" 2 10.00 "FOOD"  #t))
+      (make-line "L2" 1 25.00 "BOOKS" #f))
+    (add-line
+      (add-line
+        (add-line empty
+          (make-line "L1" 2 10.00 "FOOD"  #t))
+        (make-line "L2" 1 25.00 "BOOKS" #f))
+      (make-line "L3" 3  8.50 "MEDS"  #f))
+    (add-line
+      (add-line
+        (add-line
+          (add-line empty
+            (make-line "L1" 2 10.00 "FOOD"  #t))
+          (make-line "L2" 1 25.00 "BOOKS" #f))
+        (make-line "L3" 3  8.50 "MEDS"  #f))
+      (make-line "L4" 1 40.00 "TOY"   #f))))

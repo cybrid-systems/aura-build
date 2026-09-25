@@ -1,0 +1,66 @@
+;; report.aura — Reporting and aggregation helpers.
+;;
+;; This module pulls aggregate counters out of the store for the final
+;; stdout report printed by main.aura. Each `api-*` function here is a
+;; thin wrapper that the main entry point can call after `run-scenario`
+;; has finished mutating the store.
+;;
+;; Counter sources
+;; ---------------
+;; The store itself (see state.aura) is an alist whose entries are tagged
+;; pairs. The aggregation API below reads from a few of those entries as
+;; well as from the ledger list, so it's resilient to the order in which
+;; other modules appended entries. No mutation happens here; reporting
+;; is read-only.
+;;
+;; The `store-counters` helper at the bottom is a convenience used by
+;; the rest of this module to pull the whole counters sub-alist out of
+;; the store in one step.
+
+(define (api-reservations-held store)
+  ;; Total successful reservations ever recorded (held + later released
+  ;; or expired are still counted here — this is a "lifetime reservations
+  ;; placed" counter). Falls back to 0 if the counter is missing.
+  (let ((c (assoc 'reservations-held (store-counters store))))
+    (if c (cdr c) 0)))
+
+(define (api-reservations-expired store)
+  (let ((c (assoc 'reservations-expired (store-counters store))))
+    (if c (cdr c) 0)))
+
+(define (api-reservations-released store)
+  (let ((c (assoc 'reservations-released (store-counters store))))
+    (if c (cdr c) 0)))
+
+(define (api-reservations-total store)
+  ;; Lifetime total of reservation attempts that were accepted (held).
+  ;; In this system "total" == "held" — rejected attempts are tracked
+  ;; separately as oversells. Defined as its own API for symmetry with
+  ;; the spec.
+  (api-reservations-held store))
+
+(define (api-stock-of store sku)
+  ;; Current stock level for a SKU. Returns 0 if the SKU has no entry
+  ;; (either never seeded or fully drained and never restocked).
+  (store-stock store sku))
+
+(define (api-final-active-holds store)
+  ;; Number of holds still active across all SKUs at report time.
+  ;; We count by walking the 'holds alist.
+  (let loop ((entries (store-holds store)) (n 0))
+    (if (null? entries)
+        n
+        (loop (cdr entries) (+ n 1)))))
+
+(define (api-ledger-entries store)
+  ;; The full ledger list. Returned as-is so the caller can format it
+  ;; however it likes.
+  (store-ledger store))
+
+;; ---- internal helpers ------------------------------------------------
+
+(define (store-counters store)
+  ;; Pull the 'counters sub-alist out of the store. If absent, return
+  ;; an empty alist so lookups harmlessly return #f.
+  (let ((c (assoc 'counters store)))
+    (if c (cdr c) '())))

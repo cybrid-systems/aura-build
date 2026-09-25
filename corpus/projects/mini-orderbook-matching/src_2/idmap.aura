@@ -1,0 +1,83 @@
+;; idmap.aura — maps order ids to (price . qty) so we know where to cancel.
+;;
+;; An idmap is a flat association list: each entry is `(id . (price . qty))`.
+;;   id    : symbol/string — the order id from the tape
+;;   price : integer — the price level this order is resting at
+;;   qty   : integer — remaining (unfilled) quantity
+;;
+;; As the engine partially fills an order, it updates the qty in place via
+;; `idmap-update-qty!`. When a CANCEL comes through, `idmap-remove` drops the
+;; entry entirely. This module owns both the structure and the mutators so
+;; the rest of the engine doesn't have to think about how storage is keyed.
+;;
+;; Public API required by §3 of the spec:
+;;   (make-idmap)              → empty idmap
+;;   (idmap-register! m id price qty)  → adds (or overwrites) an entry
+;;   (idmap-update-qty! m id new-qty)  → mutates the qty for an existing id
+;;   (idmap-remove! m id)              → drops the entry for `id`
+;;   (idmap-lookup m id)               → (price . qty) or #f
+;;   (idmap-has? m id)                 → #t / #f
+;;   (idmap-count m)                   → number of live ids
+;;   (idmap-all m)                     → list of (id . (price . qty)) entries
+
+(define (make-idmap)
+  '())
+
+;; Internal helper: replace the entry for `id` in `m` with `new-entry`.
+;; Caller must guarantee `id` is already present.
+(define (idmap-replace m id new-entry)
+  (cond
+    ((null? m) '())
+    ((equal? (car (car m)) id)
+     (cons new-entry (cdr m)))
+    (else
+     (cons (car m) (idmap-replace (cdr m) id new-entry)))))
+
+;; Register an order id with a (price . qty). If `id` already exists we
+;; overwrite — MODIFY semantics in the spec use this with the new price/qty.
+(define (idmap-register! m id price qty)
+  (let ((entry (cons id (cons price qty))))
+    (if (idmap-has? m id)
+        (idmap-replace m id entry)
+        (cons entry m))))
+
+;; Update just the quantity for an id (used during partial fills).
+;; If the id isn't registered this is a no-op.
+(define (idmap-update-qty! m id new-qty)
+  (let ((entry (idmap-lookup m id)))
+    (if entry
+        (let ((price (car entry))
+              (old-entry (car (cons id entry))))
+          (idmap-replace m id (cons id (cons price new-qty))))
+        m)))
+
+;; Remove an id entirely. If absent this is a no-op.
+(define (idmap-remove! m id)
+  (cond
+    ((null? m) '())
+    ((equal? (car (car m)) id) (cdr m))
+    (else (cons (car m) (idmap-remove! (cdr m) id)))))
+
+;; Look up the (price . qty) for an id, or #f.
+(define (idmap-lookup m id)
+  (cond
+    ((null? m) #f)
+    ((equal? (car (car m)) id) (cdr (car m)))
+    (else (idmap-lookup (cdr m) id))))
+
+;; Predicate: is `id` currently registered?
+(define (idmap-has? m id)
+  (cond
+    ((null? m) #f)
+    ((equal? (car (car m)) id) #t)
+    (else (idmap-has? (cdr m) id))))
+
+;; Number of live entries.
+(define (idmap-count m)
+  (cond
+    ((null? m) 0)
+    (else (+ 1 (idmap-count (cdr m))))))
+
+;; All entries as a list of (id . (price . qty)). Pure read.
+(define (idmap-all m)
+  m)

@@ -1,0 +1,95 @@
+;; hash.aura — Deterministic fingerprint hashing for final counters.
+;;
+;; This module exists so that the stdout contract can include stable
+;; hash-like fingerprints of certain key counters (reservations held,
+;; oversell attempts blocked). It does NOT implement a cryptographic
+;; hash — Aura has no bitwise primitives and we must stay within
+;; numeric arithmetic + list operations. The "hash" here is a simple
+;; but well-distributed mixing function over a non-negative integer,
+;; combined with two named derivations that the main report prints.
+;;
+;; The mixing function is a variant of the classic
+;;   h = h ^ (h >> 16) ; h = h * 0x85ebca6b ; h = h ^ (h >> 13)
+;; style bit-splat, but implemented with arithmetic-only operations
+;; (quotient/modulo, multiplication) so it stays portable across any
+;; compliant Aura runtime. It is deterministic: same input => same
+;; output, and small input changes produce large output changes.
+;;
+;; Exported (per the module table):
+;;   api-hash-reservations-total  ; hash of the reservations-total counter
+;;   api-hash-oversell-blocked    ; hash of the oversell-blocked counter
+;;   api-hash-mix                 ; raw mixing function for any integer
+;;
+;; All inputs are expected to be non-negative integers (the counters
+;; from report.aura and oversell.aura). Negative or non-integer inputs
+;; are coerced via absolute value + truncation of any fractional part
+;; to keep the function total.
+
+;; ---------------------------------------------------------------------
+;; Internal helpers
+;; ---------------------------------------------------------------------
+
+;; Coerce an arbitrary value into a non-negative integer suitable for
+;; hashing. We deliberately avoid relying on `number?` predicates
+;; beyond what the Aura primer guarantees; if x is not a number we
+;; fall back to 0.
+(define (hash-coerce x)
+  (if (number? x)
+      (let ((absx (if (< x 0) (- 0 x) x)))
+        ;; truncation toward zero: quotient of absx by 1 keeps the
+        ;; integer part for any non-negative number. For very large
+        ;; numbers we mod-down to a safe range so the multiplier step
+        ;; below stays within practical bounds.
+        (let ((truncated (quotient absx 1)))
+          (modulo truncated 1000000007)))
+      0))
+
+;; A single mix round. We split "high bits" from "low bits" by
+;; dividing by a power-of-two-ish constant and using modulo for the
+;; low part. The multipliers are large primes (within Aura's safe
+;; integer range) to spread bits.
+(define (hash-round1 n)
+  (let ((high (quotient n 65536))
+        (low  (modulo n 65536)))
+    (+ (* high 2654435761) (* low 2654435769))))
+
+(define (hash-round2 n)
+  (let ((high (quotient n 4096))
+        (low  (modulo n 4096)))
+    (+ (* high 40503) (* low 2654435761))))
+
+;; Final avalanche: xor-equivalent via addition/subtraction and a
+;; final modulo to keep the result bounded.
+(define (hash-avalanche n)
+  (let ((a (+ n (* n 31))))
+    (let ((b (+ a (* (quotient a 7) 17))))
+      (modulo (+ (* b 2654435761) 1442695040888963407)
+              1000000007))))
+
+;; ---------------------------------------------------------------------
+;; Public mixing function
+;; ---------------------------------------------------------------------
+
+;; api-hash-mix: deterministic 32-bit-ish fingerprint of a non-negative
+;; integer. The same input always yields the same output; changing the
+;; input by 1 typically changes the output by a large amount.
+(define (api-hash-mix n)
+  (hash-avalanche (hash-round2 (hash-round1 (hash-coerce n)))))
+
+;; ---------------------------------------------------------------------
+;; Named counter hashes (per the GOAL module table)
+;; ---------------------------------------------------------------------
+
+;; api-hash-reservations-total: fingerprint of the total-reservations
+;; counter. We mix the raw counter value plus a small salt so that
+;; counters with the same numeric value but different semantics cannot
+;; accidentally collide on stdout. The salt is a fixed constant — the
+;; function is still pure / deterministic.
+(define (api-hash-reservations-total total)
+  (api-hash-mix (+ (hash-coerce total) 2654435761)))
+
+;; api-hash-oversell-blocked: fingerprint of the oversell-blocked
+;; counter. Distinct salt from reservations-total so the two hashes
+;; remain independent in the final stdout.
+(define (api-hash-oversell-blocked blocked)
+  (api-hash-mix (+ (hash-coerce blocked) 40503)))
