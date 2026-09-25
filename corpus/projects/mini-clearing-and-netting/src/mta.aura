@@ -1,0 +1,49 @@
+;; mta.aura - Minimum Transfer Amount (MTA) registry per currency
+;;
+;; An MTA is the minimum gross payment that will be settled bilaterally
+;; for a given currency. Exposures strictly below the MTA are typically
+;; deferred, carried forward, or eliminated by the netting process.
+;;
+;; Backed by an alist keyed on the currency symbol. Default MTA is 0
+;; (meaning "no filtering") so that callers who never call (set-mta!)
+;; still get sensible behaviour.
+
+(define *mta-table* '())
+
+(define (set-mta! ccy amount)
+  (set! *mta-table*
+        (let loop ((acc '()) (xs *mta-table*))
+          (if (null? xs)
+              (append (reverse acc) (list (cons ccy amount)))
+              (let ((e (car xs)))
+                (if (equal? (car e) ccy)
+                    (begin
+                      (set! *mta-table*
+                            (append (reverse acc)
+                                    (list (cons ccy amount))
+                                    (cdr xs)))
+                      *mta-table*)
+                    (loop (cons e acc) (cdr xs)))))))
+  ;; If we appended in the inner loop above, we already mutated. Handle
+  ;; the case where the entry was not present at all (closed-over scan).
+  (let ((present?
+          (let loop ((xs *mta-table*))
+            (cond
+              ((null? xs) #f)
+              ((equal? (car (car xs)) ccy) #t)
+              (else (loop (cdr xs)))))))
+    (if present?
+        *mta-table*
+        (begin
+          (set! *mta-table* (append *mta-table* (list (cons ccy amount))))
+          *mta-table*))))
+
+(define (get-mta ccy)
+  (let loop ((xs *mta-table*))
+    (cond
+      ((null? xs) 0)
+      ((equal? (car (car xs)) ccy) (cdr (car xs)))
+      (else (loop (cdr xs))))))
+
+(define (below-mta? amount ccy)
+  (< amount (get-mta ccy)))

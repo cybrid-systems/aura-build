@@ -1,0 +1,43 @@
+;; facts_exemptions.aura — Customer exemption certificates
+;; Public API: (api load-exemption-certs) -> list of cert alists
+
+(define (api load-exemption-certs)
+  ;; Each certificate is an alist:
+  ;;   ((cert-id . "EX-...") (jurisdiction . "jid-...") (reason . "...")
+  ;;    (product-classes . ("groceries" "apparel" ...)))
+  ;; - cert-id: unique identifier for the certificate
+  ;; - jurisdiction: jurisdiction id (e.g., "jid-ca-los-angeles") this cert covers
+  ;; - reason: free-text reason (e.g., "resale", "non-profit", "government")
+  ;; - product-classes: list of product categories this cert applies to;
+  ;;   empty list means it covers all product classes
+  (list
+    ;; Wholesale reseller exemption — California state-level only
+    (list (cons 'cert-id "EX-RESALE-CA")
+          (cons 'jurisdiction "jid-ca-state")
+          (cons 'reason "resale")
+          (cons 'product-classes (list "tangible" "apparel")))
+    ;; Non-profit covering all digital goods in New York
+    (list (cons 'cert-id "EX-NONPROFIT-NY")
+          (cons 'jurisdiction "jid-ny-state")
+          (cons 'reason "non-profit-501c3")
+          (cons 'product-classes (list "digital" "saas")))
+    ;; Government entity blanket exemption for Texas (covers all product classes)
+    (list (cons 'cert-id "EX-GOV-TX")
+          (cons 'jurisdiction "jid-tx-state")
+          (cons 'reason "government-entity")
+          (cons 'product-classes '()))
+    ;; Educational institution — groceries only in Illinois
+    (list (cons 'cert-id "EX-EDU-IL")
+          (cons 'jurisdiction "jid-il-state")
+          (cons 'reason "educational-institution")
+          (cons 'product-classes (list "groceries")))
+    ;; Manufacturer resale — apparel and tangible in Florida
+    (list (cons 'cert-id "EX-MFG-FL")
+          (cons 'jurisdiction "jid-fl-state")
+          (cons 'reason "resale-manufacturer")
+          (cons 'product-classes (list "apparel" "tangible")))
+    ;; Blanket resale covering all jurisdictions and product classes
+    (list (cons 'cert-id "EX-BLANKET")
+          (cons 'jurisdiction "*")
+          (cons 'reason "resale-blanket")
+          (cons 'product-classes '()))))

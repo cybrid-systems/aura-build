@@ -1,0 +1,41 @@
+;; types.aura - Trade record constructors and accessors
+;; Implements alist-based trade objects. Each trade is:
+;;   ((id . id) (ccy . ccy) (payer . payer) (payee . payee)
+;;    (amount . amount) (value-date . value-date))
+
+(define (make-trade id ccy payer payee amount value-date)
+  (list (cons 'id id)
+        (cons 'ccy ccy)
+        (cons 'payer payer)
+        (cons 'payee payee)
+        (cons 'amount amount)
+        (cons 'value-date value-date)))
+
+(define (trade-id t)
+  (cdr (assq 'id t)))
+
+(define (trade-ccy t)
+  (cdr (assq 'ccy t)))
+
+(define (trade-payer t)
+  (cdr (assq 'payer t)))
+
+(define (trade-payee t)
+  (cdr (assq 'payee t)))
+
+(define (trade-amount t)
+  (cdr (assq 'amount t)))
+
+(define (trade-value-date t)
+  (cdr (assq 'value-date t)))
+
+(define (trade? x)
+  (if (null? x)
+      #f
+      (and (list? x)
+           (assq 'id x)
+           (assq 'ccy x)
+           (assq 'payer x)
+           (assq 'payee x)
+           (assq 'amount x)
+           (assq 'value-date x))))

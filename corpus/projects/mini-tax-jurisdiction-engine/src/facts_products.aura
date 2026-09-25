@@ -1,0 +1,23 @@
+;; facts_products.aura — Product Tax Code -> taxability category
+;; Public API: (api load-product-tax-codes) -> alist of ptc -> category
+
+(define (api load-product-tax-codes)
+  ;; Each entry is (ptc . category)
+  ;; Categories:
+  ;;   "groceries"  — unprepared food, generally lower or exempt
+  ;;   "apparel"    — clothing, often taxed but may have thresholds
+  ;;   "digital"    — digital goods (downloads, streaming media)
+  ;;   "saas"       — software-as-a-service subscription
+  ;;   "tangible"   — general tangible personal property
+  ;;   "service"    — non-software professional service
+  (list
+    (cons "PTC-GROCERY"  "groceries")
+    (cons "PTC-APPAREL"  "apparel")
+    (cons "PTC-DIGITAL"  "digital")
+    (cons "PTC-SAAS"     "saas")
+    (cons "PTC-GENERAL"  "tangible")
+    (cons "PTC-SERVICE"  "service")
+    (cons "PTC-EBOOK"    "digital")
+    (cons "PTC-MUSIC"    "digital")
+    (cons "PTC-VIDEO"    "digital")
+    (cons "PTC-CLOUD"    "saas")))

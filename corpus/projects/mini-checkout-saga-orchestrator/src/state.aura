@@ -1,0 +1,66 @@
+;; state.aura — in-memory saga journal / persistent-state simulator
+;;
+;; The "journal" is an alist mapping saga_id -> list of step names that
+;; have been recorded (completed) for that saga. Each mutation goes
+;; through `journal-record!` which appends the step to that saga's list.
+;; Idempotency is enforced by checking `(member step steps)` via
+;; `already-done?`. `saga-state` returns the full per-saga list (or '()
+;; if the saga has never been seen) so other modules can audit progress.
+
+(define (make-journal)
+  ;; Fresh empty journal: a single mutable cell holding an alist.
+  (let ((j (list '())))   ;; pair: (car j) is the alist
+    (lambda (msg . args)
+      (cond
+        ;; --- internal mutator: install a new alist head ---
+        ((eq? msg 'set-alist!)
+         (set-car! j (car args)))
+        ;; --- internal accessor: get the current alist ---
+        ((eq? msg 'get-alist)
+         (car j))
+        (else
+         (error (string-append "journal: unknown message " (symbol->string msg))))))))
+
+;; helper: look up the entry for saga_id in the alist (or '())
+(define (journal-lookup j saga_id)
+  (let ((alist ((j 'get-alist))))
+    (let loop ((rest alist))
+      (cond
+        ((null? rest) '())
+        ((equal? (car (car rest)) saga_id) (cdr (car rest)))
+        (else (loop (cdr rest)))))))
+
+;; helper: produce a new alist with the saga_id entry updated to new-steps
+(define (journal-upsert alist saga_id new-steps)
+  (let loop ((rest alist) (acc '()))
+    (cond
+      ((null? rest)
+       ;; not found — append new entry
+       (append (reverse acc) (list (cons saga_id new-steps))))
+      ((equal? (car (car rest)) saga_id)
+       ;; replace this entry
+       (append (reverse acc) (list (cons saga_id new-steps)) (cdr rest)))
+      (else
+       (loop (cdr rest) (cons (car rest) acc))))))
+
+;; Record that `step` has completed for `saga_id` in journal `j`.
+;; Idempotent: if already present, no change is made.
+(define (journal-record! j saga_id step)
+  (let ((current (journal-lookup j saga_id)))
+    (if (member step current)
+        ;; already recorded — nothing to do
+        #f
+        ;; append step to this saga's list, preserving order
+        (let ((updated (append current (list step))))
+          ((j 'set-alist!) (journal-upsert ((j 'get-alist)) saga_id updated))
+          #t))))
+
+;; Idempotency guard: has this step already been recorded for this saga?
+(define (already-done? j saga_id step)
+  (let ((current (journal-lookup j saga_id)))
+    (if (member step current) #t #f)))
+
+;; Return the full state for saga_id (ordered list of recorded steps).
+;; Returns '() if the saga has no journal entries.
+(define (saga-state j saga_id)
+  (journal-lookup j saga_id))
