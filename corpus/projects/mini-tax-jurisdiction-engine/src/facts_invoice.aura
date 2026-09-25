@@ -1,0 +1,74 @@
+;; facts_invoice.aura — Invoice with mixed line items
+;; Public API: (api load-invoice) -> alist
+;;
+;; The invoice alist has these keys:
+;;   invoice-id     : unique identifier
+;;   invoice-date   : date string (YYYY-MM-DD)
+;;   currency       : ISO currency code (e.g., "USD")
+;;   lines          : list of line alists
+;;
+;; Each line alist has these keys:
+;;   line-id        : unique identifier within invoice
+;;   description    : human-readable description
+;;   ptc            : product tax code (e.g., "PTC-GENERAL")
+;;   quantity       : integer count of units
+;;   unit-price-cents : unit price in cents (integer)
+;;   extended-cents : quantity * unit-price-cents (pre-tax subtotal in cents)
+
+(define (api load-invoice)
+  (list
+    (cons 'invoice-id   "INV-2024-0001")
+    (cons 'invoice-date "2024-03-15")
+    (cons 'currency     "USD")
+    (cons 'lines
+      (list
+        ;; Line 1: General tangible merchandise
+        (list (cons 'line-id          "L1")
+              (cons 'description      "Office paper, 5 reams")
+              (cons 'ptc              "PTC-GENERAL")
+              (cons 'quantity         5)
+              (cons 'unit-price-cents 1299)
+              (cons 'extended-cents   6495))
+        ;; Line 2: Apparel
+        (list (cons 'line-id          "L2")
+              (cons 'description      "Branded cotton t-shirt")
+              (cons 'ptc              "PTC-APPAREL")
+              (cons 'quantity         12)
+              (cons 'unit-price-cents 2500)
+              (cons 'extended-cents   30000))
+        ;; Line 3: Digital goods
+        (list (cons 'line-id          "L3")
+              (cons 'description      "E-book download license")
+              (cons 'ptc              "PTC-DIGITAL")
+              (cons 'quantity         50)
+              (cons 'unit-price-cents 999)
+              (cons 'extended-cents   49950))
+        ;; Line 4: SaaS subscription
+        (list (cons 'line-id          "L4")
+              (cons 'description      "Cloud analytics subscription, 1 month")
+              (cons 'ptc              "PTC-SAAS")
+              (cons 'quantity         1)
+              (cons 'unit-price-cents 19900)
+              (cons 'extended-cents   19900))
+        ;; Line 5: Groceries
+        (list (cons 'line-id          "L5")
+              (cons 'description      "Bulk coffee beans, 10 lb")
+              (cons 'ptc              "PTC-GROCERY")
+              (cons 'quantity         2)
+              (cons 'unit-price-cents 3500)
+              (cons 'extended-cents   7000))
+        ;; Line 6: More general tangible
+        (list (cons 'line-id          "L6")
+              (cons 'description      "USB-C hub")
+              (cons 'ptc              "PTC-GENERAL")
+              (cons 'quantity         3)
+              (cons 'unit-price-cents 4500)
+              (cons 'extended-cents   13500))))))
+
+
+;; Convenience helper (not part of the public api): look up a line by id
+(define (line-by-id invoice lid)
+  (let loop ((ls (cdr (assq 'lines invoice))))
+    (cond ((null? ls) #f)
+          ((equal? (cdr (assq 'line-id (car ls))) lid) (car ls))
+          (else (loop (cdr ls))))))

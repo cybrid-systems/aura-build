@@ -1,0 +1,80 @@
+;; apply_exemption.aura
+;;
+;; Decides whether a customer's exemption certificate(s) cover a given
+;; transaction line characterized by (jurisdiction-id, product-tax-code).
+;;
+;; Inputs:
+;;   jid  : the resolved jurisdiction id string (e.g. "CA-Alameda-Oakland")
+;;          or #f if there is no nexus / origin-based.
+;;   certs : a list of certificate alists (as returned by load-exemption-certs)
+;;   ptc   : a product tax code string (e.g. "PTC-APPAREL")
+;;
+;; Output: #t if ANY cert in `certs` covers BOTH the jid AND the ptc's
+;;         category. Otherwise #f.
+;;
+;; Coverage rules:
+;;   - The cert's `jurisdiction` field must equal `jid` (exact match).
+;;     (Certificate scope is jurisdiction-specific: a resale cert for
+;;     Oakland does NOT automatically extend to San Francisco.)
+;;   - The cert's `covers` list must contain the PTC's category symbol
+;;     (looked up via load-product-tax-codes), OR the special symbol 'all.
+;;   - If `jid` is #f (no nexus / origin-based skip), there is nothing to
+;;     exempt → return #f.
+;;   - If the PTC is not found in the product-tax-codes table, fall back to
+;;     category 'unknown (treated as not covered unless a cert uses 'all).
+;;
+;; This module only inspects certs; it never mutates anything.
+
+;; --- tiny helpers (private to this file) ---------------------------
+
+;; Look up category for a PTC code in the product-tax-codes alist.
+;; Returns 'unknown if the PTC isn't found.
+(define (priv-ptc->category ptc ptcodes)
+  (cond
+    ((null? ptcodes) 'unknown)
+    ((and (string? (car (car ptcodes)))
+          (string=? (car (car ptcodes)) ptc))
+     (cdr (car ptcodes)))
+    (else (priv-ptc->category ptc (cdr ptcodes)))))
+
+;; True if `sym` appears in list `xs` (treats 'all as universal).
+(define (priv-covers-symbol? sym xs)
+  (cond
+    ((null? xs) #f)
+    ((eq? (car xs) 'all) #t)
+    ((eq? (car xs) sym) #t)
+    (else (priv-covers-symbol? sym (cdr xs)))))
+
+;; Pull a key from an alist of pairs-of-pairs (or '(())) form used here.
+(define (priv-alist-ref ls k)
+  (cond
+    ((null? ls) #f)
+    ((eq? (car (car ls)) k) (cdr (car ls)))
+    (else (priv-alist-ref (cdr ls) k))))
+
+;; --- public API ---------------------------------------------------
+
+(define (api apply-exemption jid certs ptc)
+  (cond
+    ;; No jurisdiction resolved → nothing to exempt against.
+    ((not (string? jid)) #f)
+
+    ;; Load product categories lazily here. We could pass them in, but
+    ;; keeping the API surface small (jid, certs, ptc) per the spec.
+    (else
+     (let* ((ptcodes (api load-product-tax-codes))
+            (category (priv-ptc->category ptc ptcodes))
+            (matches #f))
+       (define (scan remaining)
+         (cond
+           ((null? remaining) matches)
+           (else
+            (let ((cert (car remaining)))
+              (when (and (not matches)
+                         (string? (priv-alist-ref cert 'jurisdiction))
+                         (string=? (priv-alist-ref cert 'jurisdiction) jid)
+                         (priv-covers-symbol? category
+                                              (priv-alist-ref cert 'covers)))
+                (set! matches #t))
+              (scan (cdr remaining))))))
+       (begin (scan certs) matches)))))

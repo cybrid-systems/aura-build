@@ -1,0 +1,179 @@
+;; state.aura — persistent saga state via an in-memory alist journal.
+;;
+;; The journal is an association list keyed by (cons saga_id step-name).
+;; Each entry maps to a record of the form:
+;;   (status . payload)
+;; where status is one of 'done, 'failed, 'compensated, 'rolled-back.
+;; We keep both the journal (per-step outcomes) and a small helper
+;; for fast idempotency checks.
+
+(define (make-record status payload)
+  (cons status payload))
+
+(define (record-status rec)
+  (car rec))
+
+(define (record-payload rec)
+  (cdr rec))
+
+;; make-journal: returns a freshly minted journal structure.
+;; A journal is a mutable record holding:
+;;   - entries: alist of ((saga_id . step) . record)
+;;   - order:   list of ((saga_id . step)) in insertion order, useful for auditing.
+;; Because Aura forbids records/structs, we represent the journal as a
+;; pair (entries . order) and use set! on the cons cells.
+
+(define (make-journal)
+  (let ((j (cons '() '())))
+    (set-car! j '())
+    (set-car! j (cons 'journal-entries (list '())))
+    j))
+
+(define (journal-entries j)
+  (cdr (assq 'journal-entries (car j))))
+
+(define (journal-order j)
+  (cdr (assq 'journal-order (car j))))
+
+(define (journal-set-entries! j entries)
+  (set-car! j
+            (cons (cons 'journal-entries entries)
+                  (cdr (assq 'journal-order (car j))))))
+
+(define (journal-set-order! j order)
+  (set-car! j
+            (cons (cons 'journal-entries (journal-entries j))
+                  (cons (cons 'journal-order order)
+                        (cdr (assq 'journal-order (car j)))))))
+
+(define (journal-add-entry! j key record)
+  (let ((entries (journal-entries j)))
+    (journal-set-entries! j (cons (cons key record) entries))))
+
+(define (journal-append-order! j key)
+  (let ((order (journal-order j)))
+    (journal-set-order! j (append order (list key)))))
+
+;; journal-record!: append a step outcome to the journal.
+;; Signature: (journal-record! j saga_id step) where step is a symbol.
+;; Records the step as 'done unless a previous 'failed/compensated
+;; marker exists (we simply append; idempotency checks live elsewhere).
+
+(define (journal-record! j saga_id step)
+  (let ((key (cons saga_id step))
+        (rec (make-record 'done '())))
+    (journal-add-entry! j key rec)
+    (journal-append-order! j key)))
+
+;; Internal: lookup a record by (saga_id . step) key.
+(define (journal-lookup j saga_id step)
+  (let ((key (cons saga_id step)))
+    (let loop ((entries (journal-entries j)))
+      (cond ((null? entries) #f)
+            ((equal? (car (car entries)) key) (cdr (car entries)))
+            (else (loop (cdr entries)))))))
+
+;; already-done?: idempotency guard. Returns #t iff the (saga_id, step)
+;; key has been recorded with status 'done.
+
+(define (already-done? j saga_id step)
+  (let ((rec (journal-lookup j saga_id step)))
+    (if rec
+        (eq? (record-status rec) 'done)
+        #f)))
+
+;; saga-state: returns the aggregated state for a saga_id, walking the
+;; order list and reducing per-step statuses. The result is a symbol:
+;;   'empty   — no steps recorded
+;;   'done    — every recorded step is 'done
+;;   'partial — at least one 'done, some other status present
+;;   'failed  — a 'failed step exists and no compensation has run
+;;   'rolled-back — every previously-'done step has been compensated
+;;
+;; Implementation: we tally statuses across the (saga_id . step) keys
+;; belonging to this saga, then reduce.
+
+(define (saga-state j saga_id)
+  (let ((keys (saga-keys-in-order j saga_id)))
+    (cond ((null? keys) 'empty)
+          (else
+           (let ((tally (collect-step-statuses j keys '())))
+             (reduce-tally tally))))))
+
+(define (saga-keys-in-order j saga_id)
+  (let loop ((order (journal-order j))
+             (acc '()))
+    (cond ((null? order) (reverse acc))
+          ((equal? (car (car order)) saga_id)
+           (loop (cdr order) (cons (car order) acc)))
+          (else (loop (cdr order) acc)))))
+
+(define (collect-step-statuses j keys acc)
+  (cond ((null? keys) acc)
+        (else
+         (let ((rec (journal-lookup j (car (car keys)) (cdr (car keys)))))
+           (collect-step-statuses j
+                                  (cdr keys)
+                                  (cons (if rec (record-status rec) 'missing)
+                                        acc))))))
+
+(define (reduce-tally statuses)
+  ;; statuses is a list of symbols, possibly including duplicates.
+  (let ((done-count (count-symbol statuses 'done))
+        (failed-count (count-symbol statuses 'failed))
+        (comp-count (count-symbol statuses 'compensated))
+        (rollback-count (count-symbol statuses 'rolled-back)))
+    (cond ((> failed-count 0)
+           (if (> comp-count 0) 'rolled-back 'failed))
+          ((> rollback-count 0) 'rolled-back)
+          ((> done-count 0) 'done)
+          (else 'empty))))
+
+(define (count-symbol lst sym)
+  (cond ((null? lst) 0)
+        ((eq? (car lst) sym) (+ 1 (count-symbol (cdr lst) sym)))
+        (else (count-symbol (cdr lst) sym))))
+
+;; mark-step!: internal helper used by orchestrator/compensator to flip
+;; a recorded step's status (e.g. to 'failed or 'compensated). Exposed
+;; because other modules in this project need to mutate journal entries.
+
+(define (mark-step! j saga_id step status)
+  (let* ((key (cons saga_id step))
+         (rec (journal-lookup j saga_id step)))
+    (if rec
+        (begin
+          (journal-remove-entry! j key)
+          (journal-add-entry! j key (make-record status '()))
+          #t)
+        #f)))
+
+(define (journal-remove-entry! j key)
+  (let loop ((entries (journal-entries j))
+             (acc '()))
+    (cond ((null? entries)
+           (journal-set-entries! j acc)
+           #f)
+          ((equal? (car (car entries)) key)
+           (journal-set-entries! j (append (reverse acc) (cdr entries)))
+           #t)
+          (else (loop (cdr entries) (cons (car entries) acc))))))
+
+;; Convenience accessors used by other modules.
+
+(define (step-status j saga_id step)
+  (let ((rec (journal-lookup j saga_id step)))
+    (if rec (record-status rec) #f)))
+
+(define (journal-snapshot j)
+  ;; Returns the ordered list of ((saga_id . step) . status) for
+  ;; inspection/audit. Used by build-audit-trail.
+  (let loop ((order (journal-order j))
+             (acc '()))
+    (cond ((null? order) (reverse acc))
+          (else
+           (let* ((k (car order))
+                  (rec (journal-lookup j (car k) (cdr k))))
+             (loop (cdr order)
+                   (cons (cons k (if rec (record-status rec) 'missing))
+                         acc)))))))

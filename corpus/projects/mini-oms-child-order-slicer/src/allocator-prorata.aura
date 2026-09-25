@@ -1,0 +1,98 @@
+; allocator-prorata.aura
+; Pro-rata allocator.
+;
+; Distributes `total-filled` across `accounts` proportionally to each
+; account's share value (obtained via api-account-share).  The share
+; is normalised so the sum of share weights equals 1, then each
+; account receives share_weight * total-filled.
+;
+; To avoid rounding leaks, the integer part is assigned first and the
+; remainder (in units of 0.01) is handed out one tick at a time to
+; the accounts with the largest fractional part, sorted by their
+; original list position for stability.  The sum of all per-account
+; allocations is therefore exactly equal to total-filled.
+;
+; Each result entry is an alist:
+;   (acct . acct-id) (share . weight) (qty . allocated-qty)
+
+(define (api-allocate-pro-rata accounts total-filled)
+  (if (or (null? accounts) (<= total-filled 0))
+      '()
+      (let* ((shares (map api-account-share accounts))
+             (sum-shares (foldl + 0 shares))
+             (raw (map (lambda (s)
+                         (if (> sum-shares 0)
+                             (/ (* s total-filled) sum-shares)
+                             0))
+                       shares)))
+        (let* ((ints (map (lambda (v) (quotient (round (* v 100)) 100)) raw))
+               (remainders (map (lambda (v) (- v (car (list (truncate (/ v 1)))))) ints))
+               (scaled-ints (map (lambda (v) (quotient (round (* v 100)) 100)) raw))
+               (scaled-fracs (map (lambda (v i)
+                                    (- v i))
+                                  raw
+                                  scaled-ints))
+               (n (length accounts))
+               (target-cents (* total-filled 100))
+               (sum-int-cents (foldl (lambda (a x) (+ a (* x 100))) 0 scaled-ints))
+               (leftover-cents (- target-cents sum-int-cents)))
+          (let ((indices (build-list n (lambda (i) i))))
+            (let ((sorted-idx (sort-indices-by scaled-fracs indices)))
+              (let loop ((k 0) (cents-left leftover-cents) (ints-out scaled-ints))
+                (if (or (>= k n) (<= cents-left 0))
+                    (let ((sum-out (foldl + 0 ints-out)))
+                      (let ((diff (- total-filled sum-out)))
+                        (let ((final-ints (adjust-last ints-out diff)))
+                          (let ((result
+                                  (map (lambda (acct q)
+                                         (list (cons 'acct (api-account-acct acct))
+                                               (cons 'share (api-account-share acct))
+                                               (cons 'qty q)))
+                                       accounts
+                                       final-ints)))
+                            (verify-checksum result total-filled)
+                            result))))
+                    (let ((idx (list-ref sorted-idx k)))
+                      (loop (+ k 1)
+                            (- cents-left 1)
+                            (list-set ints-out idx (+ (list-ref ints-out idx) 0.01))))))))))))
+
+(define (foldl f init lst)
+  (if (null? lst)
+      init
+      (foldl f (f init (car lst)) (cdr lst))))
+
+(define (build-list n f)
+  (if (<= n 0)
+      '()
+      (cons (f 0) (build-list (- n 1) (lambda (i) (+ i 1))))))
+
+(define (sort-indices-by values indices)
+  (letrec ((insert (lambda (x xs)
+                     (cond
+                       ((null? xs) (cons x xs))
+                       ((>= (list-ref values x) (list-ref values (car xs)))
+                        (cons x xs))
+                       (else (cons (car xs) (insert x (cdr xs))))))))
+    (foldl (lambda (acc x) (insert x acc)) '() indices)))
+
+(define (list-set lst i v)
+  (cond
+    ((null? lst) '())
+    ((= i 0) (cons v (cdr lst)))
+    (else (cons (car lst) (list-set (cdr lst) (- i 1) v)))))
+
+(define (adjust-last lst delta)
+  (if (null? (cdr lst))
+      (cons (+ (car lst) delta) (cdr lst))
+      (cons (car lst) (adjust-last (cdr lst) delta))))
+
+(define (verify-checksum result total)
+  (let ((sum (foldl (lambda (a x)
+                      (+ a (let ((e (assq 'qty x)))
+                              (if e (cdr e) 0))))
+                    0
+                    result)))
+    (if (not (= sum total))
+        (display "ALLOC_WARNING: pro-rata sum mismatch")
+        'OK)))

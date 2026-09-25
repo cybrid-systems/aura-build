@@ -1,0 +1,62 @@
+;; paythrough.aura - Pay-through hierarchy
+;;
+;; A pay-through hierarchy models the legal payment waterfall between
+;; a client, its clearing member (CM), and the central counterparty
+;; (CCP). For example, a client's trade with another client is paid
+;; via: client -> CM -> CCP -> other CM -> other client. Each client
+;; "faces" its clearing member for settlement purposes, and each
+;; clearing member "faces" the CCP. Trades are therefore routed up to
+;; the CCP and back down.
+;;
+;; The hierarchy is configured via an alist mapping each leaf party
+;; to its ultimate counterparty (the CCP). Intermediate hops are
+;; computed by walking the alist.
+;;
+;;   '((client-a . cm-a) (client-b . cm-b) (cm-a . ccp) (cm-b . ccp))
+;;
+;; would mean: client-a pays through cm-a to ccp; client-b pays
+;; through cm-b to ccp. The CCP is the root of the hierarchy.
+
+(define *paythrough-map* '())
+
+(define (set-paythrough! hierarchy-alist)
+  (set! *paythrough-map* hierarchy-alist))
+
+(define (paythrough-parent party)
+  (let ((e (assq party *paythrough-map*)))
+    (if e (cdr e) #f)))
+
+;; Walks the hierarchy from a leaf party up to its ultimate
+;; counterparty (root), returning the chain of intermediaries as
+;; a list. The chain is ordered from immediate parent to root,
+;; so (paythrough-chain 'client-a) given the example above
+;; returns '(cm-a ccp).
+(define (paythrough-chain party)
+  (let loop ((current party) (acc '()))
+    (let ((parent (paythrough-parent current)))
+      (if (or (not parent) (equal? parent current))
+          (reverse acc)
+          (loop parent (cons parent acc))))))
+
+;; The effective counterparty of a party is the root of its
+;; pay-through chain (typically the CCP, or the party itself if
+;; no hierarchy applies).
+(define (effective-counterparty party)
+  (let ((chain (paythrough-chain party)))
+    (if (null? chain)
+        party
+        (car (reverse chain)))))
+
+;; Number of tiers in the deepest configured hierarchy. The tier
+;; depth is the maximum chain length across all configured
+;; parties. With no configuration, depth is 0 (everyone faces
+;; themselves).
+(define (tier-depth)
+  (let loop ((xs *paythrough-map*) (best 0))
+    (if (null? xs)
+        best
+        (let ((e (car xs)))
+          (let ((d (length (paythrough-chain (car e)))))
+            (if (> d best)
+                (loop (cdr xs) d)
+                (loop (cdr xs) best)))))))

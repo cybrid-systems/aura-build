@@ -1,0 +1,78 @@
+; order-types.aura
+; Parent and child order constructors and predicates.
+; Orders are represented as alists (lists of (key . value) pairs).
+; Parent orders include: id, side, qty, px-limit, tif.
+; Child orders include: id, parent-id, side, qty, venue, urgency.
+
+(define (api-make-parent id side qty px-limit tif)
+  (list (cons 'id id)
+        (cons 'kind 'parent)
+        (cons 'side side)
+        (cons 'qty qty)
+        (cons 'px-limit px-limit)
+        (cons 'tif tif)))
+
+(define (api-make-child id parent-id side qty venue urgency)
+  (list (cons 'id id)
+        (cons 'kind 'child)
+        (cons 'parent-id parent-id)
+        (cons 'side side)
+        (cons 'qty qty)
+        (cons 'venue venue)
+        (cons 'urgency urgency)))
+
+(define (api-parent? o)
+  (let ((k (assq 'kind o)))
+    (if k
+        (eq? (cdr k) 'parent)
+        #f)))
+
+(define (api-child? o)
+  (let ((k (assq 'kind o)))
+    (if k
+        (eq? (cdr k) 'child)
+        #f)))
+
+(define (api-parent-qty o)
+  (let ((p (assq 'qty o)))
+    (if p (cdr p) 0)))
+
+(define (api-parent-side o)
+  (let ((p (assq 'side o)))
+    (if p (cdr p) 'BUY)))
+
+(define (api-parent-id o)
+  (let ((p (assq 'id o)))
+    (if p (cdr p) 0)))
+
+(define (api-parent-px-limit o)
+  (let ((p (assq 'px-limit o)))
+    (if p (cdr p) 0)))
+
+(define (api-parent-tif o)
+  (let ((p (assq 'tif o)))
+    (if p (cdr p) 'DAY)))
+
+(define (api-child-qty o)
+  (let ((p (assq 'qty o)))
+    (if p (cdr p) 0)))
+
+(define (api-child-venue o)
+  (let ((p (assq 'venue o)))
+    (if p (cdr p) 'NYSE)))
+
+(define (api-child-urgency o)
+  (let ((p (assq 'urgency o)))
+    (if p (cdr p) 0)))
+
+(define (api-child-side o)
+  (let ((p (assq 'side o)))
+    (if p (cdr p) 'BUY)))
+
+(define (api-child-id o)
+  (let ((p (assq 'id o)))
+    (if p (cdr p) 0)))
+
+(define (api-child-parent-id o)
+  (let ((p (assq 'parent-id o)))
+    (if p (cdr p) 0)))

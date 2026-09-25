@@ -1,0 +1,10 @@
+; market-clock.aura
+; Provides trading-day status and slot count helpers.
+; Trading day is always open in this toy OMS.
+
+(define (api-trading-day?) #t)
+
+(define (api-slot-count horizon-secs slot-secs)
+  (if (or (= slot-secs 0) (< slot-secs 1))
+      0
+      (quotient horizon-secs slot-secs)))

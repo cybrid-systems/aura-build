@@ -1,0 +1,72 @@
+;; extra1.aura — extra helpers used by the saga orchestrator.
+;;
+;; This module is loaded between orchestrator.aura and main.aura. It
+;; exposes a few small utilities that don't cleanly belong in any of the
+;; core modules but are useful for the final reporting step:
+;;
+;;   - (status->string sym): convert a status symbol into the canonical
+;;     uppercase string form used in the stdout contract.
+;;   - (count-where pred ls): count elements of ls satisfying pred.
+;;   - (safe-symbol->string x): defensive conversion that tolerates both
+;;     symbols and strings on input.
+;;   - (distinct-symbols ls): helper used when summarizing unique
+;;     compensation outcomes.
+;;
+;; These helpers are intentionally tiny and pure (no journal access) so
+;; that the anti-hardcode rules in main.aura remain easy to audit.
+
+;; Convert a status symbol like 'COMPLETED into the string "COMPLETED".
+;; Falls back to symbol->string-like behavior; we don't have symbol->string
+;; in the Aura subset, so we dispatch on a small table of known statuses.
+(define (status->string sym)
+  (cond
+    ((equal? sym 'COMPLETED) "COMPLETED")
+    ((equal? sym 'COMPENSATED) "COMPENSATED")
+    ((equal? sym 'FAILED) "FAILED")
+    ((equal? sym 'done) "DONE")
+    ((equal? sym 'compensated) "COMPENSATED")
+    ((equal? sym 'failed) "FAILED")
+    ((equal? sym 'rolled-back) "ROLLED-BACK")
+    (else (safe-symbol->string sym))))
+
+;; Convert either a string or a symbol into a string. If the input is
+;; already a string we return it as-is; otherwise we treat it as a symbol
+;; and produce its printed name. Unknown types are stringified via
+;; number->string to keep things total.
+(define (safe-symbol->string x)
+  (cond
+    ((string? x) x)
+    ((equal? x 'none) "none")
+    ((equal? x 'pending) "pending")
+    ((equal? x 'done) "done")
+    ((equal? x 'released) "released")
+    ((equal? x 'auth) "auth")
+    ((equal? x 'inventory-hold) "inventory-hold")
+    ((equal? x 'payment-auth) "payment-auth")
+    ((equal? x 'payment-capture) "payment-capture")
+    ((equal? x 'fulfillment-kickoff) "fulfillment-kickoff")
+    (else "unknown")))
+
+;; Count how many elements of ls satisfy pred.
+(define (count-where pred ls)
+  (cond
+    ((null? ls) 0)
+    ((pred (car ls)) (+ 1 (count-where pred (cdr ls))))
+    (else (count-where pred (cdr ls)))))
+
+;; Return the list of distinct symbols in ls, preserving first-seen order.
+(define (distinct-symbols ls)
+  (cond
+    ((null? ls) '())
+    ((member (car ls) (distinct-symbols (cdr ls)))
+     (distinct-symbols (cdr ls)))
+    (else (cons (car ls) (distinct-symbols (cdr ls))))))
+
+;; Convenience: join a list of strings with a separator. Used when
+;; building human-readable summary lines for the audit trail.
+(define (join-strings sep ls)
+  (cond
+    ((null? ls) "")
+    ((null? (cdr ls)) (car ls))
+    (else (string-append (car ls) sep
+                         (join-strings sep (cdr ls))))))

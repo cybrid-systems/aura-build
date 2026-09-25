@@ -1,0 +1,71 @@
+; slicer-liqseek.aura
+; Liquidity-seeking child order slicer.
+;
+; This strategy attempts to source liquidity aggressively by splitting
+; the parent order across a prioritized set of venues. The slicer
+; walks the supplied `venues` list and assigns child quantities biased
+; toward earlier venues, scaled by an `urgency` factor:
+;   urgency <= 1.0 -> conservative, evenly spread across venues
+;   urgency  = 1.0 -> neutral, weighted by venue position
+;   urgency  > 1.0 -> aggressive, front-loaded toward top venues
+;
+; Each child is an alist:
+;   (parent-id . id) (side . side) (qty . qty) (venue . venue)
+;   (urgency . urgency) (tag . 'LIQSEEK)
+;
+; The total of all child quantities never exceeds the parent qty;
+; any rounding dust is added to the first child.
+
+(define (api-slice-liquidity parent venues children urgency)
+  (let ((pid (let ((e (assq 'id parent))) (if e (cdr e) 'P0)))
+        (side (let ((e (assq 'side parent))) (if e (cdr e) 'BUY)))
+        (pqty (let ((e (assq 'qty parent))) (if e (cdr e) 0))))
+    (if (or (null? venues) (<= children 0) (<= pqty 0))
+        '()
+        (let* ((nv (length venues))
+               (k (if (< children nv) children nv))
+               (take-list (let loop ((vs venues) (n k) (acc '()))
+                            (if (or (null? vs) (<= n 0))
+                                (reverse acc)
+                                (loop (cdr vs) (- n 1) (cons (car vs) acc)))))
+               (ntake (length take-list))
+               (total-weight
+                (let loop ((vs take-list) (i 0) (acc 0))
+                  (if (null? vs)
+                      acc
+                      (let ((w (+ 1 (* (- ntake i 1) urgency))))
+                        (loop (cdr vs) (+ i 1) (+ acc w)))))))
+          (if (<= total-weight 0)
+              (list (cons 'parent-id pid)
+                    (cons 'side side)
+                    (cons 'qty pqty)
+                    (cons 'venue (let ((e (assq 'venue (car take-list)))) (if e (cdr e) 'UNKNOWN)))
+                    (cons 'urgency urgency)
+                    (cons 'tag 'LIQSEEK))
+              (let loop ((vs take-list) (i 0) (acc '()) (placed 0))
+                (if (null? vs)
+                    (reverse acc)
+                    (let* ((v (car vs))
+                           (vname (let ((e (assq 'venue v))) (if e (cdr e) 'UNKNOWN)))
+                           (w (+ 1 (* (- ntake i 1) urgency)))
+                           (raw-qty (/ (* pqty w) total-weight))
+                           (remaining (- pqty placed))
+                           (slots-left (- ntake i))
+                           (q
+                            (if (= slots-left 1)
+                                remaining
+                                (if (> raw-qty remaining)
+                                    remaining
+                                    (truncate raw-qty)))))
+                      (loop (cdr vs)
+                            (+ i 1)
+                            (cons
+                              (list
+                                (cons 'parent-id pid)
+                                (cons 'side side)
+                                (cons 'qty q)
+                                (cons 'venue vname)
+                                (cons 'urgency urgency)
+                                (cons 'tag 'LIQSEEK))
+                              acc)
+                            (+ placed q))))))))))

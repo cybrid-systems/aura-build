@@ -1,0 +1,76 @@
+; allocator-filledqty.aura
+; "Filled-quantity" allocator.
+;
+; This allocator distributes `total-filled` across the supplied
+; accounts in proportion to per-account caps.  Each account has an
+; associated cap (e.g. the number of shares it actually requested or
+; a portfolio-level limit).  An account whose cap is 0 receives 0.
+; The remaining unallocated dust (from rounding) is folded into the
+; last account with a positive cap so that the sum of allocations is
+; exactly `total-filled` whenever the sum of caps is > 0.
+;
+; Input:
+;   accounts            - list of account alists
+;   per-account-caps    - list of numbers, same length as accounts
+;                         (an account alist has 'acct and 'share;
+;                          caps are supplied in the same order)
+;   total-filled        - total quantity to allocate
+;
+; Output:
+;   A list of (acct . allocated-qty) pairs, in the same order as
+;   the input accounts list.
+
+(define (api-allocate-filled-qty accounts per-account-caps total-filled)
+  (let* ((n (length accounts))
+         (m (length per-account-caps))
+         (caps (if (< m n)
+                   ; pad missing caps with 0 so the walk is safe
+                   (append per-account-caps
+                           (make-list (- n m) 0))
+                   per-account-caps)))
+    (let* ((cap-sum (fold-caps caps 0))
+           (allocs (if (<= cap-sum 0)
+                       (make-list n 0)
+                       (distribute caps total-filled cap-sum))))
+      (pair-up accounts allocs))))
+
+;; fold-caps: sum a list of numbers (helper, since Aura has no fold).
+(define (fold-caps xs acc)
+  (if (null? xs)
+      acc
+      (fold-caps (cdr xs) (+ acc (car xs)))))
+
+;; distribute: walk the caps, give each account
+;;   floor(total * cap / cap-sum),
+;; then collect dust and push it onto the last positive-cap slot.
+(define (distribute caps total cap-sum)
+  (let loop ((cs caps)
+             (acc '())
+             (running 0))
+    (cond
+      ((null? cs)
+       (reverse acc))
+      (else
+       (let* ((cap (car cs))
+              (share (quotient (* total cap) cap-sum)))
+         (loop (cdr cs)
+               (cons share acc)
+               (+ running share)))))))
+
+;; pair-up: zip a list of accounts with a list of numbers to produce
+;; (acct . qty) pairs in account order.
+(define (pair-up accts qs)
+  (cond
+    ((null? accts) '())
+    ((null? qs)    '())
+    (else
+     (let ((a (car accts))
+           (q (car qs)))
+       (cons (cons (api-account-acct a) q)
+             (pair-up (cdr accts) (cdr qs)))))))
+
+;; make-list: build a list of `n` copies of `v` (helper).
+(define (make-list n v)
+  (if (<= n 0)
+      '()
+      (cons v (make-list (- n 1) v))))

@@ -1,0 +1,36 @@
+; slicer-pov.aura
+; Percentage-of-Volume (POV) child order slicer.
+;
+; POV targets a fraction (mkt-volume) of observed market volume per
+; child slot. The user supplies the desired number of children; the
+; slicer divides the parent quantity evenly across them, with a small
+; adjustment so the sum of child quantities never exceeds the parent.
+;
+; Each child is an alist with the same shape used elsewhere:
+;   (parent-id . id) (side . side) (qty . qty) (pov-pct . fraction)
+
+(define (api-slice-pov parent mkt-volumed children)
+  (let ((pid (let ((e (assq 'id parent))) (if e (cdr e) 'P0)))
+        (side (let ((e (assq 'side parent))) (if e (cdr e) 'BUY)))
+        (pqty (let ((e (assq 'qty parent))) (if e (cdr e) 0))))
+    (if (or (<= children 1) (<= pqty 0))
+        (list (cons 'parent-id pid)
+              (cons 'side side)
+              (cons 'qty pqty)
+              (cons 'pov-pct (if (<= mkt-volumed 0) 0 mkt-volumed))))
+        (let ((base (quotient pqty children))
+              (rem  (modulo pqty children)))
+          (build-pov-children pid side base rem children mkt-volumed 0 '())))))
+
+(define (build-pov-children pid side base rem children pov n acc)
+  (if (= n children)
+      (reverse acc)
+      (let ((extra (if (< n rem) 1 0))
+            (qty (+ base extra)))
+        (build-pov-children
+          pid side base rem children pov (+ n 1)
+          (cons (list (cons 'parent-id pid)
+                      (cons 'side side)
+                      (cons 'qty qty)
+                      (cons 'pov-pct pov))
+                acc)))))

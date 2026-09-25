@@ -1,0 +1,75 @@
+;; main.aura — Orchestrator: runs the GOAL scenario and prints 14 KEY=value lines.
+;; Public API: (define (run) ...)  — executes end-to-end.
+
+(define (run)
+  ;; ---- 1. Load all facts ----
+  (define nexus (api load-nexus-rules))
+  (define ptc-map (api load-product-tax-codes))
+  (define certs (api load-exemption-certs))
+  (define rates (api load-jurisdiction-rates))
+  (define customer (api load-customer))
+  (define invoice  (api load-invoice))
+
+  (define origin-state (cdr (assq 'origin-state customer)))
+  (define ship-to      (cdr (assq 'ship-to customer)))
+  (define lines        (cdr (assq 'lines invoice)))
+
+  ;; ---- 2. Compute per-line tax via the public API ----
+  (define line-results
+    (map (lambda (line)
+           (api compute-line-tax line nexus rates certs origin-state))
+         lines))
+
+  ;; ---- 3. Aggregate invoice totals via the public API ----
+  (define summary (api aggregate-invoice line-results))
+
+  ;; ---- 4. Audit hash over the per-line breakdowns ----
+  (define breakdowns
+    (map (lambda (r) (cdr (assq 'breakdown r))) line-results))
+  (define audit-hash (api make-audit-hash breakdowns))
+
+  ;; ---- 5. Extract commonly-needed summary fields ----
+  (define line-count   (cdr (assq 'line-count summary)))
+  (define taxed-count  (cdr (assq 'taxed-count summary)))
+  (define exempt-count (cdr (assq 'exempt-count summary)))
+  (define zero-count   (cdr (assq 'zero-count summary)))
+  (define subtotal-cents (cdr (assq 'subtotal-cents summary)))
+  (define tax-cents      (cdr (assq 'tax-cents summary)))
+  (define invoice-total  (cdr (assq 'total-cents summary)))
+  (define invoice-id     (cdr (assq 'invoice-id invoice)))
+  (define customer-id    (cdr (assq 'customer-id customer)))
+
+  ;; ---- 6. First-taxed jurisdiction (for display; #f if none) ----
+  (define first-jid
+    (let loop ((rs line-results))
+      (cond ((null? rs) #f)
+            ((cdr (assq 'taxable? (car rs))) (cdr (assq 'jid (car rs))))
+            (else (loop (cdr rs))))))
+
+  ;; ---- 7. First exemption reason found across lines (or "none") ----
+  (define first-exemption-reason
+    (let loop ((rs line-results))
+      (cond ((null? rs) "none")
+            ((cdr (assq 'exempt? (car rs)))
+             (let ((r (cdr (assq 'exemption-reason (car rs)))))
+               (if r r "none")))
+            (else (loop (cdr rs))))))
+
+  ;; ---- 8. Emit the 14 KEY=value lines ----
+  (display "INVOICE_ID=")        (display invoice-id)               (newline)
+  (display "CUSTOMER_ID=")       (display customer-id)              (newline)
+  (display "ORIGIN_STATE=")      (display origin-state)             (newline)
+  (display "DEST_STATE=")        (display (cdr (assq 'state ship-to))) (newline)
+  (display "LINE_COUNT=")        (display line-count)               (newline)
+  (display "TAXED_LINES=")       (display taxed-count)              (newline)
+  (display "EXEMPT_LINES=")      (display exempt-count)             (newline)
+  (display "ZERO_RATE_LINES=")   (display zero-count)               (newline)
+  (display "FIRST_JID=")         (display (or first-jid "none"))    (newline)
+  (display "FIRST_EXEMPTION=")   (display first-exemption-reason)   (newline)
+  (display "SUBTOTAL_CENTS=")    (display subtotal-cents)           (newline)
+  (display "TAX_CENTS=")         (display tax-cents)                (newline)
+  (display "INVOICE_TOTAL_CENTS=") (display invoice-total)          (newline)
+  (display "AUDIT_HASH=")        (display audit-hash)               (newline))
+
+;; Auto-run when this file is the last loaded (main entry point).
+(run)

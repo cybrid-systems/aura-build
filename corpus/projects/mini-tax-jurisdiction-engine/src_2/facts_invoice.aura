@@ -1,0 +1,75 @@
+;; facts_invoice.aura
+;;
+;; The single invoice processed by this scenario. The invoice is a list of
+;; line items, each represented as an alist:
+;;
+;;   line-id     : unique id (string, e.g. "L-1")
+;;   product-id  : human-readable product description (string)
+;;   ptc         : product tax code (string, must match a key in load-product-tax-codes)
+;;   qty         : integer quantity
+;;   unit-cents  : unit price in cents (integer)
+;;
+;; Derived fields (subtotal-cents, tax-cents, total-cents) are NOT stored
+;; here — they are computed downstream by compute-line-tax and
+;; invoice-aggregate from these raw inputs.
+;;
+;; API:
+;;   (api load-invoice) -> invoice alist of the form
+;;       (cons 'id INVOICE-ID (cons 'lines LINE-LIST ...))
+;;       where LINE-LIST is a list of line alists.
+
+(define (api load-invoice)
+  (list
+   'id "INV-2026-0001"
+   'lines (list
+
+           ;; Line 1: groceries — generally exempt from state tax,
+           ;; ships to CA-Alameda-Oakland where the seller has nexus.
+           (list 'line-id "L-1"
+                 'product-id "Organic apples (5 lb bag)"
+                 'ptc "PTC-GROCERY"
+                 'qty 2
+                 'unit-cents 899)
+
+           ;; Line 2: apparel — fully taxable clothing, CA-Alameda-Oakland.
+           (list 'line-id "L-2"
+                 'product-id "Cotton t-shirt"
+                 'ptc "PTC-APPAREL"
+                 'qty 3
+                 'unit-cents 1499)
+
+           ;; Line 3: digital good (download) — taxable like tangible
+           ;; in most destination states. Ships to same CA jurisdiction.
+           (list 'line-id "L-3"
+                 'product-id "MP3 album download"
+                 'ptc "PTC-DIGITAL"
+                 'qty 1
+                 'unit-cents 999)
+
+           ;; Line 4: SaaS subscription — taxed like digital.
+           (list 'line-id "L-4"
+                 'product-id "Pro plan (monthly)"
+                 'ptc "PTC-SAAS"
+                 'qty 1
+                 'unit-cents 4900)
+
+           ;; Line 5: tangible book — fully taxable, CA-Alameda-Oakland.
+           (list 'line-id "L-5"
+                 'product-id "Hardcover reference book"
+                 'ptc "PTC-BOOK"
+                 'qty 1
+                 'unit-cents 3250)
+
+           ;; Line 6: tangible toy — fully taxable, CA-Alameda-Oakland.
+           (list 'line-id "L-6"
+                 'product-id "Wooden building blocks"
+                 'ptc "PTC-TOY"
+                 'qty 1
+                 'unit-cents 1899)
+
+           ;; Line 7: eBook — digital delivery, taxable like digital.
+           (list 'line-id "L-7"
+                 'product-id "eBook: Advanced Cooking"
+                 'ptc "PTC-EBOOK"
+                 'qty 1
+                 'unit-cents 1499))))

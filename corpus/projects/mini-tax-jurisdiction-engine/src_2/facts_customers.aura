@@ -1,0 +1,30 @@
+;; facts_customers.aura
+;;
+;; Customer master record. In this toy engine there is exactly one customer
+;; for the scenario: C-001, shipping to a destination-based state (CA) with
+;; an exemption certificate on file for that ship-to jurisdiction.
+;;
+;; Shape (alist):
+;;   customer-id        : unique id (string)
+;;   name               : display name
+;;   ship-to            : alist of ship-to address
+;;       state          : 2-letter state code
+;;       county         : county name (Title Case, as it appears in nexus)
+;;       city           : city name (Title Case, as it appears in nexus)
+;;   exemption-cert-ids : list of cert-id strings the customer holds
+;;   resale-allowed     : #t/#f convenience flag (also reflected by certs)
+;;
+;; API:
+;;   (api load-customer) -> customer alist
+
+(define (api load-customer)
+  (list
+   (cons 'customer-id "C-001")
+   (cons 'name "Acme Resale Co.")
+   (cons 'ship-to
+         (list
+          (cons 'state "CA")
+          (cons 'county "Alameda")
+          (cons 'city "Oakland")))
+   (cons 'exemption-cert-ids '("CERT-001"))
+   (cons 'resale-allowed #t)))

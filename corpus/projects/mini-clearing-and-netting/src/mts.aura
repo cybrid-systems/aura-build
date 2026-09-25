@@ -1,0 +1,248 @@
+;; mts.aura - MTA Filtering Layer
+;;
+;; "MTS" = Minimum Transfer Size filter. Sits between the bilateral
+;; exposure graph (bilateral.aura) and the netting engine (netting.aura).
+;;
+;; For a given value date and currency, this module:
+;;
+;;   * applies (below-mta? ...) to every directed bilateral exposure,
+;;     DROPPING the exposure entirely if both:
+;;       - the exposure amount is strictly below the MTA for its ccy
+;;       - the direction is not the "kept" direction for the pair
+;;         (see below)
+;;
+;;   * records which (a . b) pairs had at least one leg kept
+;;
+;;   * returns the filtered list of pairs and the list of kept pairs
+;;
+;; Design notes:
+;;   * We use the *gross* bilateral pairs as produced by
+;;     (all-bilateral-pairs vd ccy) from bilateral.aura. A pair is
+;;     represented as ((a . b) . amount) where (a . b) is a CONS
+;;     (ordered, directed) and amount is a number.
+;;   * For an undirected pair (a <-> b) with two directed legs, we
+;;     apply a "keep the larger, drop the smaller if below MTA" rule:
+;;     the kept direction is the one with the larger amount; if both
+;;     directions are below MTA, BOTH are dropped. This avoids
+;;     spuriously retaining tiny legs that, after netting, would
+;;     produce sub-MTA payment instructions.
+;;   * A pair is "mta-filtered" if at least one of its directed legs
+;;     survives. The (mta-filtered-pairs vd ccy) function returns the
+;;     list of directed exposures (same shape as all-bilateral-pairs)
+;;     after MTA filtering.
+
+;; ---------------------------------------------------------------------------
+;; Internal helpers
+;; ---------------------------------------------------------------------------
+
+;; Given an ordered pair ((a . b) . amount), return the reverse pair
+;; ((b . a) . amount) - same amount but flipped direction.
+(define (reverse-pair p)
+  (let ((k (car p))
+        (v (cdr p)))
+    (cons (cons (cdr k) (car k)) v)))
+
+;; Group directed exposures by unordered pair.
+;; Input:  list of ((a . b) . amount)
+;; Output: alist mapping (a . b) with a as the alphabetically/symbolically
+;;         smaller party to a list of directed legs.
+;; We don't sort strings - we just key by (min max) via direct comparison
+;; using the symbol/string equality semantics already in the language.
+;; Implementation: keep two passes - first scan to build canonical key.
+(define (canonical-key a b)
+  (if (string<? (number->string 0) "")  ; always #f - placeholder
+      (cons a b)
+      (cons a b)))
+
+;; Actually we need a real canonical key. Use a stable, deterministic
+;; ordering based on the printed form of the symbols.
+(define (sym<= a b)
+  (string<=? (symbol->string a) (symbol->string b)))
+
+(define (canonical a b)
+  (if (sym<= a b)
+      (cons a b)
+      (cons b a)))
+
+;; Group legs by canonical key.
+;; Input:  list of ((payer . payee) . amount)
+;; Output: alist of (canonical-key . (list legs))
+(define (group-by-canonical legs)
+  (let loop ((acc '()) (rest legs))
+    (if (null? rest)
+        acc
+        (let* ((leg (car rest))
+               (k (car leg))
+               (a (car k))
+               (b (cdr k))
+               (ck (canonical a b))
+               (existing (assq ck acc)))
+          (if existing
+              (begin
+                (set-cdr! existing (cons leg (cdr existing)))
+                (loop acc (cdr rest)))
+              (loop (cons (cons ck (list leg)) acc)
+                    (cdr rest)))))))
+
+;; Sum the amounts in a list of legs.
+(define (sum-leg-amounts legs)
+  (let loop ((acc 0) (xs legs))
+    (if (null? xs)
+        acc
+        (loop (+ acc (cdr (car xs))) (cdr xs)))))
+
+;; Decide which legs survive MTA filtering for a single undirected pair.
+;; legs is a list of ((payer . payee) . amount).
+;; Returns: list of legs to KEEP.
+;;
+;; Rules:
+;;   1. For each leg, if amount >= MTA(currency), keep unconditionally.
+;;   2. For legs below MTA, drop them UNLESS they are the dominant
+;;      (largest-amount) leg of the pair - in which case keep them too,
+;;      since the alternative (dropping both legs) would erase the
+;;      entire obligation. This preserves net obligations when one
+;;      side of a pair is below MTA but the reverse side is even smaller.
+;;   3. If BOTH legs are below MTA AND equal, drop both.
+(define (filter-pair-legs legs ccy)
+  (let ((mta (get-mta ccy)))
+    (let loop ((kept '()) (rest legs))
+      (if (null? rest)
+          (reverse kept)
+          (let* ((leg (car rest))
+                 (amt (cdr leg)))
+            (if (>= amt mta)
+                (loop (cons leg kept) (cdr rest))
+                (loop kept (cdr rest))))))))
+
+;; More nuanced filter: keep legs that are >= MTA, AND for any pair
+;; where ALL legs are below MTA, keep the single largest leg so the
+;; obligation is not silently erased.
+(define (filter-pair-legs-smart legs ccy)
+  (let ((mta (get-mta ccy)))
+    (let* ((above (let loop ((acc '()) (xs legs))
+                    (if (null? xs)
+                        (reverse acc)
+                        (let ((leg (car xs)))
+                          (if (>= (cdr leg) mta)
+                              (loop (cons leg acc) (cdr xs))
+                              (loop acc (cdr xs)))))))
+           (below (let loop ((acc '()) (xs legs))
+                    (if (null? xs)
+                        (reverse acc)
+                        (let ((leg (car xs)))
+                          (if (< (cdr leg) mta)
+                              (loop (cons leg acc) (cdr xs))
+                              (loop acc (cdr xs))))))))
+      (if (null? above)
+          ;; Nothing above MTA: keep the single largest below-MTA leg
+          ;; to preserve the net obligation; drop the rest.
+          (if (null? below)
+              '()
+              (list (largest-leg below)))
+          (append above '()))))
+
+;; Pick the leg with the largest amount from a non-empty list.
+(define (largest-leg legs)
+  (let loop ((best (car legs)) (rest (cdr legs)))
+    (if (null? rest)
+        best
+        (let ((cur (car rest)))
+          (if (> (cdr cur) (cdr best))
+              (loop cur (cdr rest))
+              (loop best (cdr rest)))))))
+
+;; ---------------------------------------------------------------------------
+;; Public API
+;; ---------------------------------------------------------------------------
+
+;; (apply-mta-filter vd ccy)
+;;
+;; Side-effecting: registers the surviving directed exposures with the
+;; netting module so that subsequent (net-obligations vd ccy) calls see
+;; only MTA-cleared positions. (The netting module reads from a dedicated
+;; slot maintained by mts.aura.)
+;;
+;; Returns: the count of directed legs kept after filtering.
+(define *mts-filtered* '())
+
+(define (apply-mta-filter vd ccy)
+  (let* ((all-legs (all-bilateral-pairs vd ccy))
+         (grouped (group-by-canonical all-legs))
+         (kept-legs
+          (let loop ((acc '()) (gs grouped))
+            (if (null? gs)
+                (reverse acc)
+                (let* ((entry (car gs))
+                       (legs (cdr entry))
+                       (survivors (filter-pair-legs-smart legs ccy)))
+                  (loop (append acc survivors) (cdr gs))))))
+         (filtered-pairs
+          (let loop ((acc '()) (xs kept-legs) (i 0))
+            (if (null? xs)
+                (reverse acc)
+                (let* ((leg (car xs))
+                       (k (car leg))
+                       (a (car k))
+                       (b (cdr k))
+                       (amt (cdr leg)))
+                  (loop (cons (list a b amt) acc)
+                        (cdr xs)
+                        (+ i))))))))
+    (set! *mts-filtered* filtered-pairs)
+    (length filtered-pairs)))
+
+;; (mta-filtered-pairs vd ccy)
+;;
+;; Returns the list of directed bilateral exposures that survived the
+;; most recent (apply-mta-filter vd ccy) call. Each element is a list
+;; (payer payee amount). If apply-mta-filter has not been called,
+;; delegates to (all-bilateral-pairs vd ccy) and returns that,
+;; re-shaped to (payer payee amount).
+(define (mta-filtered-pairs vd ccy)
+  (if (null? *mts-filtered*)
+      (let loop ((acc '()) (xs (all-bilateral-pairs vd ccy)))
+        (if (null? xs)
+            (reverse acc)
+            (let* ((leg (car xs))
+                   (k (car leg))
+                   (a (car k))
+                   (b (cdr k))
+                   (amt (cdr leg)))
+              (loop (cons (list a b amt) acc) (cdr xs)))))
+      *mts-filtered*))
+
+;; ---------------------------------------------------------------------------
+;; Convenience helpers (not strictly required by the module table but
+;; useful for compliance/audit modules that want to know what was
+;; dropped).
+;; ---------------------------------------------------------------------------
+
+;; (mta-dropped-pairs vd ccy)
+;; Returns the list of directed legs that were DROPPED by the most
+;; recent apply-mta-filter call, as (payer payee amount) triples.
+(define (mta-dropped-pairs vd ccy)
+  (let* ((all-legs (all-bilateral-pairs vd ccy))
+         (kept-keys
+          (let loop ((acc '()) (xs (mta-filtered-pairs vd ccy)))
+            (if (null? xs)
+                acc
+                (let* ((e (car xs)))
+                  (loop (cons (cons (car e) (cadr e)) acc)
+                        (cdr xs))))))
+         (loop-rest (lambda (acc xs)
+                      (if (null? xs)
+                          acc
+                          (let* ((leg (car xs))
+                                 (k (car leg))
+                                 (kept? (member k kept-keys)))
+                            (if kept?
+                                (loop-rest acc (cdr xs))
+                                (loop-rest
+                                 (cons (list (car k) (cdr k) (cdr leg))
+                                       acc)
+                                (cdr xs))))))))
+    (loop-rest '() all-legs)))
+
+;; (mta-dropped-count vd ccy)
+(define (mta-dropped-count vd ccy)
+  (length (mta-dropped-pairs vd ccy)))

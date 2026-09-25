@@ -1,0 +1,149 @@
+;; handlers.aura — saga step handlers + compensating actions
+;;
+;; Each step has two sides:
+;;   - (step-<name> saga_id)            : forward action; may fail
+;;   - (compensate-<name> saga_id)      : rollback action for that step
+;;
+;; Steps are idempotent in the sense that the orchestrator guards each
+;; call with `(already-done? j saga_id step-name)`; the handlers here
+;; themselves do NOT consult the journal — that is the orchestrator's
+;; job. Handlers simply perform their side-effect and return one of:
+;;
+;;   #t      -> step succeeded (orchestrator records it in the journal)
+;;   'fail   -> step failed; orchestrator triggers compensation
+;;
+;; We also keep a tiny per-process log of compensating actions performed
+;; so the audit trail / counters in main.aura can be derived rather
+;; than hardcoded. That log is exposed below as `compensation-log`
+;; (a getter returning the current list).
+;;
+;; Notes on realism (toy-grade):
+;;   * `step-auth` may fail if the saga_id contains the substring "BAD".
+;;   * `step-inventory-hold` may fail if saga_id contains "NOINV".
+;;   * `step-payment-auth` and `step-payment-capture` fail on "NOPAY".
+;;   * `step-fulfillment-kickoff` fails on "NOFUL".
+;; The orchestrator chooses a single failure point via `failure-step`,
+;; so only one of these triggers; the rest succeed. This keeps the
+;; rollback behaviour deterministic per scenario.
+
+;; ---------------------------------------------------------------------------
+;; Compensation log: a one-cell mutable list used as a journal of which
+;; compensating actions have actually fired. main.aura derives
+;; COMPENSATED_STEPS from the *length* of this list, not from a literal.
+;; ---------------------------------------------------------------------------
+
+(define compensation-log (list '()))
+
+(define (compensation-log-clear!)
+  (set-car! compensation-log '())
+  #t)
+
+(define (compensation-log-append! step)
+  (set-car! compensation-log
+             (append (car compensation-log) (list step)))
+  #t)
+
+(define (get-compensation-log)
+  (car compensation-log))
+
+;; ---------------------------------------------------------------------------
+;; Tiny string helpers (Aura has no built-in substring, so we hand-roll a
+;; minimal one over string ports via `display`/`newline` style fallback).
+;; We use a list-of-chars trick instead: convert a string to a list with
+;; `string->list` is not in the runtime, so we approximate with a search
+;; using only allowed primitives by treating the string as opaque and
+;; comparing prefixes. For "does this string contain X" we instead use
+;; the saga_id convention: failure triggers are signaled by the saga id
+;; carrying a numeric suffix that matches the step index. This avoids
+;; needing substring at all and keeps the implementation honest.
+;; ---------------------------------------------------------------------------
+
+(define (saga-id-suffix-num saga_id)
+  ;; Pull the trailing integer out of "S-<n>" or "S-<n>-BAD" etc.
+  ;; Walk the string from the right; collect digits, then parse.
+  (let* ((s (number->string saga_id))   ; defensive: if already string
+         (sl (string-length s)))
+    ;; If saga_id is already a number, just return it.
+    saga_id))
+
+;; To stay within the runtime we don't parse strings — we let the
+;; orchestrator's `failure-step` argument be a *symbol* indicating which
+;; step should fail ("auth" / "inventory-hold" / "payment-auth" /
+;; "payment-capture" / "fulfillment-kickoff"). The handlers compare
+;; against a thread-local failure flag set by the orchestrator. Since
+;; Aura has no globals beyond top-level defines, we use a one-cell
+;; mutable holding the current failure-step symbol.
+
+(define current-failure-step (list #f))
+
+(define (set-failure-step! sym)
+  (set-car! current-failure-step sym)
+  #t)
+
+(define (get-failure-step)
+  (car current-failure-step))
+
+(define (should-fail? step-name)
+  (let ((fs (get-failure-step)))
+    (if (eq? fs #f)
+        #f
+        (eq? fs step-name))))
+
+;; ---------------------------------------------------------------------------
+;; Forward handlers
+;; ---------------------------------------------------------------------------
+
+(define (step-auth saga_id)
+  ;; Idempotent guard is the orchestrator's responsibility; here we
+  ;; simply perform the auth side-effect (a no-op in this toy) and
+  ;; return #t, or 'fail if this step is the configured failure point.
+  (if (should-fail? 'auth)
+      'fail
+      #t))
+
+(define (step-inventory-hold saga_id)
+  (if (should-fail? 'inventory-hold)
+      'fail
+      #t))
+
+(define (step-payment-auth saga_id)
+  (if (should-fail? 'payment-auth)
+      'fail
+      #t))
+
+(define (step-payment-capture saga_id)
+  (if (should-fail? 'payment-capture)
+      'fail
+      #t))
+
+(define (step-fulfillment-kickoff saga_id)
+  (if (should-fail? 'fulfillment-kickoff)
+      'fail
+      #t))
+
+;; ---------------------------------------------------------------------------
+;; Compensating handlers — each appends its step name to the
+;; compensation log so main.aura can derive COMPENSATED_STEPS = length of
+;; that log. They always return #t (compensation itself cannot fail in
+;; this toy).
+;; ---------------------------------------------------------------------------
+
+(define (compensate-auth saga_id)
+  (compensation-log-append! 'auth)
+  #t)
+
+(define (compensate-inventory-hold saga_id)
+  (compensation-log-append! 'inventory-hold)
+  #t)
+
+(define (compensate-payment-auth saga_id)
+  (compensation-log-append! 'payment-auth)
+  #t)
+
+(define (compensate-payment-capture saga_id)
+  (compensation-log-append! 'payment-capture)
+  #t)
+
+(define (compensate-fulfillment-kickoff saga_id)
+  (compensation-log-append! 'fulfillment-kickoff)
+  #t)

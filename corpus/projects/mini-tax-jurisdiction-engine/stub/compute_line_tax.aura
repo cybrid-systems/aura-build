@@ -1,0 +1,115 @@
+;; compute_line_tax.aura — Per-line tax computation with full breakdown
+;; Public API:
+;;   (api compute-line-tax line nexus rates certs origin-states ptc->category)
+;;     line          : line alist with (line-id, description, ptc, quantity,
+;;                                       unit-price-cents, extended-cents)
+;;     nexus         : list of nexus alists from (api load-nexus-rules)
+;;     rates         : alist jid -> rate-bps (from (api load-jurisdiction-rates))
+;;     certs         : list of cert alists (from (api load-exemption-certs))
+;;     origin-states : list of 2-letter state codes that are origin-based
+;;     ptc->category : alist ptc-code -> category string (from products load)
+;;   (api ptc->category-fallback ptc ptc->category)
+;;     Helper to look up a category with a sensible default of "tangible".
+;;
+;; Returns an alist:
+;;   (line-id . "...")
+;;   (desc    . "...")
+;;   (ptc     . "...")
+;;   (category . "...")
+;;   (ship-to-state . "...")   ; destination state used for resolution
+;;   (jid          . "..." or #f)  ; resolved jurisdiction id
+;;   (resolved?    . #t/#f)    ; did we find a nexus-based jurisdiction?
+;;   (rate-bps     . N or 0)   ; basis points applied to this line
+;;   (tax-cents    . N)        ; tax for this line, in cents (rounded half-even)
+;;   (exempt?      . #t/#f)    ; was an exemption applied?
+;;   (exempt-reason . "..." or #f)
+;;   (taxable-cents . N)       ; the extended cents the tax was (or would be) computed on
+;;   (no-nexus?    . #t/#f)    ; if #t, no nexus in ship-to state
+;;   (origin-state? . #t/#f)   ; if #t, ship-to is origin-based (no tax collected)
+
+;; Helper: look up a key in an alist, return default if missing
+(define (alist-ref-default alist key default)
+  (cond
+    ((null? alist) default)
+    ((equal? (car (car alist)) key) (cdr (car alist)))
+    (else (alist-ref-default (cdr alist) key default))))
+
+;; Helper: get the 'state' field out of a ship-to alist
+(define (ship-to-state ship-to)
+  (alist-ref-default ship-to 'state ""))
+
+(define (api ptc->category-fallback ptc ptc->category)
+  (let ((cat (alist-ref-default ptc->category ptc "tangible")))
+    cat))
+
+;; Helper: convert basis points applied to cents-amount into cents, rounding half-even
+(define (bps->cents-half-even extended-cents rate-bps)
+  (let* ((product (* extended-cents rate-bps))
+         (hundredths (quotient product 10000))
+         ;; The remainder is product mod 10000, in ten-thousandths of a cent.
+         ;; We need to round to the nearest cent (10000 = 1.00), so check remainder.
+         (rem (modulo product 10000)))
+    (cond
+      ;; Exactly half: round to even
+      ((= rem 5000)
+       (if (= (modulo hundredths 2) 0)
+           hundredths
+           (+ hundredths 1)))
+      ;; More than half: round up
+      ((> rem 5000) (+ hundredths 1))
+      ;; Less than half: round down
+      (else hundredths))))
+
+(define (api compute-line-tax line nexus rates certs origin-states ptc->category)
+  (let* (
+        ;; Extract line fields
+        (line-id       (alist-ref-default line 'line-id ""))
+        (desc          (alist-ref-default line 'description ""))
+        (ptc           (alist-ref-default line 'ptc ""))
+        (qty           (alist-ref-default line 'quantity 0))
+        (unit-price    (alist-ref-default line 'unit-price-cents 0))
+        (extended      (alist-ref-default line 'extended-cents 0))
+        (ship-to       (alist-ref-default line 'ship-to (list (cons 'state ""))))
+        (st            (ship-to-state ship-to))
+        ;; Look up category for the ptc
+        (category      (api ptc->category-fallback ptc ptc->category))
+        ;; Resolve the jurisdiction via the (already-loaded) resolve-jurisdiction api
+        (jid           ((api resolve-jurisdiction) ship-to nexus))
+        (resolved?     (if jid #t #f))
+        (no-nexus?     (if (not resolved?) #t #f))
+        ;; Determine if ship-to state is origin-based
+        (origin-state? (if (member st origin-states) #t #f))
+        ;; Effective jid we will collect tax under (None if exempt at this jid)
+        (effective-jid (if (and resolved? (not origin-state?)) jid #f))
+        ;; Look up the rate for the effective jid, defaulting to 0
+        (rate          (if effective-jid
+                           (alist-ref-default rates effective-jid 0)
+                           0))
+        ;; Compute raw tax cents using half-even rounding (per-line)
+        (raw-tax       (bps->cents-half-even extended rate))
+        ;; Apply exemption against the would-be jid and the category
+        (exempt-now?   (if effective-jid
+                           ((api apply-exemption) effective-jid certs category)
+                           #f))
+        ;; Final tax: zero if exempt, else raw-tax
+        (final-tax     (if exempt-now? 0 raw-tax))
+        (exempt-reason (if exempt-now? "certificate" #f))
+        ;; Friendly flags
+        (zero-nexus?   (not resolved?))
+        )
+
+    (list
+      (cons 'line-id line-id)
+      (cons 'description desc)
+      (cons 'ptc ptc)
+      (cons 'category category)
+      (cons 'ship-to-state st)
+      (cons 'jid (if resolved? jid #f))
+      (cons 'resolved? resolved?)
+      (cons 'no-nexus? zero-nexus?)
+      (cons 'origin-state? origin-state?)
+      (cons 'rate-bps rate)
+      (cons 'taxable-cents extended)
+      (cons 'tax-cents final-tax)
+      (cons 'exempt? exempt-now?)
+      (cons 'exempt-reason exempt-reason))))

@@ -1,0 +1,87 @@
+;; settlement.aura - Settlement Instruction Builder
+;;
+;; Settlement instructions are the final executable output of the
+;; clearing pipeline. They are derived from the multilateral net
+;; obligations produced by netting.aura and carry a precise shape:
+;;
+;;   (payer . (payee . amount))
+;;
+;; where payer is the party that must deliver funds, payee is the
+;; party that must receive funds, and amount is the value transferred.
+;;
+;; Responsibilities of this module:
+;;
+;;   * (build-instructions vd ccy) - assemble the instruction list
+;;     for a given value date and currency, using the current
+;;     netting results. Each net obligation is converted into one
+;;     settlement instruction.
+;;
+;;   * Accessors for instruction fields (payer, payee, amount).
+;;
+;;   * (instructions-total-out i) - aggregate the outgoing amount
+;;     of a single instruction's payer (equal to its amount by
+;;     construction, but exposed as a separate API for symmetry with
+;;     other modules).
+;;
+;; Settlement instructions are intentionally thin wrappers: they carry
+;; only the data needed at settlement time. The netting engine already
+;; guarantees that, taken together, the instructions for a given
+;; (vd, ccy) are zero-sum across the participant set, so this module
+;; does not need to re-check that property - compliance.aura will.
+
+(define (instruction-payer i) (car i))
+
+(define (instruction-payee i) (car (cdr i)))
+
+(define (instruction-amount i) (cdr (cdr i)))
+
+;; Sum the outgoing amount of an instruction's payer.
+;;
+;; For a well-formed settlement instruction produced by
+;; (build-instructions ...) this is simply the instruction amount,
+;; because each instruction is a single directional transfer.
+;; The API is provided for completeness and to match the symmetry
+;; expected by downstream reporting modules.
+(define (instructions-total-out i)
+  (instruction-amount i))
+
+;; Build the list of settlement instructions for a value date and
+;; currency.
+;;
+;; Strategy:
+;;   1. Obtain the net obligations map from netting.aura. This map
+;;      associates each debtor party with a list of (payee . amount)
+;;      pairs representing the settlement transfers that debtor must
+;;      make to discharge its multilateral position.
+;;   2. Flatten that map into a single flat list of instructions,
+;;      each shaped (payer . (payee . amount)).
+;;   3. Return the flat list in a stable order (debtor-by-debtor,
+;;      then payee-within-debtor as produced by the netting engine).
+;;
+;; This function depends on netting.aura's (net-obligations vd ccy)
+;; and is therefore the final step of the clearing pipeline for a
+;; given (vd, ccy).
+(define (build-instructions vd ccy)
+  (let ((net-obls (net-obligations vd ccy)))
+    (let loop ((debtors net-obls) (acc '()))
+      (if (null? debtors)
+          (reverse acc)
+          (let* ((entry (car debtors))
+                 (debtor (car entry))
+                 (payouts (cdr entry))
+                 (expanded (expand-debtor debtor payouts)))
+            (loop (cdr debtors)
+                  (append (reverse acc) expanded)))))))
+
+;; Helper: turn a single debtor's list of (payee . amount) transfers
+;; into a list of settlement instructions shaped
+;; (debtor . (payee . amount)).
+(define (expand-debtor debtor payouts)
+  (let loop ((xs payouts) (acc '()))
+    (if (null? xs)
+        (reverse acc)
+        (let* ((p (car xs))
+               (payee (car p))
+               (amount (cdr p))
+               (instr (cons debtor (cons payee amount))))
+          (loop (cdr xs) (cons instr acc))))))

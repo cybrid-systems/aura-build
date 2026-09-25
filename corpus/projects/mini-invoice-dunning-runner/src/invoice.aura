@@ -1,0 +1,39 @@
+;; invoice.aura — invoice constructor + accessors / mutators.
+;;
+;; An invoice is an alist with these keys:
+;;   id         -> integer
+;;   customer   -> symbol
+;;   amount     -> integer (cents)
+;;   due-day    -> integer (day counter on which the invoice is due)
+;;   status     -> symbol in {open, paid, disputed}
+
+(define (api-invoice-make id cust amount due-day status)
+  (list (cons 'id id)
+        (cons 'customer cust)
+        (cons 'amount amount)
+        (cons 'due-day due-day)
+        (cons 'status status)))
+
+(define (api-invoice-id i)
+  (cdr (assq 'id i)))
+
+(define (api-invoice-customer i)
+  (cdr (assq 'customer i)))
+
+(define (api-invoice-amount i)
+  (cdr (assq 'amount i)))
+
+(define (api-invoice-due-day i)
+  (cdr (assq 'due-day i)))
+
+(define (api-invoice-status i)
+  (cdr (assq 'status i)))
+
+;; Age in whole days relative to `today` (negative = not yet due).
+(define (api-invoice-age-days i today)
+  (- today (api-invoice-due-day i)))
+
+(define (api-invoice-set-status i s)
+  (let ((pair (assq 'status i)))
+    (set-cdr! pair s))
+  i)

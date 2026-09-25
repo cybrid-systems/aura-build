@@ -1,0 +1,49 @@
+;; currency.aura - Currency normalization and arithmetic
+;;
+;; A single utility module providing:
+;;   * normalize-ccy    - canonicalize a currency code (trim, uppercase)
+;;   * same-ccy?        - equality predicate on normalized codes
+;;   * amount+          - add two amounts (numeric, no rounding)
+;;   * amount-          - subtract two amounts
+;;   * sum-amounts      - reduce-sum a list of amounts
+;;
+;; All amounts in this engine are plain numbers. No fixed-point or
+;; decimal arithmetic is used; the simulation is integer/real only.
+;; Currencies are represented as short uppercase strings ("USD",
+;; "EUR", "GBP", ...). normalize-ccy trims surrounding whitespace
+;; and uppercases the result so that callers can be sloppy.
+
+(define (normalize-ccy ccy)
+  ;; Trim whitespace by walking the string. Aura's string operations
+  ;; are limited; we implement trim by finding the first/last
+  ;; non-whitespace characters and substringing.
+  (let* ((s (if (string? ccy) ccy (number->string 0)))
+         (len (string-length s)))
+    (let loop-start ((i 0))
+      (if (>= i len)
+          ""
+          (let ((c (string-ref s i)))
+            (if (or (char=? c #\space) (char=? c #\tab) (char=? c #\newline))
+                (loop-start (+ i 1))
+                (let loop-end ((j (- len 1)))
+                  (if (<= j i)
+                      (substring s i (+ j 1))
+                      (let ((c2 (string-ref s j)))
+                        (if (or (char=? c2 #\space) (char=? c2 #\tab) (char=? c2 #\newline))
+                            (loop-end (- j 1))
+                            (substring s i (+ j 1))))))))))))
+
+(define (same-ccy? a b)
+  (string=? (normalize-ccy a) (normalize-ccy b)))
+
+(define (amount+ a b)
+  (+ a b))
+
+(define (amount- a b)
+  (- a b))
+
+(define (sum-amounts lst)
+  (let loop ((acc 0) (xs lst))
+    (if (null? xs)
+        acc
+        (loop (+ acc (car xs)) (cdr xs)))))

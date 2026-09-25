@@ -1,0 +1,25 @@
+; accounts.aura
+; Investor accounts participating in parent order allocation.
+; Each account has an account identifier and a participation share (number).
+; Shares are used by the allocators (FIFO / pro-rata / filled-quantity).
+
+(define *accounts*
+  (list
+    (cons 'ACC-A (cons "ACC-A" 0.40))
+    (cons 'ACC-B (cons "ACC-B" 0.35))
+    (cons 'ACC-C (cons "ACC-C" 0.25))))
+
+(define (api-account-list)
+  (map car *accounts*))
+
+(define (api-account-acct acct)
+  (let ((info (assq acct *accounts*)))
+    (if info
+        (car (cdr info))
+        "")))
+
+(define (api-account-share acct)
+  (let ((info (assq acct *accounts*)))
+    (if info
+        (cdr (cdr info))
+        0)))

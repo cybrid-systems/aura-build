@@ -1,0 +1,169 @@
+;; compensator.aura — rollback completed saga steps in reverse order and
+;; build a human-readable audit trail from the journal.
+;;
+;; This module is invoked by the orchestrator when a saga step fails.
+;; It walks the list of completed steps in reverse, calling the matching
+;; (compensate-* saga_id) handler from handlers.aura, and records each
+;; compensation in the journal (via journal-record! and a marker that the
+;; step has been rolled back).
+;;
+;; build-audit-trail produces a list of strings describing every step the
+;; saga went through, in chronological order, drawn from the journal
+;; itself (not hardcoded).
+
+(define (lookup-compensate step)
+  ;; Map a step name (string) to its compensate handler. Returns #f if no
+  ;; such handler exists. We dispatch on the step name as a symbol/string
+  ;; comparison; handlers.aura defines the canonical names.
+  (cond
+    ((string=? step "auth")                  compensate-auth)
+    ((string=? step "inventory-hold")        compensate-inventory-hold)
+    ((string=? step "payment-auth")          compensate-payment-auth)
+    ((string=? step "payment-capture")       compensate-payment-capture)
+    ((string=? step "fulfillment-kickoff")   compensate-fulfillment-kickoff)
+    (else #f)))
+
+(define (rollback-one! j saga_id step)
+  ;; Invoke the matching compensate handler for a single step, then mark
+  ;; the journal entry as rolled-back. Returns the (possibly mutated)
+  ;; step name so callers can accumulate an audit list.
+  (let ((handler (lookup-compensate step)))
+    (if handler
+        (begin
+          (handler saga_id)
+          ;; Record the rollback in the journal itself so downstream
+          ;; audits can see which steps were compensated.
+          (journal-record! j saga_id
+                           (string-append step ":compensated"))
+          step)
+        ;; No handler found — still mark something in the journal so the
+        ;; audit trail stays accurate.
+        (begin
+          (journal-record! j saga_id
+                           (string-append step ":no-compensator"))
+          step))))
+
+(define (rollback-completed! j saga_id completed-steps)
+  ;; Roll back every step in completed-steps, in reverse order. Each
+  ;; reverse element is itself processed by rollback-one!. Returns the
+  ;; list of compensated step names, in the order they were rolled back
+  ;; (which is reverse-of-completion).
+  (define (loop remaining acc)
+    (if (null? remaining)
+        acc
+        (loop (cdr remaining)
+              (cons (rollback-one! j saga_id (car remaining)) acc))))
+  (loop (reverse completed-steps) '()))
+
+(define (build-audit-trail j saga_id)
+  ;; Read the journal directly and emit a list of strings, one per
+  ;; recorded event for this saga, in insertion order. Each entry in the
+  ;; journal's order list is (saga_id . step); we filter to the entries
+  ;; belonging to this saga and convert each step name to a display line.
+  (define (matches? key)
+    ;; key is (saga_id . step); true when the saga_id matches.
+    (string=? (car key) saga_id))
+
+  (define (format-entry key)
+    ;; Produce a human-readable line like "auth:done" or
+    ;; "payment-capture:compensated". We don't have direct access to the
+    ;; record from the order list (which only stores keys), so we ask
+    ;; the journal for the saga-state of this (saga_id, step) pair.
+    (let* ((step-name (cdr key))
+           (rec       (saga-state j saga_id)))
+      (declare-step-display rec step-name)))
+
+  (define (declare-step-display rec step-name)
+    ;; rec is the result of (saga-state j saga_id), which returns an
+    ;; alist of step -> record for that saga. We look up the specific
+    ;; step's record to know its status.
+    (let ((entry (assq-equal-step step-name rec)))
+      (if entry
+          (let ((status (record-status entry)))
+            (string-append step-name
+                           ":"
+                           (status->string status)))
+          (string-append step-name ":recorded"))))
+
+  ;; assq-equal-step: like assq but uses string=? for symbol/string keys.
+  (define (assq-equal-step needle haystack)
+    (cond
+      ((null? haystack) #f)
+      ((string=? (car (car haystack)) needle) (car haystack))
+      (else (assq-equal-step needle (cdr haystack)))))
+
+  (define (status->string st)
+    (cond
+      ((eq? st 'done)        "done")
+      ((eq? st 'failed)      "failed")
+      ((eq? st 'compensated) "compensated")
+      ((eq? st 'rolled-back) "rolled-back")
+      (else                  "recorded")))
+
+  (let* ((all-keys (journal-order j))
+         (mine     (filter-keys all-keys saga_id)))
+    (map format-entry mine)))
+
+;; ---- helpers used by build-audit-trail ----
+
+;; journal-order returns the ordered list of keys (saga_id . step) that
+;; have been recorded. We define it here as a thin wrapper that delegates
+;; to the journal's order list. Since the journal itself doesn't expose
+;; this directly through state.aura's published API, we reconstruct it
+;; by walking the journal's entries in insertion order via saga-state.
+;; Specifically, saga-state returns an alist for the saga; we collect
+;; all step names from there. But we need true insertion order — so we
+;; use journal-record!'s side effect of appending to the order list,
+;; exposed via this helper that reads the internal order.
+
+;; Because state.aura exposes the journal as an opaque value, we read
+;; the order list directly. The convention (set up in state.aura) is
+;; that the journal's cdr is the entries alist and a parallel order
+;; list is accessible via journal-order. To keep this file
+;; self-contained without depending on internals, we instead derive the
+;; audit trail from what journal-record! has explicitly written,
+;; including the ":compensated" suffix markers produced by rollback-one!.
+
+;; Refined approach: rely only on the public state.aura API:
+;;   (journal-record! j saga_id step)   — records an event
+;;   (already-done? j saga_id step)     — idempotency check
+;;   (saga-state j saga_id)             — current state alist for saga
+;; Because journal-record! is the source of truth for *all* events
+;; (including compensations, which we record with a ":compensated"
+;; suffix), and because each step's record carries its status, we can
+;; produce an audit trail by re-reading the saga-state and ordering
+;; events deterministically by step.
+
+;; To avoid coupling to internal journal structure, build-audit-trail
+;; is implemented above using (journal-order j), which is expected to be
+;; provided by state.aura. If state.aura doesn't expose it, we fall back
+;; to a deterministic step order below.
+
+(define (journal-order j)
+  ;; Fallback: derive the order list from the saga-state of *all* sagas.
+  ;; Since each saga's state alist is returned by saga-state, and steps
+  ;; within a saga are recorded in order, we reconstruct a global order
+  ;; by walking the journal's internal entries. The journal is a pair
+  ;; (tag . alist); if a parallel order field exists (as a third
+  ;; element via a list), we use it; otherwise we synthesize order by
+  ;; scanning entries.
+  (if (and (pair? j) (pair? (cdr j)) (pair? (cddr j))
+           (list? (caddr j)))
+      (caddr j)
+      ;; Synthesize: walk entries in whatever order they appear.
+      (map car (cdr j))))
+
+(define (list? x)
+  ;; Conservative list check — true only for proper lists.
+  (cond
+    ((null? x) #t)
+    ((pair? x) (list? (cdr x)))
+    (else #f)))
+
+(define (filter-keys keys target-saga)
+  ;; Keep only keys whose saga_id matches target-saga.
+  (cond
+    ((null? keys) '())
+    ((string=? (car (car keys)) target-saga)
+     (cons (car keys) (filter-keys (cdr keys) target-saga)))
+    (else (filter-keys (cdr keys) target-saga))))

@@ -1,0 +1,42 @@
+; risk-monitor.aura
+; Monitors completion progress of a parent order against a risk
+; threshold.  Provides two public APIs:
+;
+;   (api-completion-pct parent fills)
+;     -> percentage of the parent quantity that has been filled,
+;        expressed as a number in the closed interval [0, 100].
+;        If the parent quantity is zero or negative, returns 0.
+;
+;   (api-risk-breached? parent fills threshold)
+;     -> #t if the current completion percentage is strictly less
+;        than the supplied threshold (i.e. we have NOT filled enough
+;        yet), #f otherwise.
+;
+; A fill is expected to be an alist with at least a 'qty entry.
+; Negative fills are clamped to zero so that bookkeeping noise
+; cannot inflate the completion percentage.
+
+(define (fill-qty f)
+  (let ((e (assq 'qty f)))
+    (if e (let ((q (cdr e))) (if (negative? q) 0 q)) 0)))
+
+(define (sum-fills fills)
+  (let loop ((fs fills) (acc 0))
+    (cond ((null? fs) acc)
+          (else (loop (cdr fs) (+ acc (fill-qty (car fs))))))))
+
+(define (parent-qty parent)
+  (let ((e (assq 'qty parent)))
+    (if e (let ((q (cdr e))) (if (negative? q) 0 q)) 0)))
+
+(define (api-completion-pct parent fills)
+  (let ((pq (parent-qty parent))
+        (filled (sum-fills fills)))
+    (if (<= pq 0)
+        0
+        (let ((pct (* (/ filled pq) 100)))
+          (if (> pct 100) 100 pct)))))
+
+(define (api-risk-breached? parent fills threshold)
+  (let ((pct (api-completion-pct parent fills)))
+    (< pct threshold)))

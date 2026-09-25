@@ -1,0 +1,55 @@
+;; invoice_aggregate.aura
+;;
+;; Aggregates a list of per-line tax results (as produced by
+;; compute-line-tax) into a single invoice-level summary alist.
+;;
+;; A line-result alist is expected to contain at least:
+;;   line-id          : string id of the line
+;;   subtotal-cents   : integer cents before tax
+;;   tax-cents        : integer cents of tax charged for this line
+;;   total-cents      : integer cents line total (subtotal + tax)
+;;   taxable?         : #t if any tax was applied, #f if fully exempt / no nexus
+;;
+;; The aggregate also derives:
+;;   invoice-subtotal-cents : sum of subtotal-cents across all lines
+;;   invoice-tax-cents      : sum of tax-cents across all lines
+;;   invoice-total-cents    : sum of total-cents across all lines
+;;
+;; Note: rounding policy (half-even per line, half-up at invoice total) is
+;; handled by round_money.aura — this aggregator does NOT re-round, it just
+;; sums the already-rounded per-line values.
+;;
+;; API:
+;;   (api aggregate-invoice line-results) -> summary alist
+
+(define (api aggregate-invoice line-results)
+  (let ((num-lines 0)
+        (taxable-count 0)
+        (exempt-count 0)
+        (no-nexus-count 0)
+        (sub-total 0)
+        (tax-total 0)
+        (line-total 0))
+    (begin
+      (define (sum-loop lines)
+        (if (null? lines)
+            'done
+            (let ((lr (car lines)))
+              (begin
+                (set! num-lines (+ num-lines 1))
+                (set! sub-total (+ sub-total (cdr (assq 'subtotal-cents lr))))
+                (set! tax-total (+ tax-total (cdr (assq 'tax-cents lr))))
+                (set! line-total (+ line-total (cdr (assq 'total-cents lr))))
+                (cond
+                  ((cdr (assq 'taxable? lr))
+                   (set! taxable-count (+ taxable-count 1)))
+                  (else
+                   (set! exempt-count (+ exempt-count 1))))
+                (sum-loop (cdr lines))))))
+      (sum-loop line-results)
+      (list 'line-count num-lines
+            'taxable-count taxable-count
+            'exempt-count exempt-count
+            'invoice-subtotal-cents sub-total
+            'invoice-tax-cents tax-total
+            'invoice-total-cents line-total))))

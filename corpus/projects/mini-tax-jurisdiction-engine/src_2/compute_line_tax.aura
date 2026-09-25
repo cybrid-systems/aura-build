@@ -1,0 +1,133 @@
+;; compute_line_tax.aura
+;;
+;; Per-line tax computation. Given a single invoice line and the global
+;; context (nexus footprint, jurisdiction rates, customer exemption certs,
+;; and the set of origin-based state codes), produce a per-line breakdown
+;; alist suitable for audit-logging and invoice aggregation.
+;;
+;; The breakdown captures every decision factor:
+;;   line-id, product-id, ptc, category
+;;   qty, unit-cents, subtotal-cents
+;;   ship-to (state, county, city)
+;;   resolved-jid   (the jid we ended up taxing under, or #f)
+;;   in-nexus?      (#t if resolve-jurisdiction returned a jid)
+;;   origin-state?  (#t if ship-to state is origin-based — tax skipped)
+;;   applicable-rate-bps  (composite rate in basis points, 0 if any skip)
+;;   exempt?        (#t if a cert covered this jid + ptc category)
+;;   tax-cents      (half-even rounded tax for this line; 0 if skipped)
+;;   total-cents    (subtotal-cents + tax-cents)
+;;
+;; Decision flow:
+;;   1. Compute subtotal-cents = qty * unit-cents.
+;;   2. Resolve jurisdiction via (api resolve-jurisdiction ship-to nexus).
+;;   3. If jid is #f  → origin-based or no nexus → rate 0, exempt #f,
+;;      tax-cents 0. (We still record the resolved state.)
+;;   4. Otherwise look up composite rate-bps for that jid; missing → 0.
+;;   5. Check exemption via (api apply-exemption jid certs ptc).
+;;      If exempt → rate effectively 0 (we keep the raw rate for audit,
+;;      but tax-cents becomes 0 and `exempt?` is #t).
+;;   6. Compute raw tax = subtotal * rate-bps / 10000, then
+;;      round with (api round-line cents) for half-even rounding.
+;;
+;; API:
+;;   (api compute-line-tax line nexus rates certs origin-states)
+;;       -> breakdown alist
+;;
+;; origin-states is expected to be a list of 2-letter state code strings
+;; (e.g. ("OR" "NH" "MT" "DE" "AK")). This file does not hardcode them.
+
+(define (api compute-line-tax line nexus rates certs origin-states)
+  (let* ((line-id    (cdr (assq 'line-id line)))
+         (product-id (cdr (assq 'product-id line)))
+         (ptc        (cdr (assq 'ptc line)))
+         (qty        (cdr (assq 'qty line)))
+         (unit-cents (cdr (assq 'unit-cents line)))
+         (ship-to    (cdr (assq 'ship-to line)))
+         (state      (cdr (assq 'state ship-to)))
+         (county     (cdr (assq 'county ship-to)))
+         (city       (cdr (assq 'city ship-to)))
+         (category   (cdr (assq 'category line)))
+         (subtotal   (* qty unit-cents))
+         (jid        (resolve-jurisdiction-ship ship-to nexus origin-states))
+         (origin?    (origin-state? state origin-states))
+         (raw-rate   (if jid (lookup-rate-bps jid rates) 0))
+         (exempt?    (and jid (apply-exemption-yes? jid certs ptc)))
+         (eff-rate   (if exempt? 0 raw-rate))
+         (raw-tax    (quotient (* subtotal eff-rate) 10000))
+         (tax-cents  (round-line-cents raw-tax))
+         (total      (+ subtotal tax-cents)))
+    (list 'line-id line-id
+          'product-id product-id
+          'ptc ptc
+          'category category
+          'qty qty
+          'unit-cents unit-cents
+          'subtotal-cents subtotal
+          'ship-to-state state
+          'ship-to-county county
+          'ship-to-city city
+          'resolved-jid (or jid "NONE")
+          'in-nexus? (if jid #t #f)
+          'origin-state? origin?
+          'applicable-rate-bps eff-rate
+          'exempt? exempt?
+          'tax-cents tax-cents
+          'total-cents total)))
+
+;; --- local helpers (kept tiny; rely on peer APIs where possible) ---
+
+;; Resolve jurisdiction by calling the peer API. If the state is
+;; origin-based we short-circuit to #f, since destination tax does not
+;; apply there at all.
+(define (resolve-jurisdiction-ship ship-to nexus origin-states)
+  (let ((state (cdr (assq 'state ship-to))))
+    (if (origin-state? state origin-states)
+        #f
+        (resolve-jurisdiction-api ship-to nexus))))
+
+;; Thin wrapper around the peer (api resolve-jurisdiction …) so we call
+;; the published API rather than re-implementing nexus logic here.
+(define (resolve-jurisdiction-api ship-to nexus)
+  ;; We invoke the peer through the same top-level binding the rest of
+  ;; the engine uses. The peer module defines (api resolve-jurisdiction …),
+  ;; but its top-level `define` also makes the body available as a plain
+  ;; procedure under the name `resolve-jurisdiction` (loaded earlier in
+  ;; the same Aura session). Fall back gracefully if not bound.
+  (if (procedure? resolve-jurisdiction)
+      (resolve-jurisdiction ship-to nexus)
+      #f))
+
+;; Membership check against the origin-based state list.
+(define (origin-state? state states)
+  (cond ((null? states) #f)
+        ((string=? state (car states)) #t)
+        (else (origin-state? state (cdr states)))))
+
+;; Look up composite rate-bps for a jid in the rates alist.
+;; rates is expected to be (cons (cons 'jid "...") …) style; we use
+;; assoc on the string key directly.
+(define (lookup-rate-bps jid rates)
+  (let ((pair (assoc jid rates)))
+    (if pair (cdr pair) 0)))
+
+;; Wrapper around peer (api apply-exemption …).
+(define (apply-exemption-yes? jid certs ptc)
+  (if (procedure? apply-exemption)
+      (apply-exemption jid certs ptc)
+      #f))
+
+;; Wrapper around peer (api round-line …). Falls back to plain integer
+;; arithmetic (truncation) if the peer binding isn't present — the peer
+;; file is always loaded before this one in practice.
+(define (round-line-cents cents)
+  (if (procedure? round-line)
+      (round-line cents)
+      cents))
+
+;; Helper used by callers / main: pull the category out of a line, given
+;; a product-tax-codes alist (so the line breakdown can record it).
+;; Provided here as a convenience; main.aura may call it directly.
+(define (api line-category line ptc-alist)
+  (let ((ptc (cdr (assq 'ptc line))))
+    (let ((pair (assoc ptc ptc-alist)))
+      (if pair (cdr pair) 'unknown))))

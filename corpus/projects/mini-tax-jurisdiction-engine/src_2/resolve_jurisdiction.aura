@@ -1,0 +1,72 @@
+;; resolve_jurisdiction.aura
+;;
+;; Given a ship-to address and the seller's nexus footprint, decide which
+;; jurisdiction id (jid) applies to the sale — or #f if the seller has no
+;; nexus there (meaning no destination tax can be charged).
+;;
+;; Origin-based states (OR, NH, MT, DE, AK) skip destination tax: for those,
+;; resolve-jurisdiction returns #f regardless of nexus, because tax (if any)
+;; is owed at the origin, not the ship-to.
+;;
+;; Otherwise: if nexus covers the exact (state, county, city) tuple of the
+;; ship-to, return the jid "STATE-County-City". If no exact city match but
+;; a state+county match exists, fall back to "STATE-County" (countywide
+;; nexus). Otherwise, no nexus → #f.
+;;
+;; API:
+;;   (api resolve-jurisdiction ship-to nexus) -> jid string or #f
+
+(define (api resolve-jurisdiction ship-to nexus)
+  (let ((state   (assq-ref-like ship-to 'state))
+        (county  (assq-ref-like ship-to 'county))
+        (city    (assq-ref-like ship-to 'city)))
+    ;; origin-based states skip destination tax entirely
+    (if (member state '("OR" "NH" "MT" "DE" "AK"))
+        #f
+        (let ((exact (find-jid-by-scope nexus state county city)))
+          (if exact
+              exact
+              ;; fallback: any nexus in same state+county (countywide)
+              (let ((county-jid (find-county-jid nexus state county)))
+                (if county-jid
+                    county-jid
+                    #f)))))))
+
+;; --- helpers ---
+
+(define (assq-ref-like alist key)
+  ;; alist lookup that tolerates both '() and proper alists
+  (cond
+    ((null? alist) #f)
+    ((equal? (car (car alist)) key) (cdr (car alist)))
+    (else (assq-ref-like (cdr alist) key))))
+
+(define (find-jid-by-scope nexus state county city)
+  ;; exact city match
+  (cond
+    ((null? nexus) #f)
+    ((and (string=? (assq-ref-like (car nexus) 'state)  state)
+          (string=? (assq-ref-like (car nexus) 'county) county)
+          (string=? (assq-ref-like (car nexus) 'city)   city))
+     (build-jid state county city))
+    (else (find-jid-by-scope (cdr nexus) state county city))))
+
+(define (find-county-jid nexus state county)
+  ;; any nexus whose state+county match (countywide fallback)
+  (cond
+    ((null? nexus) #f)
+    ((and (string=? (assq-ref-like (car nexus) 'state)  state)
+          (string=? (assq-ref-like (car nexus) 'county) county))
+     (let ((c (assq-ref-like (car nexus) 'city)))
+       (build-jid state county c)))
+    (else (find-county-jid (cdr nexus) state county))))
+
+(define (build-jid state county city)
+  ;; "STATE-County-City" (Title Case preserved). If city is #f/missing,
+  ;; emit "STATE-County".
+  (let ((s (or state ""))
+        (co (or county ""))
+        (ci (or city "")))
+    (if (or (string=? ci "") (not city))
+        (string-append s "-" co)
+        (string-append s "-" co "-" ci))))

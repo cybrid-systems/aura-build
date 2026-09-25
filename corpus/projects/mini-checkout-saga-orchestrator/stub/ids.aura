@@ -1,0 +1,25 @@
+;; ids.aura — saga id generator
+;;
+;; A tiny generator object that yields a fresh numeric id each time
+;; `next-id` is called, optionally prefixed with a string (e.g. "S-").
+;; Implemented as a closure over a mutable counter cell so multiple
+;; call sites share the same monotonic sequence.
+
+(define (make-id-gen)
+  ;; Return a procedure that accepts either:
+  ;;   (next-id gen)            -> "<n>"
+  ;;   (next-id gen prefix)     -> "<prefix><n>"
+  ;; The counter is held in a single-cell list so we can mutate it
+  ;; via set-car! without resorting to any non-Aura primitives.
+  (let ((cell (list 0)))
+    (lambda (gen . args)
+      (let ((n (car cell)))
+        (set-car! cell (+ n 1))
+        (if (null? args)
+            (number->string n)
+            (string-append (car args) (number->string n)))))))
+
+(define (next-id gen prefix)
+  ;; Convenience wrapper so callers can write `(next-id g "S-")` directly
+  ;; instead of `(g g "S-")`. Just delegates to the generator's procedure.
+  (gen gen prefix))

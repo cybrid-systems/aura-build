@@ -1,0 +1,21 @@
+; venue-registry.aura
+; In-memory venue registry. Provides a list of trading venues
+; and lookup of per-venue fee (bps) and latency (ms).
+
+(define *venues*
+  (list
+    (list 'venue 'NYSE     (cons 'fee-bps 2)   (cons 'latency-ms 5))
+    (list 'venue 'NASDAQ   (cons 'fee-bps 2)   (cons 'latency-ms 4))
+    (list 'venue 'ARCA     (cons 'fee-bps 3)   (cons 'latency-ms 6))
+    (list 'venue 'BATS     (cons 'fee-bps 2)   (cons 'latency-ms 3))
+    (list 'venue 'IEX      (cons 'fee-bps 1)   (cons 'latency-ms 8))))
+
+(define (api-venue-list) *venues*)
+
+(define (api-venue-fee venue)
+  (let ((entry (assq 'fee-bps (cdr venue))))
+    (if entry (cdr entry) 0)))
+
+(define (api-venue-latency venue)
+  (let ((entry (assq 'latency-ms (cdr venue))))
+    (if entry (cdr entry) 0)))

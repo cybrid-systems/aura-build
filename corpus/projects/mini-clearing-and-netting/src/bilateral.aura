@@ -1,0 +1,115 @@
+;; bilateral.aura - Bilateral exposure computation
+;; Given all trades for a value date and currency, compute the
+;; gross bilateral exposures (the directed total each party owes each
+;; other party before any pay-through, novation, or MTA processing).
+
+(define (amount+ a b) (+ a b))
+
+;; Helper: filter trades that match the given value date AND currency.
+(define (filter-trades-by-date-ccy trades vd ccy)
+  (let loop ((acc '()) (xs trades))
+    (if (null? xs)
+        (reverse acc)
+        (let ((t (car xs)))
+          (if (and (equal? (trade-value-date t) vd)
+                   (equal? (trade-ccy t) ccy))
+              (loop (cons t acc) (cdr xs))
+              (loop acc (cdr xs)))))))
+
+;; Helper: invert a list of pairs (a . b) -> (b . a).
+(define (swap-pair p)
+  (cons (cdr p) (car p)))
+
+;; Helper: update or insert an entry in an alist keyed by ordered pair.
+(define (bump-pair! acc key amount)
+  (let loop ((rest acc) (prev '()))
+    (cond
+      ((null? rest)
+       (append (reverse prev) (list (cons key amount))))
+      ((and (equal? (car (car rest)) (car key))
+            (equal? (cdr (car rest)) (cdr key)))
+       (let ((existing (cdr (car rest))))
+         (append (reverse prev)
+                 (list (cons key (+ existing amount)))
+                 (cdr rest))))
+      (else
+       (loop (cdr rest) (cons (car rest) prev))))))
+
+;; Compute the symmetric alist of gross bilateral exposures.
+;; Each entry is ((from . to) . amount) meaning `from` owes `to` exactly
+;; `amount` gross (only counting trades where from is payer and to is payee).
+;; The reverse direction is a separate entry.
+;; The list returned is in the natural order trades were registered.
+(define (gross-exposure vd ccy)
+  (let ((trades (filter-trades-by-date-ccy (all-trades) vd ccy)))
+    (let loop ((acc '()) (xs trades))
+      (if (null? xs)
+          acc
+          (let ((t (car xs)))
+            (let ((payer (trade-payer t))
+                  (payee (trade-payee t))
+                  (amt (trade-amount t)))
+              (loop (bump-pair! acc (cons payer payee) amt)
+                    (cdr xs))))))))
+
+;; Net bilateral exposure between two specific parties a and b.
+;; Positive means a owes b, negative means b owes a, zero means balanced.
+;; Walks the gross-exposure alist to extract both directions.
+(define (exposure-between a b vd ccy)
+  (let ((gx (gross-exposure vd ccy)))
+    (let loop ((ab 0) (ba 0) (xs gx))
+      (if (null? xs)
+          (- ab ba)
+          (let ((p (car xs)))
+            (let ((key (car p)) (amt (cdr p)))
+              (cond
+                ((and (equal? (car key) a) (equal? (cdr key) b))
+                 (loop (+ ab amt) ba (cdr xs)))
+                ((and (equal? (car key) b) (equal? (cdr key) a))
+                 (loop ab (+ ba amt) (cdr xs)))
+                (else
+                 (loop ab ba (cdr xs))))))))))
+
+;; All unordered pairs of distinct parties who have at least one
+;; exposure between them on (vd, ccy). Each pair appears once as (a . b)
+;; with a being the alphabetically-earlier party.
+(define (all-bilateral-pairs vd ccy)
+  (let ((gx (gross-exposure vd ccy)))
+    (let loop ((parties '()) (xs gx))
+      (if (null? xs)
+          (let ((sorted (sort-pairs parties)))
+            (remove-duplicates-pairs sorted '()))
+          (let ((p (car xs)))
+            (let ((key (car p)))
+              (let ((a (car key)) (b (cdr key)))
+                (loop (cons (cons a b) parties) (cdr xs))))))))
+
+;; Helper: ensure every pair is stored with the smaller party as car.
+(define (sort-pairs pairs)
+  (let loop ((acc '()) (xs pairs))
+    (if (null? xs)
+        acc
+        (let ((p (car xs)))
+          (let ((a (car p)) (b (cdr p)))
+            (if (string<? a b)
+                (loop (append acc (list (cons a b))) (cdr xs))
+                (loop (append acc (list (cons b a))) (cdr xs))))))))
+
+;; Helper: remove duplicate unordered pairs from a list of dotted pairs.
+(define (remove-duplicates-pairs xs seen)
+  (cond
+    ((null? xs) seen)
+    ((pair-already-seen? (car xs) seen)
+     (remove-duplicates-pairs (cdr xs) seen))
+    (else
+     (remove-duplicates-pairs (cdr xs)
+                              (cons (car xs) seen)))))
+
+(define (pair-already-seen? p seen)
+  (cond
+    ((null? seen) #f)
+    ((and (equal? (car (car seen)) (car p))
+          (equal? (cdr (car seen)) (cdr p)))
+     #t)
+    (else
+     (pair-already-seen? p (cdr seen)))))

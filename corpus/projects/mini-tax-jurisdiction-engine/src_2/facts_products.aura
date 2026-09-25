@@ -1,0 +1,29 @@
+;; facts_products.aura
+;; Maps each Product Tax Code (PTC) to its taxability category.
+;; Categories used downstream:
+;;   groceries : generally exempt from state tax in many states
+;;   apparel   : clothing; some jurisdictions have reduced/clothing exemptions
+;;   digital   : electronically delivered goods (taxed like tangible in most)
+;;   saas      : software-as-a-service (taxed like digital in most)
+;;   tangible  : general tangible personal property (default taxable)
+
+(define (api load-product-tax-codes)
+  (list
+   (cons "PTC-GROCERY"   'groceries)
+   (cons "PTC-APPAREL"   'apparel)
+   (cons "PTC-DIGITAL"   'digital)
+   (cons "PTC-SAAS"      'saas)
+   (cons "PTC-TANGIBLE"  'tangible)
+   (cons "PTC-BOOK"      'tangible)
+   (cons "PTC-TOY"       'tangible)
+   (cons "PTC-EBOOK"     'digital)
+   (cons "PTC-MUSIC-DL"  'digital)
+   (cons "PTC-CLOUD-SVC" 'saas)))
+
+(define (api ptc-category ptc)
+  ;; Lookup helper: returns the category symbol for a PTC, or #f if unknown.
+  (let loop ((xs (api load-product-tax-codes)))
+    (cond
+      ((null? xs) #f)
+      ((string=? (car (car xs)) ptc) (cdr (car xs)))
+      (else (loop (cdr xs))))))

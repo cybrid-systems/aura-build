@@ -1,0 +1,21 @@
+;; facts_customers.aura — Customer record (ship-to + exemption cert refs)
+;; Public API: (api load-customer) -> alist
+
+(define (api load-customer)
+  ;; The customer alist has these keys:
+  ;;   customer-id   : unique identifier
+  ;;   name          : human-readable name
+  ;;   ship-to       : alist with (state, county, city) — where goods are delivered
+  ;;   exemption-certs : list of cert-id strings the customer holds
+  ;;   origin-state  : 2-letter state code (used for origin-vs-destination logic)
+  ;;   destination-state : 2-letter state code
+  (list
+    (cons 'customer-id "CUST-001")
+    (cons 'name        "Acme Retail Co.")
+    (cons 'ship-to     (list
+                         (cons 'state  "CA")
+                         (cons 'county "Los Angeles")
+                         (cons 'city   "Los Angeles")))
+    (cons 'exemption-certs (list "EX-RESALE-CA"))
+    (cons 'origin-state      "CA")
+    (cons 'destination-state "CA")))

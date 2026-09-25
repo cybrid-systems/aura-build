@@ -1,0 +1,121 @@
+;; audit_log.aura
+;;
+;; Mutable per-line audit log + a deterministic hash over the breakdown list.
+;;
+;; The engine writes, for every invoice line, a structured breakdown alist
+;; describing exactly how the tax was computed (or why it was zero / skipped).
+;; We accumulate those breakdowns in a top-level mutable list `*audit-log*`
+;; using `set!`, so other modules can `append-line-log!` during a run, and
+;; a single `make-audit-hash` call later produces a reproducible digest that
+;; changes if any input fact (or computation) changes.
+;;
+;; Shape of each entry appended to the log (alist):
+;;   line-id           : string id of the invoice line
+;;   ptc               : product tax code for that line
+;;   ship-to           : string "<state>-<county>-<city>" (best-effort)
+;;   resolved-jid      : jid string that was applied, or #f
+;;   reason            : one of
+;;                         "no-nexus-or-origin"
+;;                         "exempt-cert"
+;;                         "taxable"
+;;   rate-bps-applied  : integer bps actually applied (0 if exempt/no-nexus)
+;;   subtotal-cents    : integer subtotal of the line (qty * unit-cents)
+;;   tax-cents         : integer tax rounded half-even at the line level
+;;   steps             : list of human-readable step strings (for traceability)
+;;
+;; APIs:
+;;   (api make-audit-hash breakdowns) -> hex string
+;;       Hash over a list of breakdown alists using a simple FNV-1a-style
+;;       fold (deterministic, in plain Aura, no external deps).
+;;
+;;   (api append-line-log! line) -> unspecified
+;;       Append a single breakdown alist to the global `*audit-log*` via set!.
+
+(define *audit-log* '())
+
+(define (api append-line-log! line)
+  (set! *audit-log* (append *audit-log* (list line))))
+
+;; --- internal hashing helpers ---
+
+;; Convert any value into a flat list of characters we can fold over.
+;; For strings: characters of the string.
+;; For symbols: their name characters.
+;; For numbers: their decimal digits (+ sign).
+;; For booleans: 't or 'f.
+;; For lists: the chars of '( ... ) with spaces between elements.
+;; Anything else: '#<other>' marker.
+(define (audit->chars v)
+  (cond
+    ((string? v) (string->list v))
+    ((symbol? v) (string->list (symbol->string v)))
+    ((number? v) (string->list (number->string v)))
+    ((null? v) (string->list "nil"))
+    ((boolean? v)
+     (if v (string->list "t") (string->list "f")))
+    ((pair? v)
+     (append (string->list "( ")
+             (audit-flatten v)
+             (string->list " )")))
+    (else (string->list "#<other>"))))
+
+(define (audit-flatten lst)
+  (cond
+    ((null? lst) '())
+    ((pair? lst)
+     (append (audit->chars (car lst))
+             (string->list " ")
+             (audit-flatten (cdr lst))))
+    (else (audit->chars lst))))
+
+;; FNV-1a 32-bit-ish hash, implemented on integers big enough not to overflow
+;; the Aura numeric range (we mod at the end). Deterministic across runs.
+(define (audit-hash-step h c)
+  (let* ((ord (char->integer c))
+         (h2 (modulo (+ h ord) 4294967291))
+         (h3 (modulo (* h2 16777619) 4294967291)))
+    h3))
+
+(define (audit-hash-string s)
+  (let loop ((cs (string->list s)) (h 2166136261))
+    (if (null? cs)
+        h
+        (loop (cdr cs) (audit-hash-step h (car cs))))))
+
+(define (audit-hex8 n)
+  (let* ((hex-chars (string->list "0123456789abcdef"))
+         (mask 255)
+         (d0 (modulo (quotient n 16) 16))
+         (d1 (modulo n 16))
+         (d2 (modulo (quotient (quotient n 16) 16) 16))
+         (d3 (modulo (quotient (quotient (quotient n 16) 16) 16) 16))
+         (d4 (modulo (quotient (quotient (quotient (quotient n 16) 16) 16) 16) 16))
+         (d5 (modulo (quotient (quotient (quotient (quotient (quotient n 16) 16) 16) 16) 16) 16))
+         (d6 (modulo (quotient (quotient (quotient (quotient (quotient (quotient n 16) 16) 16) 16) 16) 16) 16))
+         (d7 (modulo (quotient (quotient (quotient (quotient (quotient (quotient (quotient n 16) 16) 16) 16) 16) 16) 16) 16)))
+    (list (list-ref hex-chars d0) (list-ref hex-chars d1)
+          (list-ref hex-chars d2) (list-ref hex-chars d3)
+          (list-ref hex-chars d4) (list-ref hex-chars d5)
+          (list-ref hex-chars d6) (list-ref hex-chars d7))))
+
+(define (hex-chars->string chars)
+  (list->string chars))
+
+(define (api make-audit-hash breakdowns)
+  (let* ((serialized
+          (apply string-append
+                 (map (lambda (b)
+                        (apply string-append
+                               (map (lambda (pair)
+                                      (let ((k (car pair)) (v (cdr pair)))
+                                        (string-append
+                                         (symbol->string (if (symbol? k) k 'x))
+                                         "="
+                                         (apply string
+                                                (map (lambda (c) (string c))
+                                                     (audit->chars v)))
+                                         "|")))
+                                    b)))
+                      breakdowns)))
+         (h (audit-hash-string serialized)))
+    (hex-chars->string (audit-hex8 h))))

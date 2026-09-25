@@ -1,0 +1,19 @@
+;; ids.aura — simple monotonic id generator.
+;;
+;; Each generator carries a mutable counter that increments on every
+;; (next-id gen prefix) call. The returned id is a string of the form
+;; "<prefix>-<n>", where n starts at 1.
+
+(define (make-id-gen)
+  (cons 'id-gen 0))
+
+(define (gen-counter gen)
+  (cdr gen))
+
+(define (bump-counter! gen)
+  (set-cdr! gen (+ (gen-counter gen) 1)))
+
+(define (next-id gen prefix)
+  (let ((n (+ (gen-counter gen) 1)))
+    (set-cdr! gen n)
+    (string-append prefix "-" (number->string n))))

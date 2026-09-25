@@ -1,0 +1,184 @@
+; fill-sim.aura
+; Fill simulation for routed child orders.
+;
+; Given a list of routed children (each an alist that includes at
+; least 'qty and 'venue tags from router.aura), this module produces
+; a list of simulated fill events.  Each child generates one or more
+; fills whose quantities sum to (at most) the child's qty.
+;
+; Fill simulation is deterministic but uses a small, time-varying
+; "spread" around the supplied mid-px, controlled by `volatility`.
+; Volatility is treated as a fraction of mid-px (e.g. 0.01 == 1%).
+; The mid price itself drifts slightly tick-to-tick so different
+; children fill at slightly different prices.
+;
+; Each fill is an alist:
+;   (child-id . id)            - id from the routed child
+;   (route-id . route-id)      - route id from the routed child
+;   (parent-id . pid)          - parent id propagated from the child
+;   (venue . venue)            - venue tag propagated from the child
+;   (side . side)              - side propagated from the child
+;   (qty . qty)                - fill quantity, an integer > 0
+;   (px . px)                  - fill price, a number rounded to 2dp
+;   (fee . fee)                - per-share fee taken from venue registry
+;   (tick . tick)              - simulator tick at which fill occurred
+;
+; Two APIs are exposed:
+;   (api-simulate-fills routed mid-px volatility)
+;     -> list of fill alists, one per routed child (or many, if a
+;        child is broken into multiple partial fills).
+;   (api-aggregate-fills fills)
+;     -> alist ((total-qty . N) (total-notional . X) (total-fee . F))
+;        computed across the supplied list of fills.
+
+; ---------------------------------------------------------------------
+; Hidden simulator state.  *mid-px* holds the last seen mid price and
+; is updated after every simulated fill so subsequent fills drift.
+; *sim-tick* is a monotonic counter used to tag fills.
+; ---------------------------------------------------------------------
+
+(define *sim-mid* 0)
+(define *sim-tick* 0)
+
+(define (next-sim-tick)
+  (set! *sim-tick* (+ *sim-tick* 1))
+  *sim-tick*)
+
+; ---------------------------------------------------------------------
+; Numeric helpers (kept private; util.aura's api-round2 truncates to 2dp
+; but it operates on strings via number->string, so we keep a numeric
+; truncation helper here for price computation).
+; ---------------------------------------------------------------------
+
+(define (truncate2 n)
+  (let ((s (number->string n)))
+    (let loop ((i 0) (dot -1) (len (string-length s)))
+      (cond
+        ((= i len)
+         (if (= dot -1) n 0))
+        ((char=? (string-ref s i) #\.)
+         (if (= dot -1)
+             (let* ((int-part (substring s 0 i))
+                    (frac-part (substring s (+ i 1) len))
+                    (frac-len (string-length frac-part))
+                    (trunc-len (if (> frac-len 2) 2 frac-len))
+                    (trunc-frac (substring frac-part 0 trunc-len))
+                    (combined (string-append int-part "." trunc-frac)))
+               (string->number combined))
+             0))
+        (else (loop (+ i 1) dot len))))))
+
+(define (round2 n)
+  (* (truncate (/ (* n 100) 1)) 0.01))
+
+; ---------------------------------------------------------------------
+; Fill price derivation.  mid-px is the starting price; each fill moves
+; the mid by a small random-looking offset derived from the tick and
+; the volatility.  The final price is truncated (not banker's rounded)
+; to 2 decimals.
+; ---------------------------------------------------------------------
+
+(define (fill-px base-px volatility tick-no side)
+  (let* ((drift
+           (* base-px volatility
+              (/ (- (modulo (* tick-no 73) 21) 10) 100)))
+         (signed (if (eq? side 'SELL) (- (- base-px drift)) (+ base-px drift)))
+         (raw (if (eq? side 'SELL) (- base-px drift) (+ base-px drift))))
+    (round2 raw)))
+
+; ---------------------------------------------------------------------
+; Fee lookup against the venue registry.  api-venue-fee is defined in
+; venue-registry.aura.  If a venue isn't registered we fall back to 0.
+; ---------------------------------------------------------------------
+
+(define (fee-for venue)
+  (let ((f (api-venue-fee venue)))
+    (if (number? f) f 0)))
+
+; ---------------------------------------------------------------------
+; Quantity decomposition.  A single child of N shares is sometimes
+; split across two fills (a primary fill + an optional stub), so that
+; downstream aggregators see partial-fill events.  The split is based
+; on the child qty: if qty >= 10 we produce two fills; otherwise one.
+; ---------------------------------------------------------------------
+
+(define (split-qty qty)
+  (cond
+    ((<= qty 0) '())
+    ((< qty 10) (list qty))
+    (else
+      (let ((half (quotient qty 2)))
+        (list half (- qty half))))))
+
+; ---------------------------------------------------------------------
+; Build a single fill alist.
+; ---------------------------------------------------------------------
+
+(define (make-fill child qty mid-px volatility tick-no)
+  (let* ((cid (let ((e (assq 'id child))) (if e (cdr e) 'C0)))
+         (rid (let ((e (assq 'route-id child))) (if e (cdr e) 0)))
+         (pid (let ((e (assq 'parent-id child))) (if e (cdr e) 'P0)))
+         (venue (let ((e (assq 'venue child))) (if e (cdr e) 'UNKNOWN)))
+         (side (let ((e (assq 'side child))) (if e (cdr e) 'BUY)))
+         (px (fill-px mid-px volatility tick-no side))
+         (fee (fee-for venue)))
+    (list (cons 'child-id cid)
+          (cons 'route-id rid)
+          (cons 'parent-id pid)
+          (cons 'venue venue)
+          (cons 'side side)
+          (cons 'qty qty)
+          (cons 'px px)
+          (cons 'fee fee)
+          (cons 'tick tick-no))))
+
+; ---------------------------------------------------------------------
+; Main simulator: walks the routed children in order and produces
+; fills.  Each call updates *sim-mid* and bumps *sim-tick* per fill.
+; ---------------------------------------------------------------------
+
+(define (api-simulate-fills routed mid-px volatility)
+  (set! *sim-mid* mid-px)
+  (let loop ((children routed)
+             (acc '()))
+    (if (null? children)
+        (reverse acc)
+        (let* ((child (car children))
+               (qty (let ((e (assq 'qty child))) (if e (cdr e) 0)))
+               (splits (split-qty qty))
+               (fills
+                 (let inner ((ss splits) (facc '()))
+                   (if (null? ss)
+                       (reverse facc)
+                       (let* ((sq (car ss))
+                              (tick-no (next-sim-tick))
+                              (fill (make-fill child sq *sim-mid* volatility tick-no)))
+                         (set! *sim-mid* (round2 (+ *sim-mid*
+                                                  (* *sim-mid* volatility 0.01))))
+                         (inner (cdr ss) (cons fill facc)))))))
+          (loop (cdr children) (append acc fills))))))
+
+; ---------------------------------------------------------------------
+; Aggregator: collapses a list of fills into totals.
+;   total-qty       - sum of fill quantities
+;   total-notional  - sum of (qty * px)
+;   total-fee       - sum of (qty * fee)
+; ---------------------------------------------------------------------
+
+(define (api-aggregate-fills fills)
+  (let loop ((fs fills)
+             (q 0)
+             (n 0)
+             (f 0))
+    (if (null? fs)
+        (list (cons 'total-qty q)
+              (cons 'total-notional (round2 n))
+              (cons 'total-fee (round2 f)))
+        (let* ((fill (car fs))
+               (qty (let ((e (assq 'qty fill))) (if e (cdr e) 0)))
+               (px (let ((e (assq 'px fill))) (if e (cdr e) 0)))
+               (fee (let ((e (assq 'fee fill))) (if e (cdr e) 0))))
+          (loop (cdr fs)
+                (+ q qty)
+                (+ n (* qty px))
+                (+ f (* qty fee)))))))

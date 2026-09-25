@@ -1,0 +1,95 @@
+;; audit_log.aura — Mutable audit log + breakdown hashing
+;; Public API:
+;;   (api append-line-log! line)   -> mutates the global log by appending a line breakdown
+;;   (api make-audit-hash breakdowns) -> returns a short hex string digesting the list
+;;
+;; Internals:
+;;   *audit-log* — mutable top-level list of line-breakdown alists (one per line, in order).
+;;   The hash is a deterministic, in-house 32-bit FNV-1a digest, then rendered as 8 hex chars.
+;;   Same inputs → same hash; any change to any field in any breakdown → different hash.
+
+(define *audit-log* '())
+
+;; --- helpers ---------------------------------------------------------------
+
+;; Lookup a key in an alist; return default if absent.
+(define (alist-ref k alist default)
+  (cond ((null? alist) default)
+        ((equal? (car (car alist)) k) (cdr (car alist)))
+        (else (alist-ref k (cdr alist) default))))
+
+;; Convert any value to a stable string token suitable for hashing.
+;; Numbers, strings, symbols, booleans, chars, lists all get a printable form.
+(define (tokenize x)
+  (cond ((null? x) "")
+        ((boolean? x) (if x "#t" "#f"))
+        ((number? x) (number->string x))
+        ((string? x) x)
+        ((symbol? x) (symbol->string x))
+        ((char? x) (string x))
+        ((pair? x)
+         (string-append "("
+                        (tokenize (car x))
+                        " . "
+                        (tokenize (cdr x))
+                        ")"))
+        (else "")))
+
+;; Hex-encode a non-negative integer to exactly 8 lowercase hex chars.
+(define (hex8 n)
+  (let loop ((i 7) (acc ""))
+    (if (< i 0)
+        acc
+        (let ((digit (modulo n 16)))
+          (loop (- i 1)
+                (string-append acc
+                               (string (string-ref "0123456789abcdef"
+                                                   (modulo digit 16)))))))))
+
+;; --- FNV-1a 32-bit hash over a list of breakdowns -------------------------
+;; FNV-1a constants (32-bit):
+;;   offset basis = 2166136261 = 0x811C9DC5
+;;   prime        = 16777619   = 0x01000193
+;; We process each breakdown by emitting a token for every key+value pair in
+;; alist order, with a separator between breakdowns.
+
+(define (hash-token h tok)
+  ;; Process each char of tok using FNV-1a mixing.
+  (let loop ((i 0) (h h))
+    (if (>= i (string-length tok))
+        h
+        (let* ((c (char->integer (string-ref tok i)))
+               (h2 (modulo (+ (modulo (* h 16777619) 2147483647)
+                              (modulo (logxor h c) 256))
+                           4294967296)))
+          (loop (+ i 1) h2)))))
+
+(define (hash-breakdown h bd)
+  (let ((sep ";"))
+    (let loop ((pairs bd) (h h))
+      (if (null? pairs)
+          h
+          (let* ((p (car pairs))
+                 (k (car p))
+                 (v (cdr p))
+                 (h2 (hash-token h sep))
+                 (h3 (hash-token h2 (tokenize k)))
+                 (h4 (hash-token h3 "="))
+                 (h5 (hash-token h4 (tokenize v))))
+            (loop (cdr pairs) h5))))))
+
+(define (api make-audit-hash breakdowns)
+  (let ((seed 2166136261))
+    (let loop ((bs breakdowns) (h seed))
+      (if (null? bs)
+          (hex8 (modulo h 4294967296))
+          (loop (cdr bs) (hash-breakdown h (car bs)))))))
+
+;; --- mutable append --------------------------------------------------------
+;; O(n) append is fine — invoice lines are small.
+
+(define (api append-line-log! line)
+  (set! *audit-log* (append *audit-log* (list line))))
+
+;; A read accessor (not in the public spec but useful for main.aura).
+(define (api get-audit-log) *audit-log*)

@@ -1,0 +1,114 @@
+;; main.aura — entry point for the checkout saga orchestrator.
+;;
+;; This file ties everything together:
+;;   - build a journal  (state.aura)
+;;   - build an id-gen  (ids.aura)
+;;   - read a failure point from `args` (default #f → happy path)
+;;   - ask orchestrator to run the saga
+;;   - derive every display value by querying the modules
+;;   - print the stdout contract lines
+
+(load "state.aura")
+(load "ids.aura")
+(load "handlers.aura")
+(load "services.aura")
+(load "compensator.aura")
+(load "orchestrator.aura")
+(load "extra1.aura")
+
+;; ---------------------------------------------------------------------------
+;; (parse-failure-step args) -> symbol or #f
+;;
+;; `args` is the command-line list passed to `(run main args)`. The GOAL
+;; says the default failure point is #f (no failure / happy path). If the
+;; caller passes a step name we use it directly; if they pass a 1-based
+;; index we map it to the canonical step symbol.
+(define (parse-failure-step args)
+  (cond
+    ((null? args) #f)
+    ((symbol? (car args)) (car args))
+    ((number? (car args))
+     (let ((n (car args)))
+       (cond ((= n 1) 'auth)
+             ((= n 2) 'inventory-hold)
+             ((= n 3) 'payment-auth)
+             ((= n 4) 'payment-capture)
+             ((= n 5) 'fulfillment-kickoff)
+             (else #f))))
+    (else #f)))
+
+;; ---------------------------------------------------------------------------
+;; (count-completed j saga_id) -> integer
+;;
+;; Counts how many forward step names appear in the journal for this saga.
+;; We derive it from the journal itself rather than maintaining a side
+;; counter, so it stays consistent with what was actually recorded.
+(define (count-completed j saga_id)
+  (letrec ((loop
+             (lambda (entries acc)
+               (if (null? entries)
+                   acc
+                   (let ((e (car entries)))
+                     (if (and (pair? e)
+                              (= (length e) 3)
+                              (equal? (cadr e) saga_id)
+                              (symbol? (caddr e)))
+                         (loop (cdr entries) (+ acc 1))
+                         (loop (cdr entries) acc)))))))
+    (loop (state-journal-entries j) 0)))
+
+;; ---------------------------------------------------------------------------
+;; (count-compensated j saga_id) -> integer
+;;
+;; Counts rollback events for this saga in the compensation log. The
+;; compensator module appends one entry per compensate-* invocation;
+;; we walk that log and tally the rows tied to this saga.
+(define (count-compensated j saga_id)
+  (letrec ((loop
+             (lambda (entries acc)
+               (if (null? entries)
+                   acc
+                   (let ((e (car entries)))
+                     (if (and (pair? e)
+                              (>= (length e) 2)
+                              (equal? (cadr e) saga_id))
+                         (loop (cdr entries) (+ acc 1))
+                         (loop (cdr entries) acc)))))))
+    (loop (state-comp-log j) 0)))
+
+;; ---------------------------------------------------------------------------
+;; (run main args)
+;;
+;; Executes the GOAL scenario: one saga run with an injectable failure
+;; point, then prints every KEY=value line. All values are computed from
+;; the modules — no hardcoded outputs.
+(define (run main args)
+  (define j (make-journal))
+  (define g (make-id-gen))
+  (define failure-step (parse-failure-step args))
+  (define saga_id (next-id g "S-"))
+
+  ;; Drive the saga. The orchestrator is responsible for journal writes,
+  ;; idempotency guards, handler dispatch and rollback.
+  (run-saga j g failure-step)
+
+  ;; Derive everything we want to report.
+  (define status            (saga-status j saga_id))
+  (define audit             (build-audit-trail j saga_id))
+  (define order_state       (svc-order saga_id))
+  (define payment_state     (svc-payment saga_id))
+  (define fulfillment_state  (svc-fulfillment saga_id))
+  (define inventory_state   (svc-inventory saga_id))
+  (define completed_count   (count-completed j saga_id))
+  (define compensated_count (count-compensated j saga_id))
+
+  ;; Print the stdout contract. The exact order matches the GOAL.
+  (display "SAGA_ID=")              (display saga_id)              (newline)
+  (display "SAGA_STATUS=")          (display status)               (newline)
+  (display "ORDER_STATE=")          (display order_state)          (newline)
+  (display "PAYMENT_STATE=")        (display payment_state)        (newline)
+  (display "INVENTORY_HOLD_STATE=") (display inventory_state)      (newline)
+  (display "FULFILLMENT_STATE=")    (display fulfillment_state)    (newline)
+  (display "COMPLETED_STEPS=")      (display completed_count)      (newline)
+  (display "COMPENSATED_STEPS=")    (display compensated_count)    (newline)
+  (display "STEP_AUDIT=")           (display audit)                (newline))

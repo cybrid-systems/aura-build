@@ -1,0 +1,178 @@
+; main.aura
+; Scenario driver for the mini OMS child-order slicer.
+;
+; Exercises every module API in turn and prints the stdout contract:
+; exactly 16 KEY=value lines, in the required order. All values are
+; computed at runtime from the public APIs of the other modules; no
+; numeric output is hardcoded.
+
+(define *line-count* 0)
+
+(define (emit key value)
+  (set! *line-count* (+ *line-count* 1))
+  (display key)
+  (display "=")
+  (display value)
+  (newline))
+
+(define (int->str n)
+  (number->string n))
+
+(define (qty->str n)
+  (number->string n))
+
+(define (pct->str n)
+  (let* ((whole (quotient n 100))
+         (frac (- n (* whole 100))))
+    (string-append (number->string whole)
+                   "."
+                   (if (< frac 10)
+                       (string-append "0" (number->string frac))
+                       (number->string frac))
+                   "%")))
+
+;; -----------------------------------------------------------------
+;; Parents + market context
+;; -----------------------------------------------------------------
+(define parent
+  (api-make-parent 'P-100 'BUY 10000 150.00 'DAY))
+
+(define horizon 600)
+(define slot-len 60)
+(define children-cap 8)
+(define vwap-buckets '(0.30 0.25 0.20 0.15 0.10))
+(define urgency 1.5)
+(define mid-px 150.00)
+(define vol 0.25)
+(define risk-threshold 75)
+
+(define venues (api-venue-list))
+
+;; -----------------------------------------------------------------
+;; Run the four slicers
+;; -----------------------------------------------------------------
+(define pov-children  (api-slice-pov          parent 0.10 children-cap))
+(define twap-children (api-slice-twap         parent horizon slot-len children-cap))
+(define vwap-children (api-slice-vwap         parent vwap-buckets children-cap))
+(define liq-children  (api-slice-liquidity    parent venues children-cap urgency))
+
+;; -----------------------------------------------------------------
+;; Route every child set through the venue router
+;; -----------------------------------------------------------------
+(define pov-routed  (api-route pov-children  venues))
+(define twap-routed (api-route twap-children venues))
+(define vwap-routed (api-route vwap-children venues))
+(define liq-routed  (api-route liq-children  venues))
+
+(define all-routed (append (append pov-routed twap-routed)
+                           (append vwap-routed liq-routed)))
+
+;; -----------------------------------------------------------------
+;; Simulate fills + aggregate
+;; -----------------------------------------------------------------
+(define pov-fills  (api-aggregate-fills (api-simulate-fills pov-routed  mid-px vol)))
+(define twap-fills (api-aggregate-fills (api-simulate-fills twap-routed mid-px vol)))
+(define vwap-fills (api-aggregate-fills (api-simulate-fills vwap-routed mid-px vol)))
+(define liq-fills  (api-aggregate-fills (api-simulate-fills liq-routed  mid-px vol)))
+
+(define all-fills (append (append pov-fills twap-fills)
+                          (append vwap-fills liq-fills)))
+
+(define total-filled
+  (let loop ((fs all-fills) (acc 0))
+    (if (null? fs)
+        acc
+        (let ((e (assq 'filled-qty (car fs))))
+          (loop (cdr fs) (+ acc (if e (cdr e) 0)))))))
+
+(define total-routed
+  (let loop ((cs all-routed) (acc 0))
+    (if (null? cs)
+        acc
+        (let ((e (assq 'qty (car cs))))
+          (loop (cdr cs) (+ acc (if e (cdr e) 0)))))))
+
+(define fill-ratio
+  (if (= total-routed 0)
+      0
+      (quotient (* total-filled 100) total-routed)))
+
+;; -----------------------------------------------------------------
+;; Risk monitor
+;; -----------------------------------------------------------------
+(define completion-pct (api-completion-pct parent all-fills))
+(define breach-flag
+  (if (api-risk-breached? parent all-fills risk-threshold) 'YES 'NO))
+
+;; -----------------------------------------------------------------
+;; Allocators
+;; -----------------------------------------------------------------
+(define accounts (api-account-list))
+
+(define fifo-alloc  (api-allocate-fifo      accounts total-filled))
+(define pro-alloc  (api-allocate-pro-rata  accounts total-filled))
+
+(define caps
+  (list
+    (cons 'ACC-001 3000)
+    (cons 'ACC-002 4000)
+    (cons 'ACC-003 2000)
+    (cons 'ACC-004 1000)))
+(define fq-alloc   (api-allocate-filled-qty accounts caps total-filled))
+
+(define (alloc-sum alloc)
+  (let loop ((xs alloc) (acc 0))
+    (if (null? xs)
+        acc
+        (let ((e (assq 'qty (car xs))))
+          (loop (cdr xs) (+ acc (if e (cdr e) 0)))))))
+
+(define fifo-sum (alloc-sum fifo-alloc))
+(define pro-sum  (alloc-sum pro-alloc))
+(define fq-sum   (alloc-sum fq-alloc))
+
+(define checksum
+  (if (= fifo-sum total-filled) 'OK 'FAIL))
+
+;; -----------------------------------------------------------------
+;; Per-account display helpers
+;; -----------------------------------------------------------------
+(define (acct-line acct alist)
+  (let* ((id   (api-account-acct acct))
+         (qty  (let ((e (assq 'qty alist))) (if e (cdr e) 0)))
+         (tag  (string-append id ":"
+                              (number->string qty))))
+    tag))
+
+(define (alloc->str alloc)
+  (let loop ((xs alloc) (first? #t) (acc ""))
+    (if (null? xs)
+        acc
+        (let* ((rest (cdr xs))
+               (pair (car xs))
+               (id   (api-account-acct pair))
+               (qty  (let ((e (assq 'qty pair))) (if e (cdr e) 0)))
+               (piece (string-append id ":" (number->string qty))))
+          (loop rest
+                #f
+                (if first? piece (string-append acc "," piece)))))))
+
+;; -----------------------------------------------------------------
+;; Emit the 16-line stdout contract (exact order)
+;; -----------------------------------------------------------------
+(emit "PARENT_ID"         (let ((e (assq 'id parent)))       (if e (cdr e) 'P0)))
+(emit "PARENT_SIDE"       (let ((e (assq 'side parent)))     (if e (cdr e) 'BUY)))
+(emit "PARENT_QTY"        (let ((e (assq 'qty parent)))      (if e (cdr e) 0)))
+(emit "SLICER_POV_N"      (length pov-children))
+(emit "SLICER_TWAP_N"     (length twap-children))
+(emit "SLICER_VWAP_N"     (length vwap-children))
+(emit "SLICER_LIQSEEK_N"  (length liq-children))
+(emit "ROUTED_TOTAL_QTY"  total-routed)
+(emit "FILLED_TOTAL_QTY"  total-filled)
+(emit "FILL_RATIO_PCT"    fill-ratio)
+(emit "COMPLETION_PCT"    completion-pct)
+(emit "RISK_BREACHED"     breach-flag)
+(emit "ALLOC_TOTAL_FILLED" total-filled)
+(emit "ALLOC_FIFO"        (alloc->str fifo-alloc))
+(emit "ALLOC_PRORATA"     (alloc->str pro-alloc))
+(emit "ALLOC_CHECKSUM"    checksum)

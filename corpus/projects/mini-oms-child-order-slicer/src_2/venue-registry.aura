@@ -1,0 +1,29 @@
+; venue-registry.aura
+; Registry of trading venues with fee and latency metadata.
+; Shared top-level state: *venues* is an alist (venue-symbol . venue-info)
+; where venue-info is an alist of (key . value).
+
+(define *venues*
+  (list
+    (cons 'NYSE  (list (cons 'fee 0.0005) (cons 'latency 8)))
+    (cons 'NASDAQ (list (cons 'fee 0.0004) (cons 'latency 6)))
+    (cons 'ARCA  (list (cons 'fee 0.0003) (cons 'latency 7)))
+    (cons 'BATS  (list (cons 'fee 0.0002) (cons 'latency 4)))
+    (cons 'IEX   (list (cons 'fee 0.0009) (cons 'latency 1)))))
+
+(define (api-venue-list)
+  (map car *venues*))
+
+(define (api-venue-fee venue)
+  (let ((info (assq venue *venues*)))
+    (if info
+        (let ((p (assq 'fee (cdr info))))
+          (if p (cdr p) 0))
+        0)))
+
+(define (api-venue-latency venue)
+  (let ((info (assq venue *venues*)))
+    (if info
+        (let ((p (assq 'latency (cdr info))))
+          (if p (cdr p) 0))
+        0)))

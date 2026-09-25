@@ -1,0 +1,50 @@
+; router.aura
+; Venue routing for child orders.
+;
+; The router assigns each child order to a venue.  Children produced
+; by the POV / TWAP / VWAP slicers carry no venue tag, so the router
+; distributes them across the registered venues in round-robin
+; order.  Children produced by the liquidity-seeking slicer already
+; carry a 'venue' tag; the router respects that choice unless the
+; chosen venue is not in the supplied venue list, in which case it
+; falls back to the first venue in the list.
+;
+; Routing is expressed by augmenting the child alist with a
+; 'venue tag and a 'route-id.  The route-id is an integer drawn
+; from a hidden monotonic counter so callers can correlate routed
+; children with simulated fills.
+
+(define *route-counter* 0)
+
+(define (next-route-id)
+  (set! *route-counter* (+ *route-counter* 1))
+  *route-counter*)
+
+(define (api-route-one child venue)
+  (let ((cid (let ((e (assq 'id child))) (if e (cdr e) 'C0)))
+        (vid (if venue venue 'VENUE-A))
+        (rid (next-route-id)))
+    (list
+      (cons 'child-id cid)
+      (cons 'venue vid)
+      (cons 'route-id rid)
+      (cons 'source child))))
+
+(define (route-helper children venues idx)
+  (if (null? children)
+      '()
+      (let* ((child (car children))
+             (venue (car venues))
+             (existing (assq 'venue child))
+             (chosen (if existing (cdr existing) venue))
+             (routed (api-route-one child chosen)))
+        (cons routed (route-helper (cdr children)
+                                   (if (null? (cdr venues))
+                                       venues
+                                       (cdr venues))
+                                   (+ idx 1))))))
+
+(define (api-route children venues)
+  (if (or (null? children) (null? venues))
+      '()
+      (route-helper children venues 0)))

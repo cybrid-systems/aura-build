@@ -1,0 +1,69 @@
+;; efficiency.aura - Netting efficiency metrics
+;;
+;; Computes derived statistics from the netting output:
+;;   * efficiency-ratio  - the reduction fraction (gross->net)
+;;   * largest-single-payment - the biggest single settlement
+;;                               instruction in a list of instructions
+;;   * cleared-count     - how many trades went through the CCP
+;;                         (novation policy = 'ccp and applied)
+;;   * uncleared-count   - how many trades stayed bilateral
+;;
+;; cleared-count and uncleared-count use the novation policy and the
+;; count of registered trades. When novation is off, every trade is
+;; "uncleared"; when on, every trade is "cleared" (or, equivalently,
+;; the cleared count equals (length (all-trades)) and uncleared is 0).
+
+;; ----------------------------------------------------------------
+;; efficiency-ratio
+;;   gross = sum of all gross bilateral exposures (a positive number)
+;;   net   = sum of |net-obligation| across settlement instructions
+;;           (also positive - the total money that actually moves)
+;;   returns the netting efficiency in [0,1], rounded to 4 decimals,
+;;   defined as 1 - net/gross when gross > 0, else 1.0 (trivially
+;;   efficient: nothing in, nothing out).
+;; ----------------------------------------------------------------
+(define (efficiency-ratio gross net)
+  (if (= gross 0)
+      1.0
+      (let ((r (- 1.0 (/ net gross))))
+        ;; round to 4 decimals
+        (let ((scaled (* r 10000.0)))
+          (/ (round scaled) 10000.0)))))
+
+;; ----------------------------------------------------------------
+;; largest-single-payment
+;;   Given a list of settlement instructions (each an alist with
+;;   'amount field, or any structure where (instruction-amount i)
+;;   returns the numeric amount), find the maximum amount. Returns 0
+;;   on an empty list.
+;; ----------------------------------------------------------------
+(define (largest-single-payment instructions)
+  (let loop ((max-so-far 0) (xs instructions))
+    (if (null? xs)
+        max-so-far
+        (let ((a (instruction-amount (car xs))))
+          (if (> a max-so-far)
+              (loop a (cdr xs))
+              (loop max-so-far (cdr xs)))))))
+
+;; ----------------------------------------------------------------
+;; cleared-count
+;;   Number of trades that were novated to the CCP. With policy 'ccp,
+;;   this equals the total number of registered trades. With policy
+;;   'off, this is 0.
+;; ----------------------------------------------------------------
+(define (cleared-count)
+  (if (eq? (novation-policy) 'ccp)
+      (length (all-trades))
+      0))
+
+;; ----------------------------------------------------------------
+;; uncleared-count
+;;   Number of trades that remained bilateral. With policy 'off,
+;;   this equals the total number of registered trades. With policy
+;;   'ccp, this is 0.
+;; ----------------------------------------------------------------
+(define (uncleared-count)
+  (if (eq? (novation-policy) 'ccp)
+      0
+      (length (all-trades)))

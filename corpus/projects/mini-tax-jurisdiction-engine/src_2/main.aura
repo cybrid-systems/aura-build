@@ -1,0 +1,95 @@
+;; main.aura
+;;
+;; Orchestrates the mini tax jurisdiction engine.
+;; Loads all facts, resolves jurisdictions per line, applies exemptions,
+;; computes per-line tax, rounds, aggregates, and prints the 14 KEY=value
+;; lines required by the stdout contract.
+
+(define (run)
+  ;; ---- Load all facts ----
+  (define nexus    (api load-nexus-rules))
+  (define ptcs     (api load-product-tax-codes))
+  (define certs    (api load-exemption-certs))
+  (define rates    (api load-jurisdiction-rates))
+  (define customer (api load-customer))
+  (define invoice  (api load-invoice))
+
+  (define invoice-id   (cdr (assq 'id invoice)))
+  (define lines        (cdr (assq 'lines invoice)))
+
+  ;; Origin-based states: skip destination tax for these.
+  (define origin-states '(OR NH MT DE AK))
+
+  ;; ---- Compute per-line tax ----
+  (define line-results
+    (map (lambda (line)
+           (api compute-line-tax line nexus rates certs origin-states))
+         lines))
+
+  ;; ---- Round per-line tax cents using half-even ----
+  (define rounded-results
+    (map (lambda (lr)
+           (let ((raw-tax (cdr (assq 'tax-cents lr))))
+             (let ((rounded (api round-line raw-tax)))
+               (set-car! (cdr (assq 'tax-cents lr)) rounded)
+               lr)))
+         line-results))
+
+  ;; ---- Aggregate invoice totals ----
+  (define summary (api aggregate-invoice rounded-results))
+
+  (define subtotal-cents (cdr (assq 'subtotal-cents summary)))
+  (define tax-cents      (cdr (assq 'tax-cents summary)))
+  (define total-cents    (cdr (assq 'total-cents summary)))
+
+  ;; Round invoice tax/total with half-up
+  (define final-tax-cents   (api round-invoice tax-cents))
+  (define final-total-cents (api round-invoice total-cents))
+
+  (define line-count     (cdr (assq 'line-count summary)))
+  (define taxable-count  (cdr (assq 'taxable-count summary)))
+  (define exempt-count   (cdr (assq 'exempt-count summary)))
+
+  ;; ---- Audit log + per-line breakdown list ----
+  (define breakdowns
+    (map (lambda (lr)
+           (let ((reason (cdr (assq 'reason lr))))
+             (list (cdr (assq 'line-id lr))
+                   (cdr (assq 'jid lr))
+                   (cdr (assq 'ptc lr))
+                   (cdr (assq 'rate-bps lr))
+                   (cdr (assq 'tax-cents lr))
+                   reason)))
+         rounded-results))
+
+  (define audit-hash (api make-audit-hash breakdowns))
+
+  ;; ---- Print the 14 KEY=value lines ----
+  (display (string-append "INVOICE_ID=" invoice-id))                  (newline)
+  (display (string-append "CUSTOMER_ID="
+                          (cdr (assq 'customer-id customer))))        (newline)
+  (display (string-append "SHIP_TO_STATE="
+                          (cdr (assq 'state
+                                     (cdr (assq 'ship-to customer)))))) (newline)
+  (display (string-append "LINE_COUNT="
+                          (number->string line-count)))               (newline)
+  (display (string-append "TAXABLE_COUNT="
+                          (number->string taxable-count)))            (newline)
+  (display (string-append "EXEMPT_COUNT="
+                          (number->string exempt-count)))              (newline)
+  (display (string-append "SUBTOTAL_CENTS="
+                          (number->string subtotal-cents)))           (newline)
+  (display (string-append "TAX_CENTS="
+                          (number->string final-tax-cents)))          (newline)
+  (display (string-append "TOTAL_CENTS="
+                          (number->string final-total-cents)))        (newline)
+  (display (string-append "AUDIT_HASH=" audit-hash))                  (newline)
+  (display (string-append "AUDIT_LINE_COUNT="
+                          (number->string (length breakdowns))))      (newline)
+  (display (string-append "NEXUS_JIDS="
+                          (number->string (length nexus))))           (newline)
+  (display (string-append "CERT_COUNT="
+                          (number->string (length certs))))           (newline)
+  (display (string-append "DONE=OK"))                                 (newline))
+
+(run)

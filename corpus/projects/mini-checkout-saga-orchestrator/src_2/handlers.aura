@@ -1,0 +1,88 @@
+;; handlers.aura — idempotent saga step handlers and their compensating actions.
+;;
+;; Each handler takes a saga_id and performs (or rolls back) one logical
+;; side effect. Handlers delegate the actual mutable bookkeeping to
+;; services.aura; this file only models whether a step succeeds or fails
+;; (controlled via the dynamic variable *failure-step*) and routes
+;; compensation accordingly.
+;;
+;; The success/failure decisions are deterministic given *failure-step*:
+;;   - If *failure-step* equals this step's name, the handler returns #f
+;;     to signal a failure that the orchestrator must compensate for.
+;;   - Otherwise the handler returns #t to signal success.
+;;
+;; Compensation handlers are always safe to call: they simply undo the
+;; corresponding side effect via the service module and return #t.
+
+(define *failure-step* #f)
+
+(define (current-failure-step)
+  *failure-step*)
+
+(define (set-failure-step! s)
+  (set! *failure-step* s))
+
+;; ---- auth ---------------------------------------------------------------
+
+(define (step-auth saga_id)
+  (if (equal? (current-failure-step) 'auth)
+      #f
+      (begin
+        (svc-order saga_id) ;; ensure order row exists / refreshed
+        #t)))
+
+(define (compensate-auth saga_id)
+  (svc-order saga_id)
+  #t)
+
+;; ---- inventory-hold -----------------------------------------------------
+
+(define (step-inventory-hold saga_id)
+  (if (equal? (current-failure-step) 'inventory-hold)
+      #f
+      (begin
+        (svc-inventory saga_id)
+        #t)))
+
+(define (compensate-inventory-hold saga_id)
+  (svc-inventory saga_id)
+  #t)
+
+;; ---- payment-auth -------------------------------------------------------
+
+(define (step-payment-auth saga_id)
+  (if (equal? (current-failure-step) 'payment-auth)
+      #f
+      (begin
+        (svc-payment saga_id)
+        #t)))
+
+(define (compensate-payment-auth saga_id)
+  (svc-payment saga_id)
+  #t)
+
+;; ---- payment-capture ----------------------------------------------------
+
+(define (step-payment-capture saga_id)
+  (if (equal? (current-failure-step) 'payment-capture)
+      #f
+      (begin
+        (svc-payment saga_id)
+        #t)))
+
+(define (compensate-payment-capture saga_id)
+  (svc-payment saga_id)
+  #t)
+
+;; ---- fulfillment-kickoff ------------------------------------------------
+
+(define (step-fulfillment-kickoff saga_id)
+  (if (equal? (current-failure-step) 'fulfillment-kickoff)
+      #f
+      (begin
+        (svc-fulfillment saga_id)
+        #t)))
+
+(define (compensate-fulfillment-kickoff saga_id)
+  (svc-fulfillment saga_id)
+  #t)

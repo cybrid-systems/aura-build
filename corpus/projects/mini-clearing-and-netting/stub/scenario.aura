@@ -1,0 +1,86 @@
+;; scenario.aura - Canonical scenario seeder
+;;
+;; Builds a deterministic, self-consistent set of trades across two
+;; value dates and two currencies so that every downstream module
+;; (bilateral, novation, paythrough, netting, mts, settlement,
+;; efficiency, report, compliance) has meaningful data to operate on.
+;;
+;; Parties:
+;;   ccp  - Central Counterparty (the apex of the pay-through tree)
+;;   cm-a - Clearing Member A (clears for client-a1, client-a2)
+;;   cm-b - Clearing Member B (clears for client-b1)
+;;   cm-c - Clearing Member C (clears for client-c1, client-c2)
+;;   client-a1, client-a2
+;;   client-b1
+;;   client-c1, client-c2
+;;   bank-x - non-cleared bilateral counterparty
+;;
+;; Currencies: USD and EUR.
+;; Value dates: 2024-03-15 and 2024-03-16.
+
+(define *scenario-seeded* #f)
+
+(define (seed-scenario!)
+  (if *scenario-seeded*
+      'already-seeded
+      (begin
+        (reset-registry!)
+
+        ;; Pay-through hierarchy: every leaf ultimately faces 'ccp
+        ;; through its clearing member.
+        (set-paythrough!
+         (list
+          (cons 'client-a1 'cm-a)
+          (cons 'client-a2 'cm-a)
+          (cons 'client-b1 'cm-b)
+          (cons 'client-c1 'cm-c)
+          (cons 'client-c2 'cm-c)
+          (cons 'cm-a 'ccp)
+          (cons 'cm-b 'ccp)
+          (cons 'cm-c 'ccp)))
+
+        ;; Novation policy: novate everything through the CCP.
+        (set-novation-policy! 'ccp)
+
+        ;; Minimum transfer amounts per currency. Some small
+        ;; bilateral legs will fall under these thresholds.
+        (set-mta! 'USD 250000)
+        (set-mta! 'EUR 200000)
+
+        ;; ----------------------------------------------------------------
+        ;; Value date 2024-03-15, USD
+        ;; ----------------------------------------------------------------
+        ;; Inter-CM / client multilateral activity (USD, vd1)
+        (register-trade (make-trade 'T01 'USD 'client-a1 'client-b1 500000 '2024-03-15))
+        (register-trade (make-trade 'T02 'USD 'client-a1 'client-c1 750000 '2024-03-15))
+        (register-trade (make-trade 'T03 'USD 'client-a2 'client-b1 900000 '2024-03-15))
+        (register-trade (make-trade 'T04 'USD 'client-b1 'client-c2 600000 '2024-03-15))
+        (register-trade (make-trade 'T05 'USD 'client-c1 'client-a2 400000 '2024-03-15))
+        (register-trade (make-trade 'T06 'USD 'client-c2 'client-a1 350000 '2024-03-15))
+        ;; A small leg that should fall below the USD MTA.
+        (register-trade (make-trade 'T07 'USD 'client-a1 'client-c2 100000 '2024-03-15))
+
+        ;; Non-cleared bilateral with bank-x (still routes via CCP
+        ;; only if novation is applied, but bank-x sits outside the
+        ;; pay-through hierarchy so it remains bilateral).
+        (register-trade (make-trade 'T08 'USD 'bank-x    'client-a1 1200000 '2024-03-15))
+        (register-trade (make-trade 'T09 'USD 'client-b1 'bank-x     800000 '2024-03-15))
+
+        ;; ----------------------------------------------------------------
+        ;; Value date 2024-03-15, EUR
+        ;; ----------------------------------------------------------------
+        (register-trade (make-trade 'T10 'EUR 'client-a1 'client-b1 300000 '2024-03-15))
+        (register-trade (make-trade 'T11 'EUR 'client-c1 'client-a2 550000 '2024-03-15))
+        (register-trade (make-trade 'T12 'EUR 'client-b1 'client-c2 700000 '2024-03-15))
+        ;; Sub-MTA EUR leg.
+        (register-trade (make-trade 'T13 'EUR 'client-a2 'client-c1 100000 '2024-03-15))
+
+        ;; ----------------------------------------------------------------
+        ;; Value date 2024-03-16, USD (lighter day)
+        ;; ----------------------------------------------------------------
+        (register-trade (make-trade 'T14 'USD 'client-a1 'client-b1 1000000 '2024-03-16))
+        (register-trade (make-trade 'T15 'USD 'client-c1 'client-c2 450000 '2024-03-16))
+        (register-trade (make-trade 'T16 'USD 'client-a2 'client-b1 250000 '2024-03-16))
+
+        (set! *scenario-seeded* #t)
+        'seeded)))

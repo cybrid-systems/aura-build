@@ -1,0 +1,108 @@
+;; services.aura — service-state views for the saga orchestrator
+;;
+;; Each downstream service (order, inventory, payment, fulfillment)
+;; keeps its own per-saga state in an in-memory alist keyed by saga_id.
+;; These "view" procedures return a status string for a given saga_id
+;; so main.aura can derive ORDER_STATE / PAYMENT_STATE / … by calling
+;; them, rather than hardcoding expected outputs.
+;;
+;; A state value is one of:
+;;   "PENDING"  - saga has been registered but no step has run yet
+;;   "ACTIVE"   - the corresponding forward step has succeeded
+;;   "ROLLED_BACK" - a compensate-* for this service was invoked
+;;   "FAILED"   - the forward step for this service failed
+;;                (only set when the saga aborts on that step)
+;;
+;; The setters below are intentionally NOT exported as (define …) APIs
+;; (they are private to this module); only the four `svc-*` viewers
+;; are part of the required contract. Handlers mutate the service
+;; alists directly via these internal helpers.
+
+;; --- private state container -------------------------------------------------
+
+;; The four service alists: '() -> no saga entries yet.
+(define svc-alists
+  (list (list 'order      (list '()))   ; (order-alist)
+        (list 'inventory  (list '()))   ; (inventory-alist)
+        (list 'payment    (list '()))   ; (payment-alist)
+        (list 'fulfillment (list '())))) ; (fulfillment-alist)
+
+;; Helper: fetch the named alist cell, e.g. (alist-for 'order) -> the pair
+(define (alist-for name)
+  (let loop ((rest svc-alists))
+    (cond
+      ((null? rest) (list (list name '())))
+      ((eq? (car (car rest)) name) (car rest))
+      (else (loop (cdr rest))))))
+
+;; Helper: mutate the alist cell for `name`, returning the new alist.
+(define (set-alist! name new-alist)
+  (let loop ((rest svc-alists))
+    (cond
+      ((null? rest) #f)
+      ((eq? (car (car rest)) name)
+       (set-cdr! (car rest) new-alist)
+       new-alist)
+      (else (loop (cdr rest))))))
+
+;; Helper: upsert (saga_id . status) into the named alist.
+(define (svc-set! name saga_id status)
+  (let* ((cell   (alist-for name))
+         (alist  (cadr cell))
+         (found  (member saga_id (map car alist))))
+    (if found
+        (let loop ((rest alist))
+          (cond
+            ((null? rest) #f)
+            ((equal? (car (car rest)) saga_id)
+             (set-cdr! (car rest) status)
+             alist)
+            (else (loop (cdr rest)))))
+        (let ((updated (cons (cons saga_id status) alist)))
+          (set-alist! name updated)
+          updated))))
+
+;; Helper: read (saga_id . status) from the named alist.
+(define (svc-get name saga_id)
+  (let* ((cell  (alist-for name))
+         (alist (cadr cell)))
+    (cond
+      ((null? alist) #f)
+      ((equal? (car (car alist)) saga_id) (cdr (car alist)))
+      (else
+       (let loop ((rest (cdr alist)))
+         (cond
+           ((null? rest) #f)
+           ((equal? (car (car rest)) saga_id) (cdr (car rest)))
+           (else (loop (cdr rest)))))))))
+
+;; --- internal mutators used by handlers (per the GOAL scenario) -------------
+;; These are NOT part of the Module Table API contract. They are
+;; invoked by handlers.aura when a forward / compensate action runs.
+;; Keeping them in this file means service state lives next to its
+;; viewers and is easy to audit.
+
+(define (svc-order-set! saga_id status)      (svc-set! 'order      saga_id status))
+(define (svc-inventory-set! saga_id status)  (svc-set! 'inventory  saga_id status))
+(define (svc-payment-set! saga_id status)    (svc-set! 'payment    saga_id status))
+(define (svc-fulfillment-set! saga_id status)(svc-set! 'fulfillment saga_id status))
+
+;; --- public viewers (the four required APIs) --------------------------------
+;; Each returns a string for the given saga_id:
+;;   "PENDING" if unknown, otherwise whatever the service has recorded.
+
+(define (svc-order saga_id)
+  (let ((s (svc-get 'order saga_id)))
+    (if s s "PENDING")))
+
+(define (svc-inventory saga_id)
+  (let ((s (svc-get 'inventory saga_id)))
+    (if s s "PENDING")))
+
+(define (svc-payment saga_id)
+  (let ((s (svc-get 'payment saga_id)))
+    (if s s "PENDING")))
+
+(define (svc-fulfillment saga_id)
+  (let ((s (svc-get 'fulfillment saga_id)))
+    (if s s "PENDING")))

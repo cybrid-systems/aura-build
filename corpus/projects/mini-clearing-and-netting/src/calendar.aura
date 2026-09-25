@@ -1,0 +1,173 @@
+;; calendar.aura - Trade-date / value-date helpers
+;;
+;; A "value date" is the date on which a trade's cash flows settle.
+;; In this in-memory engine we don't actually do calendar arithmetic
+;; over real dates. Instead a value date is an opaque symbol or
+;; string (typically a 3-letter weekday code such as 'mon, 'tue,
+;; 'wed, 'thu, 'fri, or an ISO-style date string like "2024-03-15").
+;;
+;; The functions in this module:
+;;
+;;   parse-date       - turn a printable string into an internal
+;;                      value-date symbol (downcased, trimmed)
+;;   format-date      - render an internal value date back to a string
+;;   choose-value-date- given a list of trades and a "today" date,
+;;                      pick the natural value date for settlement
+;;   value-date?      - predicate: is x a recognisable value date
+;;
+;; Conventions used elsewhere in the project:
+;;
+;;   * value dates are compared with equal?, so they must be a single
+;;     canonical form (we canonicalise on a downcased symbol).
+;;   * when no future value date can be inferred from the trade set,
+;;     choose-value-date falls back to 'today.
+;;   * format-date is the inverse of parse-date for the forms we
+;;     support.
+
+;; Canonical list of weekday codes we recognise, in order.
+(define *weekdays* '(mon tue wed thu fri sat sun))
+
+(define (parse-date s)
+  ;; Take a printable string and return the canonical internal form.
+  ;; Accepts "Mon", "MON", "2024-03-15", "  wed " etc.
+  (let ((trimmed (string-trim s)))
+    (let ((lower (string-downcase trimmed)))
+      (let ((len (string-length lower)))
+        (cond
+          ((= len 3)
+           (let ((c0 (string-ref lower 0))
+                 (c1 (string-ref lower 1))
+                 (c2 (string-ref lower 2)))
+             (if (and (char-alpha? c0) (char-alpha? c1) (char-alpha? c2))
+                 (intern-3 c0 c1 c2)
+                 lower)))
+          ((= len 10)
+           (if (and (char=? (string-ref lower 4) #\-)
+                    (char=? (string-ref lower 7) #\-))
+               lower
+               trimmed))
+          (else trimmed)))))
+
+(define (format-date d)
+  ;; Render an internal value date back to a printable string.
+  (cond
+    ((symbol? d) (symbol->string d))
+    ((string? d) d)
+    ((number? d) (number->string d))
+    (else (display-error "format-date: unrecognised value date") "?")))
+
+(define (choose-value-date trades today)
+  ;; Pick the natural value date for settlement given a list of trades
+  ;; and a "today" reference date. Strategy:
+  ;;   1. Collect every trade's value date into a deduplicated list
+  ;;      preserving order of first appearance.
+  ;;   2. If there is exactly one distinct value date, return it.
+  ;;   3. If there are several, return the first one (lexical order
+  ;;      when symbols/strings sort cleanly).
+  ;;   4. If there are no trades, return 'today.
+  (let loop ((xs trades) (seen '()) (first #f))
+    (if (null? xs)
+        (cond
+          ((null? seen) today)
+          ((null? (cdr seen)) (car seen))
+          (else (car seen)))
+        (let ((t (car xs)))
+          (let ((vd (trade-value-date t)))
+            (if (member vd seen)
+                (loop (cdr xs) seen first)
+                (loop (cdr xs)
+                      (append seen (list vd))
+                      (if first first vd))))))))
+
+(define (value-date? x)
+  ;; A value date is one of:
+  ;;   - a 3-letter weekday symbol/string (mon..sun)
+  ;;   - an ISO-style 10-char date string YYYY-MM-DD
+  ;;   - any other non-empty string (lenient fallback)
+  (cond
+    ((null? x) #f)
+    ((symbol? x)
+     (let ((s (symbol->string x)))
+       (and (= (string-length s) 3)
+            (char-alpha? (string-ref s 0))
+            (char-alpha? (string-ref s 1))
+            (char-alpha? (string-ref s 2)))))
+    ((string? x)
+     (let ((len (string-length x)))
+       (cond
+         ((= len 0) #f)
+         ((= len 3)
+          (and (char-alpha? (string-ref x 0))
+               (char-alpha? (string-ref x 1))
+               (char-alpha? (string-ref x 2))))
+         ((= len 10)
+          (and (char-alpha? (string-ref x 0))
+               (char=? (string-ref x 4) #\-)
+               (char=? (string-ref x 7) #\-)))
+         (else #t))))
+    ((number? x) #t)
+    (else #f)))
+
+;; ---------------------------------------------------------------------------
+;; Small string helpers (private to this module)
+;; ---------------------------------------------------------------------------
+
+(define (string-trim s)
+  ;; Strip leading and trailing whitespace.
+  (let ((len (string-length s)))
+    (let loop ((start 0) (end len))
+      (cond
+        ((and (< start end) (char-whitespace? (string-ref s start)))
+         (loop (+ start 1) end))
+        ((and (> end start) (char-whitespace? (string-ref s (- end 1))))
+         (loop start (- end 1)))
+        (else (substring s start end))))))
+
+(define (char-whitespace? c)
+  (or (char=? c #\space) (char=? c #\tab) (char=? c #\newline)))
+
+(define (char-alpha? c)
+  ;; ASCII alpha: a-z or A-Z
+  (let ((code (char->integer c)))
+    (or (and (>= code 65) (<= code 90))
+        (and (>= code 97) (<= code 122)))))
+
+(define (char-downcase c)
+  (let ((code (char->integer c)))
+    (if (and (>= code 65) (<= code 90))
+        (integer->char (+ code 32))
+        c)))
+
+(define (char-upcase c)
+  (let ((code (char->integer c)))
+    (if (and (>= code 97) (<= code 122))
+        (integer->char (- code 32))
+        c)))
+
+(define (string-downcase s)
+  (let ((len (string-length s)))
+    (let loop ((i 0) (acc '()))
+      (if (= i len)
+          (list->string (reverse acc))
+          (loop (+ i 1)
+                (cons (char-downcase (string-ref s i)) acc))))))
+
+(define (string-upcase s)
+  (let ((len (string-length s)))
+    (let loop ((i 0) (acc '()))
+      (if (= i len)
+          (list->string (reverse acc))
+          (loop (+ i 1)
+                (cons (char-upcase (string-ref s i)) acc))))))
+
+(define (substring s start end)
+  ;; Extract characters [start, end) from s. Assumes 0 <= start <= end
+  ;; <= (string-length s).
+  (let loop ((i (- end 1)) (acc '()))
+    (if (< i start)
+        (list->string (reverse acc))
+        (loop (- i 1) (cons (string-ref s i) acc)))))
+
+(define (intern-3 c0 c1 c2)
+  ;; Build a 3-character symbol from three characters.
+  (string->symbol (list->string (list c0 c1 c2))))

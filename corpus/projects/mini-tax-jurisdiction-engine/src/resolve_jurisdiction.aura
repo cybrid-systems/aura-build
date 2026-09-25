@@ -1,0 +1,16 @@
+;; resolve_jurisdiction.aura — Origin-vs-destination jurisdiction pick
+;; Public API: (api resolve-jurisdiction ship-to nexus)
+;;   ship-to : alist with (state, county, city)
+;;   nexus   : list of nexus alists from (api load-nexus-rules)
+;; Returns a jurisdiction id string, or #f if no nexus applies.
+;;
+;; Logic:
+;;   - If the seller has no nexus in the ship-to state, return #f.
+;;   - If the seller's nexus in that state is origin-based (e.g., OR, NH),
+;;     the seller does NOT collect destination tax: return #f.
+;;   - Otherwise (destination-based), pick the most-specific applicable jid:
+;;       city match  -> "jid-<state>-<city-slug>"
+;;       county only -> "jid-<state>-<county-slug>"
+;;       state only  -> "jid-<state>-state"
+;;     Exact, case-insensitive matching against the seller
+;;

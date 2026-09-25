@@ -1,0 +1,72 @@
+; slicer-vwap.aura
+; Volume-Weighted Average Price (VWAP) child order slicer.
+;
+; VWAP divides the parent order quantity across `vwap-buckets`,
+; where each bucket represents the expected share of volume in a
+; slice of the trading day (e.g. 0.30, 0.25, 0.20, 0.15, 0.10 sums
+; to 1.0). The number of buckets is implicit in the length of the
+; supplied list; the caller may also cap the number of children
+; produced via the `children` argument (a VWAP at-most bound).
+;
+; Each child is an alist with the same shape used elsewhere:
+;   (parent-id . id) (side . side) (qty . qty) (bucket . idx)
+;   (share . bucket-share) (tag . 'VWAP)
+;
+; The sum of all child quantities never exceeds the parent qty; any
+; rounding dust is accumulated into the final child.
+
+(define (api-slice-vwap parent vwap-buckets children)
+  (let ((pid (let ((e (assq 'id parent))) (if e (cdr e) 'P0)))
+        (side (let ((e (assq 'side parent))) (if e (cdr e) 'BUY)))
+        (pqty (let ((e (assq 'qty parent))) (if e (cdr e) 0))))
+    (let* ((n (if (null? vwap-buckets)
+                  0
+                  (length vwap-buckets)))
+           (cap (if (<= children 0) n (min n children)))
+           (buckets (if (<= cap 0)
+                        '()
+                        (let loop ((rest vwap-buckets) (k 0) (acc '()))
+                          (if (or (null? rest) (>= k cap))
+                              (reverse acc)
+                              (loop (cdr rest) (+ k 1) (cons (car rest) acc))))))
+           (total (if (null? buckets)
+                      0
+                      (let loop ((rest buckets) (s 0))
+                        (if (null? rest)
+                            s
+                            (loop (cdr rest) (+ s (car rest))))))))
+      (if (or (<= pqty 0) (<= total 0) (null? buckets))
+          (list (cons 'parent-id pid)
+                (cons 'side side)
+                (cons 'qty 0)
+                (cons 'bucket 0)
+                (cons 'share 0)
+                (cons 'tag 'VWAP))
+          (let loop ((rest buckets)
+                     (idx 0)
+                     (remaining pqty)
+                     (acc '()))
+            (if (null? rest)
+                (reverse acc)
+                (let* ((share (car rest))
+                       (raw-qty (quotient (* pqty share) total)))
+                  (if (= idx (- cap 1))
+                      ; Final bucket absorbs all remaining quantity (rounding dust).
+                      (let ((child (list (cons 'parent-id pid)
+                                         (cons 'side side)
+                                         (cons 'qty remaining)
+                                         (cons 'bucket idx)
+                                         (cons 'share share)
+                                         (cons 'tag 'VWAP))))
+                        (loop (cdr rest) (+ idx 1) 0 (cons child acc)))
+                      (let* ((qty (if (> raw-qty remaining) remaining raw-qty))
+                             (child (list (cons 'parent-id pid)
+                                          (cons 'side side)
+                                          (cons 'qty qty)
+                                          (cons 'bucket idx)
+                                          (cons 'share share)
+                                          (cons 'tag 'VWAP))))
+                        (loop (cdr rest)
+                              (+ idx 1)
+                              (- remaining qty)
+                              (cons child acc)))))))))))

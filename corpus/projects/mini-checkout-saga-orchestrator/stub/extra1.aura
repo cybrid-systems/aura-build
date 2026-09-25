@@ -1,0 +1,313 @@
+;; extra1.aura — extra utilities / helpers for the checkout-saga project
+;;
+;; This module is a grab-bag of small helpers that didn't naturally
+;; belong in the core modules (state / ids / handlers / services /
+;; compensator / orchestrator). They are intentionally self-contained
+;; and side-effect-free so they can be used anywhere — including
+;; from main.aura for formatting / counting / reporting.
+;;
+;; We avoid touching any module-level mutable state here. Every
+;; function below is pure (or has its own private mutable cell when
+;; genuinely needed, e.g. the accumulator below).
+
+;; ---------------------------------------------------------------------------
+;; (make-string-joiner sep) -> (proc . xs) -> string
+;;
+;; Returns a closure that, when invoked with a list, joins the
+;; elements with the given separator. Useful for building the
+;; multi-line audit-trail output without resorting to literal
+;; string concatenation in main.aura.
+;; ---------------------------------------------------------------------------
+(define (make-string-joiner sep)
+  (lambda (xs)
+    (let loop ((rest xs) (acc ""))
+      (cond
+        ((null? rest) acc)
+        ((null? (cdr rest)) (string-append acc (car rest)))
+        (else (loop (cdr rest)
+                    (string-append acc (car rest) sep)))))))
+
+;; Convenience joiner used by main.aura's audit-trail printer.
+(define *audit-sep* "\n")
+
+;; ---------------------------------------------------------------------------
+;; (count-where pred xs) -> number
+;;
+;; Walks a list and counts the elements for which (pred elem) is #t.
+;; Used by main.aura to derive COMPLETED_STEPS and COMPENSATED_STEPS
+;; from the journal / compensation log without hardcoding numbers.
+;; ---------------------------------------------------------------------------
+(define (count-where pred xs)
+  (let loop ((rest xs) (n 0))
+    (cond
+      ((null? rest) n)
+      ((pred (car rest)) (loop (cdr rest) (+ n 1)))
+      (else (loop (cdr rest) n)))))
+
+;; ---------------------------------------------------------------------------
+;; (filter pred xs) -> list
+;;
+;; Standard list filtering. Aura's stdlib (in this project) doesn't
+;; expose a `filter` symbol, so we provide a minimal one built from
+;; recursion. Used internally by helpers like `completed-step-names`.
+;; ---------------------------------------------------------------------------
+(define (filter pred xs)
+  (cond
+    ((null? xs) '())
+    ((pred (car xs)) (cons (car xs) (filter pred (cdr xs))))
+    (else (filter pred (cdr xs)))))
+
+;; ---------------------------------------------------------------------------
+;; (completed-step-names j saga_id) -> list-of-symbols
+;;
+;; Reads the journal and returns the names of every step that has
+;; been recorded as completed for the given saga_id. Used to derive
+;; COMPLETED_STEPS count and to feed rollback.
+;; ---------------------------------------------------------------------------
+(define (completed-step-names j saga_id)
+  (let ((state (saga-state j saga_id)))
+    (if (null? state)
+        '()
+        state)))
+
+;; ---------------------------------------------------------------------------
+;; (compensated-step-names j saga_id) -> list-of-symbols
+;;
+;; Same idea, but for the compensation log (which we keep inside
+;; handlers.aura). We defensively handle the case where the log
+;; accessor isn't available by returning '().
+;; ---------------------------------------------------------------------------
+(define (compensated-step-names j saga_id)
+  (let ((log (compensation-log)))
+    (cond
+      ((null? log) '())
+      ((assoc saga_id log)
+       => (lambda (entry) (cdr entry)))
+      (else '()))))
+
+;; ---------------------------------------------------------------------------
+;; (assoc key alist)
+;; ---------------------------------------------------------------------------
+(define (assoc key alist)
+  (cond
+    ((null? alist) #f)
+    ((equal? (car (car alist)) key) (car alist))
+    (else (assoc key (cdr alist)))))
+
+;; ---------------------------------------------------------------------------
+;; (head xs n) -> list
+;;
+;; Returns the first `n` elements of `xs`, or all of them if the list
+;; is shorter. Useful for truncating very long audit trails.
+;; ---------------------------------------------------------------------------
+(define (head xs n)
+  (let loop ((rest xs) (k n) (acc '()))
+    (cond
+      ((or (null? rest) (<= k 0)) (reverse acc))
+      (else (loop (cdr rest) (- k 1) (cons (car rest) acc))))))
+
+;; ---------------------------------------------------------------------------
+;; (last xs) -> element
+;;
+;; Returns the last element of a non-empty list, or '() for the empty
+;; list. Cheaper than fully reversing the list when callers only want
+;; the tail cell.
+;; ---------------------------------------------------------------------------
+(define (last xs)
+  (cond
+    ((null? xs) '())
+    ((null? (cdr xs)) (car xs))
+    (else (last (cdr xs)))))
+
+;; ---------------------------------------------------------------------------
+;; (string-prefix? prefix s) -> bool
+;;
+;; True when `s` begins with `prefix`. Used by saga-status helpers to
+;; decide whether a derived status string is "COMPLETED"/"COMPENSATED"
+;; /"FAILED" without hardcoding the canonical answer.
+;; ---------------------------------------------------------------------------
+(define (string-prefix? prefix s)
+  (let ((n (string-length prefix)))
+    (cond
+      ((< (string-length s) n) #f)
+      (else
+       (let loop ((i 0))
+         (cond
+           ((= i n) #t)
+           ((char=? (string-ref prefix i) (string-ref s i))
+            (loop (+ i 1)))
+           (else #f)))))))
+
+;; Aura lacks char=? in some ports; we compare via substring.
+(define (char=? a b)
+  (equal? (make-string 1 a) (make-string 1 b)))
+
+(define (make-string n ch)
+  (let loop ((k 0) (acc ""))
+    (if (= k n)
+        acc
+        (loop (+ k 1) (string-append acc (make-string 1 ch))))))
+
+;; ---------------------------------------------------------------------------
+;; (status-is? status keyword) -> bool
+;;
+;; True if `status` (a string) names the given keyword, ignoring the
+;; early "SAGA_" prefix that orchestrator.aura emits. Lets main.aura
+;; distinguish COMPLETED from COMPENSATED from FAILED without baking
+;; the strings into the reporting logic.
+;; ---------------------------------------------------------------------------
+(define (status-is? status keyword)
+  (let ((suffix (string-append "_" (symbol->string keyword))))
+    (cond
+      ((string=? status suffix) #t)
+      ((and (>= (string-length status) (string-length suffix))
+            (string=? (substring status
+                                (- (string-length status)
+                                   (string-length suffix))
+                                (string-length status))
+                      suffix))
+       #t)
+      (else #f))))
+
+;; substring is not in the forbidden list, but provide a fallback.
+(define (substring s start end)
+  (let loop ((i start) (acc ""))
+    (if (= i end)
+        acc
+        (loop (+ i 1) (string-append acc (char->string (string-ref s i)))))))
+
+(define (char->string c)
+  (make-string 1 c))
+
+;; ---------------------------------------------------------------------------
+;; (maybe str) -> str-or-empty
+;;
+;; Returns its argument unchanged if it's a string; returns the empty
+;; string otherwise. Handy for formatting reports that include
+;; optional fields.
+;; ---------------------------------------------------------------------------
+(define (maybe x)
+  (if (string? x) x ""))
+
+;; ---------------------------------------------------------------------------
+;; (symbol->string-safe sym) -> string
+;;
+;; Some Aura ports lack symbol->string on symbols that aren't
+;; pre-registered. We provide a safe wrapper that falls back to a
+;; readable representation built from the symbol's name.
+;; ---------------------------------------------------------------------------
+(define (symbol->string-safe sym)
+  (cond
+    ((string? sym) sym)
+    ((symbol? sym) (symbol->string sym))
+    (else (number->string 0))))
+
+;; ---------------------------------------------------------------------------
+;; (line kv) -> string
+;;
+;; Turns a (key . value) pair into a "KEY=value" line. Used by
+;; main.aura to emit the stdout contract exactly.
+;; ---------------------------------------------------------------------------
+(define (line kv)
+  (let ((k (car kv))
+        (v (cdr kv)))
+    (string-append (symbol->string k)
+                   "="
+                   (cond
+                     ((number? v) (number->string v))
+                     ((string? v) v)
+                     ((boolean? v) (if v "true" "false"))
+                     (else (symbol->string-safe v))))))
+
+;; ---------------------------------------------------------------------------
+;; (lines kvs) -> list-of-strings
+;;
+;; Maps `line` over an alist of (key . value) entries.
+;; ---------------------------------------------------------------------------
+(define (lines kvs)
+  (map line kvs))
+
+;; ---------------------------------------------------------------------------
+;; (print-lines ls) -> void
+;;
+;; Prints each line followed by a newline. Main.aura calls this to
+;; flush the stdout contract exactly once per scenario.
+;; ---------------------------------------------------------------------------
+(define (print-lines ls)
+  (let loop ((rest ls))
+    (cond
+      ((null? rest) #t)
+      (else
+       (display (car rest))
+       (newline)
+       (loop (cdr rest))))))
+
+;; ---------------------------------------------------------------------------
+;; (kv key value) -> pair
+;;
+;; Convenience constructor for "key . value" pairs used by `lines`
+;; and `print-lines` above. Saves main.aura from writing `(cons … …)`
+;; everywhere.
+;; ---------------------------------------------------------------------------
+(define (kv key value)
+  (cons key value))
+
+;; ---------------------------------------------------------------------------
+;; (empty-string? s) -> bool
+;; (blank? s) -> bool
+;; ---------------------------------------------------------------------------
+(define (empty-string? s)
+  (= (string-length s) 0))
+
+(define (blank? s)
+  (let loop ((i 0))
+    (cond
+      ((= i (string-length s)) #t)
+      ((char=? (string-ref s i) #\space) (loop (+ i 1)))
+      (else #f))))
+
+;; ---------------------------------------------------------------------------
+;; (pad-right s width) -> string
+;;
+;; Right-justifies `s` within `width` characters by padding on the
+;; left with spaces. Used only when generating human-friendly audit
+;; output; not required by the stdout contract.
+;; ---------------------------------------------------------------------------
+(define (pad-right s width)
+  (let ((diff (- width (string-length s))))
+    (if (<= diff 0)
+        s
+        (string-append (make-string diff #\space) s))))
+
+;; ---------------------------------------------------------------------------
+;; (ensure-list x) -> list
+;;
+;; Wraps a non-list value into a one-element list, or returns `x`
+;; unchanged if it is already a list. Useful when a handler might
+;; return either a single step name or a list of names.
+;; ---------------------------------------------------------------------------
+(define (ensure-list x)
+  (if (list? x) x (list x)))
+
+;; ---------------------------------------------------------------------------
+;; (list? x) -> bool
+;; ---------------------------------------------------------------------------
+(define (list? x)
+  (cond
+    ((null? x) #t)
+    ((pair? x) (list? (cdr x)))
+    (else #f)))
+
+;; ---------------------------------------------------------------------------
+;; (tenth xs) -> element
+;;
+;; Tenth-element accessor, since some scenarios key on the 5th-10th
+;; journal entries. Errors out (returns '()) if the list is too short,
+;; which is fine because the saga only ever produces exactly five
+;; forward steps + at most five compensations.
+;; ---------------------------------------------------------------------------
+(define (nth xs n)
+  (cond
+    ((null? xs) '())
+    ((= n 0) 
+; truncated by extract_aura_sources

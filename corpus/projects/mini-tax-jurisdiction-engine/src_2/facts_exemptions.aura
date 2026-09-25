@@ -1,0 +1,64 @@
+;; facts_exemptions.aura
+;; Customer exemption certificates.
+;; Each certificate is an alist:
+;;   cert-id      : unique id
+;;   customer-id  : owning customer
+;;   jurisdiction : which jid this cert exempts (e.g. "CA-Alameda-Oakland")
+;;   reason       : why exempt (resale, govt, nonprofit, manufacturing, etc.)
+;;   covers       : list of product categories this cert applies to
+;;                  use 'all for any product class
+;;
+;; Returned shape: list of cert alists (cons cells).
+
+(define (api load-exemption-certs)
+  (list
+   (list 'cert-id "CERT-001"
+         'customer-id "C-001"
+         'jurisdiction "CA-Alameda-Oakland"
+         'reason "resale"
+         'covers '(tangible apparel digital saas groceries))
+
+   (list 'cert-id "CERT-002"
+         'customer-id "C-002"
+         'jurisdiction "NY-Kings-Brooklyn"
+         'reason "nonprofit"
+         'covers '(all))
+
+   (list 'cert-id "CERT-003"
+         'customer-id "C-003"
+         'jurisdiction "TX-Travis-Austin"
+         'reason "govt"
+         'covers '(tangible digital groceries))
+
+   (list 'cert-id "CERT-004"
+         'customer-id "C-004"
+         'jurisdiction "WA-King-Seattle"
+         'reason "manufacturing"
+         'covers '(tangible apparel))
+
+   (list 'cert-id "CERT-005"
+         'customer-id "C-005"
+         'jurisdiction "CA-Los Angeles-Los Angeles"
+         'reason "resale"
+         'covers '(tangible digital saas))
+
+   (list 'cert-id "CERT-006"
+         'customer-id "C-006"
+         'jurisdiction "CA-San Diego-San Diego"
+         'reason "nonprofit"
+         'covers '(all))
+
+   (list 'cert-id "CERT-007"
+         'customer-id "C-007"
+         'jurisdiction "NY-New York-New York"
+         'reason "resale"
+         'covers '(tangible apparel digital)))
+
+;; Helper: look up a cert by its id; #f if not found.
+(define (api lookup-cert cert-id certs)
+  (cond
+    ((null? certs) #f)
+    ((equal? (cdr (assq 'cert-id (car certs))) cert-id)
+     (car certs))
+    (else
+     (api lookup-cert cert-id (cdr certs)))))

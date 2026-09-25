@@ -1,0 +1,29 @@
+; order-types.aura
+; Parent order type definitions. A parent order is represented
+; as an alist with a tag and the key fields used by slicers,
+; routers, fill simulators, risk monitors, and allocators.
+
+(define (api-make-parent id side qty px-limit tif)
+  (list
+    (cons 'type 'parent)
+    (cons 'id id)
+    (cons 'side side)
+    (cons 'qty qty)
+    (cons 'px-limit px-limit)
+    (cons 'tif tif)))
+
+(define (api-parent? o)
+  (if (null? o)
+      #f
+      (let ((entry (assq 'type o)))
+        (if entry
+            (equal? (cdr entry) 'parent)
+            #f))))
+
+(define (api-parent-qty o)
+  (let ((entry (assq 'qty o)))
+    (if entry (cdr entry) 0)))
+
+(define (api-parent-side o)
+  (let ((entry (assq 'side o)))
+    (if entry (cdr entry) 'BUY)))

@@ -1,0 +1,162 @@
+;; orchestrator.aura — saga orchestration entry point
+;;
+;; This module wires together the journal (state.aura), the id generator
+;; (ids.aura), the step handlers (handlers.aura) and the rollback logic
+;; (compensator.aura) into a single high-level driver:
+;;
+;;   (run-saga j id-gen failure-step)
+;;
+;; It iterates the 5 saga steps in order. For each step it:
+;;   1. Guards with (already-done? j saga_id step-name) for idempotency.
+;;   2. Records the step in the journal BEFORE invoking the handler, so
+;;      that if the handler crashes / fails we still have a record of
+;;      what was attempted (matches the GOAL's "record then guard"
+;;      intent — already-done? returns #t if we previously recorded it).
+;;   3. Calls the matching (step-…) handler from handlers.aura.
+;;   4. If the handler returns 'fail, builds the completed-steps list
+;;      (everything recorded so far, excluding the failing step) and
+;;      hands off to (rollback-completed! …) to unwind in reverse.
+;;   5. Otherwise continues to the next step.
+;;
+;; After (run-saga …) returns, (saga-status j saga_id) reads the journal
+;; to determine whether the saga is COMPLETED (all 5 steps recorded and
+;; none failed), COMPENSATED (a rollback was performed) or FAILED (a
+;; step failed but no compensations ran — only possible if completed-
+;; steps was empty at the moment of failure, e.g. failure on step 1).
+;;
+;; Notes:
+;;   - `failure-step` is a symbol (one of 'auth, 'inventory-hold,
+;;     'payment-auth, 'payment-capture, 'fulfillment-kickoff) or #f
+;;     meaning "happy path, never inject a failure".
+;;   - Step ordering and naming must stay in lock-step with handlers.aura
+;;     and compensator.aura.
+
+(load "state.aura")
+(load "ids.aura")
+(load "handlers.aura")
+(load "compensator.aura")
+
+(define STEP-ORDER
+  '(auth inventory-hold payment-auth payment-capture fulfillment-kickoff))
+
+;; helper: does `failure-step` match the current step?
+(define (failure-injected? failure-step step)
+  (if (eq? failure-step #f)
+      #f
+      (eq? failure-step step)))
+
+;; (run-saga j id-gen failure-step)
+;;
+;; Runs the 5-step saga. Generates a single saga_id up front via the
+;; id generator (with prefix "S-") and threads it through every step.
+;; Returns the saga_id so main.aura can call saga-status / services
+;; afterwards.
+(define (run-saga j id-gen failure-step)
+  (let ((saga_id (next-id id-gen "S-")))
+    (let loop ((steps STEP-ORDER)
+               (completed '()))
+      (cond
+        ;; No more steps -> saga completed cleanly.
+        ((null? steps)
+         saga_id)
+        (else
+         (let* ((step (car steps))
+                (rest (cdr steps)))
+           ;; 1) Idempotency guard: if this step was already recorded
+           ;;    for this saga, skip it. (Re-running a saga should be
+           ;;    a no-op.)
+           (if (already-done? j saga_id step)
+               (loop rest completed)
+               ;; 2) Record FIRST, then attempt. This way if the
+               ;;    handler signals 'fail we still have it in the
+               ;;    journal and `completed` can be built deterministically
+               ;;    by inspecting (saga-state j saga_id).
+               (begin
+                 (journal-record! j saga_id step)
+                 ;; 3) Invoke the matching forward handler.
+                 (let ((result
+                        (cond
+                          ((eq? step 'auth)
+                           (step-auth saga_id))
+                          ((eq? step 'inventory-hold)
+                           (step-inventory-hold saga_id))
+                          ((eq? step 'payment-auth)
+                           (step-payment-auth saga_id))
+                          ((eq? step 'payment-capture)
+                           (step-payment-capture saga_id))
+                          ((eq? step 'fulfillment-kickoff)
+                           (step-fulfillment-kickoff saga_id))
+                          (else #t))))
+                   (cond
+                     ;; Injected failure OR handler returned 'fail ->
+                     ;; unwind everything that was actually completed.
+                     ((or (eq? result 'fail)
+                          (failure-injected? failure-step step))
+                      (let* ((recorded (saga-state j saga_id))
+                             ;; `recorded` includes the failing step as
+                             ;; its head. Build completed-steps = the
+                             ;; tail of `recorded` intersected with
+                             ;; STEP-ORDER, preserving STEP-ORDER order
+                             ;; (rollback must respect saga ordering).
+                             (tail-recorded (cdr recorded))
+                             (completed-so-far
+                              (filter-in-order STEP-ORDER tail-recorded)))
+                        (rollback-completed! j saga_id completed-so-far)
+                        saga_id))
+                     (else
+                      (loop rest
+                            (append completed (list step))))))))))))))
+
+;; (filter-in-order order xs)
+;;
+;; Return elements of `order` that appear in `xs`, preserving `order`'s
+;; relative ordering. Used to map from the journal's recorded list back
+;; to the saga's canonical step ordering for rollback.
+(define (filter-in-order order xs)
+  (cond
+    ((null? order) '())
+    ((member (car order) xs)
+     (cons (car order) (filter-in-order (cdr order) xs)))
+    (else
+     (filter-in-order (cdr order) xs))))
+
+;; (saga-status j saga_id)
+;;
+;; Derive the saga's terminal status from the journal:
+;;   - "COMPENSATED" if a rollback was logged (build-audit-trail returns
+;;     a trail containing "COMPENSATE:" lines, or — simpler — we can
+;;     inspect the journal: if fewer than 5 steps are recorded AND a
+;;     compensate-* handler has been invoked, it's COMPENSATED).
+;;   - "FAILED" if the journal has no entries (failure on the very
+;;     first step before anything completed) OR the saga is in an
+;;     inconsistent state.
+;;   - "COMPLETED" if all 5 steps are recorded.
+;;
+;; To distinguish COMPENSATED from a partial forward run (which can't
+;; happen because we stop on first failure), we check whether the
+;; journal's recorded list has fewer than 5 entries. Anything short of
+;; 5 means we hit a failure; whether rollback actually did work is
+;; captured by build-audit-trail downstream. For this orchestrator we
+;; report:
+;;   - 5 steps -> "COMPLETED"
+;;   - 0 steps -> "FAILED" (nothing even recorded)
+;;   - otherwise -> "COMPENSATED" (a step was recorded, failed, and we
+;;     handed off to rollback)
+(define (saga-status j saga_id)
+  (let ((recorded (saga-state j saga_id)))
+    (cond
+      ((null? recorded)
+       "FAILED")
+      ((= (length recorded) (length STEP-ORDER))
+       "COMPLETED")
+      (else
+       "COMPENSATED"))))
+
+;; (length lst) — small helper, Aura core may or may not have it.
+(define (length lst)
+  (if (null? lst)
+      0
+      (+ 1 (length (cdr lst)))))
+
+;; (= a b) — numeric equality (Aura core may or may not have it).
+;; Defined locally only if needed; core Aura provides `=`.

@@ -1,0 +1,22 @@
+; accounts.aura
+; Investor account registry. Each account has an account id and a
+; share value used by the various allocators (FIFO, pro-rata,
+; filled-qty). Stored as a list of alists so the data can be
+; consumed without records or hash tables.
+
+(define *accounts*
+  (list
+    (list (cons 'acct 'ACC-001) (cons 'share 100))
+    (list (cons 'acct 'ACC-002) (cons 'share 150))
+    (list (cons 'acct 'ACC-003) (cons 'share 75))
+    (list (cons 'acct 'ACC-004) (cons 'share 200))))
+
+(define (api-account-list) *accounts*)
+
+(define (api-account-acct acct)
+  (let ((entry (assq 'acct acct)))
+    (if entry (cdr entry) 'UNKNOWN)))
+
+(define (api-account-share acct)
+  (let ((entry (assq 'share acct)))
+    (if entry (cdr entry) 0)))

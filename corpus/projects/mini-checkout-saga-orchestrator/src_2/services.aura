@@ -1,0 +1,110 @@
+;; services.aura — view/state functions for the four backing services.
+;;
+;; Each service keeps a mutable alist of saga_id -> state. The state is one
+;; of the symbols:
+;;   'none      — nothing has happened for this saga
+;;   'pending   — a hold / auth has been placed but not yet captured
+;;   'done      — the service has completed its work (capture / kickoff)
+;;   'released  — compensation has reversed the action (hold released, auth voided)
+;;
+;; Handlers in handlers.aura call svc-* mutators; this file exposes both
+;; the mutators (so handlers can advance state) and the view functions
+;; (svc-order, svc-inventory, svc-payment, svc-fulfillment) that the
+;; orchestrator / main use to report the final state per service.
+
+;; ---- order service ----
+
+(define (make-order-svc)
+  (cons 'order-svc '()))
+
+(define (order-state-of svc saga_id)
+  (let ((entry (assoc saga_id (cdr svc))))
+    (if entry (cdr entry) 'none)))
+
+(define (svc-order saga_id)
+  (let ((svc *order-svc*))
+    (order-state-of svc saga_id)))
+
+;; ---- inventory service ----
+
+(define (make-inventory-svc)
+  (cons 'inventory-svc '()))
+
+(define (inventory-state-of svc saga_id)
+  (let ((entry (assoc saga_id (cdr svc))))
+    (if entry (cdr entry) 'none)))
+
+(define (svc-inventory saga_id)
+  (let ((svc *inventory-svc*))
+    (inventory-state-of svc saga_id)))
+
+;; ---- payment service ----
+
+(define (make-payment-svc)
+  (cons 'payment-svc '()))
+
+(define (payment-state-of svc saga_id)
+  (let ((entry (assoc saga_id (cdr svc))))
+    (if entry (cdr entry) 'none)))
+
+(define (svc-payment saga_id)
+  (let ((svc *payment-svc*))
+    (payment-state-of svc saga_id)))
+
+;; ---- fulfillment service ----
+
+(define (make-fulfillment-svc)
+  (cons 'fulfillment-svc '()))
+
+(define (fulfillment-state-of svc saga_id)
+  (let ((entry (assoc saga_id (cdr svc))))
+    (if entry (cdr entry) 'none)))
+
+(define (svc-fulfillment saga_id)
+  (let ((svc *fulfillment-svc*))
+    (fulfillment-state-of svc saga_id)))
+
+;; ---- global service instances ----
+;;
+;; We expose one set of backing services at top level. handlers.aura
+;; mutates these via the helpers below; main.aura reads them via the
+;; svc-* view functions above.
+
+(define *order-svc* (make-order-svc))
+(define *inventory-svc* (make-inventory-svc))
+(define *payment-svc* (make-payment-svc))
+(define *fulfillment-svc* (make-fulfillment-svc))
+
+;; ---- mutators used by handlers.aura ----
+;;
+;; These are intentionally simple — they overwrite the entry for a given
+;; saga_id. They are safe to call multiple times (idempotent in spirit,
+;; though handlers guard with already-done? anyway).
+
+(define (set-order-state! saga_id state)
+  (let ((svc *order-svc*))
+    (let ((existing (assoc saga_id (cdr svc))))
+      (if existing
+          (set-cdr! existing state)
+          (set-cdr! svc (cons (cons saga_id state) (cdr svc)))))))
+
+(define (set-inventory-state! saga_id state)
+  (let ((svc *inventory-svc*))
+    (let ((existing (assoc saga_id (cdr svc))))
+      (if existing
+          (set-cdr! existing state)
+          (set-cdr! svc (cons (cons saga_id state) (cdr svc)))))))
+
+(define (set-payment-state! saga_id state)
+  (let ((svc *payment-svc*))
+    (let ((existing (assoc saga_id (cdr svc))))
+      (if existing
+          (set-cdr! existing state)
+          (set-cdr! svc (cons (cons saga_id state) (cdr svc)))))))
+
+(define (set-fulfillment-state! saga_id state)
+  (let ((svc *fulfillment-svc*))
+    (let ((existing (assoc saga_id (cdr svc))))
+      (if existing
+          (set-cdr! existing state)
+          (set-cdr! svc (cons (cons saga_id state) (cdr svc)))))))

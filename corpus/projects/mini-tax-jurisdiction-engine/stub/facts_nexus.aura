@@ -1,0 +1,35 @@
+;; facts_nexus.aura — Seller's tax-nexus footprint
+;; Public API: (api load-nexus-rules) -> list of nexus alists
+
+(define (api load-nexus-rules)
+  ;; Each nexus entry is an alist:
+  ;;   ((state . "XX") (origin . #t/#f) (counties . ("COUNTY" ...)) (cities . ("City" ...)))
+  ;; - state: 2-letter US state code
+  ;; - origin: #t if origin-based (no destination tax collected), else #f
+  ;; - counties: counties within state where seller has nexus
+  ;; - cities: cities within state where seller has nexus
+  (list
+    (list (cons 'state "CA") (cons 'origin #f)
+          (cons 'counties (list "Los Angeles" "San Francisco" "Alameda"))
+          (cons 'cities    (list "Los Angeles" "San Francisco" "Oakland" "Berkeley")))
+    (list (cons 'state "NY") (cons 'origin #f)
+          (cons 'counties (list "New York" "Kings" "Queens" "Erie"))
+          (cons 'cities    (list "New York" "Brooklyn" "Buffalo")))
+    (list (cons 'state "TX") (cons 'origin #f)
+          (cons 'counties (list "Harris" "Travis" "Dallas"))
+          (cons 'cities    (list "Houston" "Austin" "Dallas")))
+    (list (cons 'state "WA") (cons 'origin #f)
+          (cons 'counties (list "King" "Pierce"))
+          (cons 'cities    (list "Seattle" "Tacoma")))
+    (list (cons 'state "OR") (cons 'origin #t)
+          (cons 'counties (list "Multnomah" "Washington"))
+          (cons 'cities    (list "Portland" "Beaverton")))
+    (list (cons 'state "NH") (cons 'origin #t)
+          (cons 'counties (list "Hillsborough" "Rockingham"))
+          (cons 'cities    (list "Manchester" "Nashua")))
+    (list (cons 'state "FL") (cons 'origin #f)
+          (cons 'counties (list "Miami-Dade" "Orange" "Duval"))
+          (cons 'cities    (list "Miami" "Orlando" "Jacksonville")))
+    (list (cons 'state "MA") (cons 'origin #f)
+          (cons 'counties (list "Suffolk" "Middlesex"))
+          (cons 'cities    (list "Boston" "Cambridge")))))

@@ -1,0 +1,39 @@
+;; registry.aura - Global trade registry
+;; Maintains an ordered list of registered trades and provides
+;; indexed views by value date and party.
+
+(define *trades* '())
+
+(define (register-trade t)
+  (set! *trades* (append *trades* (list t)))
+  t)
+
+(define (all-trades)
+  *trades*)
+
+(define (trades-for-date vd)
+  (let loop ((acc '()) (xs *trades*))
+    (if (null? xs)
+        (reverse acc)
+        (let ((t (car xs)))
+          (if (equal? (trade-value-date t) vd)
+              (loop (cons t acc) (cdr xs))
+              (loop acc (cdr xs)))))))
+
+(define (party-list)
+  (let loop ((seen '()) (xs *trades*))
+    (if (null? xs)
+        (reverse seen)
+        (let ((t (car xs)))
+          (let ((p (trade-payer t))
+                (q (trade-payee t)))
+            (loop (add-unique p (add-unique q seen)) (cdr xs)))))))
+
+(define (add-unique x lst)
+  (if (member x lst)
+      lst
+      (cons x lst)))
+
+(define (reset-registry!)
+  (set! *trades* '())
+  'reset)

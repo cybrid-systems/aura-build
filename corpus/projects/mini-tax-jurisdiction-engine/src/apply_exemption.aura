@@ -1,0 +1,76 @@
+;; apply_exemption.aura — Check if an exemption certificate covers a jurisdiction+product
+;; Public API: (api apply-exemption jid certs ptc-category) -> #t or #f
+;;
+;; Arguments:
+;;   jid          : jurisdiction id string (e.g., "jid-ca-los-angeles") or #f
+;;   certs        : list of cert alists; each cert has (cert-id, jurisdiction, reason, product-classes)
+;;   ptc-category : product taxability category string (e.g., "groceries", "tangible", "saas")
+;;
+;; Returns #t if ANY certificate in the list both:
+;;   (a) covers the given jid (matches its 'jurisdiction' field), AND
+;;   (b) covers the given product category (either its 'product-classes' list contains
+;;       ptc-category, or its product-classes list is empty meaning "all products")
+;; Returns #f otherwise. If jid is #f, returns #f (nothing to exempt).
+;;
+;; Implementation note: case-insensitive string comparison via string=? after
+;; lowercasing. We avoid Racket-only SRFIs and stay within the small Aura runtime.
+
+(define (api apply-exemption jid certs ptc-category)
+  (if (or (null? certs) (not jid))
+      #f
+      (let ((head (car certs)))
+        (if (cert-covers? head jid ptc-category)
+            #t
+            (api apply-exemption jid (cdr certs) ptc-category)))))
+
+;; Helper: does a single cert cover (jid, ptc-category)?
+(define (cert-covers? cert jid ptc-category)
+  (let ((cert-jid (alist-ref-safe cert #f))
+        (cert-classes (alist-ref-safe-list cert '())))
+    (if (not cert-jid)
+        #f
+        (and (string-ci=? cert-jid jid)
+             (cert-classes-cover? cert-classes ptc-category)))))
+
+;; Helper: does a product-classes list cover the given category?
+;; Empty list means "covers everything"; otherwise the category must be a member.
+(define (cert-classes-cover? classes ptc-category)
+  (cond
+    ((null? classes) #t)
+    ((string-ci=? (car classes) ptc-category) #t)
+    (else (cert-classes-cover? (cdr classes) ptc-category))))
+
+;; Helper: case-insensitive string equality
+(define (string-ci=? a b)
+  (string=? (lowercase-ascii a) (lowercase-ascii b)))
+
+;; Helper: lowercase an ASCII string (simple, deterministic; handles A-Z only)
+(define (lowercase-ascii s)
+  (list->string (map char-lower (string->list s))))
+
+;; Helper: map a procedure over characters: uppercase -> lowercase, others unchanged
+(define (char-lower c)
+  (let ((n (char->integer c)))
+    (if (and (>= n 65) (<= n 90))
+        (integer->char (+ n 32))
+        c)))
+
+;; Helper: look up a symbol-or-string key in an alist; return default if missing
+(define (alist-ref-safe alist default)
+  (cond
+    ((null? alist) default)
+    ((equal? (car (car alist)) 'cert-id)  (alist-ref-by-key alist 'cert-id default))
+    ((equal? (car (car alist)) 'jurisdiction) (alist-ref-by-key alist 'jurisdiction default))
+    (else default)))
+
+;; Helper: look up a specific key in alist, return default if missing
+(define (alist-ref-by-key alist key default)
+  (cond
+    ((null? alist) default)
+    ((equal? (car (car alist)) key) (cdr (car alist)))
+    (else (alist-ref-by-key (cdr alist) key default))))
+
+;; Helper: alist-ref that defaults to empty list (for product-classes specifically)
+(define (alist-ref-safe-list alist default)
+  (let ((v (alist-ref-by-key alist 'product-classes 'missing)))
+    (if (equal? v 'missing) default v)))

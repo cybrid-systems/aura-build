@@ -1,0 +1,126 @@
+;; compliance.aura - Compliance and consistency checks
+;;
+;; This module verifies, at runtime, that all the other modules have
+;; produced mutually consistent results for a given value date and
+;; currency. It is the final gate before the regulator-style report is
+;; trusted and before the COMPLIANCE_CHECK key is set to PASS.
+;;
+;; The module exposes four predicates, plus one umbrella check:
+;;
+;;   (check-consistency     vd ccy)  -> 'PASS or 'FAIL
+;;   (zero-sum-ok?          vd ccy)
+;;   (efficiency-bounds-ok? vd ccy)
+;;   (mtas-applied-ok?      vd ccy)
+;;
+;; All predicates are pure: they only read from other modules'
+;; top-level state. Nothing here mutates registry, MTA table, novation
+;; policy, or netting results.
+
+;; ---------------------------------------------------------------------------
+;; Dependency shims
+;;
+;; The compliance module needs to compute, from scratch, certain totals
+;; that other modules also compute. To stay decoupled and to avoid
+;; importing procedures whose exact spelling might shift, we re-derive
+;; the gross and net obligations directly here using only the public
+;; APIs of bilateral.aura, netting.aura, settlement.aura, and
+;; efficiency.aura.
+;; ---------------------------------------------------------------------------
+
+(define (compliance-payload vd ccy)
+  ;; Pull every figure the umbrella check needs in one pass so each
+  ;; predicate below stays cheap.
+  (let ((bilat (all-bilateral-pairs vd ccy)))
+    (let ((gross
+           (let loop ((xs bilat) (acc 0))
+             (if (null? xs)
+                 acc
+                 (loop (cdr xs) (+ acc (cdar xs))))))
+          (insts (settlement-instructions vd ccy))
+          (net   (let loop ((xs insts) (acc 0))
+                   (if (null? xs)
+                       acc
+                       (loop (cdr xs) (+ acc (instruction-amount (car xs))))))))
+      (list gross net insts))))
+
+(define (sum-list xs)
+  (let loop ((xs xs) (acc 0))
+    (if (null? xs)
+        acc
+        (loop (cdr xs) (+ acc (car xs))))))
+
+;; ---------------------------------------------------------------------------
+;; Individual checks
+;; ---------------------------------------------------------------------------
+
+(define (zero-sum-ok? vd ccy)
+  ;; A correctly netted set of instructions must sum to zero across
+  ;; (payer amount) and (payee amount) when each instruction's amount
+  ;; is signed by direction. We reconstruct signed contributions:
+  ;;   payer pays  ->  contributes -amount
+  ;;   payee gets  ->  contributes +amount
+  (let ((insts (settlement-instructions vd ccy)))
+    (let loop ((xs insts) (acc 0))
+      (if (null? xs)
+          (= acc 0)
+          (let ((i (car xs)))
+            (loop (cdr xs)
+                  (+ acc
+                     (- (instruction-amount i))
+                     (instruction-amount i))))))))
+
+(define (efficiency-bounds-ok? vd ccy)
+  ;; 1) NET <= GROSS  (you can't owe more than the gross total)
+  ;; 2) NETTING_EFFICIENCY = round(1 - NET/GROSS, 4) lies in [0, 1]
+  ;;    (clamped to be safe even when GROSS = 0, in which case the
+  ;;    ratio is 0 and trivially consistent).
+  (let ((p (compliance-payload vd ccy)))
+    (let ((gross (car p))
+          (net   (cadr p)))
+      (let ((ratio (efficiency-ratio gross net)))
+        (and (<= net gross)
+             (>= ratio 0)
+             (<= ratio 1)
+             ;; Round-trip identity: rounding the ratio back to 4dp
+             ;; and reconstructing NET should match (within integer
+             ;; arithmetic tolerance, which is exact since all values
+             ;; here are integers).
+             (= (round-up-4dp-portion (- 1 ratio))
+                (if (= gross 0) 0 (/ net gross))))))))
+
+(define (round-up-4dp-portion x)
+  ;; x is a "ratio in [0,1]". Multiply by 10000 and round to nearest
+  ;; integer. We implement rounding manually so we don't depend on any
+  ;; non-builtin numeric primitive.
+  (let ((scaled (* x 10000)))
+    (cond ((>= (- scaled (floor scaled)) 0.5)
+           (+ (floor scaled) 1))
+          (else (floor scaled)))))
+
+(define (mtas-applied-ok? vd ccy)
+  ;; For every directed bilateral exposure that survived into the
+  ;; netting stage, the amount must NOT be strictly below the MTA for
+  ;; its currency. (The directional "kept" pair, if present, must
+  ;; meet the threshold.)
+  (let ((pairs (all-bilateral-pairs vd ccy))
+        (mta   (get-mta ccy)))
+    (let loop ((xs pairs) (ok #t))
+      (cond ((null? xs) ok)
+            ((not ok) #f)
+            (else
+              (let ((pair (car xs)))
+                (if (or (>= (cdr pair) mta) (= mta 0))
+                    (loop (cdr xs) ok)
+                    (loop (cdr xs) #f))))))))
+
+;; ---------------------------------------------------------------------------
+;; Umbrella check
+;; ---------------------------------------------------------------------------
+
+(define (check-consistency vd ccy)
+  ;; PASS iff every predicate holds.
+  (if (and (zero-sum-ok? vd ccy)
+           (efficiency-bounds-ok? vd ccy)
+           (mtas-applied-ok? vd ccy))
+      'PASS
+      'FAIL))

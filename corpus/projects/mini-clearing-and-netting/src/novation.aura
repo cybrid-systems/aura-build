@@ -1,0 +1,133 @@
+;; novation.aura - Novation policy and application
+;;
+;; Novation is the legal mechanism by which a bilateral trade between
+;; two parties is replaced by two back-to-back trades through a
+;; Central Counterparty (CCP). After novation, the original
+;; counterparties no longer face each other directly; instead each
+;; faces the CCP. The CCP's exposure to each party is the NET of
+;; that party's bilateral trades (post-novation each party has a
+;; single net obligation to/from the CCP rather than a web of gross
+;; bilateral exposures).
+;;
+;; Policy modes:
+;;   'off  - no novation, all trades remain bilateral
+;;   'ccp  - all eligible trades are replaced with CCP-netted positions
+;;
+;; Eligible trades are those whose value date and currency match the
+;; arguments to apply-novation!. Trades involving the CCP itself are
+;; left untouched (you can't novate with yourself).
+;;
+;; This module mutates the global trade registry in place. After
+;; apply-novation! runs with policy 'ccp, every remaining eligible
+;; trade has either the CCP as payer or the CCP as payee.
+
+(define *novation-policy* 'off)
+(define *novation-ccp* 'CCP)
+
+(define (set-novation-policy! mode)
+  (set! *novation-policy* mode)
+  mode)
+
+(define (novation-policy)
+  *novation-policy*)
+
+(define (novation-ccp)
+  *novation-ccp*)
+
+(define (novation-policy? mode)
+  (equal? *novation-policy* mode))
+
+;; Has novation been applied to a given trade?  We mark novated trades
+;; by stamping an 'novation flag onto their alist.  This lets
+;; downstream modules (compliance, reporting) distinguish cleared vs
+;; uncleared trades.
+(define (trade-novation? t)
+  (if (null? t)
+      #f
+      (let ((entry (assq 'novation t)))
+        (if entry
+            (equal? (cdr entry) #t)
+            #f))))
+
+(define (mark-novated! t)
+  ;; Replace the alist entry (or add one) marking the trade as novated.
+  (let loop ((acc '()) (xs t))
+    (if (null? xs)
+        (reverse (cons (cons 'novation #t) acc))
+        (let ((e (car xs)))
+          (if (equal? (car e) 'novation)
+              (append (reverse acc) (list (cons 'novation #t)) (cdr xs))
+              (loop (cons e acc) (cdr xs)))))))
+
+;; Replace a trade's payer/payee with the CCP on the appropriate
+;; side.  When novating, the CCP takes the opposite side of each
+;; original leg: a payer/payee pair becomes two CCP-booked trades
+;; (CCP vs original payer, CCP vs original payee).  Since our model
+;; keeps one trade record per original trade (annotated), we rewrite
+;; each eligible trade so that the *non-CCP* party faces the CCP,
+;; preserving direction.
+(define (novate-trade t ccp)
+  (let ((payer (trade-payer t))
+        (payee (trade-payee t)))
+    (cond
+      ((equal? payer ccp) t)
+      ((equal? payee ccp) t)
+      (else
+       ;; Convert: original payer -> CCP, original payee unchanged.
+       ;; The novated trade represents the leg from the original payee
+       ;; to the CCP (i.e., CCP pays original payer; original payee
+       ;; pays CCP).  Direction of the original payment is preserved
+       ;; by setting payer=payee (original), payee=CCP, and tagging.
+       (let ((novated
+              (list (cons 'id (trade-id t))
+                    (cons 'ccy (trade-ccy t))
+                    (cons 'payer payee)
+                    (cons 'payee ccp)
+                    (cons 'amount (trade-amount t))
+                    (cons 'value-date (trade-value-date t)))))
+         (mark-novated! novated))))))
+
+(define (eligible-novation-trade? t vd ccy ccp)
+  (and (equal? (trade-value-date t) vd)
+       (equal? (trade-ccy t) ccy)
+       (not (equal? (trade-payer t) ccp))
+       (not (equal? (trade-payee t) ccp))))
+
+;; Apply novation to the global registry for a given value date and
+;; currency.  When policy is 'off this is a no-op (apart from making
+;; sure the policy is left in a sane state).  When policy is 'ccp,
+;; every eligible trade is rewritten to be CCP-netted and flagged.
+(define (apply-novation! vd ccy)
+  (cond
+    ((equal? *novation-policy* 'off)
+     *trades*)
+    ((equal? *novation-policy* 'ccp)
+     (let ((ccp *novation-ccp*))
+       (set! *trades*
+             (let loop ((acc '()) (xs *trades*))
+               (if (null? xs)
+                   (reverse acc)
+                   (let ((t (car xs)))
+                     (if (eligible-novation-trade? t vd ccy ccp)
+                         (loop (cons (novate-trade t ccp) acc) (cdr xs))
+                         (loop (cons t acc) (cdr xs)))))))
+       *trades*))
+    (else
+     *trades*)))
+
+;; Count trades that have been novated (cleared) across the registry.
+(define (novated-count)
+  (let loop ((n 0) (xs *trades*))
+    (if (null? xs)
+        n
+        (loop (if (trade-novation? (car xs)) (+ n 1) n)
+              (cdr xs)))))
+
+;; Reset novation state: clears the policy back to 'off.  Does NOT
+;; un-novate trades that have already been stamped - that would
+;; require explicit support from the caller.  Useful for tests and
+;; for the scenario re-seeder.
+(define (reset-novation!)
+  (set! *novation-policy* 'off)
+  (set! *novation-ccp* 'CCP)
+  'ok)

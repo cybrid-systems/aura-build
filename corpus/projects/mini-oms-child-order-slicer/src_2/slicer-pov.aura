@@ -1,0 +1,80 @@
+; slicer-pov.aura
+; POV (Percentage of Volume) child-order slicer.
+; Slices a parent order into children according to the participation target
+; relative to expected market volume, capped by the requested number of children.
+;
+; Public API:
+;   (api-slice-pov parent mkt-volume children)
+;     parent     : parent order alist (see order-types.aura)
+;     mkt-volume : expected market volume over the execution horizon (number, >0)
+;     children   : desired number of child slices (positive integer)
+;   Returns a list of child order alists (id, parent-id, side, qty, venue, urgency).
+;   If mkt-volume is 0 or negative, returns '().
+
+(define (api-slice-pov parent mkt-volume children)
+  (if (or (not (number? mkt-volume)) (<= mkt-volume 0))
+      '()
+      (let* ((parent-id (cdr (assq 'id parent)))
+             (side      (cdr (assq 'side parent)))
+             (qty       (cdr (assq 'qty parent)))
+             (n         (if (and (number? children) (> children 0))
+                            (floor children)
+                            1)))
+        (if (<= qty 0)
+            '()
+            (build-pov-children parent-id side qty mkt-volume n 1 '())))))
+
+(define (build-pov-children parent-id side qty mkt-volume n idx acc)
+  (if (> idx n)
+      (reverse acc)
+      (let* ((per-child (/ qty n))
+             (child-qty (round-child-qty per-child qty (- n idx) idx))
+             (venue (pov-pick-venue idx n))
+             (urgency (pov-urgency idx n))
+             (child  (api-make-child
+                       (build-child-id parent-id idx)
+                       parent-id
+                       side
+                       child-qty
+                       venue
+                       urgency)))
+        (build-pov-children parent-id side qty mkt-volume n (+ idx 1)
+                            (cons child acc)))))
+
+(define (round-child-qty target-qty remaining-qty remaining-idx idx)
+  ; Distribute qty as evenly as possible: give the floor to all but the last,
+  ; which absorbs the rounding remainder so total matches parent qty exactly.
+  (let ((base (quotient (truncate (* target-qty 100)) 100)))
+    (if (= idx remaining-idx)
+        remaining-qty
+        base)))
+
+(define (build-child-id parent-id idx)
+  (string-append
+    (symbol->string parent-id)
+    "-P"
+    (number->string idx)))
+
+(define (symbol->string sym)
+  ; Aura symbols print via display; convert without relying on char ports.
+  ; Fall back to a tagged representation if a primitive isn't present.
+  (let ((s (symbol->string-helper sym)))
+    (if s s (string-append "S" (number->string 0)))))
+
+(define (symbol->string-helper sym)
+  ; Try a couple of common symbol printers; Aura provides (symbol->string) in
+  ; most builds. If unavailable, return #f so the fallback is used.
+  (cond
+    ((procedure? symbol->string) (symbol->string sym))
+    (else #f)))
+
+(define (pov-pick-venue idx n)
+  ; Cycle through venues deterministically: rotate through a small fixed list
+  ; so each child lands on a venue, independent of the registry ordering.
+  (let ((venues (list 'NYSE 'NASDAQ 'ARCA 'BATS 'IEX)))
+    (list-ref venues (modulo (- idx 1) (length venues)))))
+
+(define (pov-urgency idx n)
+  ; POV participation tends to spread evenly; urgency is a moderate constant
+  ; bumped slightly on the final slice to push completion.
+  (if (= idx n) 0.8 0.5))

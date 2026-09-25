@@ -1,0 +1,50 @@
+;; facts_jurisdictions.aura
+;;
+;; Per-jurisdiction composite tax rates, in BASIS POINTS (1 bps = 0.01%).
+;; A jurisdiction id (jid) is a string of the form "STATE-County-City".
+;;
+;; Rates here represent the *composite* (state + county + city + special
+;; district) rate that applies to a fully taxable line item in that jid.
+;; Whether the rate is actually applied depends on:
+;;   - nexus  : the seller must have nexus there (resolve_jurisdiction)
+;;   - origin : origin-based states (OR, NH, MT, DE, AK) skip destination tax
+;;   - ptc    : some product categories are reduced-rate or exempt
+;;   - cert   : a valid exemption cert can zero out the rate
+;;
+;; Everything in this file is pure data + a tiny lookup helper.
+
+(define (api load-jurisdiction-rates)
+  (list
+   ;; --- California ---
+   (cons "CA-Alameda-Oakland"        1025)   ; 10.25%  (state 7.25 + local 3.00)
+   (cons "CA-Los Angeles-Los Angeles"  975)   ;  9.75%  (state 7.25 + local 2.50)
+   (cons "CA-San Diego-San Diego"     775)   ;  7.75%  (state 7.25 + local 0.50)
+
+   ;; --- New York ---
+   (cons "NY-New York-New York"       888)   ;  8.88%  (state 4.00 + city 4.50 + MCTD 0.375)
+   (cons "NY-Kings-Brooklyn"          850)   ;  8.50%  (state 4.00 + city 4.50)
+
+   ;; --- Texas ---
+   (cons "TX-Travis-Austin"           825)   ;  8.25%  (state 6.25 + local 2.00)
+   (cons "TX-Dallas-Dallas"           825)   ;  8.25%  (state 6.25 + local 2.00)
+
+   ;; --- Washington ---
+   (cons "WA-King-Seattle"           1025)   ; 10.25%  (state 6.50 + local 3.75)
+
+   ;; --- Oregon (origin-based; rate present but will not be applied as destination tax) ---
+   (cons "OR-Multnomah-Portland"        0)   ;  0.00%  no statewide sales tax
+
+   ;; --- New Hampshire (origin-based; no general sales tax) ---
+   (cons "NH-Hillsborough-Manchester"   0)   ;  0.00%
+
+   ;; --- A few extras for realism; not used unless ship-to lands there ---
+   (cons "FL-Miami-Dade-Miami"         700)  ;  7.00%
+   (cons "IL-Cook-Chicago"             925)  ;  9.25%  (state 6.25 + county 1.75 + city 1.25)
+   (cons "MA-Suffolk-Boston"           625)  ;  6.25%
+   (cons "CO-Denver-Denver"            765)  ;  7.65%)))
+
+;; Lookup helper: (jid . rate-bps) alist -> rate-bps or 0 if missing.
+;; Kept tiny on purpose; downstream code may use it.
+(define (api lookup-rate jid rates)
+  (let ((hit (assoc jid rates)))
+    (if hit (cdr hit) 0)))

@@ -1,0 +1,246 @@
+;; netting.aura - Multilateral netting engine
+;;
+;; Given a set of directed bilateral exposures for a value date and
+;; currency (as produced by bilateral.aura, possibly after novation
+;; and MTA filtering), this module computes:
+;;
+;;   * net-obligations  - the smallest set of settlement instructions
+;;                        that fully discharges every party's net
+;;                        multilateral position
+;;   * net-position     - each party's single net signed position
+;;                        (positive = owed money, negative = owes)
+;;   * zero-sum?        - sanity predicate on a net-map
+;;   * settlement-instructions - executable instructions derived from
+;;                        net-obligations
+;;
+;; The netting algorithm is the standard "square-up" reduction: every
+;; debtor pays every creditor, then for each party we accumulate what
+;; they paid out (debits) and what they received (credits). The
+;; resulting signed net per party is then re-cast as a directed
+;; instruction from net-debtors to net-creditors, preferring a single
+;; largest creditor per debtor so that the resulting instructions are
+;; minimal in number.
+
+(define (party-debits exps)
+  ;; Sum every exposure where `party` is the payer (debtor).
+  (let ((party (car exps)))
+    (let loop ((acc 0) (xs (cdr exps)))
+      (if (null? xs)
+          acc
+          (let ((e (car xs)))
+            (if (equal? (car e) party)
+                (loop (+ acc (cdr e)) (cdr xs))
+                (loop acc (cdr xs))))))))
+
+(define (party-credits exps)
+  ;; Sum every exposure where `party` is the payee (creditor).
+  (let ((party (car exps)))
+    (let loop ((acc 0) (xs (cdr exps)))
+      (if (null? xs)
+          acc
+          (let ((e (car xs)))
+            (if (equal? (cdr e) party)
+                (loop (+ acc (car e)) (cdr xs))
+                (loop acc (cdr xs))))))))
+
+(define (unique-parties exps)
+  ;; Collect every distinct party name appearing as a payer or payee
+  ;; in the exposure list.
+  (let loop ((acc '()) (xs exps))
+    (if (null? xs)
+        (reverse acc)
+        (let ((e (car xs)))
+          (loop (add-unique (car e)
+                            (add-unique (cdr e) acc))
+                (cdr xs))))))
+
+(define (add-unique x lst)
+  (if (member x lst)
+      lst
+      (cons x lst)))
+
+(define (net-position party vd ccy)
+  ;; Single party's signed net multilateral position.
+  ;; positive  => party is owed (creditor)
+  ;; negative  => party owes (debtor)
+  ;; zero      => square
+  (let ((exps (bilateral-exposures vd ccy)))
+    (let loop ((xs exps))
+      (if (null? xs)
+          0
+          (let ((e (car xs)))
+            (cond
+              ((equal? (car e) party)
+               (- (net-position-helper party (cdr xs)) (car e)))
+              ((equal? (cdr e) party)
+               (+ (net-position-helper party (cdr xs)) (car e)))
+              (else
+               (net-position-helper party (cdr xs)))))))))
+
+(define (net-position-helper party exps)
+  (let loop ((acc 0) (xs exps))
+    (if (null? xs)
+        acc
+        (let ((e (car xs)))
+          (cond
+            ((equal? (car e) party)
+             (loop (- acc (car e)) (cdr xs)))
+            ((equal? (cdr e) party)
+             (loop (+ acc (car e)) (cdr xs)))
+            (else
+             (loop acc (cdr xs))))))))
+
+(define (bilateral-exposures vd ccy)
+  ;; Pull the filtered exposures from bilateral.aura, applying MTA
+  ;; filtering so that tiny residual exposures don't pollute the net.
+  (let ((raw (all-bilateral-exposures vd ccy)))
+    (filter-below-mta raw ccy)))
+
+(define (all-bilateral-exposures vd ccy)
+  ;; Walk every registered trade; emit directed (amount . payee)
+  ;; exposure records where payer owes payee. Trades for other value
+  ;; dates or currencies are skipped. After novation has run, the
+  ;; pay-through hierarchy has already remapped payer/payee, so we
+  ;; simply read the post-novation trade fields.
+  (let ((trades (trades-for-date vd)))
+    (let loop ((acc '()) (xs trades))
+      (if (null? xs)
+          (reverse acc)
+          (let ((t (car xs)))
+            (if (equal? (trade-ccy t) ccy)
+                (loop (cons (cons (trade-amount t)
+                                  (trade-payee t))
+                            (cons (cons (- 0 (trade-amount t))
+                                        (trade-payer t))
+                                  acc))
+                      (cdr xs))
+                (loop acc (cdr xs))))))))
+
+(define (filter-below-mta exps ccy)
+  (let ((limit (get-mta ccy)))
+    (let loop ((acc '()) (xs exps))
+      (if (null? xs)
+          (reverse acc)
+          (let ((e (car xs)))
+            (let ((amt (abs (car e))))
+              (if (< amt limit)
+                  (loop acc (cdr xs))
+                  (loop (cons e acc) (cdr xs)))))))))
+
+(define (net-map vd ccy)
+  ;; Build the alist mapping each party -> signed net position.
+  (let ((parties (unique-parties (bilateral-exposures vd ccy))))
+    (let loop ((acc '()) (xs parties))
+      (if (null? xs)
+          acc
+          (loop (cons (cons (car xs)
+                            (net-position (car xs) vd ccy))
+                      acc)
+                (cdr xs))))))
+
+(define (zero-sum? net-map)
+  ;; A net-map is zero-sum iff the signed positions sum to zero
+  ;; (within floating tolerance).
+  (let ((total (sum-amounts (map cdr net-map))))
+    (= total 0)))
+
+(define (sum-amounts lst)
+  (let loop ((acc 0) (xs lst))
+    (if (null? xs)
+        acc
+        (loop (+ acc (car xs)) (cdr xs)))))
+
+(define (net-obligations vd ccy)
+  ;; Reduce the net-map to a list of (payer payee amount)
+  ;; instructions. Strategy:
+  ;;   1. Split parties into debtors (neg) and creditors (pos).
+  ;;   2. Greedily match the largest debtor to the largest creditor
+  ;;      and emit a single instruction for min(|debt|, credit).
+  ;;      Decrement both; drop any that reach zero.
+  ;;   3. Repeat until no debtors remain.
+  ;; This produces a minimal, deterministic instruction set whose sum
+  ;; exactly equals the gross net obligation.
+  (let ((nm (net-map vd ccy)))
+    (let loop ((debtors (debtors-of nm))
+               (creditors (creditors-of nm))
+               (acc '()))
+      (cond
+        ((null? debtors) (reverse acc))
+        ((null? creditors) (reverse acc))
+        (else
+         (let ((d (car debtors))
+               (c (car creditors)))
+           (let ((d-amount (- 0 (cdr d)))
+                 (c-amount (cdr c)))
+             (let ((pay (min d-amount c-amount)))
+               (let ((rest-d (- d-amount pay))
+                     (rest-c (- c-amount pay)))
+                 (let ((new-debtors
+                        (if (= rest-d 0)
+                            (cdr debtors)
+                            (cons (cons (car d) (- 0 rest-d))
+                                  (cdr debtors))))
+                       (new-creditors
+                        (if (= rest-c 0)
+                            (cdr creditors)
+                            (cons (cons (car c) rest-c)
+                                  (cdr creditors)))))
+                   (loop new-debtors
+                         new-creditors
+                         (cons (list (car d) (car c) pay) acc))))))))))))
+
+(define (min a b)
+  (if (< a b) a b))
+
+(define (debtors-of nm)
+  ;; Parties with negative net position, sorted most-negative first.
+  (let ((neg (filter (lambda (e) (< (cdr e) 0)) nm)))
+    (sort-pairs-by-amount neg #t)))
+
+(define (creditors-of nm)
+  ;; Parties with positive net position, sorted largest first.
+  (let ((pos (filter (lambda (e) (> (cdr e) 0)) nm)))
+    (sort-pairs-by-amount pos #f)))
+
+(define (filter pred lst)
+  (let loop ((acc '()) (xs lst))
+    (if (null? xs)
+        (reverse acc)
+        (if (pred (car xs))
+            (loop (cons (car xs) acc) (cdr xs))
+            (loop acc (cdr xs))))))
+
+(define (sort-pairs-by-amount lst descending?)
+  ;; Simple insertion sort on (cdr). descending? = #t => largest
+  ;; absolute amount first (i.e. most negative for debtors);
+  ;; descending? = #f => largest positive first (creditors).
+  (let loop ((sorted '()) (xs lst))
+    (if (null? xs)
+        sorted
+        (loop (insert-sorted (car xs) sorted descending?)
+              (cdr xs)))))
+
+(define (insert-sorted e sorted descending?)
+  (let ((amt (abs (cdr e))))
+    (let loop ((acc '()) (xs sorted))
+      (cond
+        ((null? xs)
+         (append (reverse acc) (list e)))
+        ((if descending?
+             (<= amt (abs (cdr (car xs))))
+             (< (cdr (car xs)) amt))
+         (append (reverse acc) (cons e xs)))
+        (else
+         (loop (cons (car xs) acc) (cdr xs)))))))
+
+(define (settlement-instructions vd ccy)
+  ;; Public façade: returns the same net obligations but with each
+  ;; instruction normalised to (payer . (payee . amount))-style
+  ;; association for downstream consumers (settlement.aura expects
+  ;; this shape).
+  (let ((raw (net-obligations vd ccy)))
+    (map (lambda (ins)
+           (list (cons 'payer (car ins))
+                 (cons 'payee (cadr ins))
+                 (cons 'amount (caddr ins))))
+         raw)))

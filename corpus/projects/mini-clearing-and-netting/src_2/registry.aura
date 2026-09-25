@@ -1,0 +1,44 @@
+; registry.aura — central trade registry for the clearing/netting engine.
+;
+; Provides storage for trade records created by types.aura and lookup
+; helpers used by bilateral / netting / mta / settlement / report.
+; Storage is an in-memory mutable list; no I/O is performed here.
+
+; Mutable list of registered trades (most-recent-first for cheap cons).
+(define *trades* '())
+
+; register-trade: append a trade to the registry.
+(define (register-trade t)
+  (set! *trades* (cons t *trades*)))
+
+; all-trades: return every registered trade in original insertion order.
+(define (all-trades)
+  (reverse *trades*))
+
+; trades-for-date: subset of trades whose value-date equals vd.
+(define (trades-for-date vd)
+  (define (keep t acc)
+    (if (equal? (trade-value-date t) vd)
+        (cons t acc)
+        acc))
+  (let loop ((src (all-trades)) (acc '()))
+    (if (null? src)
+        (reverse acc)
+        (loop (cdr src) (keep (car src) acc)))))
+
+; party-list: deduplicated list of every payer/payee seen across all trades.
+(define (party-list)
+  (define (add-unique p lst)
+    (if (member p lst) lst (cons p lst)))
+  (define (accum src acc)
+    (if (null? src)
+        acc
+        (let ((t (car src)))
+          (accum (cdr src)
+                 (add-unique (trade-payee t)
+                             (add-unique (trade-payer t) acc))))))
+  (accum (all-trades) '()))
+
+; reset-registry!: drop all stored trades (used between scenarios).
+(define (reset-registry!)
+  (set! *trades* '()))

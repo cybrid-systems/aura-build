@@ -1,0 +1,7 @@
+; market-clock.aura
+; Provides trading-day predicate and slot-count helper.
+
+(define (api-trading-day?) #t)
+
+(define (api-slot-count horizon-secs slot-secs)
+  (quotient horizon-secs slot-secs))

@@ -1,0 +1,95 @@
+;; invoice_aggregate.aura — Aggregate per-line tax results into a summary
+;; Public API: (api aggregate-invoice line-results) -> summary alist
+;;
+;; Arguments:
+;;   line-results : list of per-line tax result alists from compute-line-tax.
+;;                  Each line-result has these keys (at minimum):
+;;                    line-id, ptc, qty, extended-cents, jid, rate-bps,
+;;                    tax-cents, taxable (#t/#f), exempt (#t/#f), reason
+;;
+;; Returns a single summary alist with:
+;;   line-count       : total number of lines
+;;   taxable-count    : number of lines where tax was actually applied
+;;   exempt-count     : number of lines that were exempt
+;;   no-nexus-count   : number of lines with no applicable nexus (no tax)
+;;   subtotal-cents   : sum of extended-cents across all lines
+;;   total-tax-cents  : sum of tax-cents across all lines
+;;   grand-total-cents: subtotal + total-tax
+;;   effective-bps    : effective overall tax rate in bps (integer, half-up)
+;;   by-category      : alist of ptc-category -> alist (count, tax-cents)
+;;   by-jurisdiction  : alist of jid -> alist (count, tax-cents)
+
+(define (api aggregate-invoice line-results)
+  (define line-count      0)
+  (define taxable-count   0)
+  (define exempt-count    0)
+  (define no-nexus-count  0)
+  (define subtotal-cents  0)
+  (define total-tax-cents 0)
+  (define by-category    '())
+  (define by-jurisdiction '())
+
+  (define (bump-count! key alist)
+    (let ((entry (assq key alist)))
+               entry
+               (cons (cons key (list (cons 'count 1)
+                                     (cons 'tax-cents
+                                           (or (assq 'tax-cents (cdr entry)) 0))))
+                     alist)))
+
+  (define (bump-tax! key amt alist)
+    (let ((entry (assq key alist)))
+               entry
+               (cons (cons key (list (cons 'count 1)
+                                     (cons 'tax-cents amt)))
+                     alist))))
+
+  (define (bump-existing! key amt alist)
+    (let ((entry (assq key alist)))
+               entry
+               (cons (cons key (list (cons 'count (+ 1 (or (assq 'count (cdr entry)) 0)))
+                                     (cons 'tax-cents (+ amt (or (assq 'tax-cents (cdr entry)) 0)))))
+                     alist))))
+
+  (set! line-count (length line-results))
+
+  (let loop ((rest line-results))
+    (if (null? rest)
+        'done
+        (let ((ln (car rest)))
+          (set! subtotal-cents  (+ subtotal-cents  (or (assq 'extended-cents ln) 0)))
+          (set! total-tax-cents (+ total-tax-cents (or (assq 'tax-cents ln) 0)))
+          (cond
+            ((eq? (or (assq 'exempt ln) #f) #t)
+             (set! exempt-count (+ exempt-count 1)))
+            ((eq? (or (assq 'no-nexus ln) #f) #t)
+             (set! no-nexus-count (+ no-nexus-count 1)))
+            (else
+             (set! taxable-count (+ taxable-count 1))
+             (set! by-category    (bump-existing! (or (assq 'category ln) 'unknown)
+                                                   (or (assq 'tax-cents ln) 0)
+                                                   by-category))
+             (set! by-jurisdiction (bump-existing! (or (assq 'jid ln) 'none)
+                                                    (or (assq 'tax-cents ln) 0)
+                                                    by-jurisdiction))))
+          (loop (cdr rest))))))
+
+  (let ((grand-total (+ subtotal-cents total-tax-cents))
+        (eff-bps (if (= subtotal-cents 0)
+                     0
+                     (let ((q (quotient (* total-tax-cents 10000) subtotal-cents))
+                           (r (modulo (* total-tax-cents 10000) subtotal-cents)))
+                       (if (>= r (/ subtotal-cents 2))
+                           (+ q 1)
+                           q)))))
+    (list
+      (cons 'line-count        line-count)
+      (cons 'taxable-count     taxable-count)
+      (cons 'exempt-count      exempt-count)
+      (cons 'no-nexus-count    no-nexus-count)
+      (cons 'subtotal-cents    subtotal-cents)
+      (cons 'total-tax-cents   total-tax-cents)
+      (cons 'grand-total-cents grand-total)
+      (cons 'effective-bps     eff-bps)
+      (cons 'by-category       by-category)
+      (cons 'by-jurisdiction   by-jurisdiction))))

@@ -1,0 +1,39 @@
+; slicer-twap.aura
+; Time-Weighted Average Price (TWAP) child order slicer.
+;
+; TWAP divides the parent order quantity into N children of equal size,
+; where N is determined by the horizon (in seconds) and the slot length
+; (also in seconds). The slot count is obtained from market-clock.aura
+; via api-slot-count, but is clamped to be at least 1 and at most the
+; caller-provided `children` upper bound.
+;
+; Each child is an alist:
+;   (parent-id . id) (side . side) (qty . qty) (slot . slot-idx) (tag . TWAP)
+
+(define (api-slice-twap parent horizon-secs slot-secs children)
+  (let ((pid (let ((e (assq 'id parent))) (if e (cdr e) 'P0)))
+        (side (let ((e (assq 'side parent))) (if e (cdr e) 'BUY)))
+        (pqty (let ((e (assq 'qty parent))) (if e (cdr e) 0))))
+    (let* ((raw-slots (api-slot-count horizon-secs slot-secs))
+           (slots (if (< raw-slots 1) 1 raw-slots))
+           (cap (if (< children 1) 1 children))
+           (n (if (< slots cap) slots cap))
+           (base (quotient pqty n))
+           (rem (- pqty (* base n))))
+      (let loop ((i 0) (acc '()) (extra rem))
+        (if (>= i n)
+            (reverse acc)
+            (let ((qty (+ base (if (> extra 0) 1 0))))
+              (loop (+ i 1)
+                    (cons (list (cons 'parent-id pid)
+                                (cons 'id (string->symbol
+                                           (string-append
+                                             (symbol->string pid)
+                                             "-TWAP-"
+                                             (number->string i))))
+                                (cons 'side side)
+                                (cons 'qty qty)
+                                (cons 'slot i)
+                                (cons 'tag 'TWAP))
+                          acc)
+                    (if (> extra 0) (- extra 1) 0))))))))

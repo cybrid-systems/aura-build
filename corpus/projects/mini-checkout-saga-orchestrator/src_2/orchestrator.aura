@@ -1,0 +1,156 @@
+;; orchestrator.aura — drives the checkout saga step-by-step, recording
+;; each step in the journal and invoking compensators on failure.
+;;
+;; Public API required by the GOAL:
+;;   (run-saga j id-gen failure-step) -> saga_id
+;;   (saga-status j saga_id)          -> 'COMPLETED | 'COMPENSATED | 'FAILED
+;;
+;; run-saga executes the five canonical checkout steps in order:
+;;   auth -> inventory-hold -> payment-auth -> payment-capture -> fulfillment-kickoff
+;;
+;; For each step we:
+;;   1. Check idempotency via (already-done? j saga_id step).
+;;   2. Record the attempt in the journal via (journal-record! j saga_id step).
+;;   3. Invoke the matching (step-* saga_id) handler from handlers.aura.
+;;   4. On handler failure, snapshot completed-steps and hand them to
+;;      (rollback-completed! j saga_id completed-steps) from compensator.aura.
+;;      After compensation finishes we tag the saga as 'COMPENSATED.
+;;
+;; saga-status inspects the journal to decide whether the saga completed
+;; cleanly, was compensated after a failure, or failed outright without
+;; any compensating actions having run.
+
+;; ---- step ordering ----
+
+(define saga-steps
+  (list "auth"
+        "inventory-hold"
+        "payment-auth"
+        "payment-capture"
+        "fulfillment-kickoff"))
+
+;; Lookup the (step-* saga_id) handler for a given step name.
+(define (lookup-step step)
+  (cond
+    ((string=? step "auth")                step-auth)
+    ((string=? step "inventory-hold")      step-inventory-hold)
+    ((string=? step "payment-auth")        step-payment-auth)
+    ((string=? step "payment-capture")     step-payment-capture)
+    ((string=? step "fulfillment-kickoff") step-fulfillment-kickoff)
+    (else #f)))
+
+;; ---- dynamic failure injection ----
+;;
+;; *failure-step* is bound by run-saga. Handlers in handlers.aura consult
+;; this dynamic variable to decide whether to fail. We use a mutable cell
+;; so handlers in a single-process model can read the latest binding.
+
+(define *failure-step* (cons 'failure-cell #f))
+
+(define (current-failure-step)
+  (cdr *failure-step*))
+
+(define (set-failure-step! s)
+  (set-cdr! *failure-step* s))
+
+;; ---- run-saga ----
+
+(define (run-saga j id-gen failure-step)
+  (let ((saga_id (next-id id-gen "saga"))
+        (saved   (current-failure-step)))
+    ;; Install the requested failure point for this run.
+    (set-failure-step! failure-step)
+    ;; Track which steps have completed successfully in order, so we can
+    ;; hand them to the compensator if a later step fails.
+    (let ((completed '()))
+      (define (completed-append! step)
+        (set! completed (append completed (list step))))
+      (define (attempt-step step)
+        ;; Idempotency guard: if this step already has a record in the
+        ;; journal for this saga, skip re-execution.
+        (if (already-done? j saga_id step)
+            #t
+            (begin
+              (journal-record! j saga_id step)
+              (let ((handler (lookup-step step)))
+                (if (equal? handler #f)
+                    #f
+                    (let ((result (handler saga_id)))
+                      (if result
+                          (completed-append! step)
+                          #f)))))))
+      (define (loop remaining)
+        (if (null? remaining)
+            'ok
+            (let ((step (car remaining)))
+              (if (attempt-step step)
+                  (loop (cdr remaining))
+                  ;; Failure: compensate completed steps in reverse, then
+                  ;; mark the saga as compensated and stop.
+                  (begin
+                    (rollback-completed! j saga_id completed)
+                    'compensated)))))
+      (let ((outcome (loop saga-steps)))
+        ;; Stash the outcome on the journal under a well-known key so
+        ;; saga-status can read it without scanning everything.
+        (record-saga-outcome! j saga_id outcome)
+        saga_id))
+    ;; Restore the prior failure binding so back-to-back runs are
+    ;; independent.
+    (set-failure-step! saved)))
+
+;; ---- outcome bookkeeping ----
+;;
+;; saga-status needs to know whether a saga was completed, compensated,
+;; or left in a half-failed state. We stash the orchestrator's verdict on
+;; the journal under a sentinel step name. This keeps the state in one
+;; place (the journal) and avoids needing a separate global.
+
+(define *saga-outcome-key* "__saga_outcome__")
+
+(define (record-saga-outcome! j saga_id outcome)
+  ;; outcome is one of 'ok, 'compensated, or 'failed.
+  (let ((tag (cond
+               ((eq? outcome 'ok)          'COMPLETED)
+               ((eq? outcome 'compensated) 'COMPENSATED)
+               (else                       'FAILED))))
+    (journal-record! j saga_id *saga-outcome-key*)
+    ;; Overwrite the payload for the outcome key with our tagged symbol.
+    (overwrite-journal-payload! j saga_id *saga-outcome-key* tag)))
+
+;; Internal helpers that poke the journal representation. The journal in
+;; state.aura is an alist of ((saga_id . step) . record); we mutate the
+;; record's payload in place so saga-status can read it back.
+
+(define (journal-entries j)
+  ;; The journal stores its entries list under the cdr of the cell.
+  (cdr j))
+
+(define (journal-find j saga_id step)
+  (let loop ((rest (journal-entries j)))
+    (cond
+      ((null? rest) #f)
+      ((and (equal? (caar rest) saga_id)
+            (equal? (cdar rest) step))
+       (cdar rest))
+      (else (loop (cdr rest))))))
+
+(define (overwrite-journal-payload! j saga_id step new-payload)
+  ;; Walk entries and rewrite the matching record's cdr in place.
+  (let loop ((rest (journal-entries j)))
+    (cond
+      ((null? rest) #f)
+      ((and (equal? (caar rest) saga_id)
+            (equal? (cdar rest) step))
+       (set-cdr! (car rest) new-payload))
+      (else (loop (cdr rest))))))
+
+;; ---- saga-status ----
+
+(define (saga-status j saga_id)
+  (let ((outcome (journal-find j saga_id *saga-outcome-key*)))
+    (if (equal? outcome #f)
+        ;; No outcome recorded: either the saga never ran or every step
+        ;; failed without any compensation. Treat as FAILED.
+        'FAILED
+        outcome)))

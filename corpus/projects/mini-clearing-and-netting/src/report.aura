@@ -1,0 +1,100 @@
+;; report.aura - Regulator-style netting efficiency report
+;;
+;; Produces a human-readable report describing the multilateral
+;; netting outcome for a given value date and currency. The report
+;; bundles gross exposures, post-novation/post-MTA pairs, net
+;; obligations, settlement instructions, and efficiency metrics into
+;; a single structure that can be consumed by main.aura or
+;; compliance.aura.
+;;
+;; The report's "BIC" (Bank Identifier Code) is a stable digest of
+;; the report's contents - a simple checksum used for traceability
+;; in the regulator-style output.
+
+(define (report-bic-report-line alist)
+  (let loop ((acc 0) (xs alist))
+    (if (null? xs)
+        acc
+        (loop (+ acc (* (string-length (car (car xs)))
+                        (string-length (cdr (car xs))))))
+            (cdr xs)))))
+
+;; Build a regulator-style report for a value date + currency.
+;; Returns an alist with the following keys:
+;;   value-date       - the value date (as printed string)
+;;   currency         - the currency
+;;   gross-obligations - sum of gross bilateral exposures
+;;   net-obligations   - sum of net settlement instructions
+;;   instructions      - the list of settlement instructions
+;;   pair-count        - number of bilateral pairs considered
+;;   mta-filtered      - number of pairs dropped by MTA filter
+;;   efficiency        - efficiency ratio (1 - net/gross, 4dp)
+;;   bic               - report digest
+(define (regulator-report vd ccy)
+  (let* ((gross (apply + (map cdr (all-bilateral-pairs vd ccy))))
+         (filtered-pairs (mta-filtered-pairs vd ccy))
+         (instructions (settlement-instructions vd ccy))
+         (net (if (null? instructions)
+                  0
+                  (apply + (map (lambda (i) (instruction-amount i))
+                                instructions))))
+         (mta-count (- (length (all-bilateral-pairs vd ccy))
+                       (length filtered-pairs)))
+         (eff (if (= gross 0) 1.0 (efficiency-ratio gross net)))
+         (lines (report-lines vd ccy)))
+    (list (cons 'value-date vd)
+          (cons 'currency ccy)
+          (cons 'gross-obligations gross)
+          (cons 'net-obligations net)
+          (cons 'instructions instructions)
+          (cons 'pair-count (length (all-bilateral-pairs vd ccy)))
+          (cons 'mta-filtered mta-count)
+          (cons 'efficiency eff)
+          (cons 'lines lines)
+          (cons 'bic (report-bic lines)))))
+
+;; Produce the human-readable line list for the regulator report.
+;; Each line is a string suitable for display.
+(define (report-lines vd ccy)
+  (let* ((gross (apply + (map cdr (all-bilateral-pairs vd ccy))))
+         (instructions (settlement-instructions vd ccy))
+         (net (if (null? instructions)
+                  0
+                  (apply + (map (lambda (i) (instruction-amount i))
+                                instructions))))
+         (eff (if (= gross 0) 1.0 (efficiency-ratio gross net)))
+         (parties (party-list)))
+    (append
+      (list (string-append "=== Netting Report for " vd " / " ccy " ===")
+            (string-append "Parties: " (number->string (length parties))))
+      (map (lambda (p)
+             (string-append "  party: " p))
+           parties)
+      (list (string-append "Gross obligations: "
+                           (number->string gross))
+            (string-append "Net obligations:   "
+                           (number->string net))
+            (string-append "Efficiency ratio:  "
+                           (number->string eff))
+            (string-append "Settlement instructions: "
+                           (number->string (length instructions)))
+            "--- Instructions ---")
+      (map (lambda (i)
+             (string-append "  "
+                            (instruction-payer i)
+                            " -> "
+                            (instruction-payee i)
+                            " : "
+                            (number->string (instruction-amount i))))
+           instructions)
+      (list "=== End Report ==="))))
+
+;; Stable BIC digest for a report. Computes a simple integer
+;; fingerprint from the report lines.
+(define (report-bic lines)
+  (let loop ((acc 0) (xs lines) (i 0))
+    (if (null? xs)
+        acc
+        (loop (+ acc (* (+ (string-length (car xs)) 1) (+ i 1)))
+              (cdr xs)
+              (+ i 1)))))

@@ -1,0 +1,116 @@
+;; compensator.aura — rollback + audit-trail logic
+;;
+;; Given the list of steps that completed before the saga failed, we
+;; must invoke each step's `compensate-<name>` handler in REVERSE order.
+;; This module is the single place where rollback orchestration lives;
+;; the orchestrator simply hands us the journal, saga_id, and the list
+;; of completed steps.
+;;
+;; `build-audit-trail` reconstructs a human-readable log of what
+;; happened: which steps ran forward, which (if any) were rolled back.
+;; Everything is derived from the journal and the compensation log —
+;; nothing is hardcoded.
+
+(load "state.aura")
+(load "handlers.aura")
+
+(define (rollback-completed! j saga_id completed-steps)
+  ;; Walk `completed-steps` from last to first and call the
+  ;; matching compensate-* handler. We mutate `j` indirectly via
+  ;; the journal-record! mutator ('compensated <step>) so that
+  ;; build-audit-trail can later see that compensation happened.
+  ;;
+  ;; We use a manual loop (no for-each) to keep the dependency surface
+  ;; tiny. completed-steps is in forward order; reverse it.
+  (let ((rev (reverse completed-steps))
+        (jr (lambda (msg . args) (j msg . args))))
+    (define (loop steps)
+      (if (null? steps)
+          'done
+          (begin
+            (let ((step (car steps)))
+              ;; dispatch: step-name -> compensate-<name>
+              (cond
+                ((equal? step "auth")                (compensate-auth saga_id))
+                ((equal? step "inventory-hold")      (compensate-inventory-hold saga_id))
+                ((equal? step "payment-auth")        (compensate-payment-auth saga_id))
+                ((equal? step "payment-capture")     (compensate-payment-capture saga_id))
+                ((equal? step "fulfillment-kickoff") (compensate-fulfillment-kickoff saga_id))
+                (else (display "rollback: unknown step ")
+                      (display step) (newline)))
+              ;; Record the compensation in the journal so audit-trail
+              ;; can observe it. We piggy-back on journal-record! via
+              ;; the raw dispatcher with a special 'compensated tag.
+              (jr 'compensated step)
+              (loop (cdr steps)))))
+    (loop rev)
+    rev))
+
+(define (build-audit-trail j saga_id)
+  ;; Produce a list of audit entries, one per step that the saga
+  ;; journal has any record of. Each entry is a pair:
+  ;;   (step-name . "DONE")            if the forward step succeeded
+  ;;   (step-name . "COMPENSATED")     if the forward step was later
+  ;;                                   rolled back
+  ;;
+  ;; We derive this by reading the saga's journal entry and pairing
+  ;; each forward step with whatever compensation tag (if any) the
+  ;; rollback pass appended via 'compensated.
+  ;;
+  ;; The journal stores its saga state as either:
+  ;;   '()                                  -> nothing happened
+  ;;   (forward1 forward2 ...)              -> only forward steps
+  ;;   (forward1 ... forwardN . compensated-tail)
+  ;;     where compensated-tail is a flat
+  ;;     list mixing step-names that were
+  ;;     compensated (we only care about
+  ;;     membership; reversibility is 1:1).
+  ;;
+  ;; To keep things simple and correct we split the journal cell into
+  ;; two halves: the prefix of forward entries and any compensation
+  ;; markers that follow. We do this by walking the list and
+  ;; accumulating until we see a 'compensated sentinel — but since
+  ;; journal-record! is the only writer, in practice the layout is:
+  ;;   (<forward>... <forward> compensated <compensated>...)
+  ;; We reconstruct that boundary by scanning for the first
+  ;; 'compensated symbol after position >= (length forward-prefix).
+
+  (define (raw-state)
+    ;; Pull the raw per-saga list out of the journal object.
+    ;; j is a dispatcher procedure; we call (j 'state saga_id) which
+    ;; state.aura implements to return the stored list.
+    (j 'state saga_id))
+
+  (let* ((raw (raw-state))
+         ;; Find the split point: the position of the 'compensated
+         ;; sentinel that journal-record! writes during rollback.
+         (split (let loop ((xs raw) (i 0))
+                  (cond
+                    ((null? xs) i)
+                    ((eq? (car xs) 'compensated) i)
+                    (else (loop (cdr xs) (+ i 1))))))
+         (forward-prefix (let loop ((xs raw) (k split))
+                           (if (= k 0)
+                               '()
+                               (cons (car xs) (loop (cdr xs) (- k 1))))))
+         (compensated-set
+           ;; Members after the sentinel that are themselves step-names.
+           (let loop ((xs (list-tail raw split)))
+             (if (null? xs)
+                 '()
+                 (cons (car xs) (loop (cdr xs)))))))
+
+    (define (compensated? step)
+      (not (null? (member step compensated-set))))
+
+    ;; Emit the audit list in forward-step order. Each entry is the
+    ;; bare step name; callers can map DONE/COMPENSATED themselves by
+    ;; checking (compensated? step). Returning a flat list of symbols
+    ;; keeps the API simple and lets main.aura count entries directly.
+    (let loop ((fs forward-prefix) (out '()))
+      (if (null? fs)
+          (reverse out)
+          (let* ((s (car fs))
+                 (tag (if (compensated? s) "COMPENSATED" "DONE"))
+                 (entry (cons s tag)))
+            (loop (cdr fs) (cons entry out)))))))

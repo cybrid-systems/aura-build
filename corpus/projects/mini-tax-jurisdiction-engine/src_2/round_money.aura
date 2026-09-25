@@ -1,0 +1,81 @@
+;; round_money.aura
+;;
+;; Rounding policy for this tax engine:
+;;
+;;   * Per-line rounding  : bankers / half-even.
+;;       Rationale: avoids the systematic upward bias that half-up rounding
+;;       produces when many small lines are summed. Half-even rounds to the
+;;       nearest integer cent; when the fractional part is exactly 0.5, it
+;;       rounds to the nearest *even* integer.
+;;
+;;   * Invoice total rounding : half-up.
+;;       Rationale: this is the final amount the customer is asked to pay,
+;;       so we bias slightly toward the tax authority's favor (standard
+;;       practice for invoiced totals).
+;;
+;; Both routines take an exact integer number of *unrounded cents* and return
+;; an exact integer number of *rounded cents*. We do all arithmetic in
+;; integer arithmetic so there are no floating-point surprises.
+;;
+;; Public API:
+;;   (api round-line    cents) -> rounded cents (half-even)
+;;   (api round-invoice cents) -> rounded cents (half-up)
+
+(define (api round-line cents)
+  ;; Half-even (banker's) rounding.
+  ;; cents must be an integer (possibly negative for credit memos).
+  (let ((q (quotient cents 100))
+        (r (modulo cents 100)))
+    (let ((abs-r (if (< r 0) (- 0 r) r)))
+      (cond
+        ((< abs-r 50)
+         ;; Strictly closer to zero than to ±0.50: no carry at all.
+         ;; But we must still add the quotient remainder (cents%100) to
+         ;; capture the truncated fractional-cent part already in cents.
+         ;; Wait — cents IS the unrounded value in cents, not hundredths.
+         ;; Re-think: the contract is "unrounded cents -> rounded cents",
+         ;; where unrounded cents may contain a fractional part encoded as
+         ;; an integer of tenths-of-a-cent, or already be in cents with no
+         ;; fractional part.  To stay robust, treat `cents` as the raw
+         ;; integer with an *implied* resolution of 0.01 cent.  We round
+         ;; to the nearest whole cent.
+         cents)
+        (else
+         ;; We need a real implementation.  Recompute properly.
+         (round-line-helper cents))))))
+
+(define (round-line-helper cents)
+  ;; True half-even rounding to the nearest cent.
+  ;; Works on `cents` which may carry sub-cent information as an integer
+  ;; (e.g. 12345 means 123.45 units, which rounds to 123 cents).
+  ;; Convention here: `cents` is an integer representing value*100 with
+  ;; possible sub-cent digits; we round to the nearest whole cent using
+  ;; half-even.
+  (let* ((sign (if (< cents 0) -1 1))
+         (abs-c (* sign cents))
+         (lo (quotient abs-c 100))               ; whole cents
+         (hi-lo (modulo abs-c 100)))              ; sub-cent, 0..99
+    (let ((rounded
+           (cond
+             ((< hi-lo 50) lo)
+             ((> hi-lo 50) (+ lo 1))
+             ((= hi-lo 50)
+              ;; tie: round to even
+              (if (= (modulo lo 2) 0) lo (+ lo 1)))
+             (else lo))))
+      (* sign rounded))))
+
+;; Overwrite the stub above with the real implementation.
+(define (api round-line cents) (round-line-helper cents))
+
+(define (api round-invoice cents)
+  ;; Half-up rounding to the nearest cent.
+  ;; Same input convention as round-line: integer, value*100 with sub-cent
+  ;; digits allowed.  At the invoice total we always round .5 upward.
+  (let* ((sign (if (< cents 0) -1 1))
+         (abs-c (* sign cents))
+         (lo (quotient abs-c 100))
+         (rem (modulo abs-c 100)))
+    (let ((rounded
+           (if (>= rem 50) (+ lo 1) lo)))
+      (* sign rounded))))
