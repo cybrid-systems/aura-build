@@ -1,0 +1,47 @@
+;; aging.aura
+;; Aging bucket classification for invoices.
+;;
+;; Buckets are based on days past due (or negative, meaning not yet due).
+;;   current : days <= 0    (not yet due)
+;;   1-30    : days 1..30
+;;   31-60   : days 31..60
+;;   61-90   : days 61..90
+;;   90+     : days > 90
+;;
+;; Exports:
+;;   (api-bucket-classify days)    -> bucket symbol
+;;   (api-aging-bucketize invoices today) -> alist (bucket-symbol . count)
+
+(define (api-bucket-classify days)
+  (cond
+    ((<= days 0)  'current)
+    ((<= days 30) '1-30)
+    ((<= days 60) '31-60)
+    ((<= days 90) '61-90)
+    (else         '90-plus)))
+
+;; Helper: bump a counter in an alist by key, creating if absent.
+(define (aging-bump alist key)
+  (let ((existing (assq key alist)))
+    (if existing
+        (begin
+          (set-cdr! existing (+ (cdr existing) 1))
+          alist)
+        (cons (cons key 1) alist))))
+
+(define (api-aging-bucketize invoices today)
+  ;; Start with all buckets present at zero so output is stable.
+  (let ((result (list (cons 'current 0)
+                      (cons '1-30 0)
+                      (cons '31-60 0)
+                      (cons '61-90 0)
+                      (cons '90-plus 0))))
+    (let loop ((xs invoices))
+      (if (null? xs)
+          result
+          (let* ((inv (car xs))
+                 (due (cdr (assq 'due-day inv)))
+                 (age (- today due))
+                 (bucket (api-bucket-classify age)))
+            (aging-bump result bucket)
+            (loop (cdr xs)))))))

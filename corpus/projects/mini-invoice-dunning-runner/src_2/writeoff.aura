@@ -1,0 +1,57 @@
+;; writeoff.aura
+;; Write-off review logic for invoices in the final dunning stage.
+;;
+;; An invoice becomes eligible for write-off when:
+;;   - it is 'open
+;;   - it is more than 90 days past due (i.e., in the '90-plus bucket)
+;;   - it has gone through the 'final notice stage
+;;
+;; Per policy:
+;;   - The write-off amount equals the invoice's full outstanding amount.
+;;   - Once written off, the invoice is mutated to status 'written-off
+;;     so it is excluded from further dunning.
+;;
+;; State shape (managed by state.aura):
+;;   - 'writeoffs       : integer cents total of all writeoffs recorded
+;;   - 'writeoff-count  : integer count of invoices written off
+;;
+;; Exports:
+;;   (api-writeoff-eligible? invoice today) -> boolean
+;;   (api-writeoff-amount invoice)           -> integer cents
+;;   (api-writeoff-record! state invoice)    -> side-effecting
+;;       Updates the invoice status to 'written-off, accumulates the
+;;       amount into state['writeoffs], increments state['writeoff-count],
+;;       and returns the recorded amount.
+
+;; --- eligibility --------------------------------------------------------
+
+;; An invoice is eligible for write-off iff:
+;;   1. Its status is 'open (not already paid/disputed/written-off).
+;;   2. It is more than 90 days past due.
+(define (api-writeoff-eligible? invoice today)
+  (let ((status (cdr (assq 'status invoice)))
+        (due    (cdr (assq 'due-day invoice))))
+    (and (eq? status 'open)
+         (> (- today due) 90))))
+
+;; --- amount -------------------------------------------------------------
+
+;; The write-off amount is the full outstanding invoice amount, in cents.
+(define (api-writeoff-amount invoice)
+  (cdr (assq 'amount invoice)))
+
+;; --- record! ------------------------------------------------------------
+
+(define (api-writeoff-record! state invoice)
+  (let ((amount (api-writeoff-amount invoice)))
+    ;; Mutate the invoice in place so callers retain identity.
+    (set-cdr! (assq 'status invoice) 'written-off)
+    ;; Accumulate totals in shared state.
+    (set! state
+          (cons (cons 'writeoff-count
+                      (+ (or (cdr (assq 'writeoff-count state)) 0) 1))
+                (cons (cons 'writeoffs
+                            (+ (or (cdr (assq 'writeoffs state)) 0)
+                               amount))
+                      state)))
+    amount))

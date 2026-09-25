@@ -1,0 +1,43 @@
+;; subscription.aura — subscription lifecycle helpers.
+;;
+;; A subscription is represented as a list:
+;;   (id plan-id started-on period-days)
+;;
+;; The plan-id slot is mutable via set! so that `sub-change-plan!` can
+;; reassign a subscription to a different plan (upgrade / downgrade)
+;; without rebuilding the list.
+
+(define (make-sub id plan-id started-on period-days)
+  (list id plan-id (date-day started-on) period-days))
+
+(define (sub-id s)
+  (car s))
+
+(define (sub-plan-id s)
+  (car (cdr s)))
+
+(define (sub-started-on s)
+  (car (cdr (cdr s))))
+
+(define (sub-period-days s)
+  (car (cdr (cdr (cdr s)))))
+
+(define (sub-days-used s on)
+  ;; Days elapsed since the subscription started, clamped to >= 0.
+  (let ((diff (date-diff-days (date-day on) (sub-started-on s))))
+    (cond ((< diff 0) 0)
+          (else diff))))
+
+(define (sub-days-remaining s on period-days)
+  ;; Days left in the current billing period, clamped to [0, period-days].
+  (let* ((used (sub-days-used s on))
+         (remain (- period-days used)))
+    (cond ((< remain 0) 0)
+          ((> remain period-days) period-days)
+          (else remain))))
+
+(define (sub-change-plan! s new-plan-id on)
+  ;; Mutate the subscription so that its plan is now new-plan-id.
+  ;; We record `on` for traceability but only the plan-id is mutated.
+  (set! (car (cdr s)) new-plan-id)
+  (let ((_ on)) s))

@@ -1,0 +1,41 @@
+;; invoice.aura
+;; Invoice record abstraction.
+;;
+;; An invoice is represented as an alist:
+;;   ((id . "INV-001") (customer . "ACME") (amount . 12345) (due-day . 45) (status . open))
+;;
+;; All API functions are pure except `api-invoice-set-status!`, which mutates
+;; the invoice in place via set! on the cons cell so callers retain identity.
+
+(define (api-invoice-make id cust amount due-day status)
+  (list (cons 'id id)
+        (cons 'customer cust)
+        (cons 'amount amount)
+        (cons 'due-day due-day)
+        (cons 'status status)))
+
+(define (api-invoice-id i)
+  (cdr (assq 'id i)))
+
+(define (api-invoice-customer i)
+  (cdr (assq 'customer i)))
+
+(define (api-invoice-amount i)
+  (cdr (assq 'amount i)))
+
+(define (api-invoice-due-day i)
+  (cdr (assq 'due-day i)))
+
+(define (api-invoice-status i)
+  (cdr (assq 'status i)))
+
+(define (api-invoice-age-days i today)
+  (let ((due (api-invoice-due-day i)))
+    (- today due)))
+
+(define (api-invoice-set-status i s)
+  (let ((cell (assq 'status i)))
+    (if cell
+        (set-cdr! cell s)
+        (set! i (cons (cons 'status s) i))))
+  i)

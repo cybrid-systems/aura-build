@@ -1,0 +1,75 @@
+; currency.aura — currency normalization and amount arithmetic.
+;
+; Centralizes all currency-code handling and arithmetic over trade
+; amounts. Currency codes are stored as symbols (e.g. 'USD, 'EUR);
+; normalize-ccy trims whitespace and uppercases them so that lookups
+; against the MTA registry and trade filtering compare consistently.
+;
+; All amounts are exact non-negative integers in this engine (no
+; fractional cents, no floating point). amount+ and amount- operate
+; under that contract; sum-amounts is the reducer used by efficiency,
+; report and compliance when totaling obligations and flows.
+
+; normalize-ccy: accept either a symbol or a string and return a
+; canonical uppercase symbol. Whitespace is trimmed; empty/invalid
+; inputs yield 'XXX as a sentinel unknown currency.
+(define (normalize-ccy ccy)
+  (define (trim-front s i)
+    (if (and (< i (string-length s))
+             (or (char-whitespace? (string-ref s i))))
+        (trim-front s (+ i 1))
+        i))
+  (define (trim-back s j)
+    (let ((k (- j 1)))
+      (if (and (>= k 0)
+               (char-whitespace? (string-ref s k)))
+          (trim-back s k)
+          j)))
+  (define (upper s)
+    (define (up i acc)
+      (if (< i 0)
+          (list->string (reverse acc))
+          (let ((c (string-ref s i)))
+            (up (- i 1)
+                (cons (char-upcase c) acc)))))
+    (up (- (string-length s) 1) '()))
+  (cond
+    ((symbol? ccy)
+     (normalize-ccy (symbol->string ccy)))
+    ((string? ccy)
+     (let* ((s ccy)
+            (n (string-length s))
+            (a (trim-front s 0))
+            (b (trim-back s n)))
+       (if (>= a b)
+           'XXX
+           (let ((core (substring s a b)))
+             (if (string=? core "")
+                 'XXX
+                 (string->symbol (upper core)))))))
+    (else 'XXX)))
+
+; same-ccy?: structural equality on two currency codes after
+; normalization. We compare symbols directly for speed.
+(define (same-ccy? a b)
+  (equal? (normalize-ccy a) (normalize-ccy b)))
+
+; amount+: addition with explicit contract that inputs are numbers.
+; Negative results would indicate a bug upstream; we still return them
+; faithfully so the caller can decide.
+(define (amount+ a b)
+  (+ a b))
+
+; amount-: subtraction under the same contract. If a < b the result
+; is negative; callers (efficiency, compliance) check zero-sum
+; properties via sums rather than via sign.
+(define (amount- a b)
+  (- a b))
+
+; sum-amounts: fold + over a list of numbers. Empty list => 0.
+(define (sum-amounts lst)
+  (define (walk xs acc)
+    (if (null? xs)
+        acc
+        (walk (cdr xs) (+ acc (car xs)))))
+  (walk lst 0))

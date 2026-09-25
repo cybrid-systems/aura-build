@@ -1,0 +1,132 @@
+; scenario.aura — deterministic test scenario for the clearing engine.
+;
+; Seeds the engine with a fixed set of trades, MTAs, hierarchy, and
+; novation policy so that scenario runs produce identical, inspectable
+; output. The scenario is intentionally small but exercises every
+; code path: novation on/off, MTA filtering, pay-through, netting.
+
+; --- Scenario configuration ---
+
+; Three value dates so we can show date filtering works.
+(define *scenario-dates* '("2026-03-10" "2026-03-11" "2026-03-12"))
+
+; Three currencies, each with its own MTA.
+(define *scenario-currencies* '("USD" "EUR" "JPY"))
+
+; Counterparties: 2 CMs and 4 clients, plus a CCP for novation.
+(define *scenario-parties* '("CM1" "CM2" "CL1" "CL2" "CL3" "CL4" "CCP"))
+
+; --- Trade list ---
+;
+; Hand-authored so that:
+;  - per-pair bilateral exposures are non-trivial (not all 1.0)
+;  - currencies vary
+;  - one trade sits in each of three value-dates
+;  - amounts straddle the MTA so some get filtered and some don't
+;
+; Each entry: (id ccy payer payee amount value-date)
+
+(define *scenario-trades*
+  (list
+    ; ---- USD trades on 2026-03-10 ----
+    (list "T01" "USD" "CL1" "CM1" 1500.00 "2026-03-10")
+    (list "T02" "USD" "CM1" "CL2"  900.00 "2026-03-10")
+    (list "T03" "USD" "CL2" "CM1"  400.00 "2026-03-10")
+    (list "T04" "USD" "CM2" "CL3" 2200.00 "2026-03-10")
+    (list "T05" "USD" "CL3" "CM2" 1300.00 "2026-03-10")
+    ; ---- EUR trades on 2026-03-11 ----
+    (list "T06" "EUR" "CL4" "CM1" 3000.00 "2026-03-11")
+    (list "T07" "EUR" "CM1" "CL1"  800.00 "2026-03-11")
+    (list "T08" "EUR" "CM2" "CL4" 1100.00 "2026-03-11")
+    ; ---- JPY trades on 2026-03-12 ----
+    (list "T09" "JPY" "CL1" "CM2" 500000.00 "2026-03-12")
+    (list "T10" "JPY" "CM2" "CL2" 200000.00 "2026-03-12")
+    (list "T11" "JPY" "CL3" "CM1" 150000.00 "2026-03-12")
+    ; ---- A deliberately-tiny USD trade that should fall under MTA ----
+    (list "T12" "USD" "CL4" "CM1"   25.00 "2026-03-10")))
+
+; --- Per-currency MTA thresholds ---
+;
+; Pick thresholds that drop T12 (USD, 25.00) but keep everything else.
+
+(define *scenario-mtas*
+  (list
+    (cons "USD" 100.00)
+    (cons "EUR" 500.00)
+    (cons "JPY" 100000.00)))
+
+; --- Pay-through hierarchy ---
+;
+; CM1 and CM2 are direct clearing members of the CCP. CL1..CL4
+; clear through one of the CMs. CCP is its own root.
+
+(define *scenario-hierarchy*
+  (list
+    (cons "CL1" "CM1")
+    (cons "CL2" "CM1")
+    (cons "CL3" "CM2")
+    (cons "CL4" "CM2")
+    (cons "CM1" "CCP")
+    (cons "CM2" "CCP")))
+
+; --- Helper: set MTAs from the scenario alist ---
+;
+; mta.aura exposes set-mta!, so we iterate the alist and install.
+
+(define (install-mtas! mtas)
+  (define (walk rest)
+    (if (null? rest)
+        'done
+        (begin
+          (set-mta! (car (car rest)) (cdr (car rest)))
+          (walk (cdr rest)))))
+  (walk mtas))
+
+; --- Helper: register one raw trade triple ---
+;
+; The scenario list is (id ccy payer payee amount value-date); types.aura
+; expects (id ccy payer payee amount value-date) too — so we just pass
+; the list through. We use the 2nd..7th elements as positional args
+; by re-binding via let.
+
+(define (register-raw! raw)
+  (let ((id  (list-ref raw 0))
+        (ccy (list-ref raw 1))
+        (p   (list-ref raw 2))
+        (q   (list-ref raw 3))
+        (a   (list-ref raw 4))
+        (vd  (list-ref raw 5)))
+    (register-trade (make-trade id ccy p q a vd))))
+
+; --- seed-scenario!: the single exported API ---
+;
+; Idempotent: clears prior state, then installs the test configuration.
+
+(define (seed-scenario!)
+  ; 1. Wipe any prior state.
+  (reset-registry!)
+
+  ; 2. Install MTA thresholds before trades so MTA filtering is well
+  ;    defined the moment the engine starts computing.
+  (install-mtas! *scenario-mtas*)
+
+  ; 3. Configure the pay-through hierarchy so effective-counterparty
+  ;    lookups resolve clients → CM → CCP.
+  (set-paythrough! *scenario-hierarchy*)
+
+  ; 4. Default novation policy: 'off (bilateral as-is). Callers can
+  ;    flip to 'ccp via (set-novation-policy! 'ccp) after seeding.
+  (set-novation-policy! 'off)
+
+  ; 5. Register every trade in the scenario.
+  (define (walk ts)
+    (if (null? ts)
+        'done
+        (begin
+          (register-raw! (car ts))
+          (walk (cdr ts)))))
+  (walk *scenario-trades*)
+
+  ; Return the value date the main entry point will run against.
+  ; Main picks the first date in *scenario-dates*.
+  (car *scenario-dates*))

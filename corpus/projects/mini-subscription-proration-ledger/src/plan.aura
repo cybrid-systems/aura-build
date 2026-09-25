@@ -1,0 +1,20 @@
+;; plan.aura — plan catalog entries
+;; A plan is represented as a list: (id name monthly-cents)
+
+(define (make-plan id name monthly-cents)
+  (list id name (money-cents monthly-cents)))
+
+(define (plan-id p)
+  (car p))
+
+(define (plan-name p)
+  (car (cdr p)))
+
+(define (plan-monthly-cents p)
+  (car (cdr (cdr p))))
+
+(define (plan-lookup plans id)
+  ;; Linear scan; small catalog expected.
+  (cond ((null? plans) #f)
+        ((equal? (plan-id (car plans)) id) (car plans))
+        (else (plan-lookup (cdr plans) id))))

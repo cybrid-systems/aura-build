@@ -1,0 +1,51 @@
+;; fee.aura
+;; Tiered late-payment fee logic.
+;;
+;; Fee schedule (tiered, applied to invoice amount in cents):
+;;   1-30 days past due  -> 1%  of amount
+;;   31-60 days past due -> 3%  of amount
+;;   61-90 days past due -> 5%  of amount
+;;   90+ days past due   -> 8%  of amount
+;;   current / not yet due -> 0%
+;;
+;; Minimum fee: 100 cents ($1.00) if applicable and amount > 0.
+;; Fee is only applicable for 'open invoices that are past due.
+;;
+;; Exports:
+;;   (api-fee-rate days-past-due)          -> integer basis points (per 10000)
+;;   (api-fee-applicable? invoice today)   -> boolean
+;;   (api-fee-compute invoice today)       -> integer cents
+
+;; --- helpers ------------------------------------------------------------
+
+;; Convert days-past-due to a basis-point rate (per 10000), e.g. 1% = 100.
+(define (api-fee-rate days-past-due)
+  (cond
+    ((<= days-past-due 0)  0)
+    ((<= days-past-due 30) 100)   ;; 1%
+    ((<= days-past-due 60) 300)   ;; 3%
+    ((<= days-past-due 90) 500)   ;; 5%
+    (else                   800))) ;; 8%
+
+;; A fee is applicable when:
+;;   * the invoice is 'open
+;;   * it is past due (days > 0)
+;; We use api-invoice-status and api-invoice-due-day; today is the day
+;; counter from the runner.
+(define (api-fee-applicable? invoice today)
+  (let ((status (api-invoice-status invoice))
+        (due    (api-invoice-due-day invoice)))
+    (and (equal? status 'open)
+         (> today due))))
+
+;; Compute the fee in cents, applying the minimum $1.00 floor when any fee
+;; is charged. Returns 0 when not applicable.
+(define (api-fee-compute invoice today)
+  (if (not (api-fee-applicable? invoice today))
+      0
+      (let ((days (- today (api-invoice-due-day invoice)))
+            (amt  (api-invoice-amount invoice)))
+        (let ((raw (/ (* amt (api-fee-rate days)) 10000)))
+          (if (<= raw 0)
+              0
+              (if (< raw 100) 100 raw))))))

@@ -1,0 +1,96 @@
+;; notice.aura
+;; Stage-based dunning notice cadence.
+;;
+;; Stage progression for an open invoice (caller passes ptps so we can honor
+;;):
+;;   0-30 days past due (or current with PTP) -> 'reminder
+;;   31-60 days past due                       -> 'firm
+;;   61+  days past due                        -> 'final
+;;
+;; If a promise-to-pay is valid for the invoice (PTP active and honored),
+;; we suppress the notice and return 'none (caller still bumps audit /
+;; counters via api-notice-send!).
+;;
+;; Notice templates are short, deterministic strings that include the
+;; invoice id and customer. They are used by api-notice-send! to populate
+;; the audit log.
+;;
+;; Exports:
+;;   (api-notice-stage invoice ptps today) -> 'reminder | 'firm | 'final | 'none
+;;   (api-notice-template stage invoice)    -> string
+;;   (api-notice-send! state stage invoice) -> void (bumps counters, logs)
+;;   (api-notice-counters state)            -> (reminders . n) (firm . n) (final . n)
+
+;; --- stage decision ----------------------------------------------------
+
+(define (api-notice-stage invoice ptps today)
+  ;; If there's an active, honored promise-to-pay for this invoice, hold.
+  (let ((p (and ptps (api-promise-find ptps (api-invoice-id invoice)))))
+    (cond
+      ((and p (api-promise-valid? p today))
+       'none)
+      (else
+       (let ((days (api-invoice-age-days invoice today)))
+         (cond
+           ((<= days 30)  'reminder)
+           ((<= days 60)  'firm)
+           (else          'final)))))))
+
+;; --- templates ---------------------------------------------------------
+
+(define (api-notice-template stage invoice)
+  (let ((id   (api-invoice-id invoice))
+        (cust (api-invoice-customer invoice))
+        (amt  (api-invoice-amount invoice)))
+    (cond
+      ((eq? stage 'reminder)
+       (string-append "REMINDER: Invoice " id " for " cust
+                      " — balance " (number->string amt)
+                      " cents is past due. Please remit."))
+      ((eq? stage 'firm)
+       (string-append "FIRM NOTICE: Invoice " id " for " cust
+                      " — balance " (number->string amt)
+                      " cents is seriously overdue. Pay immediately."))
+      ((eq? stage 'final)
+       (string-append "FINAL NOTICE: Invoice " id " for " cust
+                      " — balance " (number->string amt)
+                      " cents. Account will be reviewed for writeoff."))
+      (else
+       (string-append "NOTICE (none): Invoice " id " for " cust
+                      " — promise-to-pay active, notice held.")))))
+
+;; --- send (mutate state counters + audit) ------------------------------
+
+(define (api-notice-send! state stage invoice)
+  ;; Only bump counters and audit for actual notice stages; 'none is a
+  ;; suppressed notice (still audit-logged but no counter bump).
+  (cond
+    ((eq? stage 'reminder)
+     (api-state-add! state 'reminders-sent 1)
+     (api-state-add! state 'reminders 1)
+     (api-audit-log! state
+                     (string-append "REMINDER_SENT " (api-invoice-id invoice))))
+    ((eq? stage 'firm)
+     (api-state-add! state 'firm-notices-sent 1)
+     (api-state-add! state 'firm 1)
+     (api-audit-log! state
+                     (string-append "FIRM_NOTICE_SENT " (api-invoice-id invoice))))
+    ((eq? stage 'final)
+     (api-state-add! state 'final-notices-sent 1)
+     (api-state-add! state 'final 1)
+     (api-audit-log! state
+                     (string-append "FINAL_NOTICE_SENT " (api-invoice-id invoice))))
+    (else
+     (api-audit-log! state
+                     (string-append "NOTICE_HELD "
+                                    (api-invoice-id invoice))))))
+
+;; --- counters accessor -------------------------------------------------
+
+;; Returns an alist of the three notice counters: (reminders . n) (firm . n)
+;; (final . n). Values default to 0 when missing.
+(define (api-notice-counters state)
+  (list
+    (cons 'reminders (or (api-state-get state 'reminders) 0))
+    (cons 'firm      (or (api-state-get state 'firm)      0))
+    (cons 'final     (or (api-state-get state 'final)     0))))

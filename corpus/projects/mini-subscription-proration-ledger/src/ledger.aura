@@ -1,0 +1,50 @@
+;; ledger.aura — the core ledger: a journal container with balance helpers.
+;;
+;; A ledger wraps a journal (a mutable list of lines) and provides:
+;;   - add-line!: append a line to the journal
+;;   - lines: snapshot of all lines
+;;   - balance: net debit - credit for a given account code
+;;   - total-debits / total-credits: grand totals across all lines
+;;   - balanced?: #t iff debits == credits across the whole ledger
+
+(define (make-ledger)
+  ;; A ledger is a single-cell list whose car is the mutable journal.
+  (list '()))
+
+(define (ledger-journal lg)
+  (car lg))
+
+(define (ledger-set-journal! lg j)
+  (set-car! lg j))
+
+(define (ledger-add-line! lg line)
+  (let ((j (ledger-journal lg)))
+    (ledger-set-journal! lg (journal-append! j line))))
+
+(define (ledger-lines lg)
+  (ledger-journal lg))
+
+(define (ledger-balance lg account-code)
+  ;; Sum of (dr - cr) for every line on account-code.
+  (let loop ((ls (ledger-lines lg)) (acc 0))
+    (cond ((null? ls) acc)
+          ((string=? (line-acct (car ls)) account-code)
+           (loop (cdr ls)
+                 (+ acc
+                    (- (line-dr (car ls))
+                       (line-cr (car ls))))))
+          (else (loop (cdr ls) acc)))))
+
+(define (ledger-total-debits lg)
+  (let loop ((ls (ledger-lines lg)) (acc 0))
+    (cond ((null? ls) acc)
+          (else (loop (cdr ls) (+ acc (line-dr (car ls))))))))
+
+(define (ledger-total-credits lg)
+  (let loop ((ls (ledger-lines lg)) (acc 0))
+    (cond ((null? ls) acc)
+          (else (loop (cdr ls) (+ acc (line-cr (car ls))))))))
+
+(define (ledger-balanced? lg)
+  (= (ledger-total-debits lg)
+     (ledger-total-credits lg)))

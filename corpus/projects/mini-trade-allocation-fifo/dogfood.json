@@ -1,0 +1,63 @@
+{
+  "label": "mini-trade-allocation-fifo",
+  "files": [
+    "util.aura",
+    "lot.aura",
+    "block.aura",
+    "ledger.aura",
+    "policy.aura",
+    "pnl.aura",
+    "reassign.aura",
+    "report.aura",
+    "main.aura"
+  ],
+  "entry": "main.aura",
+  "run_mode": "cli_multi",
+  "expect": "INSTRUMENT=ACME\nCLIENTS=4\nLOTS_OPEN=5\nBLOCKS=3\nALLOC_FIFO_FILLS=3\nALLOC_LIFO_FILLS=4\nALLOC_HIFO_FILLS=4\nPNL_FIFO=1520.0\nPNL_LIFO=970.0\nPNL_HIFO=740.0\nWASH_FLAGS=11\nREASSIGNED=2\nLEDGER_TICKS=0\nRUN_ID=mini-trade-allocation-fifo-001",
+  "expect_res": [
+    "INSTRUMENT\\s*=\\s*ACME",
+    "CLIENTS\\s*=\\s*4",
+    "LOTS_OPEN\\s*=\\s*5",
+    "BLOCKS\\s*=\\s*3",
+    "ALLOC_FIFO_FILLS\\s*=\\s*3",
+    "ALLOC_LIFO_FILLS\\s*=\\s*4",
+    "ALLOC_HIFO_FILLS\\s*=\\s*4",
+    "PNL_FIFO\\s*=\\s*1520\\.0",
+    "PNL_LIFO\\s*=\\s*970\\.0",
+    "PNL_HIFO\\s*=\\s*740\\.0",
+    "WASH_FLAGS\\s*=\\s*11",
+    "REASSIGNED\\s*=\\s*2",
+    "LEDGER_TICKS\\s*=\\s*0",
+    "RUN_ID\\s*=\\s*mini\\-trade\\-allocation\\-fifo\\-001"
+  ],
+  "source_res": [
+    "\\(define\\s+\\(now-tick\\b",
+    "\\(define\\s+\\(make-lot\\b",
+    "\\(define\\s+\\(make-block\\b",
+    "\\(define\\s+\\(make-ledger\\b",
+    "\\(define\\s+\\(allocate\\b",
+    "\\(define\\s+\\(realized-pnl\\b",
+    "\\(define\\s+\\(wash-flags\\b",
+    "\\(define\\s+\\(reassign-ledger\\b",
+    "\\(define\\s+\\(summarize\\b",
+    "\\(define\\s+\\(ledger-tick\\b"
+  ],
+  "expect_keys": [
+    "INSTRUMENT",
+    "CLIENTS",
+    "LOTS_OPEN",
+    "BLOCKS",
+    "ALLOC_FIFO_FILLS",
+    "ALLOC_LIFO_FILLS",
+    "ALLOC_HIFO_FILLS",
+    "PNL_FIFO",
+    "PNL_LIFO",
+    "PNL_HIFO",
+    "WASH_FLAGS",
+    "REASSIGNED",
+    "LEDGER_TICKS",
+    "RUN_ID"
+  ],
+  "seed_from_stub": true,
+  "user_extra": "Multi-file project mini-trade-allocation-fifo; implement GOAL.md APIs; print KEY=value via main.aura using module calls."
+}

@@ -1,0 +1,138 @@
+; main.aura — entry point for the mini clearing & netting engine.
+;
+; Loads the engine by relying on the fact that all preceding .aura files
+; share the same top-level environment on a single CLI invocation.
+; This file:
+;   1. Seeds the canonical scenario
+;   2. Computes all required metrics
+;   3. Prints the 15 KEY=value lines required by the GOAL contract
+;
+; All values are derived from the module APIs — none are hardcoded.
+
+; Pick the scenario value-date that the seeded trades share.
+(define *run-vd* (trade-value-date (car (all-trades))))
+(define *run-ccy* (trade-ccy (car (all-trades))))
+
+; Gross obligations per counterparty (sum of absolute outflows).
+(define (party-gross t)
+  (cond
+    ((equal? (trade-payer t) (trade-payee t))
+     (trade-amount t))
+    (else (trade-amount t))))
+
+(define (party-outflow t)
+  (if (and (equal? (trade-value-date t) *run-vd*)
+           (equal? (trade-ccy t) *run-ccy*))
+      (trade-amount t)
+      0))
+
+(define (sum lst)
+  (if (null? lst) 0 (+ (car lst) (sum (cdr lst)))))
+
+; Helper: sum of absolute outflows for all trades on vd/ccy.
+(define *gross-obligations*
+  (sum (map party-outflow (all-trades))))
+
+; Helpers for net obligations computation.
+(define (add-map m k v)
+  (let ((existing (assq k m)))
+    (if existing
+        (begin (set-cdr! existing (+ (cdr existing) v)) m)
+        (cons (cons k v) m))))
+
+(define (map-get m k)
+  (let ((p (assq k m)))
+    (if p (cdr p) 0)))
+
+; Build net position map from settlement instructions.
+(define (net-from-instructions instrs acc)
+  (if (null? instrs) acc
+      (let ((i (car instrs)))
+        (net-from-instructions
+          (cdr instrs)
+          (let ((p (instruction-payer i))
+                (q (instruction-payee i))
+                (a (instruction-amount i)))
+            (add-map (add-map acc p (- a)) q a))))))
+
+; Determine the net obligations value (absolute sum of positive legs).
+(define *net-obligations*
+  (let ((instrs (build-instructions *run-vd* *run-ccy*))
+        (netmap (net-from-instructions
+                  (build-instructions *run-vd* *run-ccy*) '())))
+    (let loop ((xs netmap) (acc 0))
+      (if (null? xs) acc
+          (let ((v (cdar xs)))
+            (loop (cdr xs)
+                  (if (> v 0) (+ acc v) acc)))))))
+
+; Compute number of counterparties.
+(define *counterparty-count* (length (party-list)))
+
+; Compute number of trades that cleared (passed MTA) vs uncleared.
+; Under novation 'off: count trades with amount >= MTA for vd/ccy.
+(define (count-cleared)
+  (let loop ((ts (all-trades)) (n 0))
+    (cond
+      ((null? ts) n)
+      ((and (equal? (trade-value-date (car ts)) *run-vd*)
+            (equal? (trade-ccy (car ts)) *run-ccy*)
+            (not (below-mta? (trade-amount (car ts)) *run-ccy*)))
+       (loop (cdr ts) (+ n 1)))
+      (else (loop (cdr ts) n)))))
+
+(define (count-uncleared)
+  (let loop ((ts (all-trades)) (n 0))
+    (cond
+      ((null? ts) n)
+      ((and (equal? (trade-value-date (car ts)) *run-vd*)
+            (equal? (trade-ccy (car ts)) *run-vd*)
+            (below-mta? (trade-amount (car ts)) *run-ccy*))
+       (loop (cdr ts) (+ n 1)))
+      ((and (equal? (trade-value-date (car ts)) *run-vd*)
+            (equal? (trade-ccy (car ts)) *run-ccy*)
+            (below-mta? (trade-amount (car ts)) *run-ccy*))
+       (loop (cdr ts) (+ n 1)))
+      (else (loop (cdr ts) n)))))
+
+(define *cleared* (count-cleared))
+(define *uncleared* (count-uncleared))
+
+; Efficiency ratio rounded to 4 places.
+(define *efficiency*
+  (efficiency-ratio *gross-obligations* *net-obligations*))
+
+; Largest single payment.
+(define *largest-payment*
+  (largest-single-payment (build-instructions *run-vd* *run-ccy*)))
+
+; Compliance check.
+(define *compliance*
+  (if (check-consistency *run-vd* *run-ccy*) "PASS" "FAIL"))
+
+; Print KEY=value lines in the required order.
+(define (print-kv key val)
+  (display key) (display "=")
+  (display val) (newline))
+
+; Seed the canonical scenario.
+(seed-scenario!)
+
+(print-kv "VALUE_DATE" (format-date *run-vd*))
+(print-kv "CURRENCY" (normalize-ccy *run-ccy*))
+(print-kv "COUNTERPARTY_COUNT" *counterparty-count*)
+(print-kv "TRADE_COUNT" (length (all-trades)))
+(print-kv "GROSS_OBLIGATIONS" *gross-obligations*)
+(print-kv "NET_OBLIGATIONS" *net-obligations*)
+(print-kv "NETTING_EFFICIENCY" *efficiency*)
+(print-kv "CLEARED_COUNT" *cleared*)
+(print-kv "UNCLEARED_COUNT" *uncleared*)
+(print-kv "LARGEST_SINGLE_PAYMENT" *largest-payment*)
+(print-kv "MTA_THRESHOLD" (get-mta *run-ccy*))
+(print-kv "NOVATION_POLICY" (novation-policy))
+(print-kv "TIER_DEPTH" (tier-depth))
+(print-kv "SETTLEMENT_INSTRUCTION_COUNT"
+  (length (build-instructions *run-vd* *run-ccy*)))
+(print-kv "ZERO_SUM_OK"
+  (if (zero-sum? (net-obligations *run-vd* *run-ccy*)) "YES" "NO"))
+(print-kv "COMPLIANCE_CHECK" *compliance*)

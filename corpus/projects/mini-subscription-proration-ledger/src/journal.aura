@@ -1,0 +1,46 @@
+;; journal.aura — append-only journal of ledger lines.
+;; A journal line is represented as a list: (ts acct dr cr memo)
+;;   ts   — integer timestamp (day index or similar)
+;;   acct — string account code (e.g. "CASH", "REVENUE")
+;;   dr   — integer cents debited (>= 0)
+;;   cr   — integer cents credited (>= 0)
+;;   memo — string description
+
+(define (make-line ts acct dr cr memo)
+  (list (date-day ts) acct (money-cents dr) (money-cents cr) memo))
+
+(define (line-ts l)
+  (car l))
+
+(define (line-acct l)
+  (car (cdr l)))
+
+(define (line-dr l)
+  (car (cdr (cdr l))))
+
+(define (line-cr l)
+  (car (cdr (cdr (cdr l)))))
+
+(define (line-memo l)
+  (car (cdr (cdr (cdr (cdr l))))))
+
+(define (journal-append! j l)
+  ;; Mutate the journal (a list) by appending l to its end.
+  ;; Journals are stored as mutable lists via set! on the cdr-chain tail.
+  (cond ((null? j)
+         (set! j (cons l '()))
+         j)
+        ((null? (cdr j))
+         (set-cdr! j (cons l '()))
+         j)
+        (else
+         (let loop ((rest (cdr j)))
+           (cond ((null? (cdr rest))
+                  (set-cdr! rest (cons l '()))
+                  j)
+                 (else (loop (cdr rest))))))))
+
+(define (journal-all j)
+  ;; Return a fresh list of all lines in order.
+  (cond ((null? j) '())
+        (else (cons (car j) (journal-all (cdr j))))))

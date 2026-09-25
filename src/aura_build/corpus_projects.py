@@ -128,7 +128,8 @@ Requirements:
   RECORDS_APPENDED=3
   ...
 - No assert/unittest that aborts before prints; no network; runtime << 2s.
-- Valid Python only (no Scheme ? in identifiers).
+- Valid Python only (no Scheme ? in identifiers; write token_kind_p, not token_kind?).
+- The ```python fence is only a delimiter. Do not leave fence lines inside the script.
 - Do NOT print JSON or prose — ONLY KEY=value lines on stdout.
 """
 
@@ -685,6 +686,92 @@ def _parse_goal_and_dogfood(text: str, entry: dict[str, Any]) -> tuple[str, dict
     return goal, dogfood
 
 
+def sanitize_python_ref(src: str) -> str:
+    """Drop a wrapping markdown fence and Scheme ``name?`` predicates.
+
+    MiniMax sometimes emits the fence as line 1 of ``run_scenarios.py``, or
+    copies Aura ``deleted?`` names into Python. Both make the oracle fail
+    before any KEY=value line exists.
+    """
+    text = src.strip()
+    text = re.sub(r"^```(?:python|py)[^\n]*\n", "", text, count=1, flags=re.IGNORECASE)
+    text = re.sub(r"\n?```[ \t]*$", "", text)
+    text = re.sub(r"\b([A-Za-z_][A-Za-z0-9_]*)\?(?=\s*\()", r"\1_p", text)
+    return text.strip() + "\n"
+
+
+def _sh_quote(text: str) -> str:
+    return "'" + text.replace("'", "'\"'\"'") + "'"
+
+
+def write_project_verify(pdir: Path, files: list[str], expect: str) -> Path | None:
+    """Cold oracle so llm-dogfood / combat can score a corpus project."""
+    rels: list[str] = []
+    for fn in files:
+        try:
+            rels.append(aura_rel_file(fn).as_posix())
+        except ValueError:
+            return None
+    if not rels or "main.aura" not in rels:
+        return None
+    expect_lines = [ln.strip() for ln in expect.splitlines() if "=" in ln.strip()]
+    if len(expect_lines) < 3:
+        return None
+    file_array = "\n".join(f"  {_sh_quote(rel)}" for rel in rels)
+    checks = []
+    for ln in expect_lines:
+        key, value = ln.split("=", 1)
+        pat = re.escape(key.strip()) + r"[[:space:]]*=[[:space:]]*" + re.escape(value.strip())
+        checks.append(f"printf '%s\\n' \"$out\" | grep -qE {_sh_quote(pat)} || ok=0")
+    script = f"""#!/usr/bin/env bash
+# Measured oracle. Expect lines come from ref/run_scenarios.py via tests.json.
+set -euo pipefail
+ARG="${{1:-}}"
+if [[ -z "$ARG" ]]; then
+  echo "usage: verify.sh <candidate_dir>" >&2
+  exit 2
+fi
+if [[ -z "${{AURA_BIN:-}}" || ! -x "${{AURA_BIN}}" ]]; then
+  echo "error: set AURA_BIN to a working Aura binary" >&2
+  exit 2
+fi
+if [[ -d "$ARG" ]]; then
+  DIR="$ARG"
+else
+  DIR="$(cd "$(dirname "$ARG")" && pwd)"
+fi
+FILES=(
+{file_array}
+)
+args=()
+for f in "${{FILES[@]}}"; do
+  if [[ ! -f "$DIR/$f" ]]; then
+    echo "verify fail: missing $f" >&2
+    exit 1
+  fi
+  args+=("$DIR/$f")
+done
+export AURA_SANDBOX="${{AURA_SANDBOX:-off}}"
+out="$("$AURA_BIN" "${{args[@]}}" 2>&1)" || true
+printf '%s\\n' "$out"
+ok=1
+{chr(10).join(checks)}
+if printf '%s\\n' "$out" | grep -qiE '\\berror:|\\bunbound variable\\b|parse error|type error'; then
+  ok=0
+fi
+if [[ "$ok" -eq 1 ]]; then
+  echo "verify ok"
+  exit 0
+fi
+echo "verify fail" >&2
+exit 1
+"""
+    path = pdir / "verify.sh"
+    path.write_text(script, encoding="utf-8")
+    path.chmod(0o755)
+    return path
+
+
 def generate_ref(
     entry: dict[str, Any],
     goal: str,
@@ -714,22 +801,22 @@ def generate_ref(
     text = str(resp.get("content") or "")
     files: dict[str, str] = {}
     for m in _FENCE_PY_NAMED.finditer(text):
-        body = m.group(2).strip()
-        if len(body) < 40:
+        body = sanitize_python_ref(m.group(2))
+        if len(body.strip()) < 40:
             continue
-        files[m.group(1).strip()] = body + "\n"
+        files[m.group(1).strip()] = body
     if "run_scenarios.py" not in files:
         # any substantial unnamed/named python fence
         for m in _FENCE_PY.finditer(text):
-            body = m.group(1).strip()
-            if len(body) >= 40 and ("print" in body or "KEY" in body or "__main__" in body):
-                files["run_scenarios.py"] = body + "\n"
+            body = sanitize_python_ref(m.group(1))
+            if len(body.strip()) >= 40 and ("print" in body or "KEY" in body or "__main__" in body):
+                files["run_scenarios.py"] = body
                 break
     if "run_scenarios.py" not in files:
-        # last resort: whole reply if it looks like python
-        stripped = text.strip()
+        # last resort: whole reply if it looks like python (fence may be unclosed)
+        stripped = sanitize_python_ref(text)
         if "def " in stripped and "print" in stripped and len(stripped) > 80:
-            files["run_scenarios.py"] = stripped + "\n"
+            files["run_scenarios.py"] = stripped
     # drop empty stubs
     files = {k: v for k, v in files.items() if len(v.strip()) >= 40}
     if "run_scenarios.py" not in files:
@@ -953,7 +1040,13 @@ def process_project(entry: dict[str, Any], bc: ProjectBurnConfig, cfg: MiniMaxCo
         text, gmeta = generate_goal(entry, cfg=cfg, bc=bc)
         summary["actions"].append("goal")
         if not text.strip():
+            prev = _load_meta(pdir / "meta.json")
+            prev["goal_attempts"] = int(prev.get("goal_attempts") or 0) + 1
+            prev["slug"] = slug
+            prev.setdefault("variants", [])
+            (pdir / "meta.json").write_text(json.dumps(prev, indent=2) + "\n", encoding="utf-8")
             summary["goal_failed"] = gmeta.get("error") or "empty"
+            summary["goal_attempts"] = prev["goal_attempts"]
             return summary
         goal, dogfood = _parse_goal_and_dogfood(text, entry)
         goal_path.write_text(goal, encoding="utf-8")
@@ -999,21 +1092,27 @@ def process_project(entry: dict[str, Any], bc: ProjectBurnConfig, cfg: MiniMaxCo
                 ref_dir.rename(bad)
             except OSError:
                 pass
+            prev = _load_meta(pdir / "meta.json")
+            attempts = int(prev.get("ref_attempts") or 0) + 1
             (pdir / "meta.json").write_text(
                 json.dumps(
                     {
                         "slug": slug,
+                        "domain": entry.get("domain"),
                         "ref": run_info,
+                        "ref_attempts": attempts,
                         "updated_at": _utc_now(),
-                        "variants": [],
+                        "variants": prev.get("variants") or [],
                     },
                     indent=2,
                 )
                 + "\n",
                 encoding="utf-8",
             )
+            summary["ref_attempts"] = attempts
             return summary
         _write_dogfood_with_expect(dog_path, dogfood, run_info["expect"])
+        write_project_verify(pdir, files, str(run_info.get("expect") or ""))
         dogfood = json.loads(dog_path.read_text(encoding="utf-8"))
 
     tests = json.loads(tests_path.read_text(encoding="utf-8"))
@@ -1128,9 +1227,11 @@ def process_project(entry: dict[str, Any], bc: ProjectBurnConfig, cfg: MiniMaxCo
 
 def project_needs_work(entry: dict[str, Any], bc: ProjectBurnConfig) -> bool:
     pdir = project_dir(bc.corpus_dir, str(entry["slug"]))
-    if not (pdir / "tests.json").is_file():
-        return True
     meta = _load_meta(pdir / "meta.json")
+    if not (pdir / "GOAL.md").is_file():
+        return int(meta.get("goal_attempts") or 0) < 2
+    if not (pdir / "tests.json").is_file():
+        return int(meta.get("ref_attempts") or 0) < 2
     dog = {}
     if (pdir / "dogfood.json").is_file():
         try:

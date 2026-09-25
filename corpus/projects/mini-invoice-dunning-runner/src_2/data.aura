@@ -1,0 +1,40 @@
+;; data.aura
+;; Seed portfolio of invoices for the dunning runner.
+;;
+;; Exports:
+;;   - seed-portfolio : a global value used internally
+;;   - (api-portfolio-data) : returns a list of invoice records + a "today" day
+;;
+;; Invoice records are simple alists:
+;;   ((id . "INV-001") (customer . "ACME") (amount . 12345) (due-day . 45) (status . open))
+;;
+;; status ∈ {open, paid, disputed}
+;; All amounts are in cents.
+
+(define seed-portfolio
+  (list
+    (list (cons 'id "INV-001") (cons 'customer "ACME")    (cons 'amount 125000) (cons 'due-day 15)  (cons 'status 'open))
+    (list (cons 'id "INV-002") (cons 'customer "ACME")    (cons 'amount  45000) (cons 'due-day 35)  (cons 'status 'open))
+    (list (cons 'id "INV-003") (cons 'customer "BETA")    (cons 'amount  78000) (cons 'due-day 50)  (cons 'status 'open))
+    (list (cons 'id "INV-004") (cons 'customer "BETA")    (cons 'amount 220000) (cons 'due-day 70)  (cons 'status 'open))
+    (list (cons 'id "INV-005") (cons 'customer "GAMMA")   (cons 'amount  33500) (cons 'due-day 80)  (cons 'status 'open))
+    (list (cons 'id "INV-006") (cons 'customer "GAMMA")   (cons 'amount 500000) (cons 'due-day 95)  (cons 'status 'open))
+    (list (cons 'id "INV-007") (cons 'customer "DELTA")   (cons 'amount  15500) (cons 'due-day 100) (cons 'status 'open))
+    (list (cons 'id "INV-008") (cons 'customer "DELTA")   (cons 'amount  99000) (cons 'due-day 105) (cons 'status 'open))
+    (list (cons 'id "INV-009") (cons 'customer "EPSILON") (cons 'amount  62500) (cons 'due-day 25)  (cons 'status 'paid))
+    (list (cons 'id "INV-010") (cons 'customer "EPSILON") (cons 'amount  80000) (cons 'due-day 40)  (cons 'status 'paid))
+    (list (cons 'id "INV-011") (cons 'customer "ZETA")    (cons 'amount  45000) (cons 'due-day 60)  (cons 'status 'disputed))
+    (list (cons 'id "INV-012") (cons 'customer "ZETA")    (cons 'amount 175000) (cons 'due-day 110) (cons 'status 'open))
+    (list (cons 'id "INV-013") (cons 'customer "ETA")     (cons 'amount  30000) (cons 'due-day 20)  (cons 'status 'open))
+    (list (cons 'id "INV-014") (cons 'customer "ETA")     (cons 'amount  42000) (cons 'due-day 55)  (cons 'status 'open))
+    (list (cons 'id "INV-015") (cons 'customer "THETA")   (cons 'amount 250000) (cons 'due-day 75)  (cons 'status 'open))
+    (list (cons 'id "INV-016") (cons 'customer "IOTA")    (cons 'amount  18500) (cons 'due-day 85)  (cons 'status 'open))
+    (list (cons 'id "INV-017") (cons 'customer "IOTA")    (cons 'amount 150000) (cons 'due-day 120) (cons 'status 'open))
+    (list (cons 'id "INV-018") (cons 'customer "KAPPA")   (cons 'amount  67500) (cons 'due-day 30)  (cons 'status 'open))
+    (list (cons 'id "INV-019") (cons 'customer "KAPPA")   (cons 'amount  90000) (cons 'due-day 65)  (cons 'status 'paid))
+    (list (cons 'id "INV-020") (cons 'customer "LAMBDA")  (cons 'amount 110000) (cons 'due-day 90)  (cons 'status 'disputed))))
+
+(define (api-portfolio-data)
+  ;; Returns a pair: (invoices . today)
+  ;; today is an integer day counter for aging computations.
+  (cons seed-portfolio 120))

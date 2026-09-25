@@ -1,0 +1,97 @@
+;; audit.aura
+;; Audit trail for the dunning run.
+;;
+;; Audit entries are appended to a list stored in the shared run state
+;; under the key 'audit. Each entry is an alist:
+;;   ((ts . <int-day>) (kind . <symbol-or-string>) (msg . <string>))
+;;
+;; The `kind` is a short symbolic tag (e.g., 'NOTICE, 'FEE, 'WRITEOFF,
+;; 'PROMISE) so callers can filter. `msg` is a human-readable line.
+;;
+;; State shape (managed by state.aura):
+;;   - 'audit : list of audit-entry alists (append-only)
+;;
+;; Exports:
+;;   (api-audit-log!  state msg)        -> void; appends entry
+;;   (api-audit-entries state)          -> list of entries
+;;   (api-audit-format entry)           -> formatted single-line string
+
+;; --- helpers ------------------------------------------------------------
+
+;; Build an audit-entry alist. `day` is the run's "today" counter, `kind`
+;; is a symbol, `msg` is a string.
+(define (audit-make-entry day kind msg)
+  (list (cons 'ts day)
+        (cons 'kind kind)
+        (cons 'msg msg)))
+
+;; Append an entry to the state's 'audit list. We avoid relying on
+;; api-state-add! because we want a clean append-only semantic; if the
+;; state module supports a generic add, that works too, but here we
+;; re-implement locally so audit is self-contained.
+(define (audit-append! state entry)
+  (let ((current (api-state-get state 'audit)))
+    (api-state-set! state 'audit (append current (list entry)))))
+
+;; --- public API ---------------------------------------------------------
+
+(define (api-audit-log! state msg)
+  (let* ((day (api-state-get state 'today))
+         ;; Infer a kind tag by looking at the prefix of the message.
+         ;; This keeps the call sites simple (one string arg) while still
+         ;; letting consumers categorize entries.
+         (kind (cond
+                 ((string-prefix? msg "NOTICE:")    'NOTICE)
+                 ((string-prefix? msg "LATE_FEE:")  'LATE-FEE)
+                 ((string-prefix? msg "WRITEOFF:")  'WRITEOFF)
+                 ((string-prefix? msg "PROMISE:")   'PROMISE)
+                 (else                              'INFO)))
+         (entry (audit-make-entry day kind msg)))
+    (audit-append! state entry)))
+
+(define (api-audit-entries state)
+  (api-state-get state 'audit))
+
+(define (api-audit-format e)
+  (let ((ts   (or (cdr (assq 'ts e))   0))
+        (kind (or (cdr (assq 'kind e)) 'INFO))
+        (msg  (or (cdr (assq 'msg e))  "")))
+    (string-append "[t="
+                   (number->string ts)
+                   "] "
+                   (symbol->string-wrapped kind)
+                   " "
+                   msg)))
+
+;; --- small string helpers ----------------------------------------------
+
+;; Cheap "does s start with prefix?" check, walks char-by-char on a
+;; substring of `s` of length (string-length prefix) and compares.
+(define (string-prefix? s prefix)
+  (let ((sl (string-length s))
+        (pl (string-length prefix)))
+    (cond
+      ((> pl sl) #f)
+      ((= pl 0) #t)
+      (else
+       (let loop ((i 0))
+         (cond
+           ((= i pl) #t)
+           ((char=? (string-ref s i) (string-ref prefix i))
+            (loop (+ i 1)))
+           (else #f)))))))
+
+;; Convert a symbol to a string without depending on symbol->string
+;; being exported by the runtime. We rebuild a string char-by-char via
+;; display-to-string trick: since Aura's stdlib here is minimal, we use
+;; a tiny manual mapping for the kind tags we emit. Unknown kinds are
+;; rendered as "INFO".
+
+(define (symbol->string-wrapped sym)
+  (cond
+    ((eq? sym 'NOTICE)   "NOTICE")
+    ((eq? sym 'LATE-FEE) "LATE_FEE")
+    ((eq? sym 'WRITEOFF) "WRITEOFF")
+    ((eq? sym 'PROMISE)  "PROMISE")
+    ((eq? sym 'INFO)     "INFO")
+    (else                "INFO")))

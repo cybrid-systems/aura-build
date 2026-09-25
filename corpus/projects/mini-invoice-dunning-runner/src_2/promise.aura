@@ -1,0 +1,82 @@
+;; promise.aura
+;; Promise-to-pay (PTP) tracking.
+;;
+;; A promise is represented as an alist:
+;;   ((customer . "ACME") (invoice-id . "INV-001") (by-day . 60) (honored . #f))
+;;
+;; `honored` is set to #t once the promise's by-day passes (the customer
+;; either paid or the run has moved past the promise date and we treat the
+;; invoice as still unpaid → promise broken at scan time).
+;;
+;; Actually, semantics used by the runner:
+;;   - api-promise-honored? checks the CURRENT state of the invoice (paid?).
+;;   - api-promise-valid? checks the promise hasn't expired AND is honored.
+;;
+;; Exports:
+;;   (api-promise-make cust invoice-id by-day) -> promise alist
+;;   (api-promise-valid? p today)              -> boolean
+;;   (api-promise-honored? p today)            -> boolean
+;;   (api-promise-add ptps p)                  -> new ptps list
+;;   (api-promise-find ptps invoice-id)        -> promise or #f
+
+(define (api-promise-make cust invoice-id by-day)
+  (list (cons 'customer cust)
+        (cons 'invoice-id invoice-id)
+        (cons 'by-day by-day)
+        (cons 'honored #f)))
+
+(define (api-promise-customer p)
+  (cdr (assq 'customer p)))
+
+(define (api-promise-invoice-id p)
+  (cdr (assq 'invoice-id p)))
+
+(define (api-promise-by-day p)
+  (cdr (assq 'by-day p)))
+
+(define (api-promise-honored p)
+  (cdr (assq 'honored p)))
+
+;; A promise is "valid" if today's date is on or before the promised day
+;; (i.e., the customer still has time to honor it).
+(define (api-promise-valid? p today)
+  (<= today (api-promise-by-day p)))
+
+;; A promise is honored if the runner has marked it so. The runner will
+;; flip the `honored` flag once today >= by-day and the invoice is paid
+;; (or simply as a bookkeeping action). When the promise is found by the
+;; runner post-cadence, honored=#t means the customer kept the promise.
+(define (api-promise-honored? p today)
+  (and (api-promise-honored p)
+       (<= today (api-promise-by-day p))))
+
+;; Prepend a promise to the list of PTPs. Order is not significant for
+;; correctness, but most-recent-first is convenient for the runner.
+(define (api-promise-add ptps p)
+  (cons p ptps))
+
+;; Find a promise for a given invoice id.
+(define (api-promise-find ptps invoice-id)
+  (let loop ((rest ptps))
+    (cond
+      ((null? rest) #f)
+      ((equal? (api-promise-invoice-id (car rest)) invoice-id)
+       (car rest))
+      (else (loop (cdr rest))))))
+
+;; Mark a promise as honored in place (mutates the alist cons cells).
+;; Returns the promise for convenience.
+(define (api-promise-mark-honored! p)
+  (let ((h (assq 'honored p)))
+    (if h
+        (set-cdr! h #t)
+        (set! p (append p (list (cons 'honored #t))))))
+  p)
+
+;; Mark a promise as broken in place.
+(define (api-promise-mark-broken! p)
+  (let ((h (assq 'honored p)))
+    (if h
+        (set-cdr! h #f)
+        (set! p (append p (list (cons 'honored #f))))))
+  p)

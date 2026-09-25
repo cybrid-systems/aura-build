@@ -1,0 +1,72 @@
+;; scenario.aura — orchestrates the trial billing scenario.
+;;
+;; Builds a small plan catalog, a chart of accounts, a subscription roster,
+;; and drives a sequence of billing events through the posting API to
+;; produce a balanced ledger. The scenario date-anchor is the fixed
+;; reference day for the run.
+
+(define (build-catalog)
+  ;; A 3-plan catalog: Starter, Pro, Business.
+  (list
+    (make-plan "starter"   "Starter"   2900)
+    (make-plan "pro"       "Pro"       7900)
+    (make-plan "business"  "Business" 19900)))
+
+(define (build-accounts)
+  ;; Standard SaaS chart of accounts.
+  (list
+    (make-account "CASH"        'asset)
+    (make-account "AR"          'asset)
+    (make-account "UNEARNED"    'liability)
+    (make-account "REVENUE"     'revenue)
+    (make-account "REFUNDS"     'expense)))
+
+(define (scenario-date-anchor)
+  ;; Anchor day for the scenario run (day 30 = 2025-01-31).
+  (date-from-yyyy-mm-dd "2025-01-31"))
+
+(define (run-scenario)
+  ;; Drive the scenario end-to-end. Returns the populated ledger.
+  ;; Subscriptions and the ledger are constructed inside so the API is
+  ;; fully self-contained — callers receive the ledger via the report API.
+  (let* ((plans     (build-catalog))
+         (accounts  (build-accounts))
+         (lg        (make-ledger))
+         (ts        (scenario-date-anchor))
+         (period    30)
+         ;; Subscription 1: started on day 1 on 'starter' (mid-cycle-ish).
+         (s1        (make-sub "S001" "starter" (date-add-days ts -29) period))
+         ;; Subscription 2: started on day 1 on 'pro'.
+         (s2        (make-sub "S002" "pro"     (date-add-days ts -29) period))
+         ;; Subscription 3: started on day 1 on 'business'.
+         (s3        (make-sub "S003" "business"(date-add-days ts -29) period)))
+    ;; Day-1 signups: collect one full period of fees up front.
+    (post-charge! lg accounts 1 s1 2900  "signup Starter period 1")
+    (post-charge! lg accounts 1 s2 7900  "signup Pro period 1")
+    (post-charge! lg accounts 1 s3 19900 "signup Business period 1")
+    ;; Day-15: S001 upgrades from starter to pro; 16 days remain.
+    (let ((new-plan (plan-lookup plans "pro")))
+      (post-upgrade! lg accounts 15 s1
+        (plan-lookup plans "starter") new-plan 16 period))
+    ;; Day-20: goodwill credit to S002 for 500 cents.
+    (post-credit! lg accounts 20 s2 500 "goodwill credit")
+    ;; Day-25: S003 cancels — credit unused 6 days at business daily rate.
+    (let ((bus (plan-lookup plans "business")))
+      (post-credit! lg accounts 25 s3
+        (prorate-credit (plan-monthly-cents bus) 6 period)
+        "cancellation credit"))
+    ;; Daily accrual sweep through day 30 for all three subs.
+    (let loop ((day 2))
+      (cond ((> day 30) 'done)
+            (else
+              (post-daily-accrual! lg accounts day s1 day period)
+              (post-daily-accrual! lg accounts day s2 day period)
+              (post-daily-accrual! lg accounts day s3 day period)
+              (loop (+ day 1)))))
+    lg))
+
+;; (api …) declarations for this module.
+(api build-catalog)
+(api build-accounts)
+(api scenario-date-anchor)
+(api run-scenario)

@@ -1,0 +1,97 @@
+;; report.aura — summarize the trial run for stdout emission.
+;;
+;; A report is built from a ledger, the chart-of-accounts, and the
+;; subscription list, and exposes a small set of integer / boolean
+;; metrics that main.aura prints under the project's stdout contract.
+
+;; ---- internal helpers --------------------------------------------------
+
+(define (report-sum-dr acct)
+  ;; sum of (dr - cr) over lines touching `acct`.
+  ;; This is a "net" balance for the report's per-account rows.
+  (let ((lines (ledger-lines (report-ledger))))
+    (report-sum-dr-aux lines acct 0)))
+
+(define (report-sum-dr-aux lines acct acc)
+  (cond ((null? lines) acc)
+        (else
+          (let ((l (car lines)))
+            (if (equal? (line-acct l) acct)
+                (report-sum-dr-aux (cdr lines)
+                                   acct
+                                   (+ acc (- (line-dr l) (line-cr l))))
+                (report-sum-dr-aux (cdr lines) acct acc))))))
+
+;; A report wraps a snapshot of: ledger, accounts, subs, plus a few
+;; cached aggregate values.
+
+(define (make-report lg accounts subs)
+  (list 'report lg accounts subs))
+
+(define (report-ledger r)
+  (car (cdr r)))
+
+(define (report-accounts r)
+  (car (cdr (cdr r))))
+
+(define (report-subs r)
+  (car (cdr (cdr (cdr r)))))
+
+;; ---- public API --------------------------------------------------------
+
+(define (report-summarize lg accounts subs)
+  ;; Build and return a report summarizing the ledger for these
+  ;; accounts/subs. main.aura calls this once and then queries
+  ;; individual metrics via the other report-* APIs.
+  (make-report lg accounts subs))
+
+(define (report-key-count subs)
+  ;; Number of distinct subscription ids in the subs list.
+  (report-count-distinct subs '()) )
+
+(define (report-count-distinct subs seen)
+  (cond ((null? subs) (length seen))
+        (else
+          (let ((id (sub-id (car subs))))
+            (if (member id seen)
+                (report-count-distinct (cdr subs) seen)
+                (report-count-distinct (cdr subs) (cons id seen)))))))
+
+(define (report-line-count lg)
+  ;; Total number of journal lines in the ledger.
+  (length (ledger-lines lg)))
+
+(define (report-flag-balanced lg)
+  ;; #t iff grand-total debits equal grand-total credits.
+  (= (ledger-total-debits lg) (ledger-total-credits lg)))
+
+(define (report-ar-balance lg)
+  ;; Net balance of the "AR" (accounts receivable) account. Positive
+  ;; means customers owe us; negative means we owe customers.
+  (report-sum-dr lg "AR"))
+
+(define (report-revenue-balance lg)
+  ;; Net balance of the "REVENUE" account. Should grow as we accrue.
+  (report-sum-dr lg "REVENUE"))
+
+(define (report-unearned-balance lg)
+  ;; Net balance of the "UNEARNED" liability account.
+  (report-sum-dr lg "UNEARNED"))
+
+(define (report-cash-balance lg)
+  ;; Net balance of the "CASH" asset account.
+  (report-sum-dr lg "CASH"))
+
+(define (report-first-memo lg)
+  ;; Memo of the very first journal line, or "" if the ledger is empty.
+  (let ((lines (ledger-lines lg)))
+    (if (null? lines)
+        ""
+        (line-memo (car lines)))))
+
+(define (report-last-memo lg)
+  ;; Memo of the most recent journal line, or "" if empty.
+  (let ((lines (ledger-lines lg)))
+    (if (null? lines)
+        ""
+        (line-memo (car (reverse lines))))))

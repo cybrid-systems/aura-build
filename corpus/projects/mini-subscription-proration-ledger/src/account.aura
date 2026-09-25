@@ -1,0 +1,28 @@
+;; account.aura — chart-of-accounts entries.
+;; An account is represented as a list: (code type)
+;; Types are symbols like 'asset', 'revenue', 'liability', 'equity', 'expense'.
+
+(define (make-account code type)
+  (list code type))
+
+(define (acct-code a)
+  (car a))
+
+(define (acct-type a)
+  (car (cdr a)))
+
+(define (account-lookup accounts code)
+  ;; Linear scan of an alist by account code.
+  (cond ((null? accounts) #f)
+        ((equal? (acct-code (car accounts)) code) (car accounts))
+        (else (account-lookup (cdr accounts) code))))
+
+(define (coa-default)
+  ;; Default chart of accounts for the subscription ledger.
+  (list
+    (make-account "CASH"        'asset)
+    (make-account "AR"          'asset)
+    (make-account "UNEARNED"    'liability)
+    (make-account "REVENUE"     'revenue)
+    (make-account "REFUNDS"     'expense)
+    (make-account "GOODWILL"    'expense)))

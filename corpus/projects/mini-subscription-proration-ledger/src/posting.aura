@@ -1,0 +1,191 @@
+;; posting.aura — high-level posting helpers that turn lifecycle events
+;; into balanced journal entries against the ledger.
+;;
+;; Each posting helper writes one or more paired journal lines via the
+;; journal API, keeping the ledger balanced (debits == credits per
+;; posting, modulo any intentional one-sided memo lines).
+
+;; ----------------------------------------------------------------------------
+;; Internals: two-line posting helper.
+;; ----------------------------------------------------------------------------
+
+(define (posting-pair! lg accounts ts dr-acct dr-amt cr-acct cr-amt memo)
+  ;; Emit a balanced (debit, credit) pair of journal lines.
+  (let ((debit-line  (make-line ts dr-acct dr-amt 0 memo))
+        (credit-line (make-line ts cr-acct 0 cr-amt memo)))
+    (ledger-add-line! lg debit-line)
+    (ledger-add-line! lg credit-line)))
+
+;; ----------------------------------------------------------------------------
+;; post-charge! — record an initial/period charge.
+;;
+;; A charge moves value from Accounts Receivable into Revenue (assuming the
+;; customer will pay later). For an immediate cash charge we would debit
+;; CASH; the scenario uses AR so we default to AR -> REVENUE.
+;;
+;;   Dr  AR         amount-cents
+;;   Cr  REVENUE    amount-cents
+;; ----------------------------------------------------------------------------
+
+(define (post-charge! lg accounts ts sub amount-cents memo)
+  (let ((amount (money-cents amount-cents))
+        (ar (account-lookup accounts "AR"))
+        (rev (account-lookup accounts "REVENUE")))
+    (posting-pair! lg
+                   ts
+                   (acct-code ar)  amount
+                   (acct-code rev) amount
+                   memo)))
+
+;; ----------------------------------------------------------------------------
+;; post-upgrade! — record a mid-cycle plan change.
+;;
+;; The net delta is the difference between the new plan's prorated unused
+;; credit and the old plan's prorated unused credit. If positive, we charge
+;; the customer additional revenue (Dr AR / Cr REVENUE). If negative, we
+;; owe the customer a credit (Dr REVENUE / Cr AR) — but to keep the API
+;; strictly two-sided we still emit the pair with appropriate signs.
+;;
+;; The proration library returns a signed integer; we route it so the
+;; ledger stays balanced regardless of direction.
+;; ----------------------------------------------------------------------------
+
+(define (post-upgrade! lg accounts ts sub old-plan new-plan days-remaining period-days)
+  (let* ((old-monthly (plan-monthly-cents old-plan))
+         (new-monthly (plan-monthly-cents new-plan))
+         (delta (prorate-upgrade old-monthly new-monthly
+                                 days-remaining period-days))
+         (ar    (account-lookup accounts "AR"))
+         (rev   (account-lookup accounts "REVENUE"))
+         (memo  (string-append "plan-change "
+                               (plan-id old-plan)
+                               "->"
+                               (plan-id new-plan)
+                               " sub="
+                               (sub-id sub))))
+    (cond ((>= delta 0)
+           ;; Additional charge owed.
+           (posting-pair! lg
+                          ts
+                          (acct-code ar)  delta
+                          (acct-code rev) delta
+                          memo))
+          (else
+           ;; Refund / reduction: reverse the direction.
+           (let ((abs-delta (- 0 delta)))
+             (posting-pair! lg
+                            ts
+                            (acct-code rev) abs-delta
+                            (acct-code ar)  abs-delta
+                            memo))))))
+
+;; ----------------------------------------------------------------------------
+;; post-credit! — record a manual credit (goodwill, refund, etc.).
+;;
+;; Credits reduce recognized revenue and either reduce AR (refund owed)
+;; or reduce CASH (cash refund). The default policy uses AR.
+;;
+;;   Dr  REVENUE     amount-cents
+;;   Cr  AR          amount-cents
+;; ----------------------------------------------------------------------------
+
+(define (post-credit! lg accounts ts sub amount-cents memo)
+  (let ((amount (money-cents amount-cents))
+        (ar  (account-lookup accounts "AR"))
+        (rev (account-lookup accounts "REVENUE"))
+        (full-memo (string-append "credit " memo " sub=" (sub-id sub))))
+    (posting-pair! lg
+                   ts
+                   (acct-code rev) amount
+                   (acct-code ar)  amount
+                   full-memo)))
+
+;; ----------------------------------------------------------------------------
+;; post-daily-accrual! — record one day's worth of revenue accrual.
+;;
+;; Each day, an active subscription earns `daily-rate-cents` of revenue.
+;; We accrue it against Unearned Revenue (the customer has prepaid for the
+;; period) so the journal reads:
+;;
+;;   Dr  UNEARNED    daily-rate
+;;   Cr  REVENUE     daily-rate
+;;
+;; When day-idx reaches period-days, the entire period's fee has been
+;; recognized and the UNEARNED balance for this subscription returns
+;; toward zero (alongside any AR/REVENUE postings from charges/credits).
+;; ----------------------------------------------------------------------------
+
+(define (post-daily-accrual! lg accounts ts sub day-idx period-days)
+  (let* ((monthly (plan-monthly-cents
+                    (plan-lookup (list (make-plan (sub-plan-id sub) "?" 0))
+                                 (sub-plan-id sub))))
+        ;; The catalog-less lookup above is a defensive fallback; in
+        ;; normal usage the caller passes a real plan via the sub's
+        ;; plan-id. To stay self-contained here, we rely on the sub's
+        ;; plan-id and require the caller to have ensured the plan is
+        ;; priced correctly. We recompute the rate directly:
+        (rate (daily-rate-cents monthly period-days))
+        (unearned (account-lookup accounts "UNEARNED"))
+        (rev      (account-lookup accounts "REVENUE"))
+        (memo     (string-append "daily-accrual day="
+                                 (number->string day-idx)
+                                 " sub="
+                                 (sub-id sub))))
+    (cond ((<= rate 0)
+           ;; Nothing to accrue (rate rounded to zero for very small fees
+           ;; relative to the period). Skip silently.
+           'skipped)
+          (else
+           (posting-pair! lg
+                          ts
+                          (acct-code unearned) rate
+                          (acct-code rev)      rate
+                          memo)))))
+
+;; ----------------------------------------------------------------------------
+;; Re-implementation note:
+;;
+;; The daily-accrual helper above tries to look up the monthly fee from a
+;; stub plan; in a real deployment the catalog is available. To avoid that
+;; indirection we provide a simpler variant that takes the monthly cents
+;; explicitly via the subscription's stored plan slot — but since the
+;; sub structure does not embed the plan, we expose a convenience that
+;; accepts a plans catalog as well. The scenario in scenario.aura drives
+;; this via the standard 4-arg signature by passing the catalog through a
+;; thread-local dynamic. Because Aura has no dynamic binding, we instead
+;; redefine post-daily-accrual! below to take the plans catalog from the
+;; accounts argument's enclosing scope. We accomplish this by accepting
+;; the plans list as an extra parameter via the journal's metadata. To
+;; keep the public API stable, we override the function with one that
+;; reads the monthly fee directly from the sub by looking it up in a
+;; catalog stored on the ledger itself.
+;;
+;; The ledger does not currently carry a catalog, so we provide a thin
+;; wrapper that callers may use: the scenario file is expected to stash
+;; the plans catalog in a top-level binding `*plans*` before invoking
+;; post-daily-accrual!. We do that lookup here.
+;; ----------------------------------------------------------------------------
+
+(define *plans* '())
+
+(define (set-plans! plans)
+  (set! *plans* plans))
+
+(define (post-daily-accrual! lg accounts ts sub day-idx period-days)
+  (let* ((plan (plan-lookup *plans* (sub-plan-id sub)))
+         (monthly (if plan (plan-monthly-cents plan) 0))
+         (rate (daily-rate-cents monthly period-days))
+         (unearned (account-lookup accounts "UNEARNED"))
+         (rev      (account-lookup accounts "REVENUE"))
+         (memo     (string-append "daily-accrual day="
+                                  (number->string day-idx)
+                                  " sub="
+                                  (sub-id sub))))
+    (cond ((or (not plan) (<= rate 0))
+           'skipped)
+          (else
+           (posting-pair! lg
+                          ts
+                          (acct-code unearned) rate
+                          (acct-code rev)      rate
+                          memo)))))

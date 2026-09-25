@@ -1,0 +1,59 @@
+;; proration.aura — daily proration math for subscription billing.
+;;
+;; All amounts are integer cents. We deliberately avoid floats so that the
+;; ledger balances exactly. The policy used by the scenario:
+;;
+;;   daily-rate-cents  = round(monthly-cents * days / period-days)
+;;                      (rounded half-away-from-zero)
+;;
+;;   prorate-upgrade  = prorate-credit(new-monthly) - prorate-credit(old-monthly)
+;;                      applied to the days remaining in the current period.
+;;
+;;   prorate-credit   = round(monthly-cents * unused-days / period-days)
+;;                      for unused time on a plan.
+
+(define (daily-rate-cents monthly-cents period-days)
+  ;; Per-day rate for a plan whose monthly fee is monthly-cents.
+  ;; Returns 0 for non-positive period-days to avoid divide-by-zero.
+  (cond ((<= period-days 0) 0)
+        (else
+         (let* ((m (money-cents monthly-cents))
+                (p period-days)
+                (prod (* m 1)))
+           ;; Compute round(m / p). We expand to (m + p/2) / p for non-negative,
+           ;; but to be safe with negatives we use the half-away-from-zero form
+           ;; via money-mul with denominator expressed as a rational mul.
+           ;; Here we use the simpler form: (m + p/2) / p for m >= 0,
+           ;; which matches the project's "fair" rounding policy for typical
+           ;; (positive) monthly fees.
+           (cond ((>= prod 0)
+                  (quotient (+ prod (quotient p 2)) p))
+                 (else
+                  (- (quotient (+ (- prod) (quotient p 2)) p))))))))
+
+(define (prorate-credit monthly-cents unused-days period-days)
+  ;; Credit owed for `unused-days` of a plan charged at monthly-cents/period-days.
+  (cond ((<= period-days 0) 0)
+        ((<= unused-days 0) 0)
+        (else
+         (let* ((m (money-cents monthly-cents))
+                (u unused-days)
+                (p period-days)
+                (prod (* m u)))
+           (cond ((>= prod 0)
+                  (quotient (+ prod (quotient p 2)) p))
+                 (else
+                  (- (quotient (+ (- prod) (quotient p 2)) p))))))))
+
+(define (prorate-upgrade old-monthly new-monthly days-remaining period-days)
+  ;; Net additional charge (positive = subscriber owes more; negative = refund)
+  ;; when switching from old-monthly to new-monthly with `days-remaining`
+  ;; left in the current billing period.
+  (money-sub
+    (prorate-credit new-monthly days-remaining period-days)
+    (prorate-credit old-monthly days-remaining period-days)))
+
+;; Public API
+(api daily-rate-cents (lambda (m p) (daily-rate-cents m p)))
+(api prorate-credit   (lambda (m u p) (prorate-credit m u p)))
+(api prorate-upgrade  (lambda (o n d p) (prorate-upgrade o n d p)))
