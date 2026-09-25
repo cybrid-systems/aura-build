@@ -1,0 +1,8 @@
+;; rules/aura_rules_pct.aura — percent-off promotion rule installation
+
+;; Install the PCT10 promotion:
+;; 10% off the cart subtotal, category scope "book"
+(define (api install-pct10 registry)
+  (let ((promo (api promotion-make 'percent 'PCT10
+                     (list 'rate 10 'category 'book))))
+    (api registry-add registry promo)))

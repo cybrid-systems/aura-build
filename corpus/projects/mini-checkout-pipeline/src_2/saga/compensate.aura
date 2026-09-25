@@ -1,0 +1,71 @@
+;; saga/compensate.aura
+;; Saga-style rollback for the checkout pipeline.
+;;
+;; Once a stage in the pipeline has completed successfully it must be
+;; undoable, otherwise a later failure (e.g. fraud rejection, commit
+;; failure) would leave the system in an inconsistent state. This module
+;; is the single entry point for that rollback path. It is invoked by
+;; saga/orchestrator.aura when the forward run cannot reach
+;; `orders/commit`.
+;;
+;; The orchestrator tracks which stages have been completed and in what
+;; order, via the pipeline state (see pipeline/state.aura). Compensation
+;; walks that list in REVERSE order and, for each completed stage,
+;; invokes the stage's registered compensate function (see
+;; pipeline/registry.aura).
+;;
+;; Compensation contract:
+;;
+;;   (api-compensate state)
+;;
+;;     - Reads the ordered list of stages that were already executed
+;;       and need rolling back, via (api-state-rollback-stages state).
+;;     - For each stage in reverse order:
+;;         * looks up the registered compensate function (if any),
+;;         * invokes it with the state,
+;;         * records that the stage was rolled back on the state via
+;;           (api-state-mark-done! state (list 'compensated stage)).
+;;     - Returns a list of stage-name strings (in the order they were
+;;       compensated), suitable for stamping into the stdout contract
+;;       by the orchestrator/main.
+;;
+;; A stage with no registered compensate function is recorded but
+;; otherwise skipped — we still want it to appear in the rollback
+;; trace so the contract reflects that compensation was considered.
+;;
+;; All work happens against the single global stage registry produced
+;; by pipeline/registry.aura, looked up via the `api-lookup-compensate`
+;; API. This file performs no I/O of its own; it is pure orchestration
+;; over the registry + state.
+
+(define (api-compensate state)
+  ;; Read the rollback queue from the state. Stages are listed in the
+  ;; order they were originally executed, so we reverse to undo the
+  ;; most recent side-effect first (LIFO compensation, the standard
+  ;; saga pattern).
+  (let ((stages (api-state-rollback-stages state)))
+    (let loop ((pending (reverse stages)) (rolled '()))
+      (cond
+        ((null? pending)
+         ;; No more stages to compensate. Return the rolled-back list
+         ;; in execution-reverse order (= the order we just iterated).
+         rolled)
+        (else
+         (let* ((stage (car pending))
+                (rest  (cdr pending))
+                (comp-fn (api-lookup-compensate stage))
+                ;; Run the compensate function when available. We
+                ;; ignore its return value — the contract for
+                ;; compensate functions is to update `state` in place
+                ;; (marking voids, captures-cancelled, etc.).
+                (_ignored (if comp-fn (comp-fn state) #f))
+                ;; Record this stage as compensated on the state so
+                ;; later observers (tests, logs) can see what happened.
+                (_marked (api-state-mark-done!
+                           state
+                           (list 'compensated stage))))
+           (loop rest (cons stage rolled))))))))
+
+;; Mark this module's API as loaded so the orchestrator can detect
+;; forward-reference resolution if needed.
+(set! *compensate-module-loaded* #t)

@@ -1,0 +1,111 @@
+;; pricing/tax.aura
+;; Computes tax in cents from a subtotal (in cents) and a region code.
+;;
+;; Region codes (case-insensitive):
+;;   "US" -> 8.25%
+;;   "EU" -> 20%
+;;   "UK" -> 20%
+;;   "CA" -> 13%
+;;   "AU" -> 10%
+;;   "JP" -> 10%
+;;   default -> 0% (no tax / tax-exempt region)
+;;
+;; Tax cents are computed with integer math (banker-friendly truncation
+;; toward zero) so totals stay exact in cents.
+
+(define (api-tax-cents subtotal-cents region)
+  ;; Normalize the region to an upper-case symbol/string we can compare.
+  (let ((bps (api-tax-rate-bps region)))
+    ;; bps is the rate in basis points (1 bps = 0.01%, so 825 bps = 8.25%).
+    ;; tax = subtotal * bps / 10000, truncated toward zero.
+    (api-div-trunc (* subtotal-cents bps) 10000)))
+
+(define (api-tax-rate-bps region)
+  ;; Return the tax rate, in basis points, for the given region.
+  ;; We compare against a fixed set of known regions; anything else is 0.
+  (let ((r (api-region-upper region)))
+    (cond
+      ((string=? r "US") 825)
+      ((string=? r "EU") 2000)
+      ((string=? r "UK") 2000)
+      ((string=? r "CA") 1300)
+      ((string=? r "AU") 1000)
+      ((string=? r "JP") 1000)
+      (else 0))))
+
+(define (api-region-upper region)
+  ;; Coerce region to an upper-case string for comparison.
+  (cond
+    ((null? region) "")
+    ((string? region)
+     (api-string-upper region))
+    ((symbol? region)
+     (api-string-upper (symbol->string region)))
+    (else "")))
+
+(define (api-string-upper s)
+  ;; ASCII-only upper-case conversion. Good enough for region codes.
+  (let ((len (string-length s))
+        (out '())
+        (i 0))
+    (api-string-upper-loop s len i out)))
+
+(define (api-string-upper-loop s len i out)
+  (if (= i len)
+      (api-list->string (reverse out))
+      (let ((c (string-ref s i))
+            (rest (api-string-upper-loop s len (+ i 1) out)))
+        (cons (api-char-upper c) rest))))
+
+(define (api-char-upper c)
+  ;; Upper-case a single ASCII character; pass through anything else.
+  (if (and (>= (char->integer c) (char->integer #\a))
+           (<= (char->integer c) (char->integer #\z)))
+      (integer->char (- (char->integer c) 32))
+      c))
+
+(define (api-list->string chars)
+  ;; Build a string out of a list of characters using display-friendly
+  ;; concatenation via string-append.
+  (let ((len (length chars)))
+    (api-list->string-loop chars len 0 (make-string len #\space))))
+
+(define (api-list->string-loop chars len i acc)
+  (if (= i len)
+      acc
+      (let ((acc2 (api-string-set! acc i (car chars))))
+        (api-list->string-loop (cdr chars) len (+ i 1) acc2))))
+
+(define (api-string-set! s i c)
+  ;; Aura exposes set-string-char! in some implementations; fall back to
+  ;; building a string char-by-char through string-append when not.
+  (let ((n (string-length s))
+        (parts '())
+        (k 0))
+    (api-string-set!-loop s i c n k parts)))
+
+(define (api-string-set!-loop s i c n k parts)
+  (cond
+    ((= k n) (api-concat-parts (reverse parts)))
+    ((= k i) (api-string-set!-loop s i c n (+ k 1)
+                                  (cons (string c) parts)))
+    (else
+      (api-string-set!-loop s i c n (+ k 1)
+                            (cons (string (string-ref s k)) parts)))))
+
+(define (api-concat-parts parts)
+  (cond
+    ((null? parts) "")
+    ((null? (cdr parts)) (car parts))
+    (else (string-append (car parts) (api-concat-parts (cdr parts))))))
+
+(define (api-div-trunc a b)
+  ;; Integer division truncated toward zero. Aura's / returns an exact
+  ;; rational when the inputs are integers, so we coerce explicitly.
+  (let ((q (quotient a b))
+        (r (modulo a b)))
+    ;; quotient already truncates toward zero in Aura, but be defensive
+    ;; for negative values: round away from zero when remainder is nonzero.
+    (if (or (= r 0) (not (negative? a)))
+        q
+        (- q 1))))

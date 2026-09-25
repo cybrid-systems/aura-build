@@ -1,0 +1,90 @@
+;; fraud/score.aura
+;; Computes a fraud score for a checkout transaction and stores it on
+;; the pipeline state.
+;;
+;; The fraud score is a deterministic, synthetic score in the range
+;; [0, 100] (integer). It is a function of:
+;;   - the cart (item count and per-line prices)
+;;   - the order amount in cents
+;;   - a small per-region bump read off of the cart/region via the
+;;     pipeline state's own auxiliary helpers when available.
+;;
+;; The score is consumed by (api-fraud-decision score) in
+;; fraud/decision.aura to decide whether the order proceeds or is
+;; compensated. Keeping the math here local and pure makes the score
+;; easy to reproduce from the reference implementation.
+;;
+;; The state is updated in place with:
+;;   'fraud-score   -> the integer score we just computed
+;;
+;; Returns the integer score (the same value that is stored on state).
+
+(define (api-score-fraud state cart amount-cents)
+  ;; ---- helpers -----------------------------------------------------
+  (define (sum-line item)
+    ;; item is (sku qty unit-price-cents)
+    (let ((qty (cadr item))
+          (price (caddr item)))
+      (* qty price)))
+
+  (define (count-items xs)
+    (let loop ((rest xs) (n 0))
+      (if (null? rest)
+          n
+          (loop (cdr rest) (+ n 1)))))
+
+  (define (max-line-amount xs best)
+    (if (null? xs)
+        best
+        (let ((v (sum-line (car xs))))
+          (if (> v best)
+              (max-line-amount (cdr xs) v)
+              (max-line-amount (cdr xs) best)))))
+
+  (define (total-line-amount xs acc)
+    (if (null? xs)
+        acc
+        (total-line-amount (cdr xs) (+ acc (sum-line (car xs))))))
+
+  ;; ---- feature extraction -----------------------------------------
+  (let* ((item-count   (count-items cart))
+         (line-total   (total-line-amount cart 0))
+         (max-line     (max-line-amount cart 0))
+         (amount       (if (number? amount-cents) amount-cents 0))
+         ;; Use line-total if amount-cents is missing/zero (defensive).
+         (effective-amount (if (> amount 0) amount line-total))
+
+         ;; Base risk: scale with amount. We use integer arithmetic so
+         ;; the score is reproducible. Divide cents by 100 to get
+         ;; dollars; further scale to a 0..60 component.
+         (amount-dollars (quotient effective-amount 100))
+         (amount-score   (if (> amount-dollars 60)
+                             60
+                             amount-dollars))
+
+         ;; Item-count bump: each item past the first adds a little.
+         (item-score     (if (> item-count 1)
+                             (* (- item-count 1) 3)
+                             0))
+
+         ;; High-value single-line bump: a single line over $200
+         ;; (i.e. > 20000 cents) adds extra suspicion.
+         (max-line-dollars (quotient max-line 100))
+         (high-line-score  (if (> max-line-dollars 200)
+                               15
+                               0))
+
+         ;; Many small items: more than 8 items adds mild suspicion.
+         (many-items-score (if (> item-count 8)
+                               8
+                               0))
+
+         ;; Compose and clamp to [0, 100].
+         (raw (+ amount-score item-score high-line-score many-items-score))
+         (score (if (< raw 0) 0 (if (> raw 100) 100 raw))))
+
+    ;; ---- persist on state ------------------------------------------
+    (when (procedure? api-state-set!)
+      (api-state-set! state 'fraud-score score))
+
+    score))

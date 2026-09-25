@@ -1,0 +1,102 @@
+;; orders/commit.aura
+;; Commits a finalized order to the persistent order store.
+;;
+;; In a real checkout pipeline, "commit" is the point of no return: the
+;; validated cart, computed pricing, captured payment, and fraud check
+;; are turned into a durable order record (a row in an orders database,
+;; a document in Mongo, an entry in an event stream, etc.). Once
+;; committed, the order is visible to downstream systems (warehouse,
+;; fulfillment, email confirmation, analytics).
+;;
+;; In this pipeline, commit is the terminal forward step. The orchestrator
+;; runs commit only if every prior stage succeeded and the fraud decision
+;; allows it. If commit itself fails, or if commit is skipped because of
+;; an earlier failure, the saga compensator walks back through the stages
+;; that did run (voiding the payment, etc.) and the order is never created.
+;;
+;; (api-commit-order state) performs the commit and returns a commit
+;; record:
+;;
+;;   (list 'committed order-id total-cents auth-id status)
+;;
+;; where:
+;;   order-id    -- the order identifier stored on state
+;;   total-cents -- the total charged (from state key 'total)
+;;   auth-id     -- the payment authorization id (from state key
+;;                  'payment-auth-id); may be #f if authorization was
+;;                  skipped or failed
+;;   status      -- a short status string; for a successful commit this
+;;                  is "COMMITTED"; for a failed commit it is "FAILED"
+;;                  and the record is tagged with 'commit-failed.
+;;
+;; State updates:
+;;   - 'commit-record  <- the returned commit record
+;;   - 'order-status   <- 'COMMITTED on success, 'FAILED otherwise
+;;   - calls (api-state-mark-done! st 'commit) on success
+;;   - calls (api-state-push-rollback! st 'commit) on failure (so the
+;;     compensator knows to attempt to undo the commit — in this
+;;     implementation the compensate step is a no-op since the record
+;;     was never durably written).
+;;
+;; Preconditions (caller's responsibility — we don't re-check them here):
+;;   - state has 'order-id, 'total, and (usually) 'payment-auth-id
+;;   - all earlier pipeline stages have been marked done on state
+
+(define (api-commit-order state)
+  ;; Extract the bits we need off the state. We tolerate missing keys
+  ;; by defaulting to safe sentinels so commit never crashes the
+  ;; pipeline — instead it returns a clearly-marked failure record.
+  (let ((order-id   (api-state-get state 'order-id))
+        (total      (api-state-get state 'total))
+        (auth-id    (api-state-get state 'payment-auth-id))
+        (subtotal   (api-state-get state 'subtotal))
+        (tax        (api-state-get state 'tax))
+        (fraud-score (api-state-get state 'fraud-score))
+        (decision   (api-state-get state 'fraud-decision)))
+    (cond
+      ;; If the order-id is missing the pipeline is in an inconsistent
+      ;; state — nothing to commit against. Mark as failed and skip the
+      ;; durable write.
+      ((or (null? order-id) (equal? order-id #f))
+       (let ((failure-record
+              (list 'commit-failed order-id total auth-id "FAILED")))
+         (api-state-set! state 'commit-record failure-record)
+         (api-state-set! state 'order-status 'FAILED)
+         (api-state-push-rollback! state 'commit)
+         failure-record))
+      ;; If the fraud decision is explicitly 'reject we must not commit.
+      ;; The orchestrator should already have caught this, but we defend
+      ;; in depth here.
+      ((equal? decision 'reject)
+       (let ((failure-record
+              (list 'commit-rejected order-id total auth-id "REJECTED")))
+         (api-state-set! state 'commit-record failure-record)
+         (api-state-set! state 'order-status 'REJECTED)
+         (api-state-push-rollback! state 'commit)
+         failure-record))
+      ;; If total is missing or zero the order has nothing to bill.
+      ;; Treat as failure rather than committing an empty order.
+      ((or (null? total) (equal? total 0))
+       (let ((failure-record
+              (list 'commit-failed order-id total auth-id "ZERO-TOTAL")))
+         (api-state-set! state 'commit-record failure-record)
+         (api-state-set! state 'order-status 'FAILED)
+         (api-state-push-rollback! state 'commit)
+         failure-record))
+      ;; Happy path: build a durable record. In a real implementation
+      ;; this would be a database insert; here we synthesize a small
+      ;; alist capturing everything that matters for downstream consumers.
+      (else
+       (let ((commit-record
+              (list 'committed
+                    order-id
+                    total
+                    auth-id
+                    "COMMITTED"
+                    (list 'subtotal  subtotal)
+                    (list 'tax       tax)
+                    (list 'fraud     fraud-score decision))))
+         (api-state-set! state 'commit-record commit-record)
+         (api-state-set! state 'order-status 'COMMITTED)
+         (api-state-mark-done! state 'commit)
+         commit-record)))))

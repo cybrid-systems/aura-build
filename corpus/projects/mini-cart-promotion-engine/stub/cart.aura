@@ -1,0 +1,26 @@
+(define (api cart-empty)
+  '())
+
+(define (api cart-add line cart sku qty)
+  (cons (list sku qty) cart))
+
+(define (api cart-lines cart)
+  cart)
+
+(define (api cart-line-count cart)
+  (cond
+    ((null? cart) 0)
+    (else (+ 1 (cart-line-count (cdr cart))))))
+
+(define (api cart-subtotal cart catalog)
+  (cond
+    ((null? cart) 0)
+    (else
+      (+ (line-subtotal (car cart) catalog)
+         (cart-subtotal (cdr cart) catalog)))))
+
+(define (line-subtotal line catalog)
+  (let ((entry (catalog-find catalog (car line))))
+    (if entry
+        (* (cadr entry) (cadr line))
+        0)))

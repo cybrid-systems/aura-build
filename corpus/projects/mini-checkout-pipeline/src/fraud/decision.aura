@@ -1,0 +1,31 @@
+;; fraud/decision.aura
+;; Maps a fraud score to a go/no-go decision for the checkout pipeline.
+;;
+;; The fraud-scoring stage produces a numeric score that represents how
+;; risky the current order appears. The pipeline only wants a binary
+;; answer from this module: either the order passes and proceeds to
+;; commit, or it fails and must be compensated by the saga.
+;;
+;; Decision rule:
+;;   - Scores are non-negative numbers (typically an integer between
+;;     0 and 100, but we do not enforce that here).
+;;   - If score < threshold: decision is 'PASS (or equivalently #t).
+;;   - If score >= threshold: decision is 'FAIL (or equivalently #f).
+;;
+;; We expose both a fresh threshold getter and a decision function so
+;; the orchestrator can read either form. The threshold is a single
+;; point of tuning; the rest of the pipeline never sees the raw number.
+;;
+;; Required exported API:
+;;   (api-fraud-decision score) -> 'PASS or 'FAIL
+;;   (api-fraud-threshold)      -> numeric threshold
+
+(define api-fraud-threshold
+  ;; 50 is the standard "median risk" cut-off; values below it are
+  ;; considered safe, values at or above it are rejected.
+  50)
+
+(define (api-fraud-decision score)
+  (if (< score api-fraud-threshold)
+      'PASS
+      'FAIL))

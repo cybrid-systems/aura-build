@@ -1,0 +1,30 @@
+;; rules/aura_rules_bxgy.aura — install BXGY1 promotion (buy 2 get 1 free on office)
+
+(define (api install-bxgy1 registry)
+  (registry-add registry
+    (promotion-make 'bxgy 'BXGY1
+      (list 'category 'office
+            'buy 2
+            'get 1))))
+
+(define (bxgy-discount cart promo)
+  (let ((category (eval-param (promo-params promo) 'category 'office))
+        (buy (eval-param (promo-params promo) 'buy 2))
+        (get (eval-param (promo-params promo) 'get 1)))
+    (bxgy-calc cart category buy get)))
+
+(define (bxgy-calc cart category buy get)
+  (let ((qty (cart-category-qty cart 'dummy category))
+        (free-units (bxgy-free-count qty buy get))
+        (cheapest (bxgy-cheapest-price cart category)))
+    (* free-units cheapest)))
+
+;; Placeholder: real implementation needs catalog; will be overridden by evaluator
+(define (cart-category-qty cart catalog category)
+  0)
+
+(define (bxgy-free-count qty buy get)
+  (quotient qty (+ buy get)))
+
+(define (bxgy-cheapest-price cart category)
+  0)

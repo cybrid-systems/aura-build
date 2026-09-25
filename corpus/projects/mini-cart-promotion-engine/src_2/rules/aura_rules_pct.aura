@@ -1,0 +1,3 @@
+(define (api install-pct10 registry)
+  (let ((promo (api promotion-make "pct" "PCT10" (list 10 "book"))))
+    (api registry-add registry promo)))

@@ -1,0 +1,84 @@
+;; cart/validate.aura
+;; Validates a shopping cart for the checkout pipeline.
+;;
+;; A valid cart is a non-empty list of items, each item being a list
+;; (sku qty unit-price-cents). Each qty must be a positive integer and
+;; each unit-price-cents must be a non-negative number.
+;;
+;; Returns a list of two elements:
+;;   (valid? . problem)
+;; where valid? is #t or #f and problem is either #f (no problem) or a
+;; short string describing the first issue encountered.
+
+(define (api-validate-cart cart)
+  ;; Walk the cart and ensure structural and value-level invariants hold.
+  (cond
+    ((null? cart)
+     (cons #f "cart is empty"))
+    ((not (list? cart))
+     (cons #f "cart is not a list"))
+    (else
+     (let loop ((items cart) (idx 0))
+       (cond
+         ((null? items)
+          (cons #t #f))
+         (else
+          (let ((item (car items)))
+            (cond
+              ((not (list? item))
+               (cons #f (string-append "item at index "
+                                       (number->string idx)
+                                       " is not a list")))
+              ((< (length item) 3)
+               (cons #f (string-append "item at index "
+                                       (number->string idx)
+                                       " malformed")))
+              ((not (string? (car item)))
+               (cons #f (string-append "item at index "
+                                       (number->string idx)
+                                       " missing sku string")))
+              ((not (number? (cadr item)))
+               (cons #f (string-append "item at index "
+                                       (number->string idx)
+                                       " qty not a number")))
+              ((not (integer? (cadr item)))
+               (cons #f (string-append "item at index "
+                                       (number->string idx)
+                                       " qty not an integer")))
+              ((<= (cadr item) 0)
+               (cons #f (string-append "item at index "
+                                       (number->string idx)
+                                       " qty not positive")))
+              ((not (number? (caddr item)))
+               (cons #f (string-append "item at index "
+                                       (number->string idx)
+                                       " unit-price not a number")))
+              ((< (caddr item) 0)
+               (cons #f (string-append "item at index "
+                                       (number->string idx)
+                                       " unit-price negative")))
+              (else
+               (loop (cdr items) (+ idx 1)))))))))))
+
+(define (list? x)
+  ;; Aura doesn't ship list?, so guard via the predicate pair:
+  ;; anything that is either '() or a cons cell counts as a list.
+  (cond ((null? x) #t)
+        ((pair? x) #t)
+        (else #f)))
+
+(define (integer? n)
+  ;; Numbers that equal their floor are integers.
+  (cond ((not (number? n)) #f)
+        ((< n 0) (= n (- 0 (api-floor-of (- 0 n)))))
+        (else (= n (api-floor-of n)))))
+
+(define (api-floor-of n)
+  ;; Small floor helper for integer? above.
+  (let loop ((g n))
+    (cond ((<= g 0) 0)
+          ((< (api-frac-part g) 0.0000001) g)
+          (else (loop (- g 1))))))
+
+(define (api-frac-part n)
+  (- n (api-floor-of n)))

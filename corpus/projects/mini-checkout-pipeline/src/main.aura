@@ -1,0 +1,107 @@
+;; main.aura
+;; Entry point for the mini-checkout-pipeline scenario.
+;;
+;; This file orchestrates the entire checkout flow by composing the
+;; exported APIs of every other module. It prints the fixed-key stdout
+;; contract described in the project goal.
+;;
+;; Stdout contract (exact order):
+;;   VERSION=<api-version>
+;;   STAGES=<comma-separated api-stage-names>
+;;   ORDER_ID=<state order id>
+;;   SUBTOTAL_CENTS=<integer cents>
+;;   TAX_CENTS=<integer cents>
+;;   TOTAL_CENTS=<integer cents>
+;;   AUTH_ID=<authorization id from payment>
+;;   FRAUD_SCORE=<integer score>
+;;   FRAUD_DECISION=<ALLOW|REVIEW|DENY>
+;;   OUTCOME=<COMMITTED|COMPENSATED|REJECTED>
+;;   ROLLBACK_STAGES=<NONE|csv>
+
+(define (api-run)
+  ;; 1. Version + stage names.
+  (define VERSION (api-version))
+  (define STAGE-NAMES (api-stage-names))
+
+  ;; 2. Sample inputs.
+  (define CART (api-sample-cart))
+  (define REGION (api-sample-region))
+
+  ;; 3. Validate cart; on failure, print rejection and exit early.
+  (define VALID (api-validate-cart CART))
+  (if (eq? VALID #f)
+      (begin
+        (display "VERSION=") (display VERSION) (newline)
+        (display "STAGES=") (display STAGE-NAMES) (newline)
+        (display "ORDER_ID=NONE") (newline)
+        (display "SUBTOTAL_CENTS=0") (newline)
+        (display "TAX_CENTS=0") (newline)
+        (display "TOTAL_CENTS=0") (newline)
+        (display "AUTH_ID=NONE") (newline)
+        (display "FRAUD_SCORE=0") (newline)
+        (display "FRAUD_DECISION=NONE") (newline)
+        (display "OUTCOME=REJECTED") (newline)
+        (display "ROLLBACK_STAGES=NONE") (newline))
+      (begin
+        ;; 4. Price the order.
+        (define PRICED (api-price-order CART))
+        (define SUBTOTAL (car PRICED))
+        (define TAX (cadr PRICED))
+        (define TOTAL (caddr PRICED))
+
+        ;; 5. Run the full pipeline (which also handles compensation).
+        (define STATE (api-run-pipeline CART REGION))
+
+        ;; 6. Read computed fields from the state.
+        (define ORDER-ID (api-order-id STATE))
+        (define AUTH-ID
+          (let ((v (api-state-get STATE 'payment-auth-id)))
+            (if v v "NONE")))
+        (define FRAUD-SCORE
+          (let ((v (api-state-get STATE 'fraud-score)))
+            (if v v 0)))
+        (define FRAUD-DECISION (api-fraud-decision FRAUD-SCORE))
+        (define OUTCOME (api-outcome STATE))
+        (define ROLLBACK
+          (let ((rs (api-state-rollback-stages STATE)))
+            (if (null? rs) "NONE" (api-join-with-comma rs))))
+
+        ;; 7. Print the stdout contract in the required order.
+        (display "VERSION=") (display VERSION) (newline)
+        (display "STAGES=") (display STAGE-NAMES) (newline)
+        (display "ORDER_ID=") (display ORDER-ID) (newline)
+        (display "SUBTOTAL_CENTS=") (display SUBTOTAL) (newline)
+        (display "TAX_CENTS=") (display TAX) (newline)
+        (display "TOTAL_CENTS=") (display TOTAL) (newline)
+        (display "AUTH_ID=") (display AUTH-ID) (newline)
+        (display "FRAUD_SCORE=") (display FRAUD-SCORE) (newline)
+        (display "FRAUD_DECISION=") (display FRAUD-DECISION) (newline)
+        (display "OUTCOME=") (display OUTCOME) (newline)
+        (display "ROLLBACK_STAGES=") (display ROLLBACK) (newline))))
+
+;; Helper: join a list of symbols/strings with commas.
+;; Used for ROLLBACK_STAGES serialization.
+(define (api-join-with-comma xs)
+  (cond
+    ((null? xs) "")
+    ((null? (cdr xs)) (api-str-of (car xs)))
+    (else
+      (string-append
+        (api-str-of (car xs))
+        ","
+        (api-join-with-comma (cdr xs))))))
+
+;; Helper: coerce a value to its displayable string form.
+;; Symbols are rendered without the leading quote; everything else
+;; falls through to (display ...)-style conversion via number->string
+;; or string concatenation. For our purposes, stage names from the
+;; registry are symbols, so this primarily renders symbols.
+(define (api-str-of v)
+  (cond
+    ((string? v) v)
+    ((number? v) (number->string v))
+    ((symbol? v) (symbol->string v))
+    (else
+      (let ((s (open-output-string)))
+        (display v s)
+        (get-output-string s)))))

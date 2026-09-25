@@ -4,8 +4,10 @@ import pytest
 
 from aura_build.corpus_projects import (
     BUSINESS_DOMAINS,
+    aura_rel_file,
     domain_allowed,
     parse_domains,
+    write_aura_source,
 )
 
 
@@ -20,6 +22,14 @@ def test_parse_domains_business_alias():
 def test_parse_domains_rejects_unknown():
     with pytest.raises(SystemExit):
         parse_domains("commerce,not-a-domain")
+
+
+def test_write_nested_aura_file(tmp_path):
+    dest = write_aura_source(tmp_path, "rules/aura_rules_pct.aura", "(define x 1)\n")
+    assert dest.is_file()
+    assert dest.parent.name == "rules"
+    with pytest.raises(ValueError):
+        aura_rel_file("../escape.aura")
 
 
 def test_domain_allowed_filters_backlog():

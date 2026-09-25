@@ -574,6 +574,27 @@ class ProjectBurnConfig:
     domains: tuple[str, ...] | None = None
 
 
+def aura_rel_file(fn: str) -> Path:
+    """Relative ``*.aura`` path. Nested files are allowed; ``..`` and absolutes are not."""
+    raw = str(fn).strip().replace("\\", "/")
+    rel = Path(raw)
+    if (
+        not raw
+        or rel.is_absolute()
+        or any(part in ("", "..") for part in rel.parts)
+        or rel.suffix != ".aura"
+    ):
+        raise ValueError(f"unsafe aura path: {fn}")
+    return rel
+
+
+def write_aura_source(src_dir: Path, fn: str, text: str) -> Path:
+    dest = src_dir / aura_rel_file(fn)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(text, encoding="utf-8")
+    return dest
+
+
 def project_dir(corpus: Path, slug: str) -> Path:
     return corpus / slug
 
@@ -895,9 +916,11 @@ def _sync_stub(src_dir: Path, stub_dir: Path, files: list[str]) -> None:
         shutil.rmtree(stub_dir)
     stub_dir.mkdir(parents=True, exist_ok=True)
     for fn in files:
-        src = src_dir / fn
+        src = src_dir / aura_rel_file(fn)
         if src.is_file():
-            shutil.copy2(src, stub_dir / fn)
+            dest = stub_dir / aura_rel_file(fn)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dest)
 
 
 def _write_dogfood_with_expect(path: Path, dogfood: dict[str, Any], expect: str) -> None:
@@ -1025,7 +1048,7 @@ def process_project(entry: dict[str, Any], bc: ProjectBurnConfig, cfg: MiniMaxCo
         for fn in files:
             if _should_stop(bc):
                 break
-            existing = src_dir / fn
+            existing = src_dir / aura_rel_file(fn)
             if existing.is_file() and existing.stat().st_size > 20:
                 prior[fn] = existing.read_text(encoding="utf-8")
                 file_metas.append({"file": fn, "skipped_existing": True, "parse_ok": None})
@@ -1043,8 +1066,9 @@ def process_project(entry: dict[str, Any], bc: ProjectBurnConfig, cfg: MiniMaxCo
             )
             summary["actions"].append(f"aura_v{v_i}:{fn}")
             if not src.strip():
-                src = f"; empty generation for {fn}\n(define (placeholder-{fn.replace('.', '-')} ) 0)\n"
-            existing.write_text(src, encoding="utf-8")
+                safe = aura_rel_file(fn).name.replace(".", "-")
+                src = f"; empty generation for {fn}\n(define (placeholder-{safe} ) 0)\n"
+            write_aura_source(src_dir, fn, src)
             prior[fn] = src
             usage = fmeta.get("usage") or {}
             for k in usage_sum:

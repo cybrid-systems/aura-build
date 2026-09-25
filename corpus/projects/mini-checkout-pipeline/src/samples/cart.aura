@@ -1,0 +1,31 @@
+;; samples/cart.aura
+;; A sample shopping cart used by main.aura for the demo scenario.
+;;
+;; Cart shape:
+;;   A list of line items. Each line item is a flat list of
+;;   (key . value) pairs containing at least:
+;;     - 'sku:           a string identifying the item
+;;     - 'qty:           a strictly positive integer
+;;     - 'price-cents:   a non-negative integer (price per unit)
+;;
+;; This sample cart contains a small mix of items that exercise the
+;; pricing, tax, fraud, and commit stages. Values are chosen to be
+;; realistic but small enough to reason about.
+;;
+;; Required exported API:
+;;   (api-sample-cart) -> a list of line items
+
+(define (api-sample-cart)
+  (list
+    (list
+      (cons 'sku "BOOK-001")
+      (cons 'qty 2)
+      (cons 'price-cents 2495))
+    (list
+      (cons 'sku "MUG-042")
+      (cons 'qty 1)
+      (cons 'price-cents 1299))
+    (list
+      (cons 'sku "STICKER-PACK")
+      (cons 'qty 3)
+      (cons 'price-cents 499))))

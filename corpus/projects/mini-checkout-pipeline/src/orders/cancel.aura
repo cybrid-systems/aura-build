@@ -1,0 +1,69 @@
+;; orders/cancel.aura
+;; Cancels a previously placed order.
+;;
+;; In the checkout pipeline, an order can be in one of a few states:
+;;   - committed   (money captured, inventory reserved)
+;;   - compensated (saga rolled back; nothing to do)
+;;   - pending     (placed but not yet finalized)
+;;
+;; This module is the high-level "cancel" entry point that *retrospectively*
+;; voids an already-committed order. It is distinct from saga compensation,
+;; which rolls back a partially-completed pipeline: cancellation here assumes
+;; a successful checkout that the caller now wants to undo.
+;;
+;; Required exported API:
+;;   (api-cancel-order state) -> cancel-result
+;;
+;; The function performs the following steps:
+;;   1. Read the order id and payment-auth-id off the state. If there is
+;;      no auth id (e.g. the order never reached the authorize stage),
+;;      cancellation is a no-op and returns (list 'CANCELED 'no-auth).
+;;   2. Read the cancel-reason if one was recorded by the caller.
+;;   3. Call api-void-payment on the stored auth id to release the hold
+;;      on the customer's funds. We always void, never refund, because
+;;      cancellation here targets authorized-but-not-yet-captured holds
+;;      and the orchestrator's commit path captures *after* any cancel
+;;      decision is made; in the cancel path we simply unwind.
+;;   4. Mark the state as canceled by stamping 'canceled on it and
+;;      recording the void id under 'payment-void-id so downstream
+;;      observers (and the stdout contract, if it ever surfaces cancel
+;;      output) can read it.
+;;   5. Return a small cancel-result list:
+;;        (list 'CANCELED auth-id void-id reason)
+;;      so callers can pattern-match on the leading 'CANCELED symbol
+;;      without having to know the internal layout.
+;;
+;; This module deliberately does NOT touch fraud or inventory stages;
+;; those are handled by their own rollback paths. Cancellation is a
+;; payment-focused operation: release the hold, mark the order
+;; canceled, return.
+
+(define (api-cancel-order state)
+  ;; Pull the auth id off the state. If it's missing, there's nothing
+  ;; to cancel -- the order never reached authorization.
+  (let ((auth-id (api-state-get state 'payment-auth-id)))
+    (cond
+      ((or (null? auth-id) (not auth-id))
+       ;; No auth id means no hold to release. Still mark the state so
+       ;; subsequent pipeline runs see the cancel attempt, but signal
+       ;; it via a distinct result symbol.
+       (begin
+         (api-state-set! state 'canceled #t)
+         (api-state-set! state 'cancel-reason 'no-auth)
+         (list 'CANCELED 'no-auth)))
+      (else
+       ;; We have a hold to release. Void it.
+       (let ((void-id (api-void-payment auth-id))
+             (reason (api-state-get state 'cancel-reason)))
+         ;; Stamp the state so subsequent observers know the order
+         ;; was canceled, not committed or compensated.
+         (api-state-set! state 'canceled #t)
+         (api-state-set! state 'payment-void-id void-id)
+         ;; If no reason was pre-recorded, attribute it to 'unspecified
+         ;; so the returned result is always a 4-element list.
+         (list 'CANCELED
+               auth-id
+               void-id
+               (if (or (null? reason) (not reason))
+                   'unspecified
+                   reason)))))))

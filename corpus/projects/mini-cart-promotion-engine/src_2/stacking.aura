@@ -1,0 +1,34 @@
+(define (api stack-promotions eligible)
+  (let loop ((remaining eligible) (acc '()))
+    (cond
+      ((null? remaining) acc)
+      (else
+        (let ((best (find-highest-priority remaining '())))
+          (loop (remove-promo remaining best)
+                (append acc (list best))))))))
+
+(define (find-highest-priority remaining best)
+  (cond
+    ((null? remaining) best)
+    (else
+      (let ((p (car remaining)))
+        (if (or (null? best)
+                (< (api stacking-order (api promotion-kind p))
+                   (api stacking-order (api promotion-kind best))))
+            (find-highest-priority (cdr remaining) p)
+            (find-highest-priority (cdr remaining) best))))))
+
+(define (remove-promo lst p)
+  (cond
+    ((null? lst) '())
+    ((equal? (api promotion-code (car lst)) (api promotion-code p))
+     (cdr lst))
+    (else (cons (car lst) (remove-promo (cdr lst) p)))))
+
+(define (api stacking-order kind)
+  (cond
+    ((equal? kind "thresh") 0)
+    ((equal? kind "fixed") 1)
+    ((equal? kind "bxgy") 2)
+    ((equal? kind "pct") 3)
+    (else 99)))

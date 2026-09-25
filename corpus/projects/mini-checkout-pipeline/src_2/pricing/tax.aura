@@ -1,0 +1,96 @@
+;; pricing/tax.aura
+;; Computes the tax amount (in cents) for a given subtotal and region.
+;;
+;; The function (api-tax-cents subtotal-cents region) is the single source
+;; of truth for tax math. It is consumed by pricing/compute.aura.
+;;
+;; Tax rules (simple but deterministic, easy to diff):
+;;
+;;   region           rate    notes
+;;   ---------------  ------  ------------------------------------
+;;   "US-CA"          8.75%   California base sales tax
+;;   "US-NY"          8.875%  New York City combined sales tax
+;;   "US-TX"          6.25%   Texas state sales tax
+;;   "US-FL"          6.00%   Florida state sales tax
+;;   "US-WA"          6.50%   Washington state sales tax
+;;   "US-OR"          0.00%   Oregon — no sales tax
+;;   "US-MT"          0.00%   Montana — no sales tax
+;;   "US-NH"          0.00%   New Hampshire — no sales tax
+;;   "CA-ON"         13.00%   Ontario HST
+;;   "CA-BC"         12.00%   British Columbia GST+PST (combined)
+;;   "CA-QC"         14.975%  Quebec GST+QST (combined)
+;;   "EU-DE"         19.00%   Germany VAT
+;;   "EU-FR"         20.00%   France VAT
+;;   "EU-IE"         23.00%   Ireland VAT
+;;   "EU-NL"         21.00%   Netherlands VAT
+;;   "UK"            20.00%   United Kingdom VAT
+;;   "AU"            10.00%   Australia GST
+;;   "NZ"            15.00%   New Zealand GST
+;;   "JP"            10.00%   Japan consumption tax
+;;   "IN"            18.00%   India GST (highest slab, simplified)
+;;   "DEFAULT"        7.00%   fallback rate for unknown regions
+;;
+;; Computation:
+;;   tax-cents = round(subtotal-cents * rate / 100)
+;;
+;; Rounding uses round-half-up so .5 always rounds away from zero. This
+;; keeps results stable across runtimes.
+
+(define *tax-rate-table*
+  (list
+    (cons "US-CA"   8.75)
+    (cons "US-NY"   8.875)
+    (cons "US-TX"   6.25)
+    (cons "US-FL"   6.00)
+    (cons "US-WA"   6.50)
+    (cons "US-OR"   0.00)
+    (cons "US-MT"   0.00)
+    (cons "US-NH"   0.00)
+    (cons "CA-ON"  13.00)
+    (cons "CA-BC"  12.00)
+    (cons "CA-QC"  14.975)
+    (cons "EU-DE"  19.00)
+    (cons "EU-FR"  20.00)
+    (cons "EU-IE"  23.00)
+    (cons "EU-NL"  21.00)
+    (cons "UK"     20.00)
+    (cons "AU"     10.00)
+    (cons "NZ"     15.00)
+    (cons "JP"     10.00)
+    (cons "IN"     18.00)
+    (cons "DEFAULT" 7.00)))
+
+(define (tax-rate-for region)
+  ;; Look up the percentage rate for REGION. Falls back to "DEFAULT".
+  ;; Tolerant of symbols (region may arrive as 'US-CA or "US-CA").
+  (let ((key (cond
+               ((string? region) region)
+               ((symbol? region) (symbol->string region))
+               (else "DEFAULT"))))
+    (let ((hit (assoc key *tax-rate-table*)))
+      (if hit
+          (cdr hit)
+          (cdr (assoc "DEFAULT" *tax-rate-table*))))))
+
+(define (round-half-up x)
+  ;; Round X to the nearest integer, breaking ties by rounding away from
+  ;; zero (i.e. standard "round half up" semantics). X must be an exact
+  ;; non-negative integer or a real number.
+  (cond
+    ((not (number? x)) 0)
+    ((integer? x) x)
+    (else
+     (let ((floor-x (floor x)))
+       (let ((diff (- x floor-x)))
+         (if (>= diff 0.5)
+             (+ floor-x 1)
+             floor-x))))))
+
+(define (api-tax-cents subtotal-cents region)
+  ;; Public entry point. Returns an integer number of cents.
+  ;;   subtotal-cents : non-negative number (cents)
+  ;;   region         : string or symbol naming the tax jurisdiction
+  (let ((sub (if (number? subtotal-cents) subtotal-cents 0)))
+    (let ((rate (tax-rate-for region)))
+      (let ((raw (/ (* sub rate) 100.0)))
+        (round-half-up raw)))))

@@ -1,0 +1,70 @@
+;; cart/validate.aura
+;; Validates a shopping cart structure.
+;;
+;; A cart is an association list of item entries. Each item entry is
+;; (cons 'sku sku-string) followed by (cons 'qty positive-integer) and
+;; (cons 'price-cents non-negative-integer).
+;;
+;; The validator checks:
+;;   - the cart is a non-empty list
+;;   - every entry is a proper pair
+;;   - every entry has a non-empty string SKU
+;;   - every entry has a strictly positive integer quantity
+;;   - every entry has a non-negative integer price-cents
+;;
+;; It returns either #t (valid) or a list describing the first failure,
+;; shaped as (list 'INVALID reason ...) so callers can pattern-match on
+;; (car result) without inspecting internals.
+
+(define (api-validate-cart cart)
+  (cond
+    ((null? cart)
+     (list 'INVALID 'empty-cart))
+    ((not (list? cart))
+     (list 'INVALID 'not-a-list))
+    (else
+     (api-validate-each cart))))
+
+(define (api-validate-each entries)
+  (cond
+    ((null? entries) #t)
+    (else
+     (let ((entry (car entries)))
+       (let ((r (api-validate-entry entry)))
+         (if (eq? r #t)
+             (api-validate-each (cdr entries))
+             r))))))
+
+(define (api-validate-entry entry)
+  (cond
+    ((not (pair? entry))
+     (list 'INVALID 'bad-entry entry))
+    (else
+     (let ((sku      (api-alist-ref entry 'sku))
+           (qty      (api-alist-ref entry 'qty))
+           (price    (api-alist-ref entry 'price-cents)))
+       (cond
+         ((not (api-non-empty-string? sku))
+          (list 'INVALID 'missing-or-bad-sku entry))
+         ((not (api-positive-integer? qty))
+          (list 'INVALID 'missing-or-bad-qty entry))
+         ((not (api-non-negative-integer? price))
+          (list 'INVALID 'missing-or-bad-price entry))
+         (else #t))))))
+
+(define (api-alist-ref alist key)
+  (cond
+    ((null? alist) #f)
+    ((and (pair? (car alist)) (eq? (car (car alist)) key))
+     (cdr (car alist)))
+    (else
+     (api-alist-ref (cdr alist) key))))
+
+(define (api-non-empty-string? v)
+  (and (string? v) (not (string=? v ""))))
+
+(define (api-positive-integer? v)
+  (and (integer? v) (>= v 1)))
+
+(define (api-non-negative-integer? v)
+  (and (integer? v) (>= v 0)))

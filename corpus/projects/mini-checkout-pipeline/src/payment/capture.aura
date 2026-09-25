@@ -1,0 +1,106 @@
+;; payment/capture.aura
+;; Simulates the "capture" step of a payment transaction.
+;;
+;; In a real payment flow, capture finalizes a previously authorized
+;; charge: it transfers the reserved funds from the authorization hold
+;; to the merchant. Capture is only meaningful when there is a valid
+;; authorization id (produced by api-authorize-payment); without one,
+;; there is nothing to capture.
+;;
+;; This module is a stand-in for a real gateway integration. We don't
+;; talk to any external service; we just synthesize a capture id from
+;; the supplied auth id so the rest of the pipeline (commit / stdout
+;; contract / saga compensation) can observe a deterministic value.
+;;
+;; Required exported API:
+;;   (api-capture-payment auth-id) -> capture-id
+;;
+;; The returned capture id is a short string of the form
+;;   "CAP-" + hex-encoded-hash-of-auth-id
+;; so it is visibly distinct from the auth id and still deterministic
+;; for a given auth id.
+;;
+;; Side effects: none. Capture does not mutate pipeline state directly;
+;; the orchestrator / commit step is responsible for recording the
+;; capture id on the state if it needs to.
+
+(define (api-capture-payment auth-id)
+  ;; Defensive: if no auth id was provided, return #f so the caller
+  ;; can detect a missing prior authorization rather than producing
+  ;; a meaningless capture id.
+  (cond
+    ((or (null? auth-id) (equal? auth-id #f))
+     #f)
+    (else
+     (string-append "CAP-" (api-hex-fingerprint auth-id)))))
+
+(define (api-hex-fingerprint s)
+  ;; Produce a short, deterministic hex string from an arbitrary input.
+  ;; We use a simple FNV-1a-like fold over the characters of s, then
+  ;; format the resulting 32-bit integer as 8 lowercase hex digits.
+  (let ((h (api-fnv-hash s)))
+    (api-hex8 h)))
+
+(define (api-fnv-hash s)
+  ;; 32-bit FNV-1a hash, computed over the Unicode code points of s.
+  ;; Offset basis and prime are the standard FNV-1a constants.
+  (let ((offset 2166136261)
+        (prime 16777619)
+        (mask 4294967295))            ; 2^32 - 1, keep within 32 bits
+    (let loop ((i 0)
+               (acc offset))
+      (cond
+        ((>= i (string-length s)) acc)
+        (else
+         (let ((cp (char->integer (string-ref s i))))
+           (loop (+ i 1)
+                 (modulo (* (modulo (bitwise-xor32 acc cp) mask) prime)
+                         mask))))))))
+
+(define (bitwise-xor32 a b)
+  ;; Aura doesn't expose bitwise ops in the primer, so implement 32-bit
+  ;; xor as a small loop over the bit positions we care about. This is
+  ;; plenty for a hash helper.
+  (let loop ((bit 31)
+             (acc 0))
+    (cond
+      ((< bit 0) acc)
+      ((and (= (api-bit a bit) 1) (= (api-bit b bit) 0))
+       (loop (- bit 1) (+ acc (api-pow2 bit))))
+      ((and (= (api-bit a bit) 0) (= (api-bit b bit) 1))
+       (loop (- bit 1) (+ acc (api-pow2 bit))))
+      (else
+       (loop (- bit 1) acc)))))
+
+(define (api-bit n k)
+  ;; Return the k-th bit of non-negative integer n (0 or 1).
+  (cond
+    ((<= n 0) 0)
+    ((= k 0) (modulo n 2))
+    (else
+     (api-bit (quotient n 2) (- k 1)))))
+
+(define (api-pow2 k)
+  ;; 2^k for k in [0, 31].
+  (cond
+    ((= k 0) 1)
+    (else (* 2 (api-pow2 (- k 1))))))
+
+(define (api-hex8 n)
+  ;; Render the low 32 bits of n as exactly 8 lowercase hex digits,
+  ;; zero-padded. We work on the non-negative remainder mod 2^32.
+  (let ((mask 4294967295)
+        (digits "0123456789abcdef"))
+    (let ((v (modulo n mask)))
+      (api-hex8-helper digits v 8 ""))))
+
+(define (api-hex8-helper digits v width acc)
+  (cond
+    ((= width 0) acc)
+    (else
+     (let ((d (modulo v 16)))
+       (api-hex8-helper
+         digits
+         (quotient v 16)
+         (- width 1)
+         (string-append (string (string-ref digits d)) acc))))))

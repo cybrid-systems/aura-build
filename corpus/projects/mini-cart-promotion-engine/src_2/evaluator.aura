@@ -1,0 +1,87 @@
+(define (api eval-promotion cart promo)
+  (cond
+    ((equal? (api promotion-kind promo) "pct") (api eval-percent cart promo))
+    ((equal? (api promotion-kind promo) "fixed") (api eval-fixed cart promo))
+    ((equal? (api promotion-kind promo) "bxgy") (api eval-bxgy cart promo))
+    ((equal? (api promotion-kind promo) "thresh") (api eval-threshold cart promo))
+    (else 0)))
+
+(define (api eval-percent cart promo)
+  (let ((subtotal (api cart-subtotal cart (current-catalog))))
+    (let ((params (promotion-params promo)))
+      (let ((pct (cond
+                   ((null? params) 10)
+                   (else (car params)))))
+        (quotient (* subtotal pct) 100))))))
+
+(define (api eval-fixed cart promo)
+  (let ((params (promotion-params promo)))
+    (cond
+      ((null? params) 0)
+      (else (car params)))))
+
+(define (api eval-bxgy cart promo)
+  (let ((params (promotion-params promo)))
+    (let ((buy (cond
+                 ((null? params) 2)
+                 (else (car params))))
+          (getfree (cond
+                     ((or (null? params) (null? (cdr params))) 1)
+                     (else (cadr params))))
+          (target-cat (cond
+                       ((or (null? params) (null? (cdr params)) (null? (cddr params))) "office"
+                       (else (caddr params)))))
+      (let ((cheapest (cheapest-in-category cart (current-catalog) target-cat)))
+        (if cheapest
+            (let ((total-qty (total-qty-in-category cart (current-catalog) target-cat)))
+              (let ((free-units (free-unit-count total-qty buy getfree)))
+                (* free-units cheapest)))
+            0)))))
+
+(define (api eval-threshold cart promo)
+  (let ((params (promotion-params promo)))
+    (let ((threshold (cond
+                       ((null? params) 30000)
+                       (else (car params))))
+          (amount (cond
+                    ((or (null? params) (null? (cdr params))) 5000)
+                    (else (cadr params)))))
+      (let ((subtotal (api cart-subtotal cart (current-catalog))))
+        (if (> subtotal threshold)
+            amount
+            0)))))
+
+(define (current-catalog)
+  (if (null? *active-catalog*) '() (car *active-catalog*)))
+
+(define *active-catalog* '())
+
+(define (set-active-catalog! cat)
+  (set! *active-catalog* (list cat)))
+
+(define (cheapest-in-category cart catalog cat-name)
+  (let loop ((lines cart) (best #f))
+    (cond
+      ((null? lines) best)
+      (else
+        (let ((entry (api catalog-find catalog (car (car lines)))))
+          (if (and entry (equal? (cadddr entry) cat-name))
+              (let ((price (cadr entry)))
+                (if (or (not best) (< price best))
+                    (loop (cdr lines) price)
+                    (loop (cdr lines) best)))
+              (loop (cdr lines) best)))))))
+
+(define (total-qty-in-category cart catalog cat-name)
+  (cond
+    ((null? cart) 0)
+    (else
+      (let ((entry (api catalog-find catalog (car (car cart)))))
+        (let ((line-qty (cadr (car cart))))
+          (if (and entry (equal? (cadddr entry) cat-name))
+              (+ line-qty (total-qty-in-category (cdr cart) catalog cat-name))
+              (total-qty-in-category (cdr cart) catalog cat-name)))))))
+
+(define (free-unit-count qty buy getfree)
+  (let ((groups (quotient qty (+ buy getfree))))
+    (* groups getfree)))

@@ -1,0 +1,65 @@
+;; saga/compensate.aura
+;; Saga-style compensation: walks back through stages that completed
+;; successfully and invokes their registered compensate functions in
+;; reverse order.
+;;
+;; The pipeline stores, on each completed stage, a compensate function
+;; via api-register-stage!. When something goes wrong downstream
+;; (fraud rejection, commit failure, etc.), the orchestrator invokes
+;; api-compensate on the state; this module looks up each completed
+;; stage, looks up its compensate function from the registry, calls
+;; it with the stage's stored result, and records that compensation
+;; happened.
+;;
+;; Required exported API:
+;;   (api-compensate state) -> 'COMPENSATED
+;;
+;; Compensation order: most-recent stage first. This matches the
+;; natural expectation that, e.g., if authorize completed and then a
+;; later stage failed, we void the authorization before doing anything
+;; else. Stages are recorded in commit order via
+;; api-state-push-rollback!, so reverse order = (reverse stages).
+;;
+;; Idempotence: each compensate function must be safe to call once.
+;; We do not retry compensations here; if one throws, the orchestrator
+;; decides how to proceed. This module assumes its dependencies
+;; (api-state-rollback-stages, api-lookup-compensate) are loaded first.
+
+(define (api-compensate state)
+  ;; The list of stages to roll back, in commit order.
+  (let ((stages (api-state-rollback-stages state)))
+    ;; Walk them in reverse so the most recent stage is undone first.
+    (api-compensate-loop state (reverse stages))
+    ;; Mark the state as fully compensated so the orchestrator can
+    ;; distinguish this path from a fresh run.
+    (api-state-set! state 'compensated #t)
+    ;; The module returns the symbol 'COMPENSATED as a convenience
+    ;; for callers that want to chain a conditional on the result.
+    'COMPENSATED))
+
+(define (api-compensate-loop state remaining)
+  ;; Tail-recursive helper: empty list -> done.
+  (cond
+    ((null? remaining)
+     'done)
+    (else
+     ;; Each remaining element is a stage name (symbol).
+     (let ((stage (car remaining)))
+       ;; Look up the compensate function in the registry. If a stage
+       ;; has no compensate registered, we silently skip it: that
+       ;; stage's effect is either irreversible or trivially safe.
+       (let ((compensate-fn (api-lookup-compensate stage)))
+         (cond
+           ((null? compensate-fn)
+            ;; No compensation needed for this stage.
+            (api-compensate-loop state (cdr remaining)))
+           (else
+            ;; Retrieve any stored result the run stage produced and
+            ;; pass it to the compensate function so it knows what to
+            ;; undo (e.g., the auth id to void).
+            (let ((stage-result (api-state-get state stage)))
+              (compensate-fn stage-result)
+              ;; Record that this stage was rolled back so the stdout
+              ;; contract and audit logs can see what happened.
+              (api-state-set! state 'rolled-back-stage stage)
+              (api-compensate-loop state (cdr remaining))))))))))

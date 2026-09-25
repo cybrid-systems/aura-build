@@ -1,0 +1,36 @@
+;; pipeline/registry.aura
+;; Registry mapping pipeline stage names to their run/compensate functions.
+;;
+;; Stages are registered at startup time (typically by the orchestrator
+;; or by the entry point) via (api-register-stage!), and looked up later
+;; during pipeline execution or saga compensation.
+;;
+;; Internally the registry is stored as a single mutable association list
+;; bound to *registry*. Each entry has the form:
+;;
+;;   (name . (cons run-fn compensate-fn))
+;;
+;; so both function slots can be retrieved in O(stages) via assoc.
+
+(define *registry* '())
+
+(define (api-register-stage! name run-fn compensate-fn)
+  ;; Register a pipeline stage under NAME with a forward (RUN-FN) and
+  ;; rollback (COMPENSATE-FN) function. If a stage with the same name
+  ;; already exists, its entry is replaced (most-recent registration wins).
+  (let ((entry (cons name (cons run-fn compensate-fn)))
+        (existing (assoc name *registry*)))
+    (set! *registry*
+          (if existing
+              (cons entry (filter (lambda (e) (not (equal? (car e) name))) *registry*))
+              (cons entry *registry*)))))
+
+(define (api-lookup-run name)
+  ;; Return the run function registered under NAME, or #f if none.
+  (let ((entry (assoc name *registry*)))
+    (if entry (car (cdr entry)) #f)))
+
+(define (api-lookup-compensate name)
+  ;; Return the compensate function registered under NAME, or #f if none.
+  (let ((entry (assoc name *registry*)))
+    (if entry (cdr (cdr entry)) #f)))

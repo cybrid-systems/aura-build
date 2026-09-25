@@ -1,0 +1,73 @@
+;; payment/void.aura
+;; Simulates the "void" step of a payment transaction.
+;;
+;; In a real payment flow, voiding cancels a previously authorized
+;; charge that has not yet been captured: it releases the hold on the
+;; customer's funds without ever moving money. Void is the natural
+;; counterpart to authorize (as opposed to refund, which would undo a
+;; completed capture).
+;;
+;; This module is a stand-in for a real gateway integration. We don't
+;; talk to any external service; we just synthesize a void id from
+;; the supplied auth id so the rest of the pipeline (saga
+;; compensation / stdout contract) can observe a deterministic value.
+;;
+;; Required exported API:
+;;   (api-void-payment auth-id) -> void-id
+;;
+;; The returned void id is a short string of the form
+;;   "VOID-" + auth-id
+;; so it is clearly distinguishable from auth and capture ids while
+;; still being deterministic in the auth id. The function accepts any
+;; value for auth-id (including #f or an empty string); if auth-id is
+;; missing or empty, we still return a well-formed void-id with an
+;; "UNKNOWN" placeholder so callers always get a string back.
+
+(define (api-void-payment auth-id)
+  (let ((base (api-void-base auth-id)))
+    (string-append "VOID-" base)))
+
+(define (api-void-base auth-id)
+  ;; Normalize the auth-id to a string suitable for embedding in the
+  ;; returned void id. We accept strings, numbers, symbols, or #f and
+  ;; always return a non-empty string.
+  (cond
+    ((string? auth-id)
+     (if (string=? auth-id "")
+         "UNKNOWN"
+         auth-id))
+    ((number? auth-id)
+     (number->string auth-id))
+    ((symbol? auth-id)
+     (symbol->string auth-id))
+    ((null? auth-id)
+     "UNKNOWN")
+    ((equal? auth-id #f)
+     "UNKNOWN")
+    (else
+     "UNKNOWN")))
+
+(define (symbol->string s)
+  ;; Minimal symbol->string so we don't depend on a particular host
+  ;; runtime's symbol printer. Symbols in this codebase are simple
+  ;; identifiers; we render them by stripping the leading quote if
+  ;; present and returning the remainder.
+  (let loop ((chars (symbol->list* s))
+             (acc '()))
+    (if (null? chars)
+        (list->string (reverse acc))
+        (loop (cdr chars)
+              (cons (car chars) acc)))))
+
+(define (symbol->list* s)
+  ;; Convert a symbol to a list of characters using display, then
+  ;; turning the resulting string into a list of chars. This is a
+  ;; pragmatic fallback; real Aura runtimes may provide a native
+  ;; symbol->string.
+  (string->list (symbol-display s)))
+
+(define (symbol-display s)
+  ;; Render a symbol as its printed form (without surrounding quotes).
+  (let ((port (open-output-string)))
+    (display s port)
+    (get-output-string port)))

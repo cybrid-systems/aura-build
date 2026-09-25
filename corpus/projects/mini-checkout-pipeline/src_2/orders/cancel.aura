@@ -1,0 +1,48 @@
+;; orders/cancel.aura
+;; Cancels an order that has not yet been committed.
+;;
+;; In the checkout pipeline, (api-cancel-order state) is the explicit
+;; cancellation path. It is distinct from the saga-style compensation
+;; performed by saga/compensate.aura: cancellation is initiated by
+;; caller intent (user pressed "Cancel", timeout reached, etc.) while
+;; compensation is initiated by a downstream failure that requires
+;; already-completed stages to be unwound.
+;;
+;; Contract:
+;;   - Returns a cancel record:
+;;       (list 'cancel order-id cancel-id status)
+;;     where:
+;;       order-id   -- the order being cancelled (from state)
+;;       cancel-id  -- a deterministic synthetic identifier
+;;       status     -- 'ok if the order was not yet committed, or
+;;                     'already-committed if it had been committed.
+;;   - If the state already has an 'order-status' key equal to
+;;     'committed, cancellation is refused and the status reflects that.
+;;     Otherwise the state is updated with:
+;;       'order-status = 'cancelled
+;;       'cancel-id    = <generated id>
+;;       'cancelled-at = a stable string
+;;
+;; We do NOT touch payment authorization here — if the caller wants
+;; the auth hold released, they should explicitly invoke void via
+;; saga/compensate.aura. Keeping concerns separate makes the rollback
+;; trace cleaner.
+
+(define (api-cancel-order state)
+  (let* ((order-id (api-state-get state 'order-id))
+         (status   (api-state-get state 'order-status)))
+    (cond
+      ((equal? status 'committed)
+       ;; Refuse cancellation: the order has already been finalized.
+       (list 'cancel order-id #f 'already-committed))
+      (else
+       ;; Generate a cancel id deterministically from the order id.
+       (let* ((n (string-length (number->string order-id)))
+              (cancel-id (string-append "CANCEL-"
+                                       (number->string order-id)
+                                       "-"
+                                       (number->string (* n 7)))))
+         (api-state-set! state 'order-status 'cancelled)
+         (api-state-set! state 'cancel-id cancel-id)
+         (api-state-set! state 'cancelled-at "stage-cancel")
+         (list 'cancel order-id cancel-id 'ok))))))

@@ -1,0 +1,13 @@
+(define (api registry-empty)
+  '())
+
+(define (api registry-add reg promo)
+  (cons promo reg))
+
+(define (api registry-all reg)
+  reg)
+
+(define (api registry-count reg)
+  (cond
+    ((null? reg) 0)
+    (else (+ 1 (registry-count (cdr reg))))))

@@ -1,0 +1,39 @@
+(define (api ledger-empty)
+  '())
+
+(define (api ledger-record ledger code)
+  (let ((existing (assq-lookup ledger code)))
+    (if existing
+        (update-existing ledger code existing)
+        (append ledger (list (list code 1))))))
+
+(define (assq-lookup ledger code)
+  (cond
+    ((null? ledger) #f)
+    ((equal? (car (car ledger)) code) (car ledger))
+    (else (assq-lookup (cdr ledger) code))))
+
+(define (update-existing ledger code existing)
+  (cond
+    ((null? ledger) '())
+    ((equal? (car (car ledger)) code)
+     (cons (list code (+ (cadr existing) 1)) (cdr ledger)))
+    (else
+      (cons (car ledger) (update-existing (cdr ledger) code existing)))))
+
+(define (api ledger-uses ledger code)
+  (let ((entry (assq-lookup ledger code)))
+    (if entry
+        (cadr entry)
+        0)))
+
+(define (api ledger-total ledger)
+  (cond
+    ((null? ledger) 0)
+    (else (+ (cadr (car ledger)) (api ledger-total (cdr ledger))))))
+
+(define (api ledger-codes ledger)
+  (cond
+    ((null? ledger) '())
+    (else
+      (cons (car (car ledger)) (api ledger-codes (cdr ledger))))))

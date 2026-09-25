@@ -1,0 +1,44 @@
+;; fraud/decision.aura
+;; Fraud decision policy for the checkout pipeline.
+;;
+;; Given a fraud score (a number, typically in [0.0, 1.0] where higher
+;; means riskier), this module decides what the pipeline should do:
+;;
+;;   - "ALLOW"  — score is below the threshold; proceed with capture.
+;;   - "REVIEW" — score is in a borderline band; in a real system this
+;;                would route to a manual reviewer. Here we treat it as
+;;                a soft block and compensate the pipeline.
+;;   - "BLOCK"  — score is clearly above the threshold; hard fail and
+;;                compensate.
+;;
+;; The policy is exposed through two APIs:
+;;
+;;   (api-fraud-threshold)        -> number
+;;   (api-fraud-decision score)   -> one of "ALLOW" / "REVIEW" / "BLOCK"
+;;
+;; Keeping the threshold as a named export lets other modules (and
+;; tests) discover it without hard-coding the magic number in multiple
+;; places. The decision function reads the threshold at call time so
+;; any later change to the policy is centralized.
+
+(define *fraud-threshold* 0.75)
+
+(define (api-fraud-threshold)
+  ;; Return the score above which a transaction is considered risky.
+  ;; "REVIEW" kicks in for scores within 0.10 of the threshold so the
+  ;; reference output has a meaningful borderline band.
+  *fraud-threshold*)
+
+(define (api-fraud-decision score)
+  ;; Coerce defensively: the fraud score may arrive as an integer
+  ;; (e.g. 0 or 1) rather than a float. We treat both kinds as numbers.
+  (cond
+    ((not (number? score))
+     ;; Bad input — fail closed.
+     "BLOCK")
+    ((>= score *fraud-threshold*)
+     "BLOCK")
+    ((>= score (- *fraud-threshold* 0.10))
+     "REVIEW")
+    (else
+     "ALLOW")))

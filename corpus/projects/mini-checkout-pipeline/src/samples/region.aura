@@ -1,0 +1,21 @@
+;; samples/region.aura
+;; Provides a sample region code for the checkout pipeline scenario.
+;;
+;; The orchestrator (saga/orchestrator.aura) and the tax module
+;; (pricing/tax.aura) both expect a region code. We expose a single
+;; function, api-sample-region, that returns a region symbol/string
+;; the rest of the system recognizes.
+;;
+;; We pick "US" because the pricing/compute module defaults to it for
+;; its embedded tax call, and the stdout contract scenarios in this
+;; project are documented around US sales-tax math.
+;;
+;; Required exported API:
+;;   (api-sample-region) -> region-code
+;;
+;; The returned value is a plain string so it can be passed directly to
+;; api-tax-cents (which expects a string) and compared with string=?
+;; without any extra conversion step on the caller side.
+
+(define (api-sample-region)
+  "US")

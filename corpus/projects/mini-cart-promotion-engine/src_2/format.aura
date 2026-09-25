@@ -1,0 +1,32 @@
+(define (api join-pipe xs)
+  (join-helper xs ""))
+
+(define (join-helper xs acc)
+  (cond
+    ((null? xs) acc)
+    ((null? (cdr xs)) (string-append acc (car xs)))
+    (else
+      (join-helper (cdr xs) 
+                   (string-append acc (car xs) "|")))))
+
+(define (api join-comma xs)
+  (join-comma-helper xs ""))
+
+(define (join-comma-helper xs acc)
+  (cond
+    ((null? xs) acc)
+    ((null? (cdr xs)) (string-append acc (car xs)))
+    (else
+      (join-comma-helper (cdr xs)
+                         (string-append acc (car xs) ",")))))
+
+(define (api cents->string n)
+  (let ((dollars (quotient n 100)))
+    (let ((cents (modulo n 100)))
+      (let ((cents-str (pad-two cents)))
+        (string-append (number->string dollars) "." cents-str)))))
+
+(define (pad-two n)
+  (if (< n 10)
+      (string-append "0" (number->string n))
+      (number->string n)))

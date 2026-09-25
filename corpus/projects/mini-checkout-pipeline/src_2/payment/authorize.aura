@@ -1,0 +1,94 @@
+;; payment/authorize.aura
+;; Authorizes a payment for a given amount against a checkout state.
+;;
+;; Real-world payment authorization involves a network round-trip to a
+;; payment processor (e.g. Stripe, Adyen, Braintree) that returns an
+;; authorization identifier (auth-id) plus a status. For the purposes
+;; of this pipeline we simulate the response deterministically:
+;;
+;;   - amount-cents must be a positive number; otherwise the call
+;;     raises an error (we return a clearly-marked failure record).
+;;   - The auth-id is generated as a string of the form
+;;     "AUTH-<order-id>-<short-hash>" where the short hash is derived
+;;     from the amount-cents. This keeps outputs stable and diffable
+;;     without baking the value into main.aura.
+;;
+;; The state is updated in place with:
+;;   'payment-auth-id  -> the generated auth-id string
+;;   'payment-amount   -> the amount-cents we authorized
+;;   'payment-status   -> "AUTHORIZED"
+;;   'payment-error    -> #f (or an error string on failure)
+;;
+;; On failure we do NOT throw — we record the error on the state and
+;; let the orchestrator / fraud-decision stage make a final call. The
+;; saga compensator can later void any authorized payment.
+;;
+;; Forward references: state helpers (api-state-set!, api-state-get) are
+;; resolved lazily in the same spirit as pricing/compute.aura, since
+;; this file is loaded before pipeline/state.aura in the project order.
+
+(define *state-setter-cache* #f)
+(define *state-getter-cache* #f)
+
+(define (ensure-state-helpers!)
+  ;; Lazily resolve api-state-set! / api-state-get from pipeline/state.
+  ;; After the first successful resolution we pin them in the caches so
+  ;; subsequent calls don't pay the lookup cost.
+  (when (not *state-setter-cache*)
+    (let ((resolved (eval 'api-state-set! (interaction-environment))))
+      (if (procedure? resolved)
+          (set! *state-setter-cache* resolved)
+          (error "payment/authorize: api-state-set! not available"))))
+  (when (not *state-getter-cache*)
+    (let ((resolved (eval 'api-state-get (interaction-environment))))
+      (if (procedure? resolved)
+          (set! *state-getter-cache* resolved)
+          (error "payment/authorize: api-state-get not available")))))
+
+(define (digits-hash n)
+  ;; Produce a small deterministic numeric string from N by summing its
+  ;; decimal digits and folding the result with simple XOR-ish ops. This
+  ;; is intentionally cheap and is meant only to make the auth-id unique
+  ;; across different amounts, not to be cryptographically meaningful.
+  (let loop ((m n) (acc 0))
+    (if (= m 0)
+        acc
+        (loop (quotient m 10)
+              (+ (* acc 31) (modulo m 10))))))
+
+(define (make-auth-id order-id amount-cents)
+  ;; Build a stable, human-readable auth-id tied to order-id and amount.
+  ;; Examples (hypothetical): "AUTH-ORD-1043-771", "AUTH-ORD-7777-83".
+  (string-append "AUTH-"
+                 order-id
+                 "-"
+                 (number->string (digits-hash amount-cents))))
+
+(define (api-authorize-payment state amount-cents)
+  ;; Authorize AMOUNT-CENTS against STATE.
+  ;; Returns the auth-id string on success, or #f on failure (with an
+  ;; error recorded on the state under 'payment-error).
+  (ensure-state-helpers!)
+  (let ((order-id (or (*state-getter-cache* state 'order-id) "UNKNOWN")))
+    (cond
+      ((not (number? amount-cents))
+       (begin
+         (*state-setter-cache* state 'payment-auth-id #f)
+         (*state-setter-cache* state 'payment-amount amount-cents)
+         (*state-setter-cache* state 'payment-status "FAILED")
+         (*state-setter-cache* state 'payment-error "amount-cents is not a number")
+         #f))
+      ((<= amount-cents 0)
+       (begin
+         (*state-setter-cache* state 'payment-auth-id #f)
+         (*state-setter-cache* state 'payment-amount amount-cents)
+         (*state-setter-cache* state 'payment-status "FAILED")
+         (*state-setter-cache* state 'payment-error "amount-cents must be positive")
+         #f))
+      (else
+       (let ((auth-id (make-auth-id order-id amount-cents)))
+         (*state-setter-cache* state 'payment-auth-id auth-id)
+         (*state-setter-cache* state 'payment-amount amount-cents)
+         (*state-setter-cache* state 'payment-status "AUTHORIZED")
+         (*state-setter-cache* state 'payment-error #f)
+         auth-id)))))

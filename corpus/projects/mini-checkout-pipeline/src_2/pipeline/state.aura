@@ -1,0 +1,65 @@
+;; pipeline/state.aura
+;; Per-order state container for the checkout pipeline.
+;;
+;; A state object is represented as an association list of key/value pairs
+;; plus a parallel rollback stack (also a list of stage names).
+;;
+;; All values are stored under quoted-symbol keys so the orchestrator can
+;; look them up with (api-state-get st 'foo).
+
+(define (api-make-state order-id)
+  ;; Initialize a fresh state for the given order-id.
+  ;; The state is an alist with two pseudo-entries:
+  ;;   ('order-id . order-id)
+  ;;   ('__rollback__ . '())   ;; rollback stack, most-recent at the front
+  (cons (cons 'order-id order-id)
+        (list (cons '__rollback__ '()))))
+
+(define (api-state-set! st k v)
+  ;; Mutate state st to associate key k with value v.
+  ;; If k already exists, replace its cdr; otherwise cons a new pair
+  ;; onto the front of the alist.
+  (let loop ((pairs (cdr st))
+             (acc   (list (car st))))
+    (cond
+      ((null? pairs)
+       (begin
+         (set-cdr! st (cons (cons k v) acc))
+         st))
+      ((and (pair? (car pairs)) (eq? (car (car pairs)) k))
+       (begin
+         (set-cdr! (car pairs) v)
+         st))
+      (else
+       (loop (cdr pairs) (cons (car pairs) acc))))))
+
+(define (api-state-get st k)
+  ;; Retrieve value for key k from state st, or #f if absent.
+  (let loop ((pairs (cdr st)))
+    (cond
+      ((null? pairs) #f)
+      ((and (pair? (car pairs)) (eq? (car (car pairs)) k))
+       (cdr (car pairs)))
+      (else
+       (loop (cdr pairs))))))
+
+(define (api-state-mark-done! st stage)
+  ;; Record that a stage has completed successfully.
+  ;; We use the special key 'done-stages whose value is a list of stage names.
+  (let ((current (api-state-get st 'done-stages)))
+    (api-state-set! st 'done-stages
+                    (append (if current current '()) (list stage)))))
+
+(define (api-state-done? st stage)
+  ;; Has the named stage been marked done?
+  (let ((current (api-state-get st 'done-stages)))
+    (if (member stage current) #t #f)))
+
+(define (api-state-push-rollback! st stage)
+  ;; Push a stage name onto the rollback stack (most-recent first).
+  (let ((current (api-state-get st '__rollback__)))
+    (api-state-set! st '__rollback__ (cons stage current))))
+
+(define (api-state-rollback-stages st)
+  ;; Return the list of stages awaiting rollback, in reverse-completion order.
+  (api-state-get st '__rollback__))

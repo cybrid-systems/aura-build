@@ -1,0 +1,98 @@
+;; main.aura — scenario driver: loads all modules, runs scenario, prints contract lines
+
+;; --- Scenario constants ---
+(define CATEGORY_BOOK 'book)
+(define CATEGORY_OFFICE 'office)
+
+;; --- Helper: extract codes from a list of promotions ---
+(define (promo-codes promos)
+  (cond
+    ((null? promos) '())
+    (else (cons (promotion-code (car promos))
+                (promo-codes (cdr promos))))))
+
+;; --- Helper: count cart lines (alias) ---
+(define (cart-count cart)
+  (cart-line-count cart))
+
+;; --- Helper: sum catalog line subtotals for a category ---
+(define (catalog-category-size catalog)
+  (catalog-size catalog))
+
+;; --- Helper: format a ledger as "code:count,code:count" ---
+(define (format-ledger ledger)
+  (join-ledger ledger))
+
+(define (join-ledger ledger)
+  (cond
+    ((null? ledger) "")
+    (else
+      (string-append (car (car ledger))
+                     (string-append ":"
+                                    (string-append (number->string (car (cdr (car ledger))))
+                                                   (if (null? (cdr ledger))
+                                                       ""
+                                                       (string-append "," (join-ledger (cdr ledger)))))))))
+
+;; --- Main scenario ---
+(define (run-scenario)
+  (let* ((catalog (catalog-make))
+         (catalog (catalog-add catalog 'SKU-BK-001 "Effective Aura" 4500 CATEGORY_BOOK))
+         (catalog (catalog-add catalog 'SKU-BK-002 "Practical Lisp" 5200 CATEGORY_BOOK))
+         (catalog (catalog-add catalog 'SKU-OF-001 "Fountain Pen" 1500 CATEGORY_OFFICE))
+         (catalog (catalog-add catalog 'SKU-OF-002 "Notebook A5" 800 CATEGORY_OFFICE))
+         (cart (cart-empty))
+         (cart (cart-add cart 'SKU-BK-001 3))
+         (cart (cart-add cart 'SKU-OF-001 4))
+         (cart (cart-add cart 'SKU-OF-002 10))
+         (registry (registry-empty))
+         (registry (install-pct10 registry))
+         (registry (install-fixed500 registry))
+         (registry (install-bxgy1 registry))
+         (subtotal-cents (compute-subtotal cart catalog))
+         (eligible (eligible-promotions cart registry))
+         (excluded (excluded-promotions cart registry eligible))
+         (stacked (stack-promotions eligible))
+         (discount-cents (compute-discount cart stacked))
+         (final-cents (compute-final subtotal-cents discount-cents))
+         (ledger (ledger-empty))
+         (ledger (apply-ledger stacked ledger))
+         (total-redemptions (ledger-total ledger))
+         (codes-applied (promo-codes stacked))
+         (codes-eligible (promo-codes eligible))
+         (codes-excluded (promo-codes excluded))
+         (catalog-sku-count (catalog-category-size catalog))
+         (cart-lines-n (cart-count cart))
+         (ledger-str (format-ledger ledger)))
+    (begin
+      (display "SUBTOTAL_CENTS=")        (display (cents->string subtotal-cents))    (newline)
+      (display "DISCOUNT_CENTS=")        (display (cents->string discount-cents))    (newline)
+      (display "FINAL_CENTS=")           (display (cents->string final-cents))       (newline)
+      (display "CATALOG_SIZE=")          (display catalog-sku-count)                 (newline)
+      (display "CART_LINES=")            (display cart-lines-n)                      (newline)
+      (display "REGISTRY_SIZE=")         (display (registry-count registry))         (newline)
+      (display "ELIGIBLE_COUNT=")        (display (length-eligible eligible))        (newline)
+      (display "EXCLUDED_COUNT=")        (display (length-eligible excluded))        (newline)
+      (display "STACK_COUNT=")           (display (length-eligible stacked))         (newline)
+      (display "ELIGIBLE_CODES=")        (display (join-pipe codes-eligible))        (newline)
+      (display "EXCLUDED_CODES=")        (display (join-pipe codes-excluded))        (newline)
+      (display "STACKED_CODES=")         (display (join-pipe codes-applied))         (newline)
+      (display "LEDGER_TOTAL=")          (display total-redemptions)                 (newline)
+      (display "LEDGER_SUMMARY=")        (display ledger-str)                        (newline))))
+
+;; Apply each promotion in stacked list to the ledger
+(define (apply-ledger stacked ledger)
+  (cond
+    ((null? stacked) ledger)
+    (else
+      (apply-ledger (cdr stacked)
+                    (ledger-record ledger (promotion-code (car stacked)))))))
+
+;; Helper: length of a list of promotions (generic length)
+(define (length-eligible lst)
+  (cond
+    ((null? lst) 0)
+    (else (+ 1 (length-eligible (cdr lst))))))
+
+;; --- Entry point ---
+(run-scenario)

@@ -1,0 +1,18 @@
+;; samples/cart.aura
+;; Provides a deterministic sample shopping cart for the checkout
+;; pipeline's main scenario.
+;;
+;; The cart is a list of items, each item being a list:
+;;   (sku qty unit-price-cents)
+;;
+;; Values are chosen to be stable across runs (so the stdout contract
+;; is reproducible and diffable) while still exercising all the
+;; downstream modules (validate, price, tax, authorize, fraud-score,
+;; commit/compensate).
+
+(define (api-sample-cart)
+  (list
+    (list "SKU-BOOK-001"  2  1499)   ; paperback book,  2 x $14.99
+    (list "SKU-MUG-042"   1   895)   ; ceramic mug,     1 x  $8.95
+    (list "SKU-CABLE-7"   3   599)   ; usb-c cable,     3 x  $5.99
+    (list "SKU-DESK-MAT"  1  2499))) ; desk mat,        1 x $24.99

@@ -1,0 +1,15 @@
+;; samples/region.aura
+;; Provides a deterministic sample region for the checkout pipeline.
+;;
+;; (api-sample-region) returns a region code that the pricing/tax
+;; module knows how to handle. Keeping the sample here (rather than
+;; hard-coding in main.aura) lets the region be swapped without
+;; touching the entry point.
+
+(define (api-sample-region)
+  ;; "US-CA" is exercised by pricing/tax.aura at 8.75% — a non-zero,
+  ;; non-trivial rate that produces a clearly different total from
+  ;; the tax-free regions (US-OR, US-MT, US-NH) and from the lower
+  ;; rate states like US-TX. This makes the diff against the
+  ;; reference stdout contract informative.
+  "US-CA")

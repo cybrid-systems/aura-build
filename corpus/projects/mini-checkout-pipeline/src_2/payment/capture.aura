@@ -1,0 +1,131 @@
+;; payment/capture.aura
+;; Captures a previously-authorized payment.
+;;
+;; In a real payment pipeline, capture is the step that actually moves
+;; funds from the customer's instrument to the merchant, settling the
+;; authorization created by (api-authorize-payment). It is the second
+;; of three payment lifecycle operations exposed by this module group:
+;;
+;;   authorize  ->  capture  ->  void  (rollback)
+;;
+;; For this pipeline we simulate capture deterministically. Given an
+;; auth-id produced by payment/authorize.aura, capture returns a
+;; capture record (also kept simple / diffable):
+;;
+;;   (list 'capture auth-id capture-id status)
+;;
+;; where:
+;;   auth-id     -- the authorization identifier being captured
+;;   capture-id  -- a synthetic, deterministic capture identifier
+;;   status      -- either "CAPTURED" (success) or "FAILED" (no auth)
+;;
+;; This module is intentionally side-effect free with respect to the
+;; checkout state: the orchestrator is responsible for reading the
+;; auth-id off the state, calling api-capture-payment, and storing any
+;; derived values (such as the capture-id) back onto the state via
+;; (api-state-set! ...). That keeps the payment module decoupled from
+;; the state container implementation.
+
+(define (api-capture-payment auth-id)
+  ;; Capture the payment identified by AUTH-ID.
+  ;;
+  ;; AUTH-ID is expected to be a string of the form produced by
+  ;; payment/authorize.aura, i.e. "AUTH-<order-id>-<hash>". If AUTH-ID
+  ;; is anything else (e.g. #f, missing, or a non-string), capture is
+  ;; considered failed and we return a FAILED status without producing
+  ;; a capture-id.
+  ;;
+  ;; On success we synthesize a capture-id of the form
+  ;; "CAP-<order-id>-<capture-hash>" so downstream stages and tests can
+  ;; distinguish captures from authorizations, while remaining fully
+  ;; derived from the auth-id (no hard-coded values here).
+  (cond
+    ((not (string? auth-id))
+     (list 'capture #f #f "FAILED"))
+    ((not (string-prefix? auth-id "AUTH-"))
+     (list 'capture auth-id #f "FAILED"))
+    (else
+     ;; Strip the "AUTH-" prefix to get "<order-id>-<hash>".
+     (let* ((stripped (substring-after auth-id "AUTH-"))
+            ;; Split on the first '-' to separate order-id from hash.
+            (parts (split-on-first-dash stripped))
+            (order-id (car parts))
+            (hash (cdr parts))
+            (capture-hash (derive-capture-hash hash))
+            (capture-id (string-append "CAP-" order-id "-" capture-hash)))
+       (list 'capture auth-id capture-id "CAPTURED")))))
+
+(define (string-prefix? s prefix)
+  ;; Return #t if STRING S begins with PREFIX, else #f.
+  (let ((plen (string-length prefix))
+        (slen (string-length s)))
+    (cond
+      ((> plen slen) #f)
+      (else
+       (let loop ((i 0))
+         (cond
+           ((= i plen) #t)
+           ((not (char=? (string-ref s i) (string-ref prefix i))) #f)
+           (else (loop (+ i 1)))))))))
+
+(define (substring-after s prefix)
+  ;; Return the portion of S that follows the first occurrence of
+  ;; PREFIX. If PREFIX is not present, return S unchanged.
+  (let ((plen (string-length prefix))
+        (slen (string-length s)))
+    (cond
+      ((> plen slen) s)
+      ((not (string-prefix? s prefix)) s)
+      (else
+       (substring s plen slen)))))
+
+(define (substring s start end)
+  ;; Extract a substring of S from START (inclusive) to END (exclusive).
+  ;; Built on top of list-of-chars representation to avoid depending on
+  ;; any non-Aura runtime features.
+  (let loop ((i start) (acc '()))
+    (if (>= i end)
+        (list->string (reverse acc))
+        (loop (+ i 1) (cons (string-ref s i) acc)))))
+
+(define (list->string chars)
+  ;; Build a string from a list of characters. We use (display "") style
+  ;; accumulation: build a list of single-char strings and append.
+  (cond
+    ((null? chars) "")
+    (else
+     (string-append (string (car chars))
+                    (list->string (cdr chars))))))
+
+(define (string ch)
+  ;; Coerce a single character into a 1-character string. The Aura
+  ;; runtime's string-ref returns a character; we wrap it here.
+  (make-string 1 ch))
+
+(define (split-on-first-dash s)
+  ;; Split S into a pair (before . after) at its first '-' character.
+  ;; If no '-' is present, the after half is the empty string.
+  (let loop ((i 0))
+    (cond
+      ((>= i (string-length s))
+       (cons s ""))
+      ((char=? (string-ref s i) #\-)
+       (cons (substring s 0 i)
+             (substring s (+ i 1) (string-length s))))
+      (else (loop (+ i 1))))))
+
+(define (derive-capture-hash auth-hash)
+  ;; Produce a short, deterministic capture-hash from the auth-hash
+  ;; portion of an auth-id. We simply rotate the digits/characters by a
+  ;; fixed offset and prefix with "C" so the capture hash is visually
+  ;; distinct from the authorization hash but still fully derived.
+  (string-append "C" (rotate-string auth-hash 3)))
+
+(define (rotate-string s n)
+  ;; Cyclically rotate the characters of S by N positions.
+  (let ((len (string-length s)))
+    (if (= len 0)
+        s
+        (let ((k (modulo n len)))
+          (string-append (substring s k len)
+                         (substring s 0 k))))))

@@ -1,0 +1,13 @@
+;; pipeline/contract.aura
+;; Defines the API version and the ordered list of pipeline stage names
+;; that the orchestrator walks through.
+
+(define (api-version) "1.0.0")
+
+(define (api-stage-names)
+  (list "validate-cart"
+        "price-order"
+        "authorize-payment"
+        "score-fraud"
+        "fraud-decision"
+        "commit-order"))

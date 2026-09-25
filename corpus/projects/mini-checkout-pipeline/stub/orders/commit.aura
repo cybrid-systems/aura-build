@@ -1,0 +1,44 @@
+;; orders/commit.aura
+;; Simulates the "commit" step of a successful order.
+;;
+;; In a real e-commerce flow, committing an order finalizes it:
+;;   - it captures the previously authorized payment,
+;;   - it records the order as placed (persisted, queued for fulfillment),
+;;   - it marks the pipeline as succeeded so downstream consumers
+;;     (e.g. notification, shipping, analytics) react.
+;;
+;; This module is a stand-in: we don't persist anything to an external
+;; store, we don't send a real "order placed" message, and we don't
+;; actually transfer funds. We just synthesize a deterministic commit
+;; id from the state's order id and record key facts on the state so
+;; subsequent stages (stdout contract / saga compensation) observe a
+;; stable, inspectable outcome.
+;;
+;; Required exported API:
+;;   (api-commit-order state) -> commit-id
+;;
+;; The returned commit id is a short string of the form
+;;   "COMMIT-" + order-id
+;;
+;; The commit id is also stored on the state under the key
+;; 'commit-id so the stdout contract and any post-commit reporting
+;; can read it. The stage is recorded on the state's done-stages set
+;; so the orchestrator's compensation logic knows commit succeeded
+;; (and would, in a richer saga, queue a compensating "un-commit" if
+;; later stages failed).
+
+(define (api-commit-order state)
+  (let* ((order-id (api-state-get state 'order-id))
+         (commit-id (string-append "COMMIT-"
+                                   (if (string? order-id)
+                                       order-id
+                                       (number->string
+                                        (if (number? order-id)
+                                            order-id
+                                            0))))))
+    ;; Record side effects on the state.
+    (api-state-set! state 'commit-id commit-id)
+    (api-state-set! state 'order-status 'COMMITTED)
+    (api-state-set! state 'committed-at "now")
+    (api-state-mark-done! state 'commit)
+    commit-id))

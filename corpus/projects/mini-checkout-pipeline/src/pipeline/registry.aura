@@ -1,0 +1,36 @@
+;; pipeline/registry.aura
+;; A simple registry mapping stage names to their run and compensate
+;; procedures. Stages are registered by the orchestrator (or main)
+;; at startup; lookups return the stored procedures (or #f if absent).
+
+(define *run-registry* '())
+(define *compensate-registry* '())
+
+(define (api-register-stage! name run-fn compensate-fn)
+  ;; Insert or replace entries for the given stage name.
+  (set! *run-registry*
+        (api-alist-set *run-registry* name run-fn))
+  (set! *compensate-registry*
+        (api-alist-set *compensate-registry* name compensate-fn)))
+
+(define (api-lookup-run name)
+  (api-alist-ref *run-registry* name))
+
+(define (api-lookup-compensate name)
+  (api-alist-ref *compensate-registry* name))
+
+(define (api-alist-ref alist key)
+  (cond
+    ((null? alist) #f)
+    ((equal? (car (car alist)) key) (cdr (car alist)))
+    (else (api-alist-ref (cdr alist) key))))
+
+(define (api-alist-set alist k v)
+  (cond
+    ((null? alist)
+     (list (cons k v)))
+    ((equal? (car (car alist)) k)
+     (cons (cons k v) (cdr alist)))
+    (else
+     (cons (car alist)
+           (api-alist-set (cdr alist) k v)))))

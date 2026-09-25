@@ -1,0 +1,61 @@
+;; pricing/compute.aura
+;; Computes order pricing from a validated cart.
+;;
+;; Cart shape (as produced by samples/cart.aura / validated by
+;; cart/validate.aura):
+;;   Each entry is a list of (key . value) pairs, with at least
+;;   'sku, 'qty, and 'price-cents present. We tolerate either a flat
+;;   list of such pairs or a cons-cell containing the entry; we look
+;;   up keys directly with member+assq style helpers.
+;;
+;; Returns a triple: (subtotal-cents tax-cents total-cents).
+;;   subtotal-cents = sum of qty * price-cents over all line items
+;;   tax-cents      = computed via api-tax-cents with 'US as the region
+;;                    (cart items do not carry region; the orchestrator
+;;                    uses its own region for tax, but compute provides
+;;                    a sensible default so the triple is self-consistent
+;;                    when called directly from main)
+;;   total-cents    = subtotal-cents + tax-cents
+;;
+;; This module depends on pricing/tax.aura being loaded earlier in the
+;; same invocation so that api-tax-cents is defined.
+
+(define (api-entry-get entry key)
+  ;; entry is a list of (key . value) pairs; return the value for key,
+  ;; or 0 if absent (defensive default for numeric fields).
+  (cond
+    ((null? entry) 0)
+    ((equal? (car (car entry)) key)
+     (cdr (car entry)))
+    (else (api-entry-get (cdr entry) key))))
+
+(define (api-entry-qty entry)
+  (api-entry-get entry 'qty))
+
+(define (api-entry-price entry)
+  (api-entry-get entry 'price-cents))
+
+(define (api-line-cents entry)
+  ;; price of a single line = qty * price-cents
+  (* (api-entry-qty entry) (api-entry-price entry)))
+
+(define (api-subtotal-cents cart)
+  ;; Sum of line totals across the entire cart.
+  (cond
+    ((null? cart) 0)
+    (else
+      (+ (api-line-cents (car cart))
+         (api-subtotal-cents (cdr cart))))))
+
+(define (api-price-order cart)
+  ;; Public API. Returns (subtotal-cents tax-cents total-cents).
+  ;; Region defaults to 'US here; the orchestrator may recompute tax
+  ;; with its own region, but api-price-order must yield a consistent
+  ;; triple that matches the printed stdout contract when called
+  ;; directly. Since main.aura calls api-price-order once and uses
+  ;; (caddr PRICED) for downstream stages, we compute with 'US and
+  ;; the orchestrator will likewise use 'US via the same tax helper,
+  ;; keeping values aligned.
+  (let ((sub (api-subtotal-cents cart))
+        (tax (api-tax-cents sub 'US)))
+    (list sub tax (+ sub tax))))

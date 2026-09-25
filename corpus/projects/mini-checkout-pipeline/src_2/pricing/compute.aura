@@ -1,0 +1,69 @@
+;; pricing/compute.aura
+;; Computes the order subtotal, tax, and total for a validated cart.
+;;
+;; A cart is a list of items, each item a list (sku qty unit-price-cents).
+;; We rely on (api-tax-cents subtotal-cents region) from pricing/tax.aura
+;; to compute the tax portion. Since this file is loaded before
+;; pricing/tax.aura in the project order, we look the function up at call
+;; time through a small indirection so forward references still resolve.
+;;
+;; Returns a list of three integers (in cents):
+;;   (subtotal-cents tax-cents total-cents)
+
+(define *tax-fn-cache* #f)
+
+(define (ensure-tax-fn!)
+  ;; Resolve and cache the tax function. If pricing/tax.aura hasn't been
+  ;; loaded yet at evaluation time, we look it up on every call until it
+  ;; becomes available, then pin it for the remainder of the run.
+  (if *tax-fn-cache*
+      *tax-fn-cache*
+      (let ((found (api-lookup-tax-cents)))
+        (if found
+            (begin
+              (set! *tax-fn-cache* found)
+              found)
+            (lambda (subtotal region)
+              ;; Conservative fallback: no tax if tax module is unavailable.
+              0)))))
+
+(define (api-lookup-tax-cents)
+  ;; Try to find a globally defined (api-tax-cents). Since Aura doesn't
+  ;; expose symbol introspection directly, we use a probe: if the symbol
+  ;; resolves as a procedure, call it; otherwise return #f.
+  ;; We rely on the fact that pricing/tax.aura will (define ...) it.
+  (let ((probe 'api-tax-cents))
+    ;; Evaluate the symbol as a variable in the top-level environment.
+    ;; Aura supports (eval expr) for this kind of lookup.
+    (let ((val (eval probe)))
+      (if (procedure? val) val #f))))
+
+(define (compute-subtotal cart)
+  ;; Sum (qty * unit-price-cents) over all items in cart.
+  (let loop ((items cart) (acc 0))
+    (cond
+      ((null? items) acc)
+      (else
+       (let ((item (car items)))
+         (let ((qty (car item))
+               (price (caddr item)))
+           (loop (cdr items)
+                 (+ acc (* qty price)))))))))
+
+(define (api-price-order cart)
+  ;; Public entry point. Returns (subtotal tax total).
+  (let ((subtotal (compute-subtotal cart))
+        (tax (api-tax-cents subtotal 'us-east)))
+    (list subtotal tax (+ subtotal tax))))
+
+;; Force the tax-function cache to be re-checked at each invocation
+;; by overriding the lookup mechanism: we don't actually need the cache
+;; if (api-tax-cents) is always available by the time this module runs.
+;; Define a clean wrapper that always resolves fresh.
+(define (api-price-order cart)
+  (let ((subtotal (compute-subtotal cart)))
+    (let ((tax-fun (eval 'api-tax-cents)))
+      (let ((tax (if (procedure? tax-fun)
+                     (tax-fun subtotal 'us-east)
+                     0)))
+        (list subtotal tax (+ subtotal tax))))))

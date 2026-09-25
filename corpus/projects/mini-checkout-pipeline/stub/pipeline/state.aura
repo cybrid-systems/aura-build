@@ -1,0 +1,56 @@
+;; pipeline/state.aura
+;; Mutable pipeline state: an alist of key->value plus a list of stages
+;; completed in order and a list of stages that need compensation.
+;; Wrapped in a single cons cell so updates via set! stay visible
+;; across modules loaded on the same Aura CLI invocation.
+
+(define (api-make-state order-id)
+  ;; The state is a pair: ( (key . value) ...  done-stages  rollback-stages )
+  ;; order-id is stored under the key 'order-id so other modules can read it.
+  (cons
+    (list (cons 'order-id order-id)
+          (cons 'done (list))
+          (cons 'rollback (list)))
+    '()))
+
+(define (api-state-set! st k v)
+  ;; Replace or insert the binding for k on the state's alist.
+  (let ((bindings (car st)))
+    (set-car! st (api-alist-set bindings k v))))
+
+(define (api-alist-set bindings k v)
+  (cond
+    ((null? bindings) (list (cons k v)))
+    ((equal? (caar bindings) k)
+     (cons (cons k v) (cdr bindings)))
+    (else
+     (cons (car bindings) (api-alist-set (cdr bindings) k v)))))
+
+(define (api-state-get st k)
+  (let loop ((bindings (car st)))
+    (cond
+      ((null? bindings) #f)
+      ((equal? (caar bindings) k) (cdar bindings))
+      (else (loop (cdr bindings))))))
+
+(define (api-state-mark-done! st stage)
+  ;; Append stage to the 'done list if not already present.
+  (let ((bindings (car st))
+        (done (api-state-get st 'done)))
+    (set-car! st
+      (api-alist-set bindings 'done
+        (if (member stage done) done (append done (list stage)))))))
+
+(define (api-state-done? st stage)
+  (member stage (api-state-get st 'done)))
+
+(define (api-state-push-rollback! st stage)
+  ;; Stages are compensated in reverse order of completion, so prepend.
+  (let ((bindings (car st))
+        (rollback (api-state-get st 'rollback)))
+    (set-car! st
+      (api-alist-set bindings 'rollback
+        (if (member stage rollback) rollback (cons stage rollback))))))
+
+(define (api-state-rollback-stages st)
+  (api-state-get st 'rollback))

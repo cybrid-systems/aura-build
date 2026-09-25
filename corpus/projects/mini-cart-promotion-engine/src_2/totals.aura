@@ -1,0 +1,12 @@
+(define (api compute-subtotal cart catalog)
+  (api cart-subtotal cart catalog))
+
+(define (api compute-discount cart stacked)
+  (cond
+    ((null? stacked) 0)
+    (else
+      (+ (api eval-promotion cart (car stacked))
+         (api compute-discount cart (cdr stacked))))))
+
+(define (api compute-final subtotal discount)
+  (- subtotal discount))

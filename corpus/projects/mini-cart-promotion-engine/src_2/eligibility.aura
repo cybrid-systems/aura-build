@@ -1,0 +1,59 @@
+(define (api eligible-promotions cart registry)
+  (cond
+    ((null? registry) '())
+    (else
+      (let ((p (car registry)))
+        (if (promotion-eligible? cart p)
+            (cons p (api eligible-promotions cart (cdr registry)))
+            (api eligible-promotions cart (cdr registry)))))))
+
+(define (promotion-eligible? cart p)
+  (cond
+    ((equal? (api promotion-kind p) "pct") (pct-eligible? cart p))
+    ((equal? (api promotion-kind p) "fixed") (fixed-eligible? cart p))
+    ((equal? (api promotion-kind p) "bxgy") (bxgy-eligible? cart p))
+    ((equal? (api promotion-kind p) "thresh") (thresh-eligible? cart p))
+    (else #t)))
+
+(define (pct-eligible? cart p)
+  #t)
+
+(define (fixed-eligible? cart p)
+  (let ((subtotal (compute-subtotal-no-reg cart)))
+    (>= subtotal 20000)))
+
+(define (bxgy-eligible? cart p)
+  (>= (cart-total-qty cart) 3))
+
+(define (thresh-eligible? cart p)
+  (let ((subtotal (compute-subtotal-no-reg cart)))
+    (>= subtotal 30000)))
+
+(define (compute-subtotal-no-reg cart)
+  (cond
+    ((null? cart) 0)
+    (else (+ (cadr (car cart)) (compute-subtotal-no-reg (cdr cart))))))
+
+(define (cart-total-qty cart)
+  (cond
+    ((null? cart) 0)
+    (else (+ (cadr (car cart)) (cart-total-qty (cdr cart))))))
+
+(define (api excluded-promotions cart registry eligible)
+  (cond
+    ((null? registry) '())
+    (else
+      (let ((p (car registry)))
+        (if (and (not (in-list? eligible p))
+                 (not (no-exclusion-clause? p)))
+            (cons p (api excluded-promotions cart (cdr registry) eligible))
+            (api excluded-promotions cart (cdr registry) eligible))))))
+
+(define (in-list? lst p)
+  (cond
+    ((null? lst) #f)
+    ((equal? (api promotion-code (car lst)) (api promotion-code p)) #t)
+    (else (in-list? (cdr lst) p))))
+
+(define (no-exclusion-clause? p)
+  (null? (promotion-excludes-list p)))

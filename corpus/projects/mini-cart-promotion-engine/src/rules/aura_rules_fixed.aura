@@ -1,0 +1,7 @@
+;; rules/aura_rules_fixed.aura — installs the FIX500 promotion rule
+
+(define (api install-fixed500 registry)
+  (registry-add registry
+                (promotion-make 'fixed 'FIX500
+                                (list 'amount 500
+                                      'min-subtotal 20000))))

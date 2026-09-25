@@ -1,0 +1,221 @@
+;; saga/orchestrator.aura
+;; Saga-style orchestrator for the checkout pipeline.
+;;
+;; The orchestrator drives the pipeline in a fixed order, using the
+;; stage registry to look up each step's run and compensate functions.
+;; If every stage succeeds, the order is committed and the outcome is
+;; 'COMMITTED. If any stage fails, the orchestrator walks the
+;; rollback stages in reverse order, invoking each stage's compensate
+;; function, and the outcome is 'COMPENSATED.
+;;
+;; Required exported API:
+;;   (api-run-pipeline state cart region) -> outcome-symbol
+;;   (api-outcome state)                   -> outcome-symbol
+;;   (api-order-id state)                  -> order-id-string
+;;
+;; The orchestrator relies on these other modules (already loaded):
+;;   - pipeline/state.aura      (state container + done/rollback)
+;;   - pipeline/registry.aura   (stage lookup)
+;;   - cart/validate.aura       (cart validation)
+;;   - pricing/compute.aura     (price computation)
+;;   - payment/authorize.aura   (auth step)
+;;   - payment/capture.aura     (capture step)
+;;   - fraud/score.aura         (fraud-scoring step)
+;;   - fraud/decision.aura      (fraud threshold + decision)
+;;   - orders/commit.aura       (commit step)
+;;   - saga/compensate.aura     (saga rollback driver)
+
+;; --- Stage wiring helpers --------------------------------------------------
+
+;; Build a stage record structure from individual run / compensate
+;; functions. Stages here are plain association lists with 'name, 'run
+;; and 'compensate entries, so we don't depend on define-record.
+(define (make-stage-record name run-fn compensate-fn)
+  (list (cons 'name name)
+        (cons 'run run-fn)
+        (cons 'compensate compensate-fn)))
+
+(define (stage-record-name rec)   (cdr (assq 'name rec)))
+(define (stage-record-run rec)    (cdr (assq 'run rec)))
+(define (stage-record-comp rec)   (cdr (assq 'compensate rec)))
+
+;; Build all stages in the canonical order. Each stage's run-fn takes
+;; (state . args) and returns #t on success or a non-#t value (typically
+;; a symbol or string) describing the failure.
+(define (api-build-stages)
+  (list
+   ;; 1. validate-cart: re-validates inside the orchestrator. If the cart
+   ;;    fails validation we treat that as a hard error before any
+   ;;    money moves. Compensation is a no-op because nothing has been
+   ;;    done yet, but we still register a no-op compensator so the
+   ;;    rollback walk has something well-defined to call.
+   (make-stage-record
+    'validate-cart
+    (lambda (st cart) (if (api-validate-cart cart) #t 'invalid-cart))
+    (lambda (st cart) #t))
+
+   ;; 2. price-order: computes subtotal/tax/total and stores them on
+   ;;    state. No external side effect, so compensation is a no-op.
+   (make-stage-record
+    'price-order
+    (lambda (st cart)
+      (let ((priced (api-price-order cart)))
+        (api-state-set! st 'subtotal (car priced))
+        (api-state-set! st 'tax (cadr priced))
+        (api-state-set! st 'total (caddr priced))
+        #t))
+    (lambda (st cart) #t))
+
+   ;; 3. authorize-payment: reserves funds with the fake gateway and
+   ;;    stores the auth id on state. Compensation: void the auth.
+   (make-stage-record
+    'authorize-payment
+    (lambda (st cart)
+      (let ((auth (api-authorize-payment
+                   st
+                   (api-state-get st 'total))))
+        (if (and auth (not (equal? auth #f)))
+            (begin
+              (api-state-set! st 'payment-auth-id auth)
+              #t)
+            'authorize-failed)))
+    (lambda (st cart)
+      (let ((auth (api-state-get st 'payment-auth-id)))
+        (if auth
+            (api-void-payment auth)
+            #t))))
+
+   ;; 4. capture-payment: captures the previously authorized charge.
+   ;;    Compensation: a capture that has already happened is undone by
+   ;;    voiding the original auth id (best-effort stand-in behavior;
+   ;;    a real system would issue a refund here).
+   (make-stage-record
+    'capture-payment
+    (lambda (st cart)
+      (let ((auth (api-state-get st 'payment-auth-id)))
+        (if auth
+            (let ((cap (api-capture-payment auth)))
+              (if cap
+                  (begin
+                    (api-state-set! st 'payment-capture-id cap)
+                    #t)
+                  'capture-failed))
+            'no-auth-to-capture)))
+    (lambda (st cart)
+      (let ((auth (api-state-get st 'payment-auth-id)))
+        (if auth
+            (api-void-payment auth)
+            #t))))
+
+   ;; 5. score-fraud: runs the fraud-scoring hook. Compensation: no-op
+   ;;    (fraud scoring has no external side effect to undo).
+   (make-stage-record
+    'score-fraud
+    (lambda (st cart)
+      (let ((score (api-score-fraud
+                    st
+                    cart
+                    (api-state-get st 'total))))
+        (api-state-set! st 'fraud-score score)
+        #t))
+    (lambda (st cart) #t))
+
+   ;; 6. fraud-decision: classifies the score as 'allow / 'review /
+   ;;    'block based on the threshold. Compensation: no-op.
+   (make-stage-record
+    'fraud-decision
+    (lambda (st cart)
+      (let ((score (api-state-get st 'fraud-score)))
+        (let ((decision (api-fraud-decision score)))
+          (api-state-set! st 'fraud-decision decision)
+          (cond
+            ((equal? decision 'block) 'fraud-block)
+            ((equal? decision 'review) 'fraud-review)
+            (else #t)))))
+    (lambda (st cart) #t))
+
+   ;; 7. commit-order: finalizes the order. Compensation: cancel the
+   ;;    order.
+   (make-stage-record
+    'commit-order
+    (lambda (st cart)
+      (let ((commit-result (api-commit-order st)))
+        (if commit-result
+            (begin
+              (api-state-set! st 'committed #t)
+              #t)
+            'commit-failed)))
+    (lambda (st cart) (api-cancel-order st)))))
+
+;; Look up a stage record by name within a stages list.
+(define (stages-find stages name)
+  (cond
+    ((null? stages) #f)
+    ((equal? (stage-record-name (car stages)) name)
+     (car stages))
+    (else (stages-find (cdr stages) name))))
+
+;; --- Pipeline result helpers ----------------------------------------------
+
+(define (pipeline-success? v) (if v #t #f))
+
+(define (pipeline-failure-reason v)
+  (cond
+    ((null? v) 'unknown-failure)
+    ((symbol? v) v)
+    ((string? v) v)
+    (else 'unknown-failure)))
+
+;; --- Main orchestrator -----------------------------------------------------
+
+;; Run the pipeline end-to-end. On success, marks state as committed and
+;; stores 'outcome = 'COMMITTED. On any stage failure, drives rollback
+;; via api-compensate and stores 'outcome = 'COMPENSATED.
+;;
+;; The returned value is the outcome symbol ('COMMITTED or 'COMPENSATED).
+(define (api-run-pipeline state cart region)
+  (let ((stages (api-build-stages)))
+    (let loop ((remaining stages)
+               (failure #f))
+      (cond
+        ;; If we already failed, stop driving the pipeline forward and
+        ;; let the caller fall through to the rollback block below.
+        ((not (null? failure))
+         (begin
+           (api-compensate state)
+           (api-state-set! state 'outcome 'COMPENSATED)
+           (api-state-set! state 'failure-reason
+                           (pipeline-failure-reason failure))
+           'COMPENSATED))
+
+        ;; All stages completed without failure: commit & return.
+        ((null? remaining)
+         (begin
+           (api-state-set! state 'outcome 'COMMITTED)
+           'COMMITTED))
+
+        ;; Otherwise run the next stage. Its run-fn returns #t on
+        ;; success or a non-#t value on failure.
+        (else
+         (let* ((stage (car remaining))
+                (run-fn (stage-record-run stage))
+                (result (run-fn state cart)))
+           (if (pipeline-success? result)
+               (begin
+                 (api-state-mark-done! state (stage-record-name stage))
+                 (loop (cdr remaining) #f))
+               (begin
+                 (api-state-push-rollback!
+                  state
+                  (stage-record-name stage))
+                 (loop (cdr remaining) result)))))))))
+
+;; Read the final outcome off of state. If for some reason the
+;; orchestrator hasn't been run, default to 'COMPENSATED to be safe.
+(define (api-outcome state)
+  (let ((o (api-state-get state 'outcome)))
+    (if o o 'COMPENSATED)))
+
+;; Read the order id from state.
+(define (api-order-id state)
+  (api-state-get state 'order-id))

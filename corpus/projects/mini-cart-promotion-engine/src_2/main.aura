@@ -1,0 +1,106 @@
+;; main.aura - Entry point for promotional pricing engine
+
+;; --- Build catalog ---
+(define catalog (api catalog-make))
+(define catalog (api catalog-add catalog "BK001" "Aura Programming" 4995 "book"))
+(define catalog (api catalog-add catalog "BK002" "Lisp Patterns" 3995 "book"))
+(define catalog (api catalog-add catalog "OF001" "Fountain Pen" 2495 "office"))
+(define catalog (api catalog-add catalog "OF002" "Notebook" 1495 "office"))
+
+;; --- Build cart ---
+(define cart (api cart-empty))
+(define cart (api cart-add cart "BK001" 2))
+(define cart (api cart-add cart "OF001" 3))
+(define cart (api cart-add cart "OF002" 1))
+
+;; --- Build registry with promotions ---
+(define registry (api registry-empty))
+(define registry (api install-pct10 registry))
+(define registry (api install-fixed500 registry))
+(define registry (api install-bxgy1 registry))
+
+;; THRESH5000 — 5000 cents off once subtotal > 30000, excluding PCT10
+(define thresh-params (list 5000 30000))
+(define thresh-excludes (list "PCT10"))
+(define thresh-promo
+  (make-thresh-promo "THRESH5000" thresh-params thresh-excludes))
+(define registry (api registry-add registry thresh-promo))
+
+;; --- Compute subtotal ---
+(define subtotal (api compute-subtotal cart catalog))
+
+;; --- Eligibility ---
+(define eligible (api eligible-promotions cart registry))
+(define excluded (api excluded-promotions cart registry eligible))
+
+;; --- Stack promotions (apply exclusion filter) ---
+(define stacked (api stack-promotions eligible))
+
+;; --- Compute totals ---
+(define discount (api compute-discount cart stacked))
+(define final (api compute-final subtotal discount))
+
+;; --- Ledger ---
+(define ledger (api ledger-empty))
+(define ledger
+  (fold-record ledger stacked))
+
+;; --- Emit output ---
+(define (emit-keys)
+  (begin
+    (display "SUBTOTAL_CENTS=")
+    (display (number->string subtotal))
+    (newline)
+    (display "DISCOUNT_CENTS=")
+    (display (number->string discount))
+    (newline)
+    (display "FINAL_CENTS=")
+    (display (number->string final))
+    (newline)
+    (display "ELIGIBLE_COUNT=")
+    (display (number->string (length eligible)))
+    (newline)
+    (display "EXCLUDED_COUNT=")
+    (display (number->string (length excluded)))
+    (newline)
+    (display "STACKED_COUNT=")
+    (display (number->string (length stacked)))
+    (newline)
+    (display "ELIGIBLE_CODES=")
+    (display (api join-pipe (map api promotion-code eligible)))
+    (newline)
+    (display "EXCLUDED_CODES=")
+    (display (api join-pipe (map api promotion-code excluded)))
+    (newline)
+    (display "STACKED_CODES=")
+    (display (api join-pipe (map api promotion-code stacked)))
+    (newline)
+    (display "LEDGER_TOTAL=")
+    (display (number->string (api ledger-total ledger)))
+    (newline)
+    (display "LEDGER_CODES=")
+    (display (api join-comma (api ledger-codes ledger)))
+    (newline)
+    (display "SUBTOTAL_DISPLAY=")
+    (display (api cents->string subtotal))
+    (newline)
+    (display "FINAL_DISPLAY=")
+    (display (api cents->string final))
+    (newline)
+    (display "DISCOUNT_DISPLAY=")
+    (display (api cents->string discount))
+    (newline)))
+
+;; --- Helpers ---
+
+(define (make-thresh-promo code params excludes)
+  (list 'thresh code params excludes))
+
+(define (fold-record ledger stacked)
+  (cond
+    ((null? stacked) ledger)
+    (else
+      (let ((code (api promotion-code (car stacked))))
+        (fold-record (api ledger-record ledger code) (cdr stacked))))))
+
+(emit-keys)

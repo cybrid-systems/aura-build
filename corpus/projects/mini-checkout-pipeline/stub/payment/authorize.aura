@@ -1,0 +1,64 @@
+;; payment/authorize.aura
+;; Simulates a payment-authorization call against a fake gateway.
+;;
+;; The authorize step is run after pricing and before fraud scoring.
+;; It is *not* a capture: it just reserves funds and returns an
+;; authorization id that later stages (capture, void) reference.
+;;
+;; The real gateway isn't available in this project, so we generate a
+;; deterministic-looking auth id from the state's order id and the
+;; amount. The auth id is also recorded on the state under the key
+;; 'payment-auth-id so downstream stages and the stdout contract can
+;; read it.
+;;
+;; Required exported API:
+;;   (api-authorize-payment state amount-cents) -> auth-id
+;;
+;; Side effects:
+;;   - Stores 'payment-auth-id on state via api-state-set!
+;;   - Stores 'payment-amount-cents on state for capture/void
+;;   - Records the stage "authorize-payment" as done via
+;;     api-state-mark-done! so saga compensation knows what to undo.
+
+(define (api-authorize-payment state amount-cents)
+  ;; Pull the order-id off the state to weave it into the auth id.
+  (let* ((order-id (api-state-get state 'order-id))
+         (auth-id (api-make-auth-id order-id amount-cents)))
+    ;; Record the result on state for later stages and the stdout contract.
+    (api-state-set! state 'payment-auth-id auth-id)
+    (api-state-set! state 'payment-amount-cents amount-cents)
+    (api-state-set! state 'payment-status 'authorized)
+    ;; Mark the stage as completed so compensation can find it.
+    (api-state-mark-done! state "authorize-payment")
+    auth-id))
+
+;; ---------------------------------------------------------------------------
+;; Helpers
+;; ---------------------------------------------------------------------------
+
+(define (api-make-auth-id order-id amount-cents)
+  ;; Build a fake but readable authorization id like:
+  ;;   "AUTH-<order-id>-<amount>"
+  ;; We deliberately avoid characters that might be tricky in some shells
+  ;; and keep it ASCII so the stdout diff stays trivial.
+  (string-append
+    "AUTH-"
+    (api-order-id-suffix order-id)
+    "-"
+    (number->string amount-cents)))
+
+(define (api-order-id-suffix order-id)
+  ;; order-id may be a string, a number, or a symbol depending on who
+  ;; generated it. Normalize to a string so string-append is happy.
+  (cond
+    ((string? order-id) order-id)
+    ((number? order-id) (number->string order-id))
+    ((symbol? order-id) (symbol->string order-id))
+    (else "0")))
+
+(define (symbol->string s)
+  ;; Tiny symbol->string shim in case the runtime doesn't expose one
+  ;; for the symbol variant we get. Fall back to a generic "SYM".
+  (if (or (string? s) (number? s))
+      (if (string? s) s (number->string s))
+      "SYM"))

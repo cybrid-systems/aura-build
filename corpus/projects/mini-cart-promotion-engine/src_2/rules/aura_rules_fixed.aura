@@ -1,0 +1,7 @@
+(define (api install-fixed500 registry)
+  (let ((promo (api promotion-make "fixed" "FIX500" (list 500))))
+    (api registry-add registry promo)))
+
+(define (fixed-eligible? cart p)
+  (let ((subtotal (compute-subtotal-no-reg cart)))
+    (>= subtotal 20000)))

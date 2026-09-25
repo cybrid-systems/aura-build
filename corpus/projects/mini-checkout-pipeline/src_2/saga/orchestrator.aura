@@ -1,0 +1,118 @@
+;; saga/orchestrator.aura
+;; Top-level orchestration of the checkout pipeline.
+;;
+;; This module wires the pipeline/registry of run/compensate functions
+;; together with the pipeline/state container and drives the saga forward.
+;;
+;; Public API:
+;;   (api-run-pipeline state cart region)
+;;     - executes the staged checkout flow against `state` for `cart`/`region`
+;;     - on success: marks all stages done and sets outcome to COMMITTED
+;;     - on failure: invokes (api-compensate state) to roll back already
+;;       completed stages, then sets outcome to COMPENSATED
+;;
+;;   (api-outcome state)   -> 'COMMITTED | 'COMPENSATED | 'REJECTED (as symbol)
+;;   (api-order-id state)  -> the order id stored on the state
+;;
+;; The orchestrator does NOT itself compute pricing, taxes, auth, fraud or
+;; commit — it delegates each step to the registered stage implementation
+;; via (api-lookup-run name). Compensation is delegated symmetrically via
+;; (api-lookup-compensate name).
+
+;; ---------------------------------------------------------------------------
+;; Internal helpers
+;; ---------------------------------------------------------------------------
+
+(define (orchestrator-symbol->string s)
+  ;; Convert an Aura symbol to its name string. Used for logging only.
+  (cond
+    ((symbol? s) (symbol->string s))
+    (else (cond ((string? s) s) (else ""))))
+
+(define (orchestrator-set-outcome! state outcome)
+  ;; Store the saga outcome as a string on the state so (api-outcome)
+  ;; can return it regardless of who reads it later.
+  (api-state-set! state 'outcome outcome))
+
+(define (orchestrator-outcome-from-state state)
+  ;; Read outcome off the state. Defaults to "PENDING" if not yet set.
+  (let ((o (api-state-get state 'outcome)))
+    (if (string? o) o "PENDING")))
+
+;; ---------------------------------------------------------------------------
+;; Stage execution
+;; ---------------------------------------------------------------------------
+
+(define (orchestrator-run-stage state stage-name cart region)
+  ;; Run a single registered stage by name. Looks up the run function from
+  ;; the registry; if not found, returns a failure indicator so the saga
+  ;; can compensate and exit cleanly.
+  (let ((run-fn (api-lookup-run stage-name)))
+    (cond
+      ((not (procedure? run-fn))
+       ;; Stage not registered — mark stage as having failed so we roll back.
+       #f)
+      (else
+       (begin
+         ;; Execute the stage. Each run-fn receives whatever arguments
+         ;; the orchestrator chooses to pass; today every stage wants
+         ;; (state cart region). Stages are responsible for marking
+         ;; themselves done via (api-state-mark-done! state stage-name).
+         (run-fn state cart region)
+         #t)))))
+
+(define (orchestrator-stage-failed? state stage-name)
+  ;; A stage is considered failed if it is not marked done on the state.
+  ;; Stages that succeed call (api-state-mark-done!) themselves.
+  (not (api-state-done? state stage-name)))
+
+;; ---------------------------------------------------------------------------
+;; Public API
+;; ---------------------------------------------------------------------------
+
+(define (api-run-pipeline state cart region)
+  ;; Drive the full checkout saga. The canonical stage list comes from
+  ;; (api-stage-names); we run each in order and short-circuit on the
+  ;; first failure, compensating already-completed stages in reverse.
+  ;;
+  ;; We capture the stage names in a local binding so we don't call
+  ;; (api-stage-names) more than once per pipeline run.
+  (let ((stage-names (api-stage-names)))
+    (let loop ((remaining stage-names) (completed '()))
+      (cond
+        ;; No stages left — everything ran cleanly. Commit the order.
+        ((null? remaining)
+         (begin
+           (api-commit-order state)
+           (orchestrator-set-outcome! state "COMMITTED")))
+        ;; Still have stages — run the head.
+        (else
+         (let ((stage (car remaining)))
+           (let ((ok (orchestrator-run-stage state stage cart region)))
+             (cond
+               ;; Stage succeeded and was marked done.
+               ((and ok (api-state-done? state stage))
+                (loop (cdr remaining) (cons stage completed)))
+               ;; Stage failed or didn't mark itself done — compensate.
+               (else
+                (begin
+                  ;; Push the stages that did complete onto the rollback
+                  ;; list so callers can see what got undone.
+                  (let push-loop ((c completed))
+                    (cond
+                      ((null? c) #t)
+                      (else
+                       (begin
+                         (api-state-push-rollback! state (car c))
+                         (push-loop (cdr c))))))
+                  (api-compensate state)
+                  (orchestrator-set-outcome! state "COMPENSATED"))))))))))))
+
+(define (api-outcome state)
+  ;; Return the final outcome string stored on the state. If the pipeline
+  ;; was never run, we return "PENDING" rather than guessing.
+  (orchestrator-outcome-from-state state))
+
+(define (api-order-id state)
+  ;; Return the order-id stored on the state by (api-make-state).
+  (api-state-get state 'order-id))
