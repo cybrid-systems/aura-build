@@ -144,3 +144,10 @@ On 3i/3j, **selected-round max fitness can dip** (e.g. candidates 0.08–0.16) w
 **Honest pure-MiniMax best still:** **0.7385** @ `combat_20260924-175921` (fiber). Hardcode green `182234` and any contract_heal path remain **invalid**.
 
 - `20260924-191515` ok=False llm_via=fiber llm_parallel=fiber explore=fiber_graph artifacts=`combat_20260924-191515_stdout.json`
+- `20260925-091746` ok=False llm_via=fiber llm_parallel=fiber explore=fiber_graph artifacts=`combat_20260925-091746_stdout.json`
+
+## Dig: eval-current JSON status ~38s after display (2026-09-25)
+
+Fresh Soft `--serve-async` (`build_soft4048/aura`, no MiniMax, no fiber http-post): `(eval-current)` after `mutate:rebind` prints display `99` then withholds the JSON status line for ~38s. The next exec reads `value ()`. Not a reopen of #4054/#4056.
+
+**Aura issue:** https://github.com/cybrid-systems/aura/issues/4079
