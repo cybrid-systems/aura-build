@@ -1,0 +1,135 @@
+; calendar.aura — date parsing, formatting, and value-date selection.
+;
+; Dates are represented internally as 3-element lists '(Y M D), so they
+; compare with equal? and sort lexicographically (year-major then month
+; then day), which matches chronological order.
+;
+; The public API:
+;   (parse-date s)            -> '(Y M D)
+;   (format-date d)           -> "YYYY-MM-DD"
+;   (choose-value-date trades today) -> '(Y M D)
+;   (value-date? x)           -> #t/#f
+;
+; choose-value-date implements a standard clearing-engine heuristic:
+;   1. If every trade's value-date equals today, return today.
+;   2. Otherwise, return the earliest value-date among the trades
+;      (a clearing house settles as soon as obligations exist).
+
+; parse-date: accept "YYYY-MM-DD" or "YYYY/MM/DD" and return '(Y M D).
+; Returns '() on malformed input.
+(define (parse-date s)
+  (cond
+    ((not (string? s)) '())
+    (else
+     (define (split c)
+       (let loop ((cs (string->list s)) (cur '()) (acc '()))
+         (cond
+           ((null? cs)
+            (reverse (cons (list->string (reverse cur)) acc)))
+           ((char=? (car cs) c)
+            (loop (cdr cs) '() (cons (list->string (reverse cur)) acc)))
+           (else
+            (loop (cdr cs) (cons (car cs) cur) acc)))))
+     (define parts (split #\-))
+     (define parts2
+       (if (= (length parts) 1) (split #\/) parts))
+     (cond
+       ((= (length parts2) 3)
+        (let ((y (string->number (list-ref parts2 0)))
+              (m (string->number (list-ref parts2 1)))
+              (d (string->number (list-ref parts2 2))))
+          (if (and (number? y) (number? m) (number? d)
+                   (>= y 1) (and (>= m 1) (<= m 12))
+                   (>= d 1) (<= d 31))
+              (list y m d)
+              '())))
+       (else '())))))
+
+; pad: zero-pad a number to at least width characters.
+(define (pad n w)
+  (let ((s (number->string n)))
+    (if (>= (string-length s) w)
+        s
+        (string-append (make-string (- w (string-length s)) #\0) s))))
+
+; format-date: render '(Y M D) as "YYYY-MM-DD". Returns "" on bad input.
+(define (format-date d)
+  (cond
+    ((not (value-date? d)) "")
+    (else
+     (string-append
+       (pad (car d) 4)
+       "-"
+       (pad (cadr d) 2)
+       "-"
+       (pad (caddr d) 2)))))
+
+; value-date?: predicate — is x a valid '(Y M D) date?
+(define (value-date? x)
+  (and (list? x)
+       (= (length x) 3)
+       (number? (car x))
+       (number? (cadr x))
+       (number? (caddr x))
+       (>= (car x) 1)
+       (>= (cadr x) 1) (<= (cadr x) 12)
+       (>= (caddr x) 1) (<= (caddr x) 31)))
+
+; min-date: pick the earlier of two '(Y M D) dates (lexicographic order
+; matches chronological for year-major tuples).
+(define (min-date a b)
+  (if (and (value-date? a) (value-date? b))
+      (if (or (< (car a) (car b))
+              (and (= (car a) (car b))
+                   (or (< (cadr a) (cadr b))
+                       (and (= (cadr a) (cadr b))
+                            (<= (caddr a) (caddr b))))))
+          a
+          b)
+      '()))
+
+; earliest-date: fold min-date over a list of dates, starting from
+; a sentinel far-future value.
+(define (earliest-date dates)
+  (let loop ((xs dates) (best '(9999 12 31)))
+    (cond
+      ((null? xs) (if (value-date? best) best '()))
+      (else
+       (let ((d (car xs)))
+         (if (value-date? d)
+             (loop (cdr xs) (min-date d best))
+             (loop (cdr xs) best)))))))
+
+; value-dates-of: pull the value-date out of every trade.
+(define (value-dates-of trades)
+  (let loop ((xs trades) (acc '()))
+    (cond
+      ((null? xs) (reverse acc))
+      (else
+       (let ((t (car xs)))
+         (loop (cdr xs)
+               (if (and (trade? t) (value-date? (trade-value-date t)))
+                   (cons (trade-value-date t) acc)
+                   acc)))))))
+
+; choose-value-date: pick the value date to settle.
+;   - if every trade settles today, settle today.
+;   - otherwise settle the earliest date in the book.
+;   - if the trade book is empty, return today.
+(define (choose-value-date trades today)
+  (cond
+    ((not (value-date? today)) '())
+    ((null? trades) today)
+    (else
+     (let ((dates (value-dates-of trades)))
+       (cond
+         ((null? dates) today)
+         ((every? (lambda (d) (equal? d today)) dates) today)
+         (else (earliest-date dates)))))))
+
+; every?: simple list universal quantifier.
+(define (every? p xs)
+  (cond
+    ((null? xs) #t)
+    ((p (car xs)) (every? p (cdr xs)))
+    (else #f)))

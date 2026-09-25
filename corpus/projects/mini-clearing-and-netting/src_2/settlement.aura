@@ -1,0 +1,52 @@
+; settlement.aura — settlement instruction construction and accessors.
+;
+; This module is the "presentation layer" for the netting engine. It
+; takes the net settlement instructions produced by netting.aura (and
+; optionally refined by mts.aura) and exposes them through a stable
+; alist-based record interface. Downstream modules — efficiency,
+; report, compliance, scenario, and main — read these accessors.
+;
+; An instruction is represented as an alist with three keys:
+;   ((payer . P) (payee . Q) (amount . A))
+; so it interoperates cleanly with the (payer payee amount) triples
+; produced elsewhere in the engine.
+;
+; build-instructions returns a list of such alists. The total outflow
+; across all instructions equals the total inflow — by construction of
+; the netting algorithm — and is what the regulator-style efficiency
+; report compares against the gross obligations.
+
+; build-instructions: produce the settlement instructions for value-date
+; vd in currency ccy. Delegates to the netting engine and re-wraps
+; each (payer payee amount) triple as an alist for accessor-friendly use.
+(define (build-instructions vd ccy)
+  (define (wrap triple)
+    (let ((payer  (car triple))
+          (payee  (cadr triple))
+          (amount (caddr triple)))
+      (list (cons 'payer payer)
+            (cons 'payee payee)
+            (cons 'amount amount))))
+  (map wrap (settlement-instructions vd ccy)))
+
+; instruction-payer: extract the paying party from an instruction alist.
+(define (instruction-payer i)
+  (cdr (assq 'payer i)))
+
+; instruction-payee: extract the receiving party from an instruction alist.
+(define (instruction-payee i)
+  (cdr (assq 'payee i)))
+
+; instruction-amount: extract the amount transferred by an instruction.
+(define (instruction-amount i)
+  (cdr (assq 'amount i)))
+
+; instructions-total-out: sum of amounts across a list of instructions.
+; By the zero-sum property of multilateral netting, this equals the
+; total inflow (and the absolute total of all net obligations).
+(define (instructions-total-out i)
+  (define (walk xs acc)
+    (if (null? xs)
+        acc
+        (walk (cdr xs) (+ acc (instruction-amount (car xs))))))
+  (walk i 0))

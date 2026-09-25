@@ -1,0 +1,47 @@
+; mts.aura — MTA (minimum-transfer-amount) filtering of bilateral pairs.
+;
+; After computing bilateral exposures (and optionally applying novation),
+; settlement engines drop legs whose absolute amount is strictly below
+; the per-currency MTA threshold defined in mta.aura. This module wraps
+; that policy as a pure function over the bilateral exposure set, so
+; downstream settlement / reporting can reason about which pairs were
+; filtered out and what remains.
+;
+; Filtering rule (standard convention):
+;   keep  leg iff |amount| >= MTA(ccy)
+; A leg equal to the MTA is kept (threshold is inclusive); only strictly
+; smaller legs are dropped.
+
+; apply-mta-filter: return the subset of bilateral (payer payee amount)
+; triples for value-date vd in currency ccy whose absolute amount is
+; >= the MTA for ccy. Pairs whose amount is strictly below the MTA are
+; removed from the settlement candidate set.
+;
+; Implementation walks every registered trade on (vd, ccy), emits the
+; corresponding (payer payee amount) triple, and keeps only those with
+; |amount| >= mta. The absolute value uses an explicit non-negative
+; conversion (Aura numbers are sign-bearing).
+(define (apply-mta-filter vd ccy)
+  (define mta (get-mta ccy))
+  (define (abs x)
+    (if (< x 0) (- 0 x) x))
+  (define (keep t acc)
+    (if (and (equal? (trade-value-date t) vd)
+             (equal? (trade-ccy t) ccy))
+        (let ((amt (trade-amount t)))
+          (if (>= (abs amt) mta)
+              (cons (list (trade-payer t) (trade-payee t) amt) acc)
+              acc))
+        acc))
+  (define (walk trades acc)
+    (if (null? trades)
+        (reverse acc)
+        (walk (cdr trades) (keep (car trades) acc))))
+  (walk (all-trades) '()))
+
+; mta-filtered-pairs: alias / convenience accessor for the same data.
+; Returns the list of (payer payee amount) triples that survive the
+; MTA filter on (vd, ccy). Provided so callers can document intent at
+; the call site (e.g. netting / settlement) without re-deriving.
+(define (mta-filtered-pairs vd ccy)
+  (apply-mta-filter vd ccy))

@@ -1,0 +1,81 @@
+;; audit.aura — append-only audit trail.
+;;
+;; The audit trail is stored in state under the key 'audit, as a plain
+;; list of entries. Each entry is an alist:
+;;
+;;   ((day . <int>)
+;;    (kind . <sym>)   ; e.g. 'NOTICE, 'LATE_FEE, 'WRITEOFF, 'PROMISE, ...
+;;    (msg  . <string>)
+;;    (tag  . <sym> | #f))   ; optional short tag (e.g. stage name)
+;;
+;; api-audit-log!      appends a new entry, stamping today's day counter.
+;; api-audit-entries   returns the raw list of entries.
+;; api-audit-format    renders a single entry as a one-line string
+;;                     suitable for display or further processing.
+
+;; Look up the current day counter stored in state under 'today, defaulting
+;; to 0 if it has not been set yet.
+(define (audit-today state)
+  (let ((v (api-state-get state 'today)))
+    (if v v 0)))
+
+;; Pick a short tag for the entry based on the message contents. This is
+;; purely cosmetic — it lets a reader of the audit log quickly tell what
+;; kind of event each row represents without parsing the message string.
+(define (audit-classify msg)
+  (cond
+    ((not msg) 'OTHER)
+    ((equal? (substring-prefix? "NOTICE" msg) #t) 'NOTICE)
+    ((equal? (substring-prefix? "LATE_FEE" msg) #t) 'LATE_FEE)
+    ((equal? (substring-prefix? "WRITEOFF" msg) #t) 'WRITEOFF)
+    ((equal? (substring-prefix? "PROMISE" msg) #t) 'PROMISE)
+    ((equal? (substring-prefix? "FEE" msg) #t) 'FEE)
+    (else 'OTHER)))
+
+;; Local helper: does `s` start with the literal characters of `p`?
+;; Returns #t or #f. Implemented in terms of list operations so we don't
+;; depend on any external string library beyond what Aura provides.
+(define (substring-prefix? p s)
+  (let ((pl (string-length p))
+        (sl (string-length s)))
+    (cond
+      ((> pl sl) #f)
+      ((= pl 0) #t)
+      (else
+       (let loop ((i 0))
+         (cond
+           ((>= i pl) #t)
+           ((not (char=? (string-ref p i) (string-ref s i))) #f)
+           (else (loop (+ i 1)))))))))
+
+;; Append a new audit entry to the 'audit list in state. The entry
+;; captures the day, a kind symbol (derived from `msg`), the message
+;; string itself, and a tag for quick filtering.
+(define (api-audit-log! state msg)
+  (let ((entry (list (cons 'day (audit-today state))
+                     (cons 'kind (audit-classify msg))
+                     (cons 'msg msg)
+                     (cons 'tag (audit-classify msg)))))
+    (api-state-add! state 'audit entry)))
+
+;; Return the list of audit entries in insertion order.
+(define (api-audit-entries state)
+  (let ((v (api-state-get state 'audit)))
+    (if v v '())))
+
+;; Format a single audit entry as a human-readable one-line string.
+;; Format: "[day=N] KIND: msg"
+;; If the entry is malformed (not an alist), we still produce a string.
+(define (api-audit-format e)
+  (let ((day (cdr (assq 'day e)))
+        (kind (cdr (assq 'kind e)))
+        (msg (cdr (assq 'msg e))))
+    (let ((day-str (if day (number->string day) "?"))
+          (kind-str (if kind (symbol->string kind) "OTHER"))
+          (msg-str (if msg msg "")))
+      (string-append "[day="
+                     day-str
+                     "] "
+                     kind-str
+                     ": "
+                     msg-str))))

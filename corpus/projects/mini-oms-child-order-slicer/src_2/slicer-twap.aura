@@ -1,0 +1,45 @@
+; slicer-twap.aura
+; TWAP (Time-Weighted Average Price) child-order slicer.
+; Slices a parent order into equal-sized children across time slots,
+; capped by the requested number of children.
+;
+; Public API:
+;   (api-slice-twap parent horizon-secs slot-secs children)
+;     parent      : parent order alist (see order-types.aura)
+;     horizon-secs: total execution horizon in seconds (number)
+;     slot-secs   : length of each time slot in seconds (number)
+;     children    : desired number of child slices (positive integer)
+;   Returns a list of child order alists (id, parent-id, side, qty, venue, urgency).
+;   If horizon-secs or slot-secs is non-positive, returns '().
+;   If the slot count is zero, returns '().
+
+(define (api-slice-twap parent horizon-secs slot-secs children)
+  (if (or (not (number? horizon-secs)) (<= horizon-secs 0)
+          (not (number? slot-secs))    (<= slot-secs 0))
+      '()
+      (let* ((parent-id (cdr (assq 'id parent)))
+             (parent-side (cdr (assq 'side parent)))
+             (parent-qty (cdr (assq 'qty parent)))
+             (slot-count (quotient horizon-secs slot-secs))
+             (n (if (> slot-count 0) slot-count 0))
+             (slice-count (if (< children n) children n))
+             (base-qty (quotient parent-qty slice-count))
+             (remainder (- parent-qty (* base-qty slice-count))))
+        (if (<= slice-count 0)
+            '()
+            (let loop ((i 0) (acc '()))
+              (if (>= i slice-count)
+                  (reverse acc)
+                  (let* ((extra (if (< i remainder) 1 0))
+                         (qty (+ base-qty extra))
+                         (child-id (string-append parent-id "-T"
+                                                  (number->string (+ i 1))))
+                         (urgency 0.5)
+                         (child (list (cons 'id child-id)
+                                      (cons 'kind 'child)
+                                      (cons 'parent-id parent-id)
+                                      (cons 'side parent-side)
+                                      (cons 'qty qty)
+                                      (cons 'venue 'NYSE)
+                                      (cons 'urgency urgency))))
+                    (loop (+ i 1) (cons child acc)))))))))

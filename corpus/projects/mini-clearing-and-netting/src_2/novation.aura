@@ -1,0 +1,77 @@
+; novation.aura — novation policy and application.
+;
+; Under novation, each bilateral trade between A and B is replaced by
+; two "back-to-back" trades through a central counterparty (CCP):
+;   A -> CCP  (amount)
+;   CCP -> B  (amount)
+; This converts a graph of bilateral exposures into a "star" topology
+; routed through the CCP, which is what makes multilateral netting
+; possible.
+;
+; Policy is a single global setting: either 'off (bilateral as-is) or
+; 'ccp (novate through CCP). Trades are stored as alists, so we
+; re-register replaced trades and remove the originals.
+
+(define *novation-policy* 'off)
+
+; The CCP identity used when policy = 'ccp.
+(define *ccp-id* "CCP")
+
+; set-novation-policy!: change the global novation mode.
+(define (set-novation-policy! mode)
+  (set! *novation-policy* mode))
+
+; novation-policy: return the current mode ('off or 'ccp).
+(define (novation-policy)
+  *novation-policy*)
+
+; ccp-id: accessor for the CCP identity (used by other modules).
+(define (ccp-id)
+  *ccp-id*)
+
+; set-ccp-id!: override the CCP identity (used by scenario setup).
+(define (set-ccp-id! id)
+  (set! *ccp-id* id))
+
+; novate-trade: take one trade, return a list of replacement trades.
+; In 'off mode, returns the original trade unchanged.
+; In 'ccp mode, returns two trades (payer->CCP, CCP->payee).
+(define (novate-trade t)
+  (if (eqv? *novation-policy* 'ccp)
+      (let ((p (trade-payer t))
+            (q (trade-payee t))
+            (a (trade-amount t))
+            (vd (trade-value-date t))
+            (ccy (trade-ccy t))
+            (id (trade-id t))
+            (ccp *ccp-id*))
+        (list
+          (make-trade (string-append id "-N1") ccy p ccp a vd)
+          (make-trade (string-append id "-N2") ccy ccp q a vd)))
+      (list t)))
+
+; apply-novation!: re-register all trades on vd in ccy in their
+; novated form. Removes originals that get replaced and inserts the
+; novated replacements into the registry.
+(define (apply-novation! vd ccy)
+  (if (eqv? *novation-policy* 'ccp)
+      (begin
+        (define originals (trades-for-date vd))
+        (define (rebuild trades acc)
+          (if (null? trades)
+              (reverse acc)
+              (let ((t (car trades)))
+                (if (equal? (trade-ccy t) ccy)
+                    (rebuild (cdr trades)
+                             (append (reverse (novate-trade t)) acc))
+                    (rebuild (cdr trades) (cons t acc))))))
+        (define keepers (rebuild originals '()))
+        (reset-registry!)
+        (define (reg lst)
+          (if (null? lst)
+              'done
+              (begin
+                (register-trade (car lst))
+                (reg (cdr lst)))))
+        (reg keepers))
+      'noop))

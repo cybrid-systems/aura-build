@@ -1,0 +1,35 @@
+; allocator-fifo.aura
+; FIFO (First-In, First-Out) allocator.
+; Allocates the total filled quantity to investor accounts in the order
+; they appear in the accounts list, filling each account up to its share
+; of the parent before moving on to the next. Any residual after the
+; last account is dropped (assumed unallocated) and any unfilled share
+; remains as residual.
+;
+; Note: "FIFO" here refers to allocation ordering among accounts — fills
+; are attributed to accounts in their registry order until exhausted.
+;
+; Public API:
+;   (api-allocate-fifo accounts total-filled)
+;     accounts     : list of account symbols (from api-account-list)
+;     total-filled : total filled quantity to allocate (number, >= 0)
+;   Returns a list of (acct . allocated-qty) pairs, one per account,
+;   in the same order as the input accounts list. Allocated quantities
+;   sum to <= total-filled. If total-filled is not a number or is
+;   negative, returns a list of (acct . 0) pairs.
+
+(define (api-allocate-fifo accounts total-filled)
+  (if (or (not (number? total-filled)) (< total-filled 0))
+      (map (lambda (a) (cons a 0)) accounts)
+      (let loop ((accs accounts)
+                 (remaining total-filled)
+                 (result '()))
+        (if (null? accs)
+            (reverse result)
+            (let* ((acct (car accs))
+                   (share (api-account-share acct))
+                   (want (* total-filled share))
+                   (alloc (if (<= want remaining) want remaining)))
+              (loop (cdr accs)
+                    (- remaining alloc)
+                    (cons (cons acct alloc) result)))))))

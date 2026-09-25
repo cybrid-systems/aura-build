@@ -1,0 +1,106 @@
+; efficiency.aura — netting efficiency metrics and cleared/uncleared counts.
+;
+; This module computes the standard "netting efficiency" ratio used by
+; regulators and clearing-house publications to express how much a
+; multilateral netting engine reduces the gross payment flow:
+;
+;     efficiency = 1 - (net / gross)
+;
+; It also surfaces:
+;   - the single largest payment leg in a settlement-instruction list,
+;     which risk managers use to size intraday liquidity buffers;
+;   - the number of trades that were actually routed through the CCP
+;     (cleared), versus the number that remained strictly bilateral
+;     (uncleared), under the current novation policy.
+;
+; All inputs are plain lists / numbers, so this module is pure and
+; has no dependency on the registry — it can be exercised in
+; isolation.
+
+; efficiency-ratio: 1 - net/gross, rounded to 4 decimal places.
+; If gross is zero, the ratio is defined as 1.0 (perfect efficiency:
+; no payments were ever needed). If gross is non-zero and net is
+; non-zero, we return the ratio clipped to [0, 1] for safety, since
+; rounding noise can occasionally push it slightly out of range.
+(define (efficiency-ratio gross net)
+  (cond
+    ((= gross 0) 1.0)
+    (else
+      (define raw (- 1 (/ net gross)))
+      (define clipped
+        (cond
+          ((< raw 0) 0)
+          ((> raw 1) 1)
+          (else raw)))
+      (define scaled (* clipped 10000))
+      (define rounded (/ (round scaled) 10000.0))
+      rounded)))
+
+; Helper: extract the amount (third element) from a
+; (payer payee amount) triple. Returns 0 for malformed entries.
+(define (triple-amount t)
+  (cond
+    ((null? t) 0)
+    ((null? (cdr t)) 0)
+    ((null? (cddr t)) 0)
+    (else (caddr t))))
+
+; largest-single-payment: maximum amount across a list of
+; settlement instructions. Each instruction may be either a flat
+; triple (payer payee amount) or an alist-style instruction
+; ((payer . P) (payee . Q) (amount . A)) — both produced by other
+; modules in the engine. We handle both shapes uniformly.
+(define (largest-single-payment instructions)
+  (define (instr-amount i)
+    (cond
+      ((null? i) 0)
+      ((and (pair? i) (pair? (car i)) (symbol? (caar i)))
+       (define assoc-result
+         (cond
+           ((assq 'amount i) => cdr)
+           (else '())))
+       (cond
+         ((null? assoc-result) 0)
+         (else assoc-result)))
+      (else (triple-amount i))))
+  (define (walk lst best)
+    (cond
+      ((null? lst) best)
+      (else
+       (define v (instr-amount (car lst)))
+       (walk (cdr lst)
+             (cond
+               ((> v best) v)
+               (else best))))))
+  (walk instructions 0))
+
+; *cleared-count* / *uncleared-count*: mutable counters that mirror the
+; registry. They are kept here (rather than in registry.aura) so the
+; efficiency module remains the single source of truth for the
+; "cleared vs. uncleared" split that ends up in the regulator report.
+; They are populated by seed-scenario! in scenario.aura (and reset
+; alongside the registry) and read by the report module.
+(define *cleared-count* 0)
+(define *uncleared-count* 0)
+
+; cleared-count: current number of cleared trades.
+(define (cleared-count) *cleared-count*)
+
+; uncleared-count: current number of uncleared (bilateral) trades.
+(define (uncleared-count) *uncleared-count*)
+
+; set-cleared-count!: internal helper used by the scenario / registry
+; to install the cleared-count after a novation sweep. Not part of
+; the public module table, but useful for testing and for
+; main.aura-driven scenarios.
+(define (set-cleared-count! n) (set! *cleared-count* n))
+
+; set-uncleared-count!: internal helper for the same purpose as above.
+(define (set-uncleared-count! n) (set! *uncleared-count* n))
+
+; reset-efficiency!: zero the cleared/uncleared counters. Called by
+; reset-registry! / seed-scenario! so the counts stay consistent with
+; the current trade population.
+(define (reset-efficiency!)
+  (set! *cleared-count* 0)
+  (set! *uncleared-count* 0))

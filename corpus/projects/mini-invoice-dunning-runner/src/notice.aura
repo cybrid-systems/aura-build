@@ -1,0 +1,80 @@
+;; notice.aura — stage-based dunning notice workflow.
+;;
+;; Stage cadence (based on days past due, never negative):
+;;   days <= 0                -> 'none      (nothing to send)
+;;   1 <= days <= 30          -> 'reminder  (gentle nudge)
+;;   31 <= days <= 60         -> 'firm      (firm notice)
+;;   61 <= days <= 90         -> 'final     (final notice)
+;;   days > 90                -> 'final     (final notice; writeoff review follows)
+;;
+;; A valid, un-broken promise-to-pay whose by-day is still in the future
+;; suppresses dunning (returns 'none) until the promise expires.
+
+;; ---- local helpers ----
+
+(define (notice-days-past-due invoice today)
+  (let ((d (- today (api-invoice-due-day invoice))))
+    (if (< d 0) 0 d)))
+
+(define (notice-promise-suppress? invoice ptps today)
+  (let ((id (api-invoice-id invoice))
+        (cust (api-invoice-customer invoice)))
+    (let ((p (api-promise-find ptps id)))
+      (if (null? p)
+          #f
+          (and (equal? (cdr (assq 'customer p)) cust)
+               (api-promise-valid? p today))))))
+
+(define (api-notice-stage invoice ptps today)
+  (if (notice-promise-suppress? invoice ptps today)
+      'none
+      (let ((d (notice-days-past-due invoice today)))
+        (cond
+          ((<= d 0)  'none)
+          ((<= d 30) 'reminder)
+          ((<= d 60) 'firm)
+          (else      'final)))))
+
+(define (api-notice-template stage invoice)
+  (let ((id (api-invoice-id invoice))
+        (cust (api-invoice-customer invoice))
+        (amt (api-invoice-amount invoice)))
+    (cond
+      ((equal? stage 'reminder)
+       (string-append "REMINDER: invoice " (number->string id)
+                      " for " (number->string amt) " cents is past due."))
+      ((equal? stage 'firm)
+       (string-append "FIRM NOTICE: invoice " (number->string id)
+                      " must be settled immediately."))
+      ((equal? stage 'final)
+       (string-append "FINAL NOTICE: invoice " (number->string id)
+                      " will be referred for writeoff review."))
+      (else
+       (string-append "NO NOTICE for invoice " (number->string id) ".")))))
+
+(define (api-notice-send! state stage invoice)
+  (if (equal? stage 'none)
+      state
+      (begin
+        (cond
+          ((equal? stage 'reminder)
+           (api-state-add! state 'reminders-sent 1))
+          ((equal? stage 'firm)
+           (api-state-add! state 'firm-notices-sent 1))
+          ((equal? stage 'final)
+           (api-state-add! state 'final-notices-sent 1))
+          (else state))
+        (api-audit-log! state
+                        (string-append "NOTICE:"
+                                       (symbol->string stage)
+                                       ": inv="
+                                       (number->string (api-invoice-id invoice))))
+        state)))
+
+(define (api-notice-counters state)
+  (list (cons 'reminders-sent
+              (or (api-state-get state 'reminders-sent) 0))
+        (cons 'firm-notices-sent
+              (or (api-state-get state 'firm-notices-sent) 0))
+        (cons 'final-notices-sent
+              (or (api-state-get state 'final-notices-sent) 0))))

@@ -1,0 +1,108 @@
+; bilateral.aura — bilateral gross-exposure computations.
+;
+; Computes the gross bilateral exposures between every ordered pair of
+; parties for a given value-date and currency. The result is a list of
+; triples (payer payee amount), which downstream modules (novation, mts,
+; netting, settlement) consume.
+
+; gross-exposure: list of all (payer payee amount) triples for trades
+; on vd in ccy. Each trade contributes one entry in its trade direction.
+(define (gross-exposure vd ccy)
+  (define (keep t acc)
+    (if (and (equal? (trade-value-date t) vd)
+             (equal? (trade-ccy t) ccy))
+        (cons (list (trade-payer t) (trade-payee t) (trade-amount t)) acc)
+        acc))
+  (define (walk trades acc)
+    (if (null? trades)
+        (reverse acc)
+        (walk (cdr trades) (keep (car trades) acc))))
+  (walk (all-trades) '()))
+
+; exposure-between: total gross amount flowing from a -> b on vd in ccy.
+(define (exposure-between a b vd ccy)
+  (define (sum-for trade acc)
+    (if (and (equal? (trade-value-date trade) vd)
+             (equal? (trade-ccy trade) ccy)
+             (equal? (trade-payer trade) a)
+             (equal? (trade-payee trade) b))
+        (+ acc (trade-amount trade))
+        acc))
+  (define (walk trades acc)
+    (if (null? trades)
+        acc
+        (walk (cdr trades) (sum-for (car trades) acc))))
+  (walk (all-trades) 0))
+
+; all-bilateral-pairs: distinct unordered party pairs with non-zero
+; gross flow in either direction on vd in ccy. Returns a list of
+; (party-a party-b amount-a->b amount-b->a).
+(define (all-bilateral-pairs vd ccy)
+  (define (distinct-parties trades)
+    (define (add p acc)
+      (if (member p acc)
+          acc
+          (cons p acc)))
+    (define (walk ts acc)
+      (if (null? ts)
+          acc
+          (let ((t (car ts)))
+            (if (and (equal? (trade-value-date t) vd)
+                     (equal? (trade-ccy t) ccy))
+                (walk (cdr ts)
+                      (add (trade-payer t)
+                           (add (trade-payee t) acc)))
+                (walk (cdr ts) acc)))))
+    (walk trades '()))
+  (define (pair-key a b)
+    (if (string<? a b) (cons a b) (cons b a)))
+  (define (bump table key payer payee amount)
+    (let ((entry (assoc key table)))
+      (if entry
+          (let ((cell (cdr entry)))
+            (let ((a (car cell))
+                  (b (cadr cell))
+                  (ab (caddr cell))
+                  (ba (cadddr cell)))
+              (set-cdr! entry
+                        (list
+                          a
+                          b
+                          (if (equal? payer (car cell))
+                              (+ ab amount)
+                              ab)
+                          (if (equal? payer (cadr cell))
+                              (+ ba amount)
+                              ba)))))
+          (set! table (cons (cons key
+                                  (list
+                                    (car key)
+                                    (cdr key)
+                                    (if (equal? payer (car key)) amount 0)
+                                    (if (equal? payer (cdr key)) amount 0)))
+                            table))))
+    table)
+  (define (collect trades table)
+    (if (null? trades)
+        table
+        (let ((t (car trades)))
+          (if (and (equal? (trade-value-date t) vd)
+                   (equal? (trade-ccy t) ccy))
+              (collect (cdr trades)
+                       (bump table
+                             (pair-key (trade-payer t) (trade-payee t))
+                             (trade-payer t)
+                             (trade-payee t)
+                             (trade-amount t)))
+              (collect (cdr trades) table)))))
+  (define (materialize table acc)
+    (if (null? table)
+        (reverse acc)
+        (let ((cell (cdar table)))
+          (materialize (cdr table)
+                       (cons (list (car cell)
+                                   (cadr cell)
+                                   (caddr cell)
+                                   (cadddr cell))
+                             acc)))))
+  (materialize (collect (all-trades) '()) '()))

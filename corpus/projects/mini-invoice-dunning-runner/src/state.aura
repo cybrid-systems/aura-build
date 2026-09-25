@@ -1,0 +1,51 @@
+;; state.aura — global mutable state container.
+;;
+;; A "state" is an association list mapping keys (symbols) to values.
+;; Values may be anything: integers, symbols, strings, booleans,
+;; lists, or nested alists. The container supports both direct
+;; set! semantics (replace the value at a key) and additive
+;; semantics (append/cons a new value onto the existing list at
+;; a key, creating the list on first use).
+;;
+;; The alist is intentionally stored in reverse insertion order so
+;; that the head of the list always reflects the most-recent
+;; binding; lookups walk the list linearly until a matching key is
+;; found. This keeps the implementation small and dependency-free.
+
+(define (api-state-make)
+  ;; Empty state is just an empty alist.
+  '())
+
+;; Return the value associated with key in state, or #f if absent.
+;; Callers that need to distinguish "missing" from a stored #f should
+;; use api-state-has? (not provided here) or check the raw alist.
+(define (api-state-get state key)
+  (cond
+    ((null? state) #f)
+    ((equal? (car (car state)) key) (cdr (car state)))
+    (else (api-state-get (cdr state) key))))
+
+;; Replace the value at key with val. If key already exists, the
+;; previous binding is overwritten in place (its cons cell is reused
+;; to preserve pointer identity where possible). If key is absent,
+;; a new (key . val) pair is consed onto the front of the alist.
+(define (api-state-set! state key val)
+  (cond
+    ((null? state)
+     (set! state (cons (cons key val) state)))
+    ((equal? (car (car state)) key)
+     (set-cdr! (car state) val))
+    (else
+     (api-state-set! (cdr state) key val)))
+  state)
+
+;; Additive update: cons val onto the list stored at key. If no
+;; list exists yet for key, install (val) as the initial list.
+;; This is the canonical "append to a counter/log" operation used
+;; throughout the dunning runner.
+(define (api-state-add! state key val)
+  (let ((current (api-state-get state key)))
+    (if current
+        (api-state-set! state key (cons val current))
+        (api-state-set! state key (list val))))
+  state)

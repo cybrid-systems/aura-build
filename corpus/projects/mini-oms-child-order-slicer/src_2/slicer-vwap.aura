@@ -1,0 +1,106 @@
+; slicer-vwap.aura
+; VWAP (Volume-Weighted Average Price) child-order slicer.
+; Slices a parent order into children weighted by a list of expected
+; volume buckets across the execution horizon. The bucket profile
+; determines the relative size of each child slice; total child quantity
+; equals the parent qty, distributed in proportion to bucket weights.
+;
+; Public API:
+;   (api-slice-vwap parent vwap-buckets children)
+;     parent       : parent order alist (see order-types.aura)
+;     vwap-buckets : list of non-negative numbers, the expected market
+;                   volume in each time bucket of the horizon. Used as
+;                   relative weights for slicing.
+;     children     : desired number of child slices (positive integer).
+;                    If children is greater than the number of buckets,
+;                    each bucket is treated as its own slice. If fewer,
+;                    buckets are aggregated to the requested count.
+;   Returns a list of child order alists (id, parent-id, side, qty,
+;   venue, urgency).
+;   If vwap-buckets is empty, all weights are zero, or children is
+;   non-positive, returns '().
+
+(define (api-sum xs)
+  (if (null? xs)
+      0
+      (+ (car xs) (api-sum (cdr xs)))))
+
+(define (api-slice-vwap parent vwap-buckets children)
+  (if (or (not (number? children)) (<= children 0))
+      '()
+      (let* ((parent-id (cdr (assq 'id parent)))
+             (side (cdr (assq 'side parent)))
+             (parent-qty (cdr (assq 'qty parent)))
+             (n-buckets (length vwap-buckets))
+             (total-weight (api-sum vwap-buckets)))
+        (if (or (null? vwap-buckets)
+                (= n-buckets 0)
+                (<= total-weight 0))
+            '()
+            (let* ((n-slices (if (< children n-buckets) children n-buckets))
+                   (per-slice-buckets (api-vwap-group-buckets vwap-buckets n-slices))
+                   (weights (map (lambda (g) (api-sum g)) per-slice-buckets)))
+              (api-vwap-build-children parent-id side parent-qty weights per-slice-buckets 1))))))
+
+(define (api-vwap-group-buckets buckets n-slices)
+  (api-vwap-group-helper buckets n-slices '() 0 '()))
+
+(define (api-vwap-group-helper buckets n-slices acc idx result)
+  (cond
+    ((null? buckets) (reverse (cons (reverse acc) result)))
+    ((>= idx n-slices) (api-vwap-group-helper (cdr buckets) n-slices '() 0
+                                               (cons (reverse acc) result)))
+    (else
+      (let* ((remaining (length buckets))
+             (slots-left (- n-slices idx))
+             (take-n (quotient (+ remaining (- slots-left 1)) slots-left))
+             (taken (api-vwap-take buckets take-n '())))
+        (api-vwap-group-helper
+          (api-vwap-drop buckets take-n)
+          n-slices '() (+ idx 1)
+          (cons (reverse acc) result))))))
+
+(define (api-vwap-take xs n)
+  (if (or (= n 0) (null? xs))
+      '()
+      (cons (car xs) (api-vwap-take (cdr xs) (- n 1)))))
+
+(define (api-vwap-drop xs n)
+  (if (or (= n 0) (null? xs))
+      xs
+      (api-vwap-drop (cdr xs) (- n 1))))
+
+(define (api-vwap-build-children parent-id side parent-qty weights bucket-groups counter)
+  (cond
+    ((null? weights) '())
+    (else
+      (let* ((group (car bucket-groups))
+             (w (car weights))
+             (qty (if (= w 0) 0 (api-vwap-quantize (* parent-qty (/ w (api-sum weights))))))
+             (urgency (api-vwap-urgency-from-group group))
+             (venue 'NYSE)
+             (cid (string-append "C-VWAP-"
+                   (number->string counter)))
+             (child (api-make-child cid parent-id side qty venue urgency)))
+        (cons child
+              (api-vwap-build-children parent-id side parent-qty
+                                       (cdr weights) (cdr bucket-groups)
+                                       (+ counter 1)))))))
+
+(define (api-vwap-urgency-from-group group)
+  (let ((peak (api-vwap-max group)))
+    (cond
+      ((>= peak 1000) 3)
+      ((>= peak 500) 2)
+      (else 1))))
+
+(define (api-vwap-max xs)
+  (cond
+    ((null? xs) 0)
+    ((null? (cdr xs)) (car xs))
+    (else (let ((m (api-vwap-max (cdr xs))))
+            (if (> (car xs) m) (car xs) m)))))
+
+(define (api-vwap-quantize n)
+  (let ((rounded (api-round2 n)))
+    (if (< rounded 1) 0 rounded)))

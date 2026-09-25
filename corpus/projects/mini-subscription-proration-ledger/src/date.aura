@@ -1,0 +1,43 @@
+;; date.aura — minimal date helpers keyed on integer days-since-epoch.
+;; All dates are integers; arithmetic and comparisons are integer ops.
+
+(define (date-day d)
+  (cond ((number? d) (quotient (round (* d 1)) 1))
+        ((integer? d) d)
+        (else 0)))
+
+(define (date-from-yyyy-mm-dd s)
+  ;; Parse "YYYY-MM-DD" into an absolute day number.
+  ;; Treat each year as 365 days, each month as 30 days (simplified calendar).
+  (let* ((y (string->number (substring s 0 4)))
+         (m (string->number (substring s 5 7)))
+         (d (string->number (substring s 8 10))))
+    (+ (* (- y 1970) 365)
+       (* (- m 1) 30)
+       (- d 1))))
+
+(define (date-to-yyyy-mm-dd d)
+  ;; Format integer day back to "YYYY-MM-DD" using the same simplified calendar.
+  (let* ((total (date-day d))
+         (y (+ 1970 (quotient total 365)))
+         (rem1 (modulo total 365))
+         (m (+ 1 (quotient rem1 30)))
+         (dy (+ 1 (modulo rem1 30))))
+    (string-append
+      (number->string y)
+      "-"
+      (if (< m 10) (string-append "0" (number->string m)) (number->string m))
+      "-"
+      (if (< dy 10) (string-append "0" (number->string dy)) (number->string dy)))))
+
+(define (date-add-days d n)
+  (+ (date-day d) (date-day n)))
+
+(define (date-diff-days a b)
+  (- (date-day a) (date-day b)))
+
+(define (date=? a b)
+  (= (date-day a) (date-day b)))
+
+(define (date<? a b)
+  (< (date-day a) (date-day b)))

@@ -1,0 +1,73 @@
+;; fee.aura — tiered late-payment fee logic.
+;;
+;; Fee tiers (based on days past due, never negative):
+;;   1..30   days  -> 1.5% of invoice amount (rounded to cents)
+;;   31..60  days  -> 3.0% of invoice amount
+;;   61..90  days  -> 5.0% of invoice amount
+;;   90+     days  -> 8.0% of invoice amount
+;;   <= 0    days  -> no fee
+;;
+;; Fees are computed on the gross invoice amount in cents, using
+;; integer arithmetic: rate * amount / 100, truncated via quotient.
+
+;; ---- helpers ----
+
+;; Clamp days-past-due to non-negative.
+(define (fee-days-clamp d)
+  (if (< d 0) 0 d))
+
+;; Pick the rate (in percent * 10 so we can keep integer math) by tier.
+;; Returns a pair: (numerator . denominator) so api-fee-compute can do
+;;   fee = amount * num / den
+;; without floating point.
+;;   tier 1-30   -> 15 / 1000   (1.5%)
+;;   tier 31-60  -> 30 / 1000   (3.0%)
+;;   tier 61-90  -> 50 / 1000   (5.0%)
+;;   tier 90+    -> 80 / 1000   (8.0%)
+;;   <= 0        -> 0  / 1
+(define (fee-rate-pair d)
+  (let ((d (fee-days-clamp d)))
+    (cond
+      ((<= d 0)  (cons 0   1))
+      ((<= d 30) (cons 15  1000))
+      ((<= d 60) (cons 30  1000))
+      ((<= d 90) (cons 50  1000))
+      (else      (cons 80  1000)))))
+
+;; ---- public API ----
+
+;; (api-fee-rate days-past-due)
+;; Returns the rate as an integer percent (e.g. 1.5% -> 15/10, reported as 15).
+;; We expose it as parts-per-thousand for callers that want a stable int
+;; (1.5% = 15, 3.0% = 30, 5.0% = 50, 8.0% = 80, none = 0).
+(define (api-fee-rate days-past-due)
+  (let ((d (fee-days-clamp days-past-due)))
+    (cond
+      ((<= d 0)  0)
+      ((<= d 30) 15)
+      ((<= d 60) 30)
+      ((<= d 90) 50)
+      (else      80))))
+
+;; (api-fee-applicable? invoice today)
+;; A fee applies only when:
+;;   * status is 'open (not 'paid, not 'disputed), and
+;;   * days-past-due >= 1.
+(define (api-fee-applicable? invoice today)
+  (let ((status (api-invoice-status invoice))
+        (age    (api-invoice-age-days invoice today)))
+    (and (equal? status 'open)
+         (>= age 1))))
+
+;; (api-fee-compute invoice today)
+;; Returns the late fee in cents for this invoice right now, as a
+;; non-negative integer. If the fee does not apply, returns 0.
+(define (api-fee-compute invoice today)
+  (if (not (api-fee-applicable? invoice today))
+      0
+      (let* ((age    (api-invoice-age-days invoice today))
+             (amount (api-invoice-amount invoice))
+             (rp     (fee-rate-pair age))
+             (num    (car rp))
+             (den    (cdr rp)))
+        (quotient (* amount num) den))))

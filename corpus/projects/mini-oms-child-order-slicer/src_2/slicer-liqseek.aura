@@ -1,0 +1,130 @@
+; slicer-liqseek.aura
+; Liquidity-seeking child-order slicer.
+; Iterates through the venue registry in latency-priority order (lowest
+; latency first) and assigns child slices greedily until the parent qty
+; is fully consumed. Each child takes a share proportional to the
+; venue's share of the aggregated inverse-latency weight, biased by the
+; caller-supplied urgency factor (0..1). Higher urgency pushes more
+; qty to faster venues.
+;
+; Public API:
+;   (api-slice-liquidity parent venues children urgency)
+;     parent   : parent order alist (see order-types.aura)
+;     venues   : list of venue symbols to consider (subset of *venues*)
+;     children : desired number of child slices (positive integer)
+;     urgency  : number in [0,1]; 0 = passive (spread across venues),
+;                1 = aggressive (concentrate on lowest-latency venue).
+;   Returns a list of child order alists (id, parent-id, side, qty,
+;   venue, urgency). If parent qty <= 0, returns '(). If venues is
+;   empty or children <= 0, returns '().
+
+(define (api-slice-liquidity parent venues children urgency)
+  (if (or (not (number? children)) (<= children 0))
+      '()
+      (let* ((parent-id (cdr (assq 'id parent)))
+             (parent-side (cdr (assq 'side parent)))
+             (parent-qty (cdr (assq 'qty parent))))
+        (if (or (not (number? parent-qty)) (<= parent-qty 0))
+            '()
+            (if (null? venues)
+                '()
+                (let* ((urgency (if (and (number? urgency) (>= urgency 0) (<= urgency 1))
+                                    urgency
+                                    0.5))
+                       (urgency-n (inexact->exact (round (* urgency 100)))))
+                  (api-liqseek-build parent-id parent-side parent-qty
+                                     venues children urgency-n))))))
+
+(define (api-liqseek-build parent-id parent-side parent-qty venues children urgency)
+  (let* ((sorted (api-liqseek-sort-venues venues))
+         (weights (api-liqseek-weights sorted urgency))
+         (sizes (api-liqseek-distribute parent-qty weights children)))
+    (api-liqseek-zip parent-id parent-side sorted sizes 1 '())))
+
+(define (api-liqseek-sort-venues venues)
+  (api-liqseek-insert-sort venues '()))
+
+(define (api-liqseek-insert-sort venues acc)
+  (cond ((null? venues) acc)
+        (else
+         (let* ((v (car venues))
+                (lat (api-venue-latency v))
+                (acc2 (api-liqseek-insert-by-lat v lat acc)))
+           (api-liqseek-insert-sort (cdr venues) acc2)))))
+
+(define (api-liqseek-insert-by-lat v lat lst)
+  (cond ((null? lst) (cons v lst))
+        (else
+         (let* ((h (car lst))
+                (h-lat (api-venue-latency h)))
+           (if (<= lat h-lat)
+               (cons v lst)
+               (cons h (api-liqseek-insert-by-lat v lat (cdr lst))))))))
+
+; Weights: each venue gets (1 / latency) scaled by urgency on fastest venues.
+; urgency=0 -> equal weights; urgency=1 -> strong bias to lowest latency.
+(define (api-liqseek-weights sorted-venues urgency)
+  (let ((base (map (lambda (v) (let ((lat (api-venue-latency v)))
+                                  (if (<= lat 0) 1 (/ 1.0 lat))))
+                   sorted-venues)))
+    (if (= urgency 0)
+        base
+        (let* ((n (length base))
+               (boost-factor (+ 1.0 (* 0.01 urgency))))
+          (api-liqseek-apply-urgency base sorted-venues boost-factor '())))))
+
+(define (api-liqseek-apply-urgency weights venues factor acc)
+  (cond ((null? weights) (reverse acc))
+        (else
+         (let* ((v (car venues))
+                (w (car weights))
+                (lat (api-venue-latency v))
+                (boost (if (<= lat 4) factor 1.0))
+                (nw (* w boost)))
+           (api-liqseek-apply-urgency (cdr weights) (cdr venues) factor
+                                      (cons nw acc))))))
+
+(define (api-liqseek-distribute total-qty weights n-children)
+  (let* ((sum-w (api-liqseek-sum weights 0))
+         (n-w (length weights)))
+    (if (or (= sum-w 0) (= n-w 0))
+        (api-liqseek-equal-slices total-qty n-children)
+        (api-liqseek-build-slices total-qty weights sum-w n-w n-children '()))))
+
+(define (api-liqseek-sum lst acc)
+  (if (null? lst) acc (api-liqseek-sum (cdr lst) (+ acc (car lst)))))
+
+(define (api-liqseek-equal-slices total n)
+  (if (<= n 0) '()
+      (let ((each (/ total n)))
+        (api-liqseek-fill n each '()))))
+
+(define (api-liqseek-fill n v acc)
+  (if (<= n 0) acc (api-liqseek-fill (- n 1) v (cons v acc))))
+
+(define (api-liqseek-build-slices total weights sum-w n-w n-children acc)
+  (cond ((<= n-children 0) (reverse acc))
+        ((null? weights) (reverse acc))
+        (else
+         (let* ((w (car weights))
+                (share (if (= sum-w 0) 0 (* (/ w sum-w) total)))
+                (remain (- n-w 1))
+                (qty (api-liqseek-round2 (max 1 share))))
+           (api-liqseek-build-slices total (cdr weights) sum-w remain
+                                     (- n-children 1)
+                                     (cons qty acc))))))
+
+(define (api-liqseek-zip parent-id parent-side venues sizes idx acc)
+  (cond ((null? sizes) (reverse acc))
+        ((null? venues) (reverse acc))
+        (else
+         (let* ((v (car venues))
+                (q (car sizes))
+                (cid (string-append "C-LIQ-" (number->string idx)))
+                (child (api-make-child cid parent-id parent-side q v 1)))
+           (api-liqseek-zip parent-id parent-side (cdr venues) (cdr sizes)
+                            (+ idx 1) (cons child acc))))))
+
+(define (api-liqseek-round2 n)
+  (let ((r (api-round2 n)))
+    (inexact->exact (truncate (* r 100)))))

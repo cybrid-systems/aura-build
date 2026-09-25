@@ -1,0 +1,121 @@
+; report.aura — regulator-style netting efficiency report.
+;
+; Produces the human-readable summaries that a clearing engine would
+; submit to a supervisory body. The "report" is itself just a list of
+; (KEY . value) pairs, but we expose convenience accessors so other
+; modules (compliance, main) can read fields without regenerating
+; everything from scratch.
+
+; A stand-in Bank Identifier Code (BIC) for the reporting entity.
+; In a real engine this would be configured; here it is a constant.
+(define *report-bic* "CLRMINI2AXXX")
+
+; report-bic: return the reporting entity's BIC.
+(define (report-bic)
+  *report-bic*)
+
+; Safe helpers for zero-arg predicates and divisions that might
+; encounter degenerate inputs (empty lists, zero denominators).
+
+(define (safe-div num denom)
+  (if (= denom 0) 0 (/ num denom)))
+
+; round-to: round a number to a fixed number of decimal places. We
+; avoid floating-point trickery by working on integers scaled up;
+; for this domain simple rounding to 4 decimal places suffices.
+(define (round-places n places)
+  (define (scale x) (* x (expt 10 places)))
+  (define (back x) (/ x (expt 10 places)))
+  (define s (scale n))
+  (define r (if (>= s 0) (floor (+ s 0.5)) (- (floor (- 0.5 s)))))
+  (back r))
+
+; Pull every metric used in the report by delegating to the modules
+; that own them. Centralizing access here keeps the report itself a
+; thin presentation layer.
+
+; Compute gross obligations (sum of absolute amounts in bilateral
+; exposures) for the given value date and currency.
+(define (report-gross-obligations vd ccy)
+  (let ((pairs (all-bilateral-pairs vd ccy)))
+    (sum-amounts
+     (map (lambda (p) (caddr p)) pairs))))
+
+; Compute net obligations after multilateral netting.
+(define (report-net-obligations vd ccy)
+  (let ((instr (settlement-instructions vd ccy)))
+    (let loop ((xs instr) (acc 0))
+      (if (null? xs) acc
+          (loop (cdr xs)
+                (+ acc (instruction-amount (car xs))))))))
+
+; Number of cleared (post-novation) bilateral legs.
+(define (report-cleared-count)
+  (cleared-count))
+
+; Number of uncleared (bilateral, pre-novation) bilateral legs. We
+; treat the count as whatever the efficiency module currently holds
+; for the most recent (and only) run; main.aura sequences calls so
+; these reflect the final state.
+(define (report-uncleared-count)
+  (uncleared-count))
+
+; Largest single settlement payment in the instruction set for vd/ccy.
+(define (report-largest-payment vd ccy)
+  (largest-single-payment (settlement-instructions vd ccy)))
+
+; Efficiency ratio: 1 - net/gross, rounded to 4 decimals. Guarded
+; against an empty / zero-gross scenario (would be ill-defined).
+(define (report-efficiency vd ccy)
+  (let ((gross (report-gross-obligations vd ccy))
+        (net   (report-net-obligations   vd ccy)))
+    (if (= gross 0)
+        0
+        (round-places (- 1 (safe-div net gross)) 4))))
+
+; Build the structured report as a flat alist of (KEY . value) pairs.
+; Keys are uppercase strings to match the stdout contract used by
+; main.aura. Numeric values are stored as numbers so consumers can
+; format them as needed.
+
+(define (regulator-report vd ccy)
+  (list
+    (cons "REPORTING_BIC"            (report-bic))
+    (cons "VALUE_DATE"               vd)
+    (cons "CURRENCY"                 ccy)
+    (cons "GROSS_OBLIGATIONS"        (report-gross-obligations vd ccy))
+    (cons "NET_OBLIGATIONS"          (report-net-obligations   vd ccy))
+    (cons "NETTING_EFFICIENCY"       (report-efficiency        vd ccy))
+    (cons "CLEARED_LEGS"             (report-cleared-count))
+    (cons "UNCLEARED_LEGS"           (report-uncleared-count))
+    (cons "LARGEST_SINGLE_PAYMENT"   (report-largest-payment   vd ccy))
+    (cons "INSTRUCTION_COUNT"        (length (settlement-instructions vd ccy)))
+    (cons "MTAS_APPLIED"             (length (mta-filtered-pairs vd ccy)))
+    (cons "COMPLIANCE_CHECK"         (if (check-consistency vd ccy) "PASS" "FAIL"))))
+
+; report-lines: render the report as a list of "KEY=value" strings,
+; one per line, in the order expected by the stdout contract. Values
+; are formatted defensively (numbers use number->string, strings are
+; emitted verbatim, symbols are made lowercase).
+
+(define (format-report-value v)
+  (cond
+    ((number? v) (number->string v))
+    ((string? v) v)
+    ((symbol? v) (symbol->string v))
+    (else         (display-to-string v))))
+
+(define (display-to-string x)
+  (let ((s (open-output-string)))
+    (display x s)
+    (get-output-string s)))
+
+(define (report-lines vd ccy)
+  (map (lambda (kv)
+         (string-append (car kv) "="
+                        (format-report-value (cdr kv))))
+       (regulator-report vd ccy)))
+
+; Convenience: just the BIC field of the report, exposed as a string.
+(define (report-bic-line)
+  (string-append "REPORTING_BIC=" (report-bic)))

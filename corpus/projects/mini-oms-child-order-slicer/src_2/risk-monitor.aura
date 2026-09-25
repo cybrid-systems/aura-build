@@ -1,0 +1,76 @@
+; risk-monitor.aura
+; Completion-risk monitor for parent orders.
+; Computes fill progress against a parent order and decides whether a
+; completion-risk threshold has been breached (i.e. too little filled
+; vs. expected progress). Operates on plain alists and lists.
+;
+; Public API:
+;   (api-completion-pct parent fills)
+;     parent : parent order alist (see order-types.aura)
+;     fills  : aggregated fill alist (see fill-sim.aura) or a list of
+;              fill alists; either shape acceptable.
+;     Returns the completion percentage as a number in [0,100],
+;     computed as (filled-qty / parent-qty) * 100.
+;     If parent-qty is 0 or missing, returns 0.
+;
+;   (api-risk-breached? parent fills threshold)
+;     parent     : parent order alist
+;     fills      : aggregated fill alist or list of fill alists
+;     threshold  : number in (0,100) — minimum acceptable completion pct
+;     Returns #t when completion-pct < threshold, otherwise #f.
+;     A parent with zero qty is never breached.
+;
+; Notes:
+;   - Handles both shapes for `fills`: an aggregated alist (single
+;     (cons 'total-qty <n>) entry) or a list of per-child fill alists
+;     where each may carry (qty . <n>).
+;   - All arithmetic is performed with real numbers; callers are
+;     responsible for formatting (util.aura's api-round2 etc.).
+
+(define (api-completion-pct parent fills)
+  (let ((parent-qty (if (and parent (assq 'qty parent))
+                        (cdr (assq 'qty parent))
+                        0)))
+    (if (or (not (number? parent-qty)) (<= parent-qty 0))
+        0
+        (let* ((filled (api-risk-filled-qty fills))
+               (ratio (/ filled parent-qty))
+               (pct (* ratio 100)))
+          (if (and (number? pct) (< pct 0)) 0
+              (if (and (number? pct) (> pct 100)) 100
+                  pct))))))
+
+(define (api-risk-breached? parent fills threshold)
+  (let ((pct (api-completion-pct parent fills)))
+    (cond
+      ((not (number? pct)) #f)
+      ((or (not (number? threshold)) (<= threshold 0)) #f)
+      ((<= threshold 100) (< pct threshold))
+      (else #f))))
+
+;; ----- internal helpers (private to this module) -----
+
+(define (api-risk-filled-qty fills)
+  (cond
+    ((null? fills) 0)
+    ((not (list? fills)) 0)
+    ((and (pair? fills) (symbol? (car fills)))
+     ;; Single aggregated alist shape: ((total-qty . n) (avg-px . p) ...)
+     (let ((info (assq 'total-qty fills)))
+       (if info (cdr info) 0)))
+    (else
+     ;; List of fill alists: sum their 'qty (or 'filled-qty) entries.
+     (api-risk-sum-qty fills 0))))
+
+(define (api-risk-sum-qty ls acc)
+  (cond
+    ((null? ls) acc)
+    ((not (pair? ls)) acc)
+    (else
+     (let* ((entry (car ls))
+            (q (cond
+                 ((assq 'qty entry) (cdr (assq 'qty entry)))
+                 ((assq 'filled-qty entry) (cdr (assq 'filled-qty entry)))
+                 ((assq 'quantity entry) (cdr (assq 'quantity entry)))
+                 (else 0))))
+       (api-risk-sum-qty (cdr ls) (+ acc (if (number? q) q 0)))))))

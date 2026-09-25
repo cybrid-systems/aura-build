@@ -1,0 +1,62 @@
+; compliance.aura — internal consistency checks for the netting engine.
+;
+; Every public metric printed in the regulator report must satisfy a
+; handful of structural invariants before it is considered trustworthy:
+;
+;   1. zero-sum     : NET_OBLIGATIONS == 0 (no money created/destroyed)
+;   2. efficiency   : 0 <= NETTING_EFFICIENCY <= 1
+;   3. bound        : NET_OBLIGATIONS <= GROSS_OBLIGATIONS
+;   4. mta filter   : every surviving bilateral leg has |amount| >= MTA
+;
+; Each predicate below returns a boolean; check-consistency combines
+; them. All comparisons are performed numerically so that callers do
+; not have to worry about type coercion.
+
+; helper: absolute value
+(define (abs-val x) (if (< x 0) (- 0 x) x))
+
+; helper: round to N decimals using the standard "multiply / round /
+; divide" trick (N hard-coded to 4 to match the report contract).
+(define (round4 x)
+  (let ((scaled (* x 10000)))
+    (/ (round scaled) 10000.0)))
+
+; zero-sum-ok?: the net obligations for (vd,ccy) must sum to zero.
+(define (zero-sum-ok? vd ccy)
+  (let ((nets (net-obligations vd ccy)))
+    (define (sum lst acc)
+      (if (null? lst)
+          acc
+          (sum (cdr lst) (+ acc (car lst)))))
+    (= 0 (sum nets 0))))
+
+; efficiency-bounds-ok?: the reported netting efficiency ratio must lie
+; in [0,1] and obey NETTING_EFFICIENCY == round(1 - NET/GROSS, 4).
+(define (efficiency-bounds-ok? vd ccy)
+  (let* ((gross (gross-exposure vd ccy))
+         (nets  (net-obligations vd ccy))
+         (g     (apply + (map (lambda (p) (car (cdr (cdr p)))) gross) 0))
+         (n     (apply + (map abs-val nets) 0))
+         (eff   (if (= g 0) 0 (round4 (- 1 (/ n g))))))
+    (and (>= eff 0) (<= eff 1))))
+
+; mtas-applied-ok?: every bilateral leg that survived MTA filtering has
+; |amount| >= MTA(ccy). If no MTA is configured (threshold == 0) the
+; check vacuously holds.
+(define (mtas-applied-ok? vd ccy)
+  (let* ((threshold (get-mta ccy))
+         (filtered  (mta-filtered-pairs vd ccy)))
+    (define (all-ok? lst)
+      (cond ((null? lst) #t)
+            (else
+             (let ((amt (car (cdr (cdr (car lst))))))
+               (and (>= (abs-val amt) threshold)
+                    (all-ok? (cdr lst)))))))
+    (all-ok? filtered)))
+
+; check-consistency: top-level predicate. Returns #t iff every internal
+; invariant holds for the chosen (vd, ccy).
+(define (check-consistency vd ccy)
+  (and (zero-sum-ok? vd ccy)
+       (efficiency-bounds-ok? vd ccy)
+       (mtas-applied-ok? vd ccy)))

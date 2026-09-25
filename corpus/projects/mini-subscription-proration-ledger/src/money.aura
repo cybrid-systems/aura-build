@@ -1,0 +1,36 @@
+;; money.aura — cents-only money helpers (no floats)
+;; All amounts are integer cents.
+
+(define (money-cents d)
+  ;; Coerce input to integer cents (assume already cents or numeric).
+  (cond ((number? d) (quotient (round (* d 1)) 1))
+        ((integer? d) d)
+        (else 0)))
+
+(define (money-zero) 0)
+
+(define (money-add a b)
+  (+ (money-cents a) (money-cents b)))
+
+(define (money-sub a b)
+  (- (money-cents a) (money-cents b)))
+
+(define (money-mul a n)
+  ;; Multiply cents by integer n (truncating toward zero would be wrong for
+  ;; proration; we round half-away-from-zero so that daily rates are fair).
+  (let ((prod (* (money-cents a) n)))
+    (cond ((>= prod 0) (+ (quotient prod 100) (quotient (modulo prod 100) 50)))
+          (else (- (+ (quotient (- prod) 100) (quotient (modulo (- prod) 100) 50)))))))
+
+(define (money-div a n)
+  ;; Divide cents by n, rounding half-away-from-zero.
+  (cond ((= n 0) 0)
+        (else
+         (let ((prod (money-cents a))
+               (abs-n (abs n)))
+           (cond ((>= prod 0)
+                  (+ (quotient prod abs-n)
+                     (if (>= (modulo prod abs-n) (/ abs-n 2)) 1 0)))
+                 (else
+                  (- (+ (quotient (- prod) abs-n)
+                        (if (>= (modulo (- prod) abs-n) (/ abs-n 2)) 1 0))))))))

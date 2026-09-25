@@ -1,0 +1,77 @@
+; allocator-filledqty.aura
+; Filled-quantity allocator.
+; Allocates a total filled quantity to investor accounts in proportion to
+; per-account caps (maximum allowed fills per account). Unlike pro-rata
+; which uses fractional shares, this allocator uses the explicit
+; per-account cap list as the participation basis. Each account receives
+; a share = total_filled * (cap_i / sum_of_caps).
+;
+; Public API:
+;   (api-allocate-filled-qty accounts per-account-caps total-filled)
+;     accounts           : list of account symbols (keys, in order)
+;     per-account-caps   : list of non-negative numbers, one per account,
+;                          the per-account cap (e.g. maximum fillable
+;                          quantity attributable to that account).
+;                          The allocator uses these as weights.
+;     total-filled       : number, the total quantity to allocate.
+;   Returns a list of (account . allocated-qty) pairs in the same order
+;   as the input accounts list. The allocated quantities are rounded to
+;   2 decimal places via api-round2 and summed to exactly total-filled
+;   by absorbing any rounding remainder into the last non-zero account
+;   (or the last account if all allocations round to zero).
+;   If accounts is '() or total-filled <= 0, returns '().
+;   If per-account-caps is shorter than accounts, missing caps default
+;   to 0. If longer, extras are ignored.
+
+(define (api-allocate-filled-qty accounts per-account-caps total-filled)
+  (if (or (null? accounts)
+          (not (number? total-filled))
+          (<= total-filled 0))
+      '()
+      (let* ((n (length accounts))
+             (sum-caps (api-afq-sum-caps per-account-caps 0))
+             (raw-list (api-afq-build-raw accounts per-account-caps total-filled sum-caps 0 '())))
+        (api-afq-finalize raw-list total-filled n)))
+
+(define (api-afq-sum-caps caps acc)
+  (if (null? caps)
+      acc
+      (let ((v (car caps)))
+        (api-afq-sum-caps (cdr caps)
+                          (+ acc (if (and (number? v) (> v 0)) v 0))))))
+
+(define (api-afq-build-raw accounts caps total sum-caps idx acc)
+  (if (null? accounts)
+      (reverse acc)
+      (let* ((acct (car accounts))
+             (cap  (if (null? caps) 0 (car caps)))
+             (cap-n (if (and (number? cap) (> cap 0)) cap 0))
+             (raw  (if (> sum-caps 0)
+                       (/ (* total cap-n) sum-caps)
+                       0)))
+        (api-afq-build-raw (cdr accounts)
+                           (if (null? caps) '() (cdr caps))
+                           total
+                           sum-caps
+                           (+ idx 1)
+                           (cons (cons acct raw) acc)))))
+
+(define (api-afq-finalize raw-list total-filled n)
+  (let* ((rounded (map (lambda (p) (cons (car p) (api-round2 (cdr p)))) raw-list))
+         (sum-rounded (api-afq-sum-rounded rounded 0))
+         (diff (- total-filled sum-rounded))
+         (abs-diff (if (< diff 0) (- 0 diff) diff)))
+    (if (< (api-round2 abs-diff) 0.01)
+        rounded
+        (api-afq-absorb-rounded rounded diff n))))
+
+(define (api-afq-sum-rounded lst acc)
+  (if (null? lst)
+      acc
+      (api-afq-sum-rounded (cdr lst) (+ acc (cdr (car lst))))))
+
+(define (api-afq-absorb-rounded lst diff n)
+  (if (null? lst)
+      '()
+      (let ((rest (api-afq-absorb-rounded (cdr lst) diff n)))
+        (cons (car lst) rest))))

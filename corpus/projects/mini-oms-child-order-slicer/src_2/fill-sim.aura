@@ -1,0 +1,105 @@
+; fill-sim.aura
+; Fill simulator for routed child orders.
+; Simulates venue fills based on the mid price, market volatility, and
+; each routed child's urgency. Children with higher urgency fill a larger
+; fraction of their quantity; the rest is partially filled or unfilled
+; depending on volatility and a deterministic seed derived from the
+; route sequence.
+;
+; Public API:
+;   (api-simulate-fills routed mid-px volatility)
+;     routed    : list of routed child alists (output of api-route)
+;     mid-px    : current mid price (number, > 0)
+;     volatility: market volatility (number, >= 0). Higher volatility
+;                 means smaller fill rates (more slippage/cancellation).
+;     Returns a list of fill alists, one per routed child:
+;       (fill-child-id . <id>)        - child id
+;       (fill-qty      . <number>)    - quantity filled
+;       (fill-px       . <number>)    - simulated fill price (rounded to 2 dp)
+;       (fill-venue    . <symbol>)    - venue the child was routed to
+;       (fill-state    . <symbol>)    - 'FULL | 'PARTIAL | 'NONE
+;
+;   (api-aggregate-fills fills)
+;     fills : list of fill alists (from api-simulate-fills)
+;     Returns a single fill alist representing aggregated totals:
+;       (agg-qty   . <number>) - total filled quantity
+;       (agg-px    . <number>) - volume-weighted average fill price
+;       (agg-count . <number>) - number of fills that produced qty > 0
+;     If fills is '(), returns (cons 'agg-qty 0) shape with zeros.
+
+(define (api-round2 n)
+  (let ((truncated (truncate (* n 100))))
+    (/ truncated 100.0)))
+
+(define (fill-base-rate urgency)
+  ; Map urgency [0,1] to a base fill rate in [0.30, 0.95].
+  ; urgency = 0  -> 0.30 (passive, smaller fills)
+  ; urgency = 1  -> 0.95 (aggressive, near-full fills)
+  (+ 0.30 (* 0.65 urgency)))
+
+(define (fill-vol-penalty volatility)
+  ; Map volatility [0, inf) to a multiplicative penalty in (0, 1].
+  ; 0 volatility -> 1.0 (no penalty)
+  ; Each 1.0 of volatility subtracts 0.10, floored at 0.10.
+  (let ((penalty (- 1.0 (* 0.10 volatility))))
+    (if (< penalty 0.10) 0.10 penalty)))
+
+(define (route-seq->seed seq)
+  ; Deterministic seed in [0, 1) derived from the route sequence number.
+  (let ((modulo (modulo (+ (* seq 37) 17) 100)))
+    (/ modulo 100.0)))
+
+(define (simulate-one routed mid-px volatility)
+  (let* ((seq       (cdr (assq 'route-seq routed)))
+         (urgency   (cdr (assq 'urgency routed)))
+         (venue     (cdr (assq 'route-venue routed)))
+         (child-id  (cdr (assq 'id routed)))
+         (qty       (cdr (assq 'qty routed)))
+         (seed      (route-seq->seed seq))
+         (base      (fill-base-rate urgency))
+         (penalty   (fill-vol-penalty volatility))
+         (jitter    (+ -0.05 (* 0.10 seed)))
+         (rate      (+ base jitter penalty))
+         (rate      (if (< rate 0) 0 rate))
+         (rate      (if (> rate 1) 1 rate))
+         (fill-qty  (api-round2 (* qty rate)))
+         (slip      (api-round2 (* (- 1 rate) 0.05 volatility)))
+         (sign      (if (eq? 'buy
+                          (cdr (assq 'side routed)))
+                       1 -1))
+         (fill-px   (api-round2 (+ mid-px (* sign slip))))
+         (state     (cond ((= fill-qty qty) 'FULL)
+                          ((> fill-qty 0)    'PARTIAL)
+                          (else              'NONE))))
+    (list (cons 'fill-child-id child-id)
+          (cons 'fill-qty      fill-qty)
+          (cons 'fill-px       fill-px)
+          (cons 'fill-venue    venue)
+          (cons 'fill-state    state))))
+
+(define (api-simulate-fills routed mid-px volatility)
+  (map (lambda (r) (simulate-one r mid-px volatility)) routed))
+
+(define (api-aggregate-fills fills)
+  (if (null? fills)
+      (list (cons 'agg-qty   0)
+            (cons 'agg-px    0)
+            (cons 'agg-count 0))
+      (let loop ((rest fills)
+                 (total-qty 0)
+                 (total-notional 0)
+                 (count 0))
+        (if (null? rest)
+            (let ((avg (if (= total-qty 0)
+                           0
+                           (api-round2 (/ total-notional total-qty)))))
+              (list (cons 'agg-qty   (api-round2 total-qty))
+                    (cons 'agg-px    avg)
+                    (cons 'agg-count count)))
+            (let* ((f       (car rest))
+                   (qty     (cdr (assq 'fill-qty f)))
+                   (px      (cdr (assq 'fill-px f)))
+                   (new-qty (+ total-qty qty))
+                   (new-not (+ total-notional (* qty px)))
+                   (new-cnt (if (> qty 0) (+ count 1) count)))
+              (loop (cdr rest) new-qty new-not new-cnt))))))

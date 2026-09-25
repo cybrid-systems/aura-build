@@ -1,0 +1,170 @@
+;; runner.aura — orchestrates the dunning workflow across one day.
+;;
+;; api-run-dunning takes:
+;;   portfolio  -> the result of api-portfolio-data: a pair (invoices . today)
+;;                 where invoices is a list of invoice alists and today is
+;;                 the simulated day counter.
+;;   ptps       -> a list of promise-to-pay alists (possibly empty).
+;;   today      -> the day on which this dunning run is executed.
+;;
+;; It returns a fully-updated state alist containing all counters and
+;; buckets that report.aura / main.aura will consume:
+;;
+;;   ((today              . <int>)
+;;    (invoices           . <list>)
+;;    (ptps               . <list>)
+;;    (buckets            . <alist>)        ; (current . n) (1-30 . n) ...
+;;    (counters           . <alist>)        ; notice counters from notice.aura
+;;    (late-fees          . <int cents>)
+;;    (writeoffs          . <int cents>)
+;;    (promises-honored   . <int>)
+;;    (promises-broken    . <int>)
+;;    (audit              . <list>))        ; audit trail
+;;
+;; This file intentionally does no printing; main.aura handles stdout.
+
+;; ---------------------------------------------------------------------------
+;; Helpers (local to this file; no exported API).
+;; ---------------------------------------------------------------------------
+
+;; Unpack the portfolio pair into (invoices . today).
+(define (runner-split-portfolio portfolio)
+  (cons (car portfolio) (cdr portfolio)))
+
+;; Returns #t if the invoice is "open" for dunning purposes:
+;; status is 'open or 'disputed (i.e., anything that is not 'paid).
+(define (runner-invoice-unpaid? inv)
+  (let ((s (api-invoice-status inv)))
+    (and (not (equal? s 'paid))
+         (not (equal? s 'written-off))
+         #t)))
+
+;; Filter the invoice list down to those still owed.
+(define (runner-unpaid-invoices invoices)
+  (cond
+    ((null? invoices) '())
+    ((runner-invoice-unpaid? (car invoices))
+     (cons (car invoices) (runner-unpaid-invoices (cdr invoices))))
+    (else (runner-unpaid-invoices (cdr invoices)))))
+
+;; Walk an invoice list, processing each unpaid invoice. Recurses on tail.
+;; Order of operations per invoice:
+;;   1. Decide notice stage (api-notice-stage).
+;;   2. If a notice is due (stage != 'none), send it (api-notice-send!)
+;;      and audit the notice.
+;;   3. If the stage is 'firm or 'final AND the invoice is fee-eligible,
+;;      compute the late fee, accumulate it, and audit "LATE_FEE".
+;;   4. If the invoice is writeoff-eligible, record the writeoff.
+;;   5. Recurse on the tail.
+(define (runner-process-invoices invoices ptps today state)
+  (cond
+    ((null? invoices) state)
+    (else
+      (let* ((inv    (car invoices))
+             (rest   (cdr invoices))
+             (stage  (api-notice-stage inv ptps today))
+             (state1 (runner-handle-notice state stage inv))
+             (state2 (runner-handle-fee state1 inv today))
+             (state3 (runner-handle-writeoff state2 inv today)))
+        (runner-process-invoices rest ptps today state3)))))
+
+;; Stage-driven notice dispatch.
+(define (runner-handle-notice state stage inv)
+  (cond
+    ((equal? stage 'none) state)
+    (else
+      (let* ((state1 (api-notice-send! state stage inv))
+             (msg    (api-notice-template stage inv))
+             (tag    stage))
+        (api-audit-log! state1 msg tag)))))
+
+;; If the stage is firm/final, apply the tiered late fee (when eligible)
+;; and audit the accrual.
+(define (runner-handle-fee state inv today)
+  (let ((stage (api-invoice-current-stage-hint inv)))
+    (cond
+      ((or (equal? stage 'firm) (equal? stage 'final))
+       (if (api-fee-applicable? inv today)
+           (let* ((fee   (api-fee-compute inv today))
+                  (cur   (or (api-state-get state 'late-fees) 0))
+                  (msg   (string-append "LATE_FEE "
+                                        (number->string fee)
+                                        " cents")))
+             (api-audit-log!
+               (api-state-set! state 'late-fees (+ cur fee))
+               msg
+               'LATE_FEE))
+           state))
+      (else state))))
+
+;; Some files pre-compute the stage; we need a stable hint here. Since runner
+;; already called api-notice-stage above, we can't re-call it without
+;; re-reading ptps. Instead, infer the stage from days-past-due directly.
+;; Days past due clamped to 0.
+(define (api-invoice-current-stage-hint inv)
+  (let ((d (api-invoice-age-days inv 99999)))
+    (cond
+      ((<= d 0)  'none)
+      ((<= d 30) 'reminder)
+      ((<= d 60) 'firm)
+      ((<= d 90) 'final)
+      (else      'final))))
+
+;; If the invoice is writeoff-eligible, record it.
+(define (runner-handle-writeoff state inv today)
+  (if (api-writeoff-eligible? inv today)
+      (api-writeoff-record! state inv)
+      state))
+
+;; Reconcile promises-to-pay against current invoice statuses, counting
+;; honored and broken. Mutates state under 'promises-honored and
+;; 'promises-broken. Does NOT audit — main.aura may do that.
+(define (runner-reconcile-ptps ptps invoices today state)
+  (define (honored-count ps)
+    (cond
+      ((null? ps) 0)
+      ((api-promise-honored? (car ps) today)
+       (+ 1 (honored-count (cdr ps))))
+      (else (honored-count (cdr ps)))))
+  (define (broken-count ps)
+    (cond
+      ((null? ps) 0)
+      (else
+        (let ((p (car ps)))
+          (if (and (>= today (api-promise-due-day p))
+                   (not (api-promise-honored? p today)))
+              (+ 1 (broken-count (cdr ps)))
+              (broken-count (cdr ps)))))))
+  (let* ((h (honored-count ptps))
+         (b (broken-count ptps)))
+    (api-state-set! (api-state-set! state 'promises-honored h)
+                    'promises-broken  b)))
+
+;; Need a helper to read a promise's by-day without exporting it. Since
+;; promise.aura exposes api-promise-find and api-promise-valid? only, we
+;; re-derive by-day by traversing the alist directly. This is acceptable
+;; because PTPs are simple alists whose shape is documented in promise.aura.
+(define (api-promise-due-day p)
+  (let ((pair (assq 'by-day p)))
+    (if pair (cdr pair) 0)))
+
+;; ---------------------------------------------------------------------------
+;; Exported API
+;; ---------------------------------------------------------------------------
+
+;; Run a full dunning pass. Returns an updated state.
+(define (api-run-dunning portfolio ptps today)
+  (let* ((pair      (runner-split-portfolio portfolio))
+         (invoices  (car pair))
+         (state0    (api-state-make))
+         (state1    (api-state-set! state0 'today today))
+         (state2    (api-state-set! state1 'ptps ptps))
+         (state3    (api-state-set! state2 'invoices invoices))
+         (unpaid    (runner-unpaid-invoices invoices))
+         (buckets   (api-aging-bucketize unpaid today))
+         (state4    (api-state-set! state3 'buckets buckets))
+         (state5    (runner-process-invoices unpaid ptps today state4))
+         (state6    (api-state-set! state5 'late-fees
+                                    (or (api-state-get state5 'late-fees) 0)))
+         (state7    (runner-reconcile-ptps ptps unpaid today state6)))
+    state7))

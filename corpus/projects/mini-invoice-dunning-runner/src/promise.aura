@@ -1,0 +1,94 @@
+;; promise.aura — promises-to-pay (PTP) handling.
+;;
+;; A promise-to-pay (PTP) is an alist:
+;;   ((customer   . <sym>)
+;;    (invoice-id . <int>)
+;;    (by-day     . <int>)      ; the day on which the customer promised to pay
+;;    (broken?    . <bool>))    ; #t once the by-day has passed without payment
+;;
+;; Semantics:
+;;   - valid?       : belongs to the right customer/invoice, not yet broken,
+;;                    and by-day is still in the future (today < by-day).
+;;   - honored?     : today >= by-day AND the invoice it references is now
+;;                    'paid (status checked via api-invoice-status).
+;;   - broken       : today >= by-day AND invoice is NOT 'paid.
+;;
+;; PTPs are stored as a plain list of these alists.
+
+(define (api-promise-make cust invoice-id by-day)
+  (list (cons 'customer cust)
+        (cons 'invoice-id invoice-id)
+        (cons 'by-day by-day)
+        (cons 'broken? #f)))
+
+;; ---- accessors ----
+
+(define (promise-cust p)
+  (cdr (assq 'customer p)))
+
+(define (promise-invoice-id p)
+  (cdr (assq 'invoice-id p)))
+
+(define (promise-by-day p)
+  (cdr (assq 'by-day p)))
+
+(define (promise-broken? p)
+  (cdr (assq 'broken? p)))
+
+;; Mutate the broken? flag in-place. Returns the (possibly updated) promise.
+(define (promise-mark-broken! p)
+  (let ((cell (assq 'broken? p)))
+    (if cell
+        (set-cdr! cell #t)
+        (set! p (append p (list (cons 'broken? #t))))))
+  p)
+
+;; ---- predicates ----
+
+;; A promise is valid (still active / enforceable) when:
+;;   - it has not yet been marked broken, AND
+;;   - today < by-day (the promise window has not elapsed).
+(define (api-promise-valid? p today)
+  (let ((by (promise-by-day p))
+        (broken (promise-broken? p)))
+    (and (not broken) (< today by))))
+
+;; Honored: the due day has arrived/passed AND the invoice it refers to
+;; is now paid. We look the invoice up in the global seed-portfolio via
+;; the data module's exposed binding.
+(define (api-promise-honored? p today)
+  (let ((by (promise-by-day p))
+        (inv-id (promise-invoice-id p)))
+    (if (>= today by)
+        (let ((inv (find-invoice-by-id inv-id)))
+          (if inv
+              (equal? (api-invoice-status inv) 'paid)
+              #f))
+        #f)))
+
+;; ---- list operations ----
+
+;; Prepend a promise onto an existing PTP list. Pure list cons.
+(define (api-promise-add ptps p)
+  (cons p ptps))
+
+;; Find the first PTP in ptps whose invoice-id matches. Returns #f if
+;; none is found.
+(define (api-promise-find ptps invoice-id)
+  (cond
+    ((null? ptps) #f)
+    ((= (promise-invoice-id (car ptps)) invoice-id) (car ptps))
+    (else (api-promise-find (cdr ptps) invoice-id))))
+
+;; ---- helpers (local to promise.aura) ----
+
+;; Look up an invoice in seed-portfolio by integer id.
+;; Returns the invoice alist or #f if not present.
+(define (find-invoice-by-id inv-id)
+  (find-invoice-by-id-loop seed-portfolio inv-id))
+
+(define (find-invoice-by-id-loop lst inv-id)
+  (cond
+    ((null? lst) #f)
+    ((= (api-invoice-id (car lst)) inv-id) (car lst))
+    (else (find-invoice-by-id-loop (cdr lst) inv-id))))

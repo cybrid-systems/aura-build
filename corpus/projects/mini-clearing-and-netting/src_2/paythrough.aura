@@ -1,0 +1,67 @@
+; paythrough.aura — pay-through hierarchy (CCP → clearing member → client).
+;
+; Real clearing engines stack counterparties into a hierarchy: when a
+; client owes a counterparty through a clearing member, settlement
+; flows "pay-through" the chain CCP → CM → client. This module
+; encodes that chain as an alist (party . parent) and exposes the
+; effective counterparty (the topmost ancestor) and the chain depth.
+;
+; Storage is a mutable alist: ((party . parent) (party . parent) ...)
+
+; Mutable alist mapping each party to its parent in the pay-through
+; hierarchy. A party with no entry has no parent (it is its own root).
+(define *hierarchy* '())
+
+; set-paythrough!: install the full hierarchy at once, replacing any
+; previous configuration. The argument is an alist of (party . parent)
+; pairs.
+(define (set-paythrough! hierarchy-alist)
+  (set! *hierarchy* hierarchy-alist))
+
+; Look up the parent of a party in the hierarchy. Returns #f if the
+; party has no recorded parent (i.e. it is itself a root / CCP).
+(define (parent-of party)
+  (define (walk lst)
+    (cond ((null? lst) #f)
+          ((equal? (caar lst) party) (cdar lst))
+          (else (walk (cdr lst)))))
+  (walk *hierarchy*))
+
+; paythrough-chain: return the list of parties from `party` up to the
+; topmost ancestor (root) of the hierarchy, inclusive of both ends.
+; For example, with CCP <- CM <- CLIENT, the chain for CLIENT is
+; (CLIENT CM CCP). A party that is itself a root returns (party).
+(define (paythrough-chain party)
+  (define (walk p acc)
+    (let ((parent (parent-of p)))
+      (if (or (equal? parent #f) (equal? parent p))
+          (reverse (cons p acc))
+          (walk parent (cons p acc)))))
+  (walk party '()))
+
+; effective-counterparty: the topmost ancestor (root) of `party`. This
+; is the party that ultimately bears the settlement obligation on
+; behalf of the whole chain.
+(define (effective-counterparty party)
+  (car (paythrough-chain party)))
+
+; tier-depth: the number of tiers separating `party` from the root of
+; the hierarchy. A root has tier-depth 0; a direct child of a root
+; has tier-depth 1; and so on. If the party is unknown to the
+; hierarchy, its tier-depth is 0.
+(define (tier-depth)
+  (define (all-parties lst)
+    (if (null? lst)
+        '()
+        (cons (caar lst) (all-parties (cdr lst)))))
+  (define (depth party)
+    (let ((chain (paythrough-chain party)))
+      (- (length chain) 1)))
+  (define (max-depth parties best)
+    (if (null? parties)
+        best
+        (let ((d (depth (car parties))))
+          (if (> d best)
+              (max-depth (cdr parties) d)
+              (max-depth (cdr parties) best)))))
+  (max-depth (all-parties *hierarchy*) 0))

@@ -1,0 +1,37 @@
+; allocator-prorata.aura
+; Pro-rata fill allocator.
+; Distributes total-filled quantity among investor accounts according
+; to each account's participation share. Each account receives
+; total-filled * share, rounded to 2 decimals via api-round2.
+; Any rounding remainder is absorbed by the first account so the
+; allocations sum exactly to total-filled.
+;
+; Public API:
+;   (api-allocate-pro-rata accounts total-filled)
+;     accounts    : list of account symbols (as produced by api-account-list)
+;     total-filled: number, total filled quantity to allocate (>= 0)
+;     Returns a list of alists, one per account, of the form:
+;       ((acct . <symbol>) (qty . <number>))
+;     The sum of qty values equals total-filled (rounded to 2 decimals).
+;     If total-filled is not a number or is negative, returns '().
+;     If accounts is empty, returns '().
+
+(define (api-allocate-pro-rata accounts total-filled)
+  (if (or (not (number? total-filled)) (< total-filled 0))
+      '()
+      (let* ((n (length accounts))
+             (scaled (api-round2 total-filled))
+             (raw (map (lambda (acct)
+                         (let ((share (api-account-share acct)))
+                           (cons acct (api-round2 (* scaled share)))))
+                       accounts))
+             (allocated (apply + (map cdr raw)))
+             (delta (- scaled allocated)))
+        (if (and (not (null? raw)) (not (= delta 0)))
+            (let* ((head (car raw))
+                   (tail (cdr raw))
+                   (head-acct (car head))
+                   (head-qty (cdr head))
+                   (new-head (cons head-acct (api-round2 (+ head-qty delta)))))
+              (cons new-head tail))
+            raw))))

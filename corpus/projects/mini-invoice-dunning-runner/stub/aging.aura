@@ -1,0 +1,51 @@
+;; aging.aura — bucket classification + invoice partitioner.
+;;
+;; Bucket semantics (based on days past due, never negative):
+;;   days <= 0           -> 'current
+;;   1 <= days <= 30     -> 'bucket-1-30
+;;   31 <= days <= 60    -> 'bucket-31-60
+;;   61 <= days <= 90    -> 'bucket-61-90
+;;   days > 90           -> 'bucket-90-plus
+
+(define (api-bucket-classify days)
+  (cond
+    ((<= days 0) 'current)
+    ((<= days 30) 'bucket-1-30)
+    ((<= days 60) 'bucket-31-60)
+    ((<= days 90) 'bucket-61-90)
+    (else 'bucket-90-plus)))
+
+;; Only unpaid (status = 'open or 'disputed) invoices count toward buckets.
+(define (api-invoice-counts? i)
+  (let ((s (api-invoice-status i)))
+    (or (equal? s 'open) (equal? s 'disputed))))
+
+(define (api-aging-bucketize invoices today)
+  (define buckets
+    (list (cons 'current 0)
+          (cons 'bucket-1-30 0)
+          (cons 'bucket-31-60 0)
+          (cons 'bucket-61-90 0)
+          (cons 'bucket-90-plus 0)))
+  (define (bump b)
+    (let loop ((rest b) (key #f))
+      (cond
+        ((null? rest) (cons (cons key 1) b))
+        ((and (not key) (equal? (car (car rest)) (api-bucket-classify (api-invoice-age-days (car invoices) today))))
+         (cons (cons (car (car rest)) (+ 1 (cdr (car rest)))) (cdr rest)))
+        (else (cons (car rest) (loop (cdr rest) key))))))
+  (let loop ((invs invoices) (acc buckets))
+    (cond
+      ((null? invs) acc)
+      ((not (api-invoice-counts? (car invs)))
+       (loop (cdr invs) acc))
+      (else
+       (let* ((days (api-invoice-age-days (car invs) today))
+              (b    (api-bucket-classify days)))
+         (loop (cdr invs)
+               (let bump ((rest acc))
+                 (cond
+                   ((null? rest) rest)
+                   ((equal? (car (car rest)) b)
+                    (cons (cons (car (car rest)) (+ 1 (cdr (car rest)))) (cdr rest)))
+                   (else (cons (car rest) (bump (cdr rest)))))))))))

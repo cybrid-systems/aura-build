@@ -1,0 +1,62 @@
+; router.aura
+; Venue routing for child orders.
+; Routes a list of child orders to a list of venues. Routes child orders
+; to venues in a round-robin fashion (with latency-priority ordering of
+; venues when relevant). Each routed child is enriched with a routing
+; decision: a venue assignment, an order in the queue, and the venue's
+; latency (looked up via the venue registry).
+;
+; Public API:
+;   (api-route children venues)
+;     children : list of child order alists
+;     venues   : list of venue symbols available for routing
+;     Returns a list of "routed child" alists. Each routed child includes
+;     the original child fields plus:
+;       (route-venue . <venue>)  - chosen venue
+;       (route-seq  . <integer>) - sequence number within routing
+;       (latency    . <number>)  - venue latency (ms) from registry
+;     If children is empty or venues is empty, returns '().
+;
+;   (api-route-one child venue)
+;     child : child order alist
+;     venue : venue symbol
+;     Returns a routed child alist for that single (child, venue) pair.
+;     Looks up latency from the venue registry.
+
+(define (api-route-one child venue)
+  (let* ((child-id (cdr (assq 'id child)))
+          (parent-id (cdr (assq 'parent-id child)))
+          (side (cdr (assq 'side child)))
+          (qty (cdr (assq 'qty child)))
+          (urgency (cdr (assq 'urgency child)))
+          (latency (api-venue-latency venue)))
+    (list (cons 'id child-id)
+          (cons 'kind 'routed)
+          (cons 'parent-id parent-id)
+          (cons 'side side)
+          (cons 'qty qty)
+          (cons 'venue venue)
+          (cons 'urgency urgency)
+          (cons 'route-venue venue)
+          (cons 'latency latency))))
+
+(define (api-route children venues)
+  (if (or (null? children) (null? venues))
+      '()
+      (let loop ((remaining children)
+                 (venue-pos 0)
+                 (seq 1)
+                 (acc '()))
+        (if (null? remaining)
+            (reverse acc)
+            (let* ((child (car remaining))
+                   (venue (list-ref venues venue-pos))
+                   (routed (api-route-one child venue))
+                   (with-seq (cons (cons 'route-seq seq) routed))
+                   (next-pos (if (= (+ venue-pos 1) (length venues))
+                                 0
+                                 (+ venue-pos 1))))
+              (loop (cdr remaining)
+                    next-pos
+                    (+ seq 1)
+                    (cons with-seq acc)))))))

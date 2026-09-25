@@ -1,0 +1,49 @@
+;; writeoff.aura — writeoff eligibility + bookkeeping.
+;;
+;; Writeoff rules:
+;;   - Eligible only if the invoice is 90+ days past due AND
+;;     its status is 'open or 'disputed (i.e., not 'paid).
+;;   - Writeoff amount equals the remaining invoice amount in cents
+;;     (we write off the full outstanding balance).
+;;
+;; api-writeoff-record! mutates state to record:
+;;   - 'writeoffs         -> cumulative cents written off
+;;   - 'writeoff-records  -> alist (invoice-id . invoice) of written-off invoices
+;; It also audits a "WRITEOFF" entry via api-audit-log!.
+
+;; ---- local helpers ----
+
+;; Days past due, clamped at 0 (never negative).
+(define (writeoff-days-past-due invoice today)
+  (let ((d (- today (api-invoice-due-day invoice))))
+    (if (< d 0) 0 d)))
+
+;; Is the invoice's status one that can be written off?
+;; ('open or 'disputed; 'paid is never written off.)
+(define (writeoff-unpaid? invoice)
+  (let ((s (api-invoice-status invoice)))
+    (or (equal? s 'open) (equal? s 'disputed))))
+
+;; ---- public API ----
+
+(define (api-writeoff-eligible? invoice today)
+  (and (writeoff-unpaid? invoice)
+       (> (writeoff-days-past-due invoice today) 90)))
+
+(define (api-writeoff-amount invoice)
+  (api-invoice-amount invoice))
+
+(define (api-writeoff-record! state invoice)
+  (let ((amount (api-writeoff-amount invoice))
+        (id     (api-invoice-id invoice)))
+    ;; Bump the cumulative cents counter.
+    (api-state-add! state 'writeoffs amount)
+    ;; Record the invoice itself for reporting.
+    (api-state-add! state 'writeoff-records (cons id invoice))
+    ;; Audit trail entry.
+    (api-audit-log! state
+      (string-append "WRITEOFF id="
+                     (number->string id)
+                     " amount="
+                     (number->string amount)))
+    state))

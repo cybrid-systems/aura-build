@@ -1,0 +1,38 @@
+; mta.aura — minimum-transfer-amount registry per currency.
+;
+; Each currency has an MTA threshold. Settlement legs whose absolute
+; amount falls strictly below the MTA for their currency are dropped
+; from net settlement instructions (a standard netting-engine rule).
+; Storage is a mutable alist mapping ccy -> mta-amount.
+
+; Mutable alist: ((ccy1 . mta1) (ccy2 . mta2) ...)
+(define *mtas* '())
+
+; set-mta!: install or replace the MTA for a given currency.
+(define (set-mta! ccy amount)
+  (define (replace entry)
+    (if (equal? (car entry) ccy)
+        (cons ccy amount)
+        entry))
+  (define (update lst)
+    (if (null? lst)
+        (cons (cons ccy amount) *mtas*)
+        (if (equal? (caar lst) ccy)
+            (cons (replace (car lst)) (cdr lst))
+            (cons (car lst) (update (cdr lst))))))
+  (set! *mtas* (update *mtas*)))
+
+; get-mta: look up the MTA for a currency. Defaults to 0 if unset.
+(define (get-mta ccy)
+  (define (scan lst)
+    (if (null? lst)
+        0
+        (if (equal? (caar lst) ccy)
+            (cdar lst)
+            (scan (cdr lst)))))
+  (scan *mtas*))
+
+; below-mta?: true iff amount is strictly less than the MTA for ccy.
+; An amount equal to the MTA is NOT below it (standard ≥ semantics).
+(define (below-mta? amount ccy)
+  (< amount (get-mta ccy)))

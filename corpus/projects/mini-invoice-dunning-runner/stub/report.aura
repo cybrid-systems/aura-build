@@ -1,0 +1,56 @@
+;; report.aura — summarize the dunning run.
+;;
+;; Given the run state (which carries counters and the audit trail) and
+;; the aging buckets alist, produce a plain list of (key . value) pairs
+;; summarizing what happened. Keys are symbols; values are whatever the
+;; caller wants to print (typically integers or #t).
+;;
+;; Schema (matches Stdout Contract in GOAL.md, order preserved):
+;;   portfolio-invoices      — int
+;;   portfolio-open-balance  — int cents
+;;   bucket-current          — int
+;;   bucket-1-30             — int
+;;   bucket-31-60            — int
+;;   bucket-61-90            — int
+;;   bucket-90-plus          — int
+;;   reminders-sent          — int
+;;   firm-notices-sent       — int
+;;   final-notices-sent      — int
+;;   promises-honored        — int
+;;   promises-broken         — int
+;;   late-fees-collected     — int cents
+;;   writeoffs               — int cents
+;;   audit-entries           — int
+;;   run-ok                  — #t
+
+;; ---- helpers ----
+
+;; Look up a bucket count from the buckets alist using a symbol key.
+;; Returns 0 if the key is missing (defensive).
+(define (report-bucket-count buckets key)
+  (let ((entry (assq key buckets)))
+    (if entry
+        (cdr entry)
+        0)))
+
+;; Build the summary list, reading all counters out of state plus the
+;; bucket counts from the supplied alist. Keys are symbols matching the
+;; Stdout Contract exactly (downcased-with-dashes for readability).
+(define (api-report-summary state buckets)
+  (list
+    (cons 'portfolio-invoices     (api-state-get state 'portfolio-invoices))
+    (cons 'portfolio-open-balance (api-state-get state 'portfolio-open-balance))
+    (cons 'bucket-current         (report-bucket-count buckets 'current))
+    (cons 'bucket-1-30            (report-bucket-count buckets 'bucket-1-30))
+    (cons 'bucket-31-60           (report-bucket-count buckets 'bucket-31-60))
+    (cons 'bucket-61-90           (report-bucket-count buckets 'bucket-61-90))
+    (cons 'bucket-90-plus         (report-bucket-count buckets 'bucket-90-plus))
+    (cons 'reminders-sent         (api-state-get state 'reminders-sent))
+    (cons 'firm-notices-sent      (api-state-get state 'firm-notices-sent))
+    (cons 'final-notices-sent     (api-state-get state 'final-notices-sent))
+    (cons 'promises-honored       (api-state-get state 'promises-honored))
+    (cons 'promises-broken        (api-state-get state 'promises-broken))
+    (cons 'late-fees-collected    (api-state-get state 'late-fees-collected))
+    (cons 'writeoffs              (api-state-get state 'writeoffs))
+    (cons 'audit-entries          (length (api-audit-entries state)))
+    (cons 'run-ok                 #t)))

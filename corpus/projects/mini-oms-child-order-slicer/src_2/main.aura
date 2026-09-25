@@ -1,0 +1,154 @@
+; main.aura
+; Scenario driver for the mini-OMS child-order slicer.
+; Builds a parent order, slices it with several strategies, simulates
+; venue routing and fills, monitors risk, allocates fills across investor
+; accounts under different policies, and prints the stdout contract
+; exactly as specified (16 KEY=value lines, computed at runtime).
+
+; --- 1. Parent order --------------------------------------------------------
+(define parent
+  (api-make-parent "P-001" 'buy 1000 50.00 'day))
+
+; --- 2. Strategy-specific inputs -------------------------------------------
+(define pov-mkt-volume 8000)
+(define twap-horizon    600)
+(define twap-slot       60)
+(define vwap-buckets    '(100 150 200 250 300))
+(define liqseek-urgency 0.7)
+
+; --- 3. Slice the parent with each strategy -------------------------------
+(define pov-children
+  (api-slice-pov parent pov-mkt-volume 4))
+(define twap-children
+  (api-slice-twap parent twap-horizon twap-slot 4))
+(define vwap-children
+  (api-slice-vwap parent vwap-buckets 4))
+(define liq-children
+  (api-slice-liquidity parent (api-venue-list) 4 liqseek-urgency))
+
+(define all-children
+  (append pov-children twap-children vwap-children liq-children))
+
+; --- 4. Route + simulate fills --------------------------------------------
+(define routed
+  (api-route all-children (api-venue-list)))
+
+(define mid-px      50.00)
+(define volatility  0.25)
+(define fills
+  (api-simulate-fills routed mid-px volatility))
+
+; --- 5. Aggregate fills ----------------------------------------------------
+(define agg
+  (api-aggregate-fills fills))
+
+(define total-filled
+  (let ((cell (assq 'total-qty agg)))
+    (if cell (cdr cell) 0)))
+
+(define vwap-exec
+  (let ((cell (assq 'vwap agg)))
+    (if cell (cdr cell) 0)))
+
+(define fill-count
+  (let ((cell (assq 'count agg)))
+    (if cell (cdr cell) 0)))
+
+; --- 6. Risk metrics -------------------------------------------------------
+(define completion-pct
+  (api-completion-pct parent fills))
+
+(define risk-breach-threshold 0.80)
+(define risk-breached
+  (api-risk-breached? parent fills risk-breach-threshold))
+
+; --- 7. Market clock / slot info ------------------------------------------
+(define trading-day
+  (api-trading-day?))
+(define slot-count
+  (api-slot-count twap-horizon twap-slot))
+
+; --- 8. Venue snapshot -----------------------------------------------------
+(define venues (api-venue-list))
+(define venue-fees
+  (map (lambda (v) (api-venue-fee v)) venues))
+(define venue-lat
+  (map (lambda (v) (api-venue-latency v)) venues))
+
+(define avg-fee
+  (if (null? venue-fees) 0
+      (/ (foldl + 0 venue-fees) (length venue-fees))))
+
+; --- 9. Top-of-book snapshot -----------------------------------------------
+(define bid-px 49.95)
+(define ask-px 50.05)
+
+; --- 10. Allocations under three policies ---------------------------------
+(define alloc-accounts (api-account-list))
+
+(define fifo-allocs
+  (api-allocate-fifo alloc-accounts total-filled))
+
+(define pr-allocs
+  (api-allocate-pro-rata alloc-accounts total-filled))
+
+; Per-account caps for filled-quantity allocator: derive from pro-rata shares,
+; scaled by total-filled.
+(define caps
+  (map (lambda (acc)
+         (let ((share (api-account-share acc))
+               (id    (api-account-acct acc)))
+           (cons id (* share total-filled))))
+       alloc-accounts))
+
+(define fq-allocs
+  (api-allocate-filled-qty alloc-accounts caps total-filled))
+
+; --- 11. Allocator checksum ------------------------------------------------
+; Sum across all three allocators for ACC-A only (representative row).
+(define (sum-alist-key lst key)
+  (let loop ((xs lst) (acc 0))
+    (cond
+      ((null? xs) acc)
+      (else
+       (let ((cell (assq key (car xs))))
+         (loop (cdr xs)
+               (+ acc (if cell (cdr cell) 0))))))))
+
+(define alloc-row-sum
+  (+ (sum-alist-key fifo-allocs 'ACC-A)
+     (sum-alist-key pr-allocs   'ACC-A)
+     (sum-alist-key fq-allocs   'ACC-A)))
+
+(define alloc-checksum
+  (if (= alloc-row-sum total-filled) "OK" "FAIL"))
+
+; --- 12. Numeric formatting helpers ---------------------------------------
+(define (fmt-num n)
+  (let* ((s (number->string n))
+         (dot (string-contains s ".")))
+    (if dot
+        s
+        (string-append s ".00"))))
+
+(define (fmt-2dp n)
+  (let ((r (api-round2 n)))
+    (number->string r)))
+
+; --- 13. Print stdout contract (16 lines, exact order) --------------------
+(display (string-append "PARENT_ID="      (cdr (assq 'id parent))))         (newline)
+(display (string-append "PARENT_SIDE="    (symbol->string (cdr (assq 'side parent))))) (newline)
+(display (string-append "PARENT_QTY="     (number->string (cdr (assq 'qty parent)))))   (newline)
+(display (string-append "CHILDREN_TOTAL=" (number->string (length all-children))))       (newline)
+(display (string-append "FILLS_TOTAL="    (number->string total-filled)))                (newline)
+(display (string-append "FILL_COUNT="     (number->string fill-count)))                  (newline)
+(display (string-append "VWAP_EXEC="      (fmt-2dp vwap-exec)))                          (newline)
+(display (string-append "COMPLETION_PCT=" (fmt-2dp completion-pct)))                     (newline)
+(display (string-append "RISK_BREACHED="  (if risk-breached "1" "0")))                   (newline)
+(display (string-append "TRADING_DAY="    (if trading-day "1" "0")))                     (newline)
+(display (string-append "SLOT_COUNT="     (number->string slot-count)))                  (newline)
+(display (string-append "VENUE_COUNT="    (number->string (length venues))))              (newline)
+(display (string-append "AVG_FEE_BPS="    (fmt-2dp avg-fee)))                            (newline)
+(display (string-append "BID_PX="         (fmt-2dp bid-px)))                             (newline)
+(display (string-append "ALLOC_TOTAL_FILLED=" (number->string total-filled)))            (newline)
+(display (string-append "ALLOC_CHECKSUM=" alloc-checksum))                               (newline)

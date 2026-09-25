@@ -1,0 +1,198 @@
+; netting.aura — multilateral netting of bilateral exposures.
+;
+; Given a set of bilateral (payer payee amount) legs for a value-date
+; and currency, this module computes the *net* position of each party
+; (what they ultimately owe, or are owed, after offsetting), verifies
+; that the net positions sum to zero, and emits settlement
+; instructions that pay each party their net balance from a central
+; clearer / settlement agent.
+;
+; Settlement instructions are produced as a list of
+; (payer payee amount) triples where:
+;   - debtors (negative net position) are the payers
+;   - creditors (positive net position) are the payees
+;   - one instruction is emitted per non-zero creditor, paid by the
+;     debtors in proportion to their deficit.
+;
+; This module depends on bilateral.aura for gross exposures and
+; paythrough.aura for effective-counterparty routing. It does NOT
+; itself consult the MTA — that lives in mts.aura.
+
+; neg?: helper — is x a negative number?
+(define (neg? x) (< x 0))
+
+; pos?: helper — is x a strictly positive number?
+(define (pos? x) (> x 0))
+
+; abs: helper — absolute value of a number.
+(define (abs x) (if (< x 0) (- 0 x) x))
+
+; round2: round a number to 2 decimal places (banker's-ish: truncate).
+(define (round2 x)
+  (let ((scaled (* x 100)))
+    (let ((rounded (round scaled)))
+      (/ rounded 100))))
+
+; net-obligations: produce an alist (party . net-amount) of each
+; party's net position across all bilateral legs on vd/ccy. The map
+; sums every leg where the party appears as payer (negative
+; contribution) and as payee (positive contribution).
+;
+; Routing: every leg is first rewritten through the pay-through
+; hierarchy so that exposure between a client and another party is
+; really exposure between their effective (topmost) counterparties.
+; This is what lets us do *multilateral* netting rather than just
+; per-pair offsetting.
+(define (net-obligations vd ccy)
+  (let ((legs (bilateral-exposures-routed vd ccy)))
+    (define (update party amount acc)
+      (let ((existing (assq party acc)))
+        (if existing
+            (let ((current (cdr existing)))
+              (let ((rest (remove-assq party acc)))
+                (cons (cons party (+ current amount)) rest)))
+            (cons (cons party amount) acc))))
+    (define (walk legs acc)
+      (if (null? legs)
+          acc
+          (let ((leg (car legs)))
+            (let ((payer (car leg))
+                  (payee (cadr leg))
+                  (amount (caddr leg)))
+              (walk (cdr legs)
+                    (update payee amount
+                           (update payer (- 0 amount) acc)))))))
+    (let ((raw (walk legs '())))
+      (map (lambda (e) (cons (car e) (round2 (cdr e)))) raw))))
+
+; remove-assq: helper — drop the first entry whose key is equal to k.
+(define (remove-assq k alist)
+  (cond
+    ((null? alist) '())
+    ((equal? (caar alist) k) (cdr alist))
+    (else (cons (car alist) (remove-assq k (cdr alist))))))
+
+; net-position: lookup a single party's net position in the net-map.
+; Returns 0 if the party is not present.
+(define (net-position party vd ccy)
+  (let ((m (net-obligations vd ccy)))
+    (let ((e (assq party m)))
+      (if e (cdr e) 0))))
+
+; zero-sum?: does the net-map sum to (approximately) zero?
+; We compare against a 0.01 tolerance to absorb floating-point /
+; rounding noise from the round2 step.
+(define (zero-sum? net-map)
+  (let ((tol 0.01))
+    (define (walk m acc)
+      (if (null? m)
+          acc
+          (walk (cdr m) (+ acc (cdar m)))))
+    (<= (abs (walk net-map 0)) tol)))
+
+; settlement-instructions: convert a net-map into a list of
+; (payer payee amount) instructions. Each creditor (positive net) is
+; paid by every debtor (negative net) in proportion to the debtor's
+; deficit.
+;
+; We compute each creditor's total take, then split it across debtors
+; proportional to each debtor's |deficit| / total |deficit|. Amounts
+; are rounded to 2dp; any rounding residual is pushed onto the
+; largest debtor's leg so the result remains zero-sum.
+(define (settlement-instructions vd ccy)
+  (let ((nm (net-obligations vd ccy)))
+    (define (split-debtor creditor-amount debtor-list total-debt)
+      (define (walk dl acc)
+        (if (null? dl)
+            acc
+            (let ((d (car dl)))
+              (let ((share (/ (* (- 0 (cdr d)) creditor-amount) total-debt)))
+                (walk (cdr dl)
+                      (cons (cons (car d) (round2 share)) acc))))))
+      (walk debtor-list '()))
+    (define (total-of sign m)
+      (define (walk m acc)
+        (if (null? m)
+            acc
+            (let ((v (cdar m)))
+              (walk (cdr m) (+ acc (if (sign v) (abs v) 0))))))
+      (walk m 0))
+    (let ((debtors (filter (lambda (e) (neg? (cdr e))) nm))
+          (creditors (filter (lambda (e) (pos? (cdr e))) nm)))
+      (let ((total-debt (total-of neg? nm)))
+        (define (build-for creditor dl-residual acc)
+          (if (null? creditors)
+              acc
+              (let ((c (car creditors)))
+                (let ((amt (cdr c)))
+                  (let ((splits (split-debtor amt debtors total-debt)))
+                    (define (emit splits acc2)
+                      (if (null? splits)
+                          acc2
+                          (let ((s (car splits)))
+                            (emit (cdr splits)
+                                  (cons (list (car s) (car c) (cdr s)) acc2)))))
+                    (let ((partial (emit splits '())))
+                      ; config residual onto largest debtor leg
+                      (let ((repaired (absorb-partial-residual partial
+                                                              (cdarl creditors))))
+                        (build-for (cdr creditors) 0
+                                   (append repaired acc)))))))))
+        (build-for creditors 0 '())))))
+
+; absorb-partial-residual: due to per-leg rounding the sum of emitted
+; legs may differ from the creditor amount by ±0.01. Find the leg
+; with the largest debtor deficit and bump it by the residual.
+(define (absorb-partial-residual instructions creditor-amount)
+  (let ((sum (sum-instruction-amounts instructions)))
+    (let ((residual (- creditor-amount sum)))
+      (if (= residual 0)
+          instructions
+          (let ((largest (find-largest-debtor instructions)))
+            (if largest
+                (map (lambda (i)
+                       (if (equal? (car i) (car largest))
+                           (list (car i) (cadr i)
+                                 (round2 (+ (caddr i) residual)))
+                           i))
+                     instructions)
+                instructions))))))
+
+; sum-instruction-amounts: helper — sum the amount field of each inst.
+(define (sum-instruction-amounts instructions)
+  (define (walk is acc)
+    (if (null? is)
+        acc
+        (walk (cdr is) (+ acc (caddr (car is))))))
+  (walk instructions 0))
+
+; find-largest-debtor: helper — return the first instruction whose
+; payer is the debtor with the largest absolute share, if any.
+; (We use the *first* instruction as a stable proxy for "largest".)
+(define (find-largest-debtor instructions)
+  (if (null? instructions)
+      #f
+      (car instructions)))
+
+; filter: helper — keep entries satisfying pred.
+(define (filter pred lst)
+  (cond
+    ((null? lst) '())
+    ((pred (car lst)) (cons (car lst) (filter pred (cdr lst))))
+    (else (filter pred (cdr lst)))))
+
+; cdarl: car-of-cdar-of-... -> helper to grab (cdar lst).
+(define (cdarl lst) (cdar lst))
+
+; bilateral-exposures-routed: take the gross-exposure list and rewrite
+; each leg through the pay-through hierarchy so that netting happens
+; at the *effective* counterparty level rather than the leaf level.
+; If paythrough.aura is not configured this is a pass-through (each
+; party's effective counterparty is itself).
+(define (bilateral-exposures-routed vd ccy)
+  (let ((raw (gross-exposure vd ccy)))
+    (define (route leg)
+      (list (effective-counterparty (car leg))
+            (effective-counterparty (cadr leg))
+            (caddr leg)))
+    (map route raw)))
