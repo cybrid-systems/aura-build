@@ -75,31 +75,47 @@
             (unbound-name (let ((err (read-file (string-append out ".err"))))
                             (if (string? err) err "")))))))
 
-(define (prelude-text name arity which)
-  (string-append
-    "(define (" name
-    (if (= arity 1) " x" (if (= arity 2) " x y" " x y z"))
-    ") "
-    (if (= which 0) "0" (if (= which 1) "x" "y"))
-    ")\n"))
+(define (find-define src name)
+  (let ((a (find-at src (string-append "(define (" name) 0)))
+    (if (>= a 0)
+        a
+        (find-at src (string-append "(define " name " ") 0))))
 
-(define (try-def slug solution tests name arity which base)
-  (let ((pre "scratch/leetcode_rl/try.aura"))
-    (write-file pre (prelude-text name arity which))
-    (let* ((got (run-with pre solution tests))
-           (hits (car got))
-           (reward (- hits base)))
-      (if (> reward 0)
-          (cons reward (prelude-text name arity which))
-          (cons reward "")))))
+(define (match-paren src i depth)
+  (if (>= i (string-length src))
+      -1
+      (let ((c (string-ref src i)))
+        (if (= c 40)
+            (match-paren src (+ i 1) (+ depth 1))
+            (if (= c 41)
+                (if (= depth 1) i (match-paren src (+ i 1) (- depth 1)))
+                (match-paren src (+ i 1) depth))))))
 
-(define (best-def slug solution tests name base)
-  (let* ((a (try-def slug solution tests name 1 0 base))
-         (b (try-def slug solution tests name 1 1 base))
-         (c (try-def slug solution tests name 2 1 base))
-         (d (try-def slug solution tests name 2 2 base))
-         (pick (lambda (p q) (if (> (car p) (car q)) p q))))
-    (pick a (pick b (pick c d)))))
+(define (hoist-source src name)
+  (let ((at (find-define src name)))
+    (if (< at 0)
+        ""
+        (let ((end (match-paren src at 0)))
+          (if (< end 0)
+              ""
+              (string-append
+                (substring src at (+ end 1))
+                "\n"
+                (substring src 0 at)
+                (substring src (+ end 1) (string-length src))))))))
+
+(define (try-hoist solution tests name base)
+  (let ((hoisted (hoist-source (read-file solution) name)))
+    (if (equal? hoisted "")
+        (cons 0 "")
+        (begin
+          (write-file "scratch/leetcode_rl/hoist.aura" hoisted)
+          (let* ((got (run-with "scratch/leetcode_rl/empty.aura"
+                                "scratch/leetcode_rl/hoist.aura" tests))
+                 (reward (- (car got) base)))
+            (if (> reward 0)
+                (cons reward hoisted)
+                (cons reward "")))))))
 
 (define (learn-slug slug)
   (let* ((dir (string-append "corpus/leetcode/" slug))
@@ -114,14 +130,11 @@
          (name (cdr base-run)))
     (if (or (equal? name "") (skip-name? name) (>= base (length tests)))
         (cons 0 "")
-        (let ((found (best-def slug sol tests name base)))
+        (let ((found (try-hoist sol tests name base)))
           (if (> (car found) 0)
               (begin
-                (shell (string-append "cat scratch/leetcode_rl/try.aura >> " learned))
                 (write-file (string-append dir "/solution_rl.aura")
-                            (string-append "(require \"compat\" all:)\n"
-                                           (cdr found)
-                                           (read-file sol)))
+                            (string-append "(require \"compat\" all:)\n" (cdr found)))
                 found)
               (cons (car found) ""))))))
 
