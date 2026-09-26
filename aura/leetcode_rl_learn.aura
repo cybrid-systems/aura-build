@@ -1,0 +1,163 @@
+; Actions come from stderr, not from a fixed menu.
+; unbound variable: NAME -> try a few definitions of NAME.
+; Keep the definition only when CASE matches rise. Otherwise discard it.
+(require "std/string" all:)
+(require "std/process" all:)
+(require "std/io" all:)
+
+(define aura-bin "/home/dev/code/grok-dev/aura-grok/build_soft4079/aura")
+(define root "/home/dev/code/grok-dev/aura-build")
+(define learned "scratch/leetcode_rl/learned.aura")
+
+(define (as-str x)
+  (if (string? x) x (number->string x)))
+
+(define (starts-with? s pre)
+  (let ((n (string-length pre)) (m (string-length s)))
+    (and (>= m n) (equal? (substring s 0 n) pre))))
+
+(define (find-at s key i)
+  (let ((n (string-length key)) (m (string-length s)))
+    (if (> (+ i n) m)
+        -1
+        (if (equal? (substring s i (+ i n)) key)
+            i
+            (find-at s key (+ i 1))))))
+
+(define (skip-name? name)
+  (or (< (string-length name) 2)
+      (equal? name "else")
+      (equal? name "loop")
+      (equal? name "solve")
+      (equal? name "let")))
+
+(define (unbound-name text)
+  (let ((at (find-at text "unbound variable: " 0)))
+    (if (< at 0)
+        ""
+        (let* ((start (+ at (string-length "unbound variable: ")))
+               (rest (substring text start (string-length text)))
+               (cut (let loop ((i 0))
+                      (if (or (>= i (string-length rest))
+                              (<= (string-ref rest i) 32))
+                          i
+                          (loop (+ i 1))))))
+          (substring rest 0 cut)))))
+
+(define (case-value lines i)
+  (let ((key (string-append "CASE" (number->string i) "=")))
+    (let loop ((xs lines))
+      (if (null? xs)
+          #f
+          (if (starts-with? (car xs) key)
+              (substring (car xs) (string-length key) (string-length (car xs)))
+              (loop (cdr xs)))))))
+
+(define (count-hits lines tests)
+  (if (null? tests)
+      0
+      (let* ((t (car tests))
+             (got (case-value lines (hash-ref t "id")))
+             (exp (as-str (hash-ref t "expected"))))
+        (+ (if (and got (equal? got exp)) 1 0)
+           (count-hits lines (cdr tests))))))
+
+(define (run-with prelude solution tests)
+  (let ((out "scratch/leetcode_rl/learn.out"))
+    (shell (string-append
+             "cd " root " && AURA_SANDBOX=off AURA_PIPELINE_STRICT=0 "
+             "AURA_PATH='" root "/../aura-grok/lib:" root "/aura' "
+             "timeout 2 " aura-bin " "
+             prelude " " root "/aura/compat.aura " solution
+             " > " out " 2>" out ".err"))
+    (let ((text (read-file out)))
+      (cons (count-hits (string-split (if (string? text) text "") "\n") tests)
+            (unbound-name (let ((err (read-file (string-append out ".err"))))
+                            (if (string? err) err "")))))))
+
+(define (prelude-text name arity which)
+  (string-append
+    "(define (" name
+    (if (= arity 1) " x" (if (= arity 2) " x y" " x y z"))
+    ") "
+    (if (= which 0) "0" (if (= which 1) "x" "y"))
+    ")\n"))
+
+(define (try-def slug solution tests name arity which base)
+  (let ((pre "scratch/leetcode_rl/try.aura"))
+    (write-file pre (prelude-text name arity which))
+    (let* ((got (run-with pre solution tests))
+           (hits (car got))
+           (reward (- hits base)))
+      (if (> reward 0)
+          (cons reward (prelude-text name arity which))
+          (cons reward "")))))
+
+(define (best-def slug solution tests name base)
+  (let* ((a (try-def slug solution tests name 1 0 base))
+         (b (try-def slug solution tests name 1 1 base))
+         (c (try-def slug solution tests name 2 1 base))
+         (d (try-def slug solution tests name 2 2 base))
+         (pick (lambda (p q) (if (> (car p) (car q)) p q))))
+    (pick a (pick b (pick c d)))))
+
+(define (learn-slug slug)
+  (let* ((dir (string-append "corpus/leetcode/" slug))
+         (sol (if (file-exists? (string-append dir "/solution_rl.aura"))
+                  (string-append dir "/solution_rl.aura")
+                  (if (file-exists? (string-append dir "/solution.aura"))
+                      (string-append dir "/solution.aura")
+                      (string-append dir "/solution_2.aura"))))
+         (tests (json-parse (read-file (string-append dir "/tests.json"))))
+         (base-run (run-with "scratch/leetcode_rl/empty.aura" sol tests))
+         (base (car base-run))
+         (name (cdr base-run)))
+    (if (or (equal? name "") (skip-name? name) (>= base (length tests)))
+        (cons 0 "")
+        (let ((found (best-def slug sol tests name base)))
+          (if (> (car found) 0)
+              (begin
+                (shell (string-append "cat scratch/leetcode_rl/try.aura >> " learned))
+                (write-file (string-append dir "/solution_rl.aura")
+                            (string-append "(require \"compat\" all:)\n"
+                                           (cdr found)
+                                           (read-file sol)))
+                found)
+              (cons (car found) ""))))))
+
+(define (learn-lines lines left gained kept rejected)
+  (if (or (null? lines) (= left 0))
+      (cons gained (cons kept rejected))
+      (let ((slug (car lines)))
+        (if (equal? slug "")
+            (learn-lines (cdr lines) left gained kept rejected)
+            (let ((r (learn-slug slug)))
+              (shell (string-append "printf '%s learn=%s\\n' " slug " " (number->string (car r))
+                                    " >> scratch/leetcode_rl/learn.log"))
+              (if (> (car r) 0)
+                  (learn-lines (cdr lines) (- left 1) (+ gained (car r)) (+ kept 1) rejected)
+                  (if (< (car r) 0)
+                      (learn-lines (cdr lines) (- left 1) gained kept (+ rejected 1))
+                      (learn-lines (cdr lines) (- left 1) gained kept rejected))))))))
+
+(define (zero-slugs)
+  (let ((raw (if (file-exists? "scratch/leetcode_rl/learn_queue.txt")
+                 (read-file "scratch/leetcode_rl/learn_queue.txt")
+                 "")))
+    (string-split raw "\n")))
+
+(let* ((mk (shell (string-append "mkdir -p " root "/scratch/leetcode_rl")))
+       (_e (if (file-exists? learned) #f (write-file learned ";; learned definitions\n")))
+       (_z (write-file "scratch/leetcode_rl/empty.aura" ";; no prelude\n"))
+       (left (if (file-exists? "scratch/leetcode_rl/learn_limit")
+                 (string->number (string-trim (read-file "scratch/leetcode_rl/learn_limit")))
+                 8))
+       (result (learn-lines (zero-slugs) left 0 0 0)))
+  (display "LEARN_OK gained=")
+  (display (car result))
+  (display " kept=")
+  (display (car (cdr result)))
+  (display " rejected=")
+  (display (cdr (cdr result)))
+  (newline)
+  mk)
