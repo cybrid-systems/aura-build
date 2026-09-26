@@ -42,8 +42,11 @@ def validate_episode(episode: dict[str, Any]) -> dict[str, Any]:
     runtime = episode["runtime"]
     if not isinstance(runtime, dict) or "mode" not in runtime:
         raise SchemaError("runtime.mode is required")
-    if runtime["mode"] not in ("simulated", "aura"):
-        raise SchemaError(f"runtime.mode must be simulated|aura, got {runtime['mode']!r}")
+    if runtime["mode"] not in ("simulated", "aura", "host_pytest"):
+        raise SchemaError(
+            "runtime.mode must be simulated|aura|host_pytest, "
+            f"got {runtime['mode']!r}"
+        )
     harness = episode["harness"]
     if not isinstance(harness, dict) or "l3_online" not in harness:
         raise SchemaError("harness.l3_online is required")

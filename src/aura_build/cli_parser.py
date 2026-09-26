@@ -424,6 +424,30 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _common(combat, aura=True, harness=True)
 
+    product = se_sub.add_parser(
+        "product",
+        help=(
+            "propose a unified diff for one aura-build file; human reads it, "
+            "then --apply-diff runs pytest and may commit with no push"
+        ),
+    )
+    _opt(product, "--session", required=True, help="dir under scratch/self_evolve_product/")
+    mx = product.add_mutually_exclusive_group(required=True)
+    _opt(mx, "--goal", default=None, help="propose goal; forbidden with --apply-diff")
+    _opt(mx, "--apply-diff", type=Path, default=None, help="apply <session>/round-N.diff")
+    _opt(product, "--allow", required=True, help="one existing src/aura_build/*.py")
+    _opt(
+        product,
+        "--pytest",
+        action="append",
+        required=True,
+        help="repeatable tests/test_*.py (no shell)",
+    )
+    _opt(product, "--max-rounds", type=int, default=3)
+    _opt(product, "--aura-bin", default=None, help="propose only; Soft binary for in-fiber http-post")
+    _opt(product, "--env-file", type=Path, default=None, help="propose only; MiniMax env file")
+    _common(product, aura=False, harness=False)
+
     pursue = sub.add_parser(
         "pursue",
         help=(

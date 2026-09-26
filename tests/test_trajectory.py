@@ -40,6 +40,18 @@ def test_validate_ok():
     validate_episode(_minimal_episode())
 
 
+def test_validate_host_pytest():
+    ep = _minimal_episode()
+    ep["runtime"] = {
+        "mode": "host_pytest",
+        "kernel": "host",
+        "fiber_live": False,
+        "incr_proven": False,
+        "llm_via": "host",
+    }
+    validate_episode(ep)
+
+
 def test_validate_rejects_bad_version():
     with pytest.raises(SchemaError, match="schema_version"):
         validate_episode(_minimal_episode(schema_version="nope"))
