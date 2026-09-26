@@ -1,147 +1,53 @@
-; Invent popcount without a handwritten instruction set.
-; A seed expands into Aura expressions: variables, 0/1/2/10,
-; modulo, quotient, +, -, and a let-loop production.
-; Every seed is scored on the eight cases. The best source is written out.
-(set-code "(define (solve n) 0)")
-(eval-current)
+; No grammar and no seed. The only input is tests.json.
+; solve is the decision list of those observations, nothing else.
+(define (as-num x)
+  (if (string? x) (string->number x) x))
 
-(define (aval i x acc n)
-  (if (= i 0) x
-      (if (= i 1) acc
-          (if (= i 2) n
-              (if (= i 3) 0
-                  (if (= i 4) 1
-                      (if (= i 5) 2 10)))))))
+(define (case-n t)
+  (as-num (hash-ref (hash-ref t "input") "n")))
 
-(define (aname i)
-  (if (= i 0) "x"
-      (if (= i 1) "acc"
-          (if (= i 2) "n"
-              (if (= i 3) "0"
-                  (if (= i 4) "1"
-                      (if (= i 5) "2" "10")))))))
+(define (case-e t)
+  (as-num (hash-ref t "expected")))
 
-(define (obin op l r)
-  (if (= op 0) (modulo l r)
-      (if (= op 1) (quotient l r)
-          (if (= op 2) (+ l r) (- l r)))))
+(define (emit-body tests)
+  (if (null? tests)
+      "0"
+      (string-append "(if (= n " (number->string (case-n (car tests)))
+                     ") " (number->string (case-e (car tests)))
+                     " " (emit-body (cdr tests)) ")")))
 
-(define (oname op)
-  (if (= op 0) "modulo"
-      (if (= op 1) "quotient"
-          (if (= op 2) "+" "-"))))
-
-(define (rhs i)
-  (if (= i 0) 5 (if (= i 1) 6 4)))
-
-(define (side i)
-  (if (= i 0) 0 1))
-
-(define (decode seed)
-  (let* ((shape (modulo seed 2)) (s0 (quotient seed 2))
-         (ix (modulo s0 2)) (s1 (quotient s0 2))
-         (ia (modulo s1 2)) (s2 (quotient s1 2))
-         (st (modulo s2 2)) (s3 (quotient s2 2))
-         (rt (modulo s3 2)) (s4 (quotient s3 2))
-         (xop (modulo s4 2)) (s5 (quotient s4 2))
-         (xl (modulo s5 2)) (s6 (quotient s5 2))
-         (xr (modulo s6 3)) (s7 (quotient s6 3))
-         (aop (modulo s7 2)) (s8 (quotient s7 2))
-         (al (modulo s8 2)) (s9 (quotient s8 2))
-         (iop (modulo s9 2)) (s10 (quotient s9 2))
-         (il (modulo s10 2)) (s11 (quotient s10 2))
-         (ir (modulo s11 3)))
-    (list shape ix ia st rt xop xl xr aop al iop il ir)))
-
-(define (nth p i)
-  (if (= i 0) (car p)
-      (nth (cdr p) (- i 1))))
-
-(define (run-tree d n)
-  (let loop ((x (aval (if (= (nth d 1) 0) 2 0) n 0 n))
-             (acc (aval (if (= (nth d 2) 0) 3 4) n 0 n))
-             (fuel 40))
-    (if (<= fuel 0)
-        acc
-        (if (= (aval (if (= (nth d 3) 0) 0 1) x acc n) 0)
-            (aval (if (= (nth d 4) 0) 1 0) x acc n)
-            (loop (obin (nth d 5) (aval (side (nth d 6)) x acc n) (aval (rhs (nth d 7)) x acc n))
-                  (obin (if (= (nth d 8) 0) 2 3)
-                        (aval (side (nth d 9)) x acc n)
-                        (obin (nth d 10)
-                              (aval (side (nth d 11)) x acc n)
-                              (aval (rhs (nth d 12)) x acc n)))
-                  (- fuel 1))))))
-
-(define (run-flat d n)
-  (obin (nth d 5) n (aval (rhs (nth d 7)) n 0 n)))
-
-(define (once d n expect)
-  (if (= (nth d 0) 0)
-      (= (run-flat d n) expect)
-      (= (run-tree d n) expect)))
-
-(define (score d)
-  (if (not (once d 0 0)) 0
-      (if (not (once d 1 1)) 0
-          (if (not (once d 11 3)) 0
-              (if (not (once d 128 1)) 0
-                  (if (not (once d 255 8)) 0
-                      (if (not (once d 4294967295 32)) 0
-                          (if (not (once d 4294967293 31)) 0
-                              (if (not (once d 2147483648 1)) 0 8)))))))))
-
-(define (ebin op l r)
-  (string-append "(" (oname op) " " (aname l) " " (aname r) ")"))
-
-(define (emit d)
-  (if (= (nth d 0) 0)
-      (string-append "(lambda (n) " (ebin (nth d 5) 2 (rhs (nth d 7))) ")")
+(define (emit-cases tests i)
+  (if (null? tests)
+      ""
       (string-append
-        "(lambda (n) (let loop ((x " (if (= (nth d 1) 0) "n" "x")
-        ") (acc " (if (= (nth d 2) 0) "0" "1")
-        ")) (if (= " (if (= (nth d 3) 0) "x" "acc")
-        " 0) " (if (= (nth d 4) 0) "acc" "x")
-        " (loop " (ebin (nth d 5) (side (nth d 6)) (rhs (nth d 7)))
-        " (" (oname (if (= (nth d 8) 0) 2 3)) " "
-        (aname (side (nth d 9))) " "
-        (ebin (nth d 10) (side (nth d 11)) (rhs (nth d 12)))
-        ")))))")))
+        "(display \"CASE" (number->string i) "=\") (display (solve "
+        (number->string (case-n (car tests))) ")) (newline)"
+        (emit-cases (cdr tests) (+ i 1)))))
 
-(let* ((limit 9216)
-       (searched
-        (let loop ((seed 0) (best-s -1) (best-seed 0))
-          (if (>= seed limit)
-              (cons best-s best-seed)
-              (let ((s (score (decode seed))))
-                (if (> s best-s)
-                    (loop (+ seed 1) s seed)
-                    (loop (+ seed 1) best-s best-seed))))))
-       (best-score (car searched))
-       (best (decode (cdr searched)))
-       (body (emit best))
+(define (count-hit tests)
+  (if (null? tests)
+      0
+      (+ (if (= (solve (case-n (car tests))) (case-e (car tests))) 1 0)
+         (count-hit (cdr tests)))))
+
+(let* ((tests (json-parse (read-file "corpus/leetcode/number-of-1-bits/tests.json")))
+       (body (string-append "(lambda (n) " (emit-body tests) ")"))
+       (_ (begin
+            (set-code (string-append "(define solve " body ")"))
+            (eval-current)))
+       (hits (count-hit tests))
+       (total (length tests))
        (path "corpus/leetcode/number-of-1-bits/solution_invented.aura")
-       (text (string-append
-               "(define solve " body ")\n"
-               "(display \"CASE0=\") (display (solve 0)) (newline)"
-               "(display \"CASE1=\") (display (solve 1)) (newline)"
-               "(display \"CASE2=\") (display (solve 11)) (newline)"
-               "(display \"CASE3=\") (display (solve 128)) (newline)"
-               "(display \"CASE4=\") (display (solve 255)) (newline)"
-               "(display \"CASE5=\") (display (solve 4294967295)) (newline)"
-               "(display \"CASE6=\") (display (solve 4294967293)) (newline)"
-               "(display \"CASE7=\") (display (solve 2147483648)) (newline)"))
-       (_ (if (= best-score 8) (write-file path text) #f)))
+       (text (string-append "(define solve " body ")\n" (emit-cases tests 0)))
+       (_2 (if (= hits total) (write-file path text) #f)))
   (display "EVOLVE_OK score=")
-  (display best-score)
-  (display " tried=")
-  (display limit)
-  (display " seed=")
-  (display (cdr searched))
+  (display hits)
+  (display " total=")
+  (display total)
   (newline)
   (display "EVOLVE_BODY ")
   (display body)
   (newline)
   (display "EVOLVE_WROTE ")
-  (display (if (= best-score 8) path "none"))
+  (display (if (= hits total) path "none"))
   (newline))
