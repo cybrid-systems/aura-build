@@ -63,6 +63,8 @@ Every `aura-build run` appends one **episode** (JSON object) per line to a JSONL
 
 **Honesty:** `runtime.mode` is the backend that actually ran. `requested_mode` may be `auto`; never claim `aura` when the episode used `SimulatedBackend`. M1 `AuraBackend` is a subprocess bridge (mutate:rebind + eval-current), not fiber-live multi-worldline.
 
+`runtime.mode=host_pytest` means the oracle was host pytest, not an Aura kernel eval. Those episodes set `runtime.kernel=host`. They are not `simulated` or `aura`, and they must not be mixed into `scripts/smoke.sh` fixtures that require `kernel==aura`.
+
 ### M2 extensions (optional keys)
 
 | Field | Meaning |

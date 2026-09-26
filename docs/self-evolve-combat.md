@@ -10,6 +10,8 @@
 > fiber-live combat. Do not pretend stamp path stamps `fiber_live` / `fiber_graph`
 > from env.
 
+`aura-build self-evolve product` is not this loop. It proposes one host diff and, after a human `--apply-diff`, scores it with pytest. Combat still does not materialize `src/aura_build`.
+
 **Tips this inventory assumes (honest):**
 
 | Layer | Tip |
