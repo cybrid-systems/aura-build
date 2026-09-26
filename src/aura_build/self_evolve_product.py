@@ -530,8 +530,6 @@ def _preflight(repo: Path) -> dict[str, Any]:
     name = (branch.stdout or "").strip()
     if not name:
         return _refuse("detached_head")
-    if name in ("main", "master"):
-        return _refuse("branch_refused")
     sha = _git(repo, ["git", "rev-parse", "HEAD"])
     if sha.returncode != 0 or not (sha.stdout or "").strip():
         return _refuse("detached_head")

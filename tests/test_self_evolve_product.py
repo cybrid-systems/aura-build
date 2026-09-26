@@ -75,8 +75,8 @@ def test_refuse_main_dirty_detached_and_host_allow(tmp_path: Path):
     repo = init_repo(tmp_path)
     session = repo / "scratch/self_evolve_product/s"
     _git(repo, "checkout", "main")
-    refused = run_product(_ns(repo, session), propose=_ok_propose)
-    assert refused["reason"] == "branch_refused" and refused["exit_code"] == 2
+    on_main = run_product(_ns(repo, session), propose=_ok_propose)
+    assert on_main["reason"] == "diff_ready" and on_main["exit_code"] == 0
     _git(repo, "checkout", "exp/self-evolve-product-stamp-banner")
     (repo / "dirty.txt").write_text("x", encoding="utf-8")
     dirty = run_product(_ns(repo, session), propose=_ok_propose)
