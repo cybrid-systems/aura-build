@@ -307,9 +307,9 @@ def build_parser() -> argparse.ArgumentParser:
     _opt(
         se,
         "--verify",
-        choices=("none", "smoke", "prove", "kernel"),
+        choices=("none", "smoke", "prove", "kernel", "stamp"),
         default="smoke",
-        help="host verify after Aura materialize (default smoke; stamp path)",
+        help="host verify after Aura materialize (default smoke; stamp checks the banner)",
     )
     _opt(se, "--no-push", action="store_true", help="commit only / dry-run push skip (stamp path)")
     _opt(se, "--no-commit", action="store_true", help="skip git commit (materialize+verify only)")

@@ -22,7 +22,7 @@ def run_host_verify(
     aura_bin: str | None = None,
     harness_root: Path | None = None,
 ) -> dict[str, Any]:
-    """Run host-side verify after Aura materialize. mode: none|smoke|prove|kernel."""
+    """Run host-side verify after Aura materialize. mode: none|smoke|prove|kernel|stamp."""
     mode = (mode or "smoke").strip().lower()
     if mode in ("none", "light", "skip"):
         return {"ok": True, "reason": "verify_skipped", "exit_code": 0, "mode": mode}
@@ -50,6 +50,18 @@ def run_host_verify(
             cmd.extend(["--harness-root", str(harness_root)])
         if aura_bin:
             cmd.extend(["--aura-bin", aura_bin])
+    elif mode == "stamp":
+        from aura_build.stamp_banner import stamp_banner_agrees
+
+        stamp = repo / "aura" / "self_evolve_stamp.aura"
+        if not stamp.is_file() or not stamp_banner_agrees(stamp.read_text(encoding="utf-8")):
+            return {
+                "ok": False,
+                "reason": "stamp_banner_mismatch",
+                "exit_code": 1,
+                "mode": "stamp",
+            }
+        return {"ok": True, "reason": "stamp_ok", "exit_code": 0, "mode": "stamp"}
     elif mode == "kernel":
         ab = repo / ".venv" / "bin" / "aura-build"
         exe = str(ab) if ab.is_file() else "aura-build"
