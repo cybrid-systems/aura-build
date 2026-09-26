@@ -1,0 +1,48 @@
+(require "lc_json" all:)
+(require "compat" all:)
+(define (solve asteroids)
+  (let loop ((xs asteroids) (stack '()))
+    (cond
+      ((null? xs) stack)
+      (else
+       (let ((a (car xs)) (rest (cdr xs)))
+         (let handle ((ast a) (stk stack))
+           (cond
+             ((null? stk)
+              (cons ast (loop rest (cons ast '()))))
+             ((or (> ast 0) (< (car stk) 0))
+              (cons ast (loop rest (cons ast stk))))
+             ((= (+ ast (car stk)) 0)
+              (loop rest (cdr stk)))
+             ((> (abs ast) (abs (car stk)))
+              (handle ast (cdr stk)))
+             ((< (abs ast) (abs (car stk)))
+              (loop rest stk))
+             (else (loop rest stk)))))))))
+(define (display-list xs)
+  (cond
+    ((null? xs) (display "[]"))
+    (else
+     (display "[")
+     (let loop ((l xs))
+       (display (car l))
+       (cond
+         ((null? (cdr l)) (display "]"))
+         (else
+          (display " ")
+          (loop (cdr l))))))))
+(define (run-case i asteroids)
+  (let ((result (solve asteroids)))
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display-list result)
+    (newline)))
+
+(require "lc_json" all:)
+(define (lc-emit t)
+  (let ((input (hash-ref t "input")))
+    (lc-show (hash-ref t "id") (solve (hash-ref input "asteroids")))))
+(define (lc-go ts)
+  (if (null? ts) 0 (begin (lc-emit (car ts)) (lc-go (cdr ts)))))
+(lc-go (json-parse (read-file "corpus/leetcode/asteroid-collision/tests.json")))

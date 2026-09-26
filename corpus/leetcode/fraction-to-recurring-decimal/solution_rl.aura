@@ -1,0 +1,100 @@
+(require "lc_json" all:)
+(require "compat" all:)
+(define (abs x) (if (< x 0) (- 0 x) x))
+(define (num->string n)
+  (if (= n 0) "0"
+    (let loop ((n n) (acc '()))
+      (if (= n 0)
+          (let ((build (lambda (l)
+            (if (null? (cdr l))
+                (car l)
+                (string-append (car l) (build (cdr l)))))))
+            (build acc))
+          (loop (quotient n 10)
+                (cons (number->string (- n (* (quotient n 10) 10))) acc))))))
+(define (string-list->str lst)
+  (if (null? lst) ""
+      (string-append (car lst) (string-list->str (cdr lst)))))
+(define (reverse-str s)
+  (let loop ((i 0) (acc '()))
+    (if (= i (string-length s))
+        (string-list->str acc)
+        (loop (+ i 1) (cons (substring s i (+ i 1)) acc)))))
+(define (int->string n)
+  (reverse-str (num->string n)))
+(define (fractionToDecimal n d)
+  (if (= n 0)
+      "0"
+      (let* ((neg (if (< (* n d) 0) #t #f))
+             (nn (abs n))
+             (dd (abs d))
+             (int-part (quotient nn dd))
+             (rem0 (modulo nn dd))
+             (sign-prefix (if neg "-" "")))
+        (if (= rem0 0)
+            (string-append sign-prefix (int->string int-part))
+            (let loop ((rem rem0)
+                       (pos 0)
+                       (digits '())
+                       (seen (cons '() '())))
+              (let* ((next (* rem 10))
+                     (digit (quotient next dd))
+                     (new-rem (modulo next dd))
+                     (new-seen (cons (cons rem (car seen)) seen)))
+                (if (assoc-member rem seen)
+                    (let ((cycle-start (get-pos rem seen)))
+                      (let* ((dlist (reverse digits))
+                             (before '())
+                             (cycle '()))
+                        (let fill ((i 0) (dl dlist) (b '()) (c '()))
+                          (cond
+                            ((null? dl)
+                             (let* ((before-str (string-list->str (reverse b)))
+                                    (cycle-str (string-list->str (reverse c)))
+                                    (result (string-append sign-prefix
+                                                       (int->string int-part)
+                                                       "."
+                                                       before-str
+                                                       "("
+                                                       cycle-str
+                                                       ")")))
+                               result))
+                            ((< i cycle-start)
+                             (fill (+ i 1) (cdr dl) (cons (car dl) b) c))
+                            (else
+                             (fill (+ i 1) (cdr dl) b (cons (car dl) c)))))))
+                    (if (= new-rem 0)
+                        (let* ((dlist (reverse (cons digit digits)))
+                               (frac-str (string-list->str dlist))
+                               (result (string-append sign-prefix
+                                                 (int->string int-part)
+                                                 "."
+                                                 frac-str)))
+                          result)
+                        (loop new-rem (+ pos 1) (cons digit digits) new-seen)))))))))
+(define (assoc-member key lst)
+  (if (null? lst) #f
+      (let ((p (car lst)))
+        (if (null? p) #f
+            (if (equal? (car p) key) #t
+                (assoc-member key (cdr lst)))))))
+(define (get-pos key lst)
+  (let loop ((l lst) (i 0))
+    (if (null? l) 0
+        (let ((p (car l)))
+          (if (null? p) 0
+              (if (equal? (car p) key) i
+                  (loop (cdr l) (+ i 1))))))))
+(define (solve numerator denominator)
+  (fractionToDecimal numerator denominator))
+(define (display-result r)
+  (display r)
+  (newline))
+
+(require "lc_json" all:)
+(define (lc-emit t)
+  (let ((input (hash-ref t "input")))
+    (lc-show (hash-ref t "id") (solve (hash-ref input "numerator") (hash-ref input "denominator")))))
+(define (lc-go ts)
+  (if (null? ts) 0 (begin (lc-emit (car ts)) (lc-go (cdr ts)))))
+(lc-go (json-parse (read-file "corpus/leetcode/fraction-to-recurring-decimal/tests.json")))

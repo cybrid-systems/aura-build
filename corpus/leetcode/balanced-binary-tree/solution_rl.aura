@@ -1,0 +1,29 @@
+(require "lc_json" all:)
+(require "compat" all:)
+(define (height-balanced? node)
+  (let ((result (check node)))
+    (if (eq? result -1) #f #t)))
+(define (check node)
+  (if (null? node)
+      0
+      (let ((lh (check (cdr (assq 'left node))))
+            (rh (check (cdr (assq 'right node)))))
+        (if (eq? lh -1) -1
+            (if (eq? rh -1) -1
+                (if (> (abs (- lh rh)) 1) -1
+                    (+ 1 (if (> lh rh) lh rh))))))))
+(define (abs x)
+  (if (< x 0) (- 0 x) x))
+(define (solve root)
+  (height-balanced? root))
+(define (display-bool b)
+  (if b (display "true") (display "false")))
+(define case0 '())
+
+(require "lc_json" all:)
+(define (lc-emit t)
+  (let ((input (hash-ref t "input")))
+    (lc-show (hash-ref t "id") (solve (hash-ref input "root")))))
+(define (lc-go ts)
+  (if (null? ts) 0 (begin (lc-emit (car ts)) (lc-go (cdr ts)))))
+(lc-go (json-parse (read-file "corpus/leetcode/balanced-binary-tree/tests.json")))

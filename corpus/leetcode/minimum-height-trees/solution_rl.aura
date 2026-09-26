@@ -1,0 +1,143 @@
+(require "lc_json" all:)
+(require "compat" all:)
+(define (display-list lst)
+  (display "[")
+  (let loop ((l lst) (first #t))
+    (cond
+      ((null? l) (display "]"))
+      (else
+        (if first
+            (set! first #f)
+            (display ","))
+        (display (car l))
+        (loop (cdr l) first)))))
+(define (solve n edges)
+  (cond
+    ((= n 1) (list 0))
+    (else
+      (let ((adj (make-vector n '())))
+        (define (add-edge! u v)
+          (vector-set! adj u (cons v (vector-ref adj u)))
+          (vector-set! adj v (cons u (vector-ref adj v))))
+        (let loop ((es edges))
+          (cond
+            ((null? es) #f)
+            (else
+              (let ((e (car es)))
+                (add-edge! (car e) (cadr e))
+                (loop (cdr es))))))
+        (let ((degree (make-vector n 0)))
+          (let loop-i ((i 0))
+            (cond
+              ((= i n) #f)
+              (else
+                (vector-set! degree i (length (vector-ref adj i)))
+                (loop-i (+ i 1))))))
+        (let ((queue (make-queue)))
+          (let loop-q ((i 0))
+            (cond
+              ((= i n) #f)
+              (else
+                (cond
+                  ((= (vector-ref degree i) 1)
+                   (queue-push! queue i))
+                  (else #f))
+                (loop-q (+ i 1))))))
+        (let ((remaining n))
+          (let trim-loop ()
+            (let ((size (queue-size queue)))
+              (cond
+                ((<= (- remaining size) 0)
+                 ;; done — collect remaining items in queue
+                 (let ((result '()))
+                   (let drain ()
+                     (cond
+                       ((queue-empty? queue) #f)
+                       (else
+                         (set! result (cons (queue-front queue) result))
+                         (queue-pop! queue)
+                         (drain))))
+                   result))
+                (else
+                  (let ((new-leaves '()))
+                    (let remove-i ((i 0))
+                      (cond
+                        ((= i size) #f)
+                        (else
+                          (let ((leaf (queue-front queue)))
+                            (queue-pop! queue)
+                            (set! remaining (- remaining 1))
+                            (let ((neighbors (vector-ref adj leaf)))
+                              (let nl ((ns neighbors))
+                                (cond
+                                  ((null? ns) #f)
+                                  (else
+                                    (let ((nb (car ns)))
+                                      (vector-set! degree nb (- (vector-ref degree nb) 1))
+                                      (cond
+                                        ((= (vector-ref degree nb) 1)
+                                         (set! new-leaves (cons nb new-leaves)))
+                                        (else #f)))
+                                    (nl (cdr ns)))))))
+                          (remove-i (+ i 1)))))
+                    (let nl2 ((nl new-leaves))
+                      (cond
+                        ((null? nl) #f)
+                        (else
+                          (queue-push! queue (car nl))
+                          (nl2 (cdr nl)))))
+                    (trim-loop)))))))))))
+(define (make-queue)
+  (cons '() '()))
+(define (queue-push! q x)
+  (let ((back (cdr q)))
+    (cond
+      ((null? back) (set-car! q (cons x (car q))))
+      (else
+        (set-cdr! back (cons x (cdr back)))))))
+(define (queue-front q)
+  (caar q))
+(define (queue-pop! q)
+  (let ((front (car q)))
+    (set-car! q (cdr front))))
+(define (queue-empty? q)
+  (null? (car q)))
+(define (queue-size q)
+  (length (car q)))
+(define (make-vector n fill)
+  (let loop ((i 0) (acc '()))
+    (cond
+      ((= i n) acc)
+      (else (loop (+ i 1) (cons fill acc))))))
+(define (vector-ref v i)
+  (let loop ((v v) (i i))
+    (cond
+      ((= i 0) (car v))
+      (else (loop (cdr v) (- i 1))))))
+(define (vector-set! v i val)
+  (let loop ((v v) (i i))
+    (cond
+      ((= i 0) (set-car! v val))
+      (else (loop (cdr v) (- i 1))))))
+(define (length lst)
+  (let loop ((l lst) (c 0))
+    (cond
+      ((null? l) c)
+      (else (loop (cdr l) (+ c 1))))))
+(define (run)
+  (display "CASE0=") (display-list (solve 1 '())) (newline)
+  (display "CASE1=") (display-list (solve 2 '((0 1)))) (newline)
+  (display "CASE2=") (display-list (solve 4 '((1 0) (1 2) (1 3)))) (newline)
+  (display "CASE3=") (display-list (solve 6 '((0 3) (1 3) (2 3) (4 3) (5 4)))) (newline)
+  (display "CASE4=") (display-list (solve 7 '((0 1) (1 2) (1 3) (2 4) (3 5) (4 6)))) (newline)
+  (display "CASE5=") (display-list (solve 5 '((0 1) (1 2) (2 3) (3 4)))) (newline)
+  (display "CASE6=") (display-list (solve 3 '((0 1) (1 2)))) (newline)
+  (display "CASE7=") (display-list (solve 8 '((0 1) (1 2) (2 3) (3 4) (4 5) (5 6) (6 7)))) (newline))
+
+(require "lc_json" all:)
+(define (lc-emit t)
+  (let ((input (hash-ref t "input")))
+    (lc-show (hash-ref t "id") (solve (hash-ref input "n") (hash-ref input "edges")))))
+(define (lc-go ts)
+  (if (null? ts) 0 (begin (lc-emit (car ts)) (lc-go (cdr ts)))))
+(lc-go (json-parse (read-file "corpus/leetcode/minimum-height-trees/tests.json")))

@@ -1,0 +1,37 @@
+(require "lc_json" all:)
+(require "compat" all:)
+(define (display-list xs)
+  (display "[")
+  (let loop ((xs xs) (first #t))
+    (cond
+      ((null? xs) (display "]"))
+      (else
+        (if first (set! first #f) (begin (display ", ") (display (car xs))))
+        (loop (cdr xs) first)))))
+(define (stock-span prices)
+  (let loop ((ps prices) (stack '()) (result '()))
+    (cond
+      ((null? ps) (reverse result))
+      (else
+        (let* ((price (car ps))
+               (span 1)
+               (popped
+                (let p-loop ((s stack) (acc 0))
+                  (cond
+                    ((null? s) acc)
+                    ((<= (car (car s)) price)
+                     (p-loop (cdr s) (+ acc (cdr (car s)))))
+                    (else acc)))))
+          (loop (cdr ps)
+                (cons (cons price (+ span popped)) stack)
+                (cons (+ span popped) result)))))))
+(define (solve prices)
+  (stock-span prices))
+
+(require "lc_json" all:)
+(define (lc-emit t)
+  (let ((input (hash-ref t "input")))
+    (lc-show (hash-ref t "id") (solve (hash-ref input "prices")))))
+(define (lc-go ts)
+  (if (null? ts) 0 (begin (lc-emit (car ts)) (lc-go (cdr ts)))))
+(lc-go (json-parse (read-file "corpus/leetcode/online-stock-span/tests.json")))

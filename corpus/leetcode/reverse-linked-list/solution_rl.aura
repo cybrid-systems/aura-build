@@ -1,0 +1,38 @@
+(require "lc_json" all:)
+(require "compat" all:)
+(define (reverse-list head)
+  ;; Reverse the list of node values in place conceptually
+  (let loop ((rest head) (acc '()))
+    (if (null? rest)
+        acc
+        (loop (cdr rest) (cons (car rest) acc)))))
+(define (solve head)
+  (reverse-list head))
+(define (display-list lst)
+  ;; Display list in readable form: a->b->c
+  (let loop ((l lst) (first #t))
+    (cond
+      ((null? l)
+       (display ""))
+      (first
+       (display (car l))
+       (loop (cdr l) #f))
+      (else
+       (display "->")
+       (display (car l))
+       (loop (cdr l) #f)))))
+(define (run-case i head)
+  (let ((result (solve head)))
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display-list result)
+    (newline)))
+
+(require "lc_json" all:)
+(define (lc-emit t)
+  (let ((input (hash-ref t "input")))
+    (lc-show (hash-ref t "id") (solve (hash-ref input "head")))))
+(define (lc-go ts)
+  (if (null? ts) 0 (begin (lc-emit (car ts)) (lc-go (cdr ts)))))
+(lc-go (json-parse (read-file "corpus/leetcode/reverse-linked-list/tests.json")))

@@ -1,0 +1,34 @@
+(require "lc_json" all:)
+(require "compat" all:)
+(define (display-list xs)
+  (cond
+    ((null? xs) (display ""))
+    (else
+      (display (car xs))
+      (display-list (cdr xs)))))
+(define (solve s)
+  (let loop ((chars (string->list s)) (stack '()))
+    (cond
+      ((null? chars)
+       (list->string (reverse stack)))
+      (else
+       (let ((c (car chars)))
+         (cond
+           ((and (not (null? stack)) (char=? (car stack) c))
+            (loop (cdr chars) (cdr stack)))
+           (else
+            (loop (cdr chars) (cons c stack)))))))))
+(define (run-case i s)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve s))
+  (newline))
+
+(require "lc_json" all:)
+(define (lc-emit t)
+  (let ((input (hash-ref t "input")))
+    (lc-show (hash-ref t "id") (solve (hash-ref input "s")))))
+(define (lc-go ts)
+  (if (null? ts) 0 (begin (lc-emit (car ts)) (lc-go (cdr ts)))))
+(lc-go (json-parse (read-file "corpus/leetcode/remove-all-adjacent-duplicates-in-string/tests.json")))

@@ -1,0 +1,35 @@
+(require "lc_json" all:)
+(require "compat" all:)
+(define (make-hash) (cons 'hash '()))
+(define (hash-get h key)
+  (let ((p (assq key (cdr h))))
+    (if p (cdr p) #f)))
+(define (hash-set! h key val)
+  (let ((p (assq key (cdr h))))
+    (if p
+        (set-cdr! p val)
+        (set-cdr! h (cons (cons key val) (cdr h))))))
+(define (contains-nearby-duplicate nums k)
+  (let ((seen (make-hash)))
+    (let loop ((i 0) (xs nums))
+      (cond
+        ((null? xs) #f)
+        (else
+         (let ((v (car xs)))
+           (let ((prev (hash-get seen v)))
+             (if (and prev (<= (- i prev) k))
+                 #t
+                 (begin
+                   (hash-set! seen v i)
+                   (loop (+ i 1) (cdr xs)))))))))))
+(define (solve nums k)
+  (contains-nearby-duplicate nums k))
+(define (bool->str b) (if b "True" "False"))
+
+(require "lc_json" all:)
+(define (lc-emit t)
+  (let ((input (hash-ref t "input")))
+    (lc-show (hash-ref t "id") (solve (hash-ref input "nums") (hash-ref input "k")))))
+(define (lc-go ts)
+  (if (null? ts) 0 (begin (lc-emit (car ts)) (lc-go (cdr ts)))))
+(lc-go (json-parse (read-file "corpus/leetcode/contains-duplicate-ii/tests.json")))

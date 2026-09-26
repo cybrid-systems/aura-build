@@ -1,17 +1,15 @@
+(require "lc_json" all:)
 (require "compat" all:)
 (define (caar p) (car (car p)))
 (define (cdar p) (cdr (car p)))
-
 (define (insert-sorted x lst)
   (cond ((null? lst) (list x))
         ((< x (car lst)) (cons x lst))
         (else (cons (car lst) (insert-sorted x (cdr lst))))))
-
 (define (remove-first x lst)
   (cond ((null? lst) lst)
         ((= x (car lst)) (cdr lst))
         (else (cons (car lst) (remove-first x (cdr lst))))))
-
 (define (advantage-shuffle A B)
   (let* ((n (length B))
          (sorted-a (sort-list A <))
@@ -35,31 +33,25 @@
                   (let ((waste (car avail)))
                     (loop (cdr avail) (cdr bs)
                           (list-set result idx waste))))))))))
-
 (define (find-beat avail target)
   (cond ((null? avail) #f)
         ((> (car avail) target) (car avail))
         (else (find-beat (cdr avail) target))))
-
 (define (list-set lst i v)
   (cond ((null? lst) lst)
         ((= i 0) (cons v (cdr lst)))
         (else (cons (car lst) (list-set (cdr lst) (- i 1) v)))))
-
 (define (sort-list lst cmp)
   (let loop ((unproc lst) (acc '()))
     (if (null? unproc) acc
         (let ((x (car unproc)))
           (loop (cdr unproc) (insert-sorted-cmp acc x cmp))))))
-
 (define (insert-sorted-cmp lst x cmp)
   (cond ((null? lst) (list x))
         ((cmp x (car lst)) (cons x lst))
         (else (cons (car lst) (insert-sorted-cmp (cdr lst) x cmp)))))
-
 (define (solve A B)
   (advantage-shuffle A B))
-
 (define (list->display lst)
   (display "[")
   (let loop ((l lst) (first #t))
@@ -69,23 +61,10 @@
            (display (car l))
            (loop (cdr l) #f)))))
 
-(let ((cases
-       (list
-        (list (list 2 7 11 15) (list 1 10 4 11))
-        (list (list 1 2 3) (list 1 2 3))
-        (list (list 1 2 3) (list 4 5 6))
-        (list (list 1 1 2 2) (list 1 2 1 2))
-        (list (list 5) (list 3))
-        (list (list 3) (list 5))
-        (list '() '())
-        (list (list 8 2 4 9 1 3) (list 5 1 4 7 3 6)))))
-  (let loop ((cs cases) (i 0))
-    (if (null? cs)
-        (display "END")
-        (begin
-         (display "CASE")
-         (display i)
-         (display "=")
-         (list->display (solve (car (car cs)) (car (cdr (car cs)))))
-         (newline)
-         (loop (cdr cs) (+ i 1))))))
+(require "lc_json" all:)
+(define (lc-emit t)
+  (let ((input (hash-ref t "input")))
+    (lc-show (hash-ref t "id") (solve (hash-ref input "A") (hash-ref input "B")))))
+(define (lc-go ts)
+  (if (null? ts) 0 (begin (lc-emit (car ts)) (lc-go (cdr ts)))))
+(lc-go (json-parse (read-file "corpus/leetcode/advantage-shuffle/tests.json")))

@@ -1,0 +1,43 @@
+(require "lc_json" all:)
+(require "compat" all:)
+(define (solve lst)
+  (cond
+    ((null? lst) '())
+    (else
+      (let loop ((rest (cdr lst)) (acc (list (car lst))))
+        (cond
+          ((null? rest) (reverse acc))
+          ((equal? (car rest) (car acc))
+           (loop (cdr rest) acc))
+          (else
+           (loop (cdr rest) (cons (car rest) acc))))))))
+(define (display-list lst)
+  (define (loop xs first?)
+    (cond
+      ((null? xs)
+       (display ""))
+      (first?
+       (begin
+         (display (car xs))
+         (loop (cdr xs) #f)))
+      (else
+       (begin
+         (display ",")
+         (display (car xs))
+         (loop (cdr xs) #f)))))
+  (loop lst #t))
+(define (run-case i n vals)
+  (let ((result (solve vals)))
+    (display "CASE")
+    (display i)
+    (display "=vals=")
+    (display-list result)
+    (newline)))
+
+(require "lc_json" all:)
+(define (lc-emit t)
+  (let ((input (hash-ref t "input")))
+    (lc-show (hash-ref t "id") (solve (hash-ref input "lst")))))
+(define (lc-go ts)
+  (if (null? ts) 0 (begin (lc-emit (car ts)) (lc-go (cdr ts)))))
+(lc-go (json-parse (read-file "corpus/leetcode/remove-duplicates-from-sorted-list/tests.json")))

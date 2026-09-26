@@ -1,0 +1,61 @@
+(require "lc_json" all:)
+(require "compat" all:)
+(define (sum-list lst)
+  (if (null? lst)
+      0
+      (+ (car lst) (sum-list (cdr lst)))))
+(define (length-list lst)
+  (if (null? lst)
+      0
+      (+ 1 (length-list (cdr lst)))))
+(define (min a b)
+  (if (< a b) a b))
+(define (solve nums x)
+  (let ((n (length-list nums))
+        (total (sum-list nums))
+        (target (- total x)))
+    (cond
+      ((= x 0) 0)
+      ((> x total) -1)
+      ((< target 0) -1)
+      ((= target 0) n)
+      (else
+       ;; sliding window to find longest subarray with sum = target
+       (let loop ((i 0) (j 0) (curr-sum 0) (max-len -1) (arr nums))
+         (cond
+           ;; expand window while j < n
+           ((< j n)
+            (let ((new-sum (+ curr-sum (list-ref arr j))))
+              (loop i (+ j 1) new-sum max-len arr)))
+           ;; shrink window if curr-sum > target and i < j
+           ((and (< i j) (> curr-sum target))
+            (let ((new-sum (- curr-sum (list-ref arr i))))
+              (loop (+ i 1) j new-sum max-len arr)))
+           ;; check if curr-sum == target
+           ((= curr-sum target)
+            (let ((new-max (max max-len (- j i))))
+              (cond
+                ((< i j)
+                 (let ((new-sum (- curr-sum (list-ref arr i))))
+                   (loop (+ i 1) j new-sum new-max arr)))
+                (else (loop i j curr-sum new-max arr)))))
+           (else
+            (cond
+              ((< i j)
+               (let ((new-sum (- curr-sum (list-ref arr i))))
+                 (loop (+ i 1) j new-sum max-len arr)))
+              (else max-len)))))))))
+(define (list-ref lst i)
+  (if (= i 0)
+      (car lst)
+      (list-ref (cdr lst) (- i 1))))
+(define (max a b)
+  (if (> a b) a b))
+
+(require "lc_json" all:)
+(define (lc-emit t)
+  (let ((input (hash-ref t "input")))
+    (lc-show (hash-ref t "id") (solve (hash-ref input "nums") (hash-ref input "x")))))
+(define (lc-go ts)
+  (if (null? ts) 0 (begin (lc-emit (car ts)) (lc-go (cdr ts)))))
+(lc-go (json-parse (read-file "corpus/leetcode/minimum-operations-to-reduce-x-to-zero/tests.json")))
