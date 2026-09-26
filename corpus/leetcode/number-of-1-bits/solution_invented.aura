@@ -1,5 +1,2 @@
-(define (op-at ops pc) (if (= pc 0) (car ops) (if (= pc 1) (car (cdr ops)) (car (cdr (cdr ops))))))
-(define (exec ops n) (let loop ((x n) (a 0) (pc 0) (fuel 128)) (if (or (<= fuel 0) (>= pc 3)) a (let ((op (op-at ops pc))) (if (= op 0) (loop x (+ a (modulo x 2)) (+ pc 1) (- fuel 1)) (if (= op 1) (loop (quotient x 2) a (+ pc 1) (- fuel 1)) (if (= op 2) (loop (quotient x 10) a (+ pc 1) (- fuel 1)) (if (= op 3) (loop x (+ a 1) (+ pc 1) (- fuel 1)) (if (= op 4) (if (= x 0) (loop x a (+ pc 1) (- fuel 1)) (loop x a 0 (- fuel 1))) (loop x 0 (+ pc 1) (- fuel 1)))))))))))
-(define ops (list 0 1 4))
-(define (solve n) (exec ops n))
+(define solve (lambda (n) (let loop ((x n) (acc 0)) (if (= x 0) acc (loop (quotient x 2) (+ acc (modulo x 2)))))))
 (display "CASE0=") (display (solve 0)) (newline)(display "CASE1=") (display (solve 1)) (newline)(display "CASE2=") (display (solve 11)) (newline)(display "CASE3=") (display (solve 128)) (newline)(display "CASE4=") (display (solve 255)) (newline)(display "CASE5=") (display (solve 4294967295)) (newline)(display "CASE6=") (display (solve 4294967293)) (newline)(display "CASE7=") (display (solve 2147483648)) (newline)
