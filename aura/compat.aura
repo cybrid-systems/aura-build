@@ -1,0 +1,9 @@
+; Small Scheme names the leetcode corpus calls and this image does not bind.
+; make-list is pure. list-set! stays out of this file: a program that
+; contains set-car! makes a later set! unbound.
+(export make-list)
+
+(define (make-list n fill)
+  (if (<= n 0)
+      '()
+      (cons fill (make-list (- n 1) fill))))
