@@ -1,8 +1,9 @@
 ; Small Scheme names the leetcode corpus calls and this image does not bind.
 ; Pure only. set-car! stays out: a program that contains set-car! makes set! unbound (#4122).
 (export make-list assoc assq list-tail expt make-string
-        string even? caddr cadddr
-        bitwise-xor bitwise-and bit-and logxor ash)
+        string even? odd? caddr cadddr
+        bitwise-xor bitwise-and bit-and bit-xor logxor logand ash
+        arithmetic-shift atom? string->chars exact->inexact make-hash)
 
 (define (make-list n fill)
   (if (<= n 0)
@@ -88,3 +89,27 @@
   (if (>= k 0)
       (* n (expt 2 k))
       (quotient n (expt 2 (- k)))))
+
+(define (bit-xor a b)
+  (bitwise-xor a b))
+
+(define (logand a b)
+  (bitwise-and a b))
+
+(define (arithmetic-shift n k)
+  (ash n k))
+
+(define (odd? n)
+  (not (even? n)))
+
+(define (atom? x)
+  (not (pair? x)))
+
+(define (string->chars s)
+  (string->list s))
+
+(define (exact->inexact n)
+  n)
+
+(define (make-hash)
+  (hash))
