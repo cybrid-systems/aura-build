@@ -145,6 +145,7 @@ On 3i/3j, **selected-round max fitness can dip** (e.g. candidates 0.08–0.16) w
 
 - `20260924-191515` ok=False llm_via=fiber llm_parallel=fiber explore=fiber_graph artifacts=`combat_20260924-191515_stdout.json`
 - `20260925-091746` ok=False llm_via=fiber llm_parallel=fiber explore=fiber_graph artifacts=`combat_20260925-091746_stdout.json`
+- `20260926-121404` ok=True llm_via=fiber llm_parallel=fiber explore=fiber_graph artifacts=`combat_20260926-121404_stdout.json`
 
 ## Dig: eval-current JSON status ~38s after display (2026-09-25)
 
