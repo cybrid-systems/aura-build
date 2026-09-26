@@ -1,9 +1,37 @@
 ; Small Scheme names the leetcode corpus calls and this image does not bind.
-; make-list is pure. list-set! stays out of this file: a program that
-; contains set-car! makes a later set! unbound.
-(export make-list)
+; Pure only. set-car! stays out: a program that contains set-car! makes set! unbound (#4122).
+(export make-list assoc assq list-tail expt make-string)
 
 (define (make-list n fill)
   (if (<= n 0)
       '()
       (cons fill (make-list (- n 1) fill))))
+
+(define (assoc key alist)
+  (if (null? alist)
+      #f
+      (if (equal? key (car (car alist)))
+          (car alist)
+          (assoc key (cdr alist)))))
+
+(define (assq key alist)
+  (if (null? alist)
+      #f
+      (if (eq? key (car (car alist)))
+          (car alist)
+          (assq key (cdr alist)))))
+
+(define (list-tail lst i)
+  (if (<= i 0)
+      lst
+      (list-tail (cdr lst) (- i 1))))
+
+(define (expt b e)
+  (if (<= e 0)
+      1
+      (* b (expt b (- e 1)))))
+
+(define (make-string n fill)
+  (if (<= n 0)
+      ""
+      (string-append (list->string (list fill)) (make-string (- n 1) fill))))
