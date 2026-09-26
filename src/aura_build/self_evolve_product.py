@@ -195,7 +195,17 @@ def _propose(
         )
     checked = _static_diff(repo, content, allow)
     if not checked.get("ok"):
-        _write_failure(session, n, str(checked.get("reason") or "diff_rejected"))
+        _write_failure(
+            session,
+            n,
+            "\n".join(
+                [
+                    str(checked.get("reason") or "diff_rejected"),
+                    str(checked.get("detail") or ""),
+                    str(checked.get("diff") or "")[:1500],
+                ]
+            ),
+        )
         reason = "max_rounds_3" if n >= cap else str(checked.get("reason"))
         return _episode_return(
             repo, session, allow, pytest_paths, goal, pre, n,
@@ -358,6 +368,9 @@ def _live_propose(
     bin_path = aura_bin or os.environ.get("AURA_BIN") or _DEFAULT_AURA
     os.environ["AURA_BIN"] = bin_path
     os.environ.setdefault("AURA_SANDBOX", "off")
+    lib = Path(bin_path).resolve().parents[1] / "lib"
+    if lib.is_dir():
+        os.environ.setdefault("AURA_PATH", str(lib))
     harness = session / "serve"
     holder = None
     try:
@@ -384,7 +397,7 @@ def _live_propose(
         if result.get("ok") and result.get("llm_via") == "fiber":
             result["llm_parallel"] = "fiber_serial"
             return result
-        if result.get("llm_via") == "fiber":
+        if result.get("llm_via") == "fiber" and str(result.get("content") or "").strip():
             result["ok"] = False
             result["llm_parallel"] = "fiber_serial"
             return result
@@ -423,6 +436,9 @@ def _static_diff(repo: Path, raw: str, allow: str) -> dict[str, Any]:
     fence = re.match(r"^```(?:diff)?\s*\n([\s\S]*?)\n```$", text)
     if fence:
         text = fence.group(1).strip()
+    start = text.find("diff --git ")
+    if start > 0:
+        text = text[start:]
     if not text.startswith("diff --git "):
         return {"ok": False, "reason": "diff_parse"}
     headers = re.findall(r"^diff --git a/(\S+) b/(\S+)", text, flags=re.M)
@@ -454,7 +470,8 @@ def _static_diff(repo: Path, raw: str, allow: str) -> dict[str, Any]:
         return {
             "ok": False,
             "reason": "apply_check",
-            "detail": (chk.stderr or "")[-500:],
+            "detail": (chk.stderr or chk.stdout or "")[-500:],
+            "diff": text,
             "numstat": numstat,
         }
     return {"ok": True, "diff": text + "\n", "numstat": numstat}
