@@ -1,0 +1,145 @@
+; Unattended leetcode repair. One action: load compat before the solution.
+; Reward is the change in CASE lines that match tests.json.
+; Negative reward discards the write and lowers the action weight.
+; No person in the loop. Re-run to continue; weights stay in scratch/leetcode_rl/policy.json.
+(require "std/string" all:)
+(require "std/process" all:)
+(require "std/io" all:)
+
+(define aura-bin "/home/dev/code/grok-dev/aura-grok/build_soft4079/aura")
+(define root "/home/dev/code/grok-dev/aura-build")
+(define policy-path "scratch/leetcode_rl/policy.json")
+
+(define (as-str x)
+  (if (string? x) x (number->string x)))
+
+(define (starts-with? s pre)
+  (let ((n (string-length pre)) (m (string-length s)))
+    (and (>= m n) (equal? (substring s 0 n) pre))))
+
+(define (case-value lines i)
+  (let ((key (string-append "CASE" (number->string i) "=")))
+    (let loop ((xs lines))
+      (if (null? xs)
+          #f
+          (if (starts-with? (car xs) key)
+              (substring (car xs) (string-length key) (string-length (car xs)))
+              (loop (cdr xs)))))))
+
+(define (count-hits lines tests)
+  (if (null? tests)
+      0
+      (let* ((t (car tests))
+             (got (case-value lines (hash-ref t "id")))
+             (exp (as-str (hash-ref t "expected")))
+             (ok (if (and got (equal? got exp)) 1 0)))
+        (+ ok (count-hits lines (cdr tests))))))
+
+(define (score-file solution use-compat tests)
+  (let ((out "scratch/leetcode_rl/last.out"))
+    (shell (string-append
+             "cd " root " && AURA_SANDBOX=off AURA_PIPELINE_STRICT=0 "
+             "AURA_PATH='" root "/../aura-grok/lib:" root "/aura' "
+             "timeout 2 " aura-bin " "
+             (if use-compat (string-append root "/aura/compat.aura ") "")
+             solution " > " out " 2>/dev/null"))
+    (let ((text (read-file out)))
+      (count-hits (string-split (if (string? text) text "") "\n") tests))))
+
+(define (better solution slug tests weight gained kept rejected)
+  (let* ((bare (score-file solution #f tests))
+         (with (score-file solution #t tests))
+         (reward (- with bare)))
+    (if (> reward 0)
+        (begin
+          (write-file (string-append "corpus/leetcode/" slug "/solution_rl.aura")
+                      (string-append "(require \"compat\" all:)\n" (read-file solution)))
+          (cons (+ weight reward)
+                (cons (+ gained reward) (cons (+ kept 1) rejected))))
+        (if (< reward 0)
+            (cons (+ weight reward)
+                  (cons gained (cons kept (+ rejected 1))))
+            (cons weight (cons gained (cons kept rejected)))))))
+
+(define (one-score path tests)
+  (if (file-exists? path)
+      (cons (score-file path #f tests) (score-file path #t tests))
+      (cons -1 -1)))
+
+(define (pick-solution slug tests stats)
+  (let* ((done (string-append "corpus/leetcode/" slug "/solution_rl.aura"))
+         (a (string-append "corpus/leetcode/" slug "/solution.aura"))
+         (b (string-append "corpus/leetcode/" slug "/solution_2.aura"))
+         (sa (one-score a tests))
+         (sb (one-score b tests))
+         (choose-b (and (> (cdr sb) -1) (> (cdr sb) (cdr sa)) (> (- (cdr sb) (car sb)) 0)))
+         (path (if choose-b b a))
+         (pair (if choose-b sb sa))
+         (reward (if (file-exists? done) 0 (if (> (cdr pair) -1) (- (cdr pair) (car pair)) 0))))
+    (shell (string-append "printf '%s reward=%s bare=%s compat=%s\\n' " slug " " (number->string reward) " " (number->string (car pair)) " " (number->string (cdr pair)) " >> scratch/leetcode_rl/epoch.log"))
+    (if (> reward 0)
+        (begin
+          (write-file (string-append "corpus/leetcode/" slug "/solution_rl.aura")
+                      (string-append "(require \"compat\" all:)\n" (read-file path)))
+          (cons (+ (car stats) reward)
+                (cons (+ (car (cdr stats)) reward)
+                      (cons (+ (car (cdr (cdr stats))) 1)
+                            (cdr (cdr (cdr stats)))))))
+        (if (< reward 0)
+            (cons (+ (car stats) reward)
+                  (cons (car (cdr stats))
+                        (cons (car (cdr (cdr stats)))
+                              (+ (cdr (cdr (cdr stats))) 1))))
+            stats))))
+
+(define (logged? slug)
+  (= (shell (string-append "grep -q '^" slug " ' scratch/leetcode_rl/epoch.log")) 0))
+
+(define (epoch lines stats left)
+  (if (or (null? lines) (= left 0))
+      stats
+      (let ((line (car lines)))
+        (if (equal? line "")
+            (epoch (cdr lines) stats left)
+            (let* ((row (json-parse line))
+                   (slug (hash-ref row "slug"))
+                   (tests-path (string-append "corpus/leetcode/" slug "/tests.json")))
+              (if (or (not (file-exists? tests-path)) (logged? slug))
+                  (epoch (cdr lines) stats (- left 1))
+                  (epoch (cdr lines)
+                         (pick-solution slug (json-parse (read-file tests-path)) stats)
+                         (- left 1))))))))
+
+(define (step-budget)
+  (if (file-exists? "scratch/leetcode_rl/limit")
+      (string->number (string-trim (read-file "scratch/leetcode_rl/limit")))
+      1000000))
+
+(let* ((mk (shell (string-append "mkdir -p " root "/scratch/leetcode_rl")))
+       (old (if (file-exists? policy-path)
+                (json-parse (read-file policy-path))
+                (hash "weight" 1)))
+       (start (hash-ref old "weight" 1))
+       (lines (string-split (read-file "corpus/leetcode/catalog.jsonl") "\n"))
+       (stats (epoch lines (cons start (cons 0 (cons 0 0))) (step-budget)))
+       (weight (car stats))
+       (gained (car (cdr stats)))
+       (kept (car (cdr (cdr stats))))
+       (rejected (cdr (cdr (cdr stats))))
+       (pol (hash "action" "use-compat"
+                  "weight" weight
+                  "gained" gained
+                  "kept" kept
+                  "rejected" rejected
+                  "l3_online" #f)))
+  (write-file policy-path (json-encode pol))
+  (display "RL_OK weight=")
+  (display weight)
+  (display " gained=")
+  (display gained)
+  (display " kept=")
+  (display kept)
+  (display " rejected=")
+  (display rejected)
+  (newline)
+  mk)

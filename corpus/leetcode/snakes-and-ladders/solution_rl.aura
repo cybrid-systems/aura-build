@@ -1,0 +1,90 @@
+(require "compat" all:)
+(define (solve board n)
+  ;; BFS to find minimum moves from square 1 to square n*n
+  (let ((target (* n n))
+        (visited (make-vector (+ target 1) #f)))
+    (vector-set! visited 1 #t)
+    (let ((queue (list (cons 1 0))))
+      (let loop ((q queue))
+        (if (null? q) -1
+            (let* ((pair (car q))
+                   (curr (car pair))
+                   (moves (cdr pair))
+                   (rest (cdr q)))
+              (if (= curr target) moves
+                  (let roll-loop ((k 1) (new-q rest))
+                    (if (> k 6) (loop new-q)
+                        (let ((next (+ curr k)))
+                          (if (> next target) (roll-loop (+ k 1) new-q)
+                              (let ((dest
+                                     (let ((v (get-square board n next)))
+                                       (if (= v -1) next v))))
+                                (if (vector-ref visited dest)
+                                    (roll-loop (+ k 1) new-q)
+                                    (begin
+                                      (vector-set! visited dest #t)
+                                      (roll-loop (+ k 1)
+                                                 (append new-q (list (cons dest (+ moves 1)))))))))))))))))))
+
+(define (get-square board n sq)
+  ;; Get value at position sq (1-indexed), accounting for boustrophedon numbering
+  (let* ((zero-idx (- sq 1))
+         (row (- n 1 (quotient zero-idx n)))
+         (col-in-row (modulo zero-idx n))
+         (col (if (even? (- n 1 row))
+                  col-in-row
+                  (- (- n 1) col-in-row))))
+    (list-ref (list-ref board row) col)))
+
+(define (main)
+  ;; CASE0: n=4, board with ladder from sq 2 to 14
+  (let ((b0 (list (list -1 -1 -1 -1)
+                  (list -1 -1 -1 -1)
+                  (list -1 -1 -1 -1)
+                  (list -1 14 -1 -1))))
+    (display "CASE0=") (display (solve b0 4)) (newline))
+  ;; CASE1: n=3, ladder from sq 2 to 9
+  (let ((b1 (list (list -1 -1 -1)
+                  (list -1 9 -1)
+                  (list -1 -1 -1))))
+    (display "CASE1=") (display (solve b1 3)) (newline))
+  ;; CASE2: n=6, empty board
+  (let ((b2 (list (list -1 -1 -1 -1 -1 -1)
+                  (list -1 -1 -1 -1 -1 -1)
+                  (list -1 -1 -1 -1 -1 -1)
+                  (list -1 -1 -1 -1 -1 -1)
+                  (list -1 -1 -1 -1 -1 -1)
+                  (list -1 -1 -1 -1 -1 -1))))
+    (display "CASE2=") (display (solve b2 6)) (newline))
+  ;; CASE3: n=2, ladder from sq 3 to itself? No - sq 3 is on top-right of 2x2
+  ;; board layout: bottom-left=1, bottom-right=2, top-right=3, top-left=4
+  ;; board rows top-down: [[-1,3],[-1,-1]] means sq 3 has ladder to... wait
+  ;; top row index 0: [-1,3] -> col 0 is sq 4, col 1 is sq 3
+  ;; sq 3 has value 3 which means ladder to sq 3 (itself)? Invalid per notes.
+  ;; But given as test, let's run it.
+  (let ((b3 (list (list -1 3)
+                  (list -1 -1))))
+    (display "CASE3=") (display (solve b3 2)) (newline))
+  ;; CASE4: n=2, top row [2,-1] -> col 0 is sq 4 with value 2 (snake to sq 2)
+  (let ((b4 (list (list 2 -1)
+                  (list -1 -1))))
+    (display "CASE4=") (display (solve b4 2)) (newline))
+  ;; CASE5: n=5, empty
+  (let ((b5 (list (list -1 -1 -1 -1 -1)
+                  (list -1 -1 -1 -1 -1)
+                  (list -1 -1 -1 -1 -1)
+                  (list -1 -1 -1 -1 -1)
+                  (list -1 -1 -1 -1 -1))))
+    (display "CASE5=") (display (solve b5 5)) (newline))
+  ;; CASE6: n=3, top row [-1,-1,2] -> col 2 is sq 3 with value 2 (snake 3->2)
+  (let ((b6 (list (list -1 -1 2)
+                  (list -1 -1 -1)
+                  (list -1 -1 -1))))
+    (display "CASE6=") (display (solve b6 3)) (newline))
+  ;; CASE7: n=3, top row [-1,-1,9] -> col 2 is sq 3 with value 9 (ladder 3->9)
+  (let ((b7 (list (list -1 -1 9)
+                  (list -1 -1 -1)
+                  (list -1 -1 -1))))
+    (display "CASE7=") (display (solve b7 3)) (newline)))
+
+(main)

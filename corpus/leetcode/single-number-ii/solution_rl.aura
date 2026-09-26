@@ -1,0 +1,39 @@
+(require "compat" all:)
+;; Bitwise solution: track per-bit counts mod 3
+
+(define (count-bit nums bit)
+  (let count-loop ((rest nums) (c 0))
+    (if (null? rest)
+        c
+        (let ((v (car rest)))
+          (let ((shifted (ash v (- bit))))
+            (count-loop (cdr rest)
+                        (+ c (logand shifted 1))))))))
+
+(define (solve nums)
+  (let solve-loop ((bit 31) (result 0))
+    (if (< bit 0)
+        result
+        (let ((c (count-bit nums bit)))
+          (let ((bit-val (modulo c 3)))
+            (solve-loop (- bit 1)
+                        (+ result (ash bit-val bit))))))))
+
+;; Helper: convert Aura integer to displayable form
+(define (show x) (number->string x))
+
+(define (run-case i nums)
+  (display "CASE")
+  (display (show i))
+  (display "=")
+  (display (show (solve nums)))
+  (newline))
+
+(run-case 0 '(2 2 3 2))
+(run-case 1 '(0 1 0 1 0 1 99))
+(run-case 2 '(-5 -5 -5 -3))
+(run-case 3 '(1))
+(run-case 4 '(7 7 7 5 5 5 9))
+(run-case 5 '(4 4 4 4 4 4 42))
+(run-case 6 '(-1 -1 -1 2))
+(run-case 7 '(3 3 3 -3 -3 -3 8 8 8 100))

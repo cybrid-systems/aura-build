@@ -1,0 +1,91 @@
+(require "compat" all:)
+;; Helper: build a tree from a nested-list structure (for testing purposes)
+(define (make-tree pairs)
+  (if (null? pairs)
+      '()
+      (let ((p (car pairs)))
+        (cons (car p) (cons (cadr p) (caddr p))))))
+
+;; Depth function: depth of node (atom or nil), counting nodes
+;; An atom dereferences to a map with :left and :right keys.
+;; If the argument is nil, depth = 0.
+(define (depth node)
+  (if (null? node)
+      0
+      (let ((m (deref node)))
+        (+ 1 (max (depth (cdr (assq 'left m)))
+                  (depth (cdr (assq 'right m))))))))
+
+;; Wrapper so solve can be called even if root is a plain atom
+(define (solve root)
+  (depth root))
+
+;; Build embedded test trees by constructing atoms whose deref'd maps
+;; contain :left and :right. We'll create them using make-atom-like objects.
+;; Since Aura has atoms as a primitive type, we'll simulate by using
+;; a list-based approach: store trees as nested lists and wrap nil/atom.
+;; But the problem states root is an atom. To honor that, we'll define
+;; each test's root as an atom whose content is a map-like association list.
+;; Use 'atom as a tagged wrapper. We'll treat root as an atom; deref returns
+;; the alist. If root is nil -> depth 0.
+
+;; For CASE0 (empty tree), root is nil.
+;; For CASE1..CASE7, root is an atom pointing to a tree.
+
+;; Since constructing real atoms is not standard Aura, we'll embed trees
+;; as nested structures and have solve accept either nil, an atom, or a list.
+;; To strictly follow the spec, solve just calls depth; depth checks null?.
+;; We construct atoms via (atom x) if available; otherwise treat input as is.
+;; Aura primer doesn't mention atom creation, so we simulate using a list
+;; representation where (cons 'node (cons left right)) is the node.
+
+;; For flexibility, define depth to handle three cases:
+;;  - nil -> 0
+;;  - an atom whose deref returns an alist -> recurse on :left/:right
+;;  - a list of form (node left right) -> recurse on cdr/caddr
+
+(define (depth node)
+  (cond
+    ((null? node) 0)
+    ((atom? node)
+     (let ((m (deref node)))
+       (+ 1 (max (depth (cdr (assq 'left m)))
+                 (depth (cdr (assq 'right m)))))))
+    (else
+     ;; assume list: (tag left right) — depth = 1 + max(depth left, depth right)
+     (+ 1 (max (depth (cadr node))
+               (depth (caddr node)))))))
+
+;; Build test trees (CASE1..CASE7) as nested lists (tag left right).
+;; CASE1: single node -> depth 1
+;; CASE2: left chain of 2 -> depth 2
+;; CASE3: right chain of 3 -> depth 3
+;; CASE4: balanced with depth 3
+;; CASE5: left-heavy depth 4
+;; CASE6: right-heavy depth 4
+;; CASE7: deeper mixed depth 5
+
+(define CASE1 (list 'n '() '()))
+(define CASE2 (list 'n CASE1 '()))
+(define CASE3 (list 'n '() (list 'n '() (list 'n '() '()))))
+(define CASE4 (list 'n CASE2 (list 'n (list 'n '() '()) '())))
+(define CASE5 (list 'n (list 'n (list 'n (list 'n '() '()) '()) '()) '()))
+(define CASE6 (list 'n '() (list 'n '() (list 'n '() (list 'n '() '())))))
+(define CASE7 (list 'n
+                    CASE2
+                    (list 'n
+                          (list 'n '() CASE3)
+                          CASE1)))
+
+;; CASE0: empty
+(define CASE0 '())
+
+;; Print results
+(display "CASE0=") (display (solve CASE0)) (newline)
+(display "CASE1=") (display (solve CASE1)) (newline)
+(display "CASE2=") (display (solve CASE2)) (newline)
+(display "CASE3=") (display (solve CASE3)) (newline)
+(display "CASE4=") (display (solve CASE4)) (newline)
+(display "CASE5=") (display (solve CASE5)) (newline)
+(display "CASE6=") (display (solve CASE6)) (newline)
+(display "CASE7=") (display (solve CASE7)) (newline)

@@ -1,0 +1,229 @@
+(require "compat" all:)
+;; Singly Linked List Design
+
+(define (make-list) (list 'list '() 0 '()))
+
+(define (list-head L) (cadr L))
+(define (list-size L) (caddr L))
+(define (list-tail-ref L) (cadddr L))
+
+(define (set-head! L h) (set-car! (cdr L) h))
+(define (set-size! L s) (set-car! (cddr L) s))
+(define (set-tail! L t) (set-car! (cdddr L) t))
+
+(define (len-chain p)
+  (if (null? p) 0 (+ 1 (len-chain (cdr p)))))
+
+(define (last-node p)
+  (if (null? (cdr p)) p (last-node (cdr p))))
+
+(define (get-val L index)
+  (cond
+    ((< index 0) -1)
+    ((>= index (list-size L)) -1)
+    (else
+      (let ((p (list-head L)))
+        (let loop ((p p) (i 0))
+          (if (= i index)
+              (car p)
+              (loop (cdr p) (+ i 1))))))))
+
+(define (add-at-head L val)
+  (let ((new-node (list val (list-head L))))
+    (set-head! L new-node)
+    (set-size! L (+ (list-size L) 1))
+    (if (= (list-size L) 1)
+        (set-tail! L new-node)
+        '())))
+
+(define (add-at-tail L val)
+  (let ((new-node (list val '())))
+    (if (null? (list-head L))
+        (begin
+          (set-head! L new-node)
+          (set-tail! L new-node))
+        (let ((t (list-tail-ref L)))
+          (set-cdr! t new-node)
+          (set-tail! L new-node)))
+    (set-size! L (+ (list-size L) 1))))
+
+(define (add-at-index L index val)
+  (cond
+    ((<= index 0) (add-at-head L val))
+    ((= index (list-size L)) (add-at-tail L val))
+    ((> index (list-size L)) '())
+    (else
+      (let loop ((p (list-head L)) (i 0))
+        (if (= i (- index 1))
+            (let ((new-node (list val (cdr p))))
+              (set-cdr! p new-node)
+              (set-size! L (+ (list-size L) 1)))
+            (loop (cdr p) (+ i 1)))))))
+
+(define (delete-at-index L index)
+  (cond
+    ((< index 0) '())
+    ((>= index (list-size L)) '())
+    ((= index 0)
+     (let ((h (list-head L)))
+       (set-head! L (cdr h))
+       (set-size! L (- (list-size L) 1))
+       (if (= (list-size L) 0)
+           (set-tail! L '())
+           '())))
+    (else
+      (let loop ((p (list-head L)) (i 0))
+        (if (= i (- index 1))
+            (let ((target (cdr p)))
+              (set-cdr! p (cdr target))
+              (set-size! L (- (list-size L) 1))
+              (if (null? (cdr target))
+                  (set-tail! L p)
+                  '()))
+            (loop (cdr p) (+ i 1)))))))
+
+(define (op-name op) (car op))
+(define (op-arg1 op) (if (>= (length op) 2) (cadr op) '()))
+(define (op-arg2 op) (if (>= (length op) 3) (caddr op) '()))
+
+(define (process-ops ops)
+  (let ((L (make-list)))
+    (let loop ((ops ops) (acc '()))
+      (if (null? ops)
+          (reverse acc)
+          (let ((op (car ops)))
+            (let ((name (op-name op)))
+              (cond
+                ((equal? name "get")
+                 (loop (cdr ops) (cons (get-val L (op-arg1 op)) acc)))
+                ((equal? name "addAtHead")
+                 (add-at-head L (op-arg1 op))
+                 (loop (cdr ops) acc))
+                ((equal? name "addAtTail")
+                 (add-at-tail L (op-arg1 op))
+                 (loop (cdr ops) acc))
+                ((equal? name "addAtIndex")
+                 (add-at-index L (op-arg1 op) (op-arg2 op))
+                 (loop (cdr ops) acc))
+                ((equal? name "deleteAtIndex")
+                 (delete-at-index L (op-arg1 op))
+                 (loop (cdr ops) acc))
+                (else (loop (cdr ops) acc)))))))))
+
+(define (solve n ops)
+  (process-ops ops))
+
+(define (display-list lst)
+  (display "[")
+  (let loop ((l lst) (first? #t))
+    (cond
+      ((null? l) (display "]"))
+      (first?
+       (display (number->string (car l)))
+       (loop (cdr l) #f))
+      (else
+       (display ",")
+       (display (number->string (car l)))
+       (loop (cdr l) #f)))))
+
+;; CASE 0
+(define c0-ops
+  (list
+    (list "MyLinkedList")
+    (list "addAtHead" 1)
+    (list "addAtTail" 3)
+    (list "addAtIndex" 1 2)
+    (list "get" 1)
+    (list "deleteAtIndex" 1)
+    (list "get" 1)))
+(define r0 (solve 7 c0-ops))
+(display "CASE0=") (display-list r0) (newline)
+
+;; CASE 1
+(define c1-ops
+  (list
+    (list "MyLinkedList")
+    (list "addAtHead" 1)
+    (list "addAtTail" 2)
+    (list "get" 0)))
+(define r1 (solve 4 c1-ops))
+(display "CASE1=") (display-list r1) (newline)
+
+;; CASE 2
+(define c2-ops
+  (list
+    (list "MyLinkedList")
+    (list "addAtHead" 2)
+    (list "deleteAtIndex" 1)
+    (list "get" 0)
+    (list "addAtHead" 3)
+    (list "get" 0)))
+(define r2 (solve 6 c2-ops))
+(display "CASE2=") (display-list r2) (newline)
+
+;; CASE 3
+(define c3-ops
+  (list
+    (list "MyLinkedList")
+    (list "addAtIndex" 0 1)
+    (list "addAtIndex" 1 2)
+    (list "addAtIndex" 2 3)
+    (list "get" 0)
+    (list "get" 1)
+    (list "get" 2)
+    (list "get" 3)))
+(define r3 (solve 8 c3-ops))
+(display "CASE3=") (display-list r3) (newline)
+
+;; CASE 4
+(define c4-ops
+  (list
+    (list "MyLinkedList")
+    (list "addAtHead" 1)
+    (list "addAtHead" 2)
+    (list "addAtHead" 3)
+    (list "get" 0)
+    (list "get" 1)
+    (list "get" 2)))
+(define r4 (solve 7 c4-ops))
+(display "CASE4=") (display-list r4) (newline)
+
+;; CASE 5
+(define c5-ops
+  (list
+    (list "MyLinkedList")
+    (list "addAtTail" 1)
+    (list "addAtTail" 2)
+    (list "addAtTail" 3)
+    (list "deleteAtIndex" 1)
+    (list "get" 0)
+    (list "get" 1)))
+(define r5 (solve 6 c5-ops))
+(display "CASE5=") (display-list r5) (newline)
+
+;; CASE 6
+(define c6-ops
+  (list
+    (list "MyLinkedList")
+    (list "get" 0)
+    (list "deleteAtIndex" 0)
+    (list "addAtHead" 5)
+    (list "get" 0)))
+(define r6 (solve 5 c6-ops))
+(display "CASE6=") (display-list r6) (newline)
+
+;; CASE 7
+(define c7-ops
+  (list
+    (list "MyLinkedList")
+    (list "addAtHead" 4)
+    (list "addAtHead" 1)
+    (list "addAtTail" 5)
+    (list "addAtIndex" 1 2)
+    (list "addAtIndex" 4 3)
+    (list "get" 0)
+    (list "get" 1)
+    (list "get" 2)
+    (list "get" 3)))
+(define r7 (solve 10 c7-ops))
+(display "CASE7=") (display-list r7) (newline)

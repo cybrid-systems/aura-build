@@ -1,0 +1,24 @@
+(require "compat" all:)
+(define (solve n)
+  ;; Use the n & (n-1) trick to count set bits
+  (let loop ((n n) (count 0))
+    (if (= n 0)
+        count
+        (loop (logand n (- n 1)) (+ count 1)))))
+
+;; Embedded test inputs
+(define cases '(0 1 11 128 255 4294967295 4294967293 2147483648))
+
+(define (run-cases cases)
+  (let loop ((cases cases) (i 0))
+    (if (null? cases)
+        'done
+        (begin
+          (display "CASE")
+          (display i)
+          (display "=")
+          (display (solve (car cases)))
+          (newline)
+          (loop (cdr cases) (+ i 1))))))
+
+(run-cases cases 0)
