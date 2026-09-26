@@ -1,0 +1,25 @@
+(require "lc_json" all:)
+(require "compat" all:)
+(define (reverse-half n)
+  (let ((rev 0))
+    (begin
+      (set! rev (reverse-iter n 0))
+      rev)))
+(define (reverse-iter n rev)
+  (if (= n 0)
+      rev
+      (let ((q (quotient n 10)))
+           (reverse-iter q (+ (* rev 10) (modulo n 10))))))
+(define (solve x)
+  (if (< x 0)
+      #f
+      (let ((reversed (reverse-half x)))
+           (= reversed x))))
+
+(require "lc_json" all:)
+(define (lc-emit t)
+  (let ((input (hash-ref t "input")))
+    (lc-show (hash-ref t "id") (solve (hash-ref input "x")))))
+(define (lc-go ts)
+  (if (null? ts) 0 (begin (lc-emit (car ts)) (lc-go (cdr ts)))))
+(lc-go (json-parse (read-file "corpus/leetcode/palindrome-number/tests.json")))

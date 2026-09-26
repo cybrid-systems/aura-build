@@ -1,0 +1,46 @@
+(require "lc_json" all:)
+(require "compat" all:)
+(define (max a b) (if (> a b) a b))
+(define (min a b) (if (< a b) a b))
+(define (solve m n grid)
+  (define result '())
+  (let ((limit (+ m n -2)))
+    (let loop ((s 0))
+      (if (> s limit)
+          result
+          (begin
+            (set! result
+              (append result
+                (let ((diagonal '()))
+                  (let ((i (max 0 (- s n -1)))
+                        (j (min s (- n 1))))
+                    (let inner ((i i) (j j))
+                      (if (or (>= i m) (< j 0))
+                          diagonal
+                          (begin
+                            (set! diagonal (append diagonal (list (list-ref (list-ref grid i) j))))
+                            (inner (+ i 1) (- j 1))))))
+                  (if (even? s)
+                      (reverse diagonal)
+                      diagonal))))
+            (loop (+ s 1)))))))
+(define (even? x) (= (modulo x 2) 0))
+(define (display-result lst)
+  (let loop ((l lst) (first #t))
+    (cond ((null? l) (newline))
+          (else
+           (if first (display (car l)) (begin (display " ") (display (car l))))
+           (loop (cdr l) #f)))))
+(define (reverse lst)
+  (let loop ((acc '()) (l lst))
+    (if (null? l) acc (loop (cons (car l) acc) (cdr l)))))
+(define (append a b)
+  (if (null? a) b (cons (car a) (append (cdr a) b))))
+
+(require "lc_json" all:)
+(define (lc-emit t)
+  (let ((input (hash-ref t "input")))
+    (lc-show (hash-ref t "id") (solve (hash-ref input "m") (hash-ref input "n") (hash-ref input "grid")))))
+(define (lc-go ts)
+  (if (null? ts) 0 (begin (lc-emit (car ts)) (lc-go (cdr ts)))))
+(lc-go (json-parse (read-file "corpus/leetcode/diagonal-traverse/tests.json")))

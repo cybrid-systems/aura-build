@@ -1,0 +1,30 @@
+(require "lc_json" all:)
+(require "compat" all:)
+(define (next-term s)
+  (let ((len (string-length s)))
+    (let loop ((i 0) (acc ""))
+      (if (>= i len)
+          acc
+          (let ((c (string-ref s i)))
+            (let count-run ((j i) (cnt 0))
+              (if (and (< j len) (char=? (string-ref s j) c))
+                  (count-run (+ j 1) (+ cnt 1))
+                  (loop j
+                        (string-append acc
+                                       (number->string cnt)
+                                       (string c))))))))))
+(define (count-and-say n)
+  (let loop ((i 1) (s "1"))
+    (if (= i n)
+        s
+        (loop (+ i 1) (next-term s)))))
+(define (solve n)
+  (count-and-say n))
+
+(require "lc_json" all:)
+(define (lc-emit t)
+  (let ((input (hash-ref t "input")))
+    (lc-show (hash-ref t "id") (solve (hash-ref input "n")))))
+(define (lc-go ts)
+  (if (null? ts) 0 (begin (lc-emit (car ts)) (lc-go (cdr ts)))))
+(lc-go (json-parse (read-file "corpus/leetcode/count-and-say/tests.json")))
