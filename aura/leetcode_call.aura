@@ -1,0 +1,284 @@
+; Score each solution, then call solve on tests.json inputs and print JSON CASE lines.
+; Keep the wrapped file only when the CASE match count rises.
+; --serve-async aborts on define (#4128); this epoch shells oneshot.
+(require "std/string" all:)
+(require "std/process" all:)
+(require "std/io" all:)
+
+(define aura-bin "/home/dev/code/grok-dev/aura-grok/build_soft4079/aura")
+(define root "/home/dev/code/grok-dev/aura-build")
+(define policy-path "scratch/leetcode_serve/policy.json")
+
+(define (as-str x)
+  (if (string? x) x (number->string x)))
+
+(define (starts-with? s pre)
+  (let ((n (string-length pre)) (m (string-length s)))
+    (and (>= m n) (equal? (substring s 0 n) pre))))
+
+(define (find-at s key i)
+  (let ((n (string-length key)) (m (string-length s)))
+    (if (> (+ i n) m)
+        -1
+        (if (equal? (substring s i (+ i n)) key)
+            i
+            (find-at s key (+ i 1))))))
+
+(define (case-value lines i)
+  (let ((key (string-append "CASE" (number->string i) "=")))
+    (let loop ((xs lines) (found #f))
+      (if (null? xs)
+          found
+          (if (starts-with? (car xs) key)
+              (loop (cdr xs)
+                    (substring (car xs) (string-length key) (string-length (car xs))))
+              (loop (cdr xs) found))))))
+
+(define (count-hits lines tests)
+  (if (null? tests)
+      0
+      (let* ((t (car tests))
+             (got (case-value lines (hash-ref t "id")))
+             (exp (as-str (hash-ref t "expected"))))
+        (+ (if (and got (equal? got exp)) 1 0)
+           (count-hits lines (cdr tests))))))
+
+(define (score-text text tests)
+  (count-hits (string-split (if (string? text) text "") "\n") tests))
+
+(define (run-files files)
+  (let ((out "scratch/leetcode_serve/last.out"))
+    (shell (string-append
+             "cd " root " && AURA_SANDBOX=off AURA_PIPELINE_STRICT=0 "
+             "AURA_PATH='" root "/../aura-grok/lib:" root "/aura' "
+             "timeout 2 " aura-bin " " files
+             " > " out " 2>" out ".err"))
+    (let ((text (read-file out)))
+      (if (string? text) text ""))))
+
+(define (score-files files tests)
+  (score-text (run-files files) tests))
+
+(define (split-ws s)
+  (let loop ((i 0) (acc '()) (cur ""))
+    (if (>= i (string-length s))
+        (reverse (if (equal? cur "") acc (cons cur acc)))
+        (if (= (string-ref s i) 32)
+            (loop (+ i 1) (if (equal? cur "") acc (cons cur acc)) "")
+            (loop (+ i 1) acc (string-append cur (substring s i (+ i 1))))))))
+
+(define (solve-at src i)
+  (let ((at (find-at src "(define (solve" i)))
+    (if (< at 0)
+        -1
+        (let ((n (+ at (string-length "(define (solve"))))
+          (if (>= n (string-length src))
+              -1
+              (let ((c (string-ref src n)))
+                (if (or (= c 32) (= c 41))
+                    at
+                    (solve-at src (+ at 1)))))))))
+
+(define (solve-params src)
+  (let ((at (solve-at src 0)))
+    (if (< at 0)
+        #f
+        (let* ((start (+ at (string-length "(define (solve")))
+               (end (let loop ((i start))
+                      (if (>= i (string-length src))
+                          -1
+                          (if (= (string-ref src i) 41)
+                              i
+                              (loop (+ i 1)))))))
+          (if (< end 0)
+              #f
+              (split-ws (substring src start end)))))))
+
+(define (arg-list params)
+  (if (null? params)
+      ""
+      (string-append " (hash-ref input \"" (car params) "\")" (arg-list (cdr params)))))
+
+(define (skip-line src i)
+  (if (>= i (string-length src))
+      i
+      (if (= (string-ref src i) 10)
+          (+ i 1)
+          (skip-line src (+ i 1)))))
+
+(define (skip-string src i)
+  (if (>= i (string-length src))
+      i
+      (let ((c (string-ref src i)))
+        (if (= c 34)
+            (+ i 1)
+            (if (= c 92)
+                (skip-string src (+ i 2))
+                (skip-string src (+ i 1)))))))
+
+(define (match-paren src i depth)
+  (if (>= i (string-length src))
+      -1
+      (let ((c (string-ref src i)))
+        (cond
+          ((= c 34) (match-paren src (skip-string src (+ i 1)) depth))
+          ((= c 59) (match-paren src (skip-line src i) depth))
+          ((= c 40) (match-paren src (+ i 1) (+ depth 1)))
+          ((= c 41) (if (= depth 1) i (match-paren src (+ i 1) (- depth 1))))
+          (else (match-paren src (+ i 1) depth))))))
+
+(define (keep-form? src i)
+  (or (starts-with? (substring src i (string-length src)) "(define ")
+      (starts-with? (substring src i (string-length src)) "(define(")
+      (starts-with? (substring src i (string-length src)) "(require ")
+      (starts-with? (substring src i (string-length src)) "(export ")))
+
+(define (keep-defines src)
+  (let loop ((i 0) (acc ""))
+    (if (>= i (string-length src))
+        acc
+        (let ((c (string-ref src i)))
+          (if (= c 40)
+              (if (keep-form? src i)
+                  (let ((end (match-paren src i 0)))
+                    (if (< end 0)
+                        acc
+                        (loop (+ end 1)
+                              (string-append acc (substring src i (+ end 1)) "\n"))))
+                  (let ((end (match-paren src i 0)))
+                    (if (< end 0)
+                        acc
+                        (loop (+ end 1) acc))))
+              (loop (+ i 1) acc))))))
+
+(define (tail-src slug params)
+  (string-append
+    "(require \"lc_json\" all:)\n"
+    "(define (lc-emit t)\n"
+    "  (let ((input (hash-ref t \"input\")))\n"
+    "    (lc-show (hash-ref t \"id\") (solve" (arg-list params) "))))\n"
+    "(define (lc-go ts)\n"
+    "  (if (null? ts) 0 (begin (lc-emit (car ts)) (lc-go (cdr ts)))))\n"
+    "(lc-go (json-parse (read-file \"corpus/leetcode/" slug "/tests.json\")))\n"))
+
+(define (candidate slug solution params)
+  (string-append
+    "(require \"lc_json\" all:)\n(require \"compat\" all:)\n"
+    (keep-defines (read-file solution))
+    "\n"
+    (tail-src slug params)))
+
+(define (logged? slug)
+  (and (file-exists? "scratch/leetcode_serve/call.log")
+       (= (shell (string-append "grep -q '^" slug " ' scratch/leetcode_serve/call.log")) 0)))
+
+(define (note slug reward base driver)
+  (shell (string-append
+           "printf '%s reward=%s base=%s driver=%s\\n' "
+           slug " " (number->string reward) " "
+           (number->string base) " " (number->string driver)
+           " >> scratch/leetcode_serve/call.log"))
+  (display slug)
+  (display " reward=")
+  (display reward)
+  (display " base=")
+  (display base)
+  (display " driver=")
+  (display driver)
+  (newline))
+
+(define (consider slug solution tests best)
+  (let ((params (solve-params (read-file solution))))
+    (if (not params)
+        best
+        (let* ((body (candidate slug solution params))
+               (path "scratch/leetcode_serve/candidate.aura"))
+          (write-file path body)
+          (let ((hits (score-files path tests)))
+            (if (> hits (cdr best))
+                (cons body hits)
+                best))))))
+
+(define (one-base path tests best)
+  (if (file-exists? path)
+      (let ((hits (score-files path tests)))
+        (if (> hits best) hits best))
+      best))
+
+(define (pick-slug slug tests stats)
+  (let* ((dir (string-append "corpus/leetcode/" slug))
+         (a (string-append dir "/solution.aura"))
+         (b (string-append dir "/solution_2.aura"))
+         (done (string-append dir "/solution_rl.aura"))
+         (base (one-base done tests (one-base b tests (one-base a tests 0))))
+         (total (length tests)))
+    (if (>= base total)
+        (begin
+          (note slug 0 base base)
+          stats)
+        (let* ((none (cons "" base))
+               (try-a (if (file-exists? a) (consider slug a tests none) none))
+               (try-b (if (file-exists? b) (consider slug b tests try-a) try-a))
+               (reward (- (cdr try-b) base)))
+          (note slug reward base (cdr try-b))
+          (if (> reward 0)
+              (begin
+                (write-file done (car try-b))
+                (cons (+ (car stats) reward)
+                      (cons (+ (car (cdr stats)) reward)
+                            (cons (+ (car (cdr (cdr stats))) 1)
+                                  (cdr (cdr (cdr stats)))))))
+              (if (< reward 0)
+                  (cons (+ (car stats) reward)
+                        (cons (car (cdr stats))
+                              (cons (car (cdr (cdr stats)))
+                                    (+ (cdr (cdr (cdr stats))) 1))))
+                  stats))))))
+
+(define (epoch lines stats left)
+  (if (or (null? lines) (= left 0))
+      stats
+      (let ((line (car lines)))
+        (if (equal? line "")
+            (epoch (cdr lines) stats left)
+            (let* ((row (json-parse line))
+                   (slug (hash-ref row "slug"))
+                   (tests-path (string-append "corpus/leetcode/" slug "/tests.json")))
+              (if (or (not (file-exists? tests-path)) (logged? slug))
+                  (epoch (cdr lines) stats left)
+                  (epoch (cdr lines)
+                         (pick-slug slug (json-parse (read-file tests-path)) stats)
+                         (- left 1))))))))
+
+(define (step-budget)
+  (if (file-exists? "scratch/leetcode_serve/limit")
+      (string->number (string-trim (read-file "scratch/leetcode_serve/limit")))
+      1000000))
+
+(let* ((mk (shell (string-append "mkdir -p " root "/scratch/leetcode_serve")))
+       (old (if (file-exists? policy-path)
+                (json-parse (read-file policy-path))
+                (hash "weight" 1)))
+       (start (hash-ref old "weight" 1))
+       (lines (string-split (read-file "corpus/leetcode/catalog.jsonl") "\n"))
+       (stats (epoch lines (cons start (cons 0 (cons 0 0))) (step-budget)))
+       (weight (car stats))
+       (gained (car (cdr stats)))
+       (kept (car (cdr (cdr stats))))
+       (rejected (cdr (cdr (cdr stats))))
+       (pol (hash "action" "json-case"
+                  "weight" weight
+                  "gained" gained
+                  "kept" kept
+                  "rejected" rejected)))
+  (write-file policy-path (json-encode pol))
+  (display "CALL_OK weight=")
+  (display weight)
+  (display " gained=")
+  (display gained)
+  (display " kept=")
+  (display kept)
+  (display " rejected=")
+  (display rejected)
+  (newline)
+  mk)
