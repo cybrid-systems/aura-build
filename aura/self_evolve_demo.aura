@@ -1,0 +1,37 @@
+; aura-build kernel demo — one mutation round, fitness from observation.
+; No Python. Each candidate is mutate:rebind, then eval-current.
+; Feedback is the live value of cand plus compile:epoch from stats:get.
+; Success line: DEMO_OK selected=<bump> observed=<value>
+(set-code "(define (cand) 0)")
+(eval-current)
+
+(let* ((step (lambda (bump)
+               (let* ((epoch0 (or (stats:get "compile:epoch") 0))
+                      (_ (mutate:rebind "cand"
+                           (string-append "(lambda () " (number->string bump) ")")
+                           (string-append "demo-" (number->string bump))))
+                      (_2 (eval-current))
+                      (epoch1 (or (stats:get "compile:epoch") 0))
+                      (value (cand)))
+                 (hash "bump" bump
+                       "value" value
+                       "epoch0" epoch0
+                       "epoch1" epoch1))))
+       (a (step 2))
+       (b (step 9))
+       (c (step 4))
+       (ab (if (> (hash-ref a "value") (hash-ref b "value")) a b))
+       (best (if (> (hash-ref ab "value") (hash-ref c "value")) ab c)))
+  (display "DEMO_OK selected=")
+  (display (hash-ref best "bump"))
+  (display " observed=")
+  (display (hash-ref best "value"))
+  (display " epoch=")
+  (display (hash-ref best "epoch0"))
+  (display "->")
+  (display (hash-ref best "epoch1"))
+  (newline)
+  (display "DEMO_OBS a=")(display (hash-ref a "value"))
+  (display " b=")(display (hash-ref b "value"))
+  (display " c=")(display (hash-ref c "value"))
+  (newline))
