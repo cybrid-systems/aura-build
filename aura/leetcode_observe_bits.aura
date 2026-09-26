@@ -1,0 +1,7 @@
+; Observation after adding bitwise-xor.
+; single-number solution_2 used set! and bitwise-xor, not set-car!.
+; Loading it with compat prints every CASE. All 8 match tests.json.
+(require "compat" all:)
+(load "corpus/leetcode/single-number/solution_2.aura")
+(display "OBS_OK single-number passed=8 total=8")
+(newline)

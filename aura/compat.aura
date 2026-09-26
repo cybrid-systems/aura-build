@@ -1,6 +1,8 @@
 ; Small Scheme names the leetcode corpus calls and this image does not bind.
 ; Pure only. set-car! stays out: a program that contains set-car! makes set! unbound (#4122).
-(export make-list assoc assq list-tail expt make-string)
+(export make-list assoc assq list-tail expt make-string
+        string even? caddr cadddr
+        bitwise-xor bitwise-and bit-and logxor ash)
 
 (define (make-list n fill)
   (if (<= n 0)
@@ -35,3 +37,54 @@
   (if (<= n 0)
       ""
       (string-append (list->string (list fill)) (make-string (- n 1) fill))))
+
+(define (string ch)
+  (list->string (list ch)))
+
+(define (even? n)
+  (= (modulo n 2) 0))
+
+(define (caddr x)
+  (car (cdr (cdr x))))
+
+(define (cadddr x)
+  (car (cdr (cdr (cdr x)))))
+
+(define (u32 n)
+  (modulo n 4294967296))
+
+(define (from-u32 u)
+  (if (>= u 2147483648) (- u 4294967296) u))
+
+(define (xor-step a b bit left acc)
+  (if (= left 0)
+      acc
+      (let ((ba (modulo a 2))
+            (bb (modulo b 2)))
+        (xor-step (quotient a 2) (quotient b 2) (* bit 2) (- left 1)
+                  (if (= ba bb) acc (+ acc bit))))))
+
+(define (and-step a b bit left acc)
+  (if (= left 0)
+      acc
+      (let ((ba (modulo a 2))
+            (bb (modulo b 2)))
+        (and-step (quotient a 2) (quotient b 2) (* bit 2) (- left 1)
+                  (if (and (= ba 1) (= bb 1)) (+ acc bit) acc)))))
+
+(define (bitwise-xor a b)
+  (from-u32 (xor-step (u32 a) (u32 b) 1 32 0)))
+
+(define (bitwise-and a b)
+  (from-u32 (and-step (u32 a) (u32 b) 1 32 0)))
+
+(define (bit-and a b)
+  (bitwise-and a b))
+
+(define (logxor a b)
+  (bitwise-xor a b))
+
+(define (ash n k)
+  (if (>= k 0)
+      (* n (expt 2 k))
+      (quotient n (expt 2 (- k)))))
