@@ -1,0 +1,32 @@
+; Kernel selects a make-list body by observation. No Python.
+; Each candidate is mutate:rebind, then eval-current, then a live call.
+; Score 1 only when (make-list 3 7) is the list (7 7 7).
+; Success line: EVOLVE_OK selected=good score=1
+(set-code "(define (make-list n fill) 0)")
+(eval-current)
+
+(let* ((good-body "(lambda (n fill) (if (<= n 0) '() (cons fill (make-list (- n 1) fill))))")
+       (score-of (lambda (body)
+                   (mutate:rebind "make-list" body "cand")
+                   (eval-current)
+                   (let ((xs (make-list 3 7)))
+                     (if (not (pair? xs))
+                         0
+                         (if (not (= (length xs) 3))
+                             0
+                             (if (= (car xs) 7) 1 0))))))
+       (bad (score-of "(lambda (n fill) 0)"))
+       (short (score-of "(lambda (n fill) (list fill))"))
+       (good (score-of good-body))
+       (best (if (> good bad)
+                 (if (> good short) "good" "short")
+                 (if (> short bad) "short" "bad"))))
+  (display "EVOLVE_OK selected=")
+  (display best)
+  (display " score=")
+  (display (if (equal? best "good") good (if (equal? best "short") short bad)))
+  (newline)
+  (display "EVOLVE_OBS bad=")(display bad)
+  (display " short=")(display short)
+  (display " good=")(display good)
+  (newline))
