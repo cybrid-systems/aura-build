@@ -16,8 +16,8 @@
 
 | Layer | Tip |
 |-------|-----|
-| Aura Soft Ready binary | `/workspace/aura-grok/build_soft4055/aura` (=`build_soft4048`) @ **`bd1c610`** (#4055 native encoding prims; #4054 TLS body-lock; #4053 async http-post; #4048 denseness; #4047 Soft Ready profile) |
-| aura-build | main @ tip after P1 wire (`self-evolve combat` CLI + ROUND1 fix `9cc096c`) |
+| Aura Soft Ready binary | `/workspace/aura-grok/build_soft4079/aura` (=`build_soft4048`) @ **`483bd70`** (#4048 denseness; #4047 Soft Ready profile; Soft residuals [#4130](https://github.com/cybrid-systems/aura/issues/4130)–[#4132](https://github.com/cybrid-systems/aura/issues/4132)) |
+| aura-build | main @ tip with Soft runtime self-evolve (`self-evolve runtime` / `leetcode` + `soft_select`) |
 
 Rebuild Soft only if that binary is missing/outdated. Soft honesty banner stays **Soft Ready**.
 
@@ -66,7 +66,7 @@ Soft serve attach (Soft Ready tip 8b8c9fa+)
 Primary CLIs for combat (reuse before rewriting stamp `self-evolve`):
 
 ```bash
-export AURA_BIN=/workspace/aura-grok/build_soft4055/aura
+export AURA_BIN=/workspace/aura-grok/build_soft4079/aura
 
 # Kill Soft --serve / --serve-async zombies first
 pkill -f 'aura .*--serve' || true
@@ -134,7 +134,7 @@ P1 CLI landed as `aura-build self-evolve combat` (`src/aura_build/self_evolve_co
 ## P1 CLI (landed)
 
 ```bash
-export AURA_BIN=/workspace/aura-grok/build_soft4055/aura
+export AURA_BIN=/workspace/aura-grok/build_soft4079/aura
 
 # Refuse without Soft attach (exit 2)
 aura-build self-evolve combat --json
@@ -159,6 +159,20 @@ Flags: `--no-push` default (`--push` / `--no-push` BooleanOptionalAction); `--st
 - [x] Refuse without `serve_attach_ok`; `--dry-run` CI-safe; stamp path unchanged.
 
 ---
+
+
+## Soft runtime self-evolve (product path; not combat stamp)
+
+Combat (this doc) = Soft + fiber explore + fiber LLM dogfood on mini-* / pursue goals.
+**Product Soft self-evolve** (AST→source on aura-build itself / Soft leetcode) is documented in
+[optimal-dev-loop.md](optimal-dev-loop.md) § Soft runtime self-evolve:
+
+- `aura-build self-evolve runtime` — denseness → worldlines → `soft_select` (Soft `pick-best`) → `(current-source :workspace :pretty)` → commit+push
+- `aura-build self-evolve leetcode` — same Soft loop on corpus (MiniMax propose-only; no gold into display)
+- Soft tip: `build_soft4079` @ `483bd70`. Sequential denseness honesty; never invent Soft Ready / `fiber_live`
+- Soft residuals: Aura [#4130](https://github.com/cybrid-systems/aura/issues/4130) empty-list unparse, [#4131](https://github.com/cybrid-systems/aura/issues/4131) SIGTERM hang, [#4132](https://github.com/cybrid-systems/aura/issues/4132) export names dropped on pretty unparse
+
+L1 `aura-build self-evolve` (no subcommand) remains stamp/simulated fitness — not Soft runtime materialize.
 
 ## See also
 

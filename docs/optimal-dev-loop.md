@@ -50,7 +50,7 @@ Never invent `serve` / `fiber_live` / `incr_proven` from env alone.
 ## How to run (box)
 
 ```bash
-export AURA_BIN=/workspace/aura-redis/.deps/aura/build/aura   # + GCC16 sidecar as elsewhere
+export AURA_BIN=/workspace/aura-grok/build_soft4079/aura   # Soft tip 483bd70; cold/redis build only as fallback
 
 # 1) Start long-lived serve (writes .aura-build/serve-session.json)
 aura-build session start
@@ -155,9 +155,54 @@ Honesty:
 - `orch_observation.ok` only when Soft `(engine:metrics "query:orch-module-stats")` returns a live hash (sentinel via Soft hash-values `2589` hits; Soft string `hash-ref` is opaque)
 - `repair_path=soft_session_worldline` when prefer-session verify is on the live Soft holder
 
+
+## Soft runtime self-evolve (north-star product path)
+
+Primary aura-build self-improve loop on a **measured** Soft tip — not stamp-only dogfood,
+not invented Soft Ready / `fiber_live` / `incr_proven`.
+
+```
+Soft --serve denseness probe (fiber:spawn/join) — fiber_live only if measured
+  → mutate / set-code worldlines (sequential Soft Ready oneshots today)
+  → soft_select via Soft-materialized pick-best (aura/soft_worldline_pick.aura)
+       honest host max fallback if Soft load/eval fails or mismatches
+  → (current-source :workspace :pretty) materialize winner AST→source
+  → light verify (stamp / Soft oneshot / pytest as applicable)
+  → git commit+push aura-build main
+```
+
+| Piece | Role |
+|-------|------|
+| Soft tip binary | `/workspace/aura-grok/build_soft4079/aura` (=`build_soft4048`) @ **`483bd70`** — Soft Ready denseness note `soft_ready_async_denseness_4048` when probe ok |
+| `aura-build self-evolve runtime` | Soft serve fiber worldlines → soft_select → current-source stamp + optional Soft-materialized helpers (`soft_worldline_pick`, `soft_starts_with`) |
+| `aura-build self-evolve leetcode` | Same Soft loop on corpus problems (recipes / MiniMax propose-only); Soft session restart on `serve_sock_missing` / `serve_session_timeout` |
+| `soft_select` | Soft inline `pick-best` (no FlatAST wipe); stamp `soft_select.via=soft_pick_best` only when Soft value matches host max |
+
+**Sequential denseness honesty:** Soft Ready denseness is live after Aura [#4048](https://github.com/cybrid-systems/aura/issues/4048), but explorer worldlines are still **sequential Soft oneshots** on the shared serve FlatAST (`explore_parallel=fiber_sequential_oneshots`). Stamp `worldline_backend=fiber_graph` / `fiber_live=true` **only** when the denseness probe measured ok — never from env.
+
+**AST→source:** winners are written from Soft `(current-source :workspace :pretty)`, not host string-built bodies. Soft residuals (do not invent Soft Ready around them):
+
+| Aura issue | Soft residual |
+|------------|---------------|
+| [#4130](https://github.com/cybrid-systems/aura/issues/4130) | Empty list unparse → `(quote 0)` |
+| [#4131](https://github.com/cybrid-systems/aura/issues/4131) | Soft oneshot hang ignores SIGTERM until killpg |
+| [#4132](https://github.com/cybrid-systems/aura/issues/4132) | `current-source :pretty` drops export names → empty `(export)`; host may restore export honestly |
+
+```bash
+export AURA_BIN=/workspace/aura-grok/build_soft4079/aura
+
+# Soft runtime self-evolve (stamp + Soft-materialized helpers; measured fiber_live)
+aura-build self-evolve runtime --aura-bin "$AURA_BIN" --verify stamp
+
+# Soft leetcode one-problem / batch (propose-only LLM; no gold hardcoding into display)
+aura-build self-evolve leetcode --aura-bin "$AURA_BIN" --slug <slug> --llm
+```
+
+Combat Soft+fiber LLM dogfood remains [self-evolve-combat.md](self-evolve-combat.md). L1 stamp `aura-build self-evolve` without `runtime`/`leetcode`/`combat` is still simulated fitness — not this Soft AST→source path.
+
 ## See also
 
-- [self-evolve-combat.md](self-evolve-combat.md) — combat self-evolve SSOT (Soft + fiber + dual sink)
+- [self-evolve-combat.md](self-evolve-combat.md) — combat Soft+fiber LLM dogfood; Soft runtime product path is § Soft runtime self-evolve above
 - [architecture.md](architecture.md) — layers
 - [storm-still-incr.md](storm-still-incr.md) — prove-or-refuse
 - [trajectory-protocol-v0.md](trajectory-protocol-v0.md) — `runtime.session_model`
