@@ -505,8 +505,18 @@ def score_aura_file(
             text=True,
             timeout=timeout_s,
             check=False,
+            start_new_session=True,
         )
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
+        # Soft tip sometimes ignores SIGTERM; kill the process group.
+        try:
+            import os
+            import signal
+
+            if getattr(exc, "pid", None):
+                os.killpg(exc.pid, signal.SIGKILL)
+        except Exception:
+            pass
         return {"ok": False, "hits": 0, "total": len(tests), "reason": "timeout"}
     hits, total, got = _score_stdout(proc.stdout or "", tests)
     return {
@@ -800,6 +810,23 @@ def _fail_case_details(tests: list[dict[str, Any]], got: dict[Any, str]) -> list
     return details
 
 
+_HANG_SKIP_SLUGS = {
+    "palindrome-linked-list",
+    "reorder-list",
+    "linked-list-cycle",
+    "linked-list-cycle-ii",
+    "reverse-linked-list",
+    "reverse-linked-list-ii",
+    "merge-two-sorted-lists",
+    "remove-nth-node-from-end-of-list",
+    "swap-nodes-in-pairs",
+    "rotate-list",
+    "partition-list",
+    "sort-list",
+    "insertion-sort-list",
+}
+
+
 _TREE_HOSTILE_PREFIXES = (
     "binary-tree",
     "same-tree",
@@ -831,7 +858,7 @@ def _list_llm_targets(repo: Path, *, limit: int = 12) -> list[str]:
     for d in sorted(root.iterdir()):
         if not d.is_dir() or (d / "solution_runtime.aura").is_file():
             continue
-        if d.name in RECIPES or _is_tree_hostile(d.name):
+        if d.name in RECIPES or _is_tree_hostile(d.name) or d.name in _HANG_SKIP_SLUGS:
             continue
         meta_p, tests_p = d / "meta.json", d / "tests.json"
         if not meta_p.is_file() or not tests_p.is_file():
@@ -1158,8 +1185,8 @@ def repair_llm(
         best = max(explorers, key=lambda e: (int(e["hits"]), 0 if e["name"] != "baseline" else -1, e["name"]))
         base_hits = int(baseline.get("hits") or 0)
         best_hits = int(best["hits"])
-        best_full = best_hits == int(best.get("total") or 0) and best_hits > 0
-        if best_hits < base_hits or (best_hits == base_hits and not best_full):
+        # Strict improvement only (do not rewrite already-full Soft baselines).
+        if best_hits <= base_hits:
             return {
                 "ok": False,
                 "reason": "no_gain_vs_baseline",

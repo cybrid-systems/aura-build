@@ -1,0 +1,185 @@
+; soft_leetcode_runtime slug=number-of-connected-components-in-an-undirected-graph path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=fiber fiber_llm_ok=true
+; selected=llm-2 hits=7/8
+; baseline_hits=3/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define make-uf
+    (lambda (n)
+      (let ((parent (list-tabulate
+          n (lambda (i)
+            i))))
+        (let ((rank (list-tabulate
+            n (lambda (i)
+              0))))
+          (cons
+            parent rank)))))
+  (define list-tabulate
+    (lambda (n f)
+      (letrec ((loop (lambda (i acc)
+          (if (=
+              i n)
+            (reverse acc)
+            (loop
+              (+
+                i 1) (cons
+                (f i) acc))))))
+        (loop
+          0 (quote 0)))))
+  (define list-set
+    (lambda (lst i v)
+      (letrec ((loop (lambda (j l acc)
+          (if (null? l)
+            (reverse acc)
+            (if (=
+                j i)
+              (loop
+                (+
+                  j 1) (cdr l) (cons
+                  v acc))
+              (loop
+                (+
+                  j 1) (cdr l) (cons
+                  (car l) acc)))))))
+        (loop
+          0 lst (quote 0)))))
+  (define list-ref-safe
+    (lambda (lst i)
+      (letrec ((loop (lambda (j l)
+          (if (null? l)
+            #f
+            (if (=
+                j i)
+              (car l)
+              (loop
+                (+
+                  j 1) (cdr l)))))))
+        (loop
+          0 lst))))
+  (define uf-find
+    (lambda (uf x)
+      (let ((parent (car uf)))
+        (let ((px (list-ref-safe
+            parent x)))
+          (if (=
+              px x)
+            x
+            (let ((root (uf-find
+                uf px)))
+              (begin
+                (set-car!
+                  uf (list-set
+                    (car uf) x root))
+                root)))))))
+  (define uf-union
+    (lambda (uf x y)
+      (let ((rx (uf-find
+          uf x)))
+        (let ((ry (uf-find
+            uf y)))
+          (if (=
+              rx ry)
+            #f
+            (let ((parent (car uf)))
+              (let ((rank (cdr uf)))
+                (let ((rx-rank (list-ref-safe
+                    rank rx)))
+                  (let ((ry-rank (list-ref-safe
+                      rank ry)))
+                    (if (<
+                        rx-rank ry-rank)
+                      (begin
+                        (set-car!
+                          uf (list-set
+                            parent rx ry))
+                        #t)
+                      (if (>
+                          rx-rank ry-rank)
+                        (begin
+                          (set-car!
+                            uf (list-set
+                              parent ry rx))
+                          #t)
+                        (begin
+                          (set-car!
+                            uf (list-set
+                              parent ry rx))
+                          (set-cdr!
+                            uf (list-set
+                              rank rx (+
+                                rx-rank 1)))
+                          #t))))))))))))
+  (define solve
+    (lambda (n edges)
+      (let ((uf (make-uf n)))
+        (let ((count n))
+          (letrec ((loop (lambda (es c)
+              (if (null? es)
+                c
+                (let ((edge (car es)))
+                  (let ((u (car (car es))))
+                    (let ((v (car (cdr (car es)))))
+                      (if (uf-union
+                          uf u v)
+                        (loop
+                          (cdr es) (-
+                            c 1))
+                        (loop
+                          (cdr es) c)))))))))
+            (loop
+              edges count))))))
+  (display "CASE0=")
+  (display (solve
+      10 (quote 0)))
+  (newline)
+  (display "CASE1=")
+  (display (solve
+      5 (list
+        (list
+          0 1) (list
+          1 2) (list
+          2 3) (list
+          3 4))))
+  (newline)
+  (display "CASE2=")
+  (display (solve
+      1 (quote 0)))
+  (newline)
+  (display "CASE3=")
+  (display (solve
+      4 (quote 0)))
+  (newline)
+  (display "CASE4=")
+  (display (solve
+      6 (list
+        (list
+          0 1) (list
+          2 3) (list
+          4 5))))
+  (newline)
+  (display "CASE5=")
+  (display (solve
+      5 (list
+        (list
+          0 1) (list
+          1 2) (list
+          0 2) (list
+          3 4))))
+  (newline)
+  (display "CASE6=")
+  (display (solve
+      3 (list
+        (list
+          0 1) (list
+          1 2))))
+  (newline)
+  (display "CASE7=")
+  (display (solve
+      4 (list
+        (list
+          0 1) (list
+          2 3) (list
+          1 2))))
+  (newline))
