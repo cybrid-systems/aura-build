@@ -53,11 +53,40 @@
       "tests_total": 8,
       "stderr_snippet": "",
       "stdout_snippet": "CASE0=[dogcat, catdog]\nCASE1=[ab]\nCASE2=[]\nCASE3=[]\nCASE4=[]\nCASE5=[]\nCASE6=[aa, aaa, aaaa]\nCASE7=[catrat, ratcatdog]\n"
+    },
+    {
+      "variant": 90,
+      "aura_file": "solution_repair.aura",
+      "temperature": 0.5,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-27T13:41:08Z",
+      "ts_local": "2026-09-27 21:41:08 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 3703,
+        "total_characters": 0,
+        "prompt_tokens": 2609,
+        "completion_tokens": 1094,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.025,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 45:53: parse error: unexpected ')'\n",
+      "stdout_snippet": "",
+      "repair_of": "solution_2.aura",
+      "prior_passed": 4
     }
   ],
   "slug": "concatenated-words",
   "title": "Concatenated Words",
   "category": "graphs_bfs_dfs",
-  "updated_at": "2026-09-24T15:15:56Z",
-  "updated_at_local": "2026-09-24 23:15:56 CST"
+  "updated_at": "2026-09-27T13:41:08Z",
+  "updated_at_local": "2026-09-27 21:41:08 CST"
 }

@@ -1,0 +1,123 @@
+;; Slug: concatenated-words
+;; Title: Concatenated Words
+;; Approach: DFS with memoization per word.
+;; For each word, try splitting it at every position: if prefix is in set,
+;; recursively check whether suffix can be formed. We require at least one
+;; further split (so total >=2 words). We exclude self-membership.
+;; Memoization is per (suffix, word) pair so results don't leak across words.
+
+(define (member? x lst)
+  (cond ((null? lst) #f)
+        ((equal? (car lst) x) #t)
+        (else (member? x (cdr lst)))))
+
+(define (substring s start end)
+  ;; end is exclusive
+  (let loop ((i 0) (acc '()) (chars (string->list s)))
+    (cond ((null? chars) (list->string (reverse acc)))
+          ((and (>= i start) (< i end))
+           (loop (+ i 1) (cons (car chars) acc) (cdr chars)))
+          (else
+           (loop (+ i 1) acc (cdr chars))))))
+
+(define (string-length s)
+  (let loop ((cs (string->list s)) (n 0))
+    (if (null? cs) n (loop (cdr cs) (+ n 1)))))
+
+(define (make-set words)
+  (let loop ((ws words) (s '()))
+    (if (null? ws)
+        s
+        (loop (cdr ws) (cons (car ws) s)))))
+
+;; Memoization cache: assoc list mapping (word . suffix) -> result (#t/#f)
+(define *memo* '())
+
+(define (memo-get w suf)
+  (let loop ((m *memo*))
+    (cond ((null? m) #f)
+          ((and (equal? (car (car m)) w)
+                (equal? (cdr (car m)) suf))
+           (cdr (car m)))
+          (else (loop (cdr m))))))
+
+(define (memo-put w suf v)
+  (set! *memo* (cons (cons w (cons suf v)) *memo*))))
+
+;; can_form: given a string s, set of words (as list), and the current word w
+;; (to exclude from prefix matches), return #t if s can be split into 2+ words
+;; from the set, none of which equals w.
+(define (can_form s words-set w)
+  (let ((cached (memo-get w s)))
+    (if cached
+        cached
+        (let ((n (string-length s)))
+          (let loop ((i 1) (res #f))
+            (cond ((>= i n) res)
+                  (else
+                   (let ((pref (substring s 0 i))
+                         (suf (substring s i n)))
+                     (if (and (member? pref words-set)
+                              (not (equal? pref w))
+                              (or (member? suf words-set)
+                                  (and (not (equal? suf w))
+                                       (can_form suf words-set w))))
+                         (begin
+                          (memo-put w s #t)
+                          #t)
+                         (loop (+ i 1) res))))))))))
+
+(define (solve words)
+  (let ((words-set (make-set words)))
+    (let loop ((ws words) (acc '()))
+      (if (null? ws)
+          (reverse acc)
+          (let ((w (car ws)))
+            (if (can_form w words-set w)
+                (loop (cdr ws) (cons w acc))
+                (loop (cdr ws) acc)))))))
+
+;; Display helpers
+(define (display-list lst)
+  (display "[")
+  (let loop ((l lst) (first #t))
+    (cond ((null? l) (display "]"))
+          (else
+           (if first (set! first #f) (display ", "))
+           (display (car l))
+           (loop (cdr l) first)))))
+
+(define (display-case i result)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display-list result)
+  (newline))
+
+(define (reset-memo)
+  (set! *memo* '()))
+
+;; Test cases
+(reset-memo)
+(display-case 0 (solve (list "cat" "dog" "catsdog" "dogcat" "catdog")))
+
+(reset-memo)
+(display-case 1 (solve (list "a" "b" "ab" "abc" "abcd" "abcde")))
+
+(reset-memo)
+(display-case 2 (solve (list)))
+
+(reset-memo)
+(display-case 3 (solve (list "single")))
+
+(reset-memo)
+(display-case 4 (solve (list "a" "b" "c")))
+
+(reset-memo)
+(display-case 5 (solve (list "ab" "bc" "abc")))
+
+(reset-memo)
+(display-case 6 (solve (list "a" "aa" "aaa" "aaaa")))
+
+(reset-memo)
+(display-case 7 (solve (list "cat" "rat" "catrat" "ratcatdog" "dog")))

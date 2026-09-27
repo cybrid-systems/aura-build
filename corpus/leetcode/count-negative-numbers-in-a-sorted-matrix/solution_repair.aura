@@ -1,32 +1,22 @@
-(require "compat" all:)
-
 (define (neg-count grid)
-  ;; Count negative numbers in a matrix sorted non-increasingly by row and column.
-  ;; Walk from top-right corner in O(m + n).
-  (cond
-    ((null? grid) 0)
-    (else
-     (let ((rows (length grid))
-           (cols (length (car grid)))
-           (r 0)
-           (c (- (length (car grid)) 1))
-           (cnt 0))
-       (let loop ((r r) (c c) (cnt cnt))
-         (cond
-           ((or (>= r rows) (< c 0)) cnt)
-           (else
-            (let ((val (list-ref (list-ref grid r) c)))
-              (if (< val 0)
-                  ;; All values at column c from row r downward are negative.
-                  ;; Their count is (rows - r). Add to cnt and move left.
-                  (loop r (- c 1) (+ cnt (- rows r)))
-                  ;; val >= 0, so column c has no negatives at or below row r.
-                  ;; Move down one row, keep column c.
-                  (loop (+ r 1) c cnt))))))))))
+  ;; Count negative numbers in a matrix where each row and column is sorted non-increasingly.
+  ;; Walks from top-right corner in O(m+n).
+  (let ((rows (length grid))
+        (cols (if (null? grid) 0 (length (car grid))))
+        (start-c (if (null? grid) 0 (- (length (car grid)) 1))))
+    (let loop ((r 0) (c start-c) (cnt 0))
+      (cond
+        ((or (>= r rows) (< c 0)) cnt)
+        (else
+         (let ((val (list-ref (list-ref grid r) c)))
+           (if (< val 0)
+               (loop (+ r 1) c (+ cnt (- rows r)))
+               (loop r (- c 1) cnt))))))))
 
 (define (solve grid)
   (neg-count grid))
 
+;; Display one test case result
 (define (run-case i grid)
   (display "CASE")
   (display i)

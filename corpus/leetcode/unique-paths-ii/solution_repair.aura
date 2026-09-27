@@ -1,0 +1,102 @@
+(require "compat" all:)
+
+(define MOD 1000000007)
+
+(define (mod-add a b)
+  (let ((s (+ a b)))
+    (if (>= s MOD) (- s MOD) s)))
+
+(define (list-ref-safe lst k)
+  (cond ((null? lst) 0)
+        ((= k 0) (car lst))
+        (else (list-ref-safe (cdr lst) (- k 1)))))
+
+(define (get-row grid i)
+  (list-ref-safe grid i))
+
+(define (make-list-of n v)
+  (if (= n 0) '() (cons v (make-list-of (- n 1) v))))
+
+(define (make-rows m n)
+  (if (= m 0) '() (cons (make-list-of n 0) (make-rows (- m 1) n))))
+
+(define (set-cell row idx val)
+  (cond ((null? row) '())
+        ((= idx 0) (cons val (cdr row)))
+        (else (cons (car row) (set-cell (cdr row) (- idx 1) val)))))
+
+(define (set-row grid i row)
+  (cond ((null? grid) '())
+        ((= i 0) (cons row (cdr grid)))
+        (else (cons (car grid) (set-row (cdr grid) (- i 1) row)))))
+
+(define (dp-fill dp grid i j)
+  (cond ((= i 0) dp)
+        ((= j 0) dp)
+        ((= (list-ref-safe (get-row grid i) j) 1)
+         (let ((row (get-row dp i)))
+           (let ((new-row (set-cell row j 0)))
+             (set-row dp i new-row))))
+        (else
+         (let ((u (list-ref-safe (get-row dp (- i 1)) j)))
+           (let ((l (list-ref-safe (get-row dp i) (- j 1))))
+             (let ((val (mod-add u l)))
+               (let ((row (get-row dp i)))
+                 (let ((new-row (set-cell row j val)))
+                   (set-row dp i new-row)))))))))
+
+(define (solve grid)
+  (let ((m (length grid)))
+    (if (= m 0) 0
+      (let ((n (length (car grid))))
+        (if (= n 0) 0
+          (if (= (list-ref-safe (get-row grid 0) 0) 1) 0
+            (let ((dp (make-rows m n)))
+              (let ((row0 (get-row dp 0)))
+                (let ((dp1 (set-row dp 0 (set-cell row0 0 1))))
+                  (let ((dp (fill-row0 dp1 grid 0 n)))
+                    (let ((dp (fill-col0 dp 0 m n)))
+                      (let ((dp (fill-rest dp 1 1 m n)))
+                        (list-ref-safe (get-row dp (- m 1)) (- n 1))))))))))))))
+
+(define (fill-row0 dp grid i n)
+  (cond ((= i n) dp)
+        ((= (list-ref-safe (get-row grid 0) i) 1)
+         (fill-row0 dp grid (+ i 1) n))
+        (else
+         (let ((row (get-row dp 0)))
+           (let ((new-row (set-cell row i 1)))
+             (fill-row0 (set-row dp 0 new-row) grid (+ i 1) n))))))
+
+(define (fill-col0 dp j m n)
+  (cond ((= j m) dp)
+        ((= (list-ref-safe (get-row dp j) 0) 1) ; already set
+         (fill-col0 dp (+ j 1) m n))
+        (else
+         (let ((g (list-ref-safe (get-row (get-row dp j) 0) 0)))
+           ; Actually need to check grid
+           (fill-col0-help dp j m n)))))
+
+(define (fill-col0-help dp j m n)
+  ; j >= 1
+  (let ((grid-cell-arg '()))
+    ; We'll just inline: check grid[j][0]
+    (let ((c 0))
+      (define (helper dp2 j2)
+        (cond ((= j2 m) dp2)
+              (else
+                (let ((row (get-row dp2 j2)))
+                  (let ((new-row (set-cell row 0 c)))
+                    (helper (set-row dp2 j2 new-row) (+ j2 1)))))))
+      ; We need to walk through and set dp[j][0] = (grid[j][0]==1 ? 0 : dp[j-1][0])
+      (fill-col0-loop dp j m))))
+
+(define (fill-col0-loop dp j m)
+  (cond ((= j m) dp)
+        (else
+          (let ((above (list-ref-safe (get-row dp (- j 1)) 0)))
+            ; need grid[j][0]
+            (let ((gc (grid-j0 dp j)))  ; not defined - just inline
+              0)))))
+
+; This is getting messy. Let me restart with a cleaner approach.

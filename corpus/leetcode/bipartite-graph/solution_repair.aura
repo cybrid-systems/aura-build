@@ -1,3 +1,5 @@
+(require "compat" all:)
+
 (define (make-adj n edges)
   (let ((adj (make-vector (+ n 1) '())))
     (define (add-edge u v)
@@ -11,7 +13,7 @@
 
 (define (bipartite? n adj)
   (let ((color (make-vector (+ n 1) -1)))
-    (define (bfs s)
+    (define (try-start s)
       (vector-set! color s 0)
       (let loop ((queue (list s)))
         (if (null? queue) #t
@@ -28,12 +30,11 @@
                         ((= (vector-ref color v) (vector-ref color u))
                          #f)
                         (else (inner (cdr nbs)))))))))))
-    (let outer ((v 1) (ok #t))
-      (cond ((not ok) #f)
-            ((> v n) #t)
+    (let outer ((v 1))
+      (cond ((> v n) #t)
             ((= (vector-ref color v) -1)
-             (if (bfs v) (outer (+ v 1) #t) #f))
-            (else (outer (+ v 1) ok))))))
+             (if (try-start v) (outer (+ v 1)) #f))
+            (else (outer (+ v 1)))))))
 
 (define (solve n edges)
   (let ((adj (make-adj n edges)))
@@ -41,7 +42,6 @@
 
 (define (bool->str b) (if b "YES" "NO"))
 
-;; Embedded test cases
 (define cases
   (list
     (list 3 (list (list 1 2) (list 2 3) (list 1 3)))

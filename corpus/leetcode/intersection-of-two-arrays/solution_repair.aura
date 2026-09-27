@@ -23,17 +23,16 @@
     (filter (lambda (x) (in-other? x b)) da)))
 
 (define (print-list xs)
-  (define (loop rest)
-    (cond ((null? rest) (display "]"))
-          (else
-            (display ",")
-            (display (car rest))
-            (loop (cdr rest)))))
   (display "[")
   (cond ((null? xs) (display "]"))
         (else
           (display (car xs))
-          (loop (cdr xs)))))
+          (let loop ((rest (cdr xs)))
+            (cond ((null? rest) (display "]"))
+                  (else
+                    (display ",")
+                    (display (car rest))
+                    (loop (cdr rest))))))))
 
 (define (run-case n a b)
   (display "CASE")

@@ -3,10 +3,10 @@
 
 (require "compat" all:)
 
-;; Insert into heap maintaining max-heap property (as list, sorted descending)
+;; Insert into heap maintaining max-heap property (list sorted descending)
 (define (heap-insert h x)
   (cond ((null? h) (cons x '()))
-        ((> x (car h)) (cons x (cdr h)))
+        ((>= x (car h)) (cons x h))
         (else (cons (car h) (heap-insert (cdr h) x)))))
 
 ;; Remove max from heap
@@ -27,13 +27,13 @@
   (cond
     ;; Check if we've reached target
     ((>= fuel target) stops)
-    ;; No more stations and can't reach target - try refuel from heap
+    ;; No more stations and can't reach target
     ((null? stations)
      (if (heap-empty? heap)
          -1
          (let ((biggest (heap-peek heap)))
            (solve-helper target (+ fuel biggest) '() (heap-pop heap) stops))))
-    ;; Can reach next station - pass it and add to heap
+    ;; Can reach next station: pass it, add its fuel to heap
     ((>= fuel (car (car stations)))
      (let ((next (car stations))
            (rest (cdr stations)))
@@ -45,42 +45,35 @@
        (solve-helper target (+ fuel biggest) stations (heap-pop heap) (+ stops 1))))))
 
 ;; Test cases
-;; CASE0: target=100, start=10, stations=[[10,20],[20,30],[30,40],[60,50]]
+
 (define result0
   (solve 100 10 (list (cons 10 20) (cons 20 30) (cons 30 40) (cons 60 50))))
 (display "CASE0=") (display result0) (newline)
 
-;; CASE1: target=100, start=200, stations=[[10,20],[20,30]]
 (define result1
   (solve 100 200 (list (cons 10 20) (cons 20 30))))
 (display "CASE1=") (display result1) (newline)
 
-;; CASE2: target=100, start=10, stations=[]
 (define result2
   (solve 100 10 '()))
 (display "CASE2=") (display result2) (newline)
 
-;; CASE3: target=50, start=50, stations=[]
 (define result3
   (solve 50 50 '()))
 (display "CASE3=") (display result3) (newline)
 
-;; CASE4: target=100, start=5, stations=[[10,20],[20,30]]
 (define result4
   (solve 100 5 (list (cons 10 20) (cons 20 30))))
 (display "CASE4=") (display result4) (newline)
 
-;; CASE5: target=1, start=1, stations=[]
 (define result5
   (solve 1 1 '()))
 (display "CASE5=") (display result5) (newline)
 
-;; CASE6: target=100, start=25, stations=[[25,25],[50,25],[75,25]]
 (define result6
   (solve 100 25 (list (cons 25 25) (cons 50 25) (cons 75 25))))
 (display "CASE6=") (display result6) (newline)
 
-;; CASE7: target=1000, start=100, stations=[[200,100],[400,100],[600,100],[800,100]]
 (define result7
   (solve 1000 100 (list (cons 200 100) (cons 400 100) (cons 600 100) (cons 800 100))))
 (display "CASE7=") (display result7) (newline)

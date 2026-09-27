@@ -1,0 +1,62 @@
+;; Check if a character is alphanumeric (ASCII only)
+(define (alnum? c)
+  (let ((code (char->integer c)))
+    (or (and (>= code 48) (<= code 57))
+        (and (>= code 65) (<= code 90))
+        (and (>= code 97) (<= code 122)))))
+
+;; Convert uppercase ASCII letter to lowercase
+(define (to-lower c)
+  (let ((code (char->integer c)))
+    (if (and (>= code 65) (<= code 90))
+        (integer->char (+ code 32))
+        c)))
+
+;; Two-pointer palindrome check using indices into the list
+(define (palin? lst)
+  (letrec ((len (lambda (l) (if (null? l) 0 (+ 1 (len (cdr l)))))))
+    (let ((n (len lst)))
+      (letrec ((at (lambda (l i)
+                     (if (= i 0) (car l) (at (cdr l) (- i 1))))))
+        (letrec ((check (lambda (lo hi)
+                          (cond
+                            ((>= lo hi) #t)
+                            ((not (equal? (to-lower (at lst lo))
+                                          (to-lower (at lst hi))))
+                             #f)
+                            (else (check (+ lo 1) (- hi 1)))))))
+          (check 0 (- n 1)))))))
+
+;; Normalize: keep only alphanumerics, preserving order
+(define (normalize s)
+  (letrec ((loop (lambda (acc rest)
+                   (if (null? rest)
+                       (reverse acc)
+                       (let ((c (car rest)))
+                         (if (alnum? c)
+                             (loop (cons c acc) (cdr rest))
+                             (loop acc (cdr rest))))))))
+    (loop '() (string->list s))))
+
+(define (solve s)
+  (let ((chars (normalize s)))
+    (palin? chars)))
+
+(define (bool->string b) (if b "True" "False"))
+
+(define (display-result i result)
+  (display (string-append "CASE" (number->string i) "="))
+  (display (bool->string result))
+  (newline))
+
+(define (main)
+  (display-result 0 (solve "A man, a plan, a canal: Panama"))
+  (display-result 1 (solve "race a car"))
+  (display-result 2 (solve " "))
+  (display-result 3 (solve "0P"))
+  (display-result 4 (solve ""))
+  (display-result 5 (solve "abba"))
+  (display-result 6 (solve "abc"))
+  (display-result 7 (solve "Was it a car or a cat I saw?")))
+
+(main)

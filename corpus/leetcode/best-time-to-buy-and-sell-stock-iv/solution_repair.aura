@@ -1,16 +1,18 @@
 (require "compat" all:)
 
+(define (max a b) (if (> a b) a b))
+
 (define (list-length xs)
   (if (null? xs) 0 (+ 1 (list-length (cdr xs)))))
 
 (define (list-ref xs i)
   (if (= i 0) (car xs) (list-ref (cdr xs) (- i 1))))
 
-(define (max a b) (if (> a b) a b))
+(define (reverse xs)
+  (let loop ((xs xs) (acc '()))
+    (if (null? xs) acc (loop (cdr xs) (cons (car xs) acc)))))
 
-(define (neg-inf) -1000000000)
-
-;; Greedy: unlimited transactions, sum positive diffs
+;; Greedy solution: unlimited transactions (sum positive diffs)
 (define (unlimited-profit prices n)
   (let loop ((i 1) (profit 0))
     (if (>= i n) profit
@@ -18,84 +20,57 @@
               (prev (list-ref prices (- i 1))))
           (loop (+ i 1) (if (> cur prev) (+ profit (- cur prev)) profit))))))
 
-(define (make-list-of n v)
-  (let loop ((j 0) (acc '()))
-    (if (= j n) acc
-        (loop (+ j 1) (cons v acc)))))
-
-(define (reverse xs)
-  (let loop ((xs xs) (acc '()))
-    (if (null? xs) acc (loop (cdr xs) (cons (car xs) acc)))))
-
+;; DP for limited k
+;; hold[j] = max profit ending with a share on day i using j transactions
+;; cash[j] = max profit ending without a share on day i using j transactions
+;; Transitions (using OLD day values, denoted with prime):
+;;   cash[j] = max(cash'[j], hold'[j] + price)
+;;   hold[j] = max(hold'[j], cash'[j] - price)
 (define (solve prices k)
   (let ((n (list-length prices)))
     (cond
       ((or (= n 0) (= k 0)) 0)
-      ((<= n 1) 0)
       ((>= k (quotient n 2)) (unlimited-profit prices n))
       (else
        (let* ((k1 (+ k 1))
-              (neg (neg-inf))
-              ;; hold[j] = max profit holding a stock with j completed transactions
-              ;; cash[j] = max profit not holding with j completed transactions
-              ;; Initialize for day 0: cash[j]=0 for all j, hold[j]=neg for j>=1, hold[0]=neg
-              (init-cash (make-list-of k1 0))
-              (init-hold (make-list-of k1 neg)))
+              (p0 (list-ref prices 0))
+              ;; Build hold[j] = -p0 for j in 0..k, cash[j] = 0
+              (init-hold
+               (let loop ((j 0) (acc '()))
+                 (if (= j k1) acc
+                     (loop (+ j 1) (cons (- 0 p0) acc)))))
+              (init-cash
+               (let loop ((j 0) (acc '()))
+                 (if (= j k1) acc
+                     (loop (+ j 1) (cons 0 acc))))))
+         ;; day-loop: each day, compute new cash and new hold using old values
          (let day-loop ((i 1) (hold init-hold) (cash init-cash))
            (if (>= i n)
-               ;; Answer is cash[k] (max profit not holding with k transactions completed)
                (list-ref cash k)
                (let* ((price (list-ref prices i))
-                      (negv (neg-inf)))
-                 ;; Build new-hold and new-cash
-                 ;; We iterate j from 0 to k
-                 (let iter ((j 0)
-                            (old-cash cash)
-                            (old-hold hold)
-                            (prev-cash-val 0)   ;; cash[j-1] for j=0, treat as 0
-                            (new-cash-acc '())
-                            (new-hold-acc '()))
-                   (if (= j k1)
-                       (let ((nc (reverse new-cash-acc))
-                             (nh (reverse new-hold-acc)))
-                         (day-loop (+ i 1) nh nc))
-                       (let* ((cval (car old-cash))
-                              (hval (car old-hold))
-                              ;; new cash[j] = max(old cash[j], old hold[j] + price)
-                              (ncash (max cval (+ hval price)))
-                              ;; new hold[j] = max(old hold[j], prev cash[j-1] - price)
-                              ;; prev-cash-val is cash[j-1] from previous day (already updated? No, use old day cash[j-1])
-                              ;; Actually use the *original* day's cash[j-1]. We passed that in.
-                              ;; For j=0: prev-cash-val = 0 (can't buy on first transaction slot... 
-                              ;; actually we can buy using "0th transaction slot" meaning it's the first buy)
-                              ;; Standard formulation: hold[j] = max(hold[j], cash[j-1] - price)
-                              ;; With cash[-1] effectively 0 for j=0 (first buy).
-                              ;; But we want hold[0] to stay neg-inf (invalid state - holding with 0 completed tx)
-                              ;; Hmm, actually with this formulation, the first buy uses cash[0]=0 -> hold[0]? 
-                              ;; No, the standard formulation tracks j = number of completed transactions.
-                              ;; So you can BUY as long as cash[j-1] is valid.
-                              ;; For j=0: cash[-1] doesn't exist; you can't have completed -1 transactions.
-                              ;; So for j=0, hold[0] should remain -inf.
-                              ;; For j>=1: hold[j] = max(hold[j], cash[j-1] - price) where cash[j-1] is from previous day.
-                              )
-                         (let ((nhold
-                                (if (= j 0)
-                                    hval  ; hold[0] stays neg-inf
-                                    (max hval (- prev-cash-val price)))))
-                           (iter (+ j 1)
-                                 (cdr old-cash)
-                                 (cdr old-hold)
-                                 cval   ;; next iteration's prev-cash = current cval (old day's cash[j])
-                                 (cons ncash new-cash-acc)
-                                 (cons nhold new-hold-acc))))))))))))))
-
-(define (display-list xs)
-  (display "[")
-  (let loop ((xs xs) (first #t))
-    (cond ((null? xs) (display "]"))
-          (else
-           (if first (display (car xs)) (begin (display ",") (display (car xs))))
-           (loop (cdr xs) #f)))))
+                      ;; Build new-cash from OLD hold and OLD cash:
+                      ;; new-cash[j] = max(old-cash[j], old-hold[j] + price)
+                      (new-cash
+                       (let build ((j 0) (acc '()) (c cash) (h hold))
+                         (if (null? c) acc
+                             (let ((cval (car c))
+                                   (hval (car h)))
+                               (build (+ j 1)
+                                      (cons (max cval (+ hval price)) acc)
+                                      (cdr c) (cdr h))))))
+                      (new-cash (reverse new-cash))
+                      ;; Build new-hold from OLD hold and OLD cash:
+                      ;; new-hold[j] = max(old-hold[j], old-cash[j] - price)
+                      (new-hold
+                       (let build ((j 0) (acc '()) (c cash) (h hold))
+                         (if (null? c) acc
+                             (let ((cval (car c))
+                                   (hval (car h)))
+                               (build (+ j 1)
+                                      (cons (max hval (- cval price)) acc)
+                                      (cdr c) (cdr h))))))
+                      (new-hold (reverse new-hold)))
+                 (day-loop (+ i 1) new-hold new-cash)))))))))
 
 (define (run-case i prices k)
   (let ((result (solve prices k)))

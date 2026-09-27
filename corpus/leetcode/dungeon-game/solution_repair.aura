@@ -1,5 +1,7 @@
 ;; Dungeon Game solution in Aura
 
+(require "compat" all:)
+
 (define (length xs)
   (if (null? xs) 0 (+ 1 (length (cdr xs)))))
 
@@ -9,64 +11,69 @@
 (define (min a b) (if (< a b) a b))
 (define (max a b) (if (> a b) a b))
 
-(define (row-ref g i) (list-ref g i))
+(define (grid-rows g) g)
 (define (cell g i j)
   (list-ref (list-ref g i) j))
 
 (define (nrows g) (length g))
 (define (ncols g) (length (list-ref g 0)))
 
-;; DP from bottom-right:
-;; dp[i][j] = min health needed BEFORE entering cell (i,j).
-;; Recurrence: need = min(dp[i][j+1], dp[i+1][j]) - grid[i][j]
-;; If need < 1, then 1.
-;; Base: dp[m-1][n-1] = max(1, 1 - grid[m-1][n-1])
+;; Compute min initial health using DP from bottom-right
+;; dp[i][j] = min health needed BEFORE entering cell (i,j) so we can reach goal
+;; Standard recurrence: dp[i][j] = max(1, -val + min(dp[i+1][j], dp[i][j+1]))
 (define (solve grid)
   (let* ((m (nrows grid))
          (n (ncols grid)))
-    (let ((dp (make-list m '())))
-      (letrec (
-        ;; Fill row i from right to left; row-below is (list-ref dp (+ i 1)) or #f
-        (fill-row (lambda (i)
-          (letrec ((row-below (if (< i (- m 1)) (list-ref dp (+ i 1)) #f))
-                   (loop (lambda (j)
-                     (if (< j 0) '()
-                         (let* ((val (cell grid i j))
-                                (right (if (< j (- n 1))
-                                           (car (list-ref (list-ref dp i) 1))
-                                           #f))
-                                (down (if row-below
-                                          (list-ref row-below j)
-                                          #f))
-                                (next (cond
-                                         ((and (number? right) (number? down))
-                                          (min right down))
-                                         ((number? right) right)
-                                         ((number? down) down)
-                                         (else 1)))
-                                (need (- next val))
-                                (final (if (< need 1) 1 need)))
-                           (cons final (loop (- j 1))))))))
-            (set! (list-ref dp i) (loop (- n 1)))))))
+    (letrec (
+      (compute-cell (lambda (i j dp-below)
+        (let* ((val (cell grid i j))
+               (move-right-needed
+                 (if (< j (- n 1))
+                     (list-ref (car dp-below) (+ j 1))
+                     1))
+               (move-down-needed
+                 (if (< i (- m 1))
+                     (list-ref (cdr dp-below) j)
+                     1))
+               (next-needed (min move-right-needed move-down-needed))
+               (needed (- next-needed val)))
+          (if (< needed 1) 1 needed))))
+      
+      (compute-row (lambda (i dp-below)
+        (letrec ((loop (lambda (j acc)
+          (if (< j 0) acc
+              (loop (- j 1)
+                    (cons (compute-cell i j dp-below) acc))))))
+          (loop (- n 1) '()))))
+      
+      (compute-all (lambda (i acc-below)
+        (if (< i 0) acc-below
+            (let ((this-row (compute-row i acc-below)))
+              (compute-all (- i 1) (cons this-row acc-below))))))
+      
+      (final-dp (compute-all (- m 1) '())))
+    (list-ref (car final-dp) 0))))
 
-        ;; Fill rows from bottom to top
-        (fill-all (lambda (i)
-          (if (< i 0) '()
-              (begin
-                (fill-row i)
-                (fill-all (- i 1)))))))
+;; ---- Display helpers ----
+(define (display-list xs)
+  (display "[")
+  (letrec ((loop (lambda (xs first)
+    (cond ((null? xs) '())
+          (else
+           (if (not first) (display ",") '())
+           (display (car xs))
+           (loop (cdr xs) #f))))))
+    (loop xs #t))
+  (display "]"))
 
-        (fill-all (- m 1))
-        (car (list-ref dp 0))))))
-
-;; Test cases
+;; ---- Test cases ----
 (define grid0 '((-2 -3 3) (-5 -10 1) (10 30 -5)))
 (define grid1 '((0)))
 (define grid2 '((-3)))
 (define grid3 '((1 2 3) (0 0 0)))
 (define grid4 '((-1 -1 -1) (-1 -1 -1) (-1 -1 -1)))
 (define grid5 '((100)))
-(define grid6 '((0 0) (0 0)))
+(define grid6 '((0 0 0) (0 0 0)))
 (define grid7 '((-2 1) (-3 1)))
 
 (display "CASE0=") (display (solve grid0)) (newline)
