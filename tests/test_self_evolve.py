@@ -160,3 +160,47 @@ def test_stamp_after_runtime_has_current_source_unparse():
     assert "incr_proven=false" in text and '"incr_proven" #f' in text
     assert "fiber_live=false" in text and '"fiber_live" #f' in text
     assert "(define cand" in text or "(define (cand" in text
+
+
+def test_build_stamp_body_fiber_live_banner():
+    from aura_build.self_evolve_runtime import _build_stamp_body
+    from aura_build.stamp_banner import stamp_banner_agrees
+
+    src = "(define cand\n  (lambda ()\n    9))"
+    body = _build_stamp_body(
+        src=src,
+        traj="t1",
+        gen=1,
+        selected=9,
+        observed=9,
+        src_len=len(src),
+        fiber_live=True,
+        worldline_backend="fiber_graph",
+        denseness_note="soft_ready_async_denseness_4048",
+    )
+    assert "; fiber_live=true" in body
+    assert '"fiber_live" #t' in body
+    assert "worldline_backend=fiber_graph" in body
+    assert stamp_banner_agrees(body)
+    assert "materialize=current-source" in body
+
+
+def test_build_stamp_body_oneshot_fiber_false():
+    from aura_build.self_evolve_runtime import _build_stamp_body
+    from aura_build.stamp_banner import stamp_banner_agrees
+
+    src = "(define cand\n  (lambda ()\n    2))"
+    body = _build_stamp_body(
+        src=src,
+        traj="t2",
+        gen=1,
+        selected=2,
+        observed=2,
+        src_len=len(src),
+        fiber_live=False,
+        worldline_backend="oneshot_mutate",
+        denseness_note="fallback",
+    )
+    assert "; fiber_live=false" in body
+    assert '"fiber_live" #f' in body
+    assert stamp_banner_agrees(body)

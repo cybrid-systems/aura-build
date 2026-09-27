@@ -452,7 +452,7 @@ def build_parser() -> argparse.ArgumentParser:
     runtime = se_sub.add_parser(
         "runtime",
         help=(
-            "Soft tip dogfood: set-code -> mutate -> select-best -> "
+            "Soft serve denseness fiber worldlines (fallback oneshot): set-code -> mutate -> select-best -> "
             "(current-source :workspace :pretty) -> write stamp -> host verify -> commit+push"
         ),
     )
@@ -465,6 +465,26 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _opt(runtime, "--no-push", action="store_true", help="commit only")
     _opt(runtime, "--no-commit", action="store_true", help="materialize+verify only")
+    _opt(
+        runtime,
+        "--prefer-serve",
+        action="store_true",
+        default=True,
+        help="prefer Soft --serve + denseness fiber worldlines (default on)",
+    )
+    _opt(
+        runtime,
+        "--force-oneshot",
+        action="store_true",
+        help="skip Soft serve; cold oneshot mutate path (fiber_live=false)",
+    )
+    _opt(
+        runtime,
+        "--worldlines",
+        type=int,
+        default=3,
+        help="fiber explorer count when denseness ok (default 3)",
+    )
     _common(runtime, aura=True, harness=True)
 
     pursue = sub.add_parser(

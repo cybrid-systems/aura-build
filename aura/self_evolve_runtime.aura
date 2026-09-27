@@ -2,6 +2,8 @@
 ; Soft tip: set-code → mutate:rebind candidates → observe → select-best →
 ; (current-source :workspace :pretty) → write-file (NOT string-built winner body).
 ; Honesty: fiber_live / incr_proven stay false on this oneshot Soft path.
+; Host prefer-serve path (self_evolve_runtime.py) uses Soft --serve + denseness
+; fiber:spawn explorers when measured; this file is the denseness-fail fallback.
 ; Success: RUNTIME_OK selected=<n> observed=<v> src_len=<n> wrote=<path>
 (define STAMP-PATH "aura/self_evolve_stamp.aura")
 
