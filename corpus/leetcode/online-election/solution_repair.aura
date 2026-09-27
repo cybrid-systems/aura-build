@@ -1,5 +1,3 @@
-(require "compat" all:)
-
 ;; Online Election - prefix leaders + binary search
 
 (define (length lst)
@@ -10,96 +8,110 @@
       (car lst)
       (nth (cdr lst) (- n 1))))
 
+;; Increment count for person in association list.
+;; counts is ((id . count) ...) - linear search.
 (define (count-vote counts person)
   (cond ((null? counts) (list (cons person 1)))
         ((= (car (car counts)) person)
          (cons (cons person (+ 1 (cdr (car counts)))) (cdr counts)))
         (else (cons (car counts) (count-vote (cdr counts) person)))))
 
-(define (find-leader counts current-best current-best-count)
-  (cond ((null? counts) current-best)
-        (else
-         (let* ((entry (car counts))
-                (p (car entry))
-                (c (cdr entry)))
-           (if (or (> c current-best-count)
-                   (and (= c current-best-count) (< p current-best)))
-               (find-leader (cdr counts) p c)
-               (find-leader (cdr counts) current-best current-best-count))))))
+;; Find leader: highest count, ties broken by smaller id
+(define (find-leader counts best-id best-cnt)
+  (if (null? counts)
+      best-id
+      (let* ((e (car counts))
+             (p (car e))
+             (c (cdr e)))
+        (if (or (> c best-cnt)
+                (and (= c best-cnt) (< p best-id)))
+            (find-leader (cdr counts) p c)
+            (find-leader (cdr counts) best-id best-cnt)))))
 
 (define (current-leader counts)
   (if (null? counts)
-      '()
-      (let ((first (car counts)))
-        (find-leader (cdr counts) (car first) (cdr first)))))
+      0
+      (let ((f (car counts)))
+        (find-leader (cdr counts) (car f) (cdr f)))))
 
 (define (build-leaders votes-at votes-for)
   (letrec ((len (length votes-at))
-           (helper (lambda (i counts leaders)
-                     (if (= i len)
-                         leaders
-                         (let* ((person (nth votes-for i))
-                                (new-counts (count-vote counts person))
-                                (new-leaders (cons (current-leader new-counts) leaders)))
-                           (helper (+ i 1) new-counts new-leaders))))))
-    (reverse (helper 0 '() '()))))
+           (loop (lambda (i counts acc)
+                   (if (= i len)
+                       acc
+                       (let* ((person (nth votes-for i))
+                              (new-c (count-vote counts person))
+                              (leader (current-leader new-c)))
+                         (loop (+ i 1) new-c (cons leader acc)))))))
+    (reverse (loop 0 '() '()))))
 
-;; Binary search: find largest index i such that votes-at[i] <= t
-;; Returns -1 if all votes-at > t (including t < votes-at[0])
-(define (upper-bound votes-at t len t0)
-  (letrec ((helper (lambda (lo hi)
+;; Find largest index i such that votes-at[i] <= t
+;; Returns -1 if t < votes-at[0]
+(define (upper-bound votes-at len t)
+  (letrec ((search (lambda (lo hi)
                      (if (= lo hi)
                          (- lo 1)
                          (let ((mid (quotient (+ lo hi) 2)))
                            (if (<= (nth votes-at mid) t)
-                               (helper (+ mid 1) hi)
-                               (helper lo mid)))))))
-    (if (< t t0)
-        -1
-        (helper 0 len))))
+                               (search (+ mid 1) hi)
+                               (search lo mid)))))))
+    (search 0 len)))
 
 (define (query leaders votes-at t)
-  (let* ((len (length leaders))
-         (t0 (nth votes-at 0))
-         (idx (upper-bound votes-at t len t0)))
+  (let* ((len (length votes-at))
+         (idx (upper-bound votes-at len t)))
     (if (< idx 0)
         '()
         (nth leaders idx))))
 
+(define (query-all leaders votes-at times)
+  (letrec ((len (length times))
+           (loop (lambda (i acc)
+                   (if (= i len)
+                       (reverse acc)
+                       (loop (+ i 1)
+                             (cons (query leaders votes-at (nth times i)) acc))))))
+    (loop 0 '())))
+
+(define (print-list lst)
+  (display "[")
+  (letrec ((loop (lambda (l)
+                   (cond ((null? l) (display ""))
+                         ((null? (cdr l))
+                          (display (car l)))
+                         (else
+                          (display (car l))
+                          (display ",")
+                          (loop (cdr l)))))))
+    (loop lst))
+  (display "]"))
+
 (define (solve votes-at votes-for times)
-  (let* ((leaders (build-leaders votes-at votes-for))
-         (result '()))
-    (letrec ((helper (lambda (ts)
-                       (if (null? ts)
-                           (reverse result)
-                           (helper (cdr ts))))))
-      (letrec ((do-query (lambda (ts)
-                          (if (null? ts)
-                              (reverse result)
-                              (let ((r (query leaders votes-at (car ts))))
-                                (if (null? r)
-                                    (do-query (cdr ts))
-                                    (begin
-                                      (set! result (cons r result))
-                                      (do-query (cdr ts)))))))))
-        (do-query times)))))
+  (let ((leaders (build-leaders votes-at votes-for)))
+    (print-list (query-all leaders votes-at times))))
 
-;; Test harness
-(define (list-of-nums->string lst)
-  (letrec ((helper (lambda (l acc)
-                     (if (null? l)
-                         (string-append acc "]")
-                         (let ((s (number->string (car l))))
-                           (if (null? (cdr l))
-                               (helper (cdr l) (string-append acc s))
-                               (helper (cdr l) (string-append acc s ","))))))))
-    (helper lst "[")))
+(require "compat" all:)
 
-(define (run-case i votes-at votes-for times)
-  (let ((result (solve votes-at votes-for times)))
-    (display (string-append "CASE" (number->string i) "="))
-    (display (list-of-nums->string result))
-    (newline)))
+;; CASE0
+(let ((votes-at (list 0 5 10 15))
+      (votes-for (list 1 2 2 1))
+      (times (list 3 12 15 20)))
+  (display "CASE0=")
+  (display (solve votes-at votes-for times))
+  (newline))
 
-;; CASE1: votes-at=[0,10,20], votes-for=[1,1,2], times=[-5,0,5]
-(run-case 1 (list 0 10 20) (list 1 1 2) (list -5 0 5))
+;; CASE1: t can be before first vote (return null)
+(let ((votes-at (list 0 10 20))
+      (votes-for (list 1 1 2))
+      (times (list -5 0 5)))
+  (display "CASE1=")
+  (display (solve votes-at votes-for times))
+  (newline))
+
+;; CASE2
+(let ((votes-at (list 0 1 2 3 4 5))
+      (votes-for (list 1 2 3 4 5 1))
+      (times (list 0 1 2 3 4 5)))
+  (display "CASE2=")
+  (display (solve votes-at votes-for times))
+  (newline))

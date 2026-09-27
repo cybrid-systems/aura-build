@@ -1,50 +1,73 @@
 (require "compat" all:)
 
-; Single Number II: count bits mod 3 across 32 bits, sign-extend by treating top bit specially.
-; Uses arithmetic-shift and logand from compat for reliable bit ops.
-
-(define (logand2 a b) (bitwise-and a b))
-(define (ash2 v n) (arithmetic-shift v n))
-
-(define (bit-set? v i)
-  ; Bit i of v's two's-complement 32-bit representation
-  (cond
-    ((= i 31) (= 1 (logand2 1 (ash2 v -31))))
-    (else (= 1 (logand2 1 (ash2 v (- i)))))))
-
-(define (bit-count-at nums i)
-  (let loop ((xs nums) (s 0))
-    (if (null? xs)
-        s
-        (let ((v (car xs)))
-          (loop (cdr xs) (+ s (if (bit-set? v i) 1 0)))))))
+; Single Number II: every element appears 3 times except one.
+; Use bitwise counting modulo 3 across 32 bits.
+; For bit positions 0..30, the bit is set if the AND with a shifted mask is odd.
+; For bit position 31 (sign bit in two's complement), the bit is set if value is negative.
+; Build result by OR-ing bits into result via arithmetic-shift.
 
 (define (single-number nums)
   (let loop ((i 0) (result 0))
     (if (= i 32)
         result
-        (let ((ones (modulo (bit-count-at nums i) 3)))
-          (loop (+ i 1) (+ result (* ones (ash2 1 i))))))))
+        (let* ((ones (count-bit nums i))
+               (bit (modulo ones 3)))
+          (if (= bit 0)
+              (loop (+ i 1) result)
+              (loop (+ i 1) (logor result (arithmetic-shift 1 i))))))))
+
+; Count number of values in xs whose bit i is set (in 32-bit two's complement sense)
+(define (count-bit xs i)
+  (cond
+    ((null? xs) 0)
+    (else
+      (+ (if (bit-set? (car xs) i) 1 0)
+         (count-bit (cdr xs) i)))))
+
+(define (bit-set? v i)
+  (cond
+    ((>= i 31) (< v 0))
+    (else
+      (let ((shifted (ash v (- i))))
+        (= (logand shifted 1) 1)))))
+
+; logor: bitwise OR (for positive integers up to 32 bits)
+(define (logor a b)
+  (let loop ((a a) (b b) (result 0) (place 1))
+    (if (and (= a 0) (= b 0))
+        result
+        (let ((ba (modulo a 2))
+              (bb (modulo b 2)))
+          (loop (floor (/ a 2)) (floor (/ b 2))
+                (+ result (* place (if (or (= ba 1) (= bb 1)) 1 0)))
+                (* place 2))))))
 
 (define (solve nums)
   (single-number nums))
 
+; Display helper for values (numbers, lists, etc.)
 (define (display-value v)
   (cond
     ((number? v) (display v))
     ((null? v) (display "()"))
-    ((pair? v)
-     (display "(")
-     (display (car v))
-     (let loop ((rest (cdr v)))
-       (cond
-         ((null? rest) (display ")"))
-         (else
-          (display " ")
-          (display (car rest))
-          (loop (cdr rest))))))
+    ((pair? v) (display-list v))
     (else (display v))))
 
+(define (display-list xs)
+  (cond
+    ((null? xs) (display ")"))
+    (else
+      (display "(")
+      (display (car xs))
+      (let loop ((rest (cdr xs)))
+        (cond
+          ((null? rest) (display ")"))
+          (else
+            (display " ")
+            (display (car rest))
+            (loop (cdr rest))))))))
+
+; Main
 (begin
   (define case0 '(2 2 3 2))
   (define case1 '(0 1 0 1 0 1 99))

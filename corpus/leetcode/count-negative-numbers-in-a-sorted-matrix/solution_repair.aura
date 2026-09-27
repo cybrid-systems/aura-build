@@ -1,10 +1,8 @@
 (define (neg-count grid)
-  ;; Count negative numbers in a matrix where each row and column is sorted non-increasingly.
-  ;; Walks from top-right corner in O(m+n).
   (let ((rows (length grid))
         (cols (if (null? grid) 0 (length (car grid))))
-        (start-c (if (null? grid) 0 (- (length (car grid)) 1))))
-    (let loop ((r 0) (c start-c) (cnt 0))
+        (col-idx (if (null? grid) 0 (- (length (car grid)) 1))))
+    (let loop ((r 0) (c col-idx) (cnt 0))
       (cond
         ((or (>= r rows) (< c 0)) cnt)
         (else
@@ -16,7 +14,6 @@
 (define (solve grid)
   (neg-count grid))
 
-;; Display one test case result
 (define (run-case i grid)
   (display "CASE")
   (display i)

@@ -1,20 +1,23 @@
 ;; Minimum Depth of Binary Tree - Aura solution
 
-(require "compat" all:)
-
-;; Tree node: (val left right), or 'null for None
+;; Tree representation: 'null for empty, (val left right) for node
+(define (make-node val left right)
+  (list val left right))
 
 (define (node? x)
   (and (pair? x) (not (eq? x 'null))))
 
 (define (node-val n) (car n))
-(define (node-left n) (cadr n))
-(define (node-right n) (caddr n))
+(define (node-left n) (car (cdr n)))
+(define (node-right n) (car (cdr (cdr n))))
 
-;; Parse level-order list with 'null markers
-(define (list-ref-aux lst i)
-  (if (= i 0) (car lst) (list-ref-aux (cdr lst) (- i 1))))
+;; list-ref helper
+(define (list-ref lst i)
+  (if (= i 0)
+      (car lst)
+      (list-ref (cdr lst) (- i 1))))
 
+;; Parse level-order list (with 'null for missing nodes) into tree.
 (define (parse-tree lst)
   (if (null? lst)
       'null
@@ -23,55 +26,71 @@
 (define (build-tree lst i n)
   (if (>= i n)
       'null
-      (let ((v (list-ref-aux lst i)))
+      (let ((v (list-ref lst i)))
         (if (eq? v 'null)
             'null
-            (list v (build-tree lst (+ (* 2 i) 1) n)
-                       (build-tree lst (+ (* 2 i) 2) n))))))
+            (let ((left (build-tree lst (+ (* 2 i) 1) n))
+                  (right (build-tree lst (+ (* 2 i) 2) n)))
+              (list v left right))))))
 
-;; solve: given root (node or 'null), return minimum depth
-(define (solve root)
-  (min-depth root))
+;; min helper
+(define (min a b) (if (< a b) a b))
 
+;; Compute minimum depth of tree.
+;; Key fix: when one child is null, must use the non-null child's depth.
 (define (min-depth node)
   (cond
     ((eq? node 'null) 0)
-    ((and (eq? (node-left node) 'null) (eq? (node-right node) 'null))
+    ((and (eq? (node-left node) 'null)
+          (eq? (node-right node) 'null))
      1)
-    ((eq? (node-left node) 'null)
-     (+ (min-depth (node-right node)) 1))
-    ((eq? (node-right node) 'null)
-     (+ (min-depth (node-left node)) 1))
     (else
-     (+ 1 (min-val (min-depth (node-left node))
-                   (min-depth (node-right node)))))))
+     (let ((l-null? (eq? (node-left node) 'null))
+           (r-null? (eq? (node-right node) 'null)))
+       (cond
+         (l-null? (+ (min-depth (node-right node)) 1))
+         (r-null? (+ (min-depth (node-left node)) 1))
+         (else (+ 1 (min (min-depth (node-left node))
+                         (min-depth (node-right node))))))))))
 
-(define (min-val a b) (if (< a b) a b))
+;; Solve: unwrap the harness list wrapper, then compute.
+(define (solve root)
+  (let ((r (if (null? root) 'null (car root))))
+    (min-depth r)))
 
-(define (show n)
-  (display n) (newline))
+(define (display-result n)
+  (display n)
+  (newline))
 
-;; Test cases
+;; --- Test cases ---
+;; CASE0: [3, 9, 20, null, null, 15, 7]
 (define case0-root (parse-tree (list 3 9 20 'null 'null 15 7)))
-(display "CASE0=") (show (solve case0-root))
+(display "CASE0=") (display-result (solve (list case0-root)))
 
+;; CASE1: []
 (define case1-root (parse-tree (list)))
-(display "CASE1=") (show (solve case1-root))
+(display "CASE1=") (display-result (solve (list case1-root)))
 
+;; CASE2: [1]
 (define case2-root (parse-tree (list 1)))
-(display "CASE2=") (show (solve case2-root))
+(display "CASE2=") (display-result (solve (list case2-root)))
 
+;; CASE3: [1, 2]
 (define case3-root (parse-tree (list 1 2)))
-(display "CASE3=") (show (solve case3-root))
+(display "CASE3=") (display-result (solve (list case3-root)))
 
+;; CASE4: [1, null, 2]
 (define case4-root (parse-tree (list 1 'null 2)))
-(display "CASE4=") (show (solve case4-root))
+(display "CASE4=") (display-result (solve (list case4-root)))
 
+;; CASE5: [1, 2, 3, 4, 5]
 (define case5-root (parse-tree (list 1 2 3 4 5)))
-(display "CASE5=") (show (solve case5-root))
+(display "CASE5=") (display-result (solve (list case5-root)))
 
+;; CASE6: [1, 2, null, 3, null, 4, null, 5]
 (define case6-root (parse-tree (list 1 2 'null 3 'null 4 'null 5)))
-(display "CASE6=") (show (solve case6-root))
+(display "CASE6=") (display-result (solve (list case6-root)))
 
+;; CASE7: [1, null, 2, null, 3, null, 4, null, 5]
 (define case7-root (parse-tree (list 1 'null 2 'null 3 'null 4 'null 5)))
-(display "CASE7=") (show (solve case7-root))
+(display "CASE7=") (display-result (solve (list case7-root)))

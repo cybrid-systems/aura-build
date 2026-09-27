@@ -32,7 +32,7 @@
 ;; Process ransomNote: decrement each char; return #f on failure, else new counts.
 (define (process-ransom chars counts)
   (cond ((null? chars) counts)
-        ((< (get-at counts (char-idx (car chars))) 1) #f)
+        ((= (get-at counts (char-idx (car chars))) 0) #f)
         (else
          (let ((nc (add-at counts (char-idx (car chars)) -1)))
            (process-ransom (cdr chars) nc)))))
@@ -51,12 +51,10 @@
   (if (> (string-length ransomNote) (string-length magazine))
       #f
       (let ((after (process-mag (string->list magazine) (make-counts 0))))
-        (if (eq? after #f)
-            #f
-            (let ((r (process-ransom (string->list ransomNote) after)))
-              (if (eq? r #f) #f #t))))))
+        (let ((r (process-ransom (string->list ransomNote) after)))
+          (if (eq? r #f) #f #t)))))
 
-;; Test harness: computes each answer via solve for the given inputs.
+;; Test harness.
 (define (show i r m)
   (display "CASE")
   (display i)

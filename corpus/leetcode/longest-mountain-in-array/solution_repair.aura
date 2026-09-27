@@ -1,3 +1,5 @@
+(require "compat" all:)
+
 (define (len lst)
   (if (null? lst) 0 (+ 1 (len (cdr lst)))))
 
@@ -12,10 +14,10 @@
       (loop-left arr (- i 1) (+ count 1))
       count))
 
-(define (loop-right arr i count n)
-  (if (and (< i (- n 1))
+(define (loop-right arr i count)
+  (if (and (< i (len arr))
            (< (ref arr i) (ref arr (- i 1))))
-      (loop-right arr (+ i 1) (+ count 1) n)
+      (loop-right arr (+ i 1) (+ count 1))
       count))
 
 (define (solve arr)
@@ -23,19 +25,19 @@
     (if (< n 3)
         0
         (let loop ((i 1) (best 0))
-          (if (>= i (- n 1))
-              best
-              (if (and (> (ref arr i) (ref arr (- i 1)))
-                       (> (ref arr i) (ref arr (+ i 1))))
-                  (let ((l (loop-left arr (- i 1) 1))
-                        (r (loop-right arr (+ i 1) 1 n)))
-                    (let ((total (+ l r 1)))
-                      (let ((newbest (if (> total best) total best)))
-                        (let ((next-i (+ i l r)))
-                          (if (< next-i (- n 1))
-                              (loop (+ next-i 1) newbest)
-                              (loop (+ i 1) newbest))))))
-                  (loop (+ i 1) best)))))))
+          (cond
+            ((>= i (- n 1)) best)
+            ((and (> (ref arr i) (ref arr (- i 1)))
+                  (> (ref arr i) (ref arr (+ i 1))))
+             (let ((l (loop-left arr (- i 1) 1))
+                   (r (loop-right arr (+ i 1) 1)))
+               (let ((total (+ l r 1)))
+                 (let ((newbest (if (> total best) total best)))
+                   (let ((ni (+ i r)))
+                     (if (< ni (- n 1))
+                         (loop (+ ni 1) newbest)
+                         newbest))))))
+            (else (loop (+ i 1) best)))))))
 
 (define (run-case i arr)
   (let ((result (solve arr)))

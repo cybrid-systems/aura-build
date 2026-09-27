@@ -1,33 +1,40 @@
-(require "compat" all:)
+;; Fix: the prior code created (cons rows cols) and tried (cadr matrix) which
+;; doesn't exist on a pair. Use a flat list-of-lists representation where the
+;; matrix IS the list of rows, and compute cols from (length (car matrix)).
+;; We also pass columns as an explicit parameter through solve.
 
-(define (matrix-rows mat) (car mat))
-(define (matrix-cols mat) (cdr mat))
+(define (list-length xs)
+  (let loop ((xs xs) (n 0))
+    (if (null? xs) n (loop (cdr xs) (+ n 1)))))
 
-(define (matrix-ref mat i)
-  (let* ((rows (matrix-rows mat))
-         (cols (matrix-cols mat))
-         (r (quotient i cols))
+(define (matrix-ref mat i cols)
+  (let* ((r (quotient i cols))
          (c (modulo i cols)))
-    (list-ref (list-ref rows r) c)))
+    (list-ref (list-ref mat r) c)))
 
-(define (matrix-len mat)
-  (* (matrix-rows mat) (matrix-cols mat)))
-
-(define (search-helper mat target lo hi)
+(define (search-helper mat cols target lo hi)
   (if (>= lo hi)
       #f
       (let* ((mid (quotient (+ lo hi) 2))
-             (val (matrix-ref mat mid)))
+             (val (matrix-ref mat mid cols)))
         (cond ((= val target) #t)
-              ((< val target) (search-helper mat target (+ mid 1) hi))
-              (else (search-helper mat target lo mid))))))
+              ((< val target) (search-helper mat cols target (+ mid 1) hi))
+              (else (search-helper mat cols target lo mid))))))
+
+(define (rows-empty? mat)
+  (or (null? mat)
+      (null? (car mat))
+      (= (list-length (car mat)) 0)))
 
 (define (solve target matrix)
-  (let ((rows (car matrix))
-        (cols (cdr matrix)))
-    (if (or (= rows 0) (= cols 0))
-        #f
-        (search-helper matrix target 0 (* rows cols)))))
+  (if (or (null? matrix) (null? (car matrix)))
+      #f
+      (let* ((cols (list-length (car matrix)))
+             (rows (list-length matrix))
+             (len (* rows cols)))
+        (if (= len 0)
+            #f
+            (search-helper matrix cols target 0 len)))))
 
 (define (display-case i result)
   (display "CASE")
@@ -36,19 +43,12 @@
   (display result)
   (newline))
 
-(define mat0 (cons 3 (cons 4 '())))
-(define mat1 (cons 1 (cons 1 '())))
-(define mat2 (cons 1 (cons 3 '())))
-(define mat3 (cons 3 (cons 1 '())))
-(define mat4 (cons 1 (cons 0 '())))
-(define mat5 (cons 0 (cons 0 '())))
-
-(set-car! mat0 (list (list 1 3 5 7) (list 10 11 16 20) (list 23 30 34 60)))
-(set-car! mat1 (list (list 7)))
-(set-car! mat2 (list (list 1 2 3)))
-(set-car! mat3 (list (list 1) (list 3) (list 5)))
-(set-car! mat4 (list (list)))
-(set-car! mat5 (list))
+(define mat0 (list (list 1 3 5 7) (list 10 11 16 20) (list 23 30 34 60)))
+(define mat1 (list (list 7)))
+(define mat2 (list (list 1 2 3)))
+(define mat3 (list (list 1) (list 3) (list 5)))
+(define mat4 (list (list)))
+(define mat5 (list))
 
 (display-case 0 (solve 5 mat0))
 (display-case 1 (solve 13 mat0))
