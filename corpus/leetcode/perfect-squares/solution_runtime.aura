@@ -1,0 +1,129 @@
+; soft_leetcode_runtime slug=perfect-squares path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=fiber fiber_llm_ok=true
+; selected=llm-0 hits=2/10
+; baseline_hits=0/10
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define square?
+    (lambda (n)
+      (let ((s (exact (floor (sqrt n)))))
+        (=
+          (*
+            s s) n))))
+  (define solve
+    (lambda (n)
+      (if (=
+          n 0)
+        0
+        (if (=
+            n 1)
+          1
+          (if (square? n)
+            1
+            (let ((dp (make-vector
+                (+
+                  n 1) 99999)))
+              (begin
+                (vector-set!
+                  dp 0 0)
+                (letrec ((loop-i (lambda (i)
+                    (if (<=
+                        i n)
+                      (begin
+                        (letrec ((loop-j (lambda (j)
+                            (let ((sq (*
+                                j j)))
+                              (if (>
+                                  sq i)
+                                (vector-set!
+                                  dp i (min-ref
+                                    dp i))
+                                (begin
+                                  (when
+                                    (<
+                                      (+
+                                        (vector-ref
+                                          dp (-
+                                            i sq)) 1) (vector-ref
+                                        dp i)) (vector-set!
+                                      dp i (+
+                                        (vector-ref
+                                          dp (-
+                                            i sq)) 1)))
+                                  (loop-j (+
+                                      j 1))))))))
+                          (loop-j 1))
+                        (loop-i (+
+                            i 1)))
+                      ()))))
+                  (loop-i 1))
+                (vector-ref
+                  dp n))))))))
+  (define min-ref
+    (lambda (vec i)
+      (vector-ref
+        vec i)))
+  (define make-vector
+    (lambda (size val)
+      (let ((v (make-vector-raw size)))
+        (letrec ((loop (lambda (k)
+            (if (<
+                k size)
+              (begin
+                (vector-set!
+                  v k val)
+                (loop (+
+                    k 1)))
+              v))))
+          (loop 0)))))
+  (define make-vector-raw
+    (lambda (size)
+      (vector
+        0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+  (define when
+    (lambda (c t)
+      (if c
+        t
+        0)))
+  (define min
+    (lambda (a b)
+      (if (<
+          a b)
+        a
+        b)))
+  (define run-cases
+    (lambda ()
+      (begin
+        (display "CASE0=")
+        (display (solve 0))
+        (newline)
+        (display "CASE1=")
+        (display (solve 1))
+        (newline)
+        (display "CASE2=")
+        (display (solve 2))
+        (newline)
+        (display "CASE3=")
+        (display (solve 3))
+        (newline)
+        (display "CASE4=")
+        (display (solve 4))
+        (newline)
+        (display "CASE5=")
+        (display (solve 7))
+        (newline)
+        (display "CASE6=")
+        (display (solve 12))
+        (newline)
+        (display "CASE7=")
+        (display (solve 13))
+        (newline)
+        (display "CASE8=")
+        (display (solve 100))
+        (newline)
+        (display "CASE9=")
+        (display (solve 9999))
+        (newline))))
+  (run-cases))

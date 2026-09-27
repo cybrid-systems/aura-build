@@ -824,6 +824,8 @@ _HANG_SKIP_SLUGS = {
     "partition-list",
     "sort-list",
     "insertion-sort-list",
+    "ugly-number",
+    "ugly-number-ii",
 }
 
 
