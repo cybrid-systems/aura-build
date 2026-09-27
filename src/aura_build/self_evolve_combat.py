@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 # Soft Ready tip used by combat dogfood (honest inventory in SSOT doc).
-DEFAULT_SOFT_AURA_BIN = "/workspace/aura-grok/build_soft4054/aura"
+DEFAULT_SOFT_AURA_BIN = "/workspace/aura-grok/build_soft4079/aura"
 DEFAULT_OUT_DIR = Path("scratch/self_evolve_combat")
 DEFAULT_PROJECT = Path("examples/projects/mini-saga")
 DEFAULT_ENV_FILE = Path.home() / ".config" / "aura-build" / "minimax.env"
