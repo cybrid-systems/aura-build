@@ -1045,6 +1045,12 @@ def _cmd_corpus_gen(args: argparse.Namespace) -> int:
         bc = lc.build_burn_config_from_args(args)
         return lc.cmd_burn(bc)
 
+
+    if sub == "repair":
+        bc = lc.build_burn_config_from_args(args)
+        # repair uses temperatures[0]; force variants unused
+        return lc.cmd_repair(bc)
+
     if sub == "summary":
         out: dict = {"ts_local": None, "tracks": {}}
         if track in ("leetcode", "all"):

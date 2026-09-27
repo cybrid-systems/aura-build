@@ -566,6 +566,31 @@ def build_parser() -> argparse.ArgumentParser:
     _opt(cg_burn, "--py-timeout", type=float, default=20.0)
     _common(cg_burn, aura=True, harness=False, json_flag=False)
 
+
+    cg_repair = cg_sub.add_parser(
+        "repair",
+        help="MiniMax repair of non-full problems via stderr + failing CASE diffs → solution_repair.aura",
+    )
+    _opt(cg_repair, "--track", choices=("leetcode",), default="leetcode")
+    _opt(cg_repair, "--corpus-dir", type=Path, default=Path("corpus/leetcode"))
+    _opt(cg_repair, "--scratch", type=Path, default=Path("scratch/corpus_gen"))
+    _opt(cg_repair, "--run-log", type=Path, default=None)
+    _opt(cg_repair, "--env-file", type=Path, default=None)
+    _opt(cg_repair, "--workers", type=int, default=4)
+    _opt(cg_repair, "--temperatures", default="0.35")
+    _opt(cg_repair, "--limit", type=int, default=8, help="max problems this invocation")
+    _opt(
+        cg_repair,
+        "--auto-commit",
+        action="store_true",
+        help="git add corpus/leetcode + commit+push every batch (main; no CI wait)",
+    )
+    _opt(cg_repair, "--commit-every", type=int, default=10, help="problems between auto-commits")
+    _opt(cg_repair, "--llm-timeout", type=float, default=120.0)
+    _opt(cg_repair, "--aura-timeout", type=float, default=20.0)
+    _opt(cg_repair, "--py-timeout", type=float, default=20.0)
+    _common(cg_repair, aura=True, harness=False, json_flag=False)
+
     cg_sum = cg_sub.add_parser("summary", help="corpus + burn-rate stats (both tracks if --track all)")
     _opt(cg_sum, "--track", choices=("leetcode", "projects", "all"), default="all")
     _opt(cg_sum, "--corpus-dir", type=Path, default=Path("corpus/leetcode"))

@@ -130,6 +130,22 @@ Rules:
 - Keep programs small. No secrets.
 """
 
+
+SYSTEM_AURA_REPAIR = f"""You repair a failing Aura (Lisp-like) program for an algorithm problem.
+{AURA_PRIMER}
+Rules:
+- Output ONE complete Aura program in a ```aura fence (full file, not a patch).
+- Keep (solve ...) as the algorithm entry; fix unbound names, parse errors, and wrong logic.
+- You may `(require "compat" all:)` at the top for helpers: make-list, assoc, assq, list-tail,
+  expt, make-string, string, even?, odd?, caddr, cadddr, bitwise-xor, bitwise-and, ash,
+  arithmetic-shift, atom?, make-hash, exact->inexact.
+- Use failing CASE diffs and stderr as clues. Do NOT hardcode expected CASE outputs as bare
+  display strings without calling solve — still compute via solve for each embedded input.
+- At the end, for each test input i, call solve and print:
+  (display "CASEi=") (display <result>) (newline)
+- Prefer #t/#f for booleans. Keep programs small. No secrets.
+"""
+
 SYSTEM_PROBLEM_MD = """You write a concise problem statement markdown for an algorithm puzzle
 adapted to a stdin-less Aura harness.
 Include: title, short statement, function signature hint for (solve ...),
@@ -1185,6 +1201,333 @@ def cmd_burn(bc: BurnConfig) -> int:
             except OSError:
                 pass
 
+    return 0
+
+
+
+
+# ---------------------------------------------------------------------------
+# MiniMax repair (stderr + failing CASE diffs → solution_repair.aura)
+# ---------------------------------------------------------------------------
+
+REPAIR_VARIANT = 90  # meta variant id for solution_repair.aura
+REPAIR_AURA_FILE = "solution_repair.aura"
+
+
+def _best_variant_row(meta: dict[str, Any]) -> dict[str, Any] | None:
+    best = None
+    best_key = (-1.0, -1)
+    for v in meta.get("variants") or []:
+        if not isinstance(v, dict) or not v.get("aura_file"):
+            continue
+        tp = int(v.get("tests_passed") or 0)
+        tt = int(v.get("tests_total") or 0)
+        ratio = (tp / tt) if tt else -1.0
+        key = (ratio, tp)
+        if key > best_key:
+            best_key = key
+            best = v
+    return best
+
+
+def problem_needs_repair(entry: dict[str, Any], corpus_dir: Path) -> bool:
+    """True when tests exist and best variant is not full pass."""
+    pdir = problem_dir(corpus_dir, str(entry["slug"]))
+    tests_path = pdir / "tests.json"
+    if not tests_path.is_file():
+        return False
+    meta = _load_meta(pdir / "meta.json")
+    best = _best_variant_row(meta)
+    if best is None:
+        # no scored variant yet — still repairable if a solution file exists
+        return any((pdir / n).is_file() for n in ("solution.aura", "solution_2.aura", REPAIR_AURA_FILE))
+    tp = int(best.get("tests_passed") or 0)
+    tt = int(best.get("tests_total") or 0)
+    return tt > 0 and tp < tt
+
+
+def generate_aura_repair(
+    entry: dict[str, Any],
+    problem_md: str,
+    tests: list[dict[str, Any]],
+    *,
+    prior_src: str,
+    stderr_snippet: str,
+    case_details: list[dict[str, Any]],
+    cfg: MiniMaxConfig,
+    bc: BurnConfig,
+    temperature: float,
+) -> tuple[str, dict[str, Any]]:
+    fail_lines = []
+    for d in case_details:
+        if d.get("ok"):
+            continue
+        tid = d.get("id")
+        # Include got vs expected for the repair prompt only — solution must still call solve.
+        fail_lines.append(
+            f"- CASE{tid} input={json.dumps(next((t.get('input') for t in tests if int(t.get('id', -1)) == int(tid)), None), ensure_ascii=False)}"
+            f" got={d.get('got')!r} expected={d.get('expected')!r}"
+        )
+    if not fail_lines:
+        fail_lines = ["(no CASE diffs; rely on stderr)"]
+    user = (
+        f"Slug: {entry.get('slug')}\nTitle: {entry.get('title')}\n"
+        f"Category: {entry.get('category')}\n\n"
+        f"Problem:\n{problem_md[:2000]}\n\n"
+        f"Prior Aura source (fix):\n```aura\n{prior_src[:6000]}\n```\n\n"
+        f"stderr (truncated):\n{stderr_snippet[:1200]}\n\n"
+        f"Failing CASE diffs (fix; do not hardcode expected into display):\n"
+        + "\n".join(fail_lines[:16])
+        + "\n\nWrite a repaired complete solution.aura now."
+    )
+    resp = _llm(
+        [
+            {"role": "system", "content": SYSTEM_AURA_REPAIR},
+            {"role": "user", "content": user},
+        ],
+        cfg=cfg,
+        temperature=temperature,
+        max_tokens=4000,
+        timeout_s=bc.llm_timeout_s,
+        run_log=bc.run_log,
+        tag="aura_repair",
+        slug=str(entry.get("slug")),
+    )
+    meta = {
+        "ok": bool(resp.get("ok")),
+        "error": resp.get("error") or "",
+        "usage": resp.get("usage") or {},
+        "model": resp.get("model") or cfg.model,
+        "temperature": temperature,
+        "variant": REPAIR_VARIANT,
+    }
+    if not resp.get("ok"):
+        return "", meta
+    src = extract_aura_source(str(resp.get("content") or ""))
+    return src, meta
+
+
+def repair_problem(entry: dict[str, Any], bc: BurnConfig, cfg: MiniMaxConfig) -> dict[str, Any]:
+    slug = str(entry["slug"])
+    pdir = problem_dir(bc.corpus_dir, slug)
+    summary: dict[str, Any] = {"slug": slug, "actions": []}
+    if _should_stop(bc):
+        summary["stopped"] = True
+        return summary
+    tests_path = pdir / "tests.json"
+    problem_path = pdir / "problem.md"
+    if not tests_path.is_file() or not problem_path.is_file():
+        summary["skipped"] = "missing_tests_or_problem"
+        return summary
+    try:
+        tests = json.loads(tests_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        summary["skipped"] = "bad_tests_json"
+        return summary
+    if not isinstance(tests, list) or not tests:
+        summary["skipped"] = "empty_tests"
+        return summary
+
+    meta = _load_meta(pdir / "meta.json")
+    best = _best_variant_row(meta)
+    prior_name = str(best.get("aura_file")) if best else "solution.aura"
+    prior_path = pdir / prior_name
+    if not prior_path.is_file():
+        for cand in ("solution.aura", "solution_2.aura", REPAIR_AURA_FILE):
+            if (pdir / cand).is_file():
+                prior_path = pdir / cand
+                prior_name = cand
+                break
+    if not prior_path.is_file():
+        summary["skipped"] = "no_prior_solution"
+        return summary
+
+    prior_src = prior_path.read_text(encoding="utf-8")
+    # Score prior (fresh) to get case_details + stderr for the prompt.
+    prior_run = run_aura_solution(prior_path, tests, aura_bin=bc.aura_bin, timeout_s=bc.aura_timeout_s)
+    summary["prior"] = {
+        "aura_file": prior_name,
+        "tests_passed": prior_run.get("tests_passed"),
+        "tests_total": prior_run.get("tests_total"),
+    }
+    if int(prior_run.get("tests_passed") or 0) >= len(tests) and prior_run.get("run_ok"):
+        summary["skipped"] = "already_full"
+        return summary
+
+    temp = (bc.temperatures or [0.4])[0]
+    problem_md = problem_path.read_text(encoding="utf-8")
+    src, gen_meta = generate_aura_repair(
+        entry,
+        problem_md,
+        tests,
+        prior_src=prior_src,
+        stderr_snippet=str(prior_run.get("stderr_snippet") or ""),
+        case_details=list(prior_run.get("case_details") or []),
+        cfg=cfg,
+        bc=bc,
+        temperature=temp,
+    )
+    summary["actions"].append("aura_repair")
+    if not src.strip():
+        summary["llm_ok"] = False
+        summary["error"] = gen_meta.get("error") or "empty"
+        return summary
+
+    # Ensure compat require if unbound names look like compat exports and missing.
+    if '(require "compat"' not in src and "unbound variable" in str(prior_run.get("stderr_snippet") or ""):
+        src = '(require "compat" all:)\n' + src
+
+    out_path = pdir / REPAIR_AURA_FILE
+    # Stage to scratch then promote so a crash mid-write does not clobber a prior repair.
+    staged = bc.scratch / f"repair_stage_{slug}.aura"
+    staged.parent.mkdir(parents=True, exist_ok=True)
+    staged.write_text(src, encoding="utf-8")
+    run = run_aura_solution(staged, tests, aura_bin=bc.aura_bin, timeout_s=bc.aura_timeout_s)
+    prior_passed = int(prior_run.get("tests_passed") or 0)
+    new_passed = int(run.get("tests_passed") or 0)
+    # Keep prior solution_repair if it was strictly better than this attempt.
+    existing_repair_passed = -1
+    if out_path.is_file():
+        try:
+            existing_repair_passed = int(
+                run_aura_solution(out_path, tests, aura_bin=bc.aura_bin, timeout_s=bc.aura_timeout_s).get("tests_passed") or 0
+            )
+        except Exception:
+            existing_repair_passed = -1
+    if new_passed >= existing_repair_passed:
+        out_path.write_text(src, encoding="utf-8")
+    else:
+        # re-score the kept file for meta honesty
+        run = run_aura_solution(out_path, tests, aura_bin=bc.aura_bin, timeout_s=bc.aura_timeout_s)
+        new_passed = int(run.get("tests_passed") or 0)
+    try:
+        staged.unlink()
+    except OSError:
+        pass
+    summary["actions"].append("run_repair")
+    summary["repair"] = {
+        "tests_passed": run.get("tests_passed"),
+        "tests_total": run.get("tests_total"),
+        "parse_ok": run.get("parse_ok"),
+        "run_ok": run.get("run_ok"),
+        "delta": int(run.get("tests_passed") or 0) - int(prior_run.get("tests_passed") or 0),
+    }
+
+    row = {
+        "variant": REPAIR_VARIANT,
+        "aura_file": REPAIR_AURA_FILE,
+        "temperature": temp,
+        "model": gen_meta.get("model"),
+        "ts": _utc_now(),
+        "ts_local": _shanghai_now(),
+        "llm_ok": True,
+        "usage": gen_meta.get("usage") or {},
+        "parse_ok": run.get("parse_ok"),
+        "run_ok": run.get("run_ok"),
+        "exit_code": run.get("exit_code"),
+        "timeout": run.get("timeout"),
+        "duration_s": run.get("duration_s"),
+        "tests_passed": run.get("tests_passed"),
+        "tests_total": run.get("tests_total"),
+        "stderr_snippet": run.get("stderr_snippet"),
+        "stdout_snippet": run.get("stdout_snippet"),
+        "repair_of": prior_name,
+        "prior_passed": prior_run.get("tests_passed"),
+    }
+    meta.setdefault("variants", [])
+    meta["variants"] = [v for v in meta["variants"] if not (isinstance(v, dict) and v.get("aura_file") == REPAIR_AURA_FILE)]
+    meta["variants"].append(row)
+    meta["slug"] = slug
+    meta["title"] = entry.get("title")
+    meta["category"] = entry.get("category")
+    meta["updated_at"] = _utc_now()
+    meta["updated_at_local"] = _shanghai_now()
+    (pdir / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    summary["llm_ok"] = True
+    summary["improved"] = bool(summary["repair"]["delta"] > 0)
+    return summary
+
+
+def cmd_repair(bc: BurnConfig) -> int:
+    """Repair non-full corpus problems via MiniMax using stderr + failing CASE diffs."""
+    ensure_dirs(bc.corpus_dir, bc.scratch)
+    stop_flag = bc.stop_flag or (bc.scratch / "STOP")
+    bc.stop_flag = stop_flag
+    if stop_flag.is_file():
+        try:
+            stop_flag.unlink()
+        except OSError:
+            pass
+    cfg = load_minimax_config(env_file=bc.env_file)
+    rows = load_catalog(bc.corpus_dir / "catalog.jsonl")
+    todo = [r for r in rows if problem_needs_repair(r, bc.corpus_dir)]
+
+    # Prefer partials (some passes) then zeros; stable catalog order within band.
+    def _rank(entry: dict[str, Any]) -> tuple:
+        pdir = problem_dir(bc.corpus_dir, str(entry["slug"]))
+        meta = _load_meta(pdir / "meta.json")
+        best = _best_variant_row(meta) or {}
+        tp = int(best.get("tests_passed") or 0)
+        tt = int(best.get("tests_total") or 0)
+        # higher tp first among non-full; then higher tt
+        return (0 if tp > 0 else 1, -tp, -tt, str(entry["slug"]))
+
+    todo.sort(key=_rank)
+    if bc.limit is not None:
+        todo = todo[: max(0, int(bc.limit))]
+
+    print(
+        json.dumps(
+            {
+                "event": "repair_start",
+                "todo": len(todo),
+                "workers": bc.workers,
+                "aura_bin": bc.aura_bin,
+                "ts_local": _shanghai_now(),
+            }
+        )
+    )
+    processed = 0
+    improved = 0
+    deltas = 0
+    with ThreadPoolExecutor(max_workers=max(1, bc.workers)) as pool:
+        futs = {pool.submit(repair_problem, entry, bc, cfg): entry.get("slug") for entry in todo}
+        for fut in as_completed(futs):
+            slug = futs[fut]
+            try:
+                result = fut.result()
+            except Exception as exc:  # noqa: BLE001
+                result = {
+                    "slug": slug,
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "trace": traceback.format_exc()[-500:],
+                }
+            processed += 1
+            if result.get("improved"):
+                improved += 1
+                deltas += int(((result.get("repair") or {}).get("delta")) or 0)
+            print(json.dumps({"event": "repair_done", **result}, ensure_ascii=False))
+            if bc.auto_commit:
+                every = max(1, bc.commit_every)
+                bucket = processed // every
+                if bucket > getattr(bc, "_last_commit_bucket", 0):
+                    bc._last_commit_bucket = bucket  # type: ignore[attr-defined]
+                    maybe_auto_commit(bc, note=f"repair processed={processed}")
+            if _should_stop(bc):
+                break
+    print(
+        json.dumps(
+            {
+                "event": "repair_complete",
+                "processed": processed,
+                "improved": improved,
+                "sum_delta": deltas,
+                "ts_local": _shanghai_now(),
+            }
+        )
+    )
+    if bc.auto_commit:
+        maybe_auto_commit(bc, note=f"repair final processed={processed}")
     return 0
 
 
