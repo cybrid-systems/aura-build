@@ -1462,15 +1462,17 @@ def cmd_repair(bc: BurnConfig) -> int:
     rows = load_catalog(bc.corpus_dir / "catalog.jsonl")
     todo = [r for r in rows if problem_needs_repair(r, bc.corpus_dir)]
 
-    # Prefer partials (some passes) then zeros; stable catalog order within band.
+    # Prefer: no solution_repair yet → partials (high tp) → zeros; stable slug tiebreak.
     def _rank(entry: dict[str, Any]) -> tuple:
         pdir = problem_dir(bc.corpus_dir, str(entry["slug"]))
         meta = _load_meta(pdir / "meta.json")
         best = _best_variant_row(meta) or {}
         tp = int(best.get("tests_passed") or 0)
         tt = int(best.get("tests_total") or 0)
-        # higher tp first among non-full; then higher tt
-        return (0 if tp > 0 else 1, -tp, -tt, str(entry["slug"]))
+        has_repair = 1 if (pdir / REPAIR_AURA_FILE).is_file() else 0
+        # has_repair last among same band; partials (tp>0) before zeros
+        band = 0 if tp > 0 else 1
+        return (has_repair, band, -tp, -tt, str(entry["slug"]))
 
     todo.sort(key=_rank)
     if bc.limit is not None:
