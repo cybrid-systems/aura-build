@@ -34,7 +34,9 @@ DEFAULT_SOFT = "/workspace/aura-grok/build_soft4079/aura"
 # Refuse Soft in-session scoring when any test list JSON exceeds this (chars).
 MAX_LIST_JSON_CHARS = 120
 SOFT_VERIFY_TIMEOUT_S = 20.0
-SOFT_MUTATE_TIMEOUT_S = 25.0
+SOFT_MUTATE_TIMEOUT_S = 20.0
+SOFT_SET_CODE_TIMEOUT_S = 18.0
+SOFT_EVAL_TIMEOUT_S = 18.0
 
 
 @dataclass(frozen=True)
@@ -761,8 +763,10 @@ Rules:
 - Output ONE complete Aura program in a ```aura fence (full file, not a patch).
 - Keep (solve ...) as the algorithm entry; fix unbound names, parse errors, and wrong logic.
 - You may use helpers; prefer plain Scheme-like Aura (define/cond/let/lambda). Avoid require unless needed.
-- Use failing CASE diffs and stderr as clues. Do NOT hardcode expected CASE outputs as bare
-  display strings without calling solve — still compute via solve for each embedded input.
+- Study failing CASE diffs (input / got / expected) and stderr carefully: they show WHERE the
+  algorithm is wrong (off-by-one, wrong order, missing edge empty/zero/negative, wrong DP base).
+- Do NOT hardcode expected CASE outputs as bare display strings without calling solve —
+  still compute via solve for each embedded input. Expected values are clues only.
 - At the end, for each test input, call solve and print:
   (display "CASEi=") (display <result>) (newline)
   Prefer printing booleans as true/false strings; lists as compact JSON-like [a,b] when tests expect that.
@@ -776,7 +780,13 @@ def _soft_escape(src: str) -> str:
 
 def _pick_baseline(pdir: Path, tests: list[dict[str, Any]], *, aura_bin: str, repo: Path) -> dict[str, Any]:
     baseline: dict[str, Any] = {"ok": False, "hits": 0, "total": len(tests)}
-    for cand in ("solution_repair.aura", "solution_2.aura", "solution.aura"):
+    # Prefer prior Soft runtime partials when present (near-miss retries).
+    for cand in (
+        "solution_runtime.aura",
+        "solution_repair.aura",
+        "solution_2.aura",
+        "solution.aura",
+    ):
         cp = pdir / cand
         if not cp.is_file():
             continue
@@ -907,20 +917,28 @@ def _minimax_propose_aura(
     from aura_build.minimax import chat_completions, extract_aura_source
 
     fail_lines = []
-    for d in fail_details[:12]:
+    for d in fail_details[:16]:
+        inp = json.dumps(d.get("input"), ensure_ascii=False)
+        if len(inp) > 220:
+            inp = inp[:220] + "..."
         fail_lines.append(
-            f"- CASE{d.get('id')} input={json.dumps(d.get('input'), ensure_ascii=False)}"
-            f" got={d.get('got')!r} expected={d.get('expected')!r}"
+            f"- CASE{d.get('id')}: input={inp}"
+            f" | got={d.get('got')!r} | expected={d.get('expected')!r}"
+            "  (fix algorithm so solve computes expected; do not print expected literally)"
         )
     if not fail_lines:
         fail_lines = ["(no CASE diffs; rely on stderr / prior)"]
+    passing = max(0, len(tests) - len(fail_details))
     user = (
-        f"Slug: {slug}\n\nProblem:\n{problem_md[:1800]}\n\n"
-        f"Prior Aura source (fix):\n```aura\n{prior_src[:5500]}\n```\n\n"
-        f"stderr (truncated):\n{(stderr_snippet or '')[:800]}\n\n"
-        f"Failing CASE diffs (fix; do not hardcode expected into display):\n"
+        f"Slug: {slug}\n"
+        f"Soft score context: {passing}/{len(tests)} cases already pass; "
+        f"{len(fail_details)} still fail — focus on the failing cases.\n\n"
+        f"Problem:\n{problem_md[:2000]}\n\n"
+        f"Prior Aura source (fix):\n```aura\n{prior_src[:6500]}\n```\n\n"
+        f"stderr (truncated):\n{(stderr_snippet or '')[:1000]}\n\n"
+        f"Failing CASE diffs (clues only; do NOT hardcode expected into display):\n"
         + "\n".join(fail_lines)
-        + "\n\nWrite a repaired complete solution.aura now."
+        + "\n\nWrite a repaired complete solution.aura now that still prints CASE lines via solve."
     )
     messages = [
         {"role": "system", "content": LLM_SYSTEM},
@@ -994,29 +1012,98 @@ def _minimax_propose_aura(
     return sources, meta
 
 
+
+_SESSION_TRANSIENT = (
+    "serve_sock_missing",
+    "serve_session_timeout",
+    "serve_sock_empty",
+    "serve_sock_error",
+    "timeout",
+)
+
+
+def _is_session_transient(msg: object) -> bool:
+    s = str(msg or "")
+    return any(tok in s for tok in _SESSION_TRANSIENT)
+
+
+def _stop_quiet(sess: Any) -> None:
+    if sess is None:
+        return
+    try:
+        sess.stop()
+    except Exception:
+        pass
+
+
+def _restart_soft_session(
+    *,
+    aura_bin: str,
+    harness_root: Path,
+    scratch: Path,
+    cfg: Any,
+) -> tuple[Any, bool, bool, dict[str, Any]]:
+    """Stop any dead Soft serve and start a fresh session; re-probe denseness/fiber-llm."""
+    from aura_build.fiber_llm import fiber_llm_probe
+    from aura_build.llm_dogfood import fiber_fanout_probe
+    from aura_build.serve_session import start_session
+
+    sess = start_session(aura_bin=aura_bin, harness_root=harness_root, force=True)
+    denseness = fiber_fanout_probe(sess, n=2, timeout_s=6.0)
+    fiber_live = bool(denseness.get("ok"))
+    probe = fiber_llm_probe(sess, scratch_dir=scratch, timeout_s=30.0, config=cfg)
+    fiber_llm_ok = bool(probe.get("ok"))
+    return sess, fiber_live, fiber_llm_ok, denseness
+
+
+
 def _session_score_src(
     sess: Any,
     src: str,
     tests: list[dict[str, Any]],
     *,
-    timeout_s: float = SOFT_MUTATE_TIMEOUT_S,
+    timeout_s: float = SOFT_EVAL_TIMEOUT_S,
 ) -> dict[str, Any]:
     esc = _soft_escape(src)
-    boot = sess.raw_line(f'(set-code "{esc}")', timeout_s=min(30.0, timeout_s + 5))
+    boot = sess.raw_line(
+        f'(set-code "{esc}")', timeout_s=min(SOFT_SET_CODE_TIMEOUT_S, timeout_s + 2)
+    )
     if boot.get("status") != "ok":
+        msg = boot.get("msg") or boot.get("status")
         return {
             "ok": False,
             "hits": 0,
             "total": len(tests),
             "status": boot.get("status"),
-            "msg": boot.get("msg"),
+            "msg": msg,
             "reason": "set_code_failed",
+            "transient": _is_session_transient(msg),
         }
     ev = sess.raw_line("(eval-current)", timeout_s=timeout_s)
+    if _is_session_transient(ev.get("msg") or ev.get("status")):
+        return {
+            "ok": False,
+            "hits": 0,
+            "total": len(tests),
+            "status": ev.get("status"),
+            "msg": ev.get("msg"),
+            "reason": "eval_transient",
+            "transient": True,
+        }
     # Top-level CASE prints often appear during eval-current
     stdout = str(ev.get("display") or "")
     if "CASE" not in stdout:
         run = sess.raw_line("(run-cases)", timeout_s=timeout_s)
+        if _is_session_transient(run.get("msg") or run.get("status")):
+            return {
+                "ok": False,
+                "hits": 0,
+                "total": len(tests),
+                "status": run.get("status"),
+                "msg": run.get("msg"),
+                "reason": "run_transient",
+                "transient": True,
+            }
         if run.get("status") == "ok":
             stdout = str(run.get("display") or "")
         else:
@@ -1034,6 +1121,7 @@ def _session_score_src(
         "got": {str(k): v for k, v in got.items()},
         "eval_status": ev.get("status"),
         "stdout_head": stdout[:240],
+        "transient": False,
     }
 
 
@@ -1104,6 +1192,7 @@ def repair_llm(
             text=True,
             timeout=SOFT_VERIFY_TIMEOUT_S,
             check=False,
+            start_new_session=True,
         )
         stderr_snippet = (proc.stderr or "")[:1200]
         got_map = {}
@@ -1159,8 +1248,19 @@ def repair_llm(
         for i, src in enumerate(proposals):
             candidates.append((f"llm-{i}", src))
 
+        restarts = 0
         for name, src in candidates:
             sc = _session_score_src(sess, src, tests)
+            if sc.get("transient") and restarts < 2:
+                _stop_quiet(sess)
+                sess, fiber_live, fiber_llm_ok, denseness = _restart_soft_session(
+                    aura_bin=aura_bin,
+                    harness_root=hroot,
+                    scratch=scratch,
+                    cfg=cfg,
+                )
+                restarts += 1
+                sc = _session_score_src(sess, src, tests)
             explorers.append(
                 {
                     "name": name,
@@ -1171,6 +1271,8 @@ def repair_llm(
                     "reason": sc.get("reason"),
                     "src": src,
                     "stdout_head": sc.get("stdout_head"),
+                    "transient": bool(sc.get("transient")),
+                    "session_restarts": restarts,
                 }
             )
 
@@ -1205,21 +1307,70 @@ def repair_llm(
                 "denseness": {"ok": denseness.get("ok"), "note": denseness.get("note")},
             }
 
-        # Materialize winner via set-code + current-source
+        # Materialize winner via set-code + current-source (restart once on transient sock errors)
         win_src = str(best.get("src") or "")
-        boot = sess.raw_line(f'(set-code "{_soft_escape(win_src)}")', timeout_s=30.0)
+        boot = sess.raw_line(
+            f'(set-code "{_soft_escape(win_src)}")', timeout_s=SOFT_SET_CODE_TIMEOUT_S
+        )
+        if boot.get("status") != "ok" and _is_session_transient(boot.get("msg")):
+            _stop_quiet(sess)
+            sess, fiber_live, fiber_llm_ok, denseness = _restart_soft_session(
+                aura_bin=aura_bin,
+                harness_root=hroot,
+                scratch=scratch,
+                cfg=cfg,
+            )
+            boot = sess.raw_line(
+                f'(set-code "{_soft_escape(win_src)}")', timeout_s=SOFT_SET_CODE_TIMEOUT_S
+            )
         if boot.get("status") != "ok":
+            out_path = pdir / "solution_runtime.aura"
+            note = str(boot.get("msg") or boot.get("status") or "set_code_failed")
+            banner = (
+                f"; soft_leetcode_runtime slug={slug} path=llm\n"
+                f"; materialize=proposed_source_fallback worldline_backend="
+                f"{'fiber_graph' if fiber_live else 'serve_mutate'}\n"
+                f"; fiber_live={'true' if fiber_live else 'false'} incr_proven=false\n"
+                f"; llm_via={llm_meta.get('llm_via')} note=winner_set_code_failed:{note}\n"
+                f"; selected={best['name']} hits={best['hits']}/{best['total']}\n"
+                f"; baseline_hits={baseline.get('hits')}/{baseline.get('total')}\n"
+                "; Expected values used only for host scoring / LLM context, not hardcoded into display.\n"
+            )
+            out_path.write_text(banner + win_src + "\n", encoding="utf-8")
+            verify = score_aura_file(repo, out_path, tests, aura_bin=aura_bin)
+            improved = int(verify.get("hits") or 0) > int(baseline.get("hits") or 0)
+            full = bool(verify.get("ok"))
             return {
-                "ok": False,
-                "reason": f"winner_set_code_failed:{boot.get('msg')}",
+                "ok": full or improved,
+                "reason": (
+                    "full"
+                    if full
+                    else ("improved" if improved else "winner_set_code_failed_fallback")
+                ),
                 "slug": slug,
-                "explorers": explorers,
-                "llm": llm_meta,
+                "out_path": str(out_path.relative_to(repo)),
+                "baseline": {k: baseline.get(k) for k in ("hits", "total", "aura_file", "ok")},
+                "verify": verify,
+                "selected": {k: best.get(k) for k in ("name", "hits", "total", "via")},
+                "explorers": [
+                    {k: e.get(k) for k in ("name", "hits", "total", "via", "ok", "reason")}
+                    for e in explorers
+                ],
                 "fiber_live": fiber_live,
-                "aura_issue_candidate": True,
+                "fiber_llm_ok": fiber_llm_ok,
+                "incr_proven": False,
+                "worldline_backend": "fiber_graph" if fiber_live else "serve_mutate",
+                "llm_ok": bool(llm_meta.get("llm_ok")),
+                "llm_via": llm_meta.get("llm_via"),
+                "model": llm_meta.get("model"),
+                "llm": llm_meta,
+                "materialize": "proposed_source_fallback",
+                "improved": improved,
+                "full": full,
+                "aura_issue_candidate": False,
             }
-        sess.raw_line("(eval-current)", timeout_s=SOFT_MUTATE_TIMEOUT_S)
-        cs = sess.raw_line("(display (current-source :workspace :pretty))", timeout_s=25.0)
+        sess.raw_line("(eval-current)", timeout_s=SOFT_EVAL_TIMEOUT_S)
+        cs = sess.raw_line("(display (current-source :workspace :pretty))", timeout_s=20.0)
         src_out = str(cs.get("display") or "").strip()
         materialize = "current-source"
         if not src_out or "solve" not in src_out:
