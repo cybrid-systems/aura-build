@@ -158,7 +158,11 @@ def test_stamp_after_runtime_has_current_source_unparse():
         return  # older string-built stamp in some checkouts
     assert stamp_banner_agrees(text)
     assert "incr_proven=false" in text and '"incr_proven" #f' in text
-    assert "fiber_live=false" in text and '"fiber_live" #f' in text
+    # fiber_live may be true (serve denseness measured) or false (oneshot fallback)
+    assert (
+        ("; fiber_live=true" in text and '"fiber_live" #t' in text)
+        or ("; fiber_live=false" in text and '"fiber_live" #f' in text)
+    )
     assert "(define cand" in text or "(define (cand" in text
 
 
