@@ -1,0 +1,228 @@
+; soft_leetcode_runtime slug=number-of-islands path=promote_soft_full
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; baseline_file=solution.aura hits=8/8
+; Soft oneshot already full; materialize via Soft current-source. No LLM.
+(begin
+  (define make-vec2
+    (lambda (H W init)
+      (let ((rows (make-vector
+          H 0)))
+        (letrec ((loop (lambda (i)
+            (if (<
+                i H)
+              (begin
+                (vector-set!
+                  rows i (make-vector
+                    W init))
+                (loop (+
+                    i 1)))
+              rows))))
+          (loop 0)))))
+  (define vref2
+    (lambda (v i j)
+      (vector-ref
+        (vector-ref
+          v i) j)))
+  (define vset2!
+    (lambda (v i j x)
+      (vector-set!
+        (vector-ref
+          v i) j x)))
+  (define bfs
+    (lambda (grid H W sr sc)
+      (let ((queue (quote 0)))
+        (begin
+          (set! queue (cons
+              (list
+                sr sc) queue))
+          (vector-set!
+            (vector-ref
+              grid sr) sc 48)
+          (letrec ((loop (lambda ()
+              (if (null? queue)
+                (quote done)
+                (let ((cell (car queue)))
+                  (let ((r (car cell)))
+                    (let ((c (cadr cell)))
+                      (let ((restq (cdr queue)))
+                        (begin
+                          (set! queue restq)
+                          (if (and
+                              (>
+                                r 0) (char=?
+                                (vref2
+                                  grid (-
+                                    r 1) c) 49))
+                            (begin
+                              (vector-set!
+                                (vector-ref
+                                  grid (-
+                                    r 1)) c 48)
+                              (set! queue (cons
+                                  (list
+                                    (-
+                                      r 1) c) queue)))
+                            (quote noop))
+                          (if (and
+                              (<
+                                (+
+                                  r 1) H) (char=?
+                                (vref2
+                                  grid (+
+                                    r 1) c) 49))
+                            (begin
+                              (vector-set!
+                                (vector-ref
+                                  grid (+
+                                    r 1)) c 48)
+                              (set! queue (cons
+                                  (list
+                                    (+
+                                      r 1) c) queue)))
+                            (quote noop))
+                          (if (and
+                              (>
+                                c 0) (char=?
+                                (vref2
+                                  grid r (-
+                                    c 1)) 49))
+                            (begin
+                              (vector-set!
+                                (vector-ref
+                                  grid r) (-
+                                  c 1) 48)
+                              (set! queue (cons
+                                  (list
+                                    r (-
+                                      c 1)) queue)))
+                            (quote noop))
+                          (if (and
+                              (<
+                                (+
+                                  c 1) W) (char=?
+                                (vref2
+                                  grid r (+
+                                    c 1)) 49))
+                            (begin
+                              (vector-set!
+                                (vector-ref
+                                  grid r) (+
+                                  c 1) 48)
+                              (set! queue (cons
+                                  (list
+                                    r (+
+                                      c 1)) queue)))
+                            (quote noop))
+                          (loop))))))))))
+            (loop))))))
+  (define solve
+    (lambda (H W grid)
+      (let ((count 0))
+        (letrec ((loop (lambda (i)
+            (if (<
+                i H)
+              (letrec ((inner (lambda (j)
+                  (if (<
+                      j W)
+                    (begin
+                      (if (char=?
+                          (vref2
+                            grid i j) 49)
+                        (begin
+                          (set! count (+
+                              count 1))
+                          (bfs
+                            grid H W i j))
+                        (quote noop))
+                      (inner (+
+                          j 1)))
+                    (loop (+
+                        i 1))))))
+                (inner 0))
+              count))))
+          (loop 0)))))
+  (define run-case
+    (lambda (H W grid)
+      (let ((gvec (make-vec2
+          H W 0)))
+        (begin
+          (letrec ((fillr (lambda (i)
+              (if (<
+                  i H)
+                (begin
+                  (letrec ((fillc (lambda (j)
+                      (if (<
+                          j W)
+                        (begin
+                          (vector-set!
+                            (vector-ref
+                              gvec i) j (string-ref
+                              (vector-ref
+                                grid i) j))
+                          (fillc (+
+                              j 1)))
+                        (quote done)))))
+                    (fillc 0))
+                  (fillr (+
+                      i 1)))
+                (quote done)))))
+            (fillr 0))
+          (solve
+            H W gvec)))))
+  (define display-int
+    (lambda (n)
+      (display (number->string n))))
+  (let ((c0 (run-case
+      4 5 (vector
+        "11110" "11010" "11000" "00000"))))
+    (begin
+      (display "CASE0=")
+      (display-int c0)
+      (newline)))
+  (let ((c1 (run-case
+      4 5 (vector
+        "11000" "11000" "00100" "00011"))))
+    (begin
+      (display "CASE1=")
+      (display-int c1)
+      (newline)))
+  (let ((c2 (run-case
+      1 1 (vector "1"))))
+    (begin
+      (display "CASE2=")
+      (display-int c2)
+      (newline)))
+  (let ((c3 (run-case
+      1 1 (vector "0"))))
+    (begin
+      (display "CASE3=")
+      (display-int c3)
+      (newline)))
+  (let ((c4 (run-case
+      1 4 (vector "1111"))))
+    (begin
+      (display "CASE4=")
+      (display-int c4)
+      (newline)))
+  (let ((c5 (run-case
+      3 3 (vector
+        "101" "010" "101"))))
+    (begin
+      (display "CASE5=")
+      (display-int c5)
+      (newline)))
+  (let ((c6 (run-case
+      4 4 (vector
+        "1100" "1110" "0110" "0001"))))
+    (begin
+      (display "CASE6=")
+      (display-int c6)
+      (newline)))
+  (let ((c7 (run-case
+      3 3 (vector
+        "000" "000" "000"))))
+    (begin
+      (display "CASE7=")
+      (display-int c7)
+      (newline))))

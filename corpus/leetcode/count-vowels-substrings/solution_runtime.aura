@@ -1,0 +1,82 @@
+; soft_leetcode_runtime slug=count-vowels-substrings path=promote_soft_full
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; baseline_file=solution.aura hits=8/8
+; Soft oneshot already full; materialize via Soft current-source. No LLM.
+(begin
+  (define vowel?
+    (lambda (c)
+      (or
+        (char=?
+          c 97) (char=?
+          c 101) (char=?
+          c 105) (char=?
+          c 111) (char=?
+          c 117) (char=?
+          c 65) (char=?
+          c 69) (char=?
+          c 73) (char=?
+          c 79) (char=?
+          c 85))))
+  (define string-length
+    (lambda (s)
+      (letrec ((loop (lambda (i)
+          (if (char=?
+              (string-ref
+                s i) 0)
+            i
+            (loop (+
+                i 1))))))
+        (loop 0))))
+  (define solve
+    (lambda (s)
+      (let ((n (string-length s)))
+        (let ((result 0))
+          (letrec ((loop (lambda (left)
+              (if (>=
+                  left n)
+                result
+                (letrec ((expand (lambda (right)
+                    (if (>=
+                        right n)
+                      result
+                      (let ((c (string-ref
+                          s right)))
+                        (if (vowel? c)
+                          (begin
+                            (set! result (+
+                                result (-
+                                  right left)))
+                            (expand (+
+                                right 1)))
+                          result))))))
+                  (expand left))))))
+            (loop 0))))))
+  (define run-cases
+    (lambda ()
+      (begin
+        (display "CASE0=")
+        (display (solve "aeiou"))
+        (newline)
+        (display "CASE1=")
+        (display (solve "abc"))
+        (newline)
+        (display "CASE2=")
+        (display (solve "aab"))
+        (newline)
+        (display "CASE3=")
+        (display (solve "a"))
+        (newline)
+        (display "CASE4=")
+        (display (solve "aa"))
+        (newline)
+        (display "CASE5=")
+        (display (solve "AaAa"))
+        (newline)
+        (display "CASE6=")
+        (display (solve "bcd"))
+        (newline)
+        (display "CASE7=")
+        (display (solve "aeiaaiooau"))
+        (newline))))
+  (run-cases))

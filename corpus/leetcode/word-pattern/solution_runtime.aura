@@ -1,0 +1,151 @@
+; soft_leetcode_runtime slug=word-pattern path=promote_soft_full
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; baseline_file=solution_2.aura hits=8/8
+; Soft oneshot already full; materialize via Soft current-source. No LLM.
+(begin
+  (define split-words
+    (lambda (s)
+      (let ((len (string-length s)))
+        (letrec ((loop (lambda (i start acc)
+            (if (=
+                i len)
+              (if (=
+                  start i)
+                acc
+                (append
+                  acc (list (substring
+                      s start i))))
+              (if (char=?
+                  (string-ref
+                    s i) 32)
+                (loop
+                  (+
+                    i 1) (+
+                    i 1) (append
+                    acc (list (substring
+                        s start i))))
+                (loop
+                  (+
+                    i 1) start acc))))))
+          (loop
+            0 0 (quote 0))))))
+  (define char-list
+    (lambda (s)
+      (let ((len (string-length s)))
+        (letrec ((loop (lambda (i acc)
+            (if (<
+                i 0)
+              acc
+              (loop
+                (-
+                  i 1) (cons
+                  (string-ref
+                    s i) acc))))))
+          (loop
+            (-
+              len 1) (quote 0))))))
+  (define list-length
+    (lambda (lst)
+      (letrec ((loop (lambda (l n)
+          (if (null? l)
+            n
+            (loop
+              (cdr l) (+
+                n 1))))))
+        (loop
+          lst 0))))
+  (define list-ref
+    (lambda (lst n)
+      (if (=
+          n 0)
+        (car lst)
+        (list-ref
+          (cdr lst) (-
+            n 1)))))
+  (define assoc-get
+    (lambda (key alist)
+      (if (null? alist)
+        #f
+        (if (equal?
+            (car (car alist)) key)
+          (cdr (car alist))
+          (assoc-get
+            key (cdr alist))))))
+  (define assoc-set
+    (lambda (key val alist)
+      (cons
+        (cons
+          key val) alist)))
+  (define match?
+    (lambda (cs ws c2w w2c)
+      (if (and
+          (null? cs) (null? ws))
+        #t
+        (if (or
+            (null? cs) (null? ws))
+          #f
+          (if (equal?
+              (assoc-get
+                (car cs) c2w) (car ws))
+            (let ((c2w2 (if (assoc-get
+                  (car cs) c2w)
+                c2w
+                (assoc-set
+                  (car cs) (car ws) c2w))))
+              (match?
+                (cdr cs) (cdr ws) c2w2 (assoc-set
+                  (car ws) (car cs) w2c)))
+            (if (assoc-get
+                (car cs) c2w)
+              #f
+              (if (assoc-get
+                  (car ws) w2c)
+                #f
+                (match?
+                  (cdr cs) (cdr ws) (assoc-set
+                    (car cs) (car ws) c2w) (assoc-set
+                    (car ws) (car cs) w2c)))))))))
+  (define solve
+    (lambda (pattern sentence)
+      (let ((cs (char-list pattern)))
+        (let ((ws (split-words sentence)))
+          (if (=
+              (list-length cs) (list-length ws))
+            (if (match?
+                cs ws (quote 0) (quote 0))
+              "YES"
+              "NO")
+            "NO")))))
+  (display "CASE0=")
+  (display (solve
+      "abba" "dog cat cat dog"))
+  (newline)
+  (display "CASE1=")
+  (display (solve
+      "abba" "dog cat cat fish"))
+  (newline)
+  (display "CASE2=")
+  (display (solve
+      "aaaa" "dog cat cat dog"))
+  (newline)
+  (display "CASE3=")
+  (display (solve
+      "abc" "one two three"))
+  (newline)
+  (display "CASE4=")
+  (display (solve
+      "abc" "one one one"))
+  (newline)
+  (display "CASE5=")
+  (display (solve
+      "a" "cat"))
+  (newline)
+  (display "CASE6=")
+  (display (solve
+      "ab" "cat"))
+  (newline)
+  (display "CASE7=")
+  (display (solve
+      "" ""))
+  (newline))

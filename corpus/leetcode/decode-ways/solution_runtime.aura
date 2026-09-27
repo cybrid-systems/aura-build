@@ -1,0 +1,218 @@
+; soft_leetcode_runtime slug=decode-ways path=promote_soft_full
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; baseline_file=solution_2.aura hits=8/8
+; Soft oneshot already full; materialize via Soft current-source. No LLM.
+(begin
+  (define MOD 1000000007)
+  (define string-length
+    (lambda (s)
+      (letrec ((loop (lambda (i)
+          (if (and
+              (<
+                i (string-length-raw s)) #t)
+            i
+            i))))
+        (loop 0))))
+  (define char-at
+    (lambda (s i)
+      (substring
+        s i (+
+          i 1))))
+  (define digit->number
+    (lambda (ch)
+      (-
+        (char->integer (string-ref
+            ch 0)) (char->integer 48))))
+  (define string-length-raw
+    (lambda (s)
+      (letrec ((loop (lambda (i)
+          (if (and
+              (<
+                i 1000000) (<
+                i (byte-count
+                  s i)))
+            (loop (+
+                i 1))
+            i))))
+        (loop 0))))
+  (define str-len
+    (lambda (s)
+      (letrec ((loop (lambda (i)
+          (if (equal?
+              (substring
+                s i (+
+                  i 1)) "")
+            i
+            (loop (+
+                i 1))))))
+        (loop 0))))
+  (define solve
+    (lambda (s)
+      (let ((n (str-len s)))
+        (let ((a (make-vector
+            n 0)))
+          (let ((b (make-vector
+              n 0)))
+            (if (=
+                n 0)
+              0
+              (begin
+                (if (equal?
+                    (char-at
+                      s 0) "0")
+                  (vector-set!
+                    a 0 0)
+                  (vector-set!
+                    a 0 1))
+                (if (=
+                    n 1)
+                  (vector-ref
+                    a 0)
+                  (letrec ((loop (lambda (i)
+                      (if (>=
+                          i n)
+                        (quote done)
+                        (begin
+                          (let ((c1 (char-at
+                              s i)))
+                            (let ((c0 (char-at
+                                s (-
+                                  i 1))))
+                              (let ((single 0))
+                                (let ((pair 0))
+                                  (begin
+                                    (if (not (equal?
+                                          c1 "0"))
+                                      (set! single (vector-ref
+                                          a (-
+                                            i 1)))
+                                      ())
+                                    (let ((two-str (string-append
+                                        c0 c1)))
+                                      (let ((val (+
+                                          (*
+                                            (digit->number c0) 10) (digit->number c1))))
+                                        (if (and
+                                            (>=
+                                              val 10) (<=
+                                              val 26))
+                                          (set! pair (if (>=
+                                                (-
+                                                  i 2) 0)
+                                              (vector-ref
+                                                a (-
+                                                  i 2))
+                                              (if (=
+                                                  i 1)
+                                                1
+                                                0)))
+                                          ())))
+                                    (vector-set!
+                                      b i (modulo
+                                        (+
+                                          single pair) MOD)))))))
+                          (let ((tmp (vector-ref
+                              a i)))
+                            (begin
+                              (vector-set!
+                                a i (vector-ref
+                                  b i))
+                              (vector-set!
+                                b i tmp)))
+                          (loop (+
+                              i 1)))))))
+                    (loop 1)))
+                (vector-ref
+                  a (-
+                    n 1)))))))))
+  (define solve
+    (lambda (s)
+      (let ((n (str-len s)))
+        (let ((dp (make-vector
+            (+
+              n 1) 0)))
+          (begin
+            (vector-set!
+              dp 0 1)
+            (if (>=
+                n 1)
+              (vector-set!
+                dp 1 (if (equal?
+                    (char-at
+                      s 0) "0")
+                  0
+                  1))
+              ())
+            (letrec ((loop (lambda (i)
+                (if (>
+                    i n)
+                  (vector-ref
+                    dp n)
+                  (begin
+                    (let ((c (char-at
+                        s (-
+                          i 1))))
+                      (if (not (equal?
+                            c "0"))
+                        (vector-set!
+                          dp i (modulo
+                            (+
+                              (vector-ref
+                                dp i) (vector-ref
+                                dp (-
+                                  i 1))) MOD))
+                        ()))
+                    (let ((two-str (substring
+                        s (-
+                          i 2) i)))
+                      (let ((val (string->two-digit-number two-str)))
+                        (if (and
+                            (>=
+                              val 10) (<=
+                              val 26))
+                          (vector-set!
+                            dp i (modulo
+                              (+
+                                (vector-ref
+                                  dp i) (vector-ref
+                                  dp (-
+                                    i 2))) MOD))
+                          ())))
+                    (loop (+
+                        i 1)))))))
+              (loop 2)))))))
+  (define string->two-digit-number
+    (lambda (s)
+      (+
+        (*
+          (digit->number (char-at
+              s 0)) 10) (digit->number (char-at
+            s 1)))))
+  (define solve-main
+    (lambda (s)
+      (solve s)))
+  (define run-case
+    (lambda (i s)
+      (begin
+        (display "CASE")
+        (display i)
+        (display "=")
+        (display (solve-main s))
+        (newline))))
+  (run-case
+    0 "12")
+  (run-case
+    1 "226")
+  (run-case
+    2 "06")
+  (run-case
+    3 "0")
+  (run-case
+    4 "27")
+  (run-case
+    5 "1111111111")
+  (run-case
+    6 "1")
+  (run-case
+    7 "10"))

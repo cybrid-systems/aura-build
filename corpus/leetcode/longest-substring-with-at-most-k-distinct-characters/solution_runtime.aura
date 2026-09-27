@@ -1,0 +1,108 @@
+; soft_leetcode_runtime slug=longest-substring-with-at-most-k-distinct-characters path=promote_soft_full
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; baseline_file=solution.aura hits=8/8
+; Soft oneshot already full; materialize via Soft current-source. No LLM.
+(begin
+  (define length-of-longest-substring-k-distinct
+    (lambda (s k)
+      (let ((n (string-length s)))
+        (let ((freq (make-vector
+            26 0)))
+          (let ((left 0))
+            (let ((distinct 0))
+              (let ((best 0))
+                (begin
+                  (define char-idx
+                    (lambda (c)
+                      (-
+                        (char->integer c) (char->integer 97))))
+                  (letrec ((loop (lambda (right)
+                      (if (=
+                          right n)
+                        best
+                        (let ((ci (char-idx (string-ref
+                              s right))))
+                          (let ((fc (vector-ref
+                              freq ci)))
+                            (begin
+                              (vector-set!
+                                freq ci (+
+                                  fc 1))
+                              (if (=
+                                  fc 0)
+                                (set! distinct (+
+                                    distinct 1))
+                                0)
+                              (letrec ((shrink (lambda ()
+                                  (if (>
+                                      distinct k)
+                                    (let ((li (char-idx (string-ref
+                                          s left))))
+                                      (let ((lc (vector-ref
+                                          freq li)))
+                                        (begin
+                                          (vector-set!
+                                            freq li (-
+                                              lc 1))
+                                          (if (=
+                                              lc 1)
+                                            (set! distinct (-
+                                                distinct 1))
+                                            0)
+                                          (set! left (+
+                                              left 1))
+                                          (shrink))))
+                                    0))))
+                                (shrink))
+                              (let ((window (-
+                                  (+
+                                    right 1) left)))
+                                (if (>
+                                    window best)
+                                  (set! best window)
+                                  0))
+                              (loop (+
+                                  right 1)))))))))
+                    (loop 0))))))))))
+  (define solve
+    (lambda (s k)
+      (length-of-longest-substring-k-distinct
+        s k)))
+  (define display-result
+    (lambda (i result)
+      (begin
+        (display "CASE")
+        (display i)
+        (display "=")
+        (display result)
+        (newline))))
+  (define run
+    (lambda ()
+      (begin
+        (display-result
+          0 (solve
+            "eceba" 2))
+        (display-result
+          1 (solve
+            "aa" 1))
+        (display-result
+          2 (solve
+            "" 3))
+        (display-result
+          3 (solve
+            "abc" 0))
+        (display-result
+          4 (solve
+            "a" 1))
+        (display-result
+          5 (solve
+            "abaccc" 2))
+        (display-result
+          6 (solve
+            "abcdefghijklmnopqrstuvwxyz" 3))
+        (display-result
+          7 (solve
+            "aaaaaaaaaa" 5))
+        0)))
+  (run))
