@@ -1,0 +1,14 @@
+(define (solve ratings)
+  (let ((n (length ratings)))
+    (cond
+      ((= n 0) 0)
+      ((= n 1) 1)
+      (else
+       (let ((left (make-list n 1))
+             (right (make-list n 1)))
+         (begin
+           (fill-left! left ratings n 1)
+           (fill-right! right ratings n (- n 2))
+           (let ((total (sum-candies left right (- n 1) 0)))
+             total)))))))
+...

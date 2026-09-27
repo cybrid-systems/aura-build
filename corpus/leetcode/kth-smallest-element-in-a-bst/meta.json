@@ -53,11 +53,40 @@
       "tests_total": 8,
       "stderr_snippet": "",
       "stdout_snippet": "CASE0=1\nCASE1=6\nCASE2=None\nCASE3=1\nCASE4=None\nCASE5=None\nCASE6=2\nCASE7=None\n"
+    },
+    {
+      "variant": 90,
+      "aura_file": "solution_repair.aura",
+      "temperature": 0.45,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-27T13:48:23Z",
+      "ts_local": "2026-09-27 21:48:23 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 4633,
+        "total_characters": 0,
+        "prompt_tokens": 2649,
+        "completion_tokens": 1984,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.016,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "warning: unbalanced parentheses in input\nerror: no complete S-expression in program source\nusage: /workspace/aura-grok/build_soft4079/aura [options] [file.aura …]\n       /workspace/aura-grok/build_soft4079/aura -e '(+ 1 2)'\n       echo '(+ 1 2)' | /workspace/aura-grok/build_soft4079/aura\n       /workspace/aura-grok/build_soft4079/aura < file.aura\n\nPrograms are read from stdin when no file/-e is given.\nDenseness / span host env (soft multi-module probes):\n  export AURA_BIN=…/build/aura   absolute",
+      "stdout_snippet": "",
+      "repair_of": "solution_2.aura",
+      "prior_passed": 2
     }
   ],
   "slug": "kth-smallest-element-in-a-bst",
   "title": "Kth Smallest Element in a BST",
   "category": "trees",
-  "updated_at": "2026-09-24T14:34:55Z",
-  "updated_at_local": "2026-09-24 22:34:55 CST"
+  "updated_at": "2026-09-27T13:48:23Z",
+  "updated_at_local": "2026-09-27 21:48:23 CST"
 }

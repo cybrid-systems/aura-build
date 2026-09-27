@@ -1,0 +1,126 @@
+;; Convert Sorted List to Binary Search Tree
+;; Build a height-balanced BST from sorted values, then serialize in level-order.
+
+(require "compat" all:)
+
+;; Tree representation: a pair (cons val (cons left right))
+;; Empty tree is '().
+(define (make-tree val left right)
+  (cons val (cons left right)))
+
+(define (tree-val t) (car t))
+(define (tree-left t) (car (cdr t)))
+(define (tree-right t) (cdr (cdr t)))
+
+;; Build balanced BST from sorted list using middle-element approach.
+(define (sorted-list-to-bst lst)
+  (if (null? lst)
+      '()
+      (let* ((n (length lst))
+             (mid (quotient n 2)))
+        (make-tree
+                  (list-ref lst mid)
+                  (sorted-list-to-bst (take lst mid))
+                  (sorted-list-to-bst (drop lst (+ mid 1)))))))
+
+(define (take lst n)
+  (if (= n 0)
+      '()
+      (cons (car lst) (take (cdr lst) (- n 1)))))
+
+(define (drop lst n)
+  (if (= n 0)
+      lst
+      (drop (cdr lst) (- n 1))))
+
+(define (list-ref lst i)
+  (if (= i 0)
+      (car lst)
+      (list-ref (cdr lst) (- i 1))))
+
+;; solve: input is a list of values (Aura harness representation of head).
+(define (solve head)
+  (sorted-list-to-bst head))
+
+;; Level-order (BFS) serialization of the tree.
+;; Produces a list where each non-empty position is a number, and missing
+;; children are represented by 'null (the symbol).
+;; We include all positions up to and including the last non-null slot.
+
+(define (level-order-list t)
+  (let loop ((current (list t)) (acc '()))
+    (cond ((null? current) acc)
+          (else
+           (let* ((vals (map (lambda (n)
+                              (if (null? n) 'null (tree-val n)))
+                            current))
+                  (next (apply append
+                               (map (lambda (n)
+                                      (if (null? n)
+                                          (list 'null 'null)
+                                          (list (tree-left n) (tree-right n))))
+                                    current))))
+             (loop next (append acc vals)))))))
+
+;; Trim trailing 'null markers (but keep at least the root if it was null).
+(define (trim-trailing-nulls lst)
+  (let loop ((l lst) (last-real -1) (i 0))
+    (cond ((null? l)
+           (if (= last-real -1)
+               '()
+               (list-head lst (+ last-real 1))))
+          ((eq? (car l) 'null)
+           (loop (cdr l) last-real (+ i 1)))
+          (else
+           (loop (cdr l) i (+ i 1))))))
+
+;; list-head: take first n elements of a list.
+(define (list-head lst n)
+  (if (= n 0)
+      '()
+      (cons (car lst) (list-head (cdr lst) (- n 1)))))
+
+;; Serialize a tree to the expected "[v,v,null,v,...]" string.
+(define (serialize-tree t)
+  (if (null? t)
+      "[]"
+      (let* ((lo (level-order-list t))
+             (trimmed (trim-trailing-nulls lo))
+             (parts (map (lambda (x)
+                          (if (eq? x 'null)
+                              "null"
+                              (number->string x)))
+                        trimmed)))
+        (string-append "[" (join-strings parts ",") "]"))))
+
+(define (join-strings xs sep)
+  (cond ((null? xs) "")
+        ((null? (cdr xs)) (car xs))
+        (else
+         (string-append (car xs) sep (join-strings (cdr xs) sep)))))
+
+;; ===== Test cases =====
+
+(define case0 '())
+(display "CASE0=") (display (serialize-tree (solve case0))) (newline)
+
+(define case1 (list 0))
+(display "CASE1=") (display (serialize-tree (solve case1))) (newline)
+
+(define case2 (list 1 2 3))
+(display "CASE2=") (display (serialize-tree (solve case2))) (newline)
+
+(define case3 (list -10 -3 0 5 9))
+(display "CASE3=") (display (serialize-tree (solve case3))) (newline)
+
+(define case4 (list 1 2 3 4 5 6 7 8))
+(display "CASE4=") (display (serialize-tree (solve case4))) (newline)
+
+(define case5 (list 0 1 2 3 4 5 6 7 8 9 10))
+(display "CASE5=") (display (serialize-tree (solve case5))) (newline)
+
+(define case6 (list -5 -4 -3 -2 -1 0 1 2 3 4 5))
+(display "CASE6=") (display (serialize-tree (solve case6))) (newline)
+
+(define case7 (list 42))
+(display "CASE7=") (display (serialize-tree (solve case7))) (newline)

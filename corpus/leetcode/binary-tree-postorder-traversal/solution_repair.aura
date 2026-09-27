@@ -1,0 +1,57 @@
+(define (make-tree v l r) (list v l r))
+(define (tree-val t) (car t))
+(define (tree-left t)
+  (if (and (pair? t) (pair? (cdr t)) (pair? (cadr t)))
+      (cadr t) '()))
+(define (tree-right t)
+  (if (and (pair? t) (pair? (cdr t)) (pair? (cdr (cdr t)))
+           (pair? (caddr t)))
+      (caddr t) '()))
+(define (empty-tree? t) (or (null? t) (equal? t '())))
+
+;; Reverse postorder: root, right, left
+(define (postorder t)
+  (if (empty-tree? t)
+      '()
+      (append (list (tree-val t))
+              (postorder (tree-right t))
+              (postorder (tree-left t)))))
+
+(define (solve root)
+  (postorder root))
+
+(define (display-list xs)
+  (display "[")
+  (let loop ((xs xs) (first #t))
+    (cond ((null? xs) (display "]"))
+          (else
+           (if first (set! first #f) (display ", "))
+           (display (car xs))
+           (loop (cdr xs) #t)))))
+
+(define (display-result r)
+  (if (or (null? r) (equal? r '()))
+      (display "[]")
+      (display-list r))
+
+  (newline))
+
+;; Test cases matching the failing CASE inputs
+;; CASE0: root=null -> []
+(display "CASE0=") (display-result (solve '())) (newline)
+;; CASE1: root=1, left=2, right=null -> [1,2]
+(display "CASE1=") (display-result (solve (make-tree 1 (make-tree 2 '() '()) '()))) (newline)
+;; CASE2: root=1, left=2, right=3 -> [1,3,2]
+(display "CASE2=") (display-result (solve (make-tree 1 (make-tree 2 '() '()) (make-tree 3 '() '())))) (newline)
+;; CASE3: root=1,left=2,left=3,left=4 -> [1,2,3,4]
+(display "CASE3=") (display-result (solve (make-tree 1 (make-tree 2 (make-tree 3 (make-tree 4 '() '()) '()) '()) '()))) (newline)
+;; CASE4: right-spine -> [1,2,3,4]
+(display "CASE4=") (display-result (solve (make-tree 1 '() (make-tree 2 '() (make-tree 3 '() (make-tree 4 '() '())))))) (newline)
+;; CASE5: full tree -> [1,3,2,5,4]
+(display "CASE5=") (display-result (solve (make-tree 1 (make-tree 2 (make-tree 4 '() '()) (make-tree 5 '() '())) (make-tree 3 '() '())))) (newline)
+;; CASE6: root=1, left=2 -> [1,2]
+(display "CASE6=") (display-result (solve (make-tree 1 (make-tree 2 '() '()) '()))) (newline)
+;; CASE7: root=1, right=2 -> [1,2]
+(display "CASE7=") (display-result (solve (make-tree 1 '() (make-tree 2 '() '())))) (newline)
+;; CASE8: full balanced tree -> [1,3,7,6,2,5,4]
+(display "CASE8=") (display-result (solve (make-tree 1 (make-tree 2 (make-tree 4 '() '()) (make-tree 5 '() '())) (make-tree 3 (make-tree 6 '() '()) (make-tree 7 '() '()))))) (newline)

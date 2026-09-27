@@ -1,0 +1,44 @@
+Looking at the failing cases, I need to identify the bug. The original code stored edges bidirectionally in adjacency, but the DFS from 0 followed *all* neighbors — including going against the arrow direction. This caused incorrect counting when the DFS traversed from a parent to a child where the arrow actually points child→parent.
+
+**Key insight**: An edge `u→v` points away from root 0 iff `u` is the parent of `v` in the rooted tree. We only need to store edges in their original direction (only in `adj[u]`). DFS from 0 follows arrows outward; each arrow traversed represents an edge that needs reversal. Edges whose arrow points toward 0 are never traversed but also never need reversal — they're already correct.
+
+Verification:
+- CASE0: `[[0,1],[1,3],[2,3],[4,3],[5,4]]` — arrows 0→1 and 1→3 point away from 0 (need reversal: 2). Arrows 2→3, 4→3, 5→4 point toward 0. ✓
+- CASE2: `[[0,1]]` — arrow 0→1 away from 0. Count=1. ✓
+- CASE4: `[[0,1],[2,0],[3,2]]` — only 0→1 is away. Count=1. ✓
+- CASE5: all arrows 0→1→...→6. Count=6. ✓
+
+```aura
+;; (solve n edges) -> minimum number of roads to reverse
+;; Each road u->v needs reversal iff u is closer to root 0 than v
+;; (i.e., in the rooted tree at 0, the arrow goes parent -> child).
+;; DFS from 0 following arrows: every arrow we traverse IS one reversal needed.
+
+(define (solve n edges)
+  (define adj (build-list n (lambda (_) '())))
+  (define visited (build-list n (lambda (_) #f)))
+
+  ;; For each edge u->v: store ONLY the forward direction.
+  ;; Going u -> v means the arrow points u->v (away from 0 if u closer to 0).
+  (define (fill-adj es)
+    (if (null? es)
+        'done
+        (let ((e (car es)))
+          (let ((u (car e)) (v (car (cdr e))))
+            (set! adj (list-set-nth adj u
+                                    (cons (cons v 1) (list-ref adj u))))
+            (fill-adj (cdr es))))))
+  (fill-adj edges)
+
+  (define count 0)
+  (define (dfs node)
+    (set! visited (list-set-nth visited node #t))
+    (let loop ((nbrs (list-ref adj node)))
+      (if (null? nbrs)
+          'done
+          (let ((p (car nbrs)))
+            (let ((nbr (car p)) (flag (cdr p)))
+              (if (list-ref visited nbr)
+                  (loop (cdr nbrs))
+                  (begin
+                    (if (= flag 1) (set! count (+ count 1)) 'no)

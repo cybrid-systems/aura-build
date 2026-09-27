@@ -1,0 +1,78 @@
+;; Combination Sum III - find all k-combinations from 1..9 summing to n
+
+(define (range a b)
+  (if (> a b) '() (cons a (range (+ a 1) b))))
+
+(define (sum lst)
+  (if (null? lst) 0 (+ (car lst) (sum (cdr lst)))))
+
+(define (backtrack start k n current)
+  ;; Returns list of valid combinations (each a list in ascending order)
+  (cond
+    ((= k 0)
+     (if (= n 0)
+         (cons (reverse current) '())
+         '()))
+    (else
+     (let loop ((s start) (acc '()))
+       (cond ((> s 9) acc)
+             (else
+              (let ((min-rest (if (= k 1) 0 (sum (range (+ s 1) (+ s (- k 1)))))))
+                (if (or (> s n) (> (+ min-rest s) n))
+                    (loop (+ s 1) acc)
+                    (loop (+ s 1)
+                          (append acc (backtrack (+ s 1) (- k 1) (- n s) (cons s current))))))))))))
+
+(define (append a b)
+  (if (null? a) b (cons (car a) (append (cdr a) b))))
+
+(define (solve k n)
+  (backtrack 1 k n '()))
+
+;; Display helpers
+(define (display-combination comb)
+  (let loop ((xs comb) (first? #t))
+    (cond ((null? xs) '())
+          (else
+           (if first? (begin (display (car xs)) '())
+               (begin (display ",") (display (car xs))))
+           (loop (cdr xs) #f)))))
+
+(define (display-results results)
+  (cond ((null? results) '())
+        (else
+         (display-combination (car results))
+         (newline)
+         (display-results (cdr results)))))
+
+(define (display-case i results)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (cond ((null? results)
+         (display "[]")
+         (newline))
+        (else
+         (display "[")
+         (let loop ((rs results) (first? #t))
+           (cond ((null? rs) '())
+                 (else
+                  (if first? (set! first? #f) (begin (display ",") '()))
+                  (display "[")
+                  (display-combination (car rs))
+                  (display "]")
+                  (loop (cdr rs) first?))))
+         (display "]")
+         (newline))))
+
+;; Test cases
+(define (run-cases cases i)
+  (if (null? cases)
+      '()
+      (begin
+       (let ((k (car (car cases)))
+             (n (car (cdr (car cases)))))
+         (display-case i (solve k n)))
+       (run-cases (cdr cases) (+ i 1)))))
+
+(run-cases '((3 7) (3 9) (4 1) (2 10) (9 45) (9 46) (2 17) (3 15)) 0)

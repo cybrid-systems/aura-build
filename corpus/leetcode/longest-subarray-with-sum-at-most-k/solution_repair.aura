@@ -1,0 +1,35 @@
+(require "compat" all:)
+
+(define (solve nums k)
+  (let ((n (length nums)))
+    (let loop ((left 0) (right 0) (sum 0) (best 0))
+      (cond
+        ((>= right n) best)
+        (else
+         (let ((new-sum (+ sum (list-ref nums right))))
+           (let shrink ((l left) (s new-sum))
+             (cond
+               ((and (> s k) (< l right))
+                (shrink (+ l 1) (- s (list-ref nums l))))
+               (else
+                (let ((new-best (max best (- (+ right 1) l))))
+                  (loop (+ right 1) (+ right 1) s new-best))))))))))
+
+(define (max a b) (if (> a b) a b))
+
+(define (run-case i nums k)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve nums k))
+  (newline))
+
+(run-case 0 '(1 2 3 4 5) 8)
+(run-case 1 '(1 2 3 4 5) 15)
+(run-case 2 '(5 5 5 5 5) 10)
+(run-case 3 '(1 1 1 1 1) 3)
+(run-case 4 '() 5)
+(run-case 5 '(0 0 0 0) -1)
+(run-case 6 '(3) 3)
+(run-case 7 '(4) 3)
+(run-case 8 '(2 2 2 2 2) 0)

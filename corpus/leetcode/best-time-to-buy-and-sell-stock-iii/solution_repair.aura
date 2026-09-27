@@ -1,0 +1,60 @@
+(require "compat" all:)
+
+(define (solve prices)
+  (let* ((n (length prices))
+         (left (make-list n 0))
+         (right (make-list n 0)))
+    (if (< n 2)
+        0
+        (begin
+          ;; left[i] = max profit from one transaction in prices[0..i]
+          (let loop ((i 1) (minp (list-ref prices 0)) (best 0))
+            (if (>= i n)
+                'done
+                (let* ((p (list-ref prices i))
+                       (new-min (if (< p minp) p minp))
+                       (new-best (if (> (- p minp) best) (- p minp) best)))
+                  (list-set! left i new-best)
+                  (loop (+ i 1) new-min new-best))))
+          ;; right[i] = max profit from one transaction in prices[i..n-1]
+          (let loop ((i (- n 2)) (maxp (list-ref prices (- n 1))) (best 0))
+            (if (< i 0)
+                'done
+                (let* ((p (list-ref prices i))
+                       (new-max (if (> p maxp) p maxp))
+                       (new-best (if (> (- new-max p) best) (- new-max p) best)))
+                  (list-set! right i new-best)
+                  (loop (- i 1) new-max new-best))))
+          ;; Combine left[i] + right[i+1] for split point i
+          ;; Also consider just one transaction (left[n-1])
+          (let loop ((i 0) (ans (list-ref left (- n 1))))
+            (if (= i (- n 1))
+                ans
+                (loop (+ i 1)
+                      (let ((cand (+ (list-ref left i) (list-ref right (+ i 1)))))
+                        (if (> cand ans) cand ans)))))))))
+
+(define (list-set! lst i v)
+  (let loop ((cur lst) (k i))
+    (if (= k 0)
+        (set-car! cur v)
+        (loop (cdr cur) (- k 1)))))
+
+;; Test harness
+(define (run-case i prices)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve prices))
+  (newline))
+
+(run-case 0 '())
+(run-case 1 '(5))
+(run-case 2 '(5 5 5 5))
+(run-case 3 '(1 2 3 4 5))
+(run-case 4 '(5 4 3 2 1))
+(run-case 5 '(3 3 5 0 0 3 1 4))
+(run-case 6 '(1 2 4 2 5 7 2 4 9 0))
+(run-case 7 '(7 6 4 3 1))
+(run-case 8 '(1 2 1 2 1 2))
+(run-case 9 '(6 1 3 2 4 7))
