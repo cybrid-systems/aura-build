@@ -1,0 +1,105 @@
+; soft_leetcode_runtime slug=find-words-that-can-be-formed-by-characters path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=fiber fiber_llm_ok=true
+; selected=llm-2 hits=8/8
+; baseline_hits=5/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define string->chars
+    (lambda (s)
+      (letrec ((loop (lambda (i acc)
+          (if (=
+              i (string-length s))
+            (reverse acc)
+            (loop
+              (+
+                i 1) (cons
+                (string-ref
+                  s i) acc))))))
+        (loop
+          0 (quote 0)))))
+  (define count-char
+    (lambda (c lst)
+      (letrec ((loop (lambda (l n)
+          (if (null? l)
+            n
+            (if (char=?
+                (car l) c)
+              (loop
+                (cdr l) (+
+                  n 1))
+              (loop
+                (cdr l) n))))))
+        (loop
+          lst 0))))
+  (define formable?
+    (lambda (chars word)
+      (letrec ((loop (lambda (w)
+          (if (null? w)
+            #t
+            (if (>
+                (count-char
+                  (car w) w) (count-char
+                  (car w) chars))
+              #f
+              (loop (cdr w)))))))
+        (loop word))))
+  (define strlen
+    (lambda (s)
+      (string-length s)))
+  (define solve
+    (lambda (characters words)
+      (let ((chars (string->chars characters)))
+        (letrec ((loop (lambda (ws total)
+            (if (null? ws)
+              total
+              (let ((w (car ws)))
+                (if (formable?
+                    chars (string->chars w))
+                  (loop
+                    (cdr ws) (+
+                      total (strlen w)))
+                  (loop
+                    (cdr ws) total)))))))
+          (loop
+            words 0)))))
+  (display "CASE0=")
+  (display (solve
+      "welcometocoding" (quote ("welcome"
+          "to" "coding" "leet" "code"))))
+  (newline)
+  (display "CASE1=")
+  (display (solve
+      "abc" (quote ("a"
+          "b" "c" "ab" "ac" "bc" "abc" "aab" "abcd"))))
+  (newline)
+  (display "CASE2=")
+  (display (solve
+      "aaaa" (quote ("a"
+          "aa" "aaa" "aaaa" "aaaaa"))))
+  (newline)
+  (display "CASE3=")
+  (display (solve
+      "abcdefghijklmnopqrstuvwxyz" (quote ("abc"
+          "xyz" "zyx" "abcd"))))
+  (newline)
+  (display "CASE4=")
+  (display (solve
+      "a" (quote 0)))
+  (newline)
+  (display "CASE5=")
+  (display (solve
+      "abcabc" (quote ("aabbcc"
+          "abc" "abca" "aabb" "abcabc"))))
+  (newline)
+  (display "CASE6=")
+  (display (solve
+      "zzz" (quote ("z"
+          "zz" "zzz" "zzzz" "zzx"))))
+  (newline)
+  (display "CASE7=")
+  (display (solve
+      "ilovepython" (quote ("i"
+          "love" "python" "pyth" "py" "loves"))))
+  (newline))

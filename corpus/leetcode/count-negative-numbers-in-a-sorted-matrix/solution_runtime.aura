@@ -1,0 +1,84 @@
+; soft_leetcode_runtime slug=count-negative-numbers-in-a-sorted-matrix path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=fiber fiber_llm_ok=true
+; selected=llm-0 hits=8/8
+; baseline_hits=5/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define neg-count
+    (lambda (grid)
+      (if (null? grid)
+        0
+        (let ((rows (length grid)))
+          (let ((cols (length (car grid))))
+            (let ((count 0))
+              (let ((row-idx 0))
+                (let ((col-idx (-
+                    (length (car grid)) 1)))
+                  (letrec ((loop (lambda (r c cnt)
+                      (if (or
+                          (>=
+                            r rows) (<
+                            c 0))
+                        cnt
+                        (let ((val (list-ref
+                            (list-ref
+                              grid r) c)))
+                          (if (<
+                              val 0)
+                            (loop
+                              (+
+                                r 1) c (+
+                                cnt (+
+                                  c 1)))
+                            (loop
+                              r (-
+                                c 1) cnt)))))))
+                    (loop
+                      row-idx col-idx count))))))))))
+  (define solve
+    (lambda (grid)
+      (neg-count grid)))
+  (define run-case
+    (lambda (i grid)
+      (begin
+        (display "CASE")
+        (display i)
+        (display "=")
+        (display (solve grid))
+        (newline))))
+  (run-case
+    0 (quote ((4
+          3 2 -1)
+        (3
+          2 1 -1) (1
+          1 -1 -2) (-1
+          -1 -2 -3) (-2
+          -3 -3 -4))))
+  (run-case
+    1 (quote ((3 2) (1 0))))
+  (run-case
+    2 (quote ((0
+          0 0) (0
+          0 0))))
+  (run-case
+    3 (quote ((-1
+          -1 -1) (-1
+          -1 -1))))
+  (run-case
+    4 (quote ((5
+          1 0)
+        (3
+          -2 -3) (1
+          -5 -7))))
+  (run-case
+    5 (quote ((1))))
+  (run-case
+    6 (quote ((-1))))
+  (run-case
+    7 (quote ((0
+          -1 -2 -3)
+        (0
+          0 -1 -2) (1
+          0 0 -1)))))

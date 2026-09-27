@@ -1,0 +1,142 @@
+; soft_leetcode_runtime slug=longest-mountain-in-array path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=fiber fiber_llm_ok=true
+; selected=llm-2 hits=10/10
+; baseline_hits=8/10
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define len
+    (lambda (lst)
+      (letrec ((loop (lambda (xs n)
+          (if (null? xs)
+            n
+            (loop
+              (cdr xs) (+
+                n 1))))))
+        (loop
+          lst 0))))
+  (define ref
+    (lambda (lst i)
+      (if (=
+          i 0)
+        (car lst)
+        (ref
+          (cdr lst) (-
+            i 1)))))
+  (define solve
+    (lambda (arr)
+      (let ((n (len arr)))
+        (if (<
+            n 3)
+          0
+          (letrec ((loop (lambda (i best)
+              (if (>=
+                  i (-
+                    n 1))
+                best
+                (if (and
+                    (>
+                      (ref
+                        arr i) (ref
+                        arr (-
+                          i 1))) (>
+                      (ref
+                        arr i) (ref
+                        arr (+
+                          i 1))))
+                  (let ((peak i))
+                    (let ((l-end (let ((j i))
+                        (letrec ((go (lambda (k acc)
+                            (if (and
+                                (>
+                                  k 0) (<
+                                  (ref
+                                    arr (-
+                                      k 1)) (ref
+                                    arr k)))
+                              (go
+                                (-
+                                  k 1) (+
+                                  acc 1))
+                              acc))))
+                          (go
+                            j 1)))))
+                      (let ((r-end (let ((j i))
+                          (letrec ((go (lambda (k acc)
+                              (if (and
+                                  (<
+                                    k (-
+                                      n 1)) (>
+                                    (ref
+                                      arr k) (ref
+                                      arr (+
+                                        k 1))))
+                                (go
+                                  (+
+                                    k 1) (+
+                                    acc 1))
+                                acc))))
+                            (go
+                              j 1)))))
+                        (let ((total (+
+                            l-end r-end -1)))
+                          (let ((newbest (if (>
+                                total best)
+                              total
+                              best)))
+                            (let ((next (+
+                                peak (-
+                                  l-end 1))))
+                              (if (<
+                                  next (-
+                                    n 1))
+                                (loop
+                                  (+
+                                    next 1) newbest)
+                                (loop
+                                  (+
+                                    i 1) newbest))))))))
+                  (loop
+                    (+
+                      i 1) best))))))
+            (loop
+              1 0))))))
+  (define run-case
+    (lambda (i arr)
+      (let ((result (solve arr)))
+        (begin
+          (display "CASE")
+          (display i)
+          (display "=")
+          (display result)
+          (newline)))))
+  (run-case
+    0 (quote (2
+        1 4 7 3 2 5)))
+  (run-case
+    1 (quote (2
+        2 2)))
+  (run-case
+    2 (quote (1
+        3 1 4 5 6 7 8 9 8 7 6 5 4 3 2 0)))
+  (run-case
+    3 (quote (1
+        2 3)))
+  (run-case
+    4 (quote (3
+        2 1)))
+  (run-case
+    5 (quote (1)))
+  (run-case
+    6 (quote (1
+        2 3 4 5 6 7 8 9)))
+  (run-case
+    7 (quote (9
+        8 7 6 5 4 3 2 1)))
+  (run-case
+    8 (quote (1
+        2 3 2 1 2 3 2 1)))
+  (run-case
+    9 (quote (0
+        1 2 3 4 5 6 7 8 9 8 7 6 5 4 3 2 1 0))))
