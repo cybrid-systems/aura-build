@@ -448,6 +448,25 @@ def build_parser() -> argparse.ArgumentParser:
     _opt(product, "--env-file", type=Path, default=None, help="propose only; MiniMax env file")
     _common(product, aura=False, harness=False)
 
+
+    runtime = se_sub.add_parser(
+        "runtime",
+        help=(
+            "Soft tip dogfood: set-code -> mutate -> select-best -> "
+            "(current-source :workspace :pretty) -> write stamp -> host verify -> commit+push"
+        ),
+    )
+    _opt(
+        runtime,
+        "--verify",
+        default="stamp",
+        choices=("none", "smoke", "prove", "kernel", "stamp"),
+        help="host verify after Soft materialize (default stamp)",
+    )
+    _opt(runtime, "--no-push", action="store_true", help="commit only")
+    _opt(runtime, "--no-commit", action="store_true", help="materialize+verify only")
+    _common(runtime, aura=True, harness=True)
+
     pursue = sub.add_parser(
         "pursue",
         help=(

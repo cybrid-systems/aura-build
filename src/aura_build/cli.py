@@ -429,6 +429,10 @@ def _cmd_self_evolve(args: argparse.Namespace) -> int:
     """
     if getattr(args, "self_evolve_cmd", None) == "combat":
         return _cmd_self_evolve_combat(args)
+    if getattr(args, "self_evolve_cmd", None) == "runtime":
+        from aura_build.self_evolve_runtime import cmd_runtime
+
+        return cmd_runtime(args)
     if getattr(args, "self_evolve_cmd", None) == "product":
         from aura_build.self_evolve_product import cmd_product
 

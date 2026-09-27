@@ -1,4 +1,7 @@
 ; aura-build kernel — self-evolve dogfood (harness L1 + worldlines over this repo)
+; GAP: se-write-stamp string-builds the stamp body (NOT Soft current-source).
+; Soft runtime north-star: aura/self_evolve_runtime.aura + `aura-build self-evolve runtime`
+;   set-code -> mutate:rebind -> select-best -> (current-source :workspace :pretty) -> write-file.
 ; Mutate/canary → select-best → materialize stamp into git worktree → light verify.
 ; Host may run heavier smoke/prove before commit/push.
 ; Honesty: never invent incr_proven / fiber_live. runtime.kernel = aura.

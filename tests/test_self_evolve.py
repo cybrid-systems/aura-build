@@ -128,3 +128,35 @@ def test_self_evolve_no_push_mocked_kernel(monkeypatch, tmp_path):
     )
     assert rc == 0
     assert calls and calls[0].get("no_push") is True
+
+
+def test_runtime_ok_regex_parses_materialize_line():
+    from aura_build.self_evolve_runtime import _RUNTIME_OK_RE
+
+    line = (
+        "RUNTIME_OK selected=9 observed=9 src_len=33 "
+        "wrote=aura/self_evolve_stamp.aura gen=1 materialize=current-source "
+        "incr_proven=false fiber_live=false kernel=aura"
+    )
+    m = _RUNTIME_OK_RE.search(line)
+    assert m is not None
+    assert m.group("selected") == "9"
+    assert m.group("observed") == "9"
+    assert m.group("src_len") == "33"
+    assert m.group("wrote") == "aura/self_evolve_stamp.aura"
+
+
+def test_stamp_after_runtime_has_current_source_unparse():
+    from pathlib import Path
+    from aura_build.stamp_banner import stamp_banner_agrees
+
+    stamp = Path("aura/self_evolve_stamp.aura")
+    if not stamp.is_file():
+        return
+    text = stamp.read_text(encoding="utf-8")
+    if "materialize=current-source" not in text:
+        return  # older string-built stamp in some checkouts
+    assert stamp_banner_agrees(text)
+    assert "incr_proven=false" in text and '"incr_proven" #f' in text
+    assert "fiber_live=false" in text and '"fiber_live" #f' in text
+    assert "(define cand" in text or "(define (cand" in text
