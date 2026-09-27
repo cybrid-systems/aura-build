@@ -1,18 +1,26 @@
-; aura-build self-evolve stamp — materialized winner
-; Not fiber-live. incr_proven only when prove measured it.
-; traj_id=ep-1790151798819-1
-; harness_mid=mid-ep-1790151798821-2
-; generation=2
-; fitness=0.8325
+; aura-build self-evolve stamp — materialized via (current-source :workspace :pretty)
+; Not Soft Ready. Not fiber-live unless serve/fiber measured it.
+; traj_id=rt-9-9
+; generation=1
+; selected=9
+; observed=9
+; src_len=33
 ; verify_ok=true
 ; incr_proven=false
 ; fiber_live=false
 ; kernel=aura
+; materialize=current-source
 (export stamp-info)
 (define (stamp-info)
-  (hash "traj_id" "ep-1790151798819-1"
-        "harness_mid" "mid-ep-1790151798821-2"
-        "generation" 2
+  (hash "traj_id" "rt-9-9"
+        "generation" 1
+        "selected" 9
+        "observed" 9
         "kernel" "aura"
+        "materialize" "current-source"
         "incr_proven" #f
         "fiber_live" #f))
+; --- winner FlatAST unparse ---
+(define cand
+  (lambda ()
+    9))

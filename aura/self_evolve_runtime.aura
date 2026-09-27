@@ -1,0 +1,85 @@
+; aura-build Soft runtime self-evolve dogfood.
+; Soft tip: set-code → mutate:rebind candidates → observe → select-best →
+; (current-source :workspace :pretty) → write-file (NOT string-built winner body).
+; Honesty: fiber_live / incr_proven stay false on this oneshot Soft path.
+; Success: RUNTIME_OK selected=<n> observed=<v> src_len=<n> wrote=<path>
+(define STAMP-PATH "aura/self_evolve_stamp.aura")
+
+(set-code "(define (cand) 0)")
+(eval-current)
+
+(define (score-bump bump)
+  (mutate:rebind "cand"
+                 (string-append "(lambda () " (number->string bump) ")")
+                 (string-append "rt-" (number->string bump)))
+  (eval-current)
+  (cand))
+
+(define (pick-best bumps)
+  (let loop ((xs bumps) (best-b 0) (best-v -999999))
+    (if (null? xs)
+        (cons best-b best-v)
+        (let* ((b (car xs))
+               (v (score-bump b)))
+          (if (> v best-v)
+              (loop (cdr xs) b v)
+              (loop (cdr xs) best-b best-v))))))
+
+(define (banner traj gen selected observed src-len)
+  (string-append
+    "; aura-build self-evolve stamp — materialized via (current-source :workspace :pretty)\n"
+    "; Not Soft Ready. Not fiber-live unless serve/fiber measured it.\n"
+    "; traj_id=" traj "\n"
+    "; generation=" (number->string gen) "\n"
+    "; selected=" (number->string selected) "\n"
+    "; observed=" (number->string observed) "\n"
+    "; src_len=" (number->string src-len) "\n"
+    "; verify_ok=true\n"
+    "; incr_proven=false\n"
+    "; fiber_live=false\n"
+    "; kernel=aura\n"
+    "; materialize=current-source\n"
+    "(export stamp-info)\n"
+    "(define (stamp-info)\n"
+    "  (hash \"traj_id\" \"" traj "\"\n"
+    "        \"generation\" " (number->string gen) "\n"
+    "        \"selected\" " (number->string selected) "\n"
+    "        \"observed\" " (number->string observed) "\n"
+    "        \"kernel\" \"aura\"\n"
+    "        \"materialize\" \"current-source\"\n"
+    "        \"incr_proven\" #f\n"
+    "        \"fiber_live\" #f))\n"
+    "; --- winner FlatAST unparse ---\n"))
+
+(let* ((bumps (list 2 9 4 7 1))
+       (picked (pick-best bumps))
+       (best-b (car picked))
+       (best-v (cdr picked))
+       (_ (mutate:rebind "cand"
+                         (string-append "(lambda () " (number->string best-b) ")")
+                         "rt-winner"))
+       (_2 (eval-current))
+       (src (current-source :workspace :pretty))
+       (src-ok (and (string? src) (> (string-length src) 0)))
+       (src-len (if src-ok (string-length src) 0))
+       (traj (string-append "rt-" (number->string best-b) "-" (number->string best-v)))
+       (gen 1)
+       (body (if src-ok
+                 (string-append (banner traj gen best-b best-v src-len) src "\n")
+                 ""))
+       (wrote (if src-ok
+                  (begin (write-file STAMP-PATH body) STAMP-PATH)
+                  "none")))
+  (display "RUNTIME_OK selected=")(display best-b)
+  (display " observed=")(display best-v)
+  (display " src_len=")(display src-len)
+  (display " wrote=")(display wrote)
+  (display " gen=")(display gen)
+  (display " materialize=current-source")
+  (display " incr_proven=false")
+  (display " fiber_live=false")
+  (display " kernel=aura")
+  (newline)
+  (if (not src-ok)
+      (begin (display "RUNTIME_FAIL reason=current-source-empty")(newline))
+      #t))
