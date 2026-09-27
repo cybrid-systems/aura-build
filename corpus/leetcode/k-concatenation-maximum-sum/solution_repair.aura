@@ -1,0 +1,57 @@
+(define MOD 1000000007)
+
+(define (max2 a b) (if (> a b) a b))
+
+(define (kadane xs)
+  (let loop ((xs xs) (best -1000000000000) (cur -1000000000000))
+    (if (null? xs) best
+        (let ((v (car xs)))
+          (set! cur (max2 v (+ cur v)))
+          (set! best (max2 best cur))
+          (loop (cdr xs) best cur)))))
+
+(define (max-prefix xs)
+  (let loop ((xs xs) (cur 0) (best -1000000000000))
+    (if (null? xs) best
+        (begin
+          (set! cur (+ cur (car xs)))
+          (set! best (max2 best cur))
+          (loop (cdr xs) cur best)))))
+
+(define (max-suffix xs)
+  (let loop ((xs (reverse xs)) (cur 0) (best -1000000000000))
+    (if (null? xs) best
+        (begin
+          (set! cur (+ cur (car xs)))
+          (set! best (max2 best cur))
+          (loop (cdr xs) cur best)))))
+
+(define (total-sum xs)
+  (let loop ((xs xs) (s 0))
+    (if (null? xs) s (loop (cdr xs) (+ s (car xs))))))
+
+(define (solve a k)
+  (let* ((single-max (kadane a))
+         (pref (max-prefix a))
+         (suff (max-suffix a))
+         (tot (total-sum a))
+         (ans
+          (cond ((<= k 1) single-max)
+                ((> tot 0)
+                 (max2 single-max (+ suff pref (* tot (- k 2)))))
+                (else
+                 (max2 single-max (+ suff pref))))))
+    (if (<= ans 0) 0 (modulo ans MOD))))
+
+(define (run-case i a k)
+  (display "CASE") (display i) (display "=")
+  (display (solve a k)) (newline))
+
+(run-case 0 '(1 -2 1 2 -2 1 -2 1) 3)
+(run-case 1 '(-1 -2) 5)
+(run-case 2 '(1 2 3) 1)
+(run-case 3 '(1 2 3) 3)
+(run-case 4 '(1 -1 1) 2)
+(run-case 5 '(5 -2 3) 4)
+(run-case 6 '(0 0 0) 10)
+(run-case 7 '(-5 -2 -3) 2)

@@ -1,0 +1,79 @@
+;; Dungeon Game solution in Aura
+
+(define (length xs)
+  (if (null? xs) 0 (+ 1 (length (cdr xs)))))
+
+(define (list-ref xs i)
+  (if (= i 0) (car xs) (list-ref (cdr xs) i)))
+
+(define (min a b) (if (< a b) a b))
+(define (max a b) (if (> a b) a b))
+
+(define (row-ref g i) (list-ref g i))
+(define (cell g i j)
+  (list-ref (list-ref g i) j))
+
+(define (nrows g) (length g))
+(define (ncols g) (length (list-ref g 0)))
+
+;; DP from bottom-right:
+;; dp[i][j] = min health needed BEFORE entering cell (i,j).
+;; Recurrence: need = min(dp[i][j+1], dp[i+1][j]) - grid[i][j]
+;; If need < 1, then 1.
+;; Base: dp[m-1][n-1] = max(1, 1 - grid[m-1][n-1])
+(define (solve grid)
+  (let* ((m (nrows grid))
+         (n (ncols grid)))
+    (let ((dp (make-list m '())))
+      (letrec (
+        ;; Fill row i from right to left; row-below is (list-ref dp (+ i 1)) or #f
+        (fill-row (lambda (i)
+          (letrec ((row-below (if (< i (- m 1)) (list-ref dp (+ i 1)) #f))
+                   (loop (lambda (j)
+                     (if (< j 0) '()
+                         (let* ((val (cell grid i j))
+                                (right (if (< j (- n 1))
+                                           (car (list-ref (list-ref dp i) 1))
+                                           #f))
+                                (down (if row-below
+                                          (list-ref row-below j)
+                                          #f))
+                                (next (cond
+                                         ((and (number? right) (number? down))
+                                          (min right down))
+                                         ((number? right) right)
+                                         ((number? down) down)
+                                         (else 1)))
+                                (need (- next val))
+                                (final (if (< need 1) 1 need)))
+                           (cons final (loop (- j 1))))))))
+            (set! (list-ref dp i) (loop (- n 1)))))))
+
+        ;; Fill rows from bottom to top
+        (fill-all (lambda (i)
+          (if (< i 0) '()
+              (begin
+                (fill-row i)
+                (fill-all (- i 1)))))))
+
+        (fill-all (- m 1))
+        (car (list-ref dp 0))))))
+
+;; Test cases
+(define grid0 '((-2 -3 3) (-5 -10 1) (10 30 -5)))
+(define grid1 '((0)))
+(define grid2 '((-3)))
+(define grid3 '((1 2 3) (0 0 0)))
+(define grid4 '((-1 -1 -1) (-1 -1 -1) (-1 -1 -1)))
+(define grid5 '((100)))
+(define grid6 '((0 0) (0 0)))
+(define grid7 '((-2 1) (-3 1)))
+
+(display "CASE0=") (display (solve grid0)) (newline)
+(display "CASE1=") (display (solve grid1)) (newline)
+(display "CASE2=") (display (solve grid2)) (newline)
+(display "CASE3=") (display (solve grid3)) (newline)
+(display "CASE4=") (display (solve grid4)) (newline)
+(display "CASE5=") (display (solve grid5)) (newline)
+(display "CASE6=") (display (solve grid6)) (newline)
+(display "CASE7=") (display (solve grid7)) (newline)

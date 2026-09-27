@@ -1,0 +1,82 @@
+;; Solution for "Find Words That Can Be Formed by Characters"
+
+;; Convert a string to a list of characters
+(define (string->chars s)
+  (let loop ((i 0) (acc '()))
+    (if (= i (string-length s))
+        (reverse acc)
+        (loop (+ i 1) (cons (string-ref s i) acc)))))
+
+;; Remove first occurrence of x from list lst; return new list
+(define (remove-one x lst)
+  (cond
+    ((null? lst) lst)
+    ((equal? (car lst) x) (cdr lst))
+    (else (cons (car lst) (remove-one x (cdr lst))))))
+
+;; Check if word is formable: every char in word must appear in chars at least as many times
+(define (formable? chars word)
+  (let loop ((cs chars) (w word))
+    (cond
+      ((null? w) #t)
+      ((null? cs) #f)
+      ((equal? (car w) (car cs))
+       (loop (remove-one (car w) cs) (cdr w)))
+      (else (loop (cdr cs) w)))))
+
+;; String length
+(define (strlen s)
+  (string-length s))
+
+;; Solve: sum of lengths of formable words
+(define (solve characters words)
+  (let ((chars (string->chars characters)))
+    (let loop ((ws words) (total 0))
+      (if (null? ws)
+          total
+          (let ((w (car ws)))
+            (if (formable? chars (string->chars w))
+                (loop (cdr ws) (+ total (strlen w)))
+                (loop (cdr ws) total)))))))
+
+;; Test cases
+
+;; CASE0
+(display "CASE0=")
+(display (solve "welcometocoding" '("welcome" "to" "coding" "leet" "code")))
+(newline)
+
+;; CASE1
+(display "CASE1=")
+(display (solve "abc" '("a" "b" "c" "ab" "ac" "bc" "abc" "aab" "abcd")))
+(newline)
+
+;; CASE2
+(display "CASE2=")
+(display (solve "aaaa" '("a" "aa" "aaa" "aaaa" "aaaaa")))
+(newline)
+
+;; CASE3
+(display "CASE3=")
+(display (solve "abcdefghijklmnopqrstuvwxyz" '("abc" "xyz" "zyx" "abcd")))
+(newline)
+
+;; CASE4
+(display "CASE4=")
+(display (solve "a" '()))
+(newline)
+
+;; CASE5
+(display "CASE5=")
+(display (solve "abcabc" '("aabbcc" "abc" "abca" "aabb" "abcabc")))
+(newline)
+
+;; CASE6
+(display "CASE6=")
+(display (solve "zzz" '("z" "zz" "zzz" "zzzz" "zzx")))
+(newline)
+
+;; CASE7
+(display "CASE7=")
+(display (solve "ilovepython" '("i" "love" "python" "pyth" "py" "loves")))
+(newline)

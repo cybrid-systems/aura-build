@@ -1,0 +1,64 @@
+(require "compat" all:)
+
+(define (solve nums)
+  (let* ((n (length nums)))
+    ;; Build a membership list where seen[i-1] = seen value i
+    (define seen (make-list n #f))
+    ;; Since list-set! may not exist, rebuild list with updated value
+    (define (set-seen lst idx val)
+      (if (= idx 0)
+          (cons val (cdr lst))
+          (cons (car lst) (set-seen (cdr lst) (- idx 1) val))))
+    (let loop ((xs nums))
+      (if (null? xs)
+          seen
+          (let* ((v (car xs))
+                 (idx (- v 1)))
+            (loop (cdr xs)))))
+    ;; Use a different approach: iterate with a hash or just collect seen numbers
+    ;; via a simple list. Since n can be large, we use a hash.
+    (let* ((h (make-hash)))
+      (let loop ((xs nums))
+        (if (null? xs)
+            'done
+            (begin
+              (hash-set! h (car xs) #t)
+              (loop (cdr xs)))))
+      ;; Collect missing numbers: 1..n not in hash
+      (let collect ((k 1) (acc '()))
+        (if (> k n)
+            (reverse acc)
+            (if (hash-has-key? h k)
+                (collect (+ k 1) acc)
+                (collect (+ k 1) (cons k acc))))))))
+
+(define (display-list xs)
+  (let go ((xs xs) (first? #t))
+    (cond
+      ((null? xs) '())
+      (else
+       (begin
+         (display (if first? "" " "))
+         (display (car xs))
+         (go (cdr xs) #f))))))
+
+;; Embedded tests
+(define c0 '(4 3 2 7 8 2 3 1))
+(define c1 '(1 1))
+(define c2 '(1 2 3 4))
+(define c3 '(2 2))
+(define c4 '(3 3 3 3))
+(define c5 '(5 4 3 2 1))
+(define c6 '())
+(define c7 '(2))
+(define c8 '(1 1 1 2 2 3))
+
+(display "CASE0=") (display-list (solve c0)) (newline)
+(display "CASE1=") (display-list (solve c1)) (newline)
+(display "CASE2=") (display-list (solve c2)) (newline)
+(display "CASE3=") (display-list (solve c3)) (newline)
+(display "CASE4=") (display-list (solve c4)) (newline)
+(display "CASE5=") (display-list (solve c5)) (newline)
+(display "CASE6=") (display-list (solve c6)) (newline)
+(display "CASE7=") (display-list (solve c7)) (newline)
+(display "CASE8=") (display-list (solve c8)) (newline)

@@ -1,0 +1,44 @@
+(require "compat" all:)
+
+(define (neg-count grid)
+  ;; Count negative numbers in a matrix sorted non-increasingly by row and column.
+  ;; Walk from top-right corner in O(m + n).
+  (cond
+    ((null? grid) 0)
+    (else
+     (let ((rows (length grid))
+           (cols (length (car grid)))
+           (r 0)
+           (c (- (length (car grid)) 1))
+           (cnt 0))
+       (let loop ((r r) (c c) (cnt cnt))
+         (cond
+           ((or (>= r rows) (< c 0)) cnt)
+           (else
+            (let ((val (list-ref (list-ref grid r) c)))
+              (if (< val 0)
+                  ;; All values at column c from row r downward are negative.
+                  ;; Their count is (rows - r). Add to cnt and move left.
+                  (loop r (- c 1) (+ cnt (- rows r)))
+                  ;; val >= 0, so column c has no negatives at or below row r.
+                  ;; Move down one row, keep column c.
+                  (loop (+ r 1) c cnt))))))))))
+
+(define (solve grid)
+  (neg-count grid))
+
+(define (run-case i grid)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (solve grid))
+  (newline))
+
+(run-case 0 '((4 3 2 -1) (3 2 1 -1) (1 1 -1 -2) (-1 -1 -2 -3) (-2 -3 -3 -4)))
+(run-case 1 '((3 2) (1 0)))
+(run-case 2 '((0 0 0) (0 0 0)))
+(run-case 3 '((-1 -1 -1) (-1 -1 -1)))
+(run-case 4 '((5 1 0) (3 -2 -3) (1 -5 -7)))
+(run-case 5 '((1)))
+(run-case 6 '((-1)))
+(run-case 7 '((0 -1 -2 -3) (0 0 -1 -2) (1 0 0 -1)))

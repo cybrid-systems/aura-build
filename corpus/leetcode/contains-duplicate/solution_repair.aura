@@ -1,0 +1,34 @@
+;; Contains Duplicate - O(n) using hash table
+(require "compat" all:)
+
+(define (solve nums)
+  (let ((seen (make-hash)))
+    (let loop ((xs nums) (result #f))
+      (cond (result result)
+            ((null? xs) result)
+            ((hash-has-key? seen (car xs)) #t)
+            (else
+             (hash-set! seen (car xs) #t)
+             (loop (cdr xs) #f))))))
+
+(define (display-bool b)
+  (display (if b "#t" "#f"))
+  (newline))
+
+(define (range-list n)
+  (let loop ((i 0) (acc '()))
+    (if (= i n)
+        acc
+        (loop (+ i 1) (cons i acc)))))
+
+(display "CASE0=") (display-bool (solve (list 1 2 3 1)))
+(display "CASE1=") (display-bool (solve (list 1 2 3 4)))
+(display "CASE2=") (display-bool (solve (list 1 1 1 3 3 4 5 2 2)))
+(display "CASE3=") (display-bool (solve (list 1)))
+(display "CASE4=") (display-bool (solve (list 0 0)))
+(display "CASE5=") (display-bool (solve (list -1 -2 -3 -1)))
+(display "CASE6=") (display-bool (solve (list 5 4 3 2 1)))
+
+;; CASE7: list of 0..9999 -> no duplicates
+(define big-input (range-list 10000))
+(display "CASE7=") (display-bool (solve big-input))

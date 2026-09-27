@@ -1,0 +1,82 @@
+;; Build a list of 26 zeros.
+(define (make-counts n)
+  (if (= n 26)
+      '()
+      (cons 0 (make-counts (+ n 1)))))
+
+;; Add delta at position idx; return new counts list.
+(define (add-at counts idx delta)
+  (if (null? counts)
+      '()
+      (if (= idx 0)
+          (cons (+ (car counts) delta) (cdr counts))
+          (cons (car counts) (add-at (cdr counts) (- idx 1) delta)))))
+
+;; Look up count at idx.
+(define (get-at counts idx)
+  (if (= idx 0)
+      (car counts)
+      (get-at (cdr counts) (- idx 1))))
+
+;; Convert a character to its 0-25 index.
+(define (char-idx c)
+  (- (char->integer c) (char->integer #\a)))
+
+;; Process magazine: bump each char; return new counts.
+(define (process-mag chars counts)
+  (if (null? chars)
+      counts
+      (process-mag (cdr chars)
+                   (add-at counts (char-idx (car chars)) 1))))
+
+;; Process ransomNote: decrement each char; return #f on failure, else new counts.
+(define (process-ransom chars counts)
+  (cond ((null? chars) counts)
+        ((< (get-at counts (char-idx (car chars))) 1) #f)
+        (else
+         (let ((nc (add-at counts (char-idx (car chars)) -1)))
+           (process-ransom (cdr chars) nc)))))
+
+;; String utilities.
+(define (string-length s)
+  (if (string=? s "") 0 (+ 1 (string-length (substring s 1 (string-length s))))))
+
+(define (string->list s)
+  (if (string=? s "")
+      '()
+      (cons (string-ref s 0) (string->list (substring s 1 (string-length s))))))
+
+;; Main solve.
+(define (solve ransomNote magazine)
+  (if (> (string-length ransomNote) (string-length magazine))
+      #f
+      (let ((after (process-mag (string->list magazine) (make-counts 0))))
+        (if (eq? after #f)
+            #f
+            (let ((r (process-ransom (string->list ransomNote) after)))
+              (if (eq? r #f) #f #t))))))
+
+;; Test harness: computes each answer via solve for the given inputs.
+(define (show i r m)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display (if (solve r m) "true" "false"))
+  (newline))
+
+(let ((r0 "a")      (m0 "b")
+      (r1 "aa")     (m1 "ab")
+      (r2 "aa")     (m2 "aab")
+      (r3 "abc")    (m3 "aabbcc")
+      (r4 "abc")    (m4 "abcc")
+      (r5 "abcd")   (m5 "abc")
+      (r6 "")       (m6 "abc")
+      (r7 "aabbcc") (m7 "abcabc"))
+  (show 0 r0 m0)
+  (show 1 r1 m1)
+  (show 2 r2 m2)
+  (show 3 r3 m3)
+  (show 4 r4 m4)
+  (show 5 r5 m5)
+  (show 6 r6 m6)
+  (show 7 r7 m7))

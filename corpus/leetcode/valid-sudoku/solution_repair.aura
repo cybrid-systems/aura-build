@@ -1,0 +1,24 @@
+(require "compat" all:)
+
+(define (member? x lst)
+  (cond ((null? lst) #f)
+        ((equal? (car lst) x) #t)
+        (else (member? x (cdr lst)))))
+
+(define (check-seq lst)
+  (let loop ((seq lst) (seen '()))
+    (cond ((null? seq) #t)
+          ((equal? (car seq) ".") (loop (cdr seq) seen))
+          ((member? (car seq) seen) #f)
+          (else (loop (cdr seq) (cons (car seq) seen))))))
+
+(define (cell board r c)
+  (car (list-tail (list-tail board r) c)))
+
+(define (get-row board r) (list-tail board r))
+
+(define (get-col board c)
+  (let loop ((r 0) (acc '()))
+    (if (= r 9)
+        acc
+        (loop (+ r 1) (cons (cell board r c) acc)))))

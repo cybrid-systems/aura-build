@@ -1,0 +1,71 @@
+;; Top K Frequent Elements - Aura solution
+;; Strategy: count frequencies, sort by frequency descending, take top k
+
+(require "compat" all:)
+
+;; Count frequencies: returns alist of (num . count)
+(define (count-freq lst)
+  (letrec ((aux
+            (lambda (xs acc)
+              (if (null? xs)
+                  acc
+                  (let ((pair (assoc (car xs) acc)))
+                    (if pair
+                        (aux (cdr xs)
+                             (cons (cons (car pair) (+ (cdr pair) 1))
+                                   (remove-key (car xs) acc)))
+                        (aux (cdr xs)
+                             (cons (cons (car xs) 1) acc))))))))
+    (aux lst '())))
+
+(define (remove-key key alist)
+  (cond ((null? alist) '())
+        ((equal? (car (car alist)) key) (cdr alist))
+        (else (cons (car alist) (remove-key key (cdr alist))))))
+
+;; Sort pairs by count descending (insertion sort)
+(define (sort-by-count pairs)
+  (if (null? pairs)
+      '()
+      (let ((rest-sorted (sort-by-count (cdr pairs))))
+        (insert-by-count (car pairs) rest-sorted))))
+
+(define (insert-by-count pair sorted)
+  (cond ((null? sorted) (list pair))
+        ((> (cdr pair) (cdr (car sorted)))
+         (cons pair sorted))
+        (else (cons (car sorted) (insert-by-count pair (cdr sorted))))))
+
+(define (take k lst)
+  (if (= k 0)
+      '()
+      (cons (car lst) (take (- k 1) (cdr lst)))))
+
+(define (solve nums k)
+  (take k (map car (sort-by-count (count-freq nums)))))
+
+(define (display-list lst)
+  (display "[")
+  (letrec ((aux
+            (lambda (xs first?)
+              (if (null? xs)
+                  '()
+                  (begin
+                    (if first? (display "") (display ", "))
+                    (display (car xs))
+                    (aux (cdr xs) #f))))))
+    (aux lst #t))
+  (display "]"))
+
+(define (run-tests)
+  (begin
+    (display "CASE0=") (display-list (solve '(1 1 1 2 2 3) 2)) (newline)
+    (display "CASE1=") (display-list (solve '(1) 1)) (newline)
+    (display "CASE2=") (display-list (solve '(4 4 4 5 5 6 7 7 7 7 8) 3)) (newline)
+    (display "CASE3=") (display-list (solve '(-1 -1 -2 -2 -2 3) 2)) (newline)
+    (display "CASE4=") (display-list (solve '(1 2 3 4 5) 5)) (newline)
+    (display "CASE5=") (display-list (solve '(2 2 3 3 4 4 5 5 6 6 7) 4)) (newline)
+    (display "CASE6=") (display-list (solve '(10 10 10 10 20) 1)) (newline)
+    (display "CASE7=") (display-list (solve '(0 0 0 0 0) 1)) (newline)))
+
+(run-tests)

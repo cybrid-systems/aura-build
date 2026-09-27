@@ -53,11 +53,37 @@
       "tests_total": 8,
       "stderr_snippet": "error: 3:4: unbound variable: set-counts\n   |\n  3 |   (set-counts counts idx 1))\n   |    ^^^^^^^^^^\nerror: 3:11: unbound variable: get-count\n  did you mean 'set-counts'?\n   |\n  3 |   (if (< (get-count counts idx) 1)\n   |           ^^^^^^^^^\n",
       "stdout_snippet": "CASE0=true\nCASE1=true\nCASE2=true\nCASE3=true\nCASE4=true\nCASE5=true\nCASE6=true\nCASE7=true\n"
+    },
+    {
+      "variant": 90,
+      "aura_file": "solution_repair.aura",
+      "temperature": 0.45,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-27T13:37:26Z",
+      "ts_local": "2026-09-27 21:37:26 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 2873,
+        "total_characters": 0,
+        "prompt_tokens": 1992,
+        "completion_tokens": 881
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.058,
+      "tests_passed": 6,
+      "tests_total": 8,
+      "stderr_snippet": "",
+      "stdout_snippet": "CASE0=CASE0=false\nCASE1=true\nCASE2=true\nCASE3=true\nCASE4=true\nCASE5=false\nCASE6=true\nCASE7=true\n",
+      "repair_of": "solution_2.aura",
+      "prior_passed": 3
     }
   ],
   "slug": "ransom-note",
   "title": "Ransom Note",
   "category": "hashing",
-  "updated_at": "2026-09-24T14:26:35Z",
-  "updated_at_local": "2026-09-24 22:26:35 CST"
+  "updated_at": "2026-09-27T13:37:26Z",
+  "updated_at_local": "2026-09-27 21:37:26 CST"
 }

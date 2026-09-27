@@ -1,0 +1,54 @@
+(require "compat" all:)
+
+(define (len lst)
+  (if (null? lst) 0 (+ 1 (len (cdr lst)))))
+
+(define (list-sum lst)
+  (if (null? lst) 0 (+ (car lst) (list-sum (cdr lst)))))
+
+; Compute prefix sums: prefix[i] = sum of first i elements
+; Returns a list of length n+1 where prefix[0]=0
+(define (prefix-sums arr)
+  (letrec ((ps (lambda (lst acc)
+                 (if (null? lst)
+                     (reverse acc)
+                     (ps (cdr lst) (cons (+ (car acc) (car lst)) acc))))))
+    (ps arr (list 0))))
+
+; Get sum arr[l..r] (inclusive) using prefix sums
+; prefix is list of length n+1
+(define (range-sum prefix l r)
+  (let ((ps (list-tail prefix l))
+        (pe (list-tail prefix (+ r 1))))
+    (- (car pe) (car ps))))
+
+(define (can-three arr)
+  (let ((n (len arr)))
+    (if (< n 3) #f
+        (let ((tot (list-sum arr)))
+          (if (not (= (modulo tot 3) 0)) #f
+              (let ((target (/ tot 3))
+                    (ps (prefix-sums arr)))
+                (let loop-i ((i 1))
+                  (if (>= i (- n 1)) #f
+                      (if (= (range-sum ps 0 i) target)
+                          (let loop-j ((j (+ i 1)))
+                            (if (>= j n) #f
+                                (if (and (= (range-sum ps (+ i 1) j) target)
+                                         (= (range-sum ps (+ j 1) (- n 1)) target))
+                                    #t
+                                    (loop-j (+ j 1)))))
+                          (loop-i (+ i 1)))))))))))
+
+(define (solve arr)
+  (if (can-three arr) "YES" "NO"))
+
+; Embedded test cases
+(display "CASE0=") (display (solve (list 0 2 1 -6 6 -7 9 1 2 0 1))) (newline)
+(display "CASE1=") (display (solve (list 1 -1 1 -1 1 -1 1 -1))) (newline)
+(display "CASE2=") (display (solve (list 1 2 3 4 5))) (newline)
+(display "CASE3=") (display (solve (list 0 0 0 0))) (newline)
+(display "CASE4=") (display (solve (list 1 2 3))) (newline)
+(display "CASE5=") (display (solve (list -1 -1 -1 -1 -1 -1))) (newline)
+(display "CASE6=") (display (solve (list 3 3 3 3))) (newline)
+(display "CASE7=") (display (solve (list 5 5 5 5 5))) (newline)

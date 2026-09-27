@@ -1,0 +1,309 @@
+;; Online Election - prefix leaders + binary search
+(require "compat" all:)
+
+;; Parse a list of numbers from string like "[0,5,10,15]"
+(define (parse-num-list s)
+  (let* ((len (string-length s))
+         (result '())
+         (buf "")
+         (i 0))
+    (letrec ((loop (lambda ()
+                     (cond ((= i len)
+                            (if (> (string-length buf) 0)
+                                (set! result (cons (string->number buf) result))
+                                '()))
+                           ((char=? (string-ref s i) #\[)
+                            (set! i (+ i 1))
+                            (loop))
+                           ((char=? (string-ref s i) #\])
+                            (set! i (+ i 1))
+                            (loop))
+                           ((char=? (string-ref s i) #\,)
+                            (if (> (string-length buf) 0)
+                                (begin
+                                  (set! result (cons (string->number buf) result))
+                                  (set! buf ""))
+                                '())
+                            (set! i (+ i 1))
+                            (loop))
+                           ((char=? (string-ref s i) #\space)
+                            (set! i (+ i 1))
+                            (loop))
+                           (else
+                            (set! buf (string-append buf (string (string-ref s i))))
+                            (set! i (+ i 1))
+                            (loop))))))
+      (loop)
+      (reverse result))))
+
+(define (char=? a b) (and (char? a) (char? b) (= (char->integer a) (char->integer b))))
+
+;; Parse a parameter value like "[0,5,10,15]" -> list of numbers
+(define (extract-list input start)
+  ;; Find matching ']' from position start
+  (letrec ((len (string-length input))
+           (find-end (lambda (i depth)
+                       (cond ((= i len) i)
+                             ((char=? (string-ref input i) #\[)
+                              (find-end (+ i 1) (+ depth 1)))
+                             ((char=? (string-ref input i) #\])
+                              (if (= depth 0) i (find-end (+ i 1) (- depth 1))))
+                             (else (find-end (+ i 1) depth))))))
+    (let ((end (find-end start 0)))
+      (parse-num-list (substring input start (+ end 1))))))
+
+;; Extract a named parameter from input string
+(define (extract-param input name)
+  (let* ((name-len (string-length name))
+         (search-name (string-append "\"" name "\""))
+         (slen (string-length search-name))
+         (len (string-length input)))
+    (letrec ((find-colon (lambda (i)
+                           (cond ((= i len) #f)
+                                 ((and (>= i slen)
+                                       (string=? (substring input (- i slen) i) search-name))
+                                  (- i slen))
+                                 (else (find-colon (+ i 1)))))))
+      (let ((colon-pos (find-colon 0)))
+        (if (or (not colon-pos) (= colon-pos len))
+            '()
+            (letrec ((find-bracket (lambda (i)
+                                     (cond ((= i len) '())
+                                           ((char=? (string-ref input i) #\[)
+                                            i)
+                                           (else (find-bracket (+ i 1)))))))
+              (let ((bracket-pos (find-bracket colon-pos)))
+                (if (not bracket-pos)
+                    '()
+                    (extract-list input bracket-pos)))))))))
+
+(define (string=? a b)
+  (let ((la (string-length a)) (lb (string-length b)))
+    (letrec ((loop (lambda (i)
+                     (cond ((and (= i la) (= i lb)) #t)
+                           ((or (= i la) (= i lb)) #f)
+                           ((char=? (string-ref a i) (string-ref b i))
+                            (loop (+ i 1)))
+                           (else #f)))))
+      (loop 0))))
+
+(define (substring s start end)
+  (let* ((len (- end start))
+         (result (make-string len #\space))
+         (i 0))
+    (letrec ((loop (lambda ()
+                     (if (>= i len)
+                         '()
+                         (begin
+                           (string-set! result i (string-ref s (+ start i)))
+                           (set! i (+ i 1))
+                           (loop))))))
+      (loop)
+      result)))
+
+(define (string-set! s i c)
+  ;; Strings are immutable in many Lisps; we'll build differently
+  '())
+
+;; Simpler: rebuild string char by char
+(define (substring s start end)
+  (letrec ((loop (lambda (i acc)
+                   (if (>= i end)
+                       (list->string (reverse acc))
+                       (loop (+ i 1) (cons (string-ref s i) acc))))))
+    (loop start '())))
+
+(define (list->string lst)
+  (let* ((len (length lst))
+         (s (make-string len #\space))
+         (i 0))
+    (letrec ((loop (lambda (rem)
+                     (if (null? rem)
+                         '()
+                         (begin
+                           (string-set-pos! s i (car rem))
+                           (set! i (+ i 1))
+                           (loop (cdr rem)))))))
+      (loop lst)
+      s)))
+
+;; Since strings may be immutable, use a list-based approach
+;; Let me restart with simpler parsing using built-ins if available
+
+;; Actually, let's parse the entire CASE input directly
+;; Format: CASE0={"votes_at": [0,5,10,15], "votes_for": [1,2,2,1], "times": [3,12,15,20]}
+
+(define (skip-ws s i)
+  (cond ((>= i (string-length s)) i)
+        ((or (char=? (string-ref s i) #\space) (char=? (string-ref s i) #\,))
+         (skip-ws s (+ i 1)))
+        (else i)))
+
+(define (parse-number-at s i)
+  ;; Parse a number starting at position i, return (value . new-index)
+  (letrec ((loop (lambda (j acc)
+                   (cond ((>= j (string-length s)) (cons (string->number (list->string (reverse acc))) j))
+                         ((or (char=? (string-ref s j) #\-)
+                              (char=? (string-ref s j) #\.)
+                              (and (char>=? (string-ref s j) #\0) (char<=? (string-ref s j) #\9)))
+                          (loop (+ j 1) (cons (string-ref s j) acc)))
+                         (else (cons (string->number (list->string (reverse acc))) j))))))
+    (loop i '())))
+
+(define (char>=? a b) (>= (char->integer a) (char->integer b)))
+(define (char<=? a b) (<= (char->integer a) (char->integer b)))
+
+(define (parse-list-at s i)
+  ;; Parse [...] starting at i (which should be '['), return (list . new-index)
+  (if (not (char=? (string-ref s i) #\[))
+      (cons '() i)
+      (letrec ((loop (lambda (j acc)
+                       (let ((j2 (skip-ws s j)))
+                         (cond ((>= j2 (string-length s)) (cons (reverse acc) j2))
+                               ((char=? (string-ref s j2) #\])
+                                (cons (reverse acc) (+ j2 1)))
+                               (else
+                                (let ((p (parse-number-at s j2)))
+                                  (loop (skip-ws s (cdr p)) (cons (car p) acc)))))))))
+        (loop (+ i 1) '()))))
+
+(define (char? x) #f)
+;; Override: in Aura everything may not be char. Use string-ref which returns char.
+
+;; Read input - all on one line
+(define input (read-line))
+
+;; Parse: find each "name": [...]
+(define (find-key input name)
+  (let* ((key (string-append "\"" name "\":"))
+         (klen (string-length key))
+         (len (string-length input)))
+    (letrec ((loop (lambda (i)
+                     (cond ((> (+ i klen) len) #f)
+                           ((string=? (substring input i (+ i klen)) key) i)
+                           (else (loop (+ i 1)))))))
+      (loop 0))))
+
+(define (get-list-param input name)
+  (let ((pos (find-key input name)))
+    (if (not pos)
+        '()
+        (let ((bracket-pos (skip-ws input (+ pos (string-length (string-append "\"" name "\":"))))))
+          (car (parse-list-at input bracket-pos))))))
+
+(define votes-at (get-list-param input "votes_at"))
+(define votes-for (get-list-param input "votes_for"))
+(define times (get-list-param input "times"))
+
+;; Now the algorithm
+
+(define (nth lst n)
+  (if (= n 0)
+      (car lst)
+      (nth (cdr lst) (- n 1))))
+
+(define (length lst)
+  (if (null? lst) 0 (+ 1 (length (cdr lst)))))
+
+;; Count vote: counts is alist ((id . count) ...)
+(define (count-vote counts person)
+  (cond ((null? counts) (list (cons person 1)))
+        ((= (car (car counts)) person)
+         (cons (cons person (+ 1 (cdr (car counts)))) (cdr counts)))
+        (else (cons (car counts) (count-vote (cdr counts) person)))))
+
+;; Find current leader in counts alist
+;; Ties broken by smaller id
+(define (find-leader counts)
+  (letrec ((loop (lambda (rem best-id best-count)
+                   (if (null? rem)
+                       best-id
+                       (let* ((entry (car rem))
+                              (p (car entry))
+                              (c (cdr entry)))
+                         (if (or (> c best-count)
+                                 (and (= c best-count) (< p best-id)))
+                             (loop (cdr rem) p c)
+                             (loop (cdr rem) best-id best-count)))))))
+    (if (null? counts)
+        -1
+        (loop counts (car (car counts)) (cdr (car counts))))))
+
+;; Build prefix leaders list
+(define (build-leaders votes-at votes-for)
+  (letrec ((len (length votes-at))
+           (helper (lambda (i counts leaders)
+                     (if (= i len)
+                         leaders
+                         (let* ((person (nth votes-for i))
+                                (new-counts (count-vote counts person))
+                                (new-leaders (cons (find-leader new-counts) leaders)))
+                           (helper (+ i 1) new-counts new-leaders))))))
+    (reverse (helper 0 '() '()))))
+
+;; Binary search: largest index i such that votes-at[i] <= t; returns -1 if none
+(define (upper-bound votes-at t)
+  (let* ((len (length votes-at)))
+    (letrec ((helper (lambda (lo hi)
+                       (if (= lo hi)
+                           (- lo 1)
+                           (let ((mid (quotient (+ lo hi) 2)))
+                             (if (<= (nth votes-at mid) t)
+                                 (helper (+ mid 1) hi)
+                                 (helper lo mid)))))))
+      (helper 0 len))))
+
+;; Query function: returns leader id, or 'null if no votes before t
+(define (query leaders votes-at t)
+  (let ((idx (upper-bound votes-at t)))
+    (if (< idx 0)
+        'null
+        (nth leaders idx))))
+
+;; Process all queries
+(define (process-queries leaders votes-at times)
+  (letrec ((loop (lambda (ts acc)
+                   (if (null? ts)
+                       (reverse acc)
+                       (loop (cdr ts) (cons (query leaders votes-at (car ts)) acc))))))
+    (loop times '())))
+
+(define leaders (build-leaders votes-at votes-for))
+(define results (process-queries leaders votes-at times))
+
+;; Output: ANSi=[...]
+(define (format-results lst)
+  (letrec ((loop (lambda (rem acc first?)
+                   (if (null? rem)
+                       acc
+                       (loop (cdr rem)
+                             (string-append acc
+                                            (if first? "" ",")
+                                            (cond ((null? (car rem)) "null")
+                                                                          ((number? (car rem)) (number->string (car rem)))
+                                                                          (else "null")))
+                             #f)))))
+    (loop lst "" #t)))
+
+(define (output n lst)
+  (display (string-append "ANS" (number->string n) "=["))
+  (display (format-results lst))
+  (display "]")
+  (newline))
+
+;; Detect case number
+(define (get-case-num input)
+  (let* ((len (string-length input))
+         (case-key "CASE")
+         (cklen 4))
+    (letrec ((loop (lambda (i)
+                     (if (>= (+ i cklen) len)
+                         0
+                         (if (string=? (substring input i (+ i cklen)) case-key)
+                             (let ((p (parse-number-at input (+ i cklen))))
+                               (car p))
+                             (loop (+ i 1)))))))
+      (loop 0))))
+
+(define case-num (get-case-num input))
+(output case-num results)
