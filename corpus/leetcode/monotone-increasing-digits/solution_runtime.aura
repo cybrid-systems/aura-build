@@ -1,0 +1,135 @@
+; soft_leetcode_runtime slug=monotone-increasing-digits path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=fiber fiber_llm_ok=true
+; selected=llm-1 hits=8/8
+; baseline_hits=4/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define digits
+    (lambda (n)
+      (if (=
+          n 0)
+        (quote (0))
+        (letrec ((loop (lambda (n acc)
+            (if (=
+                n 0)
+              acc
+              (loop
+                (quotient
+                  n 10) (cons
+                  (modulo
+                    n 10) acc))))))
+          (loop
+            n (quote 0))))))
+  (define list->int
+    (lambda (lst)
+      (letrec ((loop (lambda (l acc)
+          (if (null? l)
+            acc
+            (loop
+              (cdr l) (+
+                (*
+                  acc 10) (car l)))))))
+        (loop
+          lst 0))))
+  (define len
+    (lambda (lst)
+      (letrec ((loop (lambda (l n)
+          (if (null? l)
+            n
+            (loop
+              (cdr l) (+
+                n 1))))))
+        (loop
+          lst 0))))
+  (define list-ref
+    (lambda (lst n)
+      (if (null? lst)
+        (error "out of bounds")
+        (if (=
+            n 0)
+          (car lst)
+          (list-ref
+            (cdr lst) (-
+              n 1))))))
+  (define list-set
+    (lambda (lst n v)
+      (if (null? lst)
+        (quote 0)
+        (if (=
+            n 0)
+          (cons
+            v (cdr lst))
+          (cons
+            (car lst) (list-set
+              (cdr lst) (-
+                n 1) v))))))
+  (define set-all
+    (lambda (lst start v)
+      (letrec ((loop (lambda (k l)
+          (if (>=
+              k (len l))
+            l
+            (loop
+              (+
+                k 1) (list-set
+                l k v))))))
+        (loop
+          start lst))))
+  (define solve
+    (lambda (N)
+      (let ((d (digits N)))
+        (let ((n (len d)))
+          (letrec ((scan (lambda (digits i)
+              (if (>=
+                  i (-
+                    n 1))
+                (let ((result (list->int digits)))
+                  result)
+                (if (<=
+                    (list-ref
+                      digits i) (list-ref
+                      digits (+
+                        i 1)))
+                  (scan
+                    digits (+
+                      i 1))
+                  (let ((j (letrec ((find (lambda (k)
+                        (if (<
+                            k 0)
+                          -1
+                          (if (=
+                              (list-ref
+                                digits k) 0)
+                            (find (-
+                                k 1))
+                            k)))))
+                      (find i))))
+                    (let ((digits2 (list-set
+                        digits j (-
+                          (list-ref
+                            digits j) 1))))
+                      (scan
+                        (set-all
+                          digits2 (+
+                            j 1) 9) 0))))))))
+            (scan
+              d 0))))))
+  (define tests (quote (332
+        100 0 10 9 1234 332111 111111)))
+  (define run-tests
+    (lambda (lst i)
+      (if (null? lst)
+        (quote done)
+        (begin
+          (display "CASE")
+          (display i)
+          (display "=")
+          (display (solve (car lst)))
+          (newline)
+          (run-tests
+            (cdr lst) (+
+              i 1))))))
+  (run-tests
+    tests 0))
