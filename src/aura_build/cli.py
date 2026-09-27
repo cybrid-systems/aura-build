@@ -429,6 +429,10 @@ def _cmd_self_evolve(args: argparse.Namespace) -> int:
     """
     if getattr(args, "self_evolve_cmd", None) == "combat":
         return _cmd_self_evolve_combat(args)
+    if getattr(args, "self_evolve_cmd", None) == "leetcode":
+        from aura_build.soft_leetcode_runtime import cmd_soft_leetcode
+
+        return cmd_soft_leetcode(args)
     if getattr(args, "self_evolve_cmd", None) == "runtime":
         from aura_build.self_evolve_runtime import cmd_runtime
 

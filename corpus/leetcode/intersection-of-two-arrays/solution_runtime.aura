@@ -1,0 +1,131 @@
+; soft_leetcode_runtime slug=intersection-of-two-arrays
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; selected_explorer=sort-asc hits=8/8
+; baseline_hits=7/8
+; Inputs embedded; expected values only used for host scoring, not display.
+(begin
+  (define member?
+    (lambda (x lst)
+      (if (null? lst)
+        #f
+        (if (equal?
+            (car lst) x)
+          #t
+          (member?
+            x (cdr lst))))))
+  (define remove-dups
+    (lambda (lst)
+      (if (null? lst)
+        (quote 0)
+        (if (member?
+            (car lst) (cdr lst))
+          (remove-dups (cdr lst))
+          (cons
+            (car lst) (remove-dups (cdr lst)))))))
+  (define filter
+    (lambda (pred lst)
+      (if (null? lst)
+        (quote 0)
+        (if (pred (car lst))
+          (cons
+            (car lst) (filter
+              pred (cdr lst)))
+          (filter
+            pred (cdr lst))))))
+  (define insert-sorted
+    (lambda (x xs)
+      (if (null? xs)
+        (list x)
+        (if (<=
+            x (car xs))
+          (cons
+            x xs)
+          (cons
+            (car xs) (insert-sorted
+              x (cdr xs)))))))
+  (define sort-asc
+    (lambda (xs)
+      (if (null? xs)
+        (quote 0)
+        (insert-sorted
+          (car xs) (sort-asc (cdr xs))))))
+  (define reverse-list
+    (lambda (xs)
+      (letrec ((loop (lambda (ys acc)
+          (if (null? ys)
+            acc
+            (loop
+              (cdr ys) (cons
+                (car ys) acc))))))
+        (loop
+          xs (quote 0)))))
+  (define intersect-raw
+    (lambda (a b)
+      (let ((da (remove-dups a)))
+        (filter
+          (lambda (x)
+            (member?
+              x b)) da))))
+  (define solve
+    (lambda (a b)
+      (sort-asc (intersect-raw
+          a b))))
+  (define print-list
+    (lambda (xs)
+      (begin
+        (display "[")
+        (if (null? xs)
+          (display "]")
+          (begin
+            (display (car xs))
+            (letrec ((loop (lambda (rest)
+                (if (null? rest)
+                  (display "]")
+                  (begin
+                    (display ",")
+                    (display (car rest))
+                    (loop (cdr rest)))))))
+              (loop (cdr xs))))))))
+  (define run-case
+    (lambda (n a b)
+      (begin
+        (display "CASE")
+        (display n)
+        (display "=")
+        (print-list (solve
+            a b))
+        (newline))))
+  (define run-cases
+    (lambda ()
+      (begin
+        (run-case
+          0 (quote (1
+              2 2 3)) (quote (2
+              3 4)))
+        (run-case
+          1 (quote (1
+              2 3)) (quote (4
+              5 6)))
+        (run-case
+          2 (quote 0) (quote (1
+              2 3)))
+        (run-case
+          3 (quote (1
+              1 1)) (quote (1
+              2 3)))
+        (run-case
+          4 (quote (-1
+              -2 -3)) (quote (-2
+              -3 -4)))
+        (run-case
+          5 (quote (1
+              2 3 4 5)) (quote (3
+              4 5 6 7)))
+        (run-case
+          6 (quote (0
+              0 0)) (quote (0)))
+        (run-case
+          7 (quote (1
+              2 3)) (quote 0)))))
+  (run-cases))

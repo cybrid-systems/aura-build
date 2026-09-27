@@ -449,6 +449,19 @@ def build_parser() -> argparse.ArgumentParser:
     _common(product, aura=False, harness=False)
 
 
+
+    leetcode = se_sub.add_parser(
+        "leetcode",
+        help=(
+            "Soft-serve one-problem LeetCode repair: denseness fiber explorers -> "
+            "select-best -> (current-source) -> solution_runtime.aura -> commit"
+        ),
+    )
+    _opt(leetcode, "--slug", default="intersection-of-two-arrays", help="problem slug (default intersection-of-two-arrays)")
+    _opt(leetcode, "--no-push", action="store_true")
+    _opt(leetcode, "--no-commit", action="store_true")
+    _common(leetcode, aura=True, harness=True)
+
     runtime = se_sub.add_parser(
         "runtime",
         help=(
