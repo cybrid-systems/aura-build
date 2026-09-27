@@ -53,11 +53,43 @@
       "tests_total": 8,
       "stderr_snippet": "error: 15:10: unbound variable: build\n  did you mean 'nil'?\n   |\n 15 |         (build 0))))\n   |          ^^^^^\nerror: 5:17: unbound variable: expt\n",
       "stdout_snippet": "CASE0=CASE1=CASE2=CASE3=CASE4=CASE5=CASE6=CASE7=<error>\n"
+    },
+    {
+      "variant": 90,
+      "aura_file": "solution_repair.aura",
+      "temperature": 0.4,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-27T13:45:58Z",
+      "ts_local": "2026-09-27 21:45:58 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 4035,
+        "total_characters": 0,
+        "prompt_tokens": 2298,
+        "completion_tokens": 1737,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": true,
+      "run_ok": true,
+      "exit_code": 0,
+      "timeout": false,
+      "duration_s": 0.089,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "warning: unbalanced parentheses in input\n⚠ program returned an uncalled function\n",
+      "stdout_snippet": "#<procedure>\n",
+      "repair_of": "solution.aura",
+      "prior_passed": 4
     }
   ],
   "slug": "count-complete-tree-nodes",
   "title": "Count Complete Tree Nodes",
   "category": "trees",
-  "updated_at": "2026-09-24T14:38:36Z",
-  "updated_at_local": "2026-09-24 22:38:36 CST"
+  "updated_at": "2026-09-27T13:45:58Z",
+  "updated_at_local": "2026-09-27 21:45:58 CST"
 }

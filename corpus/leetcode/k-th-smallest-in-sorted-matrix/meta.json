@@ -53,11 +53,40 @@
       "tests_total": 8,
       "stderr_snippet": "",
       "stdout_snippet": "CASE0=5\nCASE1=-5\nCASE2=1\nCASE3=2\nCASE4=3\nCASE5=5\nCASE6=2\nCASE7=1\n"
+    },
+    {
+      "variant": 90,
+      "aura_file": "solution_repair.aura",
+      "temperature": 0.4,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-27T13:46:45Z",
+      "ts_local": "2026-09-27 21:46:45 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 5998,
+        "total_characters": 0,
+        "prompt_tokens": 1998,
+        "completion_tokens": 4000,
+        "prompt_tokens_details": {
+          "cached_tokens": 582
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.02,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 1:2: unbound variable: loop-k\n   |\n  1 | (loop-k heap 0 k)\n   |  ^^^^^^\n",
+      "stdout_snippet": "",
+      "repair_of": "solution_2.aura",
+      "prior_passed": 3
     }
   ],
   "slug": "k-th-smallest-in-sorted-matrix",
   "title": "Kth Smallest Element in a Sorted Matrix",
   "category": "heaps",
-  "updated_at": "2026-09-24T15:07:21Z",
-  "updated_at_local": "2026-09-24 23:07:21 CST"
+  "updated_at": "2026-09-27T13:46:45Z",
+  "updated_at_local": "2026-09-27 21:46:45 CST"
 }

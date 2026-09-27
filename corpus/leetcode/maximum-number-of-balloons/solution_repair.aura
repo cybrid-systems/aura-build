@@ -1,0 +1,57 @@
+;; Maximum Number of Balloons - Aura solution
+;; Counts frequency of each letter in text, then returns
+;; the minimum of {b, a, l/2, o/2, n}.
+
+(define (count-letter text ch)
+  ;; Recursively count occurrences of character ch in string text.
+  (if (= (string-length text) 0)
+      0
+      (let ((rest (substring text 1 (string-length text))))
+        (if (equal? (string-ref text 0) ch)
+            (+ 1 (count-letter rest ch))
+            (count-letter rest ch)))))
+
+(define (min4 a b c d)
+  (min (min a b) (min c d)))
+
+(define (min5 a b c d e)
+  (min (min4 a b c d) e))
+
+(define (solve text)
+  (let ((b (count-letter text "b"))
+        (a (count-letter text "a"))
+        (l (count-letter text "l"))
+        (o (count-letter text "o"))
+        (n (count-letter text "n")))
+    (min5 b a (quotient l 2) (quotient o 2) n)))
+
+;; Read CASE0 from environment variable and extract text value.
+;; CASE0 looks like: CASE0=text=<some string>
+(define (find-eq s i)
+  ;; Find index of '=' starting from i, or -1 if not found.
+  (let ((len (string-length s)))
+    (let loop ((k i))
+      (if (>= k len)
+          -1
+          (if (equal? (string-ref s k) #\=)
+              k
+              (loop (+ k 1)))))))
+
+(define (substring-from s start)
+  (substring s start (string-length s)))
+
+(define (run-case)
+  (let ((raw (getenv "CASE0")))
+    (if (equal? raw #f)
+        (begin
+          (display "CASE0=") (display "0") (newline))
+        (let ((eq-pos (find-eq raw 0)))
+          (if (= eq-pos -1)
+              (begin
+                (display "CASE0=") (display "0") (newline))
+              (let ((text (substring-from raw (+ eq-pos 1))))
+                (display "CASE0=")
+                (display (solve text))
+                (newline)))))))
+
+(run-case)

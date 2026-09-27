@@ -1,0 +1,72 @@
+(require "compat" all:)
+
+(define (len xs)
+  (if (null? xs) 0 (+ 1 (len (cdr xs)))))
+
+(define (rev-helper xs acc)
+  (if (null? xs) acc (rev-helper (cdr xs) (cons (car xs) acc))))
+
+(define (reverse-list xs) (rev-helper xs '()))
+
+; Get nth element of list (0-indexed)
+(define (nth xs i)
+  (if (= i 0) (car xs) (nth (cdr xs) (- i 1))))
+
+; Build list by mapping f over indices 0..n-1
+(define (build-list n f)
+  (rev-helper (list-tab n f) '()))
+
+(define (list-tab n f)
+  (if (= n 0)
+      '()
+      (cons (f (- n 1)) (list-tab (- n 1) f))))
+
+; Extract sublist xs[start..end) (end exclusive), preserving order
+(define (slice xs start end)
+  (let ((n (- end start)))
+    (if (<= n 0)
+        '()
+        (build-list n (lambda (i) (nth xs (+ start i)))))))
+
+; Append two lists
+(define (append a b)
+  (if (null? a) b (cons (car a) (append (cdr a) b))))
+
+; Rotate right by k using three reverses
+(define (rotate arr k)
+  (let ((n (len arr)))
+    (let ((nk (modulo k n)))
+      (if (or (= n 0) (= nk 0))
+          arr
+          (let* ((rev (reverse-list arr))
+                 (first-k (reverse-list (slice rev 0 nk)))
+                 (rest (reverse-list (slice rev nk n))))
+            (append first-k rest))))))
+
+; Convert list of numbers to bracket-form string like [1,2,3]
+(define (list->bracket xs)
+  (define (helper lst)
+    (if (null? lst)
+        ""
+        (let ((rest (helper (cdr lst))))
+          (if (= (string-length rest) 0)
+              (string-append (number->string (car lst)))
+              (string-append (number->string (car lst)) "," rest)))))
+  (string-append "[" (helper xs) "]"))
+
+(define (solve arr k)
+  (list->bracket (rotate arr k)))
+
+; ---- Test cases ----
+(define (run-tests)
+  (begin
+    (display "CASE0=") (display (solve '(1 2 3 4 5 6 7) 3)) (newline)
+    (display "CASE1=") (display (solve '(1 2 3 4 5) 0)) (newline)
+    (display "CASE2=") (display (solve '(1 2 3 4 5) 5)) (newline)
+    (display "CASE3=") (display (solve '(1 2 3 4 5) 7)) (newline)
+    (display "CASE4=") (display (solve '() 3)) (newline)
+    (display "CASE5=") (display (solve '(42) 100)) (newline)
+    (display "CASE6=") (display (solve '(-1 -2 -3 -4) 1)) (newline)
+    (display "CASE7=") (display (solve '(1 2 3 4 5 6) 2)) (newline)))
+
+(run-tests)

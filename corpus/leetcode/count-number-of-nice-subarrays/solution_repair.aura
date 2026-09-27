@@ -1,0 +1,46 @@
+(define (odd? x) (= (modulo x 2) 1))
+
+;; Count subarrays with at most k odd numbers, using sliding window.
+;; left is the index of the leftmost element in the current window.
+;; For each right position, the number of valid subarrays ending at right is (right - left + 1).
+(define (at-most-k nums k)
+  (let loop ((lst nums) (left 0) (count 0) (res 0))
+    (if (null? lst)
+        res
+        (let ((val (car lst))
+              (right left))
+          (let ((new-count (if (odd? val) (+ count 1) count)))
+            (if (> new-count k)
+                ;; need to shrink from left until count <= k
+                (let shrink ((l left) (c new-count))
+                  (if (<= c k)
+                      ;; window [l..right] now has at most k odds
+                      (let ((new-res (+ res (- right l) -1)))
+                        ;; wait: add (right - l + 1) subarrays ending at right
+                        (loop (cdr lst) l c (+ res (+ (- right l) 1))))
+                      (let ((lv (list-ref nums l)))
+                        (let ((new-c (if (odd? lv) (- c 1) c)))
+                          (shrink (+ l 1) new-c)))))
+                ;; count <= k, add (right - left + 1) valid subarrays ending at right
+                (loop (cdr lst) left new-count (+ res (+ (- right left) 1)))))))))
+
+(define (solve nums k)
+  (- (at-most-k nums k)
+     (at-most-k nums (- k 1))))
+
+(define (run-case i nums k)
+  (let ((r (solve nums k)))
+    (display "CASE")
+    (display (number->string i))
+    (display "=")
+    (display (number->string r))
+    (newline)))
+
+(run-case 0 '(1 1 2 1 2) 3)
+(run-case 1 '(2 2 2 1 2 2 1 2 2 2) 1)
+(run-case 2 '(2 2 2 2) 1)
+(run-case 3 '(1 1 1 1 1) 2)
+(run-case 4 '(1) 1)
+(run-case 5 '(1) 2)
+(run-case 6 '(1 2 3 4 5 6 7) 2)
+(run-case 7 '(2 4 6 8 10 12) 1)

@@ -1,0 +1,111 @@
+(require "compat" all:)
+
+;; Tree node: (v left right) or 'null
+
+(define (parse-csv s)
+  ;; Split string by "," and trim spaces
+  (let ((len (string-length s)))
+    (let loop ((pos 0) (start 0) (acc '()))
+      (cond
+        ((>= pos len)
+         (if (> pos start)
+             (reverse (cons (trim (substring s start pos)) acc))
+             (reverse acc)))
+        ((char=? (string-ref s pos) #\,)
+         (loop (+ pos 1) (+ pos 1)
+               (reverse (cons (trim (substring s start pos)) acc))))
+        (else (loop (+ pos 1) start acc))))))
+
+(define (trim s)
+  (let ((len (string-length s)))
+    (let loop ((start 0) (end (- len 1)))
+      (cond
+        ((> start end) "")
+        ((char=? (string-ref s start) #\space) (loop (+ start 1) end))
+        ((char=? (string-ref s end) #\space) (loop start (- end 1)))
+        (else (substring s start (+ end 1)))))))
+
+(define (parse-arr parts)
+  ;; Build tree from level-order parts list
+  (define idx 0)
+  (define (build)
+    (if (>= idx (length parts))
+        'null
+        (let ((v (list-ref parts idx)))
+          (set! idx (+ idx 1))
+          (if (equal? v "null") 'null
+              (let ((l (build))
+                    (r (build)))
+                (list v l r))))))
+  (build))
+
+(define (prune node)
+  (if (equal? node 'null) 'null
+      (let ((l (prune (cadr node)))
+            (r (prune (caddr node))))
+        (if (or (equal? (car node) "1")
+                (not (equal? l 'null))
+                (not (equal? r 'null)))
+            (list (car node) l r)
+            'null))))
+
+(define (level-order node)
+  (if (equal? node 'null) '("null")
+      (let ((result '()))
+        (define (bfs queue)
+          (if (null? queue) result
+              (let ((front (car queue)))
+                (set! result (append result
+                                     (list (if (equal? front 'null) "null" (car front)))))
+                (if (equal? front 'null)
+                    (bfs (append (cdr queue) '('null 'null)))
+                    (bfs (append (cdr queue) (list (cadr front) (caddr front))))))))
+        (bfs (list node)))))
+
+(define (trim-trailing-nulls lst)
+  (let ((len (length lst)))
+    (let loop ((i (- len 1)))
+      (cond
+        ((< i 0) '("null"))
+        ((equal? (list-ref lst i) "null") (loop (- i 1)))
+        (else
+         (let loop2 ((j 0) (out '()))
+           (if (> j i) out
+               (loop2 (+ j 1) (append out (list (list-ref lst j)))))))))))
+
+(define (join lst)
+  (if (null? lst) ""
+      (let ((first (car lst))
+            (rest (cdr lst)))
+        (if (null? rest) first
+            (string-append first ", " (join rest))))))
+
+(define (solve level-order-str)
+  (let ((parts (parse-csv level-order-str)))
+    (let ((root (parse-arr parts)))
+      (let ((pruned (prune root)))
+        (trim-trailing-nulls (level-order pruned))))))
+
+(define (run-case i case-str)
+  (display "CASE")
+  (display (number->string i))
+  (display "=")
+  (display (join (solve case-str)))
+  (newline))
+
+(define cases
+  (list
+    "1"
+    "0"
+    "1, 1, 0, 1, 1, null, 1"
+    "null"
+    "1, null, 1, null, 1"
+    "null"
+    "1, 0, 0, null, 0, null, 1, null, 1"
+    "1, null, 1, 1, 1"))
+
+(let loop ((i 0) (cs cases))
+  (if (null? cs) 'done
+      (begin
+        (run-case i (car cs))
+        (loop (+ i 1) (cdr cs)))))

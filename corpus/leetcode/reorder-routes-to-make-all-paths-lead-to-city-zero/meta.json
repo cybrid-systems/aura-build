@@ -53,11 +53,40 @@
       "tests_total": 8,
       "stderr_snippet": "error: 2:15: unbound variable: make-list\nerror: 2:15: unbound variable: make-list\nerror: 2:15: unbound variable: make-list\nerror: 2:15: unbound variable: make-list\nerror: 2:15: unbound variable: make-list\nerror: 2:15: unbound variable: make-list\nerror: 2:15: unbound variable: make-list\nerror: 2:15: unbound variable: make-list\n",
       "stdout_snippet": ""
+    },
+    {
+      "variant": 90,
+      "aura_file": "solution_repair.aura",
+      "temperature": 0.4,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-27T13:47:20Z",
+      "ts_local": "2026-09-27 21:47:20 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 4442,
+        "total_characters": 0,
+        "prompt_tokens": 1775,
+        "completion_tokens": 2667,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.077,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "type: 25:32: type error: argument 0: expected (__t227 -> __t231), got __t213\n  blamed: caller (compile)\nerror: 19:14: unbound variable: list-set!\nerror: 19:14: unbound variable: list-set!\nerror: 19:14: unbound variable: list-set!\nerror: 19:14: unbound variable: list-set!\nerror: 19:14: unbound variable: list-set!\nerror: 19:14: unbound variable: list-set!\nerror: 19:14: unbound variable: list-set!\n",
+      "stdout_snippet": "CASE0=CASE0=CASE1=CASE2=CASE3=CASE4=CASE5=CASE6=CASE7=0\n",
+      "repair_of": "solution.aura",
+      "prior_passed": 3
     }
   ],
   "slug": "reorder-routes-to-make-all-paths-lead-to-city-zero",
   "title": "Reorder Routes to Make All Paths Lead to the City Zero",
   "category": "graphs_bfs_dfs",
-  "updated_at": "2026-09-24T15:15:49Z",
-  "updated_at_local": "2026-09-24 23:15:49 CST"
+  "updated_at": "2026-09-27T13:47:20Z",
+  "updated_at_local": "2026-09-27 21:47:20 CST"
 }

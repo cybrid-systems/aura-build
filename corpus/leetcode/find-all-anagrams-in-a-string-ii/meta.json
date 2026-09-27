@@ -53,11 +53,40 @@
       "tests_total": 8,
       "stderr_snippet": "warning: unbalanced parentheses in input\n",
       "stdout_snippet": ""
+    },
+    {
+      "variant": 90,
+      "aura_file": "solution_repair.aura",
+      "temperature": 0.4,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-27T13:45:47Z",
+      "ts_local": "2026-09-27 21:45:47 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 4642,
+        "total_characters": 0,
+        "prompt_tokens": 2426,
+        "completion_tokens": 2216,
+        "prompt_tokens_details": {
+          "cached_tokens": 582
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.1,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 8:39: unbound variable: list-set\n   |\n  8 |                (cons \"a\" \"b\")\n   |                                       ^\n",
+      "stdout_snippet": "CASE0=CASE0=",
+      "repair_of": "solution.aura",
+      "prior_passed": 4
     }
   ],
   "slug": "find-all-anagrams-in-a-string-ii",
   "title": "Find All Anagrams in a String (Variant)",
   "category": "hashing",
-  "updated_at": "2026-09-24T15:01:44Z",
-  "updated_at_local": "2026-09-24 23:01:44 CST"
+  "updated_at": "2026-09-27T13:45:47Z",
+  "updated_at_local": "2026-09-27 21:45:47 CST"
 }

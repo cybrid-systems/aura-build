@@ -1,0 +1,104 @@
+;; Monotone Increasing Digits — greedy left-to-right fix
+(require "compat" all:)
+
+(define (digits-of n)
+  (if (= n 0)
+      '(0)
+      (let loop ((n n) (acc '()))
+        (if (= n 0)
+            acc
+            (loop (quotient n 10) (cons (modulo n 10) acc))))))
+
+(define (length lst)
+  (let loop ((l lst) (n 0))
+    (if (null? l) n (loop (cdr l) (+ n 1)))))
+
+(define (list-ref lst n)
+  (cond ((null? lst) (error "list-ref: out of bounds"))
+        ((= n 0) (car lst))
+        (else (list-ref (cdr lst) (- n 1)))))
+
+(define (list-set lst n v)
+  (cond ((null? lst) '())
+        ((= n 0) (cons v (cdr lst)))
+        (else (cons (car lst) (list-set (cdr lst) (- n 1) v)))))
+
+(define (list->int lst)
+  (let loop ((l lst) (acc 0))
+    (if (null? l)
+        acc
+        (loop (cdr l) (+ (* acc 10) (car l))))))
+
+(define (make-list n v)
+  (let loop ((k 0) (acc '()))
+    (if (= k n)
+        acc
+        (loop (+ k 1) (cons v acc)))))
+
+;; Ensure digits list has length len by padding with leading zeros.
+(define (pad-left d len)
+  (let ((cur (length d)))
+    (if (= cur len)
+        d
+        (let loop ((k 0) (acc '()))
+          (if (>= k (- len cur))
+              (append acc d)
+              (loop (+ k 1) (cons 0 acc)))))))
+
+(define (append a b)
+  (if (null? a) b (cons (car a) (append (cdr a) b))))
+
+;; Run greedy monotone-increasing fix on digit list (left to right).
+(define (fix-monotone d)
+  (let ((len (length d)))
+    (let loop ((digits d) (i 0))
+      (if (>= i (- len 1))
+          digits
+          (let ((a (list-ref digits i))
+                (b (list-ref digits (+ i 1))))
+            (if (<= a b)
+                (loop digits (+ i 1))
+                (let adjust ((j i) (ds digits))
+                  (cond
+                    ((< j 0)
+                     ;; All leading zeros -> answer is 0.
+                     (make-list len 0))
+                    ((> (list-ref ds j) 0)
+                     (let ((new-ds (list-set ds j (- (list-ref ds j) 1))))
+                       (zero-tail new-ds (+ j 1) len)))
+                    (else (adjust (- j 1) ds))))))))))
+
+(define (zero-tail ds start len)
+  (let loop ((k start) (d ds))
+    (if (>= k len)
+        d
+        (loop (+ k 1) (list-set d k 0)))))
+
+(define (strip-leading-zeros d)
+  (cond ((null? d) '(0))
+        ((= (car d) 0) (strip-leading-zeros (cdr d)))
+        (else d)))
+
+(define (solve N)
+  (if (= N 0)
+      0
+      (let* ((d (digits-of N))
+             (len (length d))
+             (padded (pad-left d len))
+             (fixed (fix-monotone padded))
+             (stripped (strip-leading-zeros fixed)))
+        (list->int stripped))))
+
+(define tests '(332 100 0 10 9 1234 332111 111111))
+(define (run-tests lst i)
+  (if (null? lst)
+      'done
+      (begin
+        (display "CASE")
+        (display i)
+        (display "=")
+        (display (solve (car lst)))
+        (newline)
+        (run-tests (cdr lst) (+ i 1)))))
+
+(run-tests tests 0)

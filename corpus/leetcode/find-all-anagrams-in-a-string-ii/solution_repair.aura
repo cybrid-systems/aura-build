@@ -1,0 +1,109 @@
+;; Aura program: Find All Anagrams in a String (Variant)
+;; Sliding window with frequency counts and match counter.
+
+(require "compat" all:)
+
+;; --- helpers ---
+
+(define (str-len s) (string-length s))
+(define (char-at s i) (string-ref s i))
+
+;; Convert char to integer key 0..25
+(define (char-key c)
+  (- (char->integer c) (char->integer #\a)))
+
+;; Build integer-indexed count vector (list of 26 zeros) from string s[lo..hi)
+(define (build-counts s lo hi)
+  (letrec ((vec (make-list 26 0))
+           (loop (lambda (i v)
+                   (if (= i hi)
+                       v
+                       (let* ((k (char-key (char-at s i)))
+                              (old (list-ref v k))
+                              (new-v (list-set v k (+ old 1))))
+                         (loop (+ i 1) new-v))))))
+    (loop lo vec)))
+
+;; Compare two count vectors
+(define (counts-equal? a b)
+  (letrec ((loop (lambda (k)
+                   (if (= k 26)
+                       #t
+                       (if (= (list-ref a k) (list-ref b k))
+                           (loop (+ k 1))
+                           #f)))))
+    (loop 0)))
+
+;; --- core: find anagram indices ---
+;; We compare the full target counts vs window counts each step.
+;; For efficiency we keep a vector of 26 counters and use a match counter.
+;; But simpler: just compare vectors directly (O(26) per check, still O(n)).
+
+(define (find-anagrams s p)
+  (let ((slen (str-len s))
+        (plen (str-len p)))
+    (if (> plen slen)
+        '()
+        (let* ((target (build-counts p 0 plen))
+               (window (build-counts s 0 plen))
+               (initial-match (counts-equal? target window)))
+          (letrec ((loop (lambda (i w acc match?)
+                           (if (> (+ i plen) slen)
+                               acc
+                               (let ((new-acc (if match?
+                                                  (cons i acc)
+                                                  acc)))
+                                 (if (= (+ i plen) slen)
+                                     new-acc
+                                     (let* ((out-k (char-key (char-at s i)))
+                                            (in-k (char-key (char-at s (+ i plen))))
+                                            ;; adjust window
+                                            (w1 (list-set w out-k (- (list-ref w out-k) 1)))
+                                            (w2 (list-set w1 in-k (+ (list-ref w1 in-k) 1)))
+                                            (new-match (counts-equal? target w2)))
+                                       (loop (+ i 1) w2 new-acc new-match))))))))
+            (reverse (loop 0 window '() initial-match)))))))
+
+;; --- solve ---
+
+(define (solve s p)
+  (find-anagrams s p))
+
+;; --- display list of ints as [a, b, c] ---
+(define (display-int-list lst)
+  (display "[")
+  (letrec ((loop (lambda (xs first?)
+                   (cond
+                     ((null? xs) #t)
+                     (else
+                      (if first?
+                          (display "")
+                          (display ", "))
+                      (display (car xs))
+                      (loop (cdr xs) #f))))))
+    (loop lst #t))
+  (display "]")
+  (newline))
+
+(define (run-case i s p)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display-int-list (solve s p)))
+
+(let ((cases (list
+               (cons "cbaebabacd" "abc")
+               (cons "abab" "ab")
+               (cons "aaaaa" "aa")
+               (cons "abcd" "efgh")
+               (cons "abdc" "abcd")
+               (cons "a" "a")
+               (cons "a" "b")
+               (cons "abcabcabc" "abc"))))
+  (letrec ((loop (lambda (cs i)
+                   (if (null? cs)
+                       #t
+                       (begin
+                         (run-case i (car (car cs)) (cdr (car cs)))
+                         (loop (cdr cs) (+ i 1)))))))
+    (loop cases 0)))

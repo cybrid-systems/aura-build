@@ -1,0 +1,77 @@
+;; Palindrome Linked List using slow/fast pointers, O(n) time, O(1) extra space.
+;; Nodes are represented as cons cells: (cons val next).
+;; '() denotes null.
+
+(require "compat" all:)
+
+;; Build linked list from a list of numbers.
+(define (build-list xs)
+  (define (iter xs acc)
+    (if (null? xs)
+        acc
+        (iter (cdr xs) (cons (car xs) acc))))
+  (iter (reverse xs) '()))
+
+;; Reverse a linked list (purely, returns new head).
+(define (rev-list head)
+  (let loop ((prev '()) (cur head))
+    (if (null? cur)
+        prev
+        (let ((nxt (cdr cur)))
+          (loop cur (cons (car cur) prev))))))
+
+;; Count nodes.
+(define (count-n lst)
+  (let loop ((l lst) (n 0))
+    (if (null? l) n (loop (cdr l) (+ n 1)))))
+
+;; Walk: returns the node at position `steps` from `start`.
+(define (walk start steps)
+  (let loop ((cur start) (k steps))
+    (if (= k 0) cur (loop (cdr cur) (- k 1)))))
+
+;; Solve: palindrome check using slow/fast via indices.
+(define (solve head)
+  (let* ((n (count-n head))
+         (mid-idx (quotient n 2))
+         (mid-node (walk head mid-idx)))
+    ;; Split point:
+    ;; If n odd: mid-node is the center; second half starts at (cdr mid-node).
+    ;; If n even: mid-node is the start of the second half; second half is mid-node.
+    (let ((second
+           (if (odd? n)
+               (cdr mid-node)
+               mid-node)))
+      (let* ((rev-second (rev-list second))
+             (first-len (quotient n 2)))
+        (let loop ((a head) (b rev-second) (k first-len) (ok #t))
+          (if (= k 0)
+              ok
+              (let ((new-ok (and ok (= (car a) (car b)))))
+                (loop (cdr a) (cdr b) (- k 1) new-ok))))))))
+
+;; ---- Display helper for a single value ----
+(define (display-value v)
+  (cond
+    ((boolean? v) (display (if v "#t" "#f")))
+    ((number? v) (display (number->string v)))
+    ((string? v) (display v))
+    (else (display v))))
+
+;; ---- Test runner ----
+(define (run-case i values)
+  (display (string-append "CASE" (number->string i) "="))
+  (let* ((head (build-list values))
+         (result (solve head)))
+    (display-value result)
+    (newline)))
+
+;; ---- Embedded test cases ----
+(run-case 0 '(1 2 3 2 1))
+(run-case 1 '(1 2 3))
+(run-case 2 '(7))
+(run-case 3 '(1 1))
+(run-case 4 '(1 2))
+(run-case 5 '(1 2 2 1))
+(run-case 6 '(1 2 3 4 3 2 1))
+(run-case 7 '(1 2 3 4 5 2 1))

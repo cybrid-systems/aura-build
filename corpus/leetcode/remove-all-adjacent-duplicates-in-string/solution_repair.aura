@@ -1,0 +1,49 @@
+(require "compat" all:)
+
+(define (solve s)
+  (let loop ((chars s) (acc '()))
+    (cond ((null? chars)
+           (reverse acc))
+          (else
+            (let ((c (car chars)))
+              (cond ((and (not (null? acc)) (equal? (car acc) c))
+                     (loop (cdr chars) (cdr acc)))
+                    (else
+                      (loop (cdr chars) (cons c acc)))))))))
+
+(define (string->list-of-chars s)
+  (let loop ((i 0) (n (string-length s)) (acc '()))
+    (if (>= i n)
+        (reverse acc)
+        (loop (+ i 1) n (cons (string-ref s i) acc)))))
+
+(define (list-of-chars->string xs)
+  (list->string xs))
+
+(define (display-result s)
+  (display (list-of-chars->string s)))
+
+(define cases '(
+  ("abbaca")
+  ("azxxzy")
+  ("a")
+  ("aa")
+  ("abba")
+  ("abcddcba")
+  ("mississippi")
+  ("")))
+
+(define (run-case i case)
+  (let* ((input-str (cadr case))
+         (input (string->list-of-chars input-str))
+         (result (solve input)))
+    (display "CASE")
+    (display i)
+    (display "=")
+    (display-result result)
+    (newline)))
+
+(let loop ((cs cases) (i 0))
+  (when (not (null? cs))
+    (run-case i (car cs))
+    (loop (cdr cs) (+ i 1))))

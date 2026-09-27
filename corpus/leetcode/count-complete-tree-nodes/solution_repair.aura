@@ -1,0 +1,128 @@
+;; Count nodes in a complete binary tree in better than O(n) time.
+(require "compat" all:)
+
+;; Node representation: (node val left right)
+(define (make-node val left right)
+  (cons 'node (cons val (cons left (cons right '())))))
+
+(define (node? x)
+  (if (null? x) #f
+      (if (pair? x)
+          (equal? (car x) 'node)
+          #f)))
+
+(define (node-val n) (car (cdr n)))
+(define (node-left n) (car (cdr (cdr n))))
+(define (node-right n) (car (cdr (cdr (cdr n)))))
+
+(define (set-left! n child)
+  (set-car! (cdr (cdr n)) child))
+
+(define (set-right! n child)
+  (set-car! (cdr (cdr (cdr n))) child))
+
+;; Depth of leftmost path (number of nodes from n down following left children)
+;; Returns 0 for empty tree.
+(define (left-depth n)
+  (if (null? n) 0
+      (+ 1 (left-depth (node-left n)))))
+
+;; Depth of rightmost path (number of nodes from n down following right children)
+;; Returns 0 for empty tree.
+(define (right-depth n)
+  (if (null? n) 0
+      (+ 1 (right-depth (node-right n)))))
+
+(define (pow2 n)
+  (if (= n 0) 1
+      (* 2 (pow2 (- n 1)))))
+
+(define (count-nodes n)
+  (if (null? n) 0
+      (let ((ld (left-depth n))
+            (rd (right-depth n)))
+        (if (= ld rd)
+            (- (pow2 ld) 1)
+            (+ 1 (count-nodes (node-left n))
+                  (count-nodes (node-right n)))))))
+
+(define (null-marker? v)
+  (cond
+    ((null? v) #t)
+    ((string? v) (if (equal? v "null") #t #f))
+    ((equal? v 'null) #t)
+    ((equal? v 'None) #t)
+    (else #f)))
+
+;; Build a tree from a level-order list. 
+;; Empty list -> '().
+;; 'null' marker means absent node.
+(define (build-tree arr)
+  (let ((len (length arr)))
+    (if (= len 0) '()
+        (let ((root (make-node (car arr) '() '())))
+          ;; Build a list of nodes that need children filled in, in order.
+          ;; Each entry is the node itself; we'll fill its left then right.
+          (let fill ((nodes (list root)) (idx 1))
+            (if (null? nodes) root
+                (if (>= idx len) root
+                    (let ((cur (car nodes)))
+                      (let ((rest (cdr nodes)))
+                        (let ((left-val (if (< idx len) (list-ref arr idx) 'null)))
+                          (let ((new-idx (+ idx 1)))
+                            (let ((right-val (if (< new-idx len) (list-ref arr new-idx) 'null)))
+                              (let ((new-idx2 (+ new-idx 1)))
+                                (let ((new-nodes rest))
+                                  (let ((new-nodes2
+                                         (let ((nn new-nodes))
+                                           (if (null-marker? left-val) nn
+                                               (let ((ln (make-node left-val '() '())))
+                                                 (set-left! cur ln)
+                                                 (append nn (list ln)))))))
+                                    (let ((new-nodes3
+                                           (if (null-marker? right-val) new-nodes2
+                                               (let ((rn (make-node right-val '() '())))
+                                                 (set-right! cur rn)
+                                                 (append new-nodes2 (list rn))))))
+                                      (fill new-nodes3 new-idx2))))))))))))))))
+
+(define (list-ref lst i)
+  (cond ((null? lst) (error "list-ref out of bounds"))
+        ((= i 0) (car lst))
+        (else (list-ref (cdr lst) (- i 1)))))
+
+(define (append a b)
+  (if (null? a) b (cons (car a) (append (cdr a) b))))
+
+(define (length lst)
+  (if (null? lst) 0 (+ 1 (length (cdr lst)))))
+
+(define (solve root)
+  (count-nodes root))
+
+;; ----- Test cases -----
+(define cases
+  (list
+    (list)
+    (list 1)
+    (list 1 2 3 4 5 6)
+    (list 1 2 3 4 5 'null 7)
+    (list 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15)
+    (list 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16)
+    (list 1 'null 2 'null 3 'null 4 'null 5)
+    (list 1 2 'null 3 'null 4 'null 5)))
+
+(define (run-cases cs i)
+  (if (null? cs) 'done
+      (let ((arr (car cs)))
+        (let ((root (build-tree arr)))
+          (let ((res (solve root)))
+            (begin
+              (display "CASE")
+              (display i)
+              (display "=")
+              (display res)
+              (newline)
+              (run-cases (cdr cs) (+ i 1))))))))
+
+(run-cases cases 0)

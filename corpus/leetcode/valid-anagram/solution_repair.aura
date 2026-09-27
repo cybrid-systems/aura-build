@@ -1,0 +1,53 @@
+(require "compat" all:)
+
+(define letters '("a" "b" "c" "d" "e" "f" "g" "h" "i" "j" "k" "l" "m" "n" "o" "p" "q" "r" "s" "t" "u" "v" "w" "x" "y" "z"))
+
+(define (char-idx c)
+  (let loop ((i 0) (ls letters))
+    (cond ((null? ls) -1)
+          ((string=? c (car ls)) i)
+          (else (loop (+ i 1) (cdr ls))))))
+
+(define (str-len s)
+  (let loop ((i 0))
+    (if (string=? (substring s i (+ i 1)) "") i (loop (+ i 1)))))
+
+(define (str-ref s i) (substring s i (+ i 1)))
+
+(define (make-freq)
+  (let loop ((i 0) (acc '()))
+    (if (= i 26) acc (loop (+ i 1) (cons 0 acc)))))
+
+(define (freq-bump freq c delta)
+  (let loop ((i 0) (f freq))
+    (cond ((null? f) '())
+          ((= i (char-idx c)) (cons (+ (car f) delta) (cdr f)))
+          (else (cons (car f) (loop (+ i 1) (cdr f)))))))
+
+(define (all-zero? freq)
+  (cond ((null? freq) #t)
+        ((= (car freq) 0) (all-zero? (cdr freq)))
+        (else #f)))
+
+(define (solve s t)
+  (if (not (= (str-len s) (str-len t)))
+      #f
+      (let loop ((i 0) (freq (make-freq)))
+        (if (= i (str-len s))
+            (all-zero? freq)
+            (let ((f1 (freq-bump freq (str-ref s i) 1)))
+              (loop (+ i 1) (freq-bump f1 (str-ref t i) -1)))))))
+
+(define (run-case n s t)
+  (display (string-append "CASE" (number->string n) "="))
+  (display (solve s t))
+  (newline))
+
+(run-case 0 "listen" "silent")
+(run-case 1 "hello" "world")
+(run-case 2 "anagram" "nagaram")
+(run-case 3 "rat" "car")
+(run-case 4 "a" "b")
+(run-case 5 "a" "a")
+(run-case 6 "abc" "abcd")
+(run-case 7 "abcdefghijklmnopqrstuvwxyz" "zyxwvutsrqponmlkjihgfedcba")

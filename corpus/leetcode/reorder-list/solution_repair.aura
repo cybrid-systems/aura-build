@@ -1,0 +1,115 @@
+;; Build a linked list from values (using cons cells)
+(define (build-list vals)
+  (if (null? vals)
+      '()
+      (cons (car vals) (build-list (cdr vals)))))
+
+;; Convert linked list (cons cells) back to a regular list for printing
+(define (to-list lst)
+  (if (null? lst)
+      '()
+      (cons (car lst) (to-list (cdr lst)))))
+
+;; Print a list as [a, b, c]
+(define (print-list lst)
+  (display "[")
+  (define (loop l first?)
+    (if (null? l)
+        '()
+        (begin
+          (if (not first?) (display ", ") '())
+          (display (car l))
+          (loop (cdr l) #f))))
+  (loop lst #t)
+  (display "]"))
+
+;; Reverse a linked list in place (returns new head)
+(define (rev lst)
+  (define (iter curr acc)
+    (if (null? curr)
+        acc
+        (iter (cdr curr) (cons (car curr) acc))))
+  (iter lst '()))
+
+;; Length of a list
+(define (len lst)
+  (if (null? lst) 0 (+ 1 (len (cdr lst)))))
+
+;; Find middle: returns (cons prev-slow-suffix first-half-head . second-half-head)
+;; We want first-half to be elements [0..mid-1] and second-half [mid..end]
+;; For list of length n, mid = floor(n/2) when n is odd? Let's think:
+;;  n=4: want first=[1,2], second=[3,4], mid=2
+;;  n=5: want first=[1,2], second=[3,4,5], mid=2 (slow ends at 3, prev at 2)
+;;  n=6: want first=[1,2,3], second=[4,5,6], mid=3
+;;  n=7: want first=[1,2,3], second=[4,5,6,7], mid=3
+;; Strategy: slow/fast. When fast reaches end, slow is at "middle start".
+;; We need to cut: prev->next = '(), return (cons first-head second-head)
+(define (find-middle lst)
+  (if (null? lst)
+      (cons '() '())
+      (let ((slow lst)
+            (fast lst)
+            (prev '()))
+        (let loop ((s lst) (f lst) (p '()))
+          (cond
+            ((null? f)
+             ;; cut
+             (if (null? p)
+                 (set-cdr! '() '()) ;; shouldn't happen
+                 (set-cdr! p '()))
+             (cons lst s))
+            ((null? (cdr f))
+             ;; f is last node, s is start of second half
+             (if (null? p)
+                 (set-cdr! '() '())
+                 (set-cdr! p '()))
+             (cons lst s))
+            (else
+             (loop (cdr s) (cddr f) s)))))))
+
+;; Interleave two lists: result starts with first element of a
+(define (interleave a b)
+  (cond
+    ((null? a) b)
+    ((null? b) a)
+    (else
+     (let ((head a)
+           (a-next (cdr a))
+           (b-next (cdr b)))
+       (set-cdr! a b)
+       (if (null? a-next)
+           head
+           (begin
+             (set-cdr! b a-next)
+             (interleave a-next b-next)))))))
+
+;; Main solve: takes a Python-list of ints, returns a Python-list of ints
+(define (solve head)
+  (let ((ll (build-list head)))
+    (let ((n (len ll)))
+      (cond
+        ((<= n 2) (to-list ll))
+        (else
+         (let ((mid-result (find-middle ll)))
+           (define first-half (car mid-result))
+           (define second-half (cdr mid-result))
+           (set! second-half (rev second-half))
+           (define merged (interleave first-half second-half))
+           (to-list merged)))))))
+
+;; Embedded test inputs
+(define (run-case i head)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (print-list (solve head))
+  (newline))
+
+(run-case 0 '())
+(run-case 1 '(1))
+(run-case 2 '(1 2))
+(run-case 3 '(1 2 3 4))
+(run-case 4 '(1 2 3 4 5))
+(run-case 5 '(1 2 3 4 5 6))
+(run-case 6 '(1 2 3 4 5 6 7))
+(run-case 7 '(1 2 3 4 5 6 7 8 9))

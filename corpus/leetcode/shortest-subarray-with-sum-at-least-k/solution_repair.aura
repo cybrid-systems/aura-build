@@ -1,0 +1,177 @@
+(require "compat" all:)
+;; Shortest subarray with sum at least K
+;; Uses prefix sums + monotonic deque. O(n).
+
+(define (len xs)
+  (if (null? xs) 0 (+ 1 (len (cdr xs)))))
+
+(define (list-ref xs i)
+  (if (= i 0) (car xs) (list-ref (cdr xs) (- i 1))))
+
+(define (min2 a b) (if (< a b) a b))
+
+(define (make-vector n init)
+  (let ((v (list init)))
+    (let fill ((i 1))
+      (if (>= i n) v
+          (let ((v2 (append v (list init))))
+            (set! v v2)
+            (fill (+ i 1)))))))
+
+(define (vector-set! v i val)
+  (define (helper lst idx)
+    (if (= idx 0)
+        (set-car! lst val)
+        (helper (cdr lst) (- idx 1))))
+  (helper v i))
+
+(define (vector-ref v i)
+  (list-ref v i))
+
+(define (set-car! pair val)
+  (define (helper p)
+    (if (pair? (car p))
+        (set-car! (car p) val)
+        (set-car! p val)))
+  (helper pair))
+
+(define (pair? x)
+  (cond ((null? x) #f)
+        ((number? x) #f)
+        ((string? x) #f)
+        (else #t)))
+
+;; ans stored in a one-element mutable box
+(define ans-box (list (+ 0 0)))
+
+(define (set-ans! v) (set-car! ans-box v))
+(define (get-ans) (car ans-box))
+
+;; solve with all logic inlined using helper functions operating on the global ans-box
+(define (solve nums k)
+  (let* ((n (len nums))
+         (total (+ n 1))
+         (prefix (make-vector (+ n 1) 0)))
+    (set-ans! (+ n 1))
+    ;; build prefix sums: prefix[i] = sum of first i elements
+    (let fill ((i 1) (acc 0))
+      (if (> i n) #t
+          (let ((v (+ acc (list-ref nums (- i 1)))))
+            (vector-set! prefix i v)
+            (fill (+ i 1) v))))
+    ;; main loop: i is the right index of prefix, deque holds (index . prefix-value)
+    (let loop ((i 0) (deque '()))
+      (if (= i (+ n 1))
+          (if (= (get-ans) (+ n 1)) -1 (get-ans))
+          (let* ((pi (vector-ref prefix i))
+                 (shrunk (shrink-deque deque i pi k))
+                 (pushed (push-deque shrunk i pi)))
+            (loop (+ i 1) pushed))))))
+
+(define (shrink-deque deque i pi k)
+  ;; pop from front while prefix[i] - prefix[idx] >= k, updating answer
+  (cond ((null? deque) '())
+        (else
+         (let* ((front (car deque))
+                (idx (car front))
+                (p-idx (car (cdr front))))
+           (if (>= (- pi p-idx) k)
+               (begin
+                 (set-ans! (min2 (get-ans) (- i idx)))
+                 (shrink-deque (cdr deque) i pi k))
+               deque)))))
+
+(define (push-deque deque i pi)
+  ;; pop from back while back's prefix value >= pi (keep increasing)
+  (cond ((null? deque) (list (list i pi)))
+        (else
+         (let* ((back (car (last-pair deque)))
+                (p-back (car (cdr back))))
+           (if (>= p-back pi)
+               (push-deque (all-but-last deque) i pi)
+               (append deque (list (list i pi))))))))
+
+(define (last-pair lst)
+  (if (null? (cdr lst)) lst (last-pair (cdr lst))))
+
+(define (all-but-last lst)
+  (cond ((null? lst) '())
+        ((null? (cdr lst)) '())
+        (else (cons (car lst) (all-but-last (cdr lst))))))
+
+;; Parse input: two lines CASE0=<list> and CASE1=<K>
+(define (parse-int-list s)
+  ;; s is comma-separated integers, may have spaces
+  (let* ((trimmed (trim s))
+         (len (string-length trimmed)))
+    (if (= len 0) '()
+        (let* ((comma-pos (find-comma trimmed 0)))
+          (if (= comma-pos -1)
+              (list (string->number trimmed))
+              (let* ((first-part (substring trimmed 0 comma-pos))
+                     (rest (substring trimmed (+ comma-pos 1) len))
+                     (first-val (string->number (trim first-part))))
+                (cons first-val (parse-int-list rest))))))))
+
+(define (trim s)
+  ;; strip leading/trailing whitespace
+  (let ((len (string-length s)))
+    (let left-loop ((i 0))
+      (if (>= i len) s
+          (let ((c (string-ref s i)))
+            (if (or (char=? c #\space) (char=? c #\tab))
+                (left-loop (+ i 1))
+                (let right-loop ((j (- len 1)))
+                  (if (< j i) s
+                      (let ((c2 (string-ref s j)))
+                        (if (or (char=? c2 #\space) (char=? c2 #\tab))
+                            (right-loop (- j 1))
+                            (substring s i (+ j 1))))))))))))
+
+(define (find-comma s start)
+  (let ((len (string-length s)))
+    (let loop ((i start))
+      (if (>= i len) -1
+          (if (char=? (string-ref s i) #\,) i (loop (+ i 1)))))))
+
+(define (substring s start end)
+  (let loop ((i start) (acc '()))
+    (if (>= i end) (list->string (reverse acc))
+        (loop (+ i 1) (cons (string-ref s i) acc)))))
+
+(define (string->number s)
+  ;; parse integer with optional leading minus
+  (let ((len (string-length s)))
+    (if (= len 0) 0
+        (let ((first (string-ref s 0)))
+          (if (char=? first #\-)
+              (- (parse-uint (substring s 1 len) 0 (- len 1) 0))
+              (parse-uint s 0 len 0))))))
+
+(define (parse-uint s start end acc)
+  (if (>= start end) acc
+      (let* ((c (string-ref s start))
+             (d (- (char->integer c) (char->integer #\0))))
+        (parse-uint s (+ start 1) end (+ (* acc 10) d)))))
+
+(define (char=? a b) (= (char->integer a) (char->integer b)))
+
+(define (string-length s)
+  ;; s is a list of chars per our representation... but we treat string as a real string.
+  ;; This is tricky. Let's redefine: use built-in string primitives via compat.
+  (require-compat))
+
+;; The above approach using strings-as-lists is fragile. Instead let's just
+;; hardcode reading via display-based parsing using read-line-like.
+;; Actually, simplest: read two lines from stdin using read-line.
+
+(define (read-line)
+  ;; Read chars until newline from stdin; simple implementation using char-ready?/read-char
+  (let loop ((acc '()))
+    (let ((c (read-char)))
+      (if (or (eof-object? c) (char=? c #\newline))
+          (list->string (reverse acc))
+          (loop (cons c acc))))))
+
+(define (eof-object? c)
+  (char=? c (char #\4) (char #\0))) ;; hack placeholder, replaced below

@@ -1,0 +1,5 @@
+(if (= r 0)
+    (if (= c 0)
+        (set-car! (car screen) v)
+        (screen-set screen 0 (- c 1) v m n))
+    (screen-set (cdr screen) (- r 1) c v m n))

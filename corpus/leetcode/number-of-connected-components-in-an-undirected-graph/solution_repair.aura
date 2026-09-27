@@ -1,0 +1,70 @@
+(define (make-uf n)
+  (let ((parent (make-list n 0))
+        (rank (make-list n 0)))
+    (let loop ((i 0))
+      (if (= i n)
+          (cons parent rank)
+          (begin
+            (set-car! (list-tail parent i) i)
+            (set-car! (list-tail rank i) 0)
+            (loop (+ i 1)))))))
+
+(define (list-set! lst i v)
+  (set-car! (list-tail lst i) v))
+
+(define (list-ref lst i)
+  (car (list-tail lst i)))
+
+(define (uf-find uf x)
+  (let ((parent (car uf)))
+    (let ((p (list-ref parent x)))
+      (if (= p x)
+          x
+          (let ((root (uf-find uf p)))
+            (list-set! parent x root)
+            root)))))
+
+(define (uf-union uf x y)
+  (let ((rx (uf-find uf x))
+        (ry (uf-find uf y)))
+    (if (= rx ry)
+        #f
+        (let ((parent (car uf))
+              (rank (cdr uf)))
+          (let ((rx-rank (list-ref rank rx))
+                (ry-rank (list-ref rank ry)))
+            (cond
+              ((< rx-rank ry-rank)
+               (list-set! parent rx ry)
+               #t)
+              ((> rx-rank ry-rank)
+               (list-set! parent ry rx)
+               #t)
+              (else
+               (list-set! parent ry rx)
+               (list-set! rank rx (+ rx-rank 1))
+               #t)))))))
+
+(define (solve n edges)
+  (let ((uf (make-uf n))
+        (count n))
+    (let loop ((es edges))
+      (if (null? es)
+          count
+          (begin
+            (let ((u (car (car es)))
+                  (v (car (cdr (car es)))))
+              (if (uf-union uf u v)
+                  (loop (cdr es))
+                  (loop (cdr es)))))))))
+
+(require "compat" all:)
+
+(display "CASE0=") (display (solve 10 '())) (newline)
+(display "CASE1=") (display (solve 5 (list (list 0 1) (list 1 2) (list 2 3) (list 3 4)))) (newline)
+(display "CASE2=") (display (solve 1 '())) (newline)
+(display "CASE3=") (display (solve 4 '())) (newline)
+(display "CASE4=") (display (solve 6 (list (list 0 1) (list 2 3) (list 4 5)))) (newline)
+(display "CASE5=") (display (solve 5 (list (list 0 1) (list 1 2) (list 0 2) (list 3 4)))) (newline)
+(display "CASE6=") (display (solve 3 (list (list 0 1) (list 1 2)))) (newline)
+(display "CASE7=") (display (solve 4 (list (list 0 1) (list 2 3) (list 1 2)))) (newline)

@@ -53,11 +53,40 @@
       "tests_total": 8,
       "stderr_snippet": "warning: unbalanced parentheses in input\n⚠ program returned an uncalled function\n",
       "stdout_snippet": "#<procedure>\n"
+    },
+    {
+      "variant": 90,
+      "aura_file": "solution_repair.aura",
+      "temperature": 0.4,
+      "model": "MiniMax-M3",
+      "ts": "2026-09-27T13:45:52Z",
+      "ts_local": "2026-09-27 21:45:52 CST",
+      "llm_ok": true,
+      "usage": {
+        "total_tokens": 6491,
+        "total_characters": 0,
+        "prompt_tokens": 2491,
+        "completion_tokens": 4000,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        }
+      },
+      "parse_ok": false,
+      "run_ok": false,
+      "exit_code": 1,
+      "timeout": false,
+      "duration_s": 0.017,
+      "tests_passed": 0,
+      "tests_total": 8,
+      "stderr_snippet": "error: 1:8: unbound variable: r\n   |\n  1 | (if (= r 0)\n   |        ^\n",
+      "stdout_snippet": "",
+      "repair_of": "solution.aura",
+      "prior_passed": 4
     }
   ],
   "slug": "flood-fill",
   "title": "Flood Fill",
   "category": "graphs_bfs_dfs",
-  "updated_at": "2026-09-24T15:05:31Z",
-  "updated_at_local": "2026-09-24 23:05:31 CST"
+  "updated_at": "2026-09-27T13:45:52Z",
+  "updated_at_local": "2026-09-27 21:45:52 CST"
 }

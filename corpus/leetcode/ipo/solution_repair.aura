@@ -1,0 +1,77 @@
+(require "compat" all:)
+
+(define (list-length lst)
+  (if (null? lst) 0 (+ 1 (list-length (cdr lst)))))
+
+(define (list-ref lst i)
+  (if (= i 0) (car lst) (list-ref (cdr lst) (- i 1))))
+
+(define (max a b) (if (> a b) a b))
+
+;; Check if index i is in used-list
+(define (used? i used)
+  (if (null? used) #f
+      (if (= (car used) i) #t (used? i (cdr used)))))
+
+;; Build list of profits from unused affordable projects
+(define (collect-available i cap-lst prof-lst used acc)
+  (if (null? cap-lst) acc
+      (let ((rest (collect-available (+ i 1) (cdr cap-lst) (cdr prof-lst) used acc)))
+        (if (and (<= (car cap-lst) i) (not (used? i used)))
+            (cons (car prof-lst) rest)
+            rest))))
+
+;; Find index of max-profit project in available list, mapped from original indices
+;; Returns the original index of the best available project
+(define (find-best i cap-lst prof-lst used current best-idx best-val)
+  (if (null? cap-lst) best-idx
+      (let ((new-best-idx (if (and (<= (car cap-lst) current) (not (used? i used))
+                                  (> (car prof-lst) best-val))
+                              i best-idx))
+            (new-best-val (if (and (<= (car cap-lst) current) (not (used? i used))
+                                   (> (car prof-lst) best-val))
+                              (car prof-lst) best-val)))
+        (find-best (+ i 1) (cdr cap-lst) (cdr prof-lst) used current new-best-idx new-best-val))))
+
+(define (solve w k capital profits)
+  (letrec ((loop (lambda (current selected used)
+                   (if (or (= selected k) (null? capital))
+                       current
+                       ;; Find best affordable unused project
+                       (let ((best-idx (find-best 0 capital profits used current -1 -1)))
+                         (if (= best-idx -1)
+                             current
+                             (let ((best-profit (list-ref profits best-idx)))
+                               (loop (+ current best-profit) (+ selected 1) (cons best-idx used)))))))))
+    (loop w 0 '())))
+
+(define cases
+  (list
+    (list 0 1 '(0) '(1))
+    (list 1 2 '(0 1 1) '(1 2 3))
+    (list 1 3 '(0 1 2) '(1 2 3))
+    (list 0 0 '(1 2 3) '(10 20 30))
+    (list 10 2 '(0 5 10) '(100 100 100))
+    (list 5 5 '(3 3 3 3 3) '(1 2 3 4 5))
+    (list 1 1 '(2) '(5))
+    (list 1 10 '(0 1) '(1 100))))
+
+(define (run-case idx case)
+  (let ((w (list-ref case 0))
+        (k (list-ref case 1))
+        (cap (list-ref case 2))
+        (pr  (list-ref case 3)))
+    (let ((r (solve w k cap pr)))
+      (display "CASE")
+      (display idx)
+      (display "=")
+      (display r)
+      (newline))))
+
+(define (run-all cs i)
+  (if (null? cs) 'done
+      (begin
+        (run-case i (car cs))
+        (run-all (cdr cs) (+ i 1)))))
+
+(run-all cases 0)
