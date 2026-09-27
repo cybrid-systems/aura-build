@@ -282,9 +282,141 @@ _FRUIT = Recipe(
 )
 
 
+
+_RANSOM = Recipe(
+    slug="ransom-note",
+    workspace=r"""
+(define (make-counts n)
+  (if (= n 26) '() (cons 0 (make-counts (+ n 1)))))
+(define (add-at counts idx delta)
+  (cond ((null? counts) '())
+        ((= idx 0) (cons (+ (car counts) delta) (cdr counts)))
+        (else (cons (car counts) (add-at (cdr counts) (- idx 1) delta)))))
+(define (get-at counts idx)
+  (if (= idx 0) (car counts) (get-at (cdr counts) (- idx 1))))
+(define (char-idx c) (- (char->integer c) 97))
+(define (process-mag i s counts)
+  (if (>= i (string-length s))
+      counts
+      (process-mag (+ i 1) s (add-at counts (char-idx (string-ref s i)) 1))))
+(define (process-ransom i s counts)
+  (cond ((>= i (string-length s)) #t)
+        ((= (get-at counts (char-idx (string-ref s i))) 0) #f)
+        (else (process-ransom (+ i 1) s (add-at counts (char-idx (string-ref s i)) -1)))))
+(define (can-construct ransom magazine)
+  (if (> (string-length ransom) (string-length magazine))
+      #f
+      (process-ransom 0 ransom (process-mag 0 magazine (make-counts 0)))))
+(define (always-true ransom magazine) #t)
+(define (always-false ransom magazine) #f)
+(define (solve ransom magazine) (can-construct ransom magazine))
+(define (run-case n r m)
+  (display "CASE") (display n) (display "=")
+  (display (if (solve r m) "true" "false")) (newline))
+(define (run-cases)
+  (begin
+    (run-case 0 "a" "b")
+    (run-case 1 "aa" "ab")
+    (run-case 2 "aa" "aab")
+    (run-case 3 "abc" "aabbcc")
+    (run-case 4 "abc" "abcc")
+    (run-case 5 "abcd" "abc")
+    (run-case 6 "" "abc")
+    (run-case 7 "aabbcc" "abcabc")))
+(run-cases)
+""",
+    explorers=[
+        ("can-construct", "(lambda (ransom magazine) (can-construct ransom magazine))"),
+        ("always-true", "(lambda (ransom magazine) (always-true ransom magazine))"),
+        ("always-false", "(lambda (ransom magazine) (always-false ransom magazine))"),
+    ],
+)
+
+_ONLINE = Recipe(
+    slug="online-election",
+    workspace=r"""
+(define (length xs) (if (null? xs) 0 (+ 1 (length (cdr xs)))))
+(define (nth xs i)
+  (if (= i 0) (car xs) (nth (cdr xs) (- i 1))))
+(define (count-vote counts person)
+  (cond ((null? counts) (list (cons person 1)))
+        ((= (car (car counts)) person)
+         (cons (cons person (+ 1 (cdr (car counts)))) (cdr counts)))
+        (else (cons (car counts) (count-vote (cdr counts) person)))))
+(define (find-leader counts best best-c)
+  (cond ((null? counts) best)
+        (else
+         (let ((p (car (car counts))) (c (cdr (car counts))))
+           (if (or (> c best-c) (and (= c best-c) (< p best)))
+               (find-leader (cdr counts) p c)
+               (find-leader (cdr counts) best best-c))))))
+(define (current-leader counts)
+  (if (null? counts) #f
+      (find-leader (cdr counts) (car (car counts)) (cdr (car counts)))))
+(define (build-leaders votes-for)
+  (let loop ((i 0) (counts '()) (leaders '()))
+    (if (= i (length votes-for))
+        (reverse leaders)
+        (let ((nc (count-vote counts (nth votes-for i))))
+          (loop (+ i 1) nc (cons (current-leader nc) leaders))))))
+(define (upper-bound times t)
+  (let loop ((lo 0) (hi (length times)))
+    (if (>= lo hi) lo
+        (let ((mid (quotient (+ lo hi) 2)))
+          (if (<= (nth times mid) t)
+              (loop (+ mid 1) hi)
+              (loop lo mid))))))
+(define (query leaders votes-at t)
+  (cond ((null? votes-at) #f)
+        ((< t (car votes-at)) #f)
+        (else
+         (let ((idx (- (upper-bound votes-at t) 1)))
+           (if (< idx 0) #f (nth leaders idx))))))
+(define (query-all leaders votes-at times)
+  (let loop ((i 0) (acc '()))
+    (if (= i (length times))
+        (reverse acc)
+        (loop (+ i 1) (cons (query leaders votes-at (nth times i)) acc)))))
+(define (solve votes-at votes-for times)
+  (query-all (build-leaders votes-for) votes-at times))
+(define (solve-zero-sentinel votes-at votes-for times)
+  (map (lambda (x) (if x x 0)) (solve votes-at votes-for times)))
+(define (disp-one x)
+  (cond ((not x) (display "null"))
+        (else (display x))))
+(define (print-list xs)
+  (display "[")
+  (cond ((null? xs) (display "]"))
+        (else
+          (disp-one (car xs))
+          (let loop ((rest (cdr xs)))
+            (cond ((null? rest) (display "]"))
+                  (else (display ",") (disp-one (car rest)) (loop (cdr rest))))))))
+(define (run-case n va vf times)
+  (display "CASE") (display n) (display "=")
+  (print-list (solve va vf times)) (newline))
+(define (run-cases)
+  (begin
+    (run-case 0 '(0 5 10 15) '(1 2 2 1) '(3 12 15 20))
+    (run-case 1 '(0 10 20) '(1 1 2) '(-5 0 5))
+    (run-case 2 '(0 1 2 3) '(5 5 5 5) '(0 2 3 100))
+    (run-case 3 '(0 5 10) '(1 2 3) '(0 5 10 15))
+    (run-case 4 '(0 4 8 12 16 20) '(2 1 2 1 2 1) '(1 5 9 13 17 21))
+    (run-case 5 '(0) '(42) '(0 1 2))
+    (run-case 6 '(0 100 200 300) '(3 1 2 4) '(50 150 250 350))
+    (run-case 7 '(0 5 10 15) '(2 1 1 3) '(3 8 12 16))))
+(run-cases)
+""",
+    explorers=[
+        ("null-sentinel", "(lambda (votes-at votes-for times) (query-all (build-leaders votes-for) votes-at times))"),
+        ("leaders-only", "(lambda (votes-at votes-for times) (build-leaders votes-for))"),
+    ],
+)
+
+
 RECIPES: dict[str, Recipe] = {
     r.slug: r
-    for r in (_INTERSECTION, _TOP_K, _SINGLE_II, _FRUIT)
+    for r in (_INTERSECTION, _TOP_K, _SINGLE_II, _FRUIT, _RANSOM, _ONLINE)
 }
 
 
@@ -515,6 +647,22 @@ def repair_recipe(
                 "fiber_live": fiber_live,
                 "denseness": denseness,
             }
+
+        # Re-bootstrap workspace if any explorer left the serve session unhealthy
+        # (failed mutate/eval can make subsequent current-source return empty).
+        if any(e.get("mut_status") != "ok" or e.get("run_status") != "ok" for e in explorers):
+            boot2 = sess.raw_line(f'(set-code "{esc}")', timeout_s=20.0)
+            if boot2.get("status") != "ok":
+                return {
+                    "ok": False,
+                    "reason": f"rebootstrap_failed:{boot2.get('msg') or boot2.get('status')}",
+                    "slug": slug,
+                    "baseline": baseline,
+                    "explorers": explorers,
+                    "fiber_live": fiber_live,
+                    "aura_issue_candidate": True,
+                }
+            sess.raw_line("(eval-current)", timeout_s=SOFT_MUTATE_TIMEOUT_S)
 
         win_esc = best["body"].replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
         sess.raw_line(

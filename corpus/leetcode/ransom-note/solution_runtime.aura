@@ -1,0 +1,114 @@
+; soft_leetcode_runtime slug=ransom-note
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; selected_explorer=can-construct hits=8/8
+; baseline_hits=6/8
+; Expected values used only for host scoring, not hardcoded into display.
+(begin
+  (define make-counts
+    (lambda (n)
+      (if (=
+          n 26)
+        (quote 0)
+        (cons
+          0 (make-counts (+
+              n 1))))))
+  (define add-at
+    (lambda (counts idx delta)
+      (if (null? counts)
+        (quote 0)
+        (if (=
+            idx 0)
+          (cons
+            (+
+              (car counts) delta) (cdr counts))
+          (cons
+            (car counts) (add-at
+              (cdr counts) (-
+                idx 1) delta))))))
+  (define get-at
+    (lambda (counts idx)
+      (if (=
+          idx 0)
+        (car counts)
+        (get-at
+          (cdr counts) (-
+            idx 1)))))
+  (define char-idx
+    (lambda (c)
+      (-
+        (char->integer c) 97)))
+  (define process-mag
+    (lambda (i s counts)
+      (if (>=
+          i (string-length s))
+        counts
+        (process-mag
+          (+
+            i 1) s (add-at
+            counts (char-idx (string-ref
+                s i)) 1)))))
+  (define process-ransom
+    (lambda (i s counts)
+      (if (>=
+          i (string-length s))
+        #t
+        (if (=
+            (get-at
+              counts (char-idx (string-ref
+                  s i))) 0)
+          #f
+          (process-ransom
+            (+
+              i 1) s (add-at
+              counts (char-idx (string-ref
+                  s i)) -1))))))
+  (define can-construct
+    (lambda (ransom magazine)
+      (if (>
+          (string-length ransom) (string-length magazine))
+        #f
+        (process-ransom
+          0 ransom (process-mag
+            0 magazine (make-counts 0))))))
+  (define always-true
+    (lambda (ransom magazine)
+      #t))
+  (define always-false
+    (lambda (ransom magazine)
+      #f))
+  (define solve
+    (lambda (ransom magazine)
+      (can-construct
+        ransom magazine)))
+  (define run-case
+    (lambda (n r m)
+      (begin
+        (display "CASE")
+        (display n)
+        (display "=")
+        (display (if (solve
+              r m)
+            "true"
+            "false"))
+        (newline))))
+  (define run-cases
+    (lambda ()
+      (begin
+        (run-case
+          0 "a" "b")
+        (run-case
+          1 "aa" "ab")
+        (run-case
+          2 "aa" "aab")
+        (run-case
+          3 "abc" "aabbcc")
+        (run-case
+          4 "abc" "abcc")
+        (run-case
+          5 "abcd" "abc")
+        (run-case
+          6 "" "abc")
+        (run-case
+          7 "aabbcc" "abcabc"))))
+  (run-cases))
