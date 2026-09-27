@@ -29,7 +29,7 @@ _FORBIDDEN = {
 }
 _SECRET_ENV = ("LLM_API_KEY", "MINIMAX_API_KEY", "OPENAI_API_KEY", "AUTHORIZATION")
 _DENY = ("open(", "os.environ", "subprocess", "socket", "urllib", "urlopen", "/proc")
-_DEFAULT_AURA = "/home/dev/code/grok-dev/aura-grok/build_soft4079/aura"
+_DEFAULT_AURA = "/workspace/aura-grok/build_soft4079/aura"
 _SYSTEM = (
     "You propose a unified diff and nothing else.\n"
     "No prose, no markdown fence, no new files.\n"
