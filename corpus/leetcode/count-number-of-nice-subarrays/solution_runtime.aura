@@ -1,0 +1,95 @@
+; soft_leetcode_runtime slug=count-number-of-nice-subarrays path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=fiber fiber_llm_ok=true
+; selected=llm-2 hits=8/8
+; baseline_hits=4/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define odd?
+    (lambda (x)
+      (=
+        (modulo
+          x 2) 1)))
+  (define at-most-k
+    (lambda (nums k)
+      (let ((n (length nums)))
+        (letrec ((loop (lambda (right left count res)
+            (if (>=
+                right n)
+              res
+              (let ((val (list-ref
+                  nums right)))
+                (let ((new-count (if (odd? (list-ref
+                        nums right))
+                    (+
+                      count 1)
+                    count)))
+                  (if (>
+                      new-count k)
+                    (letrec ((shrink (lambda (l c)
+                        (if (<=
+                            c k)
+                          (loop
+                            (+
+                              right 1) l c (+
+                              res (-
+                                (-
+                                  right l) -1)))
+                          (let ((lv (list-ref
+                              nums l)))
+                            (shrink
+                              (+
+                                l 1) (if (odd? lv)
+                                (-
+                                  c 1)
+                                c)))))))
+                      (shrink
+                        left new-count))
+                    (loop
+                      (+
+                        right 1) left new-count (+
+                        res (-
+                          (-
+                            right left) -1))))))))))
+          (loop
+            0 0 0 0)))))
+  (define solve
+    (lambda (nums k)
+      (-
+        (at-most-k
+          nums k) (at-most-k
+          nums (-
+            k 1)))))
+  (define run-case
+    (lambda (i nums k)
+      (let ((r (solve
+          nums k)))
+        (begin
+          (display "CASE")
+          (display (number->string i))
+          (display "=")
+          (display (number->string r))
+          (newline)))))
+  (run-case
+    0 (quote (1
+        1 2 1 2)) 3)
+  (run-case
+    1 (quote (2
+        2 2 1 2 2 1 2 2 2)) 1)
+  (run-case
+    2 (quote (2
+        2 2 2)) 1)
+  (run-case
+    3 (quote (1
+        1 1 1 1)) 2)
+  (run-case
+    4 (quote (1)) 1)
+  (run-case
+    5 (quote (1)) 2)
+  (run-case
+    6 (quote (1
+        2 3 4 5 6 7)) 2)
+  (run-case
+    7 (quote (2
+        4 6 8 10 12)) 1))

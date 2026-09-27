@@ -800,14 +800,38 @@ def _fail_case_details(tests: list[dict[str, Any]], got: dict[Any, str]) -> list
     return details
 
 
+_TREE_HOSTILE_PREFIXES = (
+    "binary-tree",
+    "same-tree",
+    "symmetric-tree",
+    "invert-binary",
+    "flatten-binary",
+    "construct-binary",
+    "serialize-and-deserialize",
+    "diameter-of-binary",
+    "path-sum",
+    "minimum-depth-of-binary",
+    "maximum-depth-of-binary",
+    "balanced-binary",
+    "validate-binary",
+    "lowest-common-ancestor",
+    "count-complete-tree",
+)
+
+
+def _is_tree_hostile(slug: str) -> bool:
+    s = slug.lower()
+    return any(s.startswith(p) or p in s for p in _TREE_HOSTILE_PREFIXES)
+
+
 def _list_llm_targets(repo: Path, *, limit: int = 12) -> list[str]:
-    """Near-full small partials without solution_runtime full."""
+    """Near-full / mid partials without solution_runtime; skip Soft-hostile trees."""
     root = repo / "corpus" / "leetcode"
     rows: list[tuple[int, int, str]] = []
     for d in sorted(root.iterdir()):
         if not d.is_dir() or (d / "solution_runtime.aura").is_file():
             continue
-        if d.name in RECIPES:
+        if d.name in RECIPES or _is_tree_hostile(d.name):
             continue
         meta_p, tests_p = d / "meta.json", d / "tests.json"
         if not meta_p.is_file() or not tests_p.is_file():
@@ -828,7 +852,7 @@ def _list_llm_targets(repo: Path, *, limit: int = 12) -> list[str]:
             tt = int(v.get("tests_total") or 0)
             if tt and p >= best_p:
                 best_p, best_t = p, tt
-        if best_t and 0 < best_p < best_t and best_p >= best_t - 3:
+        if best_t and 0 < best_p < best_t and best_p >= max(1, best_t - 4):
             rows.append((best_t - best_p, -best_p, d.name))
     rows.sort()
     return [name for _, _, name in rows[:limit]]

@@ -1,0 +1,138 @@
+; soft_leetcode_runtime slug=find-all-anagrams-in-a-string-ii path=llm
+; materialize=proposed_source_fallback worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=fiber fiber_llm_ok=true
+; selected=llm-2 hits=5/8
+; baseline_hits=4/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+;; Aura program: Find All Anagrams in a String (Variant)
+;; Sliding window with frequency counts (using integer counts on 26 letters).
+
+;; --- helpers ---
+
+(define (make-list n x)
+  (if (= n 0)
+      '()
+      (cons x (make-list (- n 1) x))))
+
+(define (char->idx c)
+  (- (char->integer c) (char->integer #\a)))
+
+(define (str-len s) (string-length s))
+
+(define (char-at s i) (string-ref s i))
+
+(define (display-int-list lst)
+  (display "[")
+  (letrec ((loop (lambda (xs first?)
+                   (cond
+                     ((null? xs) #t)
+                     (else
+                      (if first?
+                          (display "")
+                          (display ", "))
+                      (display (car xs))
+                      (loop (cdr xs) #f))))))
+    (loop lst #t))
+  (display "]")
+  (newline))
+
+;; --- frequency counting via 26-element list ---
+
+;; Build zero freq list of length 26
+(define (zero-freq)
+  (make-list 26 0))
+
+;; Increment count for char c in freq (list of 26 ints)
+(define (freq-inc freq c)
+  (let ((idx (char->idx c)))
+    (letrec ((loop (lambda (i xs)
+                     (if (= i idx)
+                         (cons (+ (car xs) 1) (cdr xs))
+                         (cons (car xs) (loop (+ i 1) (cdr xs)))))))
+      (loop 0 freq))))
+
+;; Decrement count for char c in freq; remove entry if count reaches 0
+(define (freq-dec freq c)
+  (let ((idx (char->idx c)))
+    (letrec ((loop (lambda (i xs)
+                     (if (= i idx)
+                         (let ((cnt (- (car xs) 1)))
+                           (if (= cnt 0)
+                               (cdr xs)
+                               (cons cnt (cdr xs))))
+                         (cons (car xs) (loop (+ i 1) (cdr xs)))))))
+      (loop 0 freq))))
+
+;; Build freq from string segment [lo, hi)
+(define (build-freq s lo hi)
+  (letrec ((loop (lambda (i acc)
+                   (if (= i hi)
+                       acc
+                       (loop (+ i 1) (freq-inc acc (char-at s i)))))))
+    (loop lo (zero-freq))))
+
+;; Compare two frequency lists (both length 26, zeros handled naturally)
+(define (freq-equal? a b)
+  (cond
+    ((null? a) (null? b))
+    ((null? b) #f)
+    ((not (= (car a) (car b))) #f)
+    (else (freq-equal? (cdr a) (cdr b)))))
+
+;; --- sliding window ---
+
+(define (find-anagrams s p)
+  (let ((slen (str-len s))
+        (plen (str-len p)))
+    (if (> plen slen)
+        '()
+        (let* ((target (build-freq p 0 plen))
+               (window (build-freq s 0 plen))
+               (match? (freq-equal? target window)))
+          (letrec ((loop (lambda (i w acc mflag)
+                           (cond
+                             ((> (+ i plen) slen)
+                              acc)
+                             (else
+                              (let ((new-acc (if mflag
+                                                (cons i acc)
+                                                acc)))
+                                (if (= (+ i plen) slen)
+                                    new-acc
+                                    (let* ((out-c (char-at s i))
+                                           (in-c  (char-at s (+ i plen)))
+                                           (w2 (freq-dec w out-c))
+                                           (w3 (freq-inc w2 in-c))
+                                           (new-mflag (freq-equal? target w3)))
+                                      (loop (+ i 1) w3 new-acc new-mflag)))))))))
+            (reverse (loop 0 window '() match?)))))))
+
+(define (solve s p)
+  (find-anagrams s p))
+
+;; --- test driver ---
+
+(define (run-case i s p)
+  (display "CASE")
+  (display i)
+  (display "=")
+  (display-int-list (solve s p)))
+
+(let ((cases (list
+              (cons "cbaebabacd" "abc")
+              (cons "abab" "ab")
+              (cons "aaaaa" "aa")
+              (cons "abcd" "efgh")
+              (cons "abdc" "abcd")
+              (cons "a" "a")
+              (cons "a" "b")
+              (cons "abcabcabc" "abc"))))
+  (letrec ((loop (lambda (cs i)
+                   (if (null? cs)
+                       #t
+                       (begin
+                         (run-case i (car (car cs)) (cdr (car cs)))
+                         (loop (cdr cs) (+ i 1)))))))
+    (loop cases 0)))
+

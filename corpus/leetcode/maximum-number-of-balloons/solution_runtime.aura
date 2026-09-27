@@ -1,0 +1,79 @@
+; soft_leetcode_runtime slug=maximum-number-of-balloons path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=fiber fiber_llm_ok=true
+; selected=llm-2 hits=8/8
+; baseline_hits=8/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define count-char
+    (lambda (s ch)
+      (letrec ((loop (lambda (n s)
+          (if (null? s)
+            n
+            (loop
+              (+
+                n (if (char=?
+                    (car s) ch)
+                  1
+                  0)) (cdr s))))))
+        (loop
+          0 s))))
+  (define string->list
+    (lambda (s)
+      (letrec ((loop (lambda (i acc)
+          (if (=
+              i (string-length s))
+            acc
+            (loop
+              (+
+                i 1) (cons
+                (string-ref
+                  s i) acc))))))
+        (loop
+          0 (quote 0)))))
+  (define min5
+    (lambda (a b c d e)
+      (min
+        a (min
+          b (min
+            c (min
+              d e))))))
+  (define solve
+    (lambda (text)
+      (if (=
+          (string-length text) 0)
+        0
+        (let ((chars (string->list text)))
+          (let ((b-c (count-char
+              chars 98)))
+            (let ((a-c (count-char
+                chars 97)))
+              (let ((l-c (count-char
+                  chars 108)))
+                (let ((o-c (count-char
+                    chars 111)))
+                  (let ((n-c (count-char
+                      chars 110)))
+                    (min5
+                      b-c a-c (quotient
+                        l-c 2) (quotient
+                        o-c 2) n-c))))))))))
+  (let ((cases (list
+      "balloonballoon" "bababnlnonlno" "zzz" "balon" "balloon" "bbaallllooonn" "loonbalxballoon" "")))
+    (begin
+      (define run
+        (lambda (i cases)
+          (if (null? cases)
+            (quote 0)
+            (begin
+              (display "CASE")
+              (display (number->string i))
+              (display "=")
+              (display (number->string (solve (car cases))))
+              (newline)
+              (run
+                (+
+                  i 1) (cdr cases))))))
+      (run
+        0 cases))))

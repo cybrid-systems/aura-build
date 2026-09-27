@@ -1,0 +1,176 @@
+; soft_leetcode_runtime slug=grumpy-bookstore-owner path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=fiber fiber_llm_ok=true
+; selected=llm-2 hits=7/7
+; baseline_hits=3/7
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define sum-list
+    (lambda (xs)
+      (if (null? xs)
+        0
+        (+
+          (car xs) (sum-list (cdr xs))))))
+  (define take
+    (lambda (n xs)
+      (if (=
+          n 0)
+        (quote 0)
+        (cons
+          (car xs) (take
+            (-
+              n 1) (cdr xs))))))
+  (define drop
+    (lambda (n xs)
+      (if (=
+          n 0)
+        xs
+        (drop
+          (-
+            n 1) (cdr xs)))))
+  (define length
+    (lambda (xs)
+      (if (null? xs)
+        0
+        (+
+          1 (length (cdr xs))))))
+  (define list-ref
+    (lambda (xs i)
+      (if (=
+          i 0)
+        (car xs)
+        (list-ref
+          (cdr xs) (-
+            i 1)))))
+  (define natural
+    (lambda (cs gs)
+      (if (null? cs)
+        0
+        (+
+          (if (or
+              (=
+                (car gs) 0) (<=
+                (car cs) (car gs)))
+            (car cs)
+            0) (natural
+            (cdr cs) (cdr gs))))))
+  (define extra
+    (lambda (cs gs)
+      (if (null? cs)
+        0
+        (if (=
+            (car gs) 0)
+          (extra
+            (cdr cs) (cdr gs))
+          (if (<=
+              (car cs) (car gs))
+            (extra
+              (cdr cs) (cdr gs))
+            (+
+              (car cs) (extra
+                (cdr cs) (cdr gs))))))))
+  (define solve
+    (lambda (customers grumpy k)
+      (let ((base (natural
+          customers grumpy)))
+        (let ((first-window (extra
+            (take
+              k customers) (take
+              k grumpy))))
+          (let ((best (letrec ((loop (lambda (i cs-rest gs-rest cur b)
+                (if (null? cs-rest)
+                  b
+                  (let ((out-c (list-ref
+                      customers i)))
+                    (let ((out-g (list-ref
+                        grumpy i)))
+                      (let ((out-val (if (and
+                            (=
+                              out-g 1) (>
+                              out-c out-g))
+                          out-c
+                          0)))
+                        (let ((in-c (car cs-rest)))
+                          (let ((in-g (car gs-rest)))
+                            (let ((in-val (if (and
+                                  (=
+                                    in-g 1) (>
+                                    in-c in-g))
+                                in-c
+                                0)))
+                              (let ((new-cur (+
+                                  (-
+                                    cur out-val) in-val)))
+                                (let ((new-best (if (>
+                                      new-cur b)
+                                    new-cur
+                                    b)))
+                                  (loop
+                                    (+
+                                      i 1) (cdr cs-rest) (cdr gs-rest) new-cur new-best)))))))))))))
+              (loop
+                0 (drop
+                  k customers) (drop
+                  k grumpy) first-window first-window))))
+            (+
+              base best))))))
+  (define customers0 (quote (1
+        0 1 2 1 1 7 5)))
+  (define grumpy0 (quote (0
+        1 0 1 0 1 0 1)))
+  (define k0 3)
+  (define customers1 (quote (1)))
+  (define grumpy1 (quote (0)))
+  (define k1 1)
+  (define customers2 (quote (5)))
+  (define grumpy2 (quote (3)))
+  (define k2 1)
+  (define customers3 (quote (5
+        5 5 5 5)))
+  (define grumpy3 (quote (0
+        0 0 0 0)))
+  (define k3 2)
+  (define customers4 (quote (10
+        1 0 10)))
+  (define grumpy4 (quote (1
+        0 1 1)))
+  (define k4 2)
+  (define customers5 (quote (2
+        6 3 1 2 4 1 2 8 2)))
+  (define grumpy5 (quote (1
+        0 1 1 0 1 1 1 0 1)))
+  (define k5 3)
+  (define customers6 (quote (1
+        2 3 4 5)))
+  (define grumpy6 (quote (1
+        1 1 1 1)))
+  (define k6 5)
+  (display "CASE0=")
+  (display (solve
+      customers0 grumpy0 k0))
+  (newline)
+  (display "CASE1=")
+  (display (solve
+      customers1 grumpy1 k1))
+  (newline)
+  (display "CASE2=")
+  (display (solve
+      customers2 grumpy2 k2))
+  (newline)
+  (display "CASE3=")
+  (display (solve
+      customers3 grumpy3 k3))
+  (newline)
+  (display "CASE4=")
+  (display (solve
+      customers4 grumpy4 k4))
+  (newline)
+  (display "CASE5=")
+  (display (solve
+      customers5 grumpy5 k5))
+  (newline)
+  (display "CASE6=")
+  (display (solve
+      customers6 grumpy6 k6))
+  (newline))
