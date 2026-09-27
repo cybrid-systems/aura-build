@@ -1,0 +1,21 @@
+; Soft-materialized worldline pick helper (self-evolve runtime)
+; materialize=current-source  fiber_live=true when denseness measured
+; selected=max-loop  denseness=soft_ready_async_denseness_4048
+; incr_proven=false
+; Not stamp dogfood — real kernel helper used by Soft runtime path.
+; soft_export_restored=true  (Soft current-source emptied export list)
+(export pick-best)
+(begin
+  ; Soft dropped export names — restored
+  (define pick-best
+    (lambda (xs)
+      (letrec ((loop (lambda (rest best)
+          (if (null? rest)
+            best
+            (loop
+              (cdr rest) (if (>
+                  (car rest) best)
+                (car rest)
+                best))))))
+        (loop
+          xs -999999)))))

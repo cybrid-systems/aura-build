@@ -208,3 +208,13 @@ def test_build_stamp_body_oneshot_fiber_false():
     assert "; fiber_live=false" in body
     assert '"fiber_live" #f' in body
     assert stamp_banner_agrees(body)
+
+
+def test_helper_candidates_export_pick_best():
+    from aura_build.self_evolve_runtime import _HELPER_CANDIDATES
+
+    assert len(_HELPER_CANDIDATES) >= 2
+    for name, src in _HELPER_CANDIDATES:
+        assert "pick-best" in src
+        assert "(export pick-best)" in src
+        assert name

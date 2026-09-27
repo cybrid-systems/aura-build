@@ -1013,27 +1013,16 @@ def _minimax_propose_aura(
 
 
 
-_SESSION_TRANSIENT = (
-    "serve_sock_missing",
-    "serve_session_timeout",
-    "serve_sock_empty",
-    "serve_sock_error",
-    "timeout",
-)
-
-
 def _is_session_transient(msg: object) -> bool:
-    s = str(msg or "")
-    return any(tok in s for tok in _SESSION_TRANSIENT)
+    from aura_build.serve_session import is_session_transient
+
+    return is_session_transient(msg)
 
 
 def _stop_quiet(sess: Any) -> None:
-    if sess is None:
-        return
-    try:
-        sess.stop()
-    except Exception:
-        pass
+    from aura_build.serve_session import stop_quiet
+
+    stop_quiet(sess)
 
 
 def _restart_soft_session(
@@ -1043,12 +1032,12 @@ def _restart_soft_session(
     scratch: Path,
     cfg: Any,
 ) -> tuple[Any, bool, bool, dict[str, Any]]:
-    """Stop any dead Soft serve and start a fresh session; re-probe denseness/fiber-llm."""
+    """Restart Soft serve via shared serve_session.restart_session; re-probe denseness/fiber-llm."""
     from aura_build.fiber_llm import fiber_llm_probe
     from aura_build.llm_dogfood import fiber_fanout_probe
-    from aura_build.serve_session import start_session
+    from aura_build.serve_session import restart_session
 
-    sess = start_session(aura_bin=aura_bin, harness_root=harness_root, force=True)
+    sess = restart_session(aura_bin=aura_bin, harness_root=harness_root)
     denseness = fiber_fanout_probe(sess, n=2, timeout_s=6.0)
     fiber_live = bool(denseness.get("ok"))
     probe = fiber_llm_probe(sess, scratch_dir=scratch, timeout_s=30.0, config=cfg)

@@ -271,3 +271,22 @@ def test_pursue_session_mutate_rebind(tmp_path: Path) -> None:
     assert ep["runtime"]["worldline_backend"] == "serve_mutate_rebind"
     assert ep["runtime"]["dogfood"]["cold_spawns"] == 0
     stop_session(harness_root=tmp_path)
+
+
+def test_is_session_transient_tokens():
+    from aura_build.serve_session import is_session_transient
+
+    assert is_session_transient("serve_sock_missing")
+    assert is_session_transient("err:serve_session_timeout")
+    assert is_session_transient("serve_sock_empty")
+    assert is_session_transient("serve_sock_error:Connection refused")
+    assert is_session_transient("timeout")
+    assert not is_session_transient("ok")
+    assert not is_session_transient("closure")
+    assert not is_session_transient(None)
+
+
+def test_stop_quiet_none_ok():
+    from aura_build.serve_session import stop_quiet
+
+    stop_quiet(None)  # must not raise

@@ -1272,6 +1272,76 @@ def stop_session(*, harness_root: Path | str | None = None) -> dict[str, Any]:
     return {"stopped": stopped or marker is not None, "serve_attach_ok": False}
 
 
+
+# --- Soft session resilience (shared by Soft leetcode + self-evolve runtime) ---
+
+SESSION_TRANSIENT_TOKENS = (
+    "serve_sock_missing",
+    "serve_session_timeout",
+    "serve_sock_empty",
+    "serve_sock_error",
+    "timeout",
+)
+
+
+def is_session_transient(msg: object) -> bool:
+    """True when Soft sock/session died mid-batch (restart Soft serve, do not invent ok)."""
+    s = str(msg or "")
+    return any(tok in s for tok in SESSION_TRANSIENT_TOKENS)
+
+
+def stop_quiet(sess: ServeSession | None) -> None:
+    if sess is None:
+        return
+    try:
+        sess.stop(clear=True)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def restart_session(
+    *,
+    aura_bin: str | None = None,
+    harness_root: Path | str | None = None,
+) -> ServeSession:
+    """Force-stop any Soft serve for harness_root and start a fresh session."""
+    hroot = Path(harness_root) if harness_root else Path(
+        os.environ.get("AURA_BUILD_HARNESS_ROOT") or ".aura-build"
+    )
+    stop_session(harness_root=hroot)
+    return start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+
+
+def raw_line_resilient(
+    sess: ServeSession,
+    line: str,
+    *,
+    aura_bin: str | None = None,
+    harness_root: Path | str | None = None,
+    timeout_s: float = 10.0,
+    max_restarts: int = 1,
+) -> tuple[ServeSession, dict[str, Any]]:
+    """``raw_line`` with Soft serve restart on transient sock/timeout errors.
+
+    Returns ``(session, response)``. Session may be a fresh handle after restart.
+    Does not invent fiber_live / Soft Ready — caller must re-probe denseness.
+    """
+    hroot = Path(harness_root) if harness_root else sess.harness_root
+    bin_path = aura_bin or sess.aura_bin
+    r = sess.raw_line(line, timeout_s=timeout_s)
+    msg = r.get("msg") or r.get("status")
+    if r.get("status") == "ok" or not is_session_transient(msg):
+        return sess, r
+    for _ in range(max(0, int(max_restarts))):
+        stop_quiet(sess)
+        sess = restart_session(aura_bin=bin_path, harness_root=hroot)
+        r = sess.raw_line(line, timeout_s=timeout_s)
+        msg = r.get("msg") or r.get("status")
+        if r.get("status") == "ok" or not is_session_transient(msg):
+            break
+    return sess, r
+
+
 def prefer_session_verify(
     *,
     harness_root: Path | str | None = None,
