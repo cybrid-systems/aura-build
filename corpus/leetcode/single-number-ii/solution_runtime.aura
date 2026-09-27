@@ -1,0 +1,73 @@
+; soft_leetcode_runtime slug=single-number-ii
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; selected_explorer=freq-count hits=8/8
+; baseline_hits=7/8
+; Expected values used only for host scoring, not hardcoded into display.
+(begin
+  (define count-of
+    (lambda (x xs)
+      (if (null? xs)
+        0
+        (if (equal?
+            (car xs) x)
+          (+
+            1 (count-of
+              x (cdr xs)))
+          (count-of
+            x (cdr xs))))))
+  (define find-single
+    (lambda (xs)
+      (let ((all xs))
+        (letrec ((loop (lambda (ys)
+            (if (null? ys)
+              0
+              (if (=
+                  (count-of
+                    (car ys) all) 1)
+                (car ys)
+                (loop (cdr ys)))))))
+          (loop xs)))))
+  (define find-first
+    (lambda (xs)
+      (if (null? xs)
+        0
+        (car xs))))
+  (define solve
+    (lambda (nums)
+      (find-single nums)))
+  (define run-case
+    (lambda (n nums)
+      (begin
+        (display "CASE")
+        (display n)
+        (display "=")
+        (display (solve nums))
+        (newline))))
+  (define run-cases
+    (lambda ()
+      (begin
+        (run-case
+          0 (quote (2
+              2 3 2)))
+        (run-case
+          1 (quote (0
+              1 0 1 0 1 99)))
+        (run-case
+          2 (quote (-5
+              -5 -5 -3)))
+        (run-case
+          3 (quote (1)))
+        (run-case
+          4 (quote (7
+              7 7 5 5 5 9)))
+        (run-case
+          5 (quote (4
+              4 4 4 4 4 42)))
+        (run-case
+          6 (quote (-1
+              -1 -1 2)))
+        (run-case
+          7 (quote (3
+              3 3 -3 -3 -3 8 8 8 100))))))
+  (run-cases))

@@ -1,0 +1,170 @@
+; soft_leetcode_runtime slug=fruit-into-baskets
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; selected_explorer=n2-fixed hits=8/8
+; baseline_hits=6/8
+; Expected values used only for host scoring, not hardcoded into display.
+(begin
+  (define length
+    (lambda (lst)
+      (if (null? lst)
+        0
+        (+
+          1 (length (cdr lst))))))
+  (define list-ref
+    (lambda (lst i)
+      (if (=
+          i 0)
+        (car lst)
+        (list-ref
+          (cdr lst) (-
+            i 1)))))
+  (define fruit-n2
+    (lambda (fruits)
+      (let ((n (length fruits)))
+        (letrec ((loop (lambda (i best)
+            (if (=
+                i n)
+              best
+              (letrec ((inner (lambda (j seen1 v1 seen2 v2 len)
+                  (if (=
+                      j n)
+                    (loop
+                      (+
+                        i 1) (if (>
+                          len best)
+                        len
+                        best))
+                    (if (not seen1)
+                      (inner
+                        (+
+                          j 1) #t (list-ref
+                          fruits j) seen2 v2 (+
+                          len 1))
+                      (if (and
+                          seen1 (not seen2) (=
+                            (list-ref
+                              fruits j) v1))
+                        (inner
+                          (+
+                            j 1) seen1 v1 seen2 v2 (+
+                            len 1))
+                        (if (and
+                            seen1 (not seen2))
+                          (inner
+                            (+
+                              j 1) seen1 v1 #t (list-ref
+                              fruits j) (+
+                              len 1))
+                          (if (and
+                              seen1 seen2 (or
+                                (=
+                                  (list-ref
+                                    fruits j) v1) (=
+                                  (list-ref
+                                    fruits j) v2)))
+                            (inner
+                              (+
+                                j 1) seen1 v1 seen2 v2 (+
+                                len 1))
+                            (loop
+                              (+
+                                i 1) (if (>
+                                  len best)
+                                len
+                                best))))))))))
+                (inner
+                  i #f 0 #f 0 0))))))
+          (loop
+            0 0)))))
+  (define fruit-broken
+    (lambda (fruits)
+      (let ((n (length fruits)))
+        (letrec ((loop (lambda (i best)
+            (if (=
+                i n)
+              best
+              (letrec ((inner (lambda (j seen1 v1 seen2 v2 len)
+                  (if (=
+                      j n)
+                    (if (>
+                        len best)
+                      len
+                      best)
+                    (if (not seen1)
+                      (inner
+                        (+
+                          j 1) #t (list-ref
+                          fruits j) seen2 v2 (+
+                          len 1))
+                      (if (and
+                          seen1 (not seen2) (=
+                            (list-ref
+                              fruits j) v1))
+                        (inner
+                          (+
+                            j 1) seen1 v1 seen2 v2 (+
+                            len 1))
+                        (if (and
+                            seen1 (not seen2))
+                          (inner
+                            (+
+                              j 1) seen1 v1 #t (list-ref
+                              fruits j) (+
+                              len 1))
+                          (if (and
+                              seen1 seen2 (or
+                                (=
+                                  (list-ref
+                                    fruits j) v1) (=
+                                  (list-ref
+                                    fruits j) v2)))
+                            (inner
+                              (+
+                                j 1) seen1 v1 seen2 v2 (+
+                                len 1))
+                            (if (>
+                                len best)
+                              len
+                              best)))))))))
+                (inner
+                  i #f 0 #f 0 0))))))
+          (loop
+            0 0)))))
+  (define solve
+    (lambda (fruits)
+      (fruit-n2 fruits)))
+  (define run-case
+    (lambda (n fruits)
+      (begin
+        (display "CASE")
+        (display n)
+        (display "=")
+        (display (solve fruits))
+        (newline))))
+  (define run-cases
+    (lambda ()
+      (begin
+        (run-case
+          0 (quote (3
+              3 3 1 2 1 1 2 3 3 4)))
+        (run-case
+          1 (quote (1
+              2 1)))
+        (run-case
+          2 (quote (1
+              2 3 4)))
+        (run-case
+          3 (quote (1
+              1 1 1)))
+        (run-case
+          4 (quote (1 2)))
+        (run-case
+          5 (quote (2
+              1 2 1)))
+        (run-case
+          6 (quote (0
+              1 2 2 3 4 4 5)))
+        (run-case
+          7 (quote (5))))))
+  (run-cases))

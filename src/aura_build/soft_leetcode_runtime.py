@@ -178,9 +178,113 @@ _TOP_K = Recipe(
 
 # two-sum style order: if tests expect sorted pairs
 
+
+_SINGLE_II = Recipe(
+    slug="single-number-ii",
+    workspace=r"""
+(define (count-of x xs)
+  (cond ((null? xs) 0)
+        ((equal? (car xs) x) (+ 1 (count-of x (cdr xs))))
+        (else (count-of x (cdr xs)))))
+(define (find-single xs)
+  (let ((all xs))
+    (let loop ((ys xs))
+      (cond ((null? ys) 0)
+            ((= (count-of (car ys) all) 1) (car ys))
+            (else (loop (cdr ys)))))))
+(define (find-first xs)
+  (if (null? xs) 0 (car xs)))
+(define (solve nums) (find-single nums))
+(define (run-case n nums)
+  (display "CASE") (display n) (display "=")
+  (display (solve nums)) (newline))
+(define (run-cases)
+  (begin
+    (run-case 0 '(2 2 3 2))
+    (run-case 1 '(0 1 0 1 0 1 99))
+    (run-case 2 '(-5 -5 -5 -3))
+    (run-case 3 '(1))
+    (run-case 4 '(7 7 7 5 5 5 9))
+    (run-case 5 '(4 4 4 4 4 4 42))
+    (run-case 6 '(-1 -1 -1 2))
+    (run-case 7 '(3 3 3 -3 -3 -3 8 8 8 100))))
+(run-cases)
+""",
+    explorers=[
+        ("freq-count", "(lambda (nums) (find-single nums))"),
+        ("first-only", "(lambda (nums) (find-first nums))"),
+    ],
+)
+
+_FRUIT = Recipe(
+    slug="fruit-into-baskets",
+    workspace=r"""
+(define (length lst)
+  (if (null? lst) 0 (+ 1 (length (cdr lst)))))
+(define (list-ref lst i)
+  (if (= i 0) (car lst) (list-ref (cdr lst) (- i 1))))
+(define (fruit-n2 fruits)
+  (let ((n (length fruits)))
+    (let loop ((i 0) (best 0))
+      (if (= i n)
+          best
+          (let inner ((j i) (seen1 #f) (v1 0) (seen2 #f) (v2 0) (len 0))
+            (cond
+              ((= j n)
+               (loop (+ i 1) (if (> len best) len best)))
+              ((not seen1)
+               (inner (+ j 1) #t (list-ref fruits j) seen2 v2 (+ len 1)))
+              ((and seen1 (not seen2) (= (list-ref fruits j) v1))
+               (inner (+ j 1) seen1 v1 seen2 v2 (+ len 1)))
+              ((and seen1 (not seen2))
+               (inner (+ j 1) seen1 v1 #t (list-ref fruits j) (+ len 1)))
+              ((and seen1 seen2 (or (= (list-ref fruits j) v1) (= (list-ref fruits j) v2)))
+               (inner (+ j 1) seen1 v1 seen2 v2 (+ len 1)))
+              (else
+               (loop (+ i 1) (if (> len best) len best)))))))))
+(define (fruit-broken fruits)
+  (let ((n (length fruits)))
+    (let loop ((i 0) (best 0))
+      (if (= i n)
+          best
+          (let inner ((j i) (seen1 #f) (v1 0) (seen2 #f) (v2 0) (len 0))
+            (cond
+              ((= j n) (if (> len best) len best))
+              ((not seen1)
+               (inner (+ j 1) #t (list-ref fruits j) seen2 v2 (+ len 1)))
+              ((and seen1 (not seen2) (= (list-ref fruits j) v1))
+               (inner (+ j 1) seen1 v1 seen2 v2 (+ len 1)))
+              ((and seen1 (not seen2))
+               (inner (+ j 1) seen1 v1 #t (list-ref fruits j) (+ len 1)))
+              ((and seen1 seen2 (or (= (list-ref fruits j) v1) (= (list-ref fruits j) v2)))
+               (inner (+ j 1) seen1 v1 seen2 v2 (+ len 1)))
+              (else (if (> len best) len best))))))))
+(define (solve fruits) (fruit-n2 fruits))
+(define (run-case n fruits)
+  (display "CASE") (display n) (display "=")
+  (display (solve fruits)) (newline))
+(define (run-cases)
+  (begin
+    (run-case 0 '(3 3 3 1 2 1 1 2 3 3 4))
+    (run-case 1 '(1 2 1))
+    (run-case 2 '(1 2 3 4))
+    (run-case 3 '(1 1 1 1))
+    (run-case 4 '(1 2))
+    (run-case 5 '(2 1 2 1))
+    (run-case 6 '(0 1 2 2 3 4 4 5))
+    (run-case 7 '(5))))
+(run-cases)
+""",
+    explorers=[
+        ("n2-fixed", "(lambda (fruits) (fruit-n2 fruits))"),
+        ("n2-broken", "(lambda (fruits) (fruit-broken fruits))"),
+    ],
+)
+
+
 RECIPES: dict[str, Recipe] = {
     r.slug: r
-    for r in (_INTERSECTION, _TOP_K)
+    for r in (_INTERSECTION, _TOP_K, _SINGLE_II, _FRUIT)
 }
 
 
@@ -357,19 +461,16 @@ def repair_recipe(
             }
         sess.raw_line("(eval-current)", timeout_s=SOFT_MUTATE_TIMEOUT_S)
 
+        # Explorer scoring mutates the parent FlatAST sequentially.
+        # fiber:spawn isolation is not reliable for mutate→parent run-cases
+        # (mutations may not apply, or leak inconsistently). denseness probe
+        # still measures fiber_live; worldline_backend reflects that honesty.
         for name, body in recipe.explorers:
             body_esc = body.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
-            if fiber_live:
-                line = (
-                    f'(fiber:join (fiber:spawn (lambda () '
-                    f'(begin (mutate:rebind "solve" "{body_esc}" "exp-{name}") '
-                    f'(eval-current) 1))))'
-                )
-            else:
-                line = (
-                    f'(begin (mutate:rebind "solve" "{body_esc}" "exp-{name}") '
-                    f'(eval-current) 1)'
-                )
+            line = (
+                f'(begin (mutate:rebind "solve" "{body_esc}" "exp-{name}") '
+                f'(eval-current) 1)'
+            )
             mut = sess.raw_line(line, timeout_s=SOFT_MUTATE_TIMEOUT_S)
             run = sess.raw_line("(run-cases)", timeout_s=SOFT_MUTATE_TIMEOUT_S)
             stdout = str(run.get("display") or "")
@@ -380,7 +481,8 @@ def repair_recipe(
                     "body": body,
                     "hits": hits,
                     "total": total,
-                    "via": "fiber:spawn" if fiber_live else "mutate:rebind",
+                    "via": "mutate:rebind",
+                    "fiber_live_session": fiber_live,
                     "mut_status": mut.get("status"),
                     "run_status": run.get("status"),
                 }
@@ -395,7 +497,12 @@ def repair_recipe(
                 "denseness": denseness,
             }
 
-        best = max(explorers, key=lambda e: (int(e["hits"]), e["name"]))
+        def _rank(e: dict[str, Any]) -> tuple:
+            # Prefer more hits; deprioritize known-dummy explorers on ties.
+            dummy = 1 if e["name"] in ("zero", "n2-broken", "xor-wrong") else 0
+            return (int(e["hits"]), -dummy, e["name"])
+
+        best = max(explorers, key=_rank)
         # only materialize if beats baseline or is full
         if int(best["hits"]) < int(baseline.get("hits") or 0):
             return {
