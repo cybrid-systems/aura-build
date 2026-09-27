@@ -548,7 +548,17 @@ def _run_serve_fiber(
                 "aura_issue_candidate": True,
             }
 
-        best = max(ok_ex, key=lambda e: (int(e["observed"]), int(e["bump"])))
+        from aura_build.soft_select import select_explorer_soft
+
+        best, soft_sel = select_explorer_soft(
+            ok_ex,
+            score_key="observed",
+            sess=sess,
+            repo=repo,
+            tie_key=lambda e: (int(e["observed"]), int(e["bump"])),
+            require_ok=True,
+        )
+        assert best is not None
         best_b = int(best["bump"])
         best_v = int(best["observed"])
 
@@ -621,6 +631,12 @@ def _run_serve_fiber(
             "explore_parallel": "fiber_sequential_oneshots",
             "incr_proven": False,
             "fiber_live": True,
+            "soft_select": {
+                "via": soft_sel.get("via"),
+                "reason": soft_sel.get("reason"),
+                "value": soft_sel.get("value"),
+                "helper": soft_sel.get("helper"),
+            },
             "session_model": "serve",
             "denseness": {
                 "ok": True,

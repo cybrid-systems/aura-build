@@ -29,6 +29,17 @@ from pathlib import Path
 from typing import Any, Callable
 
 from aura_build.self_evolve_host import git_commit_and_maybe_push
+from aura_build.soft_select import select_explorer_soft
+
+
+def _soft_sel_meta(soft_sel: dict[str, Any] | None) -> dict[str, Any]:
+    if not soft_sel:
+        return {"via": "unset"}
+    return {
+        k: soft_sel.get(k)
+        for k in ("via", "reason", "value", "helper", "soft_value")
+        if soft_sel.get(k) is not None or k in ("via", "reason")
+    }
 
 DEFAULT_SOFT = "/workspace/aura-grok/build_soft4079/aura"
 # Refuse Soft in-session scoring when any test list JSON exceeds this (chars).
@@ -651,7 +662,14 @@ def repair_recipe(
             dummy = 1 if e["name"] in ("zero", "n2-broken", "xor-wrong") else 0
             return (int(e["hits"]), -dummy, e["name"])
 
-        best = max(explorers, key=_rank)
+        best, soft_sel = select_explorer_soft(
+            explorers,
+            score_key="hits",
+            sess=sess,
+            repo=repo,
+            tie_key=_rank,
+        )
+        assert best is not None
         # only materialize if beats baseline or is full
         if int(best["hits"]) < int(baseline.get("hits") or 0):
             return {
@@ -662,6 +680,7 @@ def repair_recipe(
                 "selected": best,
                 "explorers": explorers,
                 "fiber_live": fiber_live,
+                "soft_select": _soft_sel_meta(soft_sel),
                 "denseness": denseness,
             }
 
@@ -728,6 +747,7 @@ def repair_recipe(
             "selected": best,
             "explorers": explorers,
             "fiber_live": fiber_live,
+            "soft_select": _soft_sel_meta(soft_sel),
             "incr_proven": False,
             "worldline_backend": "fiber_graph" if fiber_live else "serve_mutate",
             "denseness": {
@@ -1275,7 +1295,17 @@ def repair_llm(
                 "fiber_live": fiber_live,
             }
 
-        best = max(explorers, key=lambda e: (int(e["hits"]), 0 if e["name"] != "baseline" else -1, e["name"]))
+        def _llm_rank(e: dict[str, Any]) -> tuple:
+            return (int(e["hits"]), 0 if e["name"] != "baseline" else -1, e["name"])
+
+        best, soft_sel = select_explorer_soft(
+            explorers,
+            score_key="hits",
+            sess=sess,
+            repo=repo,
+            tie_key=_llm_rank,
+        )
+        assert best is not None
         base_hits = int(baseline.get("hits") or 0)
         best_hits = int(best["hits"])
         # Strict improvement only (do not rewrite already-full Soft baselines).
@@ -1293,6 +1323,7 @@ def repair_llm(
                 "llm": llm_meta,
                 "fiber_live": fiber_live,
                 "fiber_llm_ok": fiber_llm_ok,
+                "soft_select": _soft_sel_meta(soft_sel),
                 "denseness": {"ok": denseness.get("ok"), "note": denseness.get("note")},
             }
 
@@ -1409,6 +1440,7 @@ def repair_llm(
             ],
             "fiber_live": fiber_live,
             "fiber_llm_ok": fiber_llm_ok,
+            "soft_select": _soft_sel_meta(soft_sel),
             "incr_proven": False,
             "worldline_backend": "fiber_graph" if fiber_live else "serve_mutate",
             "denseness": {"ok": denseness.get("ok"), "note": denseness.get("note")},
