@@ -457,8 +457,13 @@ def build_parser() -> argparse.ArgumentParser:
             "select-best -> (current-source) -> solution_runtime.aura -> commit"
         ),
     )
-    _opt(leetcode, "--slug", default="top-k-frequent-elements", help="recipe slug (see soft_leetcode_runtime.RECIPES)")
+    _opt(leetcode, "--slug", default="", help="problem slug (recipe or --llm Soft MiniMax path)")
     _opt(leetcode, "--batch", action="store_true", help="run all registered small Soft recipes")
+    _opt(leetcode, "--llm", action="store_true", help="MiniMax propose-only Soft set-code worldlines")
+    _opt(leetcode, "--batch-llm", action="store_true", help="LLM Soft path over near-full small partials")
+    _opt(leetcode, "--proposals", type=int, default=2, help="MiniMax proposals per slug (default 2)")
+    _opt(leetcode, "--limit", type=int, default=8, help="max slugs for --batch-llm")
+    _opt(leetcode, "--env-file", default="", help="MiniMax env file (default ~/.config/aura-build/minimax.env)")
     _opt(leetcode, "--no-push", action="store_true")
     _opt(leetcode, "--no-commit", action="store_true")
     _common(leetcode, aura=True, harness=True)

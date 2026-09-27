@@ -10,6 +10,11 @@ Hardening:
   - Soft oneshot verify timeout bounded.
 
 No expected-answer hardcoding into display. Never invent fiber_live/incr_proven.
+
+LLM path (--llm / --batch-llm): MiniMax propose-only full Aura candidates → Soft
+set-code worldlines → in-session CASE score → select-best → current-source materialize.
+Prefer fiber http-post when measured; else host MiniMax. Recipes still used when slug matches
+and --llm is not forced.
 """
 
 from __future__ import annotations
@@ -738,6 +743,510 @@ def repair_recipe(
                 pass
 
 
+
+# --- MiniMax Soft-runtime logic repair ------------------------------------
+
+LLM_SYSTEM = """You repair a failing Aura (Lisp-like) program for an algorithm problem.
+Rules:
+- Output ONE complete Aura program in a ```aura fence (full file, not a patch).
+- Keep (solve ...) as the algorithm entry; fix unbound names, parse errors, and wrong logic.
+- You may use helpers; prefer plain Scheme-like Aura (define/cond/let/lambda). Avoid require unless needed.
+- Use failing CASE diffs and stderr as clues. Do NOT hardcode expected CASE outputs as bare
+  display strings without calling solve — still compute via solve for each embedded input.
+- At the end, for each test input, call solve and print:
+  (display "CASEi=") (display <result>) (newline)
+  Prefer printing booleans as true/false strings; lists as compact JSON-like [a,b] when tests expect that.
+- Prefer #t/#f internally. Keep programs small. No secrets.
+"""
+
+
+def _soft_escape(src: str) -> str:
+    return src.strip().replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+
+def _pick_baseline(pdir: Path, tests: list[dict[str, Any]], *, aura_bin: str, repo: Path) -> dict[str, Any]:
+    baseline: dict[str, Any] = {"ok": False, "hits": 0, "total": len(tests)}
+    for cand in ("solution_repair.aura", "solution_2.aura", "solution.aura"):
+        cp = pdir / cand
+        if not cp.is_file():
+            continue
+        sc = score_aura_file(repo, cp, tests, aura_bin=aura_bin)
+        if int(sc.get("hits") or 0) >= int(baseline.get("hits") or 0):
+            baseline = dict(sc)
+            baseline["aura_file"] = cand
+            baseline["src"] = cp.read_text(encoding="utf-8")
+    return baseline
+
+
+def _fail_case_details(tests: list[dict[str, Any]], got: dict[Any, str]) -> list[dict[str, Any]]:
+    details: list[dict[str, Any]] = []
+    for t in tests:
+        tid = int(t.get("id", 0))
+        exp = str(t.get("expected", "")).strip()
+        g = got.get(tid)
+        if g is None:
+            g = got.get(str(tid))
+        ok = g is not None and _values_match(str(g), exp)
+        if not ok:
+            details.append(
+                {
+                    "id": tid,
+                    "ok": False,
+                    "got": g,
+                    "expected": exp,
+                    "input": t.get("input"),
+                }
+            )
+    return details
+
+
+def _list_llm_targets(repo: Path, *, limit: int = 12) -> list[str]:
+    """Near-full small partials without solution_runtime full."""
+    root = repo / "corpus" / "leetcode"
+    rows: list[tuple[int, int, str]] = []
+    for d in sorted(root.iterdir()):
+        if not d.is_dir() or (d / "solution_runtime.aura").is_file():
+            continue
+        if d.name in RECIPES:
+            continue
+        meta_p, tests_p = d / "meta.json", d / "tests.json"
+        if not meta_p.is_file() or not tests_p.is_file():
+            continue
+        try:
+            tests = json.loads(tests_p.read_text(encoding="utf-8"))
+            meta = json.loads(meta_p.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if not isinstance(tests, list) or not tests:
+            continue
+        emb = max_embedded_list_chars(tests)
+        if emb > MAX_LIST_JSON_CHARS:
+            continue
+        best_p, best_t = -1, 0
+        for v in meta.get("variants") or []:
+            p = int(v.get("tests_passed") or 0)
+            tt = int(v.get("tests_total") or 0)
+            if tt and p >= best_p:
+                best_p, best_t = p, tt
+        if best_t and 0 < best_p < best_t and best_p >= best_t - 3:
+            rows.append((best_t - best_p, -best_p, d.name))
+    rows.sort()
+    return [name for _, _, name in rows[:limit]]
+
+
+def _minimax_propose_aura(
+    *,
+    slug: str,
+    problem_md: str,
+    prior_src: str,
+    stderr_snippet: str,
+    fail_details: list[dict[str, Any]],
+    tests: list[dict[str, Any]],
+    cfg: Any,
+    sess: Any | None,
+    fiber_llm_ok: bool,
+    scratch: Path,
+    temperature: float,
+    n: int = 2,
+) -> tuple[list[str], dict[str, Any]]:
+    """Propose-only MiniMax: return list of aura sources + meta (llm_via measured)."""
+    from aura_build.fiber_llm import fiber_chat_completions
+    from aura_build.minimax import chat_completions, extract_aura_source
+
+    fail_lines = []
+    for d in fail_details[:12]:
+        fail_lines.append(
+            f"- CASE{d.get('id')} input={json.dumps(d.get('input'), ensure_ascii=False)}"
+            f" got={d.get('got')!r} expected={d.get('expected')!r}"
+        )
+    if not fail_lines:
+        fail_lines = ["(no CASE diffs; rely on stderr / prior)"]
+    user = (
+        f"Slug: {slug}\n\nProblem:\n{problem_md[:1800]}\n\n"
+        f"Prior Aura source (fix):\n```aura\n{prior_src[:5500]}\n```\n\n"
+        f"stderr (truncated):\n{(stderr_snippet or '')[:800]}\n\n"
+        f"Failing CASE diffs (fix; do not hardcode expected into display):\n"
+        + "\n".join(fail_lines)
+        + "\n\nWrite a repaired complete solution.aura now."
+    )
+    messages = [
+        {"role": "system", "content": LLM_SYSTEM},
+        {"role": "user", "content": user},
+    ]
+    sources: list[str] = []
+    meta: dict[str, Any] = {"attempts": [], "llm_via": "none", "llm_ok": False}
+    for i in range(max(1, n)):
+        temp = temperature + 0.15 * i
+        attempt: dict[str, Any] = {"i": i, "temperature": temp}
+        resp: dict[str, Any] = {}
+        via = "host"
+        if fiber_llm_ok and sess is not None:
+            try:
+                resp = fiber_chat_completions(
+                    sess,
+                    messages,
+                    config=cfg,
+                    scratch_dir=scratch,
+                    temperature=temp,
+                    max_tokens=3500,
+                    timeout_s=120.0,
+                )
+                if resp.get("ok"):
+                    via = "fiber"
+                else:
+                    attempt["fiber_err"] = resp.get("error") or resp.get("reason") or "fiber_not_ok"
+                    # honest fallback to host MiniMax
+                    resp = chat_completions(
+                        messages,
+                        config=cfg,
+                        temperature=temp,
+                        max_tokens=3500,
+                        timeout_s=90.0,
+                    )
+                    via = "host_after_fiber_fail"
+            except Exception as exc:  # noqa: BLE001
+                resp = chat_completions(
+                    messages,
+                    config=cfg,
+                    temperature=temp,
+                    max_tokens=3500,
+                    timeout_s=90.0,
+                )
+                via = "host_after_fiber_exc"
+                attempt["fiber_exc"] = f"{type(exc).__name__}:{exc}"
+        else:
+            resp = chat_completions(
+                messages,
+                config=cfg,
+                temperature=temp,
+                max_tokens=3500,
+                timeout_s=90.0,
+            )
+            via = "host"
+        attempt["via"] = via
+        attempt["ok"] = bool(resp.get("ok"))
+        attempt["error"] = resp.get("error") or ""
+        meta["attempts"].append(attempt)
+        if not resp.get("ok"):
+            continue
+        src = extract_aura_source(str(resp.get("content") or ""))
+        if src and "solve" in src and len(src) < 24000:
+            sources.append(src)
+            meta["llm_ok"] = True
+            meta["llm_via"] = via if meta["llm_via"] == "none" else meta["llm_via"]
+            meta["model"] = resp.get("model") or getattr(cfg, "model", "")
+    # Prefer reporting fiber if any attempt used it successfully
+    if any(a.get("via") == "fiber" and a.get("ok") for a in meta["attempts"]):
+        meta["llm_via"] = "fiber"
+    return sources, meta
+
+
+def _session_score_src(
+    sess: Any,
+    src: str,
+    tests: list[dict[str, Any]],
+    *,
+    timeout_s: float = SOFT_MUTATE_TIMEOUT_S,
+) -> dict[str, Any]:
+    esc = _soft_escape(src)
+    boot = sess.raw_line(f'(set-code "{esc}")', timeout_s=min(30.0, timeout_s + 5))
+    if boot.get("status") != "ok":
+        return {
+            "ok": False,
+            "hits": 0,
+            "total": len(tests),
+            "status": boot.get("status"),
+            "msg": boot.get("msg"),
+            "reason": "set_code_failed",
+        }
+    ev = sess.raw_line("(eval-current)", timeout_s=timeout_s)
+    # Top-level CASE prints often appear during eval-current
+    stdout = str(ev.get("display") or "")
+    if "CASE" not in stdout:
+        run = sess.raw_line("(run-cases)", timeout_s=timeout_s)
+        if run.get("status") == "ok":
+            stdout = str(run.get("display") or "")
+        else:
+            # try common harness names
+            for form in ("(run-tests)", "(main)", "(test-all)"):
+                run = sess.raw_line(form, timeout_s=timeout_s)
+                if "CASE" in str(run.get("display") or ""):
+                    stdout = str(run.get("display") or "")
+                    break
+    hits, total, got = _score_stdout(stdout, tests)
+    return {
+        "ok": hits == total and total > 0,
+        "hits": hits,
+        "total": total,
+        "got": {str(k): v for k, v in got.items()},
+        "eval_status": ev.get("status"),
+        "stdout_head": stdout[:240],
+    }
+
+
+def repair_llm(
+    repo: Path,
+    slug: str,
+    *,
+    aura_bin: str,
+    harness_root: Path | None = None,
+    env_file: str | Path | None = None,
+    proposals: int = 2,
+) -> dict[str, Any]:
+    """Soft serve + MiniMax propose-only → set-code worldlines → current-source."""
+    from aura_build.fiber_llm import fiber_llm_probe
+    from aura_build.llm_dogfood import fiber_fanout_probe
+    from aura_build.minimax import load_minimax_config
+    from aura_build.serve_session import start_session
+
+    pdir = repo / "corpus" / "leetcode" / slug
+    if not pdir.is_dir():
+        return {"ok": False, "reason": "missing_problem", "slug": slug}
+    tests = json.loads((pdir / "tests.json").read_text(encoding="utf-8"))
+    emb = max_embedded_list_chars(tests)
+    if emb > MAX_LIST_JSON_CHARS:
+        return {
+            "ok": False,
+            "reason": f"tests_too_large:{emb}>{MAX_LIST_JSON_CHARS}",
+            "slug": slug,
+            "skipped": True,
+        }
+    problem_md = ""
+    if (pdir / "problem.md").is_file():
+        problem_md = (pdir / "problem.md").read_text(encoding="utf-8")
+
+    baseline = _pick_baseline(pdir, tests, aura_bin=aura_bin, repo=repo)
+    if not baseline.get("src"):
+        return {"ok": False, "reason": "no_baseline_src", "slug": slug, "baseline": baseline}
+
+    if (pdir / "solution_runtime.aura").is_file():
+        prev = score_aura_file(repo, pdir / "solution_runtime.aura", tests, aura_bin=aura_bin)
+        if prev.get("ok"):
+            return {
+                "ok": True,
+                "reason": "already_full_runtime",
+                "slug": slug,
+                "baseline": {k: baseline.get(k) for k in ("hits", "total", "aura_file", "ok")},
+                "verify": prev,
+                "skipped": True,
+                "fiber_live": False,
+                "out_path": str((pdir / "solution_runtime.aura").relative_to(repo)),
+            }
+
+    env_path = Path(env_file or Path.home() / ".config/aura-build/minimax.env")
+    try:
+        cfg = load_minimax_config(env_file=env_path)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "reason": f"minimax_config:{exc}", "slug": slug}
+
+    # oneshot baseline stderr for prompt
+    env = _aura_env(repo, aura_bin)
+    base_path = pdir / str(baseline.get("aura_file"))
+    try:
+        proc = subprocess.run(
+            [aura_bin, str(base_path)],
+            cwd=str(repo),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=SOFT_VERIFY_TIMEOUT_S,
+            check=False,
+        )
+        stderr_snippet = (proc.stderr or "")[:1200]
+        got_map = {}
+        for line in (proc.stdout or "").splitlines():
+            if line.startswith("CASE") and "=" in line:
+                k, v = line.split("=", 1)
+                try:
+                    got_map[int(k[4:])] = v.strip()
+                except ValueError:
+                    pass
+    except Exception as exc:  # noqa: BLE001
+        stderr_snippet = f"timeout_or_err:{exc}"
+        got_map = {}
+    fail_details = _fail_case_details(tests, got_map)
+
+    hroot = harness_root or (repo / ".aura-build")
+    scratch = hroot / "soft_leetcode_llm" / slug
+    scratch.mkdir(parents=True, exist_ok=True)
+    sess = None
+    fiber_live = False
+    fiber_llm_ok = False
+    denseness: dict[str, Any] = {}
+    llm_meta: dict[str, Any] = {}
+    explorers: list[dict[str, Any]] = []
+
+    try:
+        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+        denseness = fiber_fanout_probe(sess, n=3, timeout_s=8.0)
+        fiber_live = bool(denseness.get("ok"))
+        probe = fiber_llm_probe(sess, scratch_dir=scratch, timeout_s=45.0, config=cfg)
+        fiber_llm_ok = bool(probe.get("ok"))
+
+        proposals, llm_meta = _minimax_propose_aura(
+            slug=slug,
+            problem_md=problem_md,
+            prior_src=str(baseline.get("src") or ""),
+            stderr_snippet=stderr_snippet,
+            fail_details=fail_details,
+            tests=tests,
+            cfg=cfg,
+            sess=sess,
+            fiber_llm_ok=fiber_llm_ok,
+            scratch=scratch,
+            temperature=0.25,
+            n=proposals,
+        )
+        llm_meta["fiber_llm_probe"] = {
+            "ok": probe.get("ok"),
+            "reason": probe.get("reason") or probe.get("note"),
+        }
+
+        candidates: list[tuple[str, str]] = [("baseline", str(baseline["src"]))]
+        for i, src in enumerate(proposals):
+            candidates.append((f"llm-{i}", src))
+
+        for name, src in candidates:
+            sc = _session_score_src(sess, src, tests)
+            explorers.append(
+                {
+                    "name": name,
+                    "hits": int(sc.get("hits") or 0),
+                    "total": int(sc.get("total") or 0),
+                    "via": "set-code",
+                    "ok": bool(sc.get("ok")),
+                    "reason": sc.get("reason"),
+                    "src": src,
+                    "stdout_head": sc.get("stdout_head"),
+                }
+            )
+
+        if not explorers:
+            return {
+                "ok": False,
+                "reason": "no_candidates",
+                "slug": slug,
+                "baseline": baseline,
+                "llm": llm_meta,
+                "fiber_live": fiber_live,
+            }
+
+        best = max(explorers, key=lambda e: (int(e["hits"]), 0 if e["name"] != "baseline" else -1, e["name"]))
+        base_hits = int(baseline.get("hits") or 0)
+        best_hits = int(best["hits"])
+        best_full = best_hits == int(best.get("total") or 0) and best_hits > 0
+        if best_hits < base_hits or (best_hits == base_hits and not best_full):
+            return {
+                "ok": False,
+                "reason": "no_gain_vs_baseline",
+                "slug": slug,
+                "baseline": {k: baseline.get(k) for k in ("hits", "total", "aura_file", "ok")},
+                "selected": {k: best.get(k) for k in ("name", "hits", "total", "via")},
+                "explorers": [
+                    {k: e.get(k) for k in ("name", "hits", "total", "via", "ok", "reason")}
+                    for e in explorers
+                ],
+                "llm": llm_meta,
+                "fiber_live": fiber_live,
+                "fiber_llm_ok": fiber_llm_ok,
+                "denseness": {"ok": denseness.get("ok"), "note": denseness.get("note")},
+            }
+
+        # Materialize winner via set-code + current-source
+        win_src = str(best.get("src") or "")
+        boot = sess.raw_line(f'(set-code "{_soft_escape(win_src)}")', timeout_s=30.0)
+        if boot.get("status") != "ok":
+            return {
+                "ok": False,
+                "reason": f"winner_set_code_failed:{boot.get('msg')}",
+                "slug": slug,
+                "explorers": explorers,
+                "llm": llm_meta,
+                "fiber_live": fiber_live,
+                "aura_issue_candidate": True,
+            }
+        sess.raw_line("(eval-current)", timeout_s=SOFT_MUTATE_TIMEOUT_S)
+        cs = sess.raw_line("(display (current-source :workspace :pretty))", timeout_s=25.0)
+        src_out = str(cs.get("display") or "").strip()
+        materialize = "current-source"
+        if not src_out or "solve" not in src_out:
+            # Honest fallback: write proposed source (not Soft unparse)
+            src_out = win_src
+            materialize = "proposed_source_fallback"
+        out_path = pdir / "solution_runtime.aura"
+        banner = (
+            f"; soft_leetcode_runtime slug={slug} path=llm\n"
+            f"; materialize={materialize} worldline_backend="
+            f"{'fiber_graph' if fiber_live else 'serve_mutate'}\n"
+            f"; fiber_live={'true' if fiber_live else 'false'} incr_proven=false\n"
+            f"; llm_via={llm_meta.get('llm_via')} fiber_llm_ok={'true' if fiber_llm_ok else 'false'}\n"
+            f"; selected={best['name']} hits={best['hits']}/{best['total']}\n"
+            f"; baseline_hits={baseline.get('hits')}/{baseline.get('total')}\n"
+            "; Expected values used only for host scoring / LLM context, not hardcoded into display.\n"
+        )
+        out_path.write_text(banner + src_out + "\n", encoding="utf-8")
+        verify = score_aura_file(repo, out_path, tests, aura_bin=aura_bin)
+        # If current-source unparse broke scoring, fall back to raw proposed source
+        if (
+            materialize == "current-source"
+            and int(verify.get("hits") or 0) < int(best["hits"])
+            and win_src
+        ):
+            out_path.write_text(
+                banner.replace("materialize=current-source", "materialize=proposed_source_fallback")
+                + win_src
+                + "\n",
+                encoding="utf-8",
+            )
+            verify = score_aura_file(repo, out_path, tests, aura_bin=aura_bin)
+            materialize = "proposed_source_fallback"
+        improved = int(verify.get("hits") or 0) > base_hits
+        full = bool(verify.get("ok"))
+        return {
+            "ok": full or improved,
+            "reason": "full" if full else ("improved" if improved else "verify_no_gain"),
+            "slug": slug,
+            "out_path": str(out_path.relative_to(repo)),
+            "baseline": {k: baseline.get(k) for k in ("hits", "total", "aura_file", "ok")},
+            "verify": verify,
+            "selected": {k: best.get(k) for k in ("name", "hits", "total", "via")},
+            "explorers": [
+                {k: e.get(k) for k in ("name", "hits", "total", "via", "ok", "reason")}
+                for e in explorers
+            ],
+            "fiber_live": fiber_live,
+            "fiber_llm_ok": fiber_llm_ok,
+            "incr_proven": False,
+            "worldline_backend": "fiber_graph" if fiber_live else "serve_mutate",
+            "denseness": {"ok": denseness.get("ok"), "note": denseness.get("note")},
+            "llm_ok": bool(llm_meta.get("llm_ok")),
+            "llm_via": llm_meta.get("llm_via"),
+            "model": llm_meta.get("model"),
+            "llm": llm_meta,
+            "materialize": materialize,
+            "src_len": len(src_out),
+            "improved": improved,
+            "full": full,
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "ok": False,
+            "reason": f"exc:{type(exc).__name__}:{exc}",
+            "slug": slug,
+            "baseline": {k: baseline.get(k) for k in ("hits", "total", "aura_file", "ok")},
+            "llm": llm_meta,
+            "fiber_live": fiber_live,
+            "aura_issue_candidate": True,
+        }
+    finally:
+        if sess is not None:
+            try:
+                sess.stop()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+
 def _update_meta(repo: Path, result: dict[str, Any]) -> str | None:
     slug = result.get("slug")
     if not slug:
@@ -757,9 +1266,10 @@ def _update_meta(repo: Path, result: dict[str, Any]) -> str | None:
         {
             "variant": 91,
             "aura_file": "solution_runtime.aura",
-            "model": "soft-serve-fiber",
+            "model": str(result.get("model") or "soft-serve-fiber"),
             "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "llm_ok": False,
+            "llm_ok": bool(result.get("llm_ok")),
+            "llm_via": result.get("llm_via"),
             "parse_ok": True,
             "run_ok": bool(vfy.get("ok")),
             "tests_passed": int(vfy.get("hits") or 0),
@@ -786,18 +1296,40 @@ def cmd_soft_leetcode(args: Any) -> int:
         or os.environ.get("AURA_BIN")
         or DEFAULT_SOFT
     )
-    slug = getattr(args, "slug", None) or "top-k-frequent-elements"
+    slug = getattr(args, "slug", None) or ""
     batch = bool(getattr(args, "batch", False))
+    batch_llm = bool(getattr(args, "batch_llm", False))
+    force_llm = bool(getattr(args, "llm", False))
+    proposals = int(getattr(args, "proposals", 2) or 2)
     harness_root = Path(getattr(args, "harness_root", None) or (repo / ".aura-build"))
+    env_file = getattr(args, "env_file", None) or str(
+        Path.home() / ".config/aura-build/minimax.env"
+    )
 
-    slugs: list[str]
-    if batch:
+    slugs: list[str] = []
+    mode = "recipe"
+    if batch_llm or (force_llm and batch):
+        mode = "llm"
+        lim = int(getattr(args, "limit", 8) or 8)
+        slugs = _list_llm_targets(repo, limit=lim)
+        if not slugs:
+            print(json.dumps({"ok": False, "reason": "no_llm_targets"}))
+            return 2
+    elif batch:
+        mode = "recipe"
         slugs = [s for s in RECIPES if s != "intersection-of-two-arrays"]
-        # include intersection only if not already full runtime
         inter = repo / "corpus/leetcode/intersection-of-two-arrays/solution_runtime.aura"
         if not inter.is_file():
             slugs = ["intersection-of-two-arrays"] + slugs
-    else:
+    elif force_llm or (slug and slug not in RECIPES):
+        mode = "llm"
+        if not slug:
+            # default: first LLM target
+            targets = _list_llm_targets(repo, limit=1)
+            if not targets:
+                print(json.dumps({"ok": False, "reason": "no_llm_targets"}))
+                return 2
+            slug = targets[0]
         if slug == "contains-duplicate":
             print(
                 json.dumps(
@@ -809,6 +1341,21 @@ def cmd_soft_leetcode(args: Any) -> int:
                 )
             )
             return 2
+        slugs = [slug]
+    else:
+        mode = "recipe"
+        if not slug:
+            slug = "top-k-frequent-elements"
+        if slug == "contains-duplicate":
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "reason": "contains_duplicate_deferred_case7_too_large",
+                    }
+                )
+            )
+            return 2
         if slug not in RECIPES:
             print(
                 json.dumps(
@@ -816,6 +1363,7 @@ def cmd_soft_leetcode(args: Any) -> int:
                         "ok": False,
                         "reason": f"unsupported_slug:{slug}",
                         "supported": sorted(RECIPES.keys()),
+                        "hint": "pass --llm for MiniMax Soft path on any small partial",
                     }
                 )
             )
@@ -825,10 +1373,19 @@ def cmd_soft_leetcode(args: Any) -> int:
     results: list[dict[str, Any]] = []
     commit_paths: list[str] = ["src/aura_build/soft_leetcode_runtime.py"]
     for s in slugs:
-        recipe = RECIPES[s]
-        result = repair_recipe(
-            repo, recipe, aura_bin=str(aura_bin), harness_root=harness_root
-        )
+        if mode == "llm":
+            result = repair_llm(
+                repo,
+                s,
+                aura_bin=str(aura_bin),
+                harness_root=harness_root,
+                env_file=env_file,
+                proposals=proposals,
+            )
+        else:
+            result = repair_recipe(
+                repo, RECIPES[s], aura_bin=str(aura_bin), harness_root=harness_root
+            )
         print(json.dumps({"event": "soft_leetcode_runtime", **result}, ensure_ascii=False))
         results.append(result)
         if result.get("aura_issue_candidate") and not result.get("ok"):
@@ -848,10 +1405,13 @@ def cmd_soft_leetcode(args: Any) -> int:
         json.dumps(
             {
                 "event": "soft_leetcode_batch_summary",
+                "mode": mode,
                 "attempted": len(results),
                 "full": [r.get("slug") for r in fulls],
                 "improved": [r.get("slug") for r in improved],
-                "failed": [r.get("slug") for r in results if not r.get("ok") and not r.get("skipped")],
+                "failed": [
+                    r.get("slug") for r in results if not r.get("ok") and not r.get("skipped")
+                ],
             },
             ensure_ascii=False,
         )
@@ -875,18 +1435,19 @@ def cmd_soft_leetcode(args: Any) -> int:
         for r in winners
     ]
     fl_any = any(r.get("fiber_live") for r in winners)
+    llm_any = any(r.get("llm_ok") for r in winners)
     msg = (
         "chore(corpus): soft runtime repair "
         + ", ".join(parts)
         + f" materialize=current-source fiber_live={'true' if fl_any else 'false'}"
+        + (f" llm_via={winners[0].get('llm_via')}" if llm_any else "")
     )
-    # dedupe paths
     seen: set[str] = set()
     uniq = []
-    for p in commit_paths:
-        if p not in seen:
-            seen.add(p)
-            uniq.append(p)
+    for pth in commit_paths:
+        if pth not in seen:
+            seen.add(pth)
+            uniq.append(pth)
 
     git_res = git_commit_and_maybe_push(
         repo,

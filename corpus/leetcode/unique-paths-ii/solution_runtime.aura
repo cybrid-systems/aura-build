@@ -1,0 +1,231 @@
+; soft_leetcode_runtime slug=unique-paths-ii path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=fiber fiber_llm_ok=true
+; selected=llm-2 hits=8/8
+; baseline_hits=5/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define MOD 1000000007)
+  (define mod-add
+    (lambda (a b)
+      (let ((s (+
+          a b)))
+        (if (>=
+            s MOD)
+          (-
+            s MOD)
+          s))))
+  (define list-ref-safe
+    (lambda (lst k)
+      (if (null? lst)
+        (error "out of bounds")
+        (if (=
+            k 0)
+          (car lst)
+          (list-ref-safe
+            (cdr lst) (-
+              k 1))))))
+  (define make-row
+    (lambda (n)
+      (if (=
+          n 0)
+        (quote 0)
+        (cons
+          0 (make-row (-
+              n 1))))))
+  (define make-rows
+    (lambda (m n)
+      (if (=
+          m 0)
+        (quote 0)
+        (cons
+          (make-row n) (make-rows
+            (-
+              m 1) n)))))
+  (define set-cell
+    (lambda (row idx val)
+      (if (null? row)
+        (quote 0)
+        (if (=
+            idx 0)
+          (cons
+            val (cdr row))
+          (cons
+            (car row) (set-cell
+              (cdr row) (-
+                idx 1) val))))))
+  (define set-row
+    (lambda (grid i row)
+      (if (null? grid)
+        (quote 0)
+        (if (=
+            i 0)
+          (cons
+            row (cdr grid))
+          (cons
+            (car grid) (set-row
+              (cdr grid) (-
+                i 1) row))))))
+  (define get-row
+    (lambda (grid i)
+      (list-ref-safe
+        grid i)))
+  (define row-set-cell
+    (lambda (grid i j val)
+      (let ((row (get-row
+          grid i)))
+        (let ((new-row (set-cell
+            row j val)))
+          (set-row
+            grid i new-row)))))
+  (define compute-paths
+    (lambda (grid m n)
+      (let ((dp (make-rows
+          m n)))
+        (if (=
+            (list-ref-safe
+              (get-row
+                grid 0) 0) 1)
+          dp
+          (let ((dp1 (row-set-cell
+              dp 0 0 1)))
+            (compute-row0
+              dp1 grid n 1))))))
+  (define compute-row0
+    (lambda (dp grid n j)
+      (if (=
+          j n)
+        (compute-dp-loop
+          dp grid 1 0 n)
+        (let ((cell-val (list-ref-safe
+            (get-row
+              grid 0) j)))
+          (if (=
+              cell-val 1)
+            (let ((dp2 (row-set-cell
+                dp 0 j 0)))
+              (compute-row0
+                dp2 grid n (+
+                  j 1)))
+            (let ((left (list-ref-safe
+                (get-row
+                  dp 0) (-
+                  j 1))))
+              (let ((dp2 (row-set-cell
+                  dp 0 j left)))
+                (compute-row0
+                  dp2 grid n (+
+                    j 1)))))))))
+  (define compute-dp-loop
+    (lambda (dp grid i j n)
+      (if (=
+          i (length dp))
+        dp
+        (if (=
+            j n)
+          (compute-dp-loop
+            dp grid (+
+              i 1) 0 n)
+          (let ((cell-val (list-ref-safe
+              (get-row
+                grid i) j)))
+            (if (=
+                cell-val 1)
+              (let ((dp2 (row-set-cell
+                  dp i j 0)))
+                (compute-dp-loop
+                  dp2 grid i (+
+                    j 1) n))
+              (let ((u (if (>
+                    i 0)
+                  (list-ref-safe
+                    (get-row
+                      dp (-
+                        i 1)) j)
+                  0)))
+                (let ((l (if (>
+                      j 0)
+                    (list-ref-safe
+                      (get-row
+                        dp i) (-
+                        j 1))
+                    0)))
+                  (let ((val (mod-add
+                      u l)))
+                    (let ((dp2 (row-set-cell
+                        dp i j val)))
+                      (compute-dp-loop
+                        dp2 grid i (+
+                          j 1) n)))))))))))
+  (define solve
+    (lambda (grid)
+      (let ((m (length grid)))
+        (let ((n (if (null? grid)
+            0
+            (length (car grid)))))
+          (if (=
+              m 0)
+            0
+            (if (=
+                n 0)
+              0
+              (if (=
+                  (list-ref-safe
+                    (get-row
+                      grid 0) 0) 1)
+                0
+                (if (and
+                    (=
+                      m 1) (=
+                      n 1))
+                  1
+                  (let ((dp (compute-paths
+                      grid m n)))
+                    (list-ref-safe
+                      (get-row
+                        dp (-
+                          m 1)) (-
+                        n 1)))))))))))
+  (define run-tests
+    (lambda ()
+      (let ((cases (list
+          (list (list
+              (list
+                0 0 0) (list
+                0 1 0) (list
+                0 0 0))) (list (list
+              (list
+                0 1) (list
+                0 0))) (list (list (list 1))) (list (list (list 0))) (list (list
+              (list
+                0 0) (list
+                1 0) (list
+                0 0))) (list (list
+              (list
+                0 0 0 0) (list
+                0 0 0 0))) (list (list
+              (list
+                1 0) (list
+                0 0))) (list (list
+              (list
+                0 0) (list
+                0 1))))))
+        (run-tests-loop
+          cases 0))))
+  (define run-tests-loop
+    (lambda (cases i)
+      (if (null? cases)
+        (quote 0)
+        (let ((grid (car (car cases))))
+          (let ((result (solve grid)))
+            (begin
+              (display "CASE")
+              (display i)
+              (display "=")
+              (display result)
+              (newline)
+              (run-tests-loop
+                (cdr cases) (+
+                  i 1))))))))
+  (run-tests))

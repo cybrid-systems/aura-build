@@ -1,0 +1,119 @@
+; soft_leetcode_runtime slug=fractional-knapsack path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=fiber fiber_llm_ok=true
+; selected=llm-2 hits=7/7
+; baseline_hits=5/7
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define make-item
+    (lambda (w v)
+      (cons
+        w (cons
+          v (quote 0)))))
+  (define item-w
+    (lambda (i)
+      (car i)))
+  (define item-v
+    (lambda (i)
+      (car (cdr i))))
+  (define ratio-ge
+    (lambda (a b c d)
+      (>=
+        (*
+          a d) (*
+          c b))))
+  (define insert-by-ratio
+    (lambda (item sorted)
+      (if (null? sorted)
+        (cons
+          item (quote 0))
+        (if (ratio-ge
+            (item-v item) (item-w item) (item-v (car sorted)) (item-w (car sorted)))
+          (cons
+            item sorted)
+          (cons
+            (car sorted) (insert-by-ratio
+              item (cdr sorted)))))))
+  (define sort-by-ratio
+    (lambda (items)
+      (if (null? items)
+        (quote 0)
+        (insert-by-ratio
+          (car items) (sort-by-ratio (cdr items))))))
+  (define solve
+    (lambda (n W items)
+      (let ((sorted (sort-by-ratio items)))
+        (let ((cap W))
+          (let ((total 0.0))
+            (letrec ((loop (lambda (xs c acc)
+                (if (null? xs)
+                  acc
+                  (if (<=
+                      c 0)
+                    acc
+                    (let ((wi (item-w (car xs))))
+                      (let ((vi (item-v (car xs))))
+                        (if (<=
+                            wi c)
+                          (loop
+                            (cdr xs) (-
+                              c wi) (+
+                              acc (*
+                                1.0 vi)))
+                          (loop
+                            (cdr xs) 0 (+
+                              acc (*
+                                (/
+                                  (*
+                                    1.0 vi) (*
+                                    1.0 wi)) c)))))))))))
+              (loop
+                sorted cap total)))))))
+  (define build-items
+    (lambda (pairs)
+      (if (null? pairs)
+        (quote 0)
+        (cons
+          (make-item
+            (car (car pairs)) (car (cdr (car pairs)))) (build-items (cdr pairs))))))
+  (define display-float
+    (lambda (x)
+      (display x)))
+  (define case-counter 0)
+  (define next-case-i
+    (lambda ()
+      (let ((c case-counter))
+        (begin
+          (set! case-counter (+
+              c 1))
+          c))))
+  (define run-case
+    (lambda (n W pairs)
+      (let ((items (build-items pairs)))
+        (begin
+          (display "CASE")
+          (display (next-case-i))
+          (display "=")
+          (display-float (solve
+              n W items))
+          (newline)))))
+  (run-case
+    4 10 (quote ((5 10)
+        (4 40) (6 30) (3 50))))
+  (run-case
+    1 5 (quote ((10 100))))
+  (run-case
+    3 50 (quote ((10 60)
+        (20 100) (30 120))))
+  (run-case
+    5 10 (quote ((2 3)
+        (3 4) (4 5) (5 6) (1 1))))
+  (run-case
+    2 0 (quote ((1 10) (2 20))))
+  (run-case
+    3 100 (quote ((100 1)
+        (100 2) (100 3))))
+  (run-case
+    4 8 (quote ((3 9)
+        (4 12) (5 15) (2 4)))))
