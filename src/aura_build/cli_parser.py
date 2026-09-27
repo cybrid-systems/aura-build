@@ -457,7 +457,8 @@ def build_parser() -> argparse.ArgumentParser:
             "select-best -> (current-source) -> solution_runtime.aura -> commit"
         ),
     )
-    _opt(leetcode, "--slug", default="intersection-of-two-arrays", help="problem slug (default intersection-of-two-arrays)")
+    _opt(leetcode, "--slug", default="top-k-frequent-elements", help="recipe slug (see soft_leetcode_runtime.RECIPES)")
+    _opt(leetcode, "--batch", action="store_true", help="run all registered small Soft recipes")
     _opt(leetcode, "--no-push", action="store_true")
     _opt(leetcode, "--no-commit", action="store_true")
     _common(leetcode, aura=True, harness=True)

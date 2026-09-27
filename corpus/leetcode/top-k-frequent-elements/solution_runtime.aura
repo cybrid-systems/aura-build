@@ -1,0 +1,166 @@
+; soft_leetcode_runtime slug=top-k-frequent-elements
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; selected_explorer=sort-asc hits=8/8
+; baseline_hits=7/8
+; Expected values used only for host scoring, not hardcoded into display.
+(begin
+  (define assoc-key
+    (lambda (key alist)
+      (if (null? alist)
+        #f
+        (if (equal?
+            (car (car alist)) key)
+          (car alist)
+          (assoc-key
+            key (cdr alist))))))
+  (define remove-key
+    (lambda (key alist)
+      (if (null? alist)
+        (quote 0)
+        (if (equal?
+            (car (car alist)) key)
+          (cdr alist)
+          (cons
+            (car alist) (remove-key
+              key (cdr alist)))))))
+  (define count-freq
+    (lambda (lst)
+      (letrec ((aux (lambda (xs acc)
+          (if (null? xs)
+            acc
+            (let ((pair (assoc-key
+                (car xs) acc)))
+              (if pair
+                (aux
+                  (cdr xs) (cons
+                    (cons
+                      (car pair) (+
+                        (cdr pair) 1)) (remove-key
+                      (car xs) acc)))
+                (aux
+                  (cdr xs) (cons
+                    (cons
+                      (car xs) 1) acc))))))))
+        (aux
+          lst (quote 0)))))
+  (define insert-by-count
+    (lambda (pair sorted)
+      (if (null? sorted)
+        (list pair)
+        (if (>
+            (cdr pair) (cdr (car sorted)))
+          (cons
+            pair sorted)
+          (cons
+            (car sorted) (insert-by-count
+              pair (cdr sorted)))))))
+  (define sort-by-count
+    (lambda (pairs)
+      (if (null? pairs)
+        (quote 0)
+        (insert-by-count
+          (car pairs) (sort-by-count (cdr pairs))))))
+  (define take
+    (lambda (n lst)
+      (if (or
+          (=
+            n 0) (null? lst))
+        (quote 0)
+        (cons
+          (car lst) (take
+            (-
+              n 1) (cdr lst))))))
+  (define map-car
+    (lambda (xs)
+      (if (null? xs)
+        (quote 0)
+        (cons
+          (car (car xs)) (map-car (cdr xs))))))
+  (define insert-sorted
+    (lambda (x xs)
+      (if (null? xs)
+        (list x)
+        (if (<=
+            x (car xs))
+          (cons
+            x xs)
+          (cons
+            (car xs) (insert-sorted
+              x (cdr xs)))))))
+  (define sort-asc
+    (lambda (xs)
+      (if (null? xs)
+        (quote 0)
+        (insert-sorted
+          (car xs) (sort-asc (cdr xs))))))
+  (define reverse-list
+    (lambda (xs)
+      (letrec ((loop (lambda (ys acc)
+          (if (null? ys)
+            acc
+            (loop
+              (cdr ys) (cons
+                (car ys) acc))))))
+        (loop
+          xs (quote 0)))))
+  (define top-k-raw
+    (lambda (nums k)
+      (take
+        k (map-car (sort-by-count (count-freq nums))))))
+  (define solve
+    (lambda (nums k)
+      (sort-asc (top-k-raw
+          nums k))))
+  (define print-list
+    (lambda (xs)
+      (begin
+        (display "[")
+        (if (null? xs)
+          (display "]")
+          (begin
+            (display (car xs))
+            (letrec ((loop (lambda (rest)
+                (if (null? rest)
+                  (display "]")
+                  (begin
+                    (display ",")
+                    (display (car rest))
+                    (loop (cdr rest)))))))
+              (loop (cdr xs))))))))
+  (define run-case
+    (lambda (n nums k)
+      (begin
+        (display "CASE")
+        (display n)
+        (display "=")
+        (print-list (solve
+            nums k))
+        (newline))))
+  (define run-cases
+    (lambda ()
+      (begin
+        (run-case
+          0 (quote (1
+              1 1 2 2 3)) 2)
+        (run-case
+          1 (quote (1)) 1)
+        (run-case
+          2 (quote (4
+              4 4 5 5 6 7 7 7 7 8)) 3)
+        (run-case
+          3 (quote (-1
+              -1 -2 -2 -2 3)) 2)
+        (run-case
+          4 (quote (1
+              2 3 4 5)) 5)
+        (run-case
+          5 (quote (2
+              2 3 3 4 4 5 5 6 6 7)) 4)
+        (run-case
+          6 (quote (10
+              10 10 10 20)) 1)
+        (run-case
+          7 (quote (0
+              0 0 0 0)) 1))))
+  (run-cases))
