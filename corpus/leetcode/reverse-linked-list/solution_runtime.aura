@@ -2,8 +2,8 @@
 ; materialize=current-source worldline_backend=fiber_graph
 ; fiber_live=true incr_proven=false
 ; llm_via=fiber fiber_llm_ok=true
-; selected=llm-1 hits=7/8
-; baseline_hits=0/8
+; selected=llm-2 hits=8/8
+; baseline_hits=7/8
 ; Expected values used only for host scoring / LLM context, not hardcoded into display.
 (begin
   (define display-list
@@ -50,7 +50,7 @@
   (run-case
     0 (quote ()))
   (run-case
-    1 (quote (100)))
+    1 (quote (1)))
   (run-case
     2 (quote (1
         2 3 4 5)))
