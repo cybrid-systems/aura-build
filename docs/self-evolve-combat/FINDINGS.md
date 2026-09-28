@@ -183,3 +183,28 @@ Fresh Soft `--serve-async` (`build_soft4048/aura`, no MiniMax, no fiber http-pos
 **Push:** combat `--no-push` (no aura-build product materialize). This FINDINGS stamp is the productized docs commit.
 
 **New Aura issues:** none (Soft denseness held under concurrent MiniMax N=3×6).
+- `20260928-132800` ok=False llm_via=fiber llm_parallel=fiber explore=fiber_graph artifacts=`combat_20260928-132800_stdout.json`
+
+## mini-queue Soft tip cbae122 concurrent denseness held; MiniMax residual (2026-09-28 ~13:33 CST)
+
+**Soft tip:** `cbae122` `/workspace/aura-grok/build_soft4132/aura` — no rebuild (tip unchanged).
+**aura-build tip at combat:** `bdbdc08` (post k-th-smallest Soft LLM full).
+
+**Combat:** `combat_20260928-132800` — project=mini-queue (4-file; harder than mini-cache 3-file), `--fiber-explore 3 --fiber-llm --concurrent-llm --explore-tools llm --max-rounds 6`.
+
+| Honesty | Measured |
+|---------|----------|
+| fiber_live | true |
+| serve_mode | async |
+| soft_ready | soft_ready_ok denseness_4048 path |
+| llm_via | fiber |
+| llm_parallel | fiber (rounds: fiber×6) |
+| explore_parallel | fiber_graph |
+| ok / reason | False / max_rounds_6 |
+| best_fitness | 0.7444 |
+
+**Ruling:** Soft denseness / fiber concurrent MiniMax path **held** under N=3×6 on 4-file mini-queue. Failure is **MiniMax residual** (did not reach verify_green in 6 rounds), not Soft wedge. No new Aura issue.
+
+**Push:** combat `--no-push` (no aura-build product materialize). This FINDINGS stamp is the productized docs commit.
+
+**New Aura issues:** none.
