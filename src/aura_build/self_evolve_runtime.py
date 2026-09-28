@@ -4524,7 +4524,7 @@ def cmd_runtime(args: Any) -> int:
         print("self-evolve runtime: --no-commit; skip git")
         return 0
 
-    paths = [STAMP_PATH, RUNTIME_KERNEL, HELPER_PATH, STARTS_HELPER_PATH, ENDS_HELPER_PATH, CONTAINS_HELPER_PATH, SPLIT_HELPER_PATH, REPLACE_HELPER_PATH, TRIM_HELPER_PATH, DOWNCASE_HELPER_PATH, UPCASE_HELPER_PATH, PAD_HELPER_PATH, TAKE_HELPER_PATH, DROP_HELPER_PATH, LIST_TAKE_HELPER_PATH, "src/aura_build/self_evolve_runtime.py", "src/aura_build/serve_session.py", "src/aura_build/soft_leetcode_runtime.py", "tests/test_serve_session.py", "tests/test_self_evolve.py"]
+    paths = [STAMP_PATH, RUNTIME_KERNEL, HELPER_PATH, STARTS_HELPER_PATH, ENDS_HELPER_PATH, CONTAINS_HELPER_PATH, SPLIT_HELPER_PATH, REPLACE_HELPER_PATH, TRIM_HELPER_PATH, DOWNCASE_HELPER_PATH, UPCASE_HELPER_PATH, PAD_HELPER_PATH, TAKE_HELPER_PATH, DROP_HELPER_PATH, LIST_TAKE_HELPER_PATH, LIST_DROP_HELPER_PATH, "src/aura_build/self_evolve_runtime.py", "src/aura_build/serve_session.py", "src/aura_build/soft_leetcode_runtime.py", "tests/test_serve_session.py", "tests/test_self_evolve.py"]
     fl = "true" if result.get("fiber_live") else "false"
     backend = result.get("worldline_backend") or "unknown"
     helper_sel = (result.get("helper") or {}).get("selected") or "-"

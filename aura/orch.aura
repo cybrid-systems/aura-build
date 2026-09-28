@@ -1,7 +1,7 @@
 ; aura-build kernel — scout → mutate → eval → select-best
 ; Primary product path. Simulated = pure Aura fitness; aura = in-process mutate:rebind.
 ; Slice 3: fiber_live ⇒ worldline_backend=fiber_graph (fiber:spawn fan-out); else file.
-; Soft gap fill: util string-pad/string-take/string-drop/list-take (+ soft_* denseness).
+; Soft gap fill: util string-pad/string-take/string-drop/list-take/list-drop (+ soft_* denseness).
 (export run-episode run-harness-canary select-best run-backend-episode)
 
 (require "util" all:)
@@ -17,7 +17,7 @@
 (define (select-best worldlines)
   (if (null? worldlines)
     (error "no worldlines to select")
-    (let loop ((xs (cdr worldlines)) (best (car worldlines)))
+    (let loop ((xs (list-drop worldlines 1)) (best (car worldlines)))
       (if (null? xs) best
         (let* ((w (car xs))
                (wf (hash-ref (hash-ref w "eval") "fitness"))
@@ -251,7 +251,9 @@
                (hash "evaluated" evaluated "selected" selected
                      "discarded" discarded "rt" rt))
              (let* ((ws (workspace-create ws-root n))
-                    (cids (list-take (hash-keys (hash-ref ws "candidates")) n))
+                    (cids0 (hash-keys (hash-ref ws "candidates")))
+                    (cids (list-take cids0 n))
+                    (cid-overflow (list-drop cids0 n))
                     (evaluated
                       (let loop ((i 0) (xs cids) (out (list)))
                         (if (null? xs) (reverse out)
@@ -272,7 +274,15 @@
                                                       (hash-ref (hash-ref w "eval") "fitness")))
                                          evaluated)
                                h))
-                    (discarded (filter-truth (workspace-discard-losers ws (hash-ref selected "id") fit-map)))
+                    (discarded
+                      (append
+                        (filter-truth (workspace-discard-losers ws (hash-ref selected "id") fit-map))
+                        (map (lambda (cid)
+                               (hash "id" cid
+                                     "reason" "list_take_cap_overflow"
+                                     "stable_ref" cid
+                                     "worldline_backend" BACKEND_FILE))
+                             cid-overflow)))
                     (rt (workspace-runtime-fields ws)))
                (hash-set! rt "worldline_backend_reason" (hash-ref decision "reason" ""))
                (hash "evaluated" evaluated "selected" selected

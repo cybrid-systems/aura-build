@@ -5,7 +5,7 @@
   iso-now make-id
   default-fitness seed-from-prompt
   join-path abs-path string-trim string-downcase string-pad string-take string-drop
-  list-take
+  list-take list-drop
   round4)
 
 (require "std/io" all:)
@@ -91,6 +91,17 @@
                  (if (or (<= n 0) (null? xs))
                    (list)
                    (cons (car xs) (go (cdr xs) (- n 1)))))))
+    (go xs n)))
+
+
+; Drop first n list elements (Soft oneshot native `drop` returns opaque unprintable;
+; denseness path: aura/soft_list_drop.aura). Complement of list-take — orch overflow
+; honesty after list-take cap; select-best starts with list-drop rest.
+(define (list-drop xs n)
+  (letrec ((go (lambda (xs n)
+                 (if (or (<= n 0) (null? xs))
+                   xs
+                   (go (cdr xs) (- n 1))))))
     (go xs n)))
 
 (define (ensure-dir path)
