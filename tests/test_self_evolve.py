@@ -248,3 +248,13 @@ def test_contains_helper_candidates_export_contains():
         assert "contains?" in src
         assert "(export contains?)" in src
         assert name
+
+
+def test_split_helper_candidates_export_string_split():
+    from aura_build.self_evolve_runtime import _SPLIT_HELPER_CANDIDATES
+
+    assert len(_SPLIT_HELPER_CANDIDATES) >= 2
+    for name, src in _SPLIT_HELPER_CANDIDATES:
+        assert "string-split" in src
+        assert "(export string-split)" in src
+        assert name
