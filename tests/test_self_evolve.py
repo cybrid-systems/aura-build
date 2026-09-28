@@ -238,3 +238,13 @@ def test_starts_helper_candidates_export_starts_with():
         assert "starts-with?" in src
         assert "(export starts-with?)" in src
         assert name
+
+
+def test_contains_helper_candidates_export_contains():
+    from aura_build.self_evolve_runtime import _CONTAINS_HELPER_CANDIDATES
+
+    assert len(_CONTAINS_HELPER_CANDIDATES) >= 2
+    for name, src in _CONTAINS_HELPER_CANDIDATES:
+        assert "contains?" in src
+        assert "(export contains?)" in src
+        assert name
