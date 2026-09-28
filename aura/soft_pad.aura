@@ -1,0 +1,25 @@
+; Soft-materialized string-pad helper (self-evolve Soft path)
+; materialize=current-source  fiber_live=true when denseness measured
+; selected=scan-letrec-list  denseness=soft_ready_async_denseness_4048
+; incr_proven=false
+; Product: orch/pursue/harness/self_evolve stamp align (Soft oneshot lacks string-pad/make-string)
+(begin
+  (export string-pad)
+  (define string-pad
+    (lambda (s width)
+      (let ((n (string-length s)))
+        (if (>=
+            n width)
+          s
+          (letrec ((loop (lambda (k acc)
+              (if (<=
+                  k 0)
+                (list->string acc)
+                (loop
+                  (-
+                    k 1) (cons
+                    32 acc))))))
+            (string-append
+              (loop
+                (-
+                  width n) (list)) s)))))))

@@ -305,3 +305,12 @@ def test_fiber_explorer_cap_bounds_soft_joins():
     assert FIBER_EXPLORER_CAP >= len(DEFAULT_BUMPS)
     assert FIBER_EXPLORER_CAP <= 64  # Soft hang guard for sequential fiber+mutate
 
+def test_pad_helper_candidates_export_string_pad():
+    from aura_build.self_evolve_runtime import _PAD_HELPER_CANDIDATES
+
+    assert len(_PAD_HELPER_CANDIDATES) >= 2
+    for name, src in _PAD_HELPER_CANDIDATES:
+        assert "string-pad" in src
+        assert "(export string-pad)" in src
+        assert name
+
