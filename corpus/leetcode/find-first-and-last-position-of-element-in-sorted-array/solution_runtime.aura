@@ -1,0 +1,118 @@
+; soft_leetcode_runtime slug=find-first-and-last-position-of-element-in-sorted-array path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=fiber fiber_llm_ok=true
+; selected=llm-2 hits=8/8
+; baseline_hits=0/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define list-length
+    (lambda (xs)
+      (if (null? xs)
+        0
+        (+
+          1 (list-length (cdr xs))))))
+  (define list-ref
+    (lambda (xs i)
+      (if (=
+          i 0)
+        (car xs)
+        (list-ref
+          (cdr xs) (-
+            i 1)))))
+  (define leftmost
+    (lambda (a target n)
+      (letrec ((loop (lambda (lo hi)
+          (if (>=
+              lo hi)
+            lo
+            (let ((mid (quotient
+                (+
+                  lo hi) 2)))
+              (if (>=
+                  (list-ref
+                    a mid) target)
+                (loop
+                  lo mid)
+                (loop
+                  (+
+                    mid 1) hi)))))))
+        (loop
+          0 n))))
+  (define rightmost
+    (lambda (a target n)
+      (letrec ((loop (lambda (lo hi)
+          (if (>=
+              lo hi)
+            lo
+            (let ((mid (quotient
+                (+
+                  lo hi) 2)))
+              (if (>
+                  (list-ref
+                    a mid) target)
+                (loop
+                  lo mid)
+                (loop
+                  (+
+                    mid 1) hi)))))))
+        (loop
+          0 n))))
+  (define solve
+    (lambda (a target)
+      (let ((n (list-length a)))
+        (if (=
+            n 0)
+          (cons
+            -1 -1)
+          (let ((l (leftmost
+              a target n)))
+            (if (or
+                (>=
+                  l n) (not (=
+                    (list-ref
+                      a l) target)))
+              (cons
+                -1 -1)
+              (let ((r (rightmost
+                  a target n)))
+                (cons
+                  l (-
+                    r 1)))))))))
+  (define print-case
+    (lambda (i res)
+      (begin
+        (display "CASE")
+        (display i)
+        (display "=[")
+        (display (car res))
+        (display ",")
+        (display (cdr res))
+        (display "]")
+        (newline))))
+  (define run-case
+    (lambda (i a target)
+      (print-case
+        i (solve
+          a target))))
+  (run-case
+    0 (quote (5
+        7 7 8 8 10)) 8)
+  (run-case
+    1 (quote (5
+        7 7 8 8 10)) 6)
+  (run-case
+    2 (quote (1)) 1)
+  (run-case
+    3 (quote ()) 0)
+  (run-case
+    4 (quote (1
+        2 3 4 5)) 3)
+  (run-case
+    5 (quote (1
+        1 1 1 1)) 1)
+  (run-case
+    6 (quote (2 2)) 3)
+  (run-case
+    7 (quote (-5
+        -3 -1 0 2 4 6)) -1))
