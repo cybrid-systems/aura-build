@@ -5,7 +5,7 @@
   iso-now make-id
   default-fitness seed-from-prompt
   join-path abs-path string-trim string-downcase string-pad string-take string-drop
-  list-take list-drop list-tail make-list for-each hash-for-each hash-fold
+  list-take list-drop list-tail make-list for-each hash-for-each hash-fold foldr
   round4)
 
 (require "std/io" all:)
@@ -140,6 +140,14 @@
     (if (null? ks)
       acc
       (loop (cdr ks) (f (car ks) (hash-ref h (car ks)) acc)))))
+
+
+; Soft oneshot has foldl but unbound foldr (Soft std/list.aura defines via reverse+foldl
+; #1549; Soft std/hash hash-fold depends on foldr; Soft oneshot does not auto-load std/list).
+; Denseness path: aura/soft_foldr.aura (selected=reverse-foldl). Soft std shape:
+; (foldr f init lst) with f := (lambda (x acc) ...).
+(define (foldr f init lst)
+  (foldl (lambda (acc x) (f x acc)) init (reverse lst)))
 
 (define (ensure-dir path)
   (sh (string-append "mkdir -p '" path "'"))
