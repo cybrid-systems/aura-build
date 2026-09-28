@@ -60,7 +60,25 @@ TASK_SAGA = "saga"
 TASK_EXCHANGE = "exchange"
 DEFAULT_TASK = TASK_FIB
 DEFAULT_MAX_ROUNDS = 8
-DEFAULT_WORLDLINES = 3
+DEFAULT_WORLDLINES = 256  # Soft resource_quota_max_fibers default
+DEFAULT_LLM_PARALLEL_CAP = 64  # concurrent MiniMax batch window (env override)
+
+
+def llm_parallel_cap() -> int:
+    """Max concurrent MiniMax HTTP in one Soft/host batch (not fiber spawn N).
+
+    Soft worldlines may be 256; MiniMax concurrency is ``min(n_explore, cap)``
+    so a 256-fiber fan-out does not thrash the API. Override with
+    ``AURA_BUILD_LLM_PARALLEL_CAP`` (default 64).
+    """
+    raw = (os.environ.get("AURA_BUILD_LLM_PARALLEL_CAP") or "").strip()
+    if not raw:
+        return DEFAULT_LLM_PARALLEL_CAP
+    try:
+        n = int(raw)
+    except ValueError:
+        return DEFAULT_LLM_PARALLEL_CAP
+    return max(1, n)
 
 SYSTEM_CODEGEN = """You are a careful Aura (Lisp-like) code generator for the Aura runtime.
 Rules:
@@ -3285,28 +3303,51 @@ def run_closed_loop(
                     )
                 )
             if concurrent_llm_mode and n_explore >= 2:
-                batch = fiber_chat_completions_batch(
-                    serve_sess,
-                    msgs_list,
-                    config=cfg,
-                    scratch_dir=fiber_scratch,
-                    thinking_disabled=True,
-                    timeout_s=180.0,
-                )
-                if batch.get("ok") and len(batch.get("results") or []) == n_explore:
-                    for i, res in enumerate(batch["results"]):
-                        fiber_prefetch[i] = dict(res)
-                        fiber_prefetch[i]["llm_via"] = "fiber"
+                # Cap concurrent MiniMax to AURA_BUILD_LLM_PARALLEL_CAP (default 64)
+                # while fiber explore N may be Soft max-fibers (256). Chunk waves.
+                _cap = llm_parallel_cap()
+                batch_ok_all = True
+                any_fiber_parallel = False
+                reasons: list[str] = []
+                for _start in range(0, n_explore, _cap):
+                    _chunk = msgs_list[_start : _start + _cap]
+                    batch = fiber_chat_completions_batch(
+                        serve_sess,
+                        _chunk,
+                        config=cfg,
+                        scratch_dir=fiber_scratch,
+                        thinking_disabled=True,
+                        timeout_s=180.0,
+                    )
+                    _got = list(batch.get("results") or [])
+                    if batch.get("ok") and len(_got) == len(_chunk):
+                        for _j, res in enumerate(_got):
+                            fiber_prefetch[_start + _j] = dict(res)
+                            fiber_prefetch[_start + _j]["llm_via"] = "fiber"
+                        if (batch.get("llm_parallel") or "") == "fiber":
+                            any_fiber_parallel = True
+                    else:
+                        batch_ok_all = False
+                        reasons.append(
+                            str(
+                                batch.get("reason")
+                                or batch.get("error")
+                                or f"batch_fail:ok={batch.get('ok')}@{_start}"
+                            )
+                        )
+                        break
+                if batch_ok_all and len(fiber_prefetch) == n_explore:
                     round_llm_via = "fiber"
-                    round_llm_parallel_fiber = batch.get("llm_parallel") or "fiber"
+                    round_llm_parallel_fiber = (
+                        "fiber" if any_fiber_parallel else "fiber_serial"
+                    )
                     fiber_batch_reason = ""
                 else:
                     # Fall through to per-explorer fiber oneshot / host
                     round_llm_parallel_fiber = "fiber_serial"
-                    fiber_batch_reason = str(
-                        batch.get("reason")
-                        or batch.get("error")
-                        or f"batch_fail:ok={batch.get('ok')}"
+                    fiber_batch_reason = (
+                        ";".join(reasons)
+                        or f"batch_partial:{len(fiber_prefetch)}/{n_explore}"
                     )
             # When not batched, per-explorer fiber oneshots below.
 
@@ -3459,7 +3500,12 @@ def run_closed_loop(
         # HTTP remains host_thread (llm_parallel=host_thread).
         results: list[dict[str, Any]] = []
         explore_t0 = time.monotonic()
-        with ThreadPoolExecutor(max_workers=max(1, n_explore)) as pool:
+        # When concurrent-llm, cap host workers to LLM parallel cap (API thrash).
+        # Fiber denseness N stays at worldlines; MiniMax concurrency is separate.
+        _pool_n = max(1, n_explore)
+        if concurrent_llm_mode:
+            _pool_n = min(_pool_n, llm_parallel_cap())
+        with ThreadPoolExecutor(max_workers=_pool_n) as pool:
             futs = {pool.submit(_explore_one, i): i for i in range(n_explore)}
             for fut in as_completed(futs):
                 results.append(fut.result())

@@ -369,10 +369,10 @@ def run_combat(
     project: Path | str | None = None,
     task: str | None = None,
     max_rounds: int = 8,
-    worldlines: int = 3,
+    worldlines: int = 256,
     fiber_explore: int | None = None,
     explore_tools: str = "rule,llm,intent",
-    concurrent_llm: bool = False,
+    concurrent_llm: bool = True,
     fiber_llm: bool | None = None,
     env_file: Path | None = None,
     out_dir: Path | None = None,
@@ -510,6 +510,11 @@ def run_combat(
             explore = ",".join(
                 t for t in explore.split(",") if t.strip() and t.strip() != "llm"
             ) or "rule,intent"
+    # concurrent-llm defaults ON; without MiniMax env, degrade (do not refuse
+    # rule/intent-only combat). Soft fiber denseness still uses --worldlines.
+    if concurrent_llm and not env_path.is_file() and not use_fiber_llm:
+        concurrent_llm = False
+        result["concurrent_llm_degraded"] = "no_minimax_env"
 
     traj = traj_out or (out / f"combat_{ts}_traj.jsonl")
 
@@ -521,10 +526,18 @@ def run_combat(
         if env_path.is_file() or use_fiber_llm or "llm" in explore:
             cfg = load_minimax_config(env_file=env_path if env_path.is_file() else None)
     except (FileNotFoundError, ValueError, OSError) as exc:
-        if use_fiber_llm or concurrent_llm or "llm" in explore.split(","):
+        _explore_has_llm = "llm" in [
+            t.strip() for t in (explore or "").split(",") if t.strip()
+        ]
+        if use_fiber_llm or _explore_has_llm:
             result["reason"] = f"minimax_config:{exc}"
             result["hint"] = "provide --env-file or drop llm from --explore-tools"
             return result
+        # concurrent-llm default ON: degrade when config unusable and explore
+        # is rule/intent-only (tests / no-key combat).
+        if concurrent_llm:
+            concurrent_llm = False
+            result["concurrent_llm_degraded"] = f"minimax_config:{exc}"
         cfg = None
 
     # Prefer-session env marker so dogfood hits Soft path

@@ -1603,7 +1603,7 @@ def run_pursue_session(
     goal: str,
     min_fitness: float = 0.8,
     max_rounds: int = 8,
-    worldlines: int = 3,
+    worldlines: int = 256,
     aura_bin: str | None = None,
     harness_root: Path | str | None = None,
     out: Path | str | None = None,

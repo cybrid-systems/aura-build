@@ -31,6 +31,7 @@ Rebuild Soft only if that binary is missing/outdated. Soft honesty banner stays 
 | 2 | Same-session `mutate:rebind` + `eval-current` | `worldline_backend=serve_mutate_rebind`, `cold_spawns=0`, `serve_same_session_mutate_ok` | Anti-postman primary path. |
 | 3 | Denseness `fiber:spawn` / `join` | `worldline_backend=fiber_graph` / `explore_parallel=fiber_graph` **only** when denseness probe ok (#4048 Soft Ready) | On probe fail → honest `host_thread`. Never invent `fiber_live` / `fiber_graph`. |
 | 4 | Soft in-fiber MiniMax via `http-post` | `llm_via=fiber` after #4053 + aura-build fiber_llm base64 in-memory join; `llm_parallel=fiber` **only** when N≥2 batch wall ≈ concurrent; else `fiber_serial` | Local stub ≠ MiniMax. Do not claim wall-parallel without measuring real MiniMax. |
+| 5a | Soft fiber fan-out default | `--worldlines` / `DEFAULT_WORLDLINES=256` (Soft `resource_quota_max_fibers`); MiniMax concurrency `min(N, AURA_BUILD_LLM_PARALLEL_CAP)` default **64**; leetcode `--proposals` default **32** | Denseness N≠API thrash. |
 | 5 | Explore tools ≠ agents | `--explore-tools rule,llm,intent` strategies on fibers; stamp `tools_used` | Not a three-agent product. |
 | 6 | Worldline select-best + trajectory.v0 | Episodes under `trajectories/` / combat scratch; `runtime.*` honesty fields | Off-Aura IDs/snapshots devalue. |
 | 7 | L1 `std/hot-strategy` swap/heal canary | Optional; **AUTOPROMOTE default OFF** | Propose → swap → canary → heal\|commit mirror. |
@@ -79,12 +80,12 @@ aura-build llm-dogfood \
   --project examples/projects/mini-saga \
   --prefer-session --fiber-explore 3 --fiber-llm \
   --explore-tools rule,llm,intent \
-  --worldlines 3 --max-rounds 8 \
+  --worldlines 256 --max-rounds 8 --concurrent-llm \
   --out scratch/self_evolve_combat/roundN_traj.jsonl --json \
   --env-file "$HOME/.config/aura-build/minimax.env"
 
 # Or pursue (same-session mutate path; optional --with-llm)
-aura-build pursue --goal "…" --prefer-session --worldlines 3 --max-rounds 2 --json
+aura-build pursue --goal "…" --prefer-session --worldlines 256 --max-rounds 2 --json
 
 aura-build session stop
 ```

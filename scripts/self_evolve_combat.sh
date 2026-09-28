@@ -10,7 +10,7 @@ export AURA_BIN
 OUT_DIR="${OUT_DIR:-scratch/self_evolve_combat}"
 PROJECT="${PROJECT:-examples/projects/mini-saga}"
 ROUNDS="${ROUNDS:-8}"
-EXPLORE="${EXPLORE:-3}"
+EXPLORE="${EXPLORE:-256}"
 ENV_FILE="${ENV_FILE:-$HOME/.config/aura-build/minimax.env}"
 
 EXTRA=(--start-session --project "$PROJECT" --max-rounds "$ROUNDS"
@@ -24,7 +24,8 @@ fi
 if [[ "${COMBAT_STOP:-0}" == "1" ]]; then
   EXTRA+=(--stop-session)
 fi
-if [[ "${CONCURRENT_LLM:-0}" == "1" ]]; then
-  EXTRA+=(--concurrent-llm)
+# concurrent-llm defaults ON in CLI; CONCURRENT_LLM=0 → --no-concurrent-llm
+if [[ "${CONCURRENT_LLM:-1}" == "0" ]]; then
+  EXTRA+=(--no-concurrent-llm)
 fi
 exec "$AB" self-evolve combat "${EXTRA[@]}" "$@"

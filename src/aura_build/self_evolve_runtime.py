@@ -443,7 +443,7 @@ def _run_serve_fiber(
     repo: Path,
     *,
     aura_bin: str,
-    worldlines: int = 3,
+    worldlines: int = 256,
     bumps: tuple[int, ...] | list[int] | None = None,
     harness_root: Path | None = None,
 ) -> dict[str, Any]:
@@ -673,7 +673,7 @@ def cmd_runtime(args: Any) -> int:
     )
     force_oneshot = bool(getattr(args, "force_oneshot", False))
     prefer_serve = not force_oneshot and bool(getattr(args, "prefer_serve", True))
-    worldlines = int(getattr(args, "worldlines", None) or 3)
+    worldlines = int(getattr(args, "worldlines", None) or 256)
     harness_root = Path(
         getattr(args, "harness_root", None) or (repo / ".aura-build")
     )
