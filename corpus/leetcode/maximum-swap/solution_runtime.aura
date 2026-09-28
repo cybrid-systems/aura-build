@@ -1,0 +1,176 @@
+; soft_leetcode_runtime slug=maximum-swap path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=fiber fiber_llm_ok=true
+; selected=llm-1 hits=7/8
+; baseline_hits=5/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define digits->list
+    (lambda (s)
+      (letrec ((loop (lambda (i acc)
+          (if (>=
+              i (string-length s))
+            (reverse acc)
+            (loop
+              (+
+                i 1) (cons
+                (-
+                  (char->integer (string-ref
+                      s i)) (char->integer 48)) acc))))))
+        (loop
+          0 (quote ())))))
+  (define list-ref
+    (lambda (lst i)
+      (letrec ((loop (lambda (l n)
+          (if (=
+              n i)
+            (car l)
+            (loop
+              (cdr l) (+
+                n 1))))))
+        (loop
+          lst 0))))
+  (define list-set
+    (lambda (lst i v)
+      (letrec ((loop (lambda (l n acc)
+          (if (null? l)
+            (reverse acc)
+            (if (=
+                n i)
+              (loop
+                (cdr l) (+
+                  n 1) (cons
+                  v acc))
+              (loop
+                (cdr l) (+
+                  n 1) (cons
+                  (car l) acc)))))))
+        (loop
+          lst 0 (quote ())))))
+  (define list-length
+    (lambda (lst)
+      (letrec ((loop (lambda (l n)
+          (if (null? l)
+            n
+            (loop
+              (cdr l) (+
+                n 1))))))
+        (loop
+          lst 0))))
+  (define rightmost-max-from
+    (lambda (lst start)
+      (let ((len (list-length lst)))
+        (letrec ((loop (lambda (i maxv maxidx)
+            (if (>=
+                i len)
+              (cons
+                maxv maxidx)
+              (let ((v (list-ref
+                  lst i)))
+                (if (>
+                    v maxv)
+                  (loop
+                    (+
+                      i 1) v i)
+                  (loop
+                    (+
+                      i 1) maxv maxidx)))))))
+          (loop
+            start -1 -1)))))
+  (define swap
+    (lambda (lst i j)
+      (let ((vi (list-ref
+          lst i)))
+        (let ((vj (list-ref
+            lst j)))
+          (list-set
+            (list-set
+              lst i vj) j vi)))))
+  (define greater?
+    (lambda (a b)
+      (if (null? a)
+        #f
+        (if (null? b)
+          #t
+          (if (>
+              (car a) (car b))
+            #t
+            (if (<
+                (car a) (car b))
+              #f
+              (greater?
+                (cdr a) (cdr b))))))))
+  (define digits->int
+    (lambda (lst)
+      (letrec ((loop (lambda (l acc)
+          (if (null? l)
+            acc
+            (loop
+              (cdr l) (+
+                (*
+                  acc 10) (car l)))))))
+        (loop
+          lst 0))))
+  (define max-swap
+    (lambda (s)
+      (let ((digits (digits->list s)))
+        (let ((len (list-length digits)))
+          (letrec ((loop (lambda (i best)
+              (if (>=
+                  i (-
+                    len 1))
+                best
+                (let ((cur (list-ref
+                    digits i)))
+                  (let ((rm (rightmost-max-from
+                      digits (+
+                        i 1))))
+                    (let ((mval (car rm)))
+                      (let ((midx (cdr rm)))
+                        (if (or
+                            (=
+                              midx -1) (<=
+                              mval cur))
+                          (loop
+                            (+
+                              i 1) best)
+                          (let ((candidate (swap
+                              digits i midx)))
+                            (if (greater?
+                                candidate best)
+                              (loop
+                                (+
+                                  i 1) candidate)
+                              (loop
+                                (+
+                                  i 1) best))))))))))))
+            (loop
+              0 digits))))))
+  (define solve
+    (lambda (s)
+      (digits->int (max-swap s))))
+  (define run-case
+    (lambda (i s)
+      (begin
+        (display "CASE")
+        (display i)
+        (display "=")
+        (display (solve s))
+        (newline))))
+  (run-case
+    0 "2736")
+  (run-case
+    1 "9973")
+  (run-case
+    2 "98368")
+  (run-case
+    3 "0")
+  (run-case
+    4 "1")
+  (run-case
+    5 "10")
+  (run-case
+    6 "1999999999")
+  (run-case
+    7 "99999"))
