@@ -1,0 +1,150 @@
+; soft_leetcode_runtime slug=course-schedule path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=fiber fiber_llm_ok=true
+; selected=llm-1 hits=3/10
+; baseline_hits=0/10
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define make-vector
+    (lambda (n val)
+      (letrec ((loop (lambda (i v)
+          (if (=
+              i n)
+            (list->vector (reverse v))
+            (loop
+              (+
+                i 1) (cons
+                val v))))))
+        (loop
+          0 (quote ())))))
+  (define vec-set
+    (lambda (v i val)
+      (vector-set!
+        v i val)))
+  (define vec-ref
+    (lambda (v i)
+      (vector-ref
+        v i)))
+  (define build-graph
+    (lambda (N prereqs)
+      (let ((adj (make-vector
+          N (quote ()))))
+        (letrec ((loop (lambda (ps)
+            (if (null? ps)
+              adj
+              (let ((p (car ps)))
+                (let ((a (car p)))
+                  (let ((b (cadr p)))
+                    (begin
+                      (vec-set
+                        adj b (cons
+                          a (vec-ref
+                            adj b)))
+                      (loop (cdr ps))))))))))
+          (loop prereqs)))))
+  (define has-cycle?
+    (lambda (adj N)
+      (let ((color (make-vector
+          N 0)))
+        (let ((result #f))
+          (begin
+            (define dfs
+              (lambda (u)
+                (begin
+                  (vec-set
+                    color u 1)
+                  (let ((neighbors (vec-ref
+                      adj u)))
+                    (letrec ((nloop (lambda (ns)
+                        (if (null? ns)
+                          #f
+                          (let ((v (car ns)))
+                            (let ((c (vec-ref
+                                color v)))
+                              (if (=
+                                  c 1)
+                                (begin
+                                  (set! result #t)
+                                  (quote done))
+                                (if (=
+                                    c 0)
+                                  (begin
+                                    (dfs v)
+                                    (if result
+                                      (quote done)
+                                      (nloop (cdr ns))))
+                                  (nloop (cdr ns))))))))))
+                      (nloop neighbors))))))
+            (letrec ((outer (lambda (u)
+                (if (=
+                    u N)
+                  result
+                  (if result
+                    #t
+                    (if (=
+                        (vec-ref
+                          color u) 0)
+                      (begin
+                        (dfs u)
+                        (outer (+
+                            u 1)))
+                      (outer (+
+                          u 1))))))))
+              (outer 0)))))))
+  (define solve
+    (lambda (N prereqs)
+      (if (has-cycle?
+          (build-graph
+            N prereqs) N)
+        #f
+        #t)))
+  (define display-bool
+    (lambda (b)
+      (display (if b
+          "true"
+          "false"))))
+  (display "CASE0=")
+  (display-bool (solve
+      2 (quote ())))
+  (newline)
+  (display "CASE1=")
+  (display-bool (solve
+      0 (quote ())))
+  (newline)
+  (display "CASE2=")
+  (display-bool (solve
+      1 (quote ())))
+  (newline)
+  (display "CASE3=")
+  (display-bool (solve
+      2 (quote ((1 0)))))
+  (newline)
+  (display "CASE4=")
+  (display-bool (solve
+      2 (quote ((1 0) (0 1)))))
+  (newline)
+  (display "CASE5=")
+  (display-bool (solve
+      3 (quote ((1 0) (2 1)))))
+  (newline)
+  (display "CASE6=")
+  (display-bool (solve
+      4 (quote ((1 0)
+          (2 0) (3 1) (3 2)))))
+  (newline)
+  (display "CASE7=")
+  (display-bool (solve
+      5 (quote ((1 0)
+          (2 1) (3 2) (4 3) (0 4)))))
+  (newline)
+  (display "CASE8=")
+  (display-bool (solve
+      3 (quote ((0 1)
+          (0 2) (1 2)))))
+  (newline)
+  (display "CASE9=")
+  (display-bool (solve
+      6 (quote ((2 0)
+          (3 0) (4 1) (4 2) (5 3)))))
+  (newline))
