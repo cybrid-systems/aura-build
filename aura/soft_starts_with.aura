@@ -2,8 +2,8 @@
 ; materialize=current-source  fiber_live=true when denseness measured
 ; selected=prefix-loop  denseness=soft_ready_async_denseness_4048
 ; incr_proven=false
-(export starts-with?)
 (begin
+  (export starts-with?)
   (define starts-with?
     (lambda (s pre)
       (let ((n (string-length pre)))
