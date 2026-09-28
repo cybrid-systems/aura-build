@@ -400,3 +400,22 @@ def test_runtime_result_attaches_for_each_helper_key():
     assert 'result["make_list_helper"]' in src
     assert m.FIBER_EXPLORER_CAP == 32
 
+def test_hash_for_each_helper_candidates_export_hash_for_each():
+    from aura_build.self_evolve_runtime import _HASH_FOR_EACH_HELPER_CANDIDATES
+
+    assert len(_HASH_FOR_EACH_HELPER_CANDIDATES) >= 2
+    for name, src in _HASH_FOR_EACH_HELPER_CANDIDATES:
+        assert "hash-for-each" in src
+        assert "(export hash-for-each)" in src
+
+
+def test_runtime_result_attaches_hash_for_each_helper_key():
+    """Regression: hash_for_each must attach on runtime result; FIBER_EXPLORER_CAP=32 kept."""
+    import inspect
+    from aura_build import self_evolve_runtime as m
+
+    src = inspect.getsource(m.cmd_runtime)
+    assert 'result["hash_for_each_helper"]' in src
+    assert 'result["for_each_helper"]' in src
+    assert m.FIBER_EXPLORER_CAP == 32
+
