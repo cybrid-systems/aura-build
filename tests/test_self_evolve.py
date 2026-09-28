@@ -312,5 +312,19 @@ def test_pad_helper_candidates_export_string_pad():
     for name, src in _PAD_HELPER_CANDIDATES:
         assert "string-pad" in src
         assert "(export string-pad)" in src
-        assert name
+
+
+def test_take_helper_candidates_export_string_take():
+    from aura_build.self_evolve_runtime import _TAKE_HELPER_CANDIDATES
+
+    assert len(_TAKE_HELPER_CANDIDATES) >= 2
+    for name, src in _TAKE_HELPER_CANDIDATES:
+        assert "string-take" in src
+        assert "(export string-take)" in src
+
+
+def test_fiber_explorer_cap_kept_at_32():
+    from aura_build.self_evolve_runtime import FIBER_EXPLORER_CAP
+
+    assert FIBER_EXPLORER_CAP == 32
 

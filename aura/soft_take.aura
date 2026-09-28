@@ -1,0 +1,18 @@
+; Soft-materialized string-take helper (self-evolve Soft path)
+; materialize=current-source  fiber_live=true when denseness measured
+; selected=substr-guard  denseness=soft_ready_async_denseness_4048
+; incr_proven=false
+; Product: orch/pursue/harness/self_evolve prompt trunc (Soft oneshot lacks string-take)
+(begin
+  (export string-take)
+  (define string-take
+    (lambda (s n)
+      (let ((len (string-length s)))
+        (if (<=
+            n 0)
+          ""
+          (if (>=
+              n len)
+            s
+            (substring
+              s 0 n)))))))
