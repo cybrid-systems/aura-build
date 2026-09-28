@@ -5,7 +5,7 @@
   iso-now make-id
   default-fitness seed-from-prompt
   join-path abs-path string-trim string-downcase string-pad string-take string-drop
-  list-take list-drop list-tail make-list for-each hash-for-each
+  list-take list-drop list-tail make-list for-each hash-for-each hash-fold
   round4)
 
 (require "std/io" all:)
@@ -132,6 +132,14 @@
       #t
       (begin (f (car ks) (hash-ref h (car ks))) (loop (cdr ks))))))
 
+; Soft oneshot unbound hash-fold (Soft std/hash.aura defines via foldr; Soft oneshot
+; lacks foldr + does not auto-load std/hash). Denseness path: aura/soft_hash_fold.aura.
+; Soft std shape: (hash-fold h f init) with f := (lambda (k v acc) ...).
+(define (hash-fold h f init)
+  (let loop ((ks (hash-keys h)) (acc init))
+    (if (null? ks)
+      acc
+      (loop (cdr ks) (f (car ks) (hash-ref h (car ks)) acc)))))
 
 (define (ensure-dir path)
   (sh (string-append "mkdir -p '" path "'"))
