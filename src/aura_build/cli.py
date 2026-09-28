@@ -978,7 +978,10 @@ def _cmd_pursue(args: argparse.Namespace) -> int:
     if args.seed is not None:
         env["AURA_BUILD_SEED"] = str(args.seed)
 
-    timeout = max(180.0, float(args.max_rounds) * 90.0)
+    # Force-kernel oneshot scales with worldlines (select-best string>? path + mutate).
+    # Prefer-session path returns earlier; this timeout only applies to Aura kernel dispatch.
+    wl = max(1, int(getattr(args, "worldlines", 3) or 3))
+    timeout = max(180.0, float(args.max_rounds) * 90.0, float(wl) * 8.0)
     code = _dispatch(
         "pursue",
         env,
