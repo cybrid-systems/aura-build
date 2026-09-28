@@ -1,0 +1,69 @@
+; soft_leetcode_runtime slug=reverse-linked-list path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=fiber fiber_llm_ok=true
+; selected=llm-1 hits=7/8
+; baseline_hits=0/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define display-list
+    (lambda (lst)
+      (begin
+        (display "[")
+        (letrec ((loop (lambda (l first)
+            (if (null? l)
+              (display "]")
+              (if first
+                (begin
+                  (display (car l))
+                  (loop
+                    (cdr l) #f))
+                (begin
+                  (display ",")
+                  (display (car l))
+                  (loop
+                    (cdr l) #f)))))))
+          (loop
+            lst #t)))))
+  (define reverse-list
+    (lambda (lst)
+      (letrec ((loop (lambda (rest acc)
+          (if (null? rest)
+            acc
+            (loop
+              (cdr rest) (cons
+                (car rest) acc))))))
+        (loop
+          lst (quote ())))))
+  (define solve
+    (lambda (head)
+      (reverse-list head)))
+  (define run-case
+    (lambda (i head)
+      (let ((result (solve head)))
+        (begin
+          (display "CASE")
+          (display i)
+          (display "=")
+          (display-list result)
+          (newline)))))
+  (run-case
+    0 (quote ()))
+  (run-case
+    1 (quote (100)))
+  (run-case
+    2 (quote (1
+        2 3 4 5)))
+  (run-case
+    3 (quote (1 2)))
+  (run-case
+    4 (quote (7
+        7 7 7)))
+  (run-case
+    5 (quote (-3
+        -2 -1 0 1 2)))
+  (run-case
+    6 (quote (100)))
+  (run-case
+    7 (quote (1
+        2 3))))
