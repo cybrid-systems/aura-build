@@ -218,3 +218,23 @@ def test_helper_candidates_export_pick_best():
         assert "pick-best" in src
         assert "(export pick-best)" in src
         assert name
+
+
+def test_ends_helper_candidates_export_ends_with():
+    from aura_build.self_evolve_runtime import _ENDS_HELPER_CANDIDATES
+
+    assert len(_ENDS_HELPER_CANDIDATES) >= 2
+    for name, src in _ENDS_HELPER_CANDIDATES:
+        assert "ends-with?" in src
+        assert "(export ends-with?)" in src
+        assert name
+
+
+def test_starts_helper_candidates_export_starts_with():
+    from aura_build.self_evolve_runtime import _STARTS_HELPER_CANDIDATES
+
+    assert len(_STARTS_HELPER_CANDIDATES) >= 2
+    for name, src in _STARTS_HELPER_CANDIDATES:
+        assert "starts-with?" in src
+        assert "(export starts-with?)" in src
+        assert name
