@@ -4,7 +4,7 @@
   ensure-dir append-file dirname-path
   iso-now make-id
   default-fitness seed-from-prompt
-  join-path abs-path string-trim string-downcase string-pad string-take
+  join-path abs-path string-trim string-downcase string-pad string-take string-drop
   round4)
 
 (require "std/io" all:)
@@ -69,6 +69,17 @@
       (if (>= n len)
         s
         (substring s 0 n)))))
+
+
+; Drop first n chars (Soft oneshot lacks string-drop; denseness path: aura/soft_drop.aura).
+; Complement of string-take — used by pursue fitness_ge: parse + orch prefix strip.
+(define (string-drop s n)
+  (let ((len (string-length s)))
+    (if (<= n 0)
+      s
+      (if (>= n len)
+        ""
+        (substring s n len)))))
 
 (define (ensure-dir path)
   (sh (string-append "mkdir -p '" path "'"))

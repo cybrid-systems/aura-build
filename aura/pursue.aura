@@ -2,7 +2,7 @@
 ; Owns scout→mutate→eval→select-best rounds until goal / max-rounds / honesty fail-closed.
 ; MiniMax is never the controller (optional host hint only). AUTOPROMOTE stays OFF.
 ; Honesty: never invent incr_proven / fiber_live / worldline_backend via env alone.
-; Soft gap fill: util string-pad/string-take (+ soft_pad/soft_take denseness) for align/trunc.
+; Soft gap fill: util string-pad/string-take/string-drop (+ soft_pad/soft_take/soft_drop denseness).
 (export run-pursue)
 
 (require "util" all:)
@@ -22,8 +22,8 @@
     (if (number? from-min)
       from-min
       (if (and (>= (string-length pred) 11)
-               (equal? (substring pred 0 11) "fitness_ge:"))
-        (let ((n (string->number (substring pred 11 (string-length pred)))))
+               (equal? (string-take pred 11) "fitness_ge:"))
+        (let ((n (string->number (string-drop pred 11))))
           (if (number? n) n 0.8))
         0.8))))
 
