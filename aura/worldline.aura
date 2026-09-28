@@ -10,7 +10,7 @@
   fiber-fanout-aura fiber-fanout-sim fiber-discard-losers
   fiber-runtime-fields fiber-audit-write)
 
-; Soft gap fill: util string-take/list-take/list-drop (+ soft_take/soft_list_take/soft_list_drop denseness).
+; Soft gap fill: util string-take/list-take/list-drop/list-tail/make-list (+ soft_* denseness).
 (require "util" all:)
 (require "std/io" all:)
 (require "traj" all:)
@@ -338,7 +338,7 @@
     (eval-current)
     (let ((spawned (spawn-aura-fibers n)))
       (let ((fids (car spawned))
-            (meta (car (cdr spawned))))
+            (meta (car (list-drop spawned 1))))
         (let ((joins (join-all fids)))
           (let ((evaluated (eval-aura-joins meta joins)))
             (let ((ids (map (lambda (w) (hash-ref w "id")) evaluated)))

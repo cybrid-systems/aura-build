@@ -5,7 +5,7 @@
   iso-now make-id
   default-fitness seed-from-prompt
   join-path abs-path string-trim string-downcase string-pad string-take string-drop
-  list-take list-drop
+  list-take list-drop list-tail make-list
   round4)
 
 (require "std/io" all:)
@@ -103,6 +103,17 @@
                    xs
                    (go (cdr xs) (- n 1))))))
     (go xs n)))
+
+; R7RS list-tail ≡ list-drop (Soft oneshot unbound list-tail; denseness: soft_list_drop).
+(define (list-tail xs n)
+  (list-drop xs n))
+
+; R7RS make-list (Soft oneshot unbound; denseness path: aura/soft_make_list.aura).
+; Soft self_evolve_select + leetcode_observe already Soft-gap this primitive.
+(define (make-list n fill)
+  (if (<= n 0)
+    (list)
+    (cons fill (make-list (- n 1) fill))))
 
 (define (ensure-dir path)
   (sh (string-append "mkdir -p '" path "'"))
