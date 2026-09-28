@@ -268,3 +268,13 @@ def test_replace_helper_candidates_export_string_replace():
         assert "string-replace" in src
         assert "(export string-replace)" in src
         assert name
+
+
+def test_trim_helper_candidates_export_string_trim():
+    from aura_build.self_evolve_runtime import _TRIM_HELPER_CANDIDATES
+
+    assert len(_TRIM_HELPER_CANDIDATES) >= 2
+    for name, src in _TRIM_HELPER_CANDIDATES:
+        assert "string-trim" in src
+        assert "(export string-trim)" in src
+        assert name

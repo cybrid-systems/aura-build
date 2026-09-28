@@ -1,0 +1,32 @@
+; Soft-materialized string-trim helper (self-evolve Soft path)
+; materialize=current-source  fiber_live=true when denseness measured
+; selected=scan-letrec  denseness=soft_ready_async_denseness_4048
+; incr_proven=false
+; Product: util/prove/acp trim (Soft oneshot lacks string-trim prim)
+(begin
+  (export string-trim)
+  (define string-trim
+    (lambda (s)
+      (let ((n (string-length s)))
+        (letrec ((l (lambda (i)
+            (if (or
+                (>=
+                  i n) (>
+                  (string-ref
+                    s i) 32))
+              (letrec ((r (lambda (j)
+                  (if (or
+                      (<
+                        j i) (>
+                        (string-ref
+                          s j) 32))
+                    (substring
+                      s i (+
+                        j 1))
+                    (r (-
+                        j 1))))))
+                (r (-
+                    n 1)))
+              (l (+
+                  i 1))))))
+          (l 0))))))
