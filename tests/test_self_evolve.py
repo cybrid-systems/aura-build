@@ -359,3 +359,24 @@ def test_list_drop_helper_candidates_export_list_drop():
         assert "list-drop" in src
         assert "(export list-drop)" in src
 
+
+def test_make_list_helper_candidates_export_make_list():
+    from aura_build.self_evolve_runtime import _MAKE_LIST_HELPER_CANDIDATES
+
+    assert len(_MAKE_LIST_HELPER_CANDIDATES) >= 2
+    for name, src in _MAKE_LIST_HELPER_CANDIDATES:
+        assert "make-list" in src
+        assert "(export make-list)" in src
+
+
+def test_runtime_result_attaches_list_and_make_list_helper_keys():
+    """Regression: list_take/list_drop/make_list must attach on runtime result."""
+    import inspect
+    from aura_build import self_evolve_runtime as m
+
+    src = inspect.getsource(m.cmd_runtime)
+    assert 'result["list_take_helper"]' in src
+    assert 'result["list_drop_helper"]' in src
+    assert 'result["make_list_helper"]' in src
+    assert m.FIBER_EXPLORER_CAP == 32
+
