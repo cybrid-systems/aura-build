@@ -1,0 +1,20 @@
+; Soft-materialized list-take helper (self-evolve Soft path)
+; materialize=current-source  fiber_live=true when denseness measured
+; selected=letrec-go  denseness=soft_ready_async_denseness_4048
+; incr_proven=false
+; Product: orch/worldline cap evaluated lists (Soft oneshot take opaque)
+(begin
+  (export list-take)
+  (define list-take
+    (lambda (xs n)
+      (letrec ((go (lambda (xs n)
+          (if (or
+              (<=
+                n 0) (null? xs))
+            (list)
+            (cons
+              (car xs) (go
+                (cdr xs) (-
+                  n 1)))))))
+        (go
+          xs n)))))

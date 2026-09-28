@@ -334,6 +334,17 @@ def test_drop_helper_candidates_export_string_drop():
         assert "(export string-drop)" in src
 
 
+
+
+def test_list_take_helper_candidates_export_list_take():
+    from aura_build.self_evolve_runtime import _LIST_TAKE_HELPER_CANDIDATES
+
+    assert len(_LIST_TAKE_HELPER_CANDIDATES) >= 2
+    for name, src in _LIST_TAKE_HELPER_CANDIDATES:
+        assert "list-take" in src
+        assert "(export list-take)" in src
+
+
 def test_fiber_explorer_cap_kept_at_32():
     from aura_build.self_evolve_runtime import FIBER_EXPLORER_CAP
 

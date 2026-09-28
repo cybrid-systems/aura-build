@@ -45,6 +45,7 @@ UPCASE_HELPER_PATH = "aura/soft_upcase.aura"
 PAD_HELPER_PATH = "aura/soft_pad.aura"
 TAKE_HELPER_PATH = "aura/soft_take.aura"
 DROP_HELPER_PATH = "aura/soft_drop.aura"
+LIST_TAKE_HELPER_PATH = "aura/soft_list_take.aura"
 DEFAULT_BUMPS = (2, 9, 4, 7, 1)
 # Soft fiber:spawn+mutate:rebind oneshots hang past ~64 sequential joins
 # (fiber:join WARN defuse_version storm → sock stall). Cap explorers;
@@ -3416,6 +3417,264 @@ def _run_soft_drop_helper_evolve(
         stop_quiet(sess)
 
 
+# Soft oneshot native `take` is bound but returns an opaque unprintable value
+# (display/write → <unknown>/<error>; pair?/null? fail). Real Soft oneshot gap —
+# not string trivia. Product: orch/worldline cap evaluated/candidate lists.
+_LIST_TAKE_HELPER_CANDIDATES: list[tuple[str, str]] = [
+    (
+        "letrec-go",
+        "(export list-take)\n"
+        "(define (list-take xs n)\n"
+        "  (letrec ((go (lambda (xs n)\n"
+        "                 (if (or (<= n 0) (null? xs))\n"
+        "                     (list)\n"
+        "                     (cons (car xs) (go (cdr xs) (- n 1)))))))\n"
+        "    (go xs n)))\n",
+    ),
+    (
+        "named-let",
+        "(export list-take)\n"
+        "(define (list-take xs n)\n"
+        "  (let loop ((xs xs) (n n) (out (list)))\n"
+        "    (if (or (<= n 0) (null? xs))\n"
+        "        (reverse out)\n"
+        "        (loop (cdr xs) (- n 1) (cons (car xs) out)))))\n",
+    ),
+    (
+        "cond-go",
+        "(export list-take)\n"
+        "(define (list-take xs n)\n"
+        "  (cond\n"
+        "    ((or (<= n 0) (null? xs)) (list))\n"
+        "    (else (cons (car xs) (list-take (cdr xs) (- n 1))))))\n",
+    ),
+]
+
+
+def _score_list_take_helper_src(sess: Any, src: str, *, timeout_s: float = 12.0) -> dict[str, Any]:
+    """Score list-take helper against a small known vector (Soft equal?)."""
+    from aura_build.serve_session import is_session_transient
+
+    esc = _soft_escape(src)
+    boot = sess.raw_line(f'(set-code "{esc}")', timeout_s=timeout_s)
+    if boot.get("status") != "ok":
+        msg = boot.get("msg") or boot.get("status")
+        return {
+            "ok": False,
+            "observed": None,
+            "msg": msg,
+            "transient": is_session_transient(msg),
+        }
+    sess.raw_line("(eval-current)", timeout_s=timeout_s)
+    cases = [
+        '(equal? (list-take (list 1 2 3 4) 2) (list 1 2))',
+        '(equal? (list-take (list 1 2) 5) (list 1 2))',
+        '(equal? (list-take (list 1 2 3) 0) (list))',
+        '(equal? (list-take (list) 3) (list))',
+        '(equal? (list-take (list 9) 1) (list 9))',
+        '(equal? (list-take (list 1 2 3) 3) (list 1 2 3))',
+        '(equal? (list-take (list "a" "b" "c") 2) (list "a" "b"))',
+    ]
+    hits = 0
+    last_msg = None
+    for expr in cases:
+        r = sess.raw_line(expr, timeout_s=timeout_s)
+        msg = r.get("msg") or r.get("status")
+        if is_session_transient(msg):
+            return {"ok": False, "observed": hits, "msg": msg, "transient": True}
+        if r.get("status") != "ok":
+            last_msg = msg
+            continue
+        if _truthy_soft(r.get("value")):
+            hits += 1
+        last_msg = msg
+    ok = hits == len(cases)
+    return {
+        "ok": ok,
+        "observed": hits,
+        "status": "ok" if ok else "partial",
+        "msg": last_msg,
+        "transient": False,
+    }
+
+
+def _run_soft_list_take_helper_evolve(
+    repo: Path,
+    *,
+    aura_bin: str,
+    harness_root: Path | None = None,
+) -> dict[str, Any]:
+    """Soft serve denseness → list-take candidates → select-best → current-source.
+
+    Materializes ``aura/soft_list_take.aura`` (real kernel helper).
+    Honesty: fiber_live only when denseness probe measured ok.
+    Soft oneshot native ``take`` returns opaque unprintable — Soft gap.
+    """
+    from aura_build.llm_dogfood import fiber_fanout_probe
+    from aura_build.serve_session import (
+        is_session_transient,
+        restart_session,
+        start_session,
+        stop_quiet,
+    )
+
+    hroot = harness_root or (repo / ".aura-build")
+    sess = None
+    try:
+        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+        if not sess.alive():
+            return {"ok": False, "reason": "serve_not_alive", "fiber_live": False}
+
+        probe = fiber_fanout_probe(sess, n=2, timeout_s=8.0)
+        denseness_ok = bool(probe.get("ok"))
+        denseness_note = str(
+            probe.get("note") or probe.get("reason") or ("ok" if denseness_ok else "fail")
+        )
+        if not denseness_ok:
+            return {
+                "ok": False,
+                "reason": "denseness_probe_failed",
+                "denseness": probe,
+                "fiber_live": False,
+            }
+
+        explorers: list[dict[str, Any]] = []
+        restarts = 0
+        for name, src in _LIST_TAKE_HELPER_CANDIDATES:
+            sc = _score_list_take_helper_src(sess, src)
+            if sc.get("transient") and restarts < 2:
+                stop_quiet(sess)
+                sess = restart_session(aura_bin=aura_bin, harness_root=hroot)
+                denseness = fiber_fanout_probe(sess, n=2, timeout_s=6.0)
+                denseness_ok = bool(denseness.get("ok"))
+                denseness_note = str(denseness.get("note") or denseness_note)
+                restarts += 1
+                if not denseness_ok:
+                    return {
+                        "ok": False,
+                        "reason": "denseness_lost_after_restart",
+                        "fiber_live": False,
+                        "restarts": restarts,
+                    }
+                sc = _score_list_take_helper_src(sess, src)
+            explorers.append(
+                {
+                    "name": name,
+                    "ok": bool(sc.get("ok")),
+                    "observed": sc.get("observed"),
+                    "src": src,
+                    "transient": bool(sc.get("transient")),
+                    "msg": sc.get("msg"),
+                }
+            )
+
+        ok_ex = [e for e in explorers if e.get("ok")]
+        if not ok_ex:
+            return {
+                "ok": False,
+                "reason": "list_take_helper_candidates_all_failed",
+                "explorers": [
+                    {k: e.get(k) for k in ("name", "ok", "observed", "msg")}
+                    for e in explorers
+                ],
+                "fiber_live": True,
+                "denseness_note": denseness_note,
+                "aura_issue_candidate": True,
+            }
+
+        # Prefer letrec-go when green.
+        best = next((e for e in ok_ex if e["name"] == "letrec-go"), ok_ex[0])
+        win_src = str(best["src"])
+        boot = sess.raw_line(
+            f'(set-code "{_soft_escape(win_src)}")', timeout_s=12.0
+        )
+        if boot.get("status") != "ok" and is_session_transient(boot.get("msg")):
+            stop_quiet(sess)
+            sess = restart_session(aura_bin=aura_bin, harness_root=hroot)
+            boot = sess.raw_line(
+                f'(set-code "{_soft_escape(win_src)}")', timeout_s=12.0
+            )
+        if boot.get("status") != "ok":
+            return {
+                "ok": False,
+                "reason": f"winner_set_code_failed:{boot.get('msg') or boot.get('status')}",
+                "fiber_live": True,
+                "selected": best["name"],
+            }
+        sess.raw_line("(eval-current)", timeout_s=10.0)
+        cs = sess.raw_line(
+            "(display (current-source :workspace :pretty))", timeout_s=10.0
+        )
+        src = str(cs.get("display") or "").strip()
+        if not src or "list-take" not in src:
+            return {
+                "ok": False,
+                "reason": "current_source_empty_or_bad",
+                "display": src[:200],
+                "fiber_live": True,
+                "aura_issue_candidate": True,
+                "tip_note": "Soft current-source failed for soft_list_take",
+            }
+
+        if "(export list-take)" not in src:
+            return {
+                "ok": False,
+                "reason": "current_source_missing_export_names",
+                "display": src[:200],
+                "fiber_live": True,
+                "aura_issue_candidate": True,
+                "tip_note": "Soft current-source dropped export names (#4132 should be fixed)",
+                "selected": best["name"],
+            }
+
+        banner = (
+            "; Soft-materialized list-take helper (self-evolve Soft path)\n"
+            "; materialize=current-source  fiber_live=true when denseness measured\n"
+            f"; selected={best['name']}  denseness={denseness_note}\n"
+            "; incr_proven=false\n"
+            "; Product: orch/worldline cap evaluated lists (Soft oneshot take opaque)\n"
+        )
+        body = banner + src.rstrip() + "\n"
+
+        out = repo / LIST_TAKE_HELPER_PATH
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(body, encoding="utf-8")
+
+        verify = sess.raw_line(
+            '(equal? (list-take (list 1 2 3) 2) (list 1 2))',
+            timeout_s=8.0,
+        )
+        v_ok = verify.get("status") == "ok" and _truthy_soft(verify.get("value"))
+
+        return {
+            "ok": bool(v_ok),
+            "reason": "list_take_helper_evolved" if v_ok else "list_take_helper_verify_fail",
+            "path": LIST_TAKE_HELPER_PATH,
+            "selected": best["name"],
+            "observed": next((e.get("observed") for e in explorers if e["name"] == best["name"]), None),
+            "src_len": len(src),
+            "materialize": "current-source",
+            "worldline_backend": "fiber_graph",
+            "fiber_live": True,
+            "incr_proven": False,
+            "denseness_note": denseness_note,
+            "explorers": [
+                {k: e.get(k) for k in ("name", "ok", "observed")} for e in explorers
+            ],
+            "session_restarts": restarts,
+            "verify_ok": v_ok,
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "ok": False,
+            "reason": f"list_take_helper_evolve_exc:{type(exc).__name__}:{exc}",
+            "fiber_live": False,
+        }
+    finally:
+        stop_quiet(sess)
+
+
+
 def _run_serve_fiber(
     repo: Path,
     *,
@@ -3774,6 +4033,15 @@ def cmd_runtime(args: Any) -> int:
                 ensure_ascii=False,
             )
         )
+        list_take_helper = _run_soft_list_take_helper_evolve(
+            repo, aura_bin=str(aura_bin), harness_root=harness_root
+        )
+        print(
+            json.dumps(
+                {"event": "self_evolve_list_take_helper", **list_take_helper},
+                ensure_ascii=False,
+            )
+        )
 
     result: dict[str, Any]
     if prefer_serve:
@@ -3986,7 +4254,7 @@ def cmd_runtime(args: Any) -> int:
         print("self-evolve runtime: --no-commit; skip git")
         return 0
 
-    paths = [STAMP_PATH, RUNTIME_KERNEL, HELPER_PATH, STARTS_HELPER_PATH, ENDS_HELPER_PATH, CONTAINS_HELPER_PATH, SPLIT_HELPER_PATH, REPLACE_HELPER_PATH, TRIM_HELPER_PATH, DOWNCASE_HELPER_PATH, UPCASE_HELPER_PATH, PAD_HELPER_PATH, TAKE_HELPER_PATH, DROP_HELPER_PATH, "src/aura_build/self_evolve_runtime.py", "src/aura_build/serve_session.py", "src/aura_build/soft_leetcode_runtime.py", "tests/test_serve_session.py", "tests/test_self_evolve.py"]
+    paths = [STAMP_PATH, RUNTIME_KERNEL, HELPER_PATH, STARTS_HELPER_PATH, ENDS_HELPER_PATH, CONTAINS_HELPER_PATH, SPLIT_HELPER_PATH, REPLACE_HELPER_PATH, TRIM_HELPER_PATH, DOWNCASE_HELPER_PATH, UPCASE_HELPER_PATH, PAD_HELPER_PATH, TAKE_HELPER_PATH, DROP_HELPER_PATH, LIST_TAKE_HELPER_PATH, "src/aura_build/self_evolve_runtime.py", "src/aura_build/serve_session.py", "src/aura_build/soft_leetcode_runtime.py", "tests/test_serve_session.py", "tests/test_self_evolve.py"]
     fl = "true" if result.get("fiber_live") else "false"
     backend = result.get("worldline_backend") or "unknown"
     helper_sel = (result.get("helper") or {}).get("selected") or "-"
