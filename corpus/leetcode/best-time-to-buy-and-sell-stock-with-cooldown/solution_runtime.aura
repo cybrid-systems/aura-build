@@ -1,0 +1,79 @@
+; soft_leetcode_runtime slug=best-time-to-buy-and-sell-stock-with-cooldown path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=fiber fiber_llm_ok=true
+; selected=llm-0 hits=3/8
+; baseline_hits=0/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define max
+    (lambda (a b)
+      (if (>
+          a b)
+        a
+        b)))
+  (define max3
+    (lambda (a b c)
+      (max
+        a (max
+          b c))))
+  (define solve
+    (lambda (prices)
+      (let ((n (length prices)))
+        (if (<=
+            n 1)
+          0
+          (let ((hold (car prices)))
+            (let ((sold 0))
+              (let ((rest 0))
+                (letrec ((loop (lambda (i h s r)
+                    (if (>=
+                        i n)
+                      (max
+                        r h)
+                      (let ((p (list-ref
+                          prices i)))
+                        (let ((prev-h h))
+                          (let ((prev-s s))
+                            (let ((prev-r r))
+                              (loop
+                                (+
+                                  i 1) (max3
+                                  (-
+                                    prev-r p) prev-h (-
+                                    prev-r p)) (max
+                                  prev-s (-
+                                    prev-h (-
+                                      p prev-r))) prev-r)))))))))
+                  (loop
+                    1 hold sold rest)))))))))
+  (display "CASE0=")
+  (display (solve (list
+        1 2 3 0 2)))
+  (newline)
+  (display "CASE1=")
+  (display (solve (list 1)))
+  (newline)
+  (display "CASE2=")
+  (display (solve (list)))
+  (newline)
+  (display "CASE3=")
+  (display (solve (list
+        1 2 4)))
+  (newline)
+  (display "CASE4=")
+  (display (solve (list
+        2 1 4)))
+  (newline)
+  (display "CASE5=")
+  (display (solve (list
+        6 1 3 2 4 7)))
+  (newline)
+  (display "CASE6=")
+  (display (solve (list
+        1 2 3 4 5)))
+  (newline)
+  (display "CASE7=")
+  (display (solve (list
+        5 4 3 2 1)))
+  (newline))
