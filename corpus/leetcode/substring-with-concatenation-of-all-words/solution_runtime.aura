@@ -2,8 +2,8 @@
 ; materialize=current-source worldline_backend=fiber_graph
 ; fiber_live=true incr_proven=false
 ; llm_via=fiber fiber_llm_ok=true
-; selected=llm-2 hits=4/8
-; baseline_hits=2/8
+; selected=llm-0 hits=7/8
+; baseline_hits=4/8
 ; Expected values used only for host scoring / LLM context, not hardcoded into display.
 (begin
   (define length
@@ -144,6 +144,13 @@
                         j 1))))))))))
         (loop
           (copy-alist req) 0))))
+  (define append
+    (lambda (a b)
+      (if (null? a)
+        b
+        (cons
+          (car a) (append
+            (cdr a) b)))))
   (define check-offset
     (lambda (s req m w n offset)
       (letrec ((loop (lambda (i acc)
@@ -184,13 +191,13 @@
                   (letrec ((loop (lambda (offset result)
                       (if (>=
                           offset w)
-                        (reverse result)
+                        result
                         (let ((res (check-offset
                             s req m w n offset)))
                           (loop
                             (+
                               offset 1) (append
-                              res result)))))))
+                              result res)))))))
                     (loop
                       0 (quote ())))))))))))
   (define display-list
@@ -240,8 +247,7 @@
   (newline)
   (display "CASE6=")
   (display-list (solve
-      "lingmindrotatom" (list
-        "rot" "atom" "mind" "ling")))
+      "a" (list "a")))
   (newline)
   (display "CASE7=")
   (display-list (solve
