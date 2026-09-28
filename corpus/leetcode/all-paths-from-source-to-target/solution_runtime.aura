@@ -1,0 +1,140 @@
+; soft_leetcode_runtime slug=all-paths-from-source-to-target path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=fiber fiber_llm_ok=true
+; selected=llm-1 hits=5/8
+; baseline_hits=0/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define my-length
+    (lambda (lst)
+      (if (null? lst)
+        0
+        (+
+          1 (my-length (cdr lst))))))
+  (define list-ref
+    (lambda (lst i)
+      (if (=
+          i 0)
+        (car lst)
+        (list-ref
+          (cdr lst) (-
+            i 1)))))
+  (define my-reverse
+    (lambda (lst)
+      (begin
+        (define rev
+          (lambda (acc lst)
+            (if (null? lst)
+              acc
+              (rev
+                (cons
+                  (car lst) acc) (cdr lst)))))
+        (rev
+          (quote ()) lst))))
+  (define dfs
+    (lambda (graph target u path)
+      (if (=
+          u target)
+        (list path)
+        (let ((neighbors (list-ref
+            graph u)))
+          (begin
+            (define explore
+              (lambda (nbrs acc)
+                (if (null? nbrs)
+                  acc
+                  (let ((nbr (car nbrs)))
+                    (explore
+                      (cdr nbrs) (append
+                        acc (dfs
+                          graph target nbr (append
+                            path (list nbr)))))))))
+            (explore
+              neighbors (quote ())))))))
+  (define find-all-paths
+    (lambda (graph)
+      (let ((n (my-length graph)))
+        (dfs
+          graph (-
+            n 1) 0 (list 0)))))
+  (define display-path-simple
+    (lambda (path)
+      (begin
+        (display "[")
+        (define walk
+          (lambda (lst)
+            (if (null? lst)
+              (quote ())
+              (begin
+                (display (number->string (car lst)))
+                (if (null? (cdr lst))
+                  (quote ())
+                  (display ","))
+                (walk (cdr lst))))))
+        (walk path)
+        (display "]"))))
+  (define display-paths
+    (lambda (paths)
+      (begin
+        (display "[")
+        (define walk
+          (lambda (lst)
+            (if (null? lst)
+              (quote ())
+              (begin
+                (display-path-simple (car lst))
+                (if (null? (cdr lst))
+                  (quote ())
+                  (display ","))
+                (walk (cdr lst))))))
+        (walk paths)
+        (display "]"))))
+  (define solve
+    (lambda (graph)
+      (find-all-paths graph)))
+  (define test0 (quote ((1 2)
+        (3) (3) 0)))
+  (define test1 (quote ((1 2)
+        (3) (3) (4) 0)))
+  (define test2 (quote ((1)
+        (2) (3) (4) 0)))
+  (define test3 (quote ((1
+          2 3)
+        (3) (3) 0)))
+  (define test4 (quote ((1)
+        (2 3) (3) 0)))
+  (define test5 (quote ((4
+          3 1)
+        (3
+          2 4) (3) (4) 0)))
+  (define test6 (quote ((1)
+        (2 3) (3) (4) (5) 0)))
+  (define test7 (quote ((1
+          2 3 4 5)
+        (3 4) (3 5) (5) (5) 0)))
+  (define run-test
+    (lambda (i g)
+      (let ((result (solve g)))
+        (begin
+          (display "CASE")
+          (display (number->string i))
+          (display "=")
+          (display-paths result)
+          (newline)))))
+  (run-test
+    0 test0)
+  (run-test
+    1 test1)
+  (run-test
+    2 test2)
+  (run-test
+    3 test3)
+  (run-test
+    4 test4)
+  (run-test
+    5 test5)
+  (run-test
+    6 test6)
+  (run-test
+    7 test7))
