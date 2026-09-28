@@ -157,3 +157,29 @@ Fresh Soft `--serve-async` (`build_soft4048/aura`, no MiniMax, no fiber http-pos
 - `20260927-212409` ok=True llm_via=fiber llm_parallel=fiber explore=fiber_graph artifacts=`combat_20260927-212409_stdout.json`
 - `20260927-213755` ok=False llm_via=fiber llm_parallel=fiber_serial explore=fiber_graph artifacts=`combat_20260927-213755_stdout.json`
 - `20260928-125943` ok=True llm_via=host llm_parallel=host_thread explore=fiber_graph artifacts=`combat_20260928-125943_stdout.json`
+- `20260928-131320` ok=True llm_via=fiber llm_parallel=fiber explore=fiber_graph artifacts=`combat_20260928-131320_stdout.json`
+
+
+## mini-cache Soft tip cbae122 concurrent denseness green (2026-09-28 ~13:17 CST)
+
+**Soft tip:** `cbae122` `/workspace/aura-grok/build_soft4132/aura` (#4132 unparse). **aura-build:** tip before stamp includes `79c32cd` equal-occurrences Soft LLM full.
+
+**Combat:** `combat_20260928-131320` — project=mini-cache (3-file), `--fiber-explore 3 --fiber-llm --concurrent-llm --explore-tools llm --max-rounds 6`.
+
+| Honesty | Measured |
+|---------|----------|
+| fiber_live | true |
+| serve_mode | async |
+| soft_ready | soft_ready_ok denseness_4048 path |
+| llm_via | fiber |
+| llm_parallel | fiber (rounds: fiber×6) |
+| explore_parallel | fiber_graph |
+| fiber_llm_probe | ok ~6.6s |
+| ok / reason | True / verify_green |
+| fitness | 1.0 |
+
+**Selected:** store/ops/main compute GET_*/COUNT via cache-get + counter — no `GET_A=1` / `COUNT=2` literal hardcode in source. Forever-ttl=`0`/`#f` not exercised by verify scenario (candidate used ttl=10 for key a).
+
+**Push:** combat `--no-push` (no aura-build product materialize). This FINDINGS stamp is the productized docs commit.
+
+**New Aura issues:** none (Soft denseness held under concurrent MiniMax N=3×6).
