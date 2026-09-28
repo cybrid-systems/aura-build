@@ -1,0 +1,250 @@
+; soft_leetcode_runtime slug=substring-with-concatenation-of-all-words path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=fiber fiber_llm_ok=true
+; selected=llm-2 hits=4/8
+; baseline_hits=2/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define length
+    (lambda (lst)
+      (if (null? lst)
+        0
+        (+
+          1 (length (cdr lst))))))
+  (define list-ref
+    (lambda (lst i)
+      (if (=
+          i 0)
+        (car lst)
+        (list-ref
+          (cdr lst) (-
+            i 1)))))
+  (define equal?
+    (lambda (a b)
+      (if (and
+          (null? a) (null? b))
+        #t
+        (if (or
+            (null? a) (null? b))
+          #f
+          (if (and
+              (number? a) (number? b))
+            (=
+              a b)
+            (if (and
+                (string? a) (string? b))
+              (string=?
+                a b)
+              (if (and
+                  (pair? a) (pair? b))
+                (and
+                  (equal?
+                    (car a) (car b)) (equal?
+                    (cdr a) (cdr b)))
+                #f)))))))
+  (define assoc
+    (lambda (key lst)
+      (if (null? lst)
+        #f
+        (if (equal?
+            (car (car lst)) key)
+          (car lst)
+          (assoc
+            key (cdr lst))))))
+  (define remove-pair
+    (lambda (key lst)
+      (if (null? lst)
+        (quote ())
+        (if (equal?
+            (car (car lst)) key)
+          (cdr lst)
+          (cons
+            (car lst) (remove-pair
+              key (cdr lst)))))))
+  (define build-req
+    (lambda (words)
+      (letrec ((loop (lambda (ws acc)
+          (if (null? ws)
+            acc
+            (if (assoc
+                (car ws) acc)
+              (let ((pair (assoc
+                  (car ws) acc)))
+                (let ((new-val (+
+                    (cdr pair) 1)))
+                  (loop
+                    (cdr ws) (cons
+                      (cons
+                        (car ws) new-val) (remove-pair
+                        (car ws) acc)))))
+              (loop
+                (cdr ws) (cons
+                  (cons
+                    (car ws) 1) acc)))))))
+        (loop
+          words (quote ())))))
+  (define copy-alist
+    (lambda (alst)
+      (if (null? alst)
+        (quote ())
+        (cons
+          (cons
+            (car (car alst)) (cdr (car alst))) (copy-alist (cdr alst))))))
+  (define all-zero?
+    (lambda (counts)
+      (if (null? counts)
+        #t
+        (if (not (=
+              (cdr (car counts)) 0))
+          #f
+          (all-zero? (cdr counts))))))
+  (define substring
+    (lambda (s start end)
+      (let ((len (-
+          end start)))
+        (letrec ((loop (lambda (i acc)
+            (if (=
+                i len)
+              (list->string (reverse acc))
+              (loop
+                (+
+                  i 1) (cons
+                  (string-ref
+                    s (+
+                      start i)) acc))))))
+          (loop
+            0 (quote ()))))))
+  (define check-window
+    (lambda (s i req m w)
+      (letrec ((loop (lambda (counts j)
+          (if (=
+              j m)
+            (all-zero? counts)
+            (let ((word (substring
+                s (+
+                  i (*
+                    j w)) (+
+                  i (*
+                    (+
+                      j 1) w)))))
+              (let ((pair (assoc
+                  word counts)))
+                (if (not pair)
+                  #f
+                  (if (=
+                      (cdr pair) 0)
+                    #f
+                    (loop
+                      (cons
+                        (cons
+                          word (-
+                            (cdr pair) 1)) (remove-pair
+                          word counts)) (+
+                        j 1))))))))))
+        (loop
+          (copy-alist req) 0))))
+  (define check-offset
+    (lambda (s req m w n offset)
+      (letrec ((loop (lambda (i acc)
+          (if (>
+              (+
+                i (*
+                  m w)) n)
+            (reverse acc)
+            (if (check-window
+                s i req m w)
+              (loop
+                (+
+                  i w) (cons
+                  i acc))
+              (loop
+                (+
+                  i w) acc))))))
+        (loop
+          offset (quote ())))))
+  (define solve
+    (lambda (s words)
+      (let ((n (string-length s)))
+        (let ((m (length words)))
+          (let ((w (if (>
+                m 0)
+              (string-length (list-ref
+                  words 0))
+              0)))
+            (let ((target-len (*
+                m w)))
+              (if (or
+                  (=
+                    m 0) (=
+                    w 0) (<
+                    n target-len))
+                (quote ())
+                (let ((req (build-req words)))
+                  (letrec ((loop (lambda (offset result)
+                      (if (>=
+                          offset w)
+                        (reverse result)
+                        (let ((res (check-offset
+                            s req m w n offset)))
+                          (loop
+                            (+
+                              offset 1) (append
+                              res result)))))))
+                    (loop
+                      0 (quote ())))))))))))
+  (define display-list
+    (lambda (lst)
+      (begin
+        (display "[")
+        (letrec ((loop (lambda (l first?)
+            (if (null? l)
+              (display "]")
+              (begin
+                (if first?
+                  (set! first? #f)
+                  (display ","))
+                (display (car l))
+                (loop
+                  (cdr l) #f))))))
+          (loop
+            lst #t)))))
+  (display "CASE0=")
+  (display-list (solve
+      "barfoothefoobarman" (list
+        "foo" "bar")))
+  (newline)
+  (display "CASE1=")
+  (display-list (solve
+      "wordgoodgoodgoodbestword" (list
+        "word" "good" "best" "good")))
+  (newline)
+  (display "CASE2=")
+  (display-list (solve
+      "barfoofoobarthefoobarman" (list
+        "bar" "foo" "the")))
+  (newline)
+  (display "CASE3=")
+  (display-list (solve
+      "" (list "foo")))
+  (newline)
+  (display "CASE4=")
+  (display-list (solve
+      "abcdef" (list
+        "a" "b" "c")))
+  (newline)
+  (display "CASE5=")
+  (display-list (solve
+      "aaaaaaaaaa" (list
+        "a" "a" "a")))
+  (newline)
+  (display "CASE6=")
+  (display-list (solve
+      "lingmindrotatom" (list
+        "rot" "atom" "mind" "ling")))
+  (newline)
+  (display "CASE7=")
+  (display-list (solve
+      "abcabcabc" (list
+        "abc" "abc")))
+  (newline))
