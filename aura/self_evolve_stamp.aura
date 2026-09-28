@@ -1,26 +1,29 @@
 ; aura-build self-evolve stamp — materialized via (current-source :workspace :pretty)
-; Not Soft Ready. Not fiber-live unless serve/fiber measured it.
-; traj_id=rt-9-9
+; Not Soft Ready invent. fiber_live / incr_proven only when measured.
+; traj_id=serve-fiber-36-36
 ; generation=1
-; selected=9
-; observed=9
-; src_len=33
+; selected=36
+; observed=36
+; src_len=34
 ; verify_ok=true
 ; incr_proven=false
-; fiber_live=false
+; fiber_live=true
 ; kernel=aura
 ; materialize=current-source
+; worldline_backend=fiber_graph
+; denseness=soft_ready_async_denseness_4048
 (export stamp-info)
 (define (stamp-info)
-  (hash "traj_id" "rt-9-9"
+  (hash "traj_id" "serve-fiber-36-36"
         "generation" 1
-        "selected" 9
-        "observed" 9
+        "selected" 36
+        "observed" 36
         "kernel" "aura"
         "materialize" "current-source"
+        "worldline_backend" "fiber_graph"
         "incr_proven" #f
-        "fiber_live" #f))
+        "fiber_live" #t))
 ; --- winner FlatAST unparse ---
 (define cand
   (lambda ()
-    9))
+    36))

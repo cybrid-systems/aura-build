@@ -1,0 +1,18 @@
+; Soft-materialized string-drop helper (self-evolve Soft path)
+; materialize=current-source  fiber_live=true when denseness measured
+; selected=substr-guard  denseness=soft_ready_async_denseness_4048
+; incr_proven=false
+; Product: pursue fitness_ge: parse / orch prefix strip (Soft oneshot lacks string-drop)
+(begin
+  (export string-drop)
+  (define string-drop
+    (lambda (s n)
+      (let ((len (string-length s)))
+        (if (<=
+            n 0)
+          s
+          (if (>=
+              n len)
+            ""
+            (substring
+              s n len)))))))
