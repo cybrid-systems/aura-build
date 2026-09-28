@@ -1,0 +1,60 @@
+; soft_leetcode_runtime slug=number-of-1-bits path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=fiber fiber_llm_ok=true
+; selected=llm-2 hits=8/8
+; baseline_hits=1/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define solve
+    (lambda (n)
+      (letrec ((bitwise-and (lambda (a b)
+          (letrec ((loop (lambda (a b result bit)
+              (if (and
+                  (=
+                    a 0) (=
+                    b 0))
+                result
+                (loop
+                  (quotient
+                    a 2) (quotient
+                    b 2) (+
+                    result (if (and
+                        (=
+                          (remainder
+                            a 2) 1) (=
+                          (remainder
+                            b 2) 1))
+                      bit
+                      0)) (*
+                    bit 2))))))
+            (loop
+              a b 0 1)))))
+        (letrec ((loop (lambda (n count)
+            (if (=
+                n 0)
+              count
+              (loop
+                (bitwise-and
+                  n (-
+                    n 1)) (+
+                  count 1))))))
+          (loop
+            n 0)))))
+  (define cases (quote (0
+        1 11 128 255 4294967295 4294967293 2147483648)))
+  (define run-cases
+    (lambda (cases i)
+      (if (null? cases)
+        (quote done)
+        (begin
+          (display "CASE")
+          (display i)
+          (display "=")
+          (display (solve (car cases)))
+          (newline)
+          (run-cases
+            (cdr cases) (+
+              i 1))))))
+  (run-cases
+    cases 0))
