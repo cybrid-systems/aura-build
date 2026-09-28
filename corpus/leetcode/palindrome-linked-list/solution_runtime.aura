@@ -1,0 +1,101 @@
+; soft_leetcode_runtime slug=palindrome-linked-list path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=fiber fiber_llm_ok=true
+; selected=llm-2 hits=8/8
+; baseline_hits=3/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define build-list
+    (lambda (xs)
+      (letrec ((loop (lambda (xs acc)
+          (if (null? xs)
+            acc
+            (loop
+              (cdr xs) (cons
+                (car xs) acc))))))
+        (loop
+          xs (quote ())))))
+  (define rev-list
+    (lambda (head)
+      (letrec ((loop (lambda (prev cur)
+          (if (null? cur)
+            prev
+            (loop
+              (cons
+                (car cur) prev) (cdr cur))))))
+        (loop
+          (quote ()) head))))
+  (define solve
+    (lambda (head)
+      (begin
+        (define step
+          (lambda (slow fast)
+            (if (or
+                (null? fast) (null? (cdr fast)))
+              slow
+              (step
+                (cdr slow) (cddr fast)))))
+        (let ((mid (step
+            head (cdr head))))
+          (let ((n (letrec ((loop (lambda (l k)
+                (if (null? l)
+                  k
+                  (loop
+                    (cdr l) (+
+                      k 1))))))
+              (loop
+                head 0))))
+            (let ((second (if (=
+                  (modulo
+                    n 2) 1)
+                (cdr mid)
+                mid)))
+              (let ((rev-second (rev-list second)))
+                (letrec ((loop (lambda (a b ok)
+                    (if (null? b)
+                      ok
+                      (let ((new-ok (and
+                          ok (=
+                            (car a) (car b)))))
+                        (loop
+                          (cdr a) (cdr b) new-ok))))))
+                  (loop
+                    head rev-second #t)))))))))
+  (define display-value
+    (lambda (v)
+      (if (boolean? v)
+        (display (if v
+            "#t"
+            "#f"))
+        (if (number? v)
+          (display (number->string v))
+          (display v)))))
+  (define run-case
+    (lambda (i values)
+      (begin
+        (display (string-append
+            "CASE" (number->string i) "="))
+        (display-value (solve (build-list values)))
+        (newline))))
+  (run-case
+    0 (quote (1
+        2 3 2 1)))
+  (run-case
+    1 (quote (1
+        2 3)))
+  (run-case
+    2 (quote (7)))
+  (run-case
+    3 (quote (1 1)))
+  (run-case
+    4 (quote (1 2)))
+  (run-case
+    5 (quote (1
+        2 2 1)))
+  (run-case
+    6 (quote (1
+        2 3 4 3 2 1)))
+  (run-case
+    7 (quote (1
+        2 3 4 5 2 1))))
