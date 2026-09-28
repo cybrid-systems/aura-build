@@ -1,0 +1,75 @@
+; soft_leetcode_runtime slug=asteroid-collision path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=fiber fiber_llm_ok=true
+; selected=llm-2 hits=2/3
+; baseline_hits=0/3
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define solve
+    (lambda (asteroids)
+      (letrec ((loop (lambda (xs stack)
+          (if (null? xs)
+            stack
+            (let ((a (car xs)))
+              (let ((rest (cdr xs)))
+                (letrec ((push (lambda (stk)
+                    (if (null? stk)
+                      (loop
+                        rest (cons
+                          a stk))
+                      (if (or
+                          (>
+                            a 0) (<
+                            (car stk) 0))
+                        (loop
+                          rest (cons
+                            a stk))
+                        (if (=
+                            (+
+                              a (car stk)) 0)
+                          (loop
+                            rest (cdr stk))
+                          (if (>
+                              (abs a) (abs (car stk)))
+                            (push (cdr stk))
+                            (if (<
+                                (abs a) (abs (car stk)))
+                              (loop
+                                rest stk)
+                              (loop
+                                rest stk)))))))))
+                  (push stack))))))))
+        (loop
+          asteroids (quote ())))))
+  (define display-list
+    (lambda (xs)
+      (if (null? xs)
+        (display "[]")
+        (begin
+          (display "[")
+          (letrec ((loop (lambda (l)
+              (begin
+                (display (car l))
+                (if (null? (cdr l))
+                  (display "]")
+                  (begin
+                    (display " ")
+                    (loop (cdr l))))))))
+            (loop xs))))))
+  (define run-case
+    (lambda (i asteroids)
+      (begin
+        (display "CASE")
+        (display i)
+        (display "=")
+        (display-list (solve asteroids))
+        (newline))))
+  (run-case
+    0 (quote (5
+        10 -5)))
+  (run-case
+    1 (quote (8 -8)))
+  (run-case
+    2 (quote (10
+        2 -5))))
