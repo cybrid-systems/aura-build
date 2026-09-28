@@ -278,3 +278,13 @@ def test_trim_helper_candidates_export_string_trim():
         assert "string-trim" in src
         assert "(export string-trim)" in src
         assert name
+
+def test_downcase_helper_candidates_export_string_downcase():
+    from aura_build.self_evolve_runtime import _DOWNCASE_HELPER_CANDIDATES
+
+    assert len(_DOWNCASE_HELPER_CANDIDATES) >= 2
+    for name, src in _DOWNCASE_HELPER_CANDIDATES:
+        assert "string-downcase" in src
+        assert "(export string-downcase)" in src
+        assert name
+

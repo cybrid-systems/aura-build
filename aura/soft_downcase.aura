@@ -1,0 +1,18 @@
+; Soft-materialized string-downcase helper (self-evolve Soft path)
+; materialize=current-source  fiber_live=true when denseness measured
+; selected=map-list  denseness=soft_ready_async_denseness_4048
+; incr_proven=false
+; Product: util/pursue/worldline normalize (Soft oneshot lacks string-downcase prim)
+(begin
+  (export string-downcase)
+  (define string-downcase
+    (lambda (s)
+      (list->string (map
+          (lambda (c)
+            (if (and
+                (>=
+                  c 65) (<=
+                  c 90))
+              (+
+                c 32)
+              c)) (string->list s))))))
