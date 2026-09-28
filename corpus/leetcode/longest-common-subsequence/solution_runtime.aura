@@ -1,0 +1,121 @@
+; soft_leetcode_runtime slug=longest-common-subsequence path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=fiber fiber_llm_ok=true
+; selected=llm-1 hits=8/8
+; baseline_hits=0/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define make-list
+    (lambda (n val)
+      (letrec ((loop (lambda (i acc)
+          (if (=
+              i n)
+            (reverse acc)
+            (loop
+              (+
+                i 1) (cons
+                val acc))))))
+        (loop
+          0 (quote ())))))
+  (define list-set-return
+    (lambda (lst index value)
+      (letrec ((loop (lambda (i xs acc)
+          (if (null? xs)
+            (reverse acc)
+            (if (=
+                i index)
+              (loop
+                (+
+                  i 1) (cdr xs) (cons
+                  value acc))
+              (loop
+                (+
+                  i 1) (cdr xs) (cons
+                  (car xs) acc)))))))
+        (loop
+          0 lst (quote ())))))
+  (define char-at
+    (lambda (str k)
+      (substring
+        str k (+
+          k 1))))
+  (define lcs-length
+    (lambda (s t)
+      (let ((m (string-length t)))
+        (let ((len-s (string-length s)))
+          (letrec ((iloop (lambda (i dp)
+              (if (=
+                  i len-s)
+                (list-ref
+                  dp m)
+                (let ((ch (char-at
+                    s i)))
+                  (letrec ((build (lambda (j new-dp prev)
+                      (if (>
+                          j m)
+                        (iloop
+                          (+
+                            i 1) new-dp)
+                        (let ((cur (list-ref
+                            dp j)))
+                          (let ((above (list-ref
+                              new-dp (-
+                                j 1))))
+                            (let ((ti (char-at
+                                t (-
+                                  j 1))))
+                              (let ((new (if (string=?
+                                    ch ti)
+                                  (+
+                                    prev 1)
+                                  (if (>
+                                      above cur)
+                                    above
+                                    cur))))
+                                (build
+                                  (+
+                                    j 1) (list-set-return
+                                    new-dp j new) cur)))))))))
+                    (build
+                      1 dp 0)))))))
+            (iloop
+              0 (make-list
+                (+
+                  m 1) 0)))))))
+  (define solve
+    (lambda (s t)
+      (lcs-length
+        s t)))
+  (define run-cases
+    (lambda ()
+      (let ((cases (list
+          (list
+            "ABCBDAB" "BDBACA") (list
+            "A" "A") (list
+            "ABC" "DEF") (list
+            "AGGTAB" "GXTXAYB") (list
+            "AAA" "AA") (list
+            "ABCDEF" "ABCDEF") (list
+            "AB" "BA") (list
+            "ZXVYZWQ" "ZYZWXRQ"))))
+        (letrec ((loop (lambda (i cs)
+            (if (null? cs)
+              (quote done)
+              (begin
+                (let ((s (car (car cs))))
+                  (let ((t (car (cdr (car cs)))))
+                    (let ((ans (solve
+                        s t)))
+                      (begin
+                        (display "CASE")
+                        (display (number->string i))
+                        (display "=")
+                        (display (number->string ans))
+                        (newline)))))
+                (loop
+                  (+
+                    i 1) (cdr cs)))))))
+          (loop
+            0 cases)))))
+  (run-cases))
