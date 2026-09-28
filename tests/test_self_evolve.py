@@ -378,5 +378,25 @@ def test_runtime_result_attaches_list_and_make_list_helper_keys():
     assert 'result["list_take_helper"]' in src
     assert 'result["list_drop_helper"]' in src
     assert 'result["make_list_helper"]' in src
+    assert 'result["for_each_helper"]' in src
+    assert m.FIBER_EXPLORER_CAP == 32
+
+def test_for_each_helper_candidates_export_for_each():
+    from aura_build.self_evolve_runtime import _FOR_EACH_HELPER_CANDIDATES
+
+    assert len(_FOR_EACH_HELPER_CANDIDATES) >= 2
+    for name, src in _FOR_EACH_HELPER_CANDIDATES:
+        assert "for-each" in src
+        assert "(export for-each)" in src
+
+
+def test_runtime_result_attaches_for_each_helper_key():
+    """Regression: for_each must attach on runtime result; FIBER_EXPLORER_CAP=32 kept."""
+    import inspect
+    from aura_build import self_evolve_runtime as m
+
+    src = inspect.getsource(m.cmd_runtime)
+    assert 'result["for_each_helper"]' in src
+    assert 'result["make_list_helper"]' in src
     assert m.FIBER_EXPLORER_CAP == 32
 
