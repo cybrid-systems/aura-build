@@ -156,3 +156,4 @@ Fresh Soft `--serve-async` (`build_soft4048/aura`, no MiniMax, no fiber http-pos
 - `20260927-212409` ok=True llm_via=None llm_parallel=None explore=None artifacts=`combat_20260927-212409_stdout.json`
 - `20260927-212409` ok=True llm_via=fiber llm_parallel=fiber explore=fiber_graph artifacts=`combat_20260927-212409_stdout.json`
 - `20260927-213755` ok=False llm_via=fiber llm_parallel=fiber_serial explore=fiber_graph artifacts=`combat_20260927-213755_stdout.json`
+- `20260928-125943` ok=True llm_via=host llm_parallel=host_thread explore=fiber_graph artifacts=`combat_20260928-125943_stdout.json`
