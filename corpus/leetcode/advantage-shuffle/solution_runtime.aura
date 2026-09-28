@@ -1,0 +1,179 @@
+; soft_leetcode_runtime slug=advantage-shuffle path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=fiber fiber_llm_ok=true
+; selected=llm-0 hits=4/8
+; baseline_hits=0/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define length
+    (lambda (lst)
+      (letrec ((loop (lambda (l n)
+          (if (null? l)
+            n
+            (loop
+              (cdr l) (+
+                n 1))))))
+        (loop
+          lst 0))))
+  (define reverse
+    (lambda (lst)
+      (letrec ((loop (lambda (l acc)
+          (if (null? l)
+            acc
+            (loop
+              (cdr l) (cons
+                (car l) acc))))))
+        (loop
+          lst (quote ())))))
+  (define assoc
+    (lambda (k al)
+      (if (null? al)
+        #f
+        (if (equal?
+            (car (car al)) k)
+          (cdr (car al))
+          (assoc
+            k (cdr al))))))
+  (define sort-pairs
+    (lambda (pairs)
+      (begin
+        (define insert
+          (lambda (p sorted)
+            (if (null? sorted)
+              (cons
+                p (quote ()))
+              (if (<=
+                  (cdr p) (cdr (car sorted)))
+                (cons
+                  p sorted)
+                (cons
+                  (car sorted) (insert
+                    p (cdr sorted)))))))
+        (define loop
+          (lambda (rest acc)
+            (if (null? rest)
+              acc
+              (loop
+                (cdr rest) (insert
+                  (car rest) acc)))))
+        (loop
+          pairs (quote ())))))
+  (define solve
+    (lambda (A B)
+      (let ((n (length A)))
+        (let ((a-pairs (letrec ((loop (lambda (i lst acc)
+              (if (null? lst)
+                acc
+                (loop
+                  (+
+                    i 1) (cdr lst) (cons
+                    (cons
+                      i (car lst)) acc))))))
+            (loop
+              0 A (quote ())))))
+          (let ((sorted-a (sort-pairs a-pairs)))
+            (let ((b-pairs (letrec ((loop (lambda (i lst acc)
+                  (if (null? lst)
+                    acc
+                    (loop
+                      (+
+                        i 1) (cdr lst) (cons
+                        (cons
+                          i (car lst)) acc))))))
+                (loop
+                  0 B (quote ())))))
+              (let ((sorted-b (sort-pairs b-pairs)))
+                (let ((result (quote ())))
+                  (let ((a-ptr sorted-a))
+                    (begin
+                      (set! result (letrec ((loop (lambda (rp ap bp)
+                            (if (null? bp)
+                              rp
+                              (let ((b-index (car (car bp))))
+                                (let ((b-val (cdr (car bp))))
+                                  (let ((winner (letrec ((find-w (lambda (ap)
+                                        (if (null? ap)
+                                          #f
+                                          (if (>
+                                              (cdr (car ap)) b-val)
+                                            (car ap)
+                                            (find-w (cdr ap)))))))
+                                      (find-w ap))))
+                                    (if winner
+                                      (loop
+                                        (cons
+                                          (cons
+                                            b-index (cdr winner)) rp) (cdr ap) (cdr bp))
+                                      (loop
+                                        (cons
+                                          (cons
+                                            b-index (cdr (car ap))) rp) (cdr ap) (cdr bp))))))))))
+                          (loop
+                            result a-ptr sorted-b)))
+                      (letrec ((loop (lambda (i acc)
+                          (if (>=
+                              i n)
+                            (reverse acc)
+                            (loop
+                              (+
+                                i 1) (cons
+                                (assoc
+                                  i result) acc))))))
+                        (loop
+                          0 (quote ())))))))))))))
+  (define display-list
+    (lambda (lst)
+      (begin
+        (display "[")
+        (letrec ((loop (lambda (l first)
+            (if (null? l)
+              (display "")
+              (if first
+                (begin
+                  (display (number->string (car l)))
+                  (loop
+                    (cdr l) #f))
+                (begin
+                  (display ", ")
+                  (display (number->string (car l)))
+                  (loop
+                    (cdr l) #f)))))))
+          (loop
+            lst #t))
+        (display "]"))))
+  (define cases (list
+      (list
+        (list
+          2 7 11 15) (list
+          1 10 4 11)) (list
+        (list
+          1 2 3) (list
+          1 2 3)) (list
+        (list
+          1 2 3) (list
+          4 5 6)) (list
+        (list
+          1 1 2 2) (list
+          1 2 1 2)) (list
+        (list 5) (list 3)) (list
+        (list 3) (list 5)) (list
+        (quote ()) (quote ())) (list
+        (list
+          8 2 4 9 1 3) (list
+          5 1 4 7 3 6))))
+  (letrec ((loop (lambda (cs i)
+      (if (null? cs)
+        (quote ())
+        (begin
+          (display "CASE")
+          (display (number->string i))
+          (display "=")
+          (display-list (solve
+              (car (car cs)) (car (cdr (car cs)))))
+          (newline)
+          (loop
+            (cdr cs) (+
+              i 1)))))))
+    (loop
+      cases 0)))
