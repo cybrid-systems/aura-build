@@ -1,0 +1,91 @@
+; soft_leetcode_runtime slug=longest-subarray-with-sum-at-most-k path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=fiber fiber_llm_ok=true
+; selected=llm-1 hits=5/9
+; baseline_hits=2/9
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define max
+    (lambda (a b)
+      (if (>
+          a b)
+        a
+        b)))
+  (define solve
+    (lambda (nums k)
+      (let ((len (length nums)))
+        (letrec ((loop (lambda (left right sum best)
+            (if (>=
+                right len)
+              best
+              (let ((new-sum (+
+                  sum (list-ref
+                    nums right))))
+                (if (>
+                    new-sum k)
+                  (letrec ((shrink (lambda (l s)
+                      (if (>
+                          s k)
+                        (shrink
+                          (+
+                            l 1) (-
+                            s (list-ref
+                              nums l)))
+                        (loop
+                          (+
+                            l 1) (+
+                            right 1) s best)))))
+                    (shrink
+                      left sum))
+                  (let ((new-best (max
+                      best (-
+                        (+
+                          right 1) left))))
+                    (loop
+                      left (+
+                        right 1) new-sum new-best))))))))
+          (loop
+            0 0 0 0)))))
+  (display "CASE0=")
+  (display (solve
+      (quote (1
+          2 3 4 5)) 8))
+  (newline)
+  (display "CASE1=")
+  (display (solve
+      (quote (1
+          2 3 4 5)) 15))
+  (newline)
+  (display "CASE2=")
+  (display (solve
+      (quote (5
+          5 5 5 5)) 10))
+  (newline)
+  (display "CASE3=")
+  (display (solve
+      (quote (1
+          1 1 1 1)) 3))
+  (newline)
+  (display "CASE4=")
+  (display (solve
+      (quote ()) 5))
+  (newline)
+  (display "CASE5=")
+  (display (solve
+      (quote (0
+          0 0 0)) -1))
+  (newline)
+  (display "CASE6=")
+  (display (solve
+      (quote (3)) 3))
+  (newline)
+  (display "CASE7=")
+  (display (solve
+      (quote (4)) 3))
+  (newline)
+  (display "CASE8=")
+  (display (solve
+      (quote (2
+          2 2 2 2)) 0))
+  (newline))
