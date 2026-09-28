@@ -1,0 +1,120 @@
+; soft_leetcode_runtime slug=queue-reconstruction-by-height path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=fiber fiber_llm_ok=true
+; selected=llm-0 hits=8/8
+; baseline_hits=1/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define solve
+    (lambda (people)
+      (let ((sorted (sort-desc people)))
+        (let ((result (quote ())))
+          (begin
+            (define insert-at
+              (lambda (lst idx val)
+                (if (=
+                    idx 0)
+                  (cons
+                    val lst)
+                  (cons
+                    (car lst) (insert-at
+                      (cdr lst) (-
+                        idx 1) val)))))
+            (define loop
+              (lambda (lst)
+                (if (null? lst)
+                  result
+                  (begin
+                    (set! result (insert-at
+                        result (cadar lst) (car lst)))
+                    (loop (cdr lst))))))
+            (loop sorted))))))
+  (define sort-desc
+    (lambda (lst)
+      (begin
+        (define insert
+          (lambda (x sorted)
+            (if (null? sorted)
+              (cons
+                x (quote ()))
+              (if (>
+                  (car x) (caar sorted))
+                (cons
+                  x sorted)
+                (cons
+                  (car sorted) (insert
+                    x (cdr sorted)))))))
+        (define loop
+          (lambda (s rest)
+            (if (null? rest)
+              s
+              (loop
+                (insert
+                  (car rest) s) (cdr rest)))))
+        (loop
+          (quote ()) lst))))
+  (define display-pair
+    (lambda (p)
+      (begin
+        (display "[")
+        (display (car p))
+        (display ",")
+        (display (cadr p))
+        (display "]"))))
+  (define display-people
+    (lambda (lst)
+      (begin
+        (display "[")
+        (define loop
+          (lambda (l first?)
+            (if (null? l)
+              #t
+              (begin
+                (if (not first?)
+                  (display ",")
+                  ())
+                (display-pair (car l))
+                (loop
+                  (cdr l) #f)))))
+        (loop
+          lst #t)
+        (display "]"))))
+  (define case0 (quote ((7 0)
+        (4 4) (7 1) (5 0) (6 1) (5 2))))
+  (define case1 (quote ()))
+  (define case2 (quote ((1 0))))
+  (define case3 (quote ((5 0)
+        (4 0) (3 0) (2 0) (1 0))))
+  (define case4 (quote ((6 0)
+        (5 1) (4 2) (3 3) (2 4) (1 5))))
+  (define case5 (quote ((10 0)
+        (10 1) (10 2) (10 3))))
+  (define case6 (quote ((100 0)
+        (90 1) (80 2) (70 3) (60 4))))
+  (define case7 (quote ((5 0)
+        (5 1) (5 2) (4 0) (4 1) (4 2) (3 0))))
+  (display "CASE0=")
+  (display-people (solve case0))
+  (newline)
+  (display "CASE1=")
+  (display-people (solve case1))
+  (newline)
+  (display "CASE2=")
+  (display-people (solve case2))
+  (newline)
+  (display "CASE3=")
+  (display-people (solve case3))
+  (newline)
+  (display "CASE4=")
+  (display-people (solve case4))
+  (newline)
+  (display "CASE5=")
+  (display-people (solve case5))
+  (newline)
+  (display "CASE6=")
+  (display-people (solve case6))
+  (newline)
+  (display "CASE7=")
+  (display-people (solve case7))
+  (newline))
