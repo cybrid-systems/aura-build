@@ -259,3 +259,27 @@ Fresh Soft `--serve-async` (`build_soft4048/aura`, no MiniMax, no fiber http-pos
 **Push:** combat `--no-push` (no aura-build product materialize). This FINDINGS stamp is the productized docs commit.
 
 **New Aura issues:** none.
+## mini-saga Soft tip cbae122 denseness held; MiniMax residual (2026-09-28 ~14:49 CST)
+
+**Soft tip:** `cbae122` `/workspace/aura-grok/build_soft4132/aura` — no rebuild. Aura tip still `f3fd950` (#4134 JIT owner fail-closed; not Soft-facing).
+**aura-build tip at combat:** `98aefb2` (post number-of-1-bits Soft LLM full + merge-k-sorted-lists / house-robber-iii improved).
+
+**Combat:** `combat_20260928-144400` — project=mini-saga (10-file stub; harder than mini-2pc 7-file), `--fiber-explore 3 --fiber-llm --concurrent-llm --explore-tools llm --max-rounds 6`.
+
+| Honesty | Measured |
+|---------|----------|
+| fiber_live | true |
+| serve_mode | async |
+| soft_ready | soft_ready_ok denseness_4048 path |
+| llm_via | fiber |
+| llm_parallel | fiber (rounds: fiber×6) |
+| explore_parallel | fiber_graph |
+| fiber_llm_probe | ok ~6.6s |
+| ok / reason | False / max_rounds_6 |
+| best_fitness | 0.8222 |
+
+**Ruling:** Soft denseness / fiber concurrent MiniMax path **held** under N=3×6 on 10-file mini-saga. Failure is **MiniMax residual** (fitness climbed 0.35→0.82 but did not reach verify_green in 6 rounds), not Soft wedge. No new Aura issue.
+
+**Push:** combat `--no-push` (no aura-build product materialize). This FINDINGS stamp is the productized docs commit.
+
+**New Aura issues:** none.
