@@ -199,7 +199,8 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     _opt(dog, "--max-rounds", type=int, default=8)
-    _opt(dog, "--worldlines", type=int, default=3)
+    _opt(dog, "--worldlines", type=int, default=256,
+         help="fiber explore N (Soft max-fibers quota default 256)")
     _opt(dog, "--out", type=Path, default=None)
     _opt(dog, "--workspace", type=Path, default=None)
     _opt(dog, "--env-file", type=Path, default=None)
@@ -237,10 +238,12 @@ def build_parser() -> argparse.ArgumentParser:
         dog,
         "--concurrent-llm",
         action=argparse.BooleanOptionalAction,
-        default=False,
+        default=True,
         help=(
             "force every explorer to tools=['llm'] for parallel MiniMax proposes "
-            "(also AURA_BUILD_CONCURRENT_LLM=1); stamps concurrent_llm + llm_parallel_ok"
+            "(default ON for Soft dogfood; --no-concurrent-llm / "
+            "AURA_BUILD_CONCURRENT_LLM=0 to disable); stamps concurrent_llm + "
+            "llm_parallel_ok; MiniMax concurrency capped by AURA_BUILD_LLM_PARALLEL_CAP"
         ),
     )
     _opt(
@@ -301,7 +304,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     _opt(se, "--prompt", default="self-evolve dogfood aura-build")
-    _opt(se, "--worldlines", type=int, default=3)
+    _opt(se, "--worldlines", type=int, default=256)
     _opt(se, "--seed", type=int, default=None)
     _opt(se, "--out", type=Path, default=None)
     _opt(
@@ -354,7 +357,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="optional built-in llm-dogfood task (ignored when --project set)",
     )
     _opt(combat, "--max-rounds", type=int, default=8)
-    _opt(combat, "--worldlines", type=int, default=3)
+    _opt(combat, "--worldlines", type=int, default=256,
+         help="fiber explore N (Soft max-fibers quota default 256)")
     _opt(
         combat,
         "--fiber-explore",
@@ -372,8 +376,12 @@ def build_parser() -> argparse.ArgumentParser:
         combat,
         "--concurrent-llm",
         action=argparse.BooleanOptionalAction,
-        default=False,
-        help="force explorers to llm-only for parallel MiniMax proposes",
+        default=True,
+        help=(
+            "force explorers to llm-only for parallel MiniMax proposes "
+            "(default ON; --no-concurrent-llm to disable; "
+            "AURA_BUILD_LLM_PARALLEL_CAP caps concurrent MiniMax)"
+        ),
     )
     _opt(
         combat,
@@ -461,7 +469,7 @@ def build_parser() -> argparse.ArgumentParser:
     _opt(leetcode, "--batch", action="store_true", help="run all registered small Soft recipes")
     _opt(leetcode, "--llm", action="store_true", help="MiniMax propose-only Soft set-code worldlines")
     _opt(leetcode, "--batch-llm", action="store_true", help="LLM Soft path over near-full small partials")
-    _opt(leetcode, "--proposals", type=int, default=2, help="MiniMax proposals per slug (default 2)")
+    _opt(leetcode, "--proposals", type=int, default=32, help="MiniMax proposals per slug (default 32; not 256)")
     _opt(leetcode, "--limit", type=int, default=8, help="max slugs for --batch-llm")
     _opt(leetcode, "--env-file", default="", help="MiniMax env file (default ~/.config/aura-build/minimax.env)")
     _opt(leetcode, "--no-push", action="store_true")
@@ -501,8 +509,8 @@ def build_parser() -> argparse.ArgumentParser:
         runtime,
         "--worldlines",
         type=int,
-        default=3,
-        help="fiber explorer count when denseness ok (default 3)",
+        default=256,
+        help="fiber explorer count when denseness ok (Soft max-fibers default 256)",
     )
     _common(runtime, aura=True, harness=True)
 
@@ -523,7 +531,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _opt(pursue, "--min-fitness", type=float, default=None, help="alias for fitness_ge threshold")
     _opt(pursue, "--max-rounds", type=int, default=8)
-    _opt(pursue, "--worldlines", type=int, default=3)
+    _opt(pursue, "--worldlines", type=int, default=256)
     _opt(
         pursue,
         "--mode",

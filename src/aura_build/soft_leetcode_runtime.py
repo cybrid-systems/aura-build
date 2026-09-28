@@ -1122,7 +1122,7 @@ def repair_llm(
     aura_bin: str,
     harness_root: Path | None = None,
     env_file: str | Path | None = None,
-    proposals: int = 2,
+    proposals: int = 32,
 ) -> dict[str, Any]:
     """Soft serve + MiniMax propose-only → set-code worldlines → current-source."""
     from aura_build.fiber_llm import fiber_llm_probe
@@ -1506,7 +1506,7 @@ def cmd_soft_leetcode(args: Any) -> int:
     batch = bool(getattr(args, "batch", False))
     batch_llm = bool(getattr(args, "batch_llm", False))
     force_llm = bool(getattr(args, "llm", False))
-    proposals = int(getattr(args, "proposals", 2) or 2)
+    proposals = int(getattr(args, "proposals", 32) or 32)
     harness_root = Path(getattr(args, "harness_root", None) or (repo / ".aura-build"))
     env_file = getattr(args, "env_file", None) or str(
         Path.home() / ".config/aura-build/minimax.env"

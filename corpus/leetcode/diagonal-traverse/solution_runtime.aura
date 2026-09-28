@@ -1,0 +1,162 @@
+; soft_leetcode_runtime slug=diagonal-traverse path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=fiber fiber_llm_ok=true
+; selected=llm-2 hits=8/8
+; baseline_hits=0/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define max
+    (lambda (a b)
+      (if (>
+          a b)
+        a
+        b)))
+  (define min
+    (lambda (a b)
+      (if (<
+          a b)
+        a
+        b)))
+  (define solve
+    (lambda (m n grid)
+      (begin
+        (define result (quote ()))
+        (let ((limit (+
+            m n -2)))
+          (letrec ((loop (lambda (s)
+              (if (>
+                  s limit)
+                result
+                (begin
+                  (set! result (append
+                      result (let ((diagonal (quote ())))
+                        (begin
+                          (let ((i (max
+                              0 (-
+                                s n -1))))
+                            (let ((j (min
+                                s (-
+                                  n 1))))
+                              (letrec ((inner (lambda (i j)
+                                  (if (or
+                                      (>=
+                                        i m) (<
+                                        j 0))
+                                    diagonal
+                                    (begin
+                                      (set! diagonal (append
+                                          diagonal (list (list-ref
+                                              (list-ref
+                                                grid i) j))))
+                                      (inner
+                                        (+
+                                          i 1) (-
+                                          j 1)))))))
+                                (inner
+                                  i j))))
+                          (if (even? s)
+                            (reverse diagonal)
+                            diagonal)))))
+                  (loop (+
+                      s 1)))))))
+            (loop 0))))))
+  (define even?
+    (lambda (x)
+      (=
+        (modulo
+          x 2) 0)))
+  (define reverse
+    (lambda (lst)
+      (letrec ((loop (lambda (acc l)
+          (if (null? l)
+            acc
+            (loop
+              (cons
+                (car l) acc) (cdr l))))))
+        (loop
+          (quote ()) lst))))
+  (define append
+    (lambda (a b)
+      (if (null? a)
+        b
+        (cons
+          (car a) (append
+            (cdr a) b)))))
+  (define display-result
+    (lambda (lst)
+      (begin
+        (display "[")
+        (letrec ((loop (lambda (l)
+            (if (null? l)
+              (display "]")
+              (begin
+                (display (car l))
+                (if (not (null? (cdr l)))
+                  (display ",")
+                  ())
+                (loop (cdr l)))))))
+          (loop lst))
+        (newline))))
+  (let ((g0 (list
+      (list
+        1 2 3) (list
+        4 5 6) (list
+        7 8 9))))
+    (begin
+      (display "CASE0=")
+      (display-result (solve
+          3 3 g0))))
+  (let ((g1 (list
+      (list
+        1 2) (list
+        3 4))))
+    (begin
+      (display "CASE1=")
+      (display-result (solve
+          2 2 g1))))
+  (let ((g2 (list (list 42))))
+    (begin
+      (display "CASE2=")
+      (display-result (solve
+          1 1 g2))))
+  (let ((g3 (list (list
+        1 2 3 4))))
+    (begin
+      (display "CASE3=")
+      (display-result (solve
+          1 4 g3))))
+  (let ((g4 (list
+      (list 1) (list 2) (list 3) (list 4))))
+    (begin
+      (display "CASE4=")
+      (display-result (solve
+          4 1 g4))))
+  (let ((g5 (list
+      (list
+        1 2 3) (list
+        4 5 6))))
+    (begin
+      (display "CASE5=")
+      (display-result (solve
+          2 3 g5))))
+  (let ((g6 (list
+      (list
+        1 2) (list
+        3 4) (list
+        5 6))))
+    (begin
+      (display "CASE6=")
+      (display-result (solve
+          3 2 g6))))
+  (let ((g7 (list
+      (list
+        -1 -2 -3 -4 -5) (list
+        -6 -7 -8 -9 -10) (list
+        -11 -12 -13 -14 -15) (list
+        -16 -17 -18 -19 -20) (list
+        -21 -22 -23 -24 -25))))
+    (begin
+      (display "CASE7=")
+      (display-result (solve
+          5 5 g7)))))
