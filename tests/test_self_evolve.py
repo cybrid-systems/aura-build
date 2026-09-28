@@ -350,3 +350,12 @@ def test_fiber_explorer_cap_kept_at_32():
 
     assert FIBER_EXPLORER_CAP == 32
 
+
+def test_list_drop_helper_candidates_export_list_drop():
+    from aura_build.self_evolve_runtime import _LIST_DROP_HELPER_CANDIDATES
+
+    assert len(_LIST_DROP_HELPER_CANDIDATES) >= 2
+    for name, src in _LIST_DROP_HELPER_CANDIDATES:
+        assert "list-drop" in src
+        assert "(export list-drop)" in src
+
