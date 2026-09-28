@@ -1,0 +1,95 @@
+; soft_leetcode_runtime slug=check-if-all-characters-have-equal-number-of-occurrences path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=fiber fiber_llm_ok=true
+; selected=llm-0 hits=8/8
+; baseline_hits=4/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define solve
+    (lambda (s)
+      (let ((chars (string->list s)))
+        (let ((pairs (letrec ((loop (lambda (cs acc)
+              (if (null? cs)
+                acc
+                (let ((c (car cs)))
+                  (let ((existing (assoc
+                      c acc)))
+                    (if existing
+                      (loop
+                        (cdr cs) (cons
+                          (cons
+                            c (+
+                              1 (cdr existing))) (remove-existing
+                            c acc)))
+                      (loop
+                        (cdr cs) (cons
+                          (cons
+                            c 1) acc)))))))))
+            (loop
+              chars (quote ())))))
+          (let ((counts (map
+              cdr pairs)))
+            (if (null? counts)
+              #t
+              (let ((target (car counts)))
+                (letrec ((loop (lambda (cs)
+                    (if (null? cs)
+                      #t
+                      (if (not (=
+                            (car cs) target))
+                        #f
+                        (loop (cdr cs)))))))
+                  (loop counts)))))))))
+  (define assoc
+    (lambda (k lst)
+      (if (null? lst)
+        #f
+        (if (equal?
+            (car (car lst)) k)
+          (car lst)
+          (assoc
+            k (cdr lst))))))
+  (define remove-existing
+    (lambda (k lst)
+      (if (null? lst)
+        (quote ())
+        (if (equal?
+            (car (car lst)) k)
+          (cdr lst)
+          (cons
+            (car lst) (remove-existing
+              k (cdr lst)))))))
+  (define map
+    (lambda (f lst)
+      (if (null? lst)
+        (quote ())
+        (cons
+          (f (car lst)) (map
+            f (cdr lst))))))
+  (define run-case
+    (lambda (i s)
+      (begin
+        (display "CASE")
+        (display i)
+        (display "=")
+        (display (if (solve s)
+            "True"
+            "False"))
+        (newline))))
+  (run-case
+    0 "ababab")
+  (run-case
+    1 "aaaaabbbbb")
+  (run-case
+    2 "abc")
+  (run-case
+    3 "aabbcc")
+  (run-case
+    4 "aabbccc")
+  (run-case
+    5 "aaaa")
+  (run-case
+    6 "")
+  (run-case
+    7 "a b c a b c"))
