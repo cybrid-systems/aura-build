@@ -1,6 +1,7 @@
 ; aura-build kernel — scout → mutate → eval → select-best
 ; Primary product path. Simulated = pure Aura fitness; aura = in-process mutate:rebind.
 ; Slice 3: fiber_live ⇒ worldline_backend=fiber_graph (fiber:spawn fan-out); else file.
+; Soft gap fill: util string-pad / string-take (+ soft_pad/soft_take denseness paths).
 (export run-episode run-harness-canary select-best run-backend-episode)
 
 (require "util" all:)
@@ -37,7 +38,7 @@
                           (hash "op" "simulated_edit"
                                 "target_id" (string-append "node:demo:" (number->string i))
                                 "summary" (string-append "candidate " (string-pad (number->string i) 3)
-                                                         " for: " (substring prompt 0 (min 80 (string-length prompt)))))))
+                                                         " for: " (string-take prompt 80)))))
                   out)))))
 
 (define (sim-eval wl prompt seed index)
@@ -104,7 +105,7 @@
                           "mutations" (list
                             (hash "op" "aura_mutate_rebind"
                                   "target_id" (string-append "m1-cand:" (number->string i))
-                                  "summary" (string-append "mutate:rebind bump=" (number->string bump))
+                                  "summary" (string-append "mutate:rebind bump=" (string-pad (number->string bump) 3))
                                   "bump" bump)))
                     out))))))
 
@@ -255,8 +256,8 @@
                         (if (null? xs) (reverse out)
                           (let* ((cid (car xs))
                                  (mut (workspace-fork-note ws cid
-                                        (string-append "aura-repo candidate " (number->string i)
-                                                       " for: " (substring prompt 0 (min 80 (string-length prompt))))))
+                                        (string-append "aura-repo candidate " (string-pad (number->string i) 3)
+                                                       " for: " (string-take prompt 80))))
                                  (got (sim-eval (hash "id" cid
                                                       "parent_id" "wl-parent"
                                                       "mutations" (list mut)
@@ -332,7 +333,7 @@
     (if (not (equal? mem-profile ""))
       (begin
         (memory-set harness-root mem-profile "last_selected_id" (hash-ref sel "id"))
-        (memory-set harness-root mem-profile "last_prompt" (substring prompt 0 (min 200 (string-length prompt))))
+        (memory-set harness-root mem-profile "last_prompt" (string-take prompt 200))
         (memory-set harness-root mem-profile "last_fitness" (hash-ref (hash-ref sel "eval") "fitness"))
         (hash-set! ep "memory" (hash "profile_id" mem-profile
                                      "updated_keys" (list "last_selected_id" "last_prompt" "last_fitness"))))

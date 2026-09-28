@@ -1,7 +1,7 @@
 ; aura-build kernel — self-evolve dogfood (harness L1 + worldlines over this repo)
 ; GAP: se-write-stamp string-builds the stamp body (NOT Soft current-source).
-; Soft gap fill: aura/soft_pad.aura (string-pad) Soft-materialized for stamp/align fields;
-; Soft oneshot lacks string-pad/make-string — prefer soft_pad when formatting widths.
+; Soft gap fill: soft_pad/soft_take Soft-materialized for stamp/align/trunc fields;
+; Soft oneshot lacks string-pad/make-string/string-take — prefer Soft denseness helpers.
 ; Soft runtime north-star: aura/self_evolve_runtime.aura + `aura-build self-evolve runtime`
 ;   set-code -> mutate:rebind -> select-best -> (current-source :workspace :pretty) -> write-file.
 ; Mutate/canary → select-best → materialize stamp into git worktree → light verify.
@@ -44,8 +44,8 @@
             "; Not fiber-live. incr_proven only when prove measured it.\n"
             "; traj_id=" traj-id "\n"
             "; harness_mid=" mid "\n"
-            "; generation=" (number->string generation) "\n"
-            "; fitness=" (number->string fitness) "\n"
+            "; generation=" (string-pad (number->string generation) 4) "\n"
+            "; fitness=" (string-pad (number->string fitness) 6) "\n"
             "; verify_ok=" (if verify-ok "true" "false") "\n"
             "; incr_proven=" (if (hash-ref honesty "incr_proven" #f) "true" "false") "\n"
             "; fiber_live=" (if (hash-ref honesty "fiber_live" #f) "true" "false") "\n"
@@ -92,7 +92,7 @@
                                    "mutations" (list
                                      (hash "op" "self_evolve_stamp"
                                            "target_id" "aura/self_evolve_stamp.aura"
-                                           "summary" (string-append "self-evolve candidate " fid)
+                                           "summary" (string-append "self-evolve candidate " (string-pad fid 8))
                                            "generation" (+ generation 1)))
                                    "eval" (hash "fitness" fit
                                                 "passed" passed

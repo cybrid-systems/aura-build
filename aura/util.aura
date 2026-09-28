@@ -4,7 +4,7 @@
   ensure-dir append-file dirname-path
   iso-now make-id
   default-fitness seed-from-prompt
-  join-path abs-path string-trim string-downcase string-pad
+  join-path abs-path string-trim string-downcase string-pad string-take
   round4)
 
 (require "std/io" all:)
@@ -59,6 +59,16 @@
                          (list->string acc)
                          (loop (- k 1) (cons 32 acc))))))
         (string-append (loop (- width n) (list)) s)))))
+
+; First n chars (Soft oneshot lacks string-take; denseness path: aura/soft_take.aura).
+; Used by orch/pursue prompt trunc instead of substring+min boilerplate.
+(define (string-take s n)
+  (let ((len (string-length s)))
+    (if (<= n 0)
+      ""
+      (if (>= n len)
+        s
+        (substring s 0 n)))))
 
 (define (ensure-dir path)
   (sh (string-append "mkdir -p '" path "'"))
