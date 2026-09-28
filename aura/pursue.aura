@@ -2,7 +2,7 @@
 ; Owns scout→mutate→eval→select-best rounds until goal / max-rounds / honesty fail-closed.
 ; MiniMax is never the controller (optional host hint only). AUTOPROMOTE stays OFF.
 ; Honesty: never invent incr_proven / fiber_live / worldline_backend via env alone.
-; Soft gap fill: util string-pad/string-take/string-drop (+ soft_pad/soft_take/soft_drop denseness).
+; Soft gap fill: util string-pad/string-take/string-drop/list-take (+ soft_* denseness).
 (export run-pursue)
 
 (require "util" all:)

@@ -1,7 +1,7 @@
 ; aura-build kernel — scout → mutate → eval → select-best
 ; Primary product path. Simulated = pure Aura fitness; aura = in-process mutate:rebind.
 ; Slice 3: fiber_live ⇒ worldline_backend=fiber_graph (fiber:spawn fan-out); else file.
-; Soft gap fill: util string-pad/string-take/string-drop (+ soft_pad/soft_take/soft_drop denseness).
+; Soft gap fill: util string-pad/string-take/string-drop/list-take (+ soft_* denseness).
 (export run-episode run-harness-canary select-best run-backend-episode)
 
 (require "util" all:)
@@ -163,9 +163,10 @@
          (evaluated
            (if use-fiber
              (hash-ref fan "worldlines")
-             (let* ((raw (if (equal? mode "aura")
-                           (aura-mutate prompt seed n)
-                           (sim-mutate prompt seed n))))
+             (let* ((raw0 (if (equal? mode "aura")
+                            (aura-mutate prompt seed n)
+                            (sim-mutate prompt seed n)))
+                    (raw (list-take raw0 n)))
                (let loop ((i 0) (xs raw) (out (list)))
                  (if (null? xs) (reverse out)
                    (let ((got (if (equal? mode "aura")
@@ -250,7 +251,7 @@
                (hash "evaluated" evaluated "selected" selected
                      "discarded" discarded "rt" rt))
              (let* ((ws (workspace-create ws-root n))
-                    (cids (hash-keys (hash-ref ws "candidates")))
+                    (cids (list-take (hash-keys (hash-ref ws "candidates")) n))
                     (evaluated
                       (let loop ((i 0) (xs cids) (out (list)))
                         (if (null? xs) (reverse out)

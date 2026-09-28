@@ -10,6 +10,7 @@
   fiber-fanout-aura fiber-fanout-sim fiber-discard-losers
   fiber-runtime-fields fiber-audit-write)
 
+; Soft gap fill: util string-take/list-take (+ soft_take/soft_list_take denseness).
 (require "util" all:)
 (require "std/io" all:)
 (require "traj" all:)
@@ -378,7 +379,7 @@
                          "summary" (string-append "fiber:spawn sim candidate "
                                                   (number->string i)
                                                   " for: "
-                                                  (substring prompt 0 (min 80 (string-length prompt))))
+                                                  (string-take prompt 80))
                          "worldline_backend" BACKEND_FIBER)))
           (hash "id" cid
                 "parent_id" "wl-parent"

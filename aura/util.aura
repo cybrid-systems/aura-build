@@ -5,6 +5,7 @@
   iso-now make-id
   default-fitness seed-from-prompt
   join-path abs-path string-trim string-downcase string-pad string-take string-drop
+  list-take
   round4)
 
 (require "std/io" all:)
@@ -80,6 +81,17 @@
       (if (>= n len)
         ""
         (substring s n len)))))
+
+
+; First n list elements (Soft oneshot native `take` returns opaque unprintable;
+; denseness path: aura/soft_list_take.aura). Used by orch/worldline to cap
+; evaluated/candidate lists (align host FIBER_EXPLORER_CAP honesty).
+(define (list-take xs n)
+  (letrec ((go (lambda (xs n)
+                 (if (or (<= n 0) (null? xs))
+                   (list)
+                   (cons (car xs) (go (cdr xs) (- n 1)))))))
+    (go xs n)))
 
 (define (ensure-dir path)
   (sh (string-append "mkdir -p '" path "'"))
