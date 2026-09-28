@@ -36,7 +36,7 @@
                         "mutations" (list
                           (hash "op" "simulated_edit"
                                 "target_id" (string-append "node:demo:" (number->string i))
-                                "summary" (string-append "candidate " (number->string i)
+                                "summary" (string-append "candidate " (string-pad (number->string i) 3)
                                                          " for: " (substring prompt 0 (min 80 (string-length prompt)))))))
                   out)))))
 

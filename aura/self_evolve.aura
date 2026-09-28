@@ -1,5 +1,7 @@
 ; aura-build kernel — self-evolve dogfood (harness L1 + worldlines over this repo)
 ; GAP: se-write-stamp string-builds the stamp body (NOT Soft current-source).
+; Soft gap fill: aura/soft_pad.aura (string-pad) Soft-materialized for stamp/align fields;
+; Soft oneshot lacks string-pad/make-string — prefer soft_pad when formatting widths.
 ; Soft runtime north-star: aura/self_evolve_runtime.aura + `aura-build self-evolve runtime`
 ;   set-code -> mutate:rebind -> select-best -> (current-source :workspace :pretty) -> write-file.
 ; Mutate/canary → select-best → materialize stamp into git worktree → light verify.

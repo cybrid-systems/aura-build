@@ -4,7 +4,7 @@
   ensure-dir append-file dirname-path
   iso-now make-id
   default-fitness seed-from-prompt
-  join-path abs-path string-trim string-downcase
+  join-path abs-path string-trim string-downcase string-pad
   round4)
 
 (require "std/io" all:)
@@ -47,6 +47,18 @@
             (substring s i (+ j 1))
             (r (- j 1))))
         (l (+ i 1))))))
+
+; Left-pad with spaces to width (Soft oneshot lacks string-pad/make-string;
+; Soft denseness path: aura/soft_pad.aura). Used by orch/pursue/harness aligns.
+(define (string-pad s width)
+  (let ((n (string-length s)))
+    (if (>= n width)
+      s
+      (letrec ((loop (lambda (k acc)
+                       (if (<= k 0)
+                         (list->string acc)
+                         (loop (- k 1) (cons 32 acc))))))
+        (string-append (loop (- width n) (list)) s)))))
 
 (define (ensure-dir path)
   (sh (string-append "mkdir -p '" path "'"))
