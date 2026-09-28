@@ -2,68 +2,72 @@
 ; materialize=current-source worldline_backend=fiber_graph
 ; fiber_live=true incr_proven=false
 ; llm_via=fiber fiber_llm_ok=true
-; selected=llm-1 hits=6/8
-; baseline_hits=2/8
+; selected=llm-1 hits=8/8
+; baseline_hits=6/8
 ; Expected values used only for host scoring / LLM context, not hardcoded into display.
 (begin
-  (define solve
-    (lambda (heights)
-      (let ((sentinel (append
-          heights (list 0))))
-        (letrec ((loop (lambda (i hs stack best)
-            (if (null? hs)
-              best
-              (let ((h (car hs)))
-                (if (or
-                    (null? stack) (>=
-                      h (cdar stack)))
-                  (loop
-                    (+
-                      i 1) (cdr hs) (cons
-                      (cons
-                        i h) stack) best)
-                  (let ((top (car stack)))
-                    (let ((idx (car top)))
-                      (let ((height (cdr top)))
-                        (let ((rest-stack (cdr stack)))
-                          (let ((width (-
-                              i idx)))
-                            (let ((area (*
-                                height width)))
-                              (let ((new-best (if (>
-                                    area best)
-                                  area
-                                  best)))
-                                (loop
-                                  i hs rest-stack new-best))))))))))))))
-          (loop
-            0 sentinel (quote 0) 0)))))
   (begin
-    (display "CASE0=")
-    (display (solve (quote (2
-            1 5 6 2 3))))
-    (newline)
-    (display "CASE1=")
-    (display (solve (quote (2 4))))
-    (newline)
-    (display "CASE2=")
-    (display (solve (quote (0 0))))
-    (newline)
-    (display "CASE3=")
-    (display (solve (quote (1))))
-    (newline)
-    (display "CASE4=")
-    (display (solve (quote (1
-            1 1 1))))
-    (newline)
-    (display "CASE5=")
-    (display (solve (quote (4
-            2 0 3 2 5))))
-    (newline)
-    (display "CASE6=")
-    (display (solve (quote (0))))
-    (newline)
-    (display "CASE7=")
-    (display (solve (quote (6
-            7 5 2 4 5 9 3))))
-    (newline)))
+    (define solve
+      (lambda (heights)
+        (let ((sentinel (append
+            heights (list 0))))
+          (letrec ((loop (lambda (i hs stack best)
+              (if (null? hs)
+                best
+                (let ((h (car hs)))
+                  (if (or
+                      (null? stack) (>=
+                        h (cdr (car stack))))
+                    (loop
+                      (+
+                        i 1) (cdr hs) (cons
+                        (cons
+                          i h) stack) best)
+                    (let ((top (car stack)))
+                      (let ((idx (car top)))
+                        (let ((height (cdr top)))
+                          (let ((rest-stack (cdr stack)))
+                            (let ((left (if (null? rest-stack)
+                                -1
+                                (car (car rest-stack)))))
+                              (let ((width (-
+                                  i left 1)))
+                                (let ((area (*
+                                    height width)))
+                                  (let ((new-best (if (>
+                                        area best)
+                                      area
+                                      best)))
+                                    (loop
+                                      i hs rest-stack new-best)))))))))))))))
+            (loop
+              0 sentinel (quote ()) 0)))))
+    (begin
+      (display "CASE0=")
+      (display (solve (quote (2
+              1 5 6 2 3))))
+      (newline)
+      (display "CASE1=")
+      (display (solve (quote (2 4))))
+      (newline)
+      (display "CASE2=")
+      (display (solve (quote (0 0))))
+      (newline)
+      (display "CASE3=")
+      (display (solve (quote (1))))
+      (newline)
+      (display "CASE4=")
+      (display (solve (quote (1
+              1 1 1))))
+      (newline)
+      (display "CASE5=")
+      (display (solve (quote (4
+              2 0 3 2 5))))
+      (newline)
+      (display "CASE6=")
+      (display (solve (quote (0))))
+      (newline)
+      (display "CASE7=")
+      (display (solve (quote (6
+              7 5 2 4 5 9 3))))
+      (newline))))
