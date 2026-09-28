@@ -5,7 +5,7 @@
   iso-now make-id
   default-fitness seed-from-prompt
   join-path abs-path string-trim string-downcase string-pad string-take string-drop
-  list-take list-drop list-tail make-list for-each
+  list-take list-drop list-tail make-list for-each hash-for-each
   round4)
 
 (require "std/io" all:)
@@ -121,6 +121,17 @@
   (if (null? xs)
     #t
     (begin (f (car xs)) (for-each f (cdr xs)))))
+
+; Soft oneshot unbound hash-for-each (orch/harness/export use it; Soft std/hash.aura
+; defines it but Soft oneshot does not auto-load std/hash). Denseness path:
+; aura/soft_hash_for_each.aura (selected=named-let-keys). Arg order matches Soft
+; std/hash and product: (hash-for-each h f) with f := (lambda (k v) ...).
+(define (hash-for-each h f)
+  (let loop ((ks (hash-keys h)))
+    (if (null? ks)
+      #t
+      (begin (f (car ks) (hash-ref h (car ks))) (loop (cdr ks))))))
+
 
 (define (ensure-dir path)
   (sh (string-append "mkdir -p '" path "'"))
