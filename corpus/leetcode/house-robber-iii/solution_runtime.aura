@@ -2,25 +2,14 @@
 ; materialize=current-source worldline_backend=fiber_graph
 ; fiber_live=true incr_proven=false
 ; llm_via=fiber fiber_llm_ok=true
-; selected=llm-1 hits=1/8
-; baseline_hits=0/8
+; selected=llm-2 hits=8/8
+; baseline_hits=1/8
 ; Expected values used only for host scoring / LLM context, not hardcoded into display.
 (begin
-  (define build-vec
-    (lambda (flat n)
-      (let ((vec (make-vector
-          n -999999)))
-        (letrec ((loop (lambda (i)
-            (if (>=
-                i n)
-              vec
-              (begin
-                (vector-set!
-                  vec i (list-ref
-                    flat i))
-                (loop (+
-                    i 1)))))))
-          (loop 0)))))
+  (define negative?
+    (lambda (x)
+      (<
+        x 0)))
   (define vec-money
     (lambda (vec idx n)
       (if (or
@@ -50,10 +39,7 @@
                 vec ri n)))
               (let ((m (vec-money
                   vec idx n)))
-                (if (not (and
-                      (>=
-                        idx 0) (<
-                        idx n) (not (negative? m))))
+                (if (negative? m)
                   (cons
                     0 0)
                   (if (and
@@ -86,16 +72,14 @@
         (if (=
             n 0)
           0
-          (let ((root-val (list-ref
-              tree 0)))
-            (if (negative? root-val)
-              0
-              (let ((vec (build-vec
-                  tree n)))
-                (let ((r (dfs
-                    vec 0 n)))
-                  (max
-                    (car r) (cdr r))))))))))
+          (if (negative? (list-ref
+                tree 0))
+            0
+            (let ((vec (list->vector tree)))
+              (let ((r (dfs
+                  vec 0 n)))
+                (max
+                  (car r) (cdr r)))))))))
   (define run-case
     (lambda (i tree)
       (begin
