@@ -1,7 +1,7 @@
 ; aura-build kernel — self-evolve dogfood (harness L1 + worldlines over this repo)
 ; GAP: se-write-stamp string-builds the stamp body (NOT Soft current-source).
-; Soft gap fill: soft_pad/soft_take/soft_drop/soft_list_take/soft_list_drop/soft_make_list/soft_for_each/soft_hash_for_each/soft_hash_fold/soft_foldr Soft-materialized for stamp/align/trunc/prefix-strip/list-cap/list-rest/make-list/for-each/hash-for-each/hash-fold/foldr;
-; Soft oneshot lacks string-pad/make-string/string-take/string-drop/make-list/for-each/hash-for-each/hash-fold/foldr (has foldl); Soft native take/drop opaque (#4177) — prefer Soft denseness helpers.
+; Soft gap fill: soft_pad/soft_take/soft_drop/soft_list_take/soft_list_drop/soft_make_list/soft_for_each/soft_hash_for_each/soft_hash_fold/soft_foldr/soft_hash_empty Soft-materialized for stamp/align/trunc/prefix-strip/list-cap/list-rest/make-list/for-each/hash-for-each/hash-fold/foldr/hash-empty?;
+; Soft oneshot lacks string-pad/make-string/string-take/string-drop/make-list/for-each/hash-for-each/hash-fold/foldr/hash-empty? (has foldl); Soft native take/drop opaque (#4177) — prefer Soft denseness helpers.
 ; Soft runtime north-star: aura/self_evolve_runtime.aura + `aura-build self-evolve runtime`
 ;   set-code -> mutate:rebind -> select-best -> (current-source :workspace :pretty) -> write-file.
 ; Mutate/canary → select-best → materialize stamp into git worktree → light verify.

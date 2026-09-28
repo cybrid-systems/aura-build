@@ -5,7 +5,7 @@
   iso-now make-id
   default-fitness seed-from-prompt
   join-path abs-path string-trim string-downcase string-pad string-take string-drop
-  list-take list-drop list-tail make-list for-each hash-for-each hash-fold foldr
+  list-take list-drop list-tail make-list for-each hash-for-each hash-fold foldr hash-empty?
   round4)
 
 (require "std/io" all:)
@@ -148,6 +148,13 @@
 ; (foldr f init lst) with f := (lambda (x acc) ...).
 (define (foldr f init lst)
   (foldl (lambda (acc x) (f x acc)) init (reverse lst)))
+
+
+; Soft oneshot unbound hash-empty? (Soft std/hash.aura defines via hash-length;
+; Soft oneshot does not auto-load std/hash). Denseness path: aura/soft_hash_empty.aura
+; (selected=hash-length-eq). Soft std shape: (hash-empty? h).
+(define (hash-empty? h)
+  (= (hash-length h) 0))
 
 (define (ensure-dir path)
   (sh (string-append "mkdir -p '" path "'"))
