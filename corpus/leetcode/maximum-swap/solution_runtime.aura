@@ -2,8 +2,8 @@
 ; materialize=current-source worldline_backend=fiber_graph
 ; fiber_live=true incr_proven=false
 ; llm_via=fiber fiber_llm_ok=true
-; selected=llm-1 hits=7/8
-; baseline_hits=5/8
+; selected=llm-2 hits=8/8
+; baseline_hits=7/8
 ; Expected values used only for host scoring / LLM context, not hardcoded into display.
 (begin
   (define digits->list
@@ -68,7 +68,7 @@
                 maxv maxidx)
               (let ((v (list-ref
                   lst i)))
-                (if (>
+                (if (>=
                     v maxv)
                   (loop
                     (+
