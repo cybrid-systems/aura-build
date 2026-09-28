@@ -16,7 +16,7 @@
 
 | Layer | Tip |
 |-------|-----|
-| Aura Soft Ready binary | `/workspace/aura-grok/build_soft4079/aura` (=`build_soft4048`) @ **`483bd70`** (#4048 denseness; #4047 Soft Ready profile; Soft residuals [#4130](https://github.com/cybrid-systems/aura/issues/4130)–[#4132](https://github.com/cybrid-systems/aura/issues/4132)) |
+| Aura Soft Ready binary | `/workspace/aura-grok/build_soft4079/aura` (=`build_soft4132`) @ **`cbae122`** (#4048 denseness; #4047 Soft Ready profile; Soft #4130/#4131/#4132 **fixed**) |
 | aura-build | main @ tip with Soft runtime self-evolve (`self-evolve runtime` / `leetcode` + `soft_select`) |
 
 Rebuild Soft only if that binary is missing/outdated. Soft honesty banner stays **Soft Ready**.
@@ -170,7 +170,7 @@ Combat (this doc) = Soft + fiber explore + fiber LLM dogfood on mini-* / pursue 
 - `aura-build self-evolve runtime` — denseness → worldlines → `soft_select` (Soft `pick-best`) → `(current-source :workspace :pretty)` → commit+push
 - `aura-build self-evolve leetcode` — same Soft loop on corpus (MiniMax propose-only; no gold into display)
 - Soft tip: `build_soft4079` @ `483bd70`. Sequential denseness honesty; never invent Soft Ready / `fiber_live`
-- Soft residuals: Aura [#4130](https://github.com/cybrid-systems/aura/issues/4130) empty-list unparse, [#4131](https://github.com/cybrid-systems/aura/issues/4131) SIGTERM hang, [#4132](https://github.com/cybrid-systems/aura/issues/4132) export names dropped on pretty unparse
+- Soft residuals #4130/#4131/#4132: **fixed** on tip `cbae122`; host export-restore + hang-skip list removed from aura-build
 
 L1 `aura-build self-evolve` (no subcommand) remains stamp/simulated fitness — not Soft runtime materialize.
 

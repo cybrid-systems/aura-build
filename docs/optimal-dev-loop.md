@@ -50,7 +50,7 @@ Never invent `serve` / `fiber_live` / `incr_proven` from env alone.
 ## How to run (box)
 
 ```bash
-export AURA_BIN=/workspace/aura-grok/build_soft4079/aura   # Soft tip 483bd70; cold/redis build only as fallback
+export AURA_BIN=/workspace/aura-grok/build_soft4079/aura   # Soft tip cbae122 (build_soft4132); cold/redis build only as fallback
 
 # 1) Start long-lived serve (writes .aura-build/serve-session.json)
 aura-build session start
@@ -173,7 +173,7 @@ Soft --serve denseness probe (fiber:spawn/join) — fiber_live only if measured
 
 | Piece | Role |
 |-------|------|
-| Soft tip binary | `/workspace/aura-grok/build_soft4079/aura` (=`build_soft4048`) @ **`483bd70`** — Soft Ready denseness note `soft_ready_async_denseness_4048` when probe ok |
+| Soft tip binary | `/workspace/aura-grok/build_soft4079/aura` (=`build_soft4132`) @ **`cbae122`** — Soft Ready denseness note when probe ok; #4130/#4131/#4132 fixed on tip |
 | `aura-build self-evolve runtime` | Soft serve fiber worldlines → soft_select → current-source stamp + optional Soft-materialized helpers (`soft_worldline_pick`, `soft_starts_with`) |
 | `aura-build self-evolve leetcode` | Same Soft loop on corpus problems (recipes / MiniMax propose-only); Soft session restart on `serve_sock_missing` / `serve_session_timeout` |
 | `soft_select` | Soft inline `pick-best` (no FlatAST wipe); stamp `soft_select.via=soft_pick_best` only when Soft value matches host max |
@@ -184,9 +184,9 @@ Soft --serve denseness probe (fiber:spawn/join) — fiber_live only if measured
 
 | Aura issue | Soft residual |
 |------------|---------------|
-| [#4130](https://github.com/cybrid-systems/aura/issues/4130) | Empty list unparse → `(quote 0)` |
-| [#4131](https://github.com/cybrid-systems/aura/issues/4131) | Soft oneshot hang ignores SIGTERM until killpg |
-| [#4132](https://github.com/cybrid-systems/aura/issues/4132) | `current-source :pretty` drops export names → empty `(export)`; host may restore export honestly |
+| [#4130](https://github.com/cybrid-systems/aura/issues/4130) | Empty list unparse → `(quote 0)` — **FIXED** on tip |
+| [#4131](https://github.com/cybrid-systems/aura/issues/4131) **FIXED** | Soft oneshot hang ignores SIGTERM until killpg |
+| [#4132](https://github.com/cybrid-systems/aura/issues/4132) | `current-source :pretty` drops export names — **FIXED** (`cbae122`); host restore **removed** |
 
 ```bash
 export AURA_BIN=/workspace/aura-grok/build_soft4079/aura

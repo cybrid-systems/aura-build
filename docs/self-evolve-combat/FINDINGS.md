@@ -152,3 +152,7 @@ On 3i/3j, **selected-round max fitness can dip** (e.g. candidates 0.08–0.16) w
 Fresh Soft `--serve-async` (`build_soft4048/aura`, no MiniMax, no fiber http-post): `(eval-current)` after `mutate:rebind` prints display `99` then withholds the JSON status line for ~38s. The next exec reads `value ()`. Not a reopen of #4054/#4056.
 
 **Aura issue:** https://github.com/cybrid-systems/aura/issues/4079
+- `20260927-212409` ok=True llm_via=None llm_parallel=None explore=None artifacts=`combat_20260927-212409_stdout.json`
+- `20260927-212409` ok=True llm_via=None llm_parallel=None explore=None artifacts=`combat_20260927-212409_stdout.json`
+- `20260927-212409` ok=True llm_via=fiber llm_parallel=fiber explore=fiber_graph artifacts=`combat_20260927-212409_stdout.json`
+- `20260927-213755` ok=False llm_via=fiber llm_parallel=fiber_serial explore=fiber_graph artifacts=`combat_20260927-213755_stdout.json`

@@ -381,19 +381,18 @@ def _run_soft_helper_evolve(
                 "tip_note": "Soft current-source failed for soft_worldline_pick",
             }
 
-        # Soft tip 483bd70: (current-source :pretty) can emit empty (export) while
-        # dropping export names (sibling of empty-list → (quote 0) #4130). Restore
-        # export from Soft-scored winner; keep Soft unparse body for define forms.
-        export_restored = False
-        if "(export pick-best)" not in src and "(export)" in src:
-            src = (
-                "(export pick-best)\n"
-                + src.replace("(export)", "; Soft dropped export names — restored", 1)
-            )
-            export_restored = True
-        elif "(export pick-best)" not in src:
-            src = "(export pick-best)\n" + src
-            export_restored = True
+        # Soft tip cbae122+: #4132 fixed — export names come from Soft unparse;
+        # do not host-restore or invent soft_export_restored.
+        if "(export pick-best)" not in src:
+            return {
+                "ok": False,
+                "reason": "current_source_missing_export_names",
+                "display": src[:200],
+                "fiber_live": True,
+                "aura_issue_candidate": True,
+                "tip_note": "Soft current-source dropped export names (#4132 should be fixed)",
+                "selected": best["name"],
+            }
 
         banner = (
             "; Soft-materialized worldline pick helper (self-evolve runtime)\n"
@@ -401,11 +400,6 @@ def _run_soft_helper_evolve(
             f"; selected={best['name']}  denseness={denseness_note}\n"
             "; incr_proven=false\n"
             "; Not stamp dogfood — real kernel helper used by Soft runtime path.\n"
-            + (
-                "; soft_export_restored=true  (Soft current-source emptied export list)\n"
-                if export_restored
-                else ""
-            )
         )
         body = banner + src.rstrip() + "\n"
 

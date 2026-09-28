@@ -521,7 +521,7 @@ def score_aura_file(
             start_new_session=True,
         )
     except subprocess.TimeoutExpired as exc:
-        # Soft tip sometimes ignores SIGTERM; kill the process group.
+        # Defense-in-depth: Soft #4131 fixed TERM; still killpg on timeout loops.
         try:
             import os
             import signal
@@ -840,25 +840,6 @@ def _fail_case_details(tests: list[dict[str, Any]], got: dict[Any, str]) -> list
     return details
 
 
-_HANG_SKIP_SLUGS = {
-    "palindrome-linked-list",
-    "reorder-list",
-    "linked-list-cycle",
-    "linked-list-cycle-ii",
-    "reverse-linked-list",
-    "reverse-linked-list-ii",
-    "merge-two-sorted-lists",
-    "remove-nth-node-from-end-of-list",
-    "swap-nodes-in-pairs",
-    "rotate-list",
-    "partition-list",
-    "sort-list",
-    "insertion-sort-list",
-    "ugly-number",
-    "ugly-number-ii",
-}
-
-
 _TREE_HOSTILE_PREFIXES = (
     "binary-tree",
     "same-tree",
@@ -890,7 +871,7 @@ def _list_llm_targets(repo: Path, *, limit: int = 12) -> list[str]:
     for d in sorted(root.iterdir()):
         if not d.is_dir() or (d / "solution_runtime.aura").is_file():
             continue
-        if d.name in RECIPES or _is_tree_hostile(d.name) or d.name in _HANG_SKIP_SLUGS:
+        if d.name in RECIPES or _is_tree_hostile(d.name):
             continue
         meta_p, tests_p = d / "meta.json", d / "tests.json"
         if not meta_p.is_file() or not tests_p.is_file():
