@@ -1,0 +1,163 @@
+; soft_leetcode_runtime slug=palindromic-substrings path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=fiber fiber_llm_ok=true
+; selected=llm-2 hits=8/8
+; baseline_hits=3/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define string-length
+    (lambda (s)
+      (letrec ((loop (lambda (i)
+          (if (>=
+              i (string-length-raw s))
+            i
+            (loop (+
+                i 1))))))
+        (loop 0))))
+  (define string-length-raw
+    (lambda (s)
+      (letrec ((loop (lambda (i)
+          (if (char=?
+              (string-ref
+                s i) 0)
+            i
+            (loop (+
+                i 1))))))
+        (loop 0))))
+  (define substring-of
+    (lambda (s start len)
+      (letrec ((loop (lambda (i acc)
+          (if (>=
+              i len)
+            (list->string (reverse acc))
+            (loop
+              (+
+                i 1) (cons
+                (string-ref
+                  s (+
+                    start i)) acc))))))
+        (loop
+          0 (quote ())))))
+  (define string-equal?
+    (lambda (a b)
+      (let ((la (string-length a)))
+        (let ((lb (string-length b)))
+          (if (not (=
+                la lb))
+            #f
+            (letrec ((loop (lambda (i)
+                (if (>=
+                    i la)
+                  #t
+                  (if (char=?
+                      (string-ref
+                        a i) (string-ref
+                        b i))
+                    (loop (+
+                        i 1))
+                    #f)))))
+              (loop 0)))))))
+  (define contains?
+    (lambda (lst s)
+      (if (null? lst)
+        #f
+        (if (string-equal?
+            (car lst) s)
+          #t
+          (contains?
+            (cdr lst) s)))))
+  (define add-unique
+    (lambda (lst s)
+      (if (contains?
+          lst s)
+        lst
+        (cons
+          s lst))))
+  (define solve
+    (lambda (s)
+      (let ((n (string-length s)))
+        (let ((seen (quote ())))
+          (letrec ((loop-center (lambda (i)
+              (if (>=
+                  i n)
+                (letrec ((count-loop (lambda (lst c)
+                    (if (null? lst)
+                      c
+                      (count-loop
+                        (cdr lst) (+
+                          c 1))))))
+                  (count-loop
+                    seen 0))
+                (begin
+                  (letrec ((expand-odd (lambda (l r)
+                      (if (or
+                          (<
+                            l 0) (>=
+                            r n))
+                        (quote ())
+                        (let ((ch-l (string-ref
+                            s l)))
+                          (let ((ch-r (string-ref
+                              s r)))
+                            (if (char=?
+                                ch-l ch-r)
+                              (begin
+                                (set! seen (add-unique
+                                    seen (substring-of
+                                      s l (+
+                                        (-
+                                          r l) 1))))
+                                (expand-odd
+                                  (-
+                                    l 1) (+
+                                    r 1)))
+                              (quote ()))))))))
+                    (expand-odd
+                      i i))
+                  (letrec ((expand-even (lambda (l r)
+                      (if (or
+                          (<
+                            l 0) (>=
+                            r n))
+                        (quote ())
+                        (let ((ch-l (string-ref
+                            s l)))
+                          (let ((ch-r (string-ref
+                              s r)))
+                            (if (char=?
+                                ch-l ch-r)
+                              (begin
+                                (set! seen (add-unique
+                                    seen (substring-of
+                                      s l (+
+                                        (-
+                                          r l) 1))))
+                                (expand-even
+                                  (-
+                                    l 1) (+
+                                    r 1)))
+                              (quote ()))))))))
+                    (expand-even
+                      i (+
+                        i 1)))
+                  (loop-center (+
+                      i 1)))))))
+            (loop-center 0))))))
+  (define cases (list
+      "aba" "aaaa" "abc" "a" "ababa" "abbaa" "zxyxz" "abcdefg"))
+  (define run-cases
+    (lambda (lst i)
+      (if (null? lst)
+        (quote ())
+        (begin
+          (display "CASE")
+          (display i)
+          (display "=")
+          (display (solve (car lst)))
+          (newline)
+          (run-cases
+            (cdr lst) (+
+              i 1))))))
+  (run-cases
+    cases 0))
