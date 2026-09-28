@@ -288,3 +288,20 @@ def test_downcase_helper_candidates_export_string_downcase():
         assert "(export string-downcase)" in src
         assert name
 
+
+def test_upcase_helper_candidates_export_string_upcase():
+    from aura_build.self_evolve_runtime import _UPCASE_HELPER_CANDIDATES
+
+    assert len(_UPCASE_HELPER_CANDIDATES) >= 2
+    for name, src in _UPCASE_HELPER_CANDIDATES:
+        assert "string-upcase" in src
+        assert "(export string-upcase)" in src
+        assert name
+
+
+def test_fiber_explorer_cap_bounds_soft_joins():
+    from aura_build.self_evolve_runtime import FIBER_EXPLORER_CAP, DEFAULT_BUMPS
+
+    assert FIBER_EXPLORER_CAP >= len(DEFAULT_BUMPS)
+    assert FIBER_EXPLORER_CAP <= 64  # Soft hang guard for sequential fiber+mutate
+
