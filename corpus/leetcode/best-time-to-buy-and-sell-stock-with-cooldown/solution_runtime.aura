@@ -2,51 +2,46 @@
 ; materialize=current-source worldline_backend=fiber_graph
 ; fiber_live=true incr_proven=false
 ; llm_via=fiber fiber_llm_ok=true
-; selected=llm-0 hits=3/8
-; baseline_hits=0/8
+; selected=llm-0 hits=8/8
+; baseline_hits=3/8
 ; Expected values used only for host scoring / LLM context, not hardcoded into display.
 (begin
-  (define max
-    (lambda (a b)
-      (if (>
-          a b)
-        a
-        b)))
-  (define max3
-    (lambda (a b c)
-      (max
-        a (max
-          b c))))
   (define solve
     (lambda (prices)
       (let ((n (length prices)))
         (if (<=
             n 1)
           0
-          (let ((hold (car prices)))
-            (let ((sold 0))
-              (let ((rest 0))
-                (letrec ((loop (lambda (i h s r)
-                    (if (>=
-                        i n)
-                      (max
-                        r h)
-                      (let ((p (list-ref
-                          prices i)))
-                        (let ((prev-h h))
-                          (let ((prev-s s))
-                            (let ((prev-r r))
-                              (loop
-                                (+
-                                  i 1) (max3
-                                  (-
-                                    prev-r p) prev-h (-
-                                    prev-r p)) (max
-                                  prev-s (-
-                                    prev-h (-
-                                      p prev-r))) prev-r)))))))))
-                  (loop
-                    1 hold sold rest)))))))))
+          (if (=
+              n 0)
+            0
+            (let ((p0 (car prices)))
+              (let ((hold (- p0)))
+                (let ((sold (- 999999999)))
+                  (let ((rest 0))
+                    (letrec ((loop (lambda (i h s r)
+                        (if (>=
+                            i n)
+                          (if (>
+                              s r)
+                            s
+                            r)
+                          (let ((p (list-ref
+                              prices i)))
+                            (loop
+                              (+
+                                i 1) (if (>
+                                  h (-
+                                    r p))
+                                h
+                                (-
+                                  r p)) (+
+                                h p) (if (>
+                                  r s)
+                                r
+                                s)))))))
+                      (loop
+                        1 hold sold rest)))))))))))
   (display "CASE0=")
   (display (solve (list
         1 2 3 0 2)))
