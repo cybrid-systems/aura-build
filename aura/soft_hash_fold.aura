@@ -1,0 +1,19 @@
+; Soft-materialized hash-fold helper (self-evolve Soft path)
+; materialize=current-source  fiber_live=true when denseness measured
+; selected=named-let-keys  denseness=soft_ready_async_denseness_4048
+; incr_proven=false
+; Product: Soft oneshot unbound hash-fold (Soft std/hash defines via foldr;
+; Soft oneshot lacks foldr + does not auto-load std/hash; sibling of hash-for-each)
+(begin
+  (export hash-fold)
+  (define hash-fold
+    (lambda (h f init)
+      (letrec ((loop (lambda (ks acc)
+          (if (null? ks)
+            acc
+            (loop
+              (cdr ks) (f
+                (car ks) (hash-ref
+                  h (car ks)) acc))))))
+        (loop
+          (hash-keys h) init)))))
