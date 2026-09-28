@@ -283,3 +283,28 @@ Fresh Soft `--serve-async` (`build_soft4048/aura`, no MiniMax, no fiber http-pos
 **Push:** combat `--no-push` (no aura-build product materialize). This FINDINGS stamp is the productized docs commit.
 
 **New Aura issues:** none.
+- `20260928-152350` ok=False llm_via=fiber llm_parallel=fiber explore=fiber_graph artifacts=`combat_20260928-152350_stdout.json`
+## mini-exchange Soft tip cbae122 denseness held; MiniMax residual (2026-09-28 ~15:30 CST)
+
+**Soft tip:** `cbae122` `/workspace/aura-grok/build_soft4132/aura` — no rebuild. Aura tip still `f3fd950` (#4134 JIT owner fail-closed; not Soft-facing).
+**aura-build tip at combat:** `3d99ab9` (post queue-reconstruction / reverse-linked-list / largest-rectangle full + knight-moves / asteroid / cooldown improved).
+
+**Combat:** `combat_20260928-152350` — project=mini-exchange (15-file stub; harder than mini-saga 10-file), `--fiber-explore 3 --fiber-llm --concurrent-llm --explore-tools llm --max-rounds 6`.
+
+| Honesty | Measured |
+|---------|----------|
+| fiber_live | true |
+| serve_mode | async |
+| soft_ready | soft_ready_ok denseness_4048 path |
+| llm_via | fiber |
+| llm_parallel | fiber (rounds: fiber×6) |
+| explore_parallel | fiber_graph |
+| fiber_llm_probe | ok ~9.0s |
+| ok / reason | False / max_rounds_6 |
+| best_fitness | 0.3077 |
+
+**Ruling:** Soft denseness / fiber concurrent MiniMax path **held** under N=3×6 on 15-file mini-exchange. Failure is **MiniMax residual** (classic FILL1=filled vs partial + LEFT/RISK/FEES/COUNT mismatches; fitness stuck ~0.31), not Soft wedge. No new Aura issue.
+
+**Push:** combat `--no-push` (no aura-build product materialize). This FINDINGS stamp is the productized docs commit.
+
+**New Aura issues:** none.
