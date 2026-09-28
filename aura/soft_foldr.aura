@@ -1,0 +1,15 @@
+; Soft-materialized foldr helper (self-evolve Soft path)
+; materialize=current-source  fiber_live=true when denseness measured
+; selected=reverse-foldl  denseness=soft_ready_async_denseness_4048
+; incr_proven=false
+; Product: Soft oneshot has foldl but unbound foldr (Soft std/list defines
+; via reverse+foldl; Soft std/hash hash-fold depends on foldr; Soft oneshot
+; does not auto-load std/list)
+(begin
+  (export foldr)
+  (define foldr
+    (lambda (f init lst)
+      (foldl
+        (lambda (acc x)
+          (f
+            x acc)) init (reverse lst)))))

@@ -439,3 +439,23 @@ def test_runtime_result_attaches_hash_fold_helper_key():
     assert 'result["hash_for_each_helper"]' in src
     assert m.FIBER_EXPLORER_CAP == 32
 
+
+def test_foldr_helper_candidates_export_foldr():
+    from aura_build.self_evolve_runtime import _FOLDR_HELPER_CANDIDATES
+
+    assert len(_FOLDR_HELPER_CANDIDATES) >= 2
+    for name, src in _FOLDR_HELPER_CANDIDATES:
+        assert "foldr" in src
+        assert "(export foldr)" in src
+
+
+def test_runtime_result_attaches_foldr_helper_key():
+    """Regression: foldr must attach on runtime result; FIBER_EXPLORER_CAP=32 kept."""
+    import inspect
+    from aura_build import self_evolve_runtime as m
+
+    src = inspect.getsource(m.cmd_runtime)
+    assert 'result["foldr_helper"]' in src
+    assert 'result["hash_fold_helper"]' in src
+    assert m.FIBER_EXPLORER_CAP == 32
+
