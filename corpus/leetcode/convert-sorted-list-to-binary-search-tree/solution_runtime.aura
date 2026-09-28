@@ -1,0 +1,164 @@
+; soft_leetcode_runtime slug=convert-sorted-list-to-binary-search-tree path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=fiber fiber_llm_ok=true
+; selected=llm-2 hits=4/8
+; baseline_hits=2/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define make-tree
+    (lambda (val left right)
+      (cons
+        val (cons
+          left right))))
+  (define tree-val
+    (lambda (t)
+      (car t)))
+  (define tree-left
+    (lambda (t)
+      (car (cdr t))))
+  (define tree-right
+    (lambda (t)
+      (cdr (cdr t))))
+  (define nil (quote ()))
+  (define sorted-list-to-bst
+    (lambda (lst)
+      (if (null? lst)
+        nil
+        (let ((n (length lst)))
+          (let ((mid (quotient
+              n 2)))
+            (let ((left-part (take
+                lst mid)))
+              (let ((right-part (drop
+                  lst (+
+                    mid 1))))
+                (make-tree
+                  (list-ref
+                    lst mid) (sorted-list-to-bst left-part) (sorted-list-to-bst right-part)))))))))
+  (define take
+    (lambda (lst n)
+      (if (=
+          n 0)
+        (quote ())
+        (cons
+          (car lst) (take
+            (cdr lst) (-
+              n 1))))))
+  (define drop
+    (lambda (lst n)
+      (if (=
+          n 0)
+        lst
+        (drop
+          (cdr lst) (-
+            n 1)))))
+  (define list-ref
+    (lambda (lst i)
+      (if (=
+          i 0)
+        (car lst)
+        (list-ref
+          (cdr lst) (-
+            i 1)))))
+  (define tree-height
+    (lambda (t)
+      (if (null? t)
+        0
+        (+
+          1 (max
+            (tree-height (tree-left t)) (tree-height (tree-right t)))))))
+  (define level-nodes
+    (lambda (t level)
+      (if (null? t)
+        (list nil)
+        (if (=
+            level 0)
+          (list t)
+          (append
+            (level-nodes
+              (tree-left t) (-
+                level 1)) (level-nodes
+              (tree-right t) (-
+                level 1)))))))
+  (define tree-to-level-order
+    (lambda (t)
+      (if (null? t)
+        (quote ())
+        (let ((h (tree-height t)))
+          (letrec ((loop (lambda (lvl acc)
+              (if (=
+                  lvl h)
+                acc
+                (loop
+                  (+
+                    lvl 1) (append
+                    acc (level-nodes
+                      t lvl)))))))
+            (loop
+              0 (quote ())))))))
+  (define format-node
+    (lambda (n)
+      (if (null? n)
+        "null"
+        (number->string (tree-val n)))))
+  (define display-list-level
+    (lambda (xs)
+      (begin
+        (display "[")
+        (letrec ((loop (lambda (rest first?)
+            (if (null? rest)
+              (display "]")
+              (begin
+                (if first?
+                  (set! first? #f)
+                  (begin
+                    (display ",")))
+                (display (format-node (car rest)))
+                (loop
+                  (cdr rest) #f))))))
+          (loop
+            xs #t)))))
+  (define print-tree-result
+    (lambda (t)
+      (display-list-level (tree-to-level-order t))))
+  (define solve
+    (lambda (head)
+      (sorted-list-to-bst head)))
+  (define case0 (quote ()))
+  (display "CASE0=")
+  (print-tree-result (solve case0))
+  (newline)
+  (define case1 (list 0))
+  (display "CASE1=")
+  (print-tree-result (solve case1))
+  (newline)
+  (define case2 (list
+      1 2 3))
+  (display "CASE2=")
+  (print-tree-result (solve case2))
+  (newline)
+  (define case3 (list
+      -10 -3 0 5 9))
+  (display "CASE3=")
+  (print-tree-result (solve case3))
+  (newline)
+  (define case4 (list
+      1 2 3 4 5 6 7 8))
+  (display "CASE4=")
+  (print-tree-result (solve case4))
+  (newline)
+  (define case5 (list
+      0 1 2 3 4 5 6 7 8 9 10))
+  (display "CASE5=")
+  (print-tree-result (solve case5))
+  (newline)
+  (define case6 (list
+      -5 -4 -3 -2 -1 0 1 2 3 4 5))
+  (display "CASE6=")
+  (print-tree-result (solve case6))
+  (newline)
+  (define case7 (list 42))
+  (display "CASE7=")
+  (print-tree-result (solve case7))
+  (newline))
