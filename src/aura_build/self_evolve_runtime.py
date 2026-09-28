@@ -38,6 +38,7 @@ STARTS_HELPER_PATH = "aura/soft_starts_with.aura"
 ENDS_HELPER_PATH = "aura/soft_ends_with.aura"
 CONTAINS_HELPER_PATH = "aura/soft_contains.aura"
 SPLIT_HELPER_PATH = "aura/soft_split.aura"
+REPLACE_HELPER_PATH = "aura/soft_replace.aura"
 DEFAULT_BUMPS = (2, 9, 4, 7, 1)
 
 _RUNTIME_OK_RE = re.compile(
@@ -1506,6 +1507,294 @@ def _run_soft_split_helper_evolve(
 
 
 
+
+# Candidate Soft string-replace helpers. Soft scores each via set-code + eval;
+# winner is materialized via (current-source :workspace :pretty).
+# Product use: export redaction / path rewrite (Soft oneshot lacks string-replace
+# without std/string; Soft-materialized pure letrec works denseness path).
+_REPLACE_HELPER_CANDIDATES: list[tuple[str, str]] = [
+    (
+        "scan-letrec",
+        "(export string-replace)\n"
+        "(define (string-replace s old new)\n"
+        "  (let ((slen (string-length s))\n"
+        "        (olen (string-length old)))\n"
+        "    (if (or (= olen 0) (> olen slen))\n"
+        "        s\n"
+        "        (letrec ((loop (lambda (i result)\n"
+        "                         (if (>= i slen)\n"
+        "                             result\n"
+        "                             (if (and (<= (+ i olen) slen)\n"
+        "                                      (equal? (substring s i (+ i olen)) old))\n"
+        "                                 (loop (+ i olen) (string-append result new))\n"
+        "                                 (loop (+ i 1)\n"
+        "                                       (string-append result\n"
+        "                                         (substring s i (+ i 1)))))))))\n"
+        "          (loop 0 \"\")))))\n",
+    ),
+    (
+        "scan-named",
+        "(export string-replace)\n"
+        "(define (string-replace s old new)\n"
+        "  (let ((slen (string-length s))\n"
+        "        (olen (string-length old)))\n"
+        "    (if (or (= olen 0) (> olen slen))\n"
+        "        s\n"
+        "        (let loop ((i 0) (result \"\"))\n"
+        "          (if (>= i slen)\n"
+        "              result\n"
+        "              (if (and (<= (+ i olen) slen)\n"
+        "                       (equal? (substring s i (+ i olen)) old))\n"
+        "                  (loop (+ i olen) (string-append result new))\n"
+        "                  (loop (+ i 1)\n"
+        "                        (string-append result\n"
+        "                          (substring s i (+ i 1))))))))))\n",
+    ),
+    (
+        "scan-cond",
+        "(export string-replace)\n"
+        "(define (string-replace s old new)\n"
+        "  (let ((slen (string-length s))\n"
+        "        (olen (string-length old)))\n"
+        "    (cond ((or (= olen 0) (> olen slen)) s)\n"
+        "          (else\n"
+        "           (letrec ((loop (lambda (i result)\n"
+        "                            (cond ((>= i slen) result)\n"
+        "                                  ((and (<= (+ i olen) slen)\n"
+        "                                        (equal? (substring s i (+ i olen)) old))\n"
+        "                                   (loop (+ i olen) (string-append result new)))\n"
+        "                                  (else\n"
+        "                                   (loop (+ i 1)\n"
+        "                                         (string-append result\n"
+        "                                           (substring s i (+ i 1)))))))))\n"
+        "             (loop 0 \"\"))))))\n",
+    ),
+]
+
+
+def _score_replace_helper_src(sess: Any, src: str, *, timeout_s: float = 12.0) -> dict[str, Any]:
+    """Score string-replace helper against a small known vector (Soft equal?)."""
+    from aura_build.serve_session import is_session_transient
+
+    esc = _soft_escape(src)
+    boot = sess.raw_line(f'(set-code "{esc}")', timeout_s=timeout_s)
+    if boot.get("status") != "ok":
+        msg = boot.get("msg") or boot.get("status")
+        return {
+            "ok": False,
+            "observed": None,
+            "msg": msg,
+            "transient": is_session_transient(msg),
+        }
+    sess.raw_line("(eval-current)", timeout_s=timeout_s)
+    cases = [
+        '(equal? (string-replace "abc" "b" "X") "aXc")',
+        '(equal? (string-replace "abab" "ab" "X") "XX")',
+        '(equal? (string-replace "hello" "" "X") "hello")',
+        '(equal? (string-replace "aaa" "a" "b") "bbb")',
+        '(equal? (string-replace "abc" "d" "X") "abc")',
+        '(equal? (string-replace "foo--bar--baz" "--" "|") "foo|bar|baz")',
+        '(equal? (string-replace "" "a" "b") "")',
+        '(equal? (string-replace "xx" "xxx" "Y") "xx")',
+    ]
+    hits = 0
+    last_msg = None
+    for expr in cases:
+        r = sess.raw_line(expr, timeout_s=timeout_s)
+        msg = r.get("msg") or r.get("status")
+        if is_session_transient(msg):
+            return {"ok": False, "observed": hits, "msg": msg, "transient": True}
+        if r.get("status") != "ok":
+            last_msg = msg
+            continue
+        if _truthy_soft(r.get("value")):
+            hits += 1
+        last_msg = msg
+    ok = hits == len(cases)
+    return {
+        "ok": ok,
+        "observed": hits,
+        "status": "ok" if ok else "partial",
+        "msg": last_msg,
+        "transient": False,
+    }
+
+
+def _run_soft_replace_helper_evolve(
+    repo: Path,
+    *,
+    aura_bin: str,
+    harness_root: Path | None = None,
+) -> dict[str, Any]:
+    """Soft serve denseness → string-replace candidates → select-best → current-source.
+
+    Materializes ``aura/soft_replace.aura`` (real kernel helper).
+    Honesty: fiber_live only when denseness probe measured ok.
+    """
+    from aura_build.llm_dogfood import fiber_fanout_probe
+    from aura_build.serve_session import (
+        is_session_transient,
+        restart_session,
+        start_session,
+        stop_quiet,
+    )
+
+    hroot = harness_root or (repo / ".aura-build")
+    sess = None
+    try:
+        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+        if not sess.alive():
+            return {"ok": False, "reason": "serve_not_alive", "fiber_live": False}
+
+        probe = fiber_fanout_probe(sess, n=2, timeout_s=8.0)
+        denseness_ok = bool(probe.get("ok"))
+        denseness_note = str(
+            probe.get("note") or probe.get("reason") or ("ok" if denseness_ok else "fail")
+        )
+        if not denseness_ok:
+            return {
+                "ok": False,
+                "reason": "denseness_probe_failed",
+                "denseness": probe,
+                "fiber_live": False,
+            }
+
+        explorers: list[dict[str, Any]] = []
+        restarts = 0
+        for name, src in _REPLACE_HELPER_CANDIDATES:
+            sc = _score_replace_helper_src(sess, src)
+            if sc.get("transient") and restarts < 2:
+                stop_quiet(sess)
+                sess = restart_session(aura_bin=aura_bin, harness_root=hroot)
+                denseness = fiber_fanout_probe(sess, n=2, timeout_s=6.0)
+                denseness_ok = bool(denseness.get("ok"))
+                denseness_note = str(denseness.get("note") or denseness_note)
+                restarts += 1
+                if not denseness_ok:
+                    return {
+                        "ok": False,
+                        "reason": "denseness_lost_after_restart",
+                        "fiber_live": False,
+                        "restarts": restarts,
+                    }
+                sc = _score_replace_helper_src(sess, src)
+            explorers.append(
+                {
+                    "name": name,
+                    "ok": bool(sc.get("ok")),
+                    "observed": sc.get("observed"),
+                    "src": src,
+                    "transient": bool(sc.get("transient")),
+                    "msg": sc.get("msg"),
+                }
+            )
+
+        ok_ex = [e for e in explorers if e.get("ok")]
+        if not ok_ex:
+            return {
+                "ok": False,
+                "reason": "replace_helper_candidates_all_failed",
+                "explorers": [
+                    {k: e.get(k) for k in ("name", "ok", "observed", "msg")}
+                    for e in explorers
+                ],
+                "fiber_live": True,
+                "denseness_note": denseness_note,
+                "aura_issue_candidate": True,
+            }
+
+        best = next((e for e in ok_ex if e["name"] == "scan-letrec"), ok_ex[0])
+        win_src = str(best["src"])
+        boot = sess.raw_line(
+            f'(set-code "{_soft_escape(win_src)}")', timeout_s=12.0
+        )
+        if boot.get("status") != "ok" and is_session_transient(boot.get("msg")):
+            stop_quiet(sess)
+            sess = restart_session(aura_bin=aura_bin, harness_root=hroot)
+            boot = sess.raw_line(
+                f'(set-code "{_soft_escape(win_src)}")', timeout_s=12.0
+            )
+        if boot.get("status") != "ok":
+            return {
+                "ok": False,
+                "reason": f"winner_set_code_failed:{boot.get('msg') or boot.get('status')}",
+                "fiber_live": True,
+                "selected": best["name"],
+            }
+        sess.raw_line("(eval-current)", timeout_s=10.0)
+        cs = sess.raw_line(
+            "(display (current-source :workspace :pretty))", timeout_s=10.0
+        )
+        src = str(cs.get("display") or "").strip()
+        if not src or "string-replace" not in src:
+            return {
+                "ok": False,
+                "reason": "current_source_empty_or_bad",
+                "display": src[:200],
+                "fiber_live": True,
+                "aura_issue_candidate": True,
+                "tip_note": "Soft current-source failed for soft_replace",
+            }
+
+        if "(export string-replace)" not in src:
+            return {
+                "ok": False,
+                "reason": "current_source_missing_export_names",
+                "display": src[:200],
+                "fiber_live": True,
+                "aura_issue_candidate": True,
+                "tip_note": "Soft current-source dropped export names (#4132 should be fixed)",
+                "selected": best["name"],
+            }
+
+        banner = (
+            "; Soft-materialized string-replace helper (self-evolve Soft path)\n"
+            "; materialize=current-source  fiber_live=true when denseness measured\n"
+            f"; selected={best['name']}  denseness={denseness_note}\n"
+            "; incr_proven=false\n"
+            "; Product: export redaction / rewrite (Soft oneshot lacks string-replace prim)\n"
+        )
+        body = banner + src.rstrip() + "\n"
+
+        out = repo / REPLACE_HELPER_PATH
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(body, encoding="utf-8")
+
+        verify = sess.raw_line(
+            '(equal? (string-replace "abc" "b" "X") "aXc")',
+            timeout_s=8.0,
+        )
+        v_ok = verify.get("status") == "ok" and _truthy_soft(verify.get("value"))
+
+        return {
+            "ok": bool(v_ok),
+            "reason": "replace_helper_evolved" if v_ok else "replace_helper_verify_fail",
+            "path": REPLACE_HELPER_PATH,
+            "selected": best["name"],
+            "observed": next((e.get("observed") for e in explorers if e["name"] == best["name"]), None),
+            "src_len": len(src),
+            "materialize": "current-source",
+            "worldline_backend": "fiber_graph",
+            "fiber_live": True,
+            "incr_proven": False,
+            "denseness_note": denseness_note,
+            "explorers": [
+                {k: e.get(k) for k in ("name", "ok", "observed")} for e in explorers
+            ],
+            "session_restarts": restarts,
+            "verify_ok": v_ok,
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "ok": False,
+            "reason": f"replace_helper_evolve_exc:{type(exc).__name__}:{exc}",
+            "fiber_live": False,
+        }
+    finally:
+        stop_quiet(sess)
+
+
+
 def _run_serve_fiber(
     repo: Path,
     *,
@@ -1750,6 +2039,7 @@ def cmd_runtime(args: Any) -> int:
     ends_helper: dict[str, Any] = {"ok": False, "reason": "skipped"}
     contains_helper: dict[str, Any] = {"ok": False, "reason": "skipped"}
     split_helper: dict[str, Any] = {"ok": False, "reason": "skipped"}
+    replace_helper: dict[str, Any] = {"ok": False, "reason": "skipped"}
     if prefer_serve:
         helper = _run_soft_helper_evolve(
             repo, aura_bin=str(aura_bin), harness_root=harness_root
@@ -1788,6 +2078,15 @@ def cmd_runtime(args: Any) -> int:
         print(
             json.dumps(
                 {"event": "self_evolve_split_helper", **split_helper},
+                ensure_ascii=False,
+            )
+        )
+        replace_helper = _run_soft_replace_helper_evolve(
+            repo, aura_bin=str(aura_bin), harness_root=harness_root
+        )
+        print(
+            json.dumps(
+                {"event": "self_evolve_replace_helper", **replace_helper},
                 ensure_ascii=False,
             )
         )
@@ -1882,6 +2181,19 @@ def cmd_runtime(args: Any) -> int:
             "denseness_note",
         )
     }
+    result["replace_helper"] = {
+        k: replace_helper.get(k)
+        for k in (
+            "ok",
+            "reason",
+            "path",
+            "selected",
+            "fiber_live",
+            "materialize",
+            "src_len",
+            "denseness_note",
+        )
+    }
 
     print(json.dumps({"event": "self_evolve_runtime", **result}, ensure_ascii=False))
     if not result.get("ok"):
@@ -1912,7 +2224,7 @@ def cmd_runtime(args: Any) -> int:
         print("self-evolve runtime: --no-commit; skip git")
         return 0
 
-    paths = [STAMP_PATH, RUNTIME_KERNEL, HELPER_PATH, STARTS_HELPER_PATH, ENDS_HELPER_PATH, CONTAINS_HELPER_PATH, SPLIT_HELPER_PATH, "src/aura_build/self_evolve_runtime.py", "src/aura_build/serve_session.py", "src/aura_build/soft_leetcode_runtime.py", "tests/test_serve_session.py", "tests/test_self_evolve.py"]
+    paths = [STAMP_PATH, RUNTIME_KERNEL, HELPER_PATH, STARTS_HELPER_PATH, ENDS_HELPER_PATH, CONTAINS_HELPER_PATH, SPLIT_HELPER_PATH, REPLACE_HELPER_PATH, "src/aura_build/self_evolve_runtime.py", "src/aura_build/serve_session.py", "src/aura_build/soft_leetcode_runtime.py", "tests/test_serve_session.py", "tests/test_self_evolve.py"]
     fl = "true" if result.get("fiber_live") else "false"
     backend = result.get("worldline_backend") or "unknown"
     helper_sel = (result.get("helper") or {}).get("selected") or "-"

@@ -258,3 +258,13 @@ def test_split_helper_candidates_export_string_split():
         assert "string-split" in src
         assert "(export string-split)" in src
         assert name
+
+
+def test_replace_helper_candidates_export_string_replace():
+    from aura_build.self_evolve_runtime import _REPLACE_HELPER_CANDIDATES
+
+    assert len(_REPLACE_HELPER_CANDIDATES) >= 2
+    for name, src in _REPLACE_HELPER_CANDIDATES:
+        assert "string-replace" in src
+        assert "(export string-replace)" in src
+        assert name

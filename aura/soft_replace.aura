@@ -1,0 +1,39 @@
+; Soft-materialized string-replace helper (self-evolve Soft path)
+; materialize=current-source  fiber_live=true when denseness measured
+; selected=scan-letrec  denseness=soft_ready_async_denseness_4048
+; incr_proven=false
+; Product: export redaction / rewrite (Soft oneshot lacks string-replace prim)
+(begin
+  (export string-replace)
+  (define string-replace
+    (lambda (s old new)
+      (let ((slen (string-length s)))
+        (let ((olen (string-length old)))
+          (if (or
+              (=
+                olen 0) (>
+                olen slen))
+            s
+            (letrec ((loop (lambda (i result)
+                (if (>=
+                    i slen)
+                  result
+                  (if (and
+                      (<=
+                        (+
+                          i olen) slen) (equal?
+                        (substring
+                          s i (+
+                            i olen)) old))
+                    (loop
+                      (+
+                        i olen) (string-append
+                        result new))
+                    (loop
+                      (+
+                        i 1) (string-append
+                        result (substring
+                          s i (+
+                            i 1)))))))))
+              (loop
+                0 ""))))))))
