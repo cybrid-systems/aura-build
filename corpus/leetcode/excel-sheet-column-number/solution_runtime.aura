@@ -1,0 +1,67 @@
+; soft_leetcode_runtime slug=excel-sheet-column-number path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=fiber fiber_llm_ok=true
+; selected=llm-2 hits=9/9
+; baseline_hits=0/9
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define char-val
+    (lambda (c)
+      (-
+        (char->integer c) (char->integer 65) -1)))
+  (define string-length
+    (lambda (s)
+      (letrec ((loop (lambda (i)
+          (if (char=?
+              (string-ref
+                s i) 0)
+            i
+            (loop (+
+                i 1))))))
+        (loop 0))))
+  (define string-ref-safe
+    (lambda (s i)
+      (string-ref
+        s i)))
+  (define solve
+    (lambda (s)
+      (letrec ((loop (lambda (i ans)
+          (if (=
+              i (string-length s))
+            ans
+            (let ((v (+
+                (*
+                  ans 26) (char-val (string-ref-safe
+                    s i)))))
+              (loop
+                (+
+                  i 1) v))))))
+        (loop
+          0 0))))
+  (define run-case
+    (lambda (idx s)
+      (begin
+        (display "CASE")
+        (display idx)
+        (display "=")
+        (display (solve s))
+        (newline))))
+  (run-case
+    0 "A")
+  (run-case
+    1 "Z")
+  (run-case
+    2 "AA")
+  (run-case
+    3 "AB")
+  (run-case
+    4 "AZ")
+  (run-case
+    5 "BA")
+  (run-case
+    6 "ZZ")
+  (run-case
+    7 "AAA")
+  (run-case
+    8 "ZY"))
