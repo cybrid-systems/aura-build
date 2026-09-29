@@ -107,6 +107,7 @@ def test_observe_pursue_shrinks_then_ramps():
         "worldlines": WORLDLINES_FULL,
         "worldlines_idx": 2,
         "notes": [],
+        "diverge_sticky": False,  # exercise adaptive shrink path (not user 多发散 sticky)
     }
     state = observe_pursue_round(
         state, soft_ready=True, goal_met=True, ms=90_000
