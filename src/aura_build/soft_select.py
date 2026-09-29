@@ -126,7 +126,15 @@ def soft_pick_best_score(
 
     msg = r.get("msg") or r.get("status")
     if is_session_transient(msg):
-        return {**base, "via": "host_fallback", "reason": f"transient:{msg}", "transient": True}
+        # Caller (leetcode scoring) should ensure_session_ready + retry; mark transient
+        # so host can re-attach before Soft select-best after parallel proposes.
+        return {
+            **base,
+            "via": "host_fallback",
+            "reason": f"transient:{msg}",
+            "transient": True,
+            "needs_reattach": True,
+        }
     if r.get("status") != "ok":
         return {**base, "via": "host_fallback", "reason": str(msg)}
 

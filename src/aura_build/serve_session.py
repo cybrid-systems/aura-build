@@ -1486,6 +1486,65 @@ def restart_session(
     return start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
 
 
+def ensure_session_ready(
+    sess: ServeSession | None,
+    *,
+    aura_bin: str | None = None,
+    harness_root: Path | str | None = None,
+    ping_timeout_s: float = 3.0,
+) -> tuple[ServeSession, dict[str, Any]]:
+    """Ping Soft sock; re-attach / restart when dead before scoring.
+
+    After long host_parallel MiniMax proposes the Soft holder may still look
+    marked-alive while the unix sock is transient/dead. Call this *before*
+    Soft select-best / set-code scoring so host does not invent Soft Ready —
+    only re-attaches a measured live session (or force-restarts).
+
+    Returns ``(session, meta)`` where meta.via is ``ping_ok`` / ``reattach`` /
+    ``restart`` / ``cold_start``.
+    """
+    hroot = Path(harness_root) if harness_root else (
+        sess.harness_root if sess is not None else Path(
+            os.environ.get("AURA_BUILD_HARNESS_ROOT") or ".aura-build"
+        )
+    )
+    bin_path = aura_bin or (sess.aura_bin if sess is not None else None)
+    meta: dict[str, Any] = {"ok": False, "via": "none", "ping": False}
+
+    if sess is not None:
+        try:
+            if sess.ping(timeout_s=ping_timeout_s):
+                meta.update({"ok": True, "via": "ping_ok", "ping": True})
+                return sess, meta
+        except Exception as exc:  # noqa: BLE001
+            meta["ping_exc"] = f"{type(exc).__name__}:{exc}"
+
+    attached = attach_session(harness_root=hroot, aura_bin=bin_path)
+    if attached is not None:
+        try:
+            if attached.ping(timeout_s=ping_timeout_s):
+                meta.update({"ok": True, "via": "reattach", "ping": True})
+                return attached, meta
+        except Exception as exc:  # noqa: BLE001
+            meta["reattach_exc"] = f"{type(exc).__name__}:{exc}"
+
+    # Sock dead / holder stale — force restart (hang recovery path).
+    fresh = restart_session(aura_bin=bin_path, harness_root=hroot)
+    ping_ok = False
+    try:
+        ping_ok = bool(fresh.ping(timeout_s=ping_timeout_s))
+    except Exception as exc:  # noqa: BLE001
+        meta["restart_ping_exc"] = f"{type(exc).__name__}:{exc}"
+    meta.update(
+        {
+            "ok": ping_ok,
+            "via": "restart" if sess is not None else "cold_start",
+            "ping": ping_ok,
+        }
+    )
+    return fresh, meta
+
+
 def raw_line_resilient(
     sess: ServeSession,
     line: str,

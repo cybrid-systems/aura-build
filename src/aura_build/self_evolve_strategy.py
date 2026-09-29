@@ -549,6 +549,10 @@ def observe_llm_round(
             }
         )
         state["recent_latency"] = recent[-12:]
+    # High-proposal no_gain often Soft sock mid-score — host must re-attach
+    # before Soft select (see ensure_session_ready); keep llm in mix.
+    if int(proposals or 0) >= 16 and not ok:
+        notes.append("llm_parallel_no_gain→ensure_reattach_before_score")
     # Ensure mix stays rule+mutate+llm (never denseness-only)
     state["mix_explorers"] = ["rule", "mutate", "llm"]
     if state.get("last_llm_ok"):

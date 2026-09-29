@@ -348,3 +348,46 @@ def test_soft_ready_cache_roundtrip(tmp_path: Path) -> None:
     bad = tmp_path / "soft_ready_cache.json"
     bad.write_text('{"bin": {}, "probe": {"reason": "no_ok"}}\n', encoding="utf-8")
     assert load_cached_soft_ready(tmp_path, bin_path) is None
+
+
+def test_ensure_session_ready_ping_ok(tmp_path, monkeypatch):
+    from aura_build import serve_session as ss
+
+    class _Sess:
+        harness_root = tmp_path
+        aura_bin = "/fake/aura"
+
+        def ping(self, *, timeout_s=3.0):
+            return True
+
+    sess = _Sess()
+    out, meta = ss.ensure_session_ready(sess, aura_bin="/fake/aura", harness_root=tmp_path)
+    assert out is sess
+    assert meta["via"] == "ping_ok"
+    assert meta["ok"] is True
+
+
+def test_ensure_session_ready_restart_when_ping_fails(tmp_path, monkeypatch):
+    from aura_build import serve_session as ss
+
+    class _Dead:
+        harness_root = tmp_path
+        aura_bin = "/fake/aura"
+
+        def ping(self, *, timeout_s=3.0):
+            return False
+
+    class _Fresh:
+        harness_root = tmp_path
+        aura_bin = "/fake/aura"
+
+        def ping(self, *, timeout_s=3.0):
+            return True
+
+    monkeypatch.setattr(ss, "attach_session", lambda **kw: None)
+    monkeypatch.setattr(ss, "restart_session", lambda **kw: _Fresh())
+    dead = _Dead()
+    out, meta = ss.ensure_session_ready(dead, aura_bin="/fake/aura", harness_root=tmp_path)
+    assert isinstance(out, _Fresh)
+    assert meta["via"] == "restart"
+    assert meta["ok"] is True
