@@ -1,98 +1,123 @@
 ; soft_leetcode_runtime slug=perfect-squares path=llm
 ; materialize=current-source worldline_backend=fiber_graph
 ; fiber_live=true incr_proven=false
-; llm_via=fiber fiber_llm_ok=true
-; selected=llm-0 hits=2/10
-; baseline_hits=0/10
+; llm_via=host_parallel fiber_llm_ok=true
+; selected=llm-60 hits=10/10
+; baseline_hits=2/10
 ; Expected values used only for host scoring / LLM context, not hardcoded into display.
 (begin
-  (define square?
-    (lambda (n)
-      (let ((s (exact (floor (sqrt n)))))
-        (=
-          (*
-            s s) n))))
+  (begin
+    (define min
+      (lambda (a b)
+        (if (<
+            a b)
+          a
+          b)))
+    (define is-square?
+      (lambda (n)
+        (let ((s (floor (sqrt n))))
+          (=
+            (*
+              s s) n))))
+    (define is-sum-of-2-squares?
+      (lambda (n)
+        (letrec ((loop (lambda (i)
+            (if (>
+                (*
+                  i i) n)
+              #f
+              (if (is-square? (-
+                    n (*
+                      i i)))
+                #t
+                (loop (+
+                    i 1)))))))
+          (loop 1)))))
   (define solve
     (lambda (n)
       (if (=
           n 0)
         0
-        (if (=
-            n 1)
+        (if (is-square? n)
           1
-          (if (square? n)
-            1
-            (let ((dp (make-vector
-                (+
-                  n 1) 99999)))
-              (begin
-                (vector-set!
-                  dp 0 0)
-                (letrec ((loop-i (lambda (i)
-                    (if (<=
-                        i n)
-                      (begin
-                        (letrec ((loop-j (lambda (j)
-                            (let ((sq (*
-                                j j)))
-                              (if (>
-                                  sq i)
-                                (vector-set!
-                                  dp i (min-ref
-                                    dp i))
-                                (begin
-                                  (when
-                                    (<
-                                      (+
-                                        (vector-ref
-                                          dp (-
-                                            i sq)) 1) (vector-ref
-                                        dp i)) (vector-set!
-                                      dp i (+
-                                        (vector-ref
-                                          dp (-
-                                            i sq)) 1)))
-                                  (loop-j (+
-                                      j 1))))))))
-                          (loop-j 1))
-                        (loop-i (+
-                            i 1)))
-                      ()))))
-                  (loop-i 1))
-                (vector-ref
-                  dp n))))))))
-  (define min-ref
-    (lambda (vec i)
-      (vector-ref
-        vec i)))
-  (define make-vector
+          (if (is-sum-of-2-squares? n)
+            2
+            (let ((m n))
+              (letrec ((reduce (lambda ()
+                  (if (=
+                      (mod
+                        m 4) 0)
+                    (begin
+                      (set! m (quotient
+                          m 4))
+                      (reduce))
+                    (if (=
+                        (mod
+                          m 8) 7)
+                      #t
+                      #f)))))
+                (begin
+                  (reduce)
+                  (if (and
+                      (number? m) (=
+                        (mod
+                          m 8) 7))
+                    4
+                    3)))))))))
+  (define make-vec
     (lambda (size val)
-      (let ((v (make-vector-raw size)))
-        (letrec ((loop (lambda (k)
+      (begin
+        (define v 0)
+        (define fill 0)
+        (set! v (make-vector size))
+        (set! fill (lambda (k)
             (if (<
                 k size)
               (begin
                 (vector-set!
                   v k val)
-                (loop (+
+                (fill (+
                     k 1)))
-              v))))
-          (loop 0)))))
-  (define make-vector-raw
-    (lambda (size)
-      (vector
-        0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
-  (define when
-    (lambda (c t)
-      (if c
-        t
-        0)))
-  (define min
-    (lambda (a b)
-      (if (<
-          a b)
-        a
-        b)))
+              v)))
+        (fill 0))))
+  (define solve-dp
+    (lambda (n)
+      (if (=
+          n 0)
+        0
+        (let ((dp (make-vec
+            (+
+              n 1) 999999)))
+          (begin
+            (vector-set!
+              dp 0 0)
+            (letrec ((outer (lambda (i)
+                (if (<=
+                    i n)
+                  (begin
+                    (letrec ((inner (lambda (j)
+                        (let ((sq (*
+                            j j)))
+                          (if (>
+                              sq i)
+                            0
+                            (begin
+                              (vector-set!
+                                dp i (min
+                                  (vector-ref
+                                    dp i) (+
+                                    (vector-ref
+                                      dp (-
+                                        i sq)) 1)))
+                              (inner (+
+                                  j 1))))))))
+                      (inner 1))
+                    (outer (+
+                        i 1)))
+                  0))))
+              (outer 1))
+            (vector-ref
+              dp n))))))
   (define run-cases
     (lambda ()
       (begin
