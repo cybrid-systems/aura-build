@@ -123,6 +123,8 @@
   (memory-set harness-root "leet_swarm" "mix" (list "rule" "mutate" "llm"))
   (memory-set harness-root "leet_swarm" "path" "swarm_mutate_then_llm")
   (memory-set harness-root "leet_swarm" "kernel" "aura")
+  ; Host MiniMax seed-only for banner ops; Soft-score only mutate:rebind body diffs.
+  (memory-set harness-root "leet_swarm" "seed_policy" "minimax_seed_only_no_soft_score_banner")
   (hash "ok" #t "profile" "leet_swarm" "slug" slug "kernel" "aura"))
 
 (define (mix-explorers-swarm)
