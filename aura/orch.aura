@@ -1,7 +1,7 @@
 ; aura-build kernel — scout → mutate → eval → select-best
 ; Primary product path. Simulated = pure Aura fitness; aura = in-process mutate:rebind.
 ; Slice 3: fiber_live ⇒ worldline_backend=fiber_graph (fiber:spawn fan-out); else file.
-; Soft gap fill: util …/last/find/count/remove/delete/range/take/drop/any/all (+ soft_* denseness). Soft tip 069bafa (#4154 Soft-zero-extra; #4153 Soft-zero-cost) gold find/count/remove/delete/range/extent/last/filter/any/all + R7RS take/drop — prefer Soft-native; soft_* fallbacks. #4228: Soft filter+math-pred direct-call empty — prefer lambda/let or local denseness filter.
+; Soft gap fill: util …/last/find/count/remove/delete/range/take/drop/any/all (+ soft_* denseness). Soft tip fecdf63 (#4228 CLOSED Soft oneshot filter+std/math preds FIXED; #4154 Soft-zero-extra; #4153 Soft-zero-cost) gold find/count/remove/delete/range/extent/last/filter/any/all + R7RS take/drop (#4220–#4226/#4228 CLOSED) — prefer Soft-native filter/find/count/…; soft_* = denseness defense-in-depth.
 (export run-episode run-harness-canary select-best run-backend-episode fitness-extent fitness-values)
 
 (require "util" all:)
@@ -17,7 +17,7 @@
 (define (select-best worldlines)
   (if (null? worldlines)
     (error "no worldlines to select")
-    ; Prefer Soft-native drop (tip 069bafa / #4221 CLOSED); util/list-drop fallback.
+    ; Prefer Soft-native drop (tip fecdf63 / #4221 CLOSED); util/list-drop fallback.
     (let loop ((xs (drop worldlines 1)) (best (car worldlines)))
       (if (null? xs) best
         (let* ((w (car xs))
@@ -48,7 +48,7 @@
   (map (lambda (w) (hash-ref (hash-ref w "eval") "fitness")) worldlines))
 
 (define (fitness-extent worldlines)
-  ; Prefer Soft-native extent (tip 069bafa / #4225 CLOSED); util/extent defense-in-depth.
+  ; Prefer Soft-native extent (tip fecdf63 / #4225 CLOSED); util/extent defense-in-depth.
   ; Empty → 0. Honesty: span of fitnesses observed this episode.
   (extent (fitness-values worldlines)))
 
@@ -196,7 +196,7 @@
              (let* ((raw0 (if (equal? mode "aura")
                             (aura-mutate prompt seed n)
                             (sim-mutate prompt seed n)))
-                    ; Prefer Soft-native take (tip 069bafa / #4221 CLOSED); util/list-take fallback.
+                    ; Prefer Soft-native take (tip fecdf63 / #4221 CLOSED); util/list-take fallback.
                     (raw (take raw0 n)))
                (let loop ((i 0) (xs raw) (out (list)))
                  (if (null? xs) (reverse out)
@@ -250,7 +250,7 @@
     (hash-set! rt "worldline_backend_reason" (hash-ref decision "reason" ""))
     (hash-set! rt "fiber_live" (hash-ref decision "fiber_live" #f))
     (hash-set! rt "session_model" (hash-ref decision "session_model" SESSION_SHARED))
-    ; Prefer Soft-native extent (tip 069bafa) — fitness span honesty.
+    ; Prefer Soft-native extent (tip fecdf63) — fitness span honesty.
     (hash-set! rt "fitness_extent" (fitness-extent evaluated))
     (hash "episode" ep "selected" selected
           "worldline_backend" backend)))
@@ -287,7 +287,7 @@
                      "discarded" discarded "rt" rt))
              (let* ((ws (workspace-create ws-root n))
                     (cids0 (hash-keys (hash-ref ws "candidates")))
-                    ; Prefer Soft-native take/drop (tip 069bafa / #4221 CLOSED).
+                    ; Prefer Soft-native take/drop (tip fecdf63 / #4221 CLOSED).
                     (cids (take cids0 n))
                     (cid-overflow (drop cids0 n))
                     (evaluated
@@ -337,7 +337,7 @@
     (hash-set! rtrun "worldline_backend_reason" (hash-ref decision "reason" ""))
     (hash-set! rtrun "fiber_live" (hash-ref decision "fiber_live" #f))
     (hash-set! rtrun "session_model" (hash-ref decision "session_model" SESSION_SHARED))
-    ; Prefer Soft-native extent (tip 069bafa) — fitness span honesty (aura-repo path).
+    ; Prefer Soft-native extent (tip fecdf63) — fitness span honesty (aura-repo path).
     (hash-set! rtrun "fitness_extent" (fitness-extent evaluated))
     (hash-set! rtrun "profile"
                (hash "id" "aura-repo"

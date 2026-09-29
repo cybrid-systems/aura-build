@@ -2,7 +2,7 @@
 ; Owns scout→mutate→eval→select-best rounds until goal / max-rounds / honesty fail-closed.
 ; MiniMax is never the controller (optional host hint only). AUTOPROMOTE stays OFF.
 ; Honesty: never invent incr_proven / fiber_live / worldline_backend via env alone.
-; Soft gap fill: util …/find/count/remove/delete/range/take/drop/any/all (+ soft_* denseness). Soft tip 069bafa (#4154 Soft-zero-extra; #4153 Soft-zero-cost) gold find/count/remove/delete/range/extent/last/filter/any/all + R7RS take/drop — prefer Soft-native. #4228 filter residual noted.
+; Soft gap fill: util …/find/count/remove/delete/range/take/drop/any/all (+ soft_* denseness). Soft tip fecdf63 (#4228 CLOSED Soft oneshot filter+std/math preds FIXED; #4154 Soft-zero-extra; #4153 Soft-zero-cost) gold find/count/remove/delete/range/extent/last/filter/any/all + R7RS take/drop (#4220–#4226/#4228 CLOSED) — prefer Soft-native; soft_* denseness. #4228 CLOSED.
 (export run-pursue)
 
 (require "util" all:)
