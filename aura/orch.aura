@@ -1,7 +1,7 @@
 ; aura-build kernel — scout → mutate → eval → select-best
 ; Primary product path. Simulated = pure Aura fitness; aura = in-process mutate:rebind.
 ; Slice 3: fiber_live ⇒ worldline_backend=fiber_graph (fiber:spawn fan-out); else file.
-; Soft gap fill: util string-pad/string-take/string-drop/list-take/list-drop/list-tail/make-list/for-each/hash-for-each/hash-fold/foldr/hash-empty?/hash->list (+ soft_* denseness).
+; Soft gap fill: util string-pad/string-take/string-drop/list-take/list-drop/list-tail/make-list/for-each/hash-for-each/hash-fold/foldr/hash-empty?/hash->list/any (+ soft_* denseness).
 (export run-episode run-harness-canary select-best run-backend-episode)
 
 (require "util" all:)
