@@ -1,0 +1,133 @@
+; soft_leetcode_runtime slug=candy path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=host_parallel fiber_llm_ok=true
+; selected=llm-26 hits=7/8
+; baseline_hits=2/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define solve
+    (lambda (ratings)
+      (let ((n (length ratings)))
+        (if (=
+            n 0)
+          0
+          (let ((left (build-left
+              ratings n)))
+            (let ((right (build-right
+                ratings n)))
+              (combine
+                left right 0 0)))))))
+  (define build-left
+    (lambda (ratings n)
+      (letrec ((loop (lambda (i acc prev-val)
+          (if (=
+              i n)
+            (reverse acc)
+            (let ((cur-val (if (or
+                  (=
+                    i 0) (<=
+                    (list-ref
+                      ratings i) (list-ref
+                      ratings (-
+                        i 1))))
+                1
+                (+
+                  prev-val 1))))
+              (loop
+                (+
+                  i 1) (cons
+                  cur-val acc) cur-val))))))
+        (loop
+          0 (quote ()) 1))))
+  (define build-right
+    (lambda (ratings n)
+      (letrec ((loop (lambda (i acc next-val)
+          (if (<
+              i 0)
+            (reverse acc)
+            (let ((cur-val (if (or
+                  (=
+                    i (-
+                      n 1)) (<=
+                    (list-ref
+                      ratings i) (list-ref
+                      ratings (+
+                        i 1))))
+                1
+                (+
+                  next-val 1))))
+              (loop
+                (-
+                  i 1) (cons
+                  cur-val acc) cur-val))))))
+        (loop
+          (-
+            n 1) (quote ()) 1))))
+  (define combine
+    (lambda (l r i acc)
+      (if (null? l)
+        acc
+        (combine
+          (cdr l) (cdr r) (+
+            i 1) (+
+            acc (max
+              (car l) (car r)))))))
+  (define max
+    (lambda (a b)
+      (if (>
+          a b)
+        a
+        b)))
+  (define min
+    (lambda (a b)
+      (if (<
+          a b)
+        a
+        b)))
+  (define list-ref
+    (lambda (lst i)
+      (if (=
+          i 0)
+        (car lst)
+        (list-ref
+          (cdr lst) (-
+            i 1)))))
+  (define length
+    (lambda (lst)
+      (if (null? lst)
+        0
+        (+
+          1 (length (cdr lst))))))
+  (define reverse
+    (lambda (lst)
+      (letrec ((loop (lambda (orig acc)
+          (if (null? orig)
+            acc
+            (loop
+              (cdr orig) (cons
+                (car orig) acc))))))
+        (loop
+          lst (quote ())))))
+  (define run-cases
+    (lambda (cases i)
+      (if (null? cases)
+        (quote done)
+        (begin
+          (display "CASE")
+          (display i)
+          (display "=")
+          (display (solve (car cases)))
+          (newline)
+          (run-cases
+            (cdr cases) (+
+              i 1))))))
+  (run-cases
+    (list
+      (list
+        1 0 2) (list
+        1 2 2 4 3) (list
+        4 3 2 1) (list) (list 5) (list
+        1 2 3 4 5) (list
+        5 4 3 2 1) (list
+        1 3 4 5 2)) 0))
