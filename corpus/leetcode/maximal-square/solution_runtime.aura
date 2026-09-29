@@ -1,0 +1,147 @@
+; soft_leetcode_runtime slug=maximal-square path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=host_parallel fiber_llm_ok=true
+; selected=llm-39 hits=2/8
+; baseline_hits=0/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define solve
+    (lambda (m n grid)
+      (let ((max-side 0))
+        (letrec ((loop-i (lambda (i)
+            (if (=
+                i m)
+              (*
+                max-side max-side)
+              (letrec ((loop-j (lambda (j)
+                  (if (=
+                      j n)
+                    (loop-i (+
+                        i 1))
+                    (let ((cell (grid-ref
+                        grid i j)))
+                      (begin
+                        (if (=
+                            cell 1)
+                          (let ((side (if (or
+                                (=
+                                  i 0) (=
+                                  j 0))
+                              1
+                              (+
+                                1 (min3
+                                  (grid-ref
+                                    grid (-
+                                      i 1) j) (grid-ref
+                                    grid i (-
+                                      j 1)) (grid-ref
+                                    grid (-
+                                      i 1) (-
+                                      j 1)))))))
+                            (if (>
+                                side max-side)
+                              (set! max-side side)
+                              (quote noop)))
+                          (quote noop))
+                        (loop-j (+
+                            j 1))))))))
+                (loop-j 0))))))
+          (loop-i 0)))))
+  (define min3
+    (lambda (a b c)
+      (min
+        a (min
+          b c))))
+  (define grid-ref
+    (lambda (grid i j)
+      (letrec ((loop (lambda (rows k)
+          (if (=
+              k i)
+            (letrec ((loop2 (lambda (row l)
+                (if (=
+                    l j)
+                  (car row)
+                  (loop2
+                    (cdr row) (+
+                      l 1))))))
+              (loop2
+                (car rows) 0))
+            (loop
+              (cdr rows) (+
+                k 1))))))
+        (loop
+          grid 0))))
+  (define run-case
+    (lambda (i m n grid)
+      (begin
+        (display "CASE")
+        (display i)
+        (display "=")
+        (display (solve
+            m n grid))
+        (newline))))
+  (let ((case0-m 4))
+    (let ((case0-n 5))
+      (let ((case0-grid (quote ((1
+              0 1 0 0)
+            (1
+              0 1 1 1) (1
+              1 1 1 1) (1
+              0 0 1 0)))))
+        (run-case
+          0 case0-m case0-n case0-grid))))
+  (let ((case1-m 1))
+    (let ((case1-n 1))
+      (let ((case1-grid (quote ((0)))))
+        (run-case
+          1 case1-m case1-n case1-grid))))
+  (let ((case2-m 1))
+    (let ((case2-n 1))
+      (let ((case2-grid (quote ((1)))))
+        (run-case
+          2 case2-m case2-n case2-grid))))
+  (let ((case3-m 2))
+    (let ((case3-n 2))
+      (let ((case3-grid (quote ((1 1) (1 1)))))
+        (run-case
+          3 case3-m case3-n case3-grid))))
+  (let ((case4-m 3))
+    (let ((case4-n 3))
+      (let ((case4-grid (quote ((0
+              0 0)
+            (0
+              0 0) (0
+              0 0)))))
+        (run-case
+          4 case4-m case4-n case4-grid))))
+  (let ((case5-m 3))
+    (let ((case5-n 3))
+      (let ((case5-grid (quote ((1
+              1 1)
+            (1
+              1 1) (1
+              1 1)))))
+        (run-case
+          5 case5-m case5-n case5-grid))))
+  (let ((case6-m 5))
+    (let ((case6-n 5))
+      (let ((case6-grid (quote ((1
+              0 1 1 1)
+            (1
+              1 1 1 1) (1
+              1 1 1 1) (1
+              0 0 1 0) (1
+              1 1 1 1)))))
+        (run-case
+          6 case6-m case6-n case6-grid))))
+  (let ((case7-m 4))
+    (let ((case7-n 4))
+      (let ((case7-grid (quote ((1
+              1 0 1)
+            (1
+              1 1 1) (1
+              1 1 1) (0
+              1 1 1)))))
+        (run-case
+          7 case7-m case7-n case7-grid)))))
