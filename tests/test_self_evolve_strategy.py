@@ -89,7 +89,7 @@ def test_observe_hang_lowers_cap_and_prefer_oneshot(tmp_path: Path):
         nothing_to_commit=False,
         latency={"total_ms": 90000, "progress": "x"},
     )
-    assert state["explorer_cap"] <= 16
+    assert state["explorer_cap"] <= 32  # hang → ceil//2 with FIBER=64
     assert should_prefer_oneshot(state)
     save_strategy(repo, state)
     assert (repo / ".aura-build" / "self_evolve_strategy.json").is_file()
@@ -125,10 +125,10 @@ def test_observe_pursue_shrinks_then_ramps():
     assert effective_worldlines(state, requested=32) == 32  # explicit low sticky
 
 
-def test_fiber_explorer_cap_ceiling_unchanged():
+def test_fiber_explorer_cap_ceiling_matches_runtime():
     from aura_build import self_evolve_runtime as m
 
-    assert m.FIBER_EXPLORER_CAP == 32
+    assert m.FIBER_EXPLORER_CAP == 64
     assert m.FIBER_EXPLORER_CAP == EXPLORER_CAP_CEILING
 
 

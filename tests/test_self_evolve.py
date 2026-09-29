@@ -345,10 +345,10 @@ def test_list_take_helper_candidates_export_list_take():
         assert "(export list-take)" in src
 
 
-def test_fiber_explorer_cap_kept_at_32():
+def test_fiber_explorer_cap_kept_at_64():
     from aura_build.self_evolve_runtime import FIBER_EXPLORER_CAP
 
-    assert FIBER_EXPLORER_CAP == 32
+    assert FIBER_EXPLORER_CAP == 64
 
 
 def test_list_drop_helper_candidates_export_list_drop():
@@ -379,7 +379,7 @@ def test_runtime_result_attaches_list_and_make_list_helper_keys():
     assert "list_drop_helper" in src  # helper_specs registry / attach key
     assert "make_list_helper" in src  # helper_specs registry / attach key
     assert "for_each_helper" in src  # helper_specs registry / attach key
-    assert m.FIBER_EXPLORER_CAP == 32
+    assert m.FIBER_EXPLORER_CAP == 64
 
 def test_for_each_helper_candidates_export_for_each():
     from aura_build.self_evolve_runtime import _FOR_EACH_HELPER_CANDIDATES
@@ -391,14 +391,14 @@ def test_for_each_helper_candidates_export_for_each():
 
 
 def test_runtime_result_attaches_for_each_helper_key():
-    """Regression: for_each must attach on runtime result; FIBER_EXPLORER_CAP=32 kept."""
+    """Regression: for_each must attach on runtime result; FIBER_EXPLORER_CAP=64 kept (measured Soft sequential)."""
     import inspect
     from aura_build import self_evolve_runtime as m
 
     src = inspect.getsource(m.cmd_runtime)
     assert "for_each_helper" in src  # helper_specs registry / attach key
     assert "make_list_helper" in src  # helper_specs registry / attach key
-    assert m.FIBER_EXPLORER_CAP == 32
+    assert m.FIBER_EXPLORER_CAP == 64
 
 def test_hash_for_each_helper_candidates_export_hash_for_each():
     from aura_build.self_evolve_runtime import _HASH_FOR_EACH_HELPER_CANDIDATES
@@ -410,14 +410,14 @@ def test_hash_for_each_helper_candidates_export_hash_for_each():
 
 
 def test_runtime_result_attaches_hash_for_each_helper_key():
-    """Regression: hash_for_each must attach on runtime result; FIBER_EXPLORER_CAP=32 kept."""
+    """Regression: hash_for_each must attach on runtime result; FIBER_EXPLORER_CAP=64 kept (measured Soft sequential)."""
     import inspect
     from aura_build import self_evolve_runtime as m
 
     src = inspect.getsource(m.cmd_runtime)
     assert "hash_for_each_helper" in src  # helper_specs registry / attach key
     assert "for_each_helper" in src  # helper_specs registry / attach key
-    assert m.FIBER_EXPLORER_CAP == 32
+    assert m.FIBER_EXPLORER_CAP == 64
 
 
 def test_hash_fold_helper_candidates_export_hash_fold():
@@ -430,14 +430,14 @@ def test_hash_fold_helper_candidates_export_hash_fold():
 
 
 def test_runtime_result_attaches_hash_fold_helper_key():
-    """Regression: hash_fold must attach on runtime result; FIBER_EXPLORER_CAP=32 kept."""
+    """Regression: hash_fold must attach on runtime result; FIBER_EXPLORER_CAP=64 kept (measured Soft sequential)."""
     import inspect
     from aura_build import self_evolve_runtime as m
 
     src = inspect.getsource(m.cmd_runtime)
     assert "hash_fold_helper" in src  # helper_specs registry / attach key
     assert "hash_for_each_helper" in src  # helper_specs registry / attach key
-    assert m.FIBER_EXPLORER_CAP == 32
+    assert m.FIBER_EXPLORER_CAP == 64
 
 
 def test_foldr_helper_candidates_export_foldr():
@@ -450,14 +450,14 @@ def test_foldr_helper_candidates_export_foldr():
 
 
 def test_runtime_result_attaches_foldr_helper_key():
-    """Regression: foldr must attach on runtime result; FIBER_EXPLORER_CAP=32 kept."""
+    """Regression: foldr must attach on runtime result; FIBER_EXPLORER_CAP=64 kept (measured Soft sequential)."""
     import inspect
     from aura_build import self_evolve_runtime as m
 
     src = inspect.getsource(m.cmd_runtime)
     assert "foldr_helper" in src  # helper_specs registry / attach key
     assert "hash_fold_helper" in src  # helper_specs registry / attach key
-    assert m.FIBER_EXPLORER_CAP == 32
+    assert m.FIBER_EXPLORER_CAP == 64
 
 
 def test_hash_empty_helper_candidates_export_hash_empty():
@@ -470,14 +470,14 @@ def test_hash_empty_helper_candidates_export_hash_empty():
 
 
 def test_runtime_result_attaches_hash_empty_helper_key():
-    """Regression: hash_empty must attach on runtime result; FIBER_EXPLORER_CAP=32 kept."""
+    """Regression: hash_empty must attach on runtime result; FIBER_EXPLORER_CAP=64 kept (measured Soft sequential)."""
     import inspect
     from aura_build import self_evolve_runtime as m
 
     src = inspect.getsource(m.cmd_runtime)
     assert "hash_empty_helper" in src  # helper_specs registry / attach key
     assert "foldr_helper" in src  # helper_specs registry / attach key
-    assert m.FIBER_EXPLORER_CAP == 32
+    assert m.FIBER_EXPLORER_CAP == 64
 
 
 
@@ -491,14 +491,14 @@ def test_hash_to_list_helper_candidates_export_hash_to_list():
 
 
 def test_runtime_result_attaches_hash_to_list_helper_key():
-    """Regression: hash_to_list must attach on runtime result; FIBER_EXPLORER_CAP=32 kept."""
+    """Regression: hash_to_list must attach on runtime result; FIBER_EXPLORER_CAP=64 kept (measured Soft sequential)."""
     import inspect
     from aura_build import self_evolve_runtime as m
 
     src = inspect.getsource(m.cmd_runtime)
     assert "hash_to_list_helper" in src  # helper_specs registry / attach key
     assert "hash_empty_helper" in src  # helper_specs registry / attach key
-    assert m.FIBER_EXPLORER_CAP == 32
+    assert m.FIBER_EXPLORER_CAP == 64
 
 
 def test_any_helper_candidates_export_any():
@@ -511,14 +511,14 @@ def test_any_helper_candidates_export_any():
 
 
 def test_runtime_result_attaches_any_helper_key():
-    """Regression: any must attach on runtime result; FIBER_EXPLORER_CAP=32 kept."""
+    """Regression: any must attach on runtime result; FIBER_EXPLORER_CAP=64 kept (measured Soft sequential)."""
     import inspect
     from aura_build import self_evolve_runtime as m
 
     src = inspect.getsource(m.cmd_runtime)
     assert "any_helper" in src  # helper_specs registry / attach key
     assert "hash_to_list_helper" in src  # helper_specs registry / attach key
-    assert m.FIBER_EXPLORER_CAP == 32
+    assert m.FIBER_EXPLORER_CAP == 64
 
 
 def test_all_helper_candidates_export_all():
@@ -531,14 +531,14 @@ def test_all_helper_candidates_export_all():
 
 
 def test_runtime_result_attaches_all_helper_key():
-    """Regression: all must attach on runtime result; FIBER_EXPLORER_CAP=32 kept."""
+    """Regression: all must attach on runtime result; FIBER_EXPLORER_CAP=64 kept (measured Soft sequential)."""
     import inspect
     from aura_build import self_evolve_runtime as m
 
     src = inspect.getsource(m.cmd_runtime)
     assert "all_helper" in src  # helper_specs registry / attach key
     assert "any_helper" in src  # helper_specs registry / attach key
-    assert m.FIBER_EXPLORER_CAP == 32
+    assert m.FIBER_EXPLORER_CAP == 64
 
 
 def test_last_helper_candidates_export_last():
@@ -551,14 +551,14 @@ def test_last_helper_candidates_export_last():
 
 
 def test_runtime_result_attaches_last_helper_key():
-    """Regression: last must attach on runtime result; FIBER_EXPLORER_CAP=32 kept."""
+    """Regression: last must attach on runtime result; FIBER_EXPLORER_CAP=64 kept (measured Soft sequential)."""
     import inspect
     from aura_build import self_evolve_runtime as m
 
     src = inspect.getsource(m.cmd_runtime)
     assert "last_helper" in src  # helper_specs registry / attach key
     assert "all_helper" in src  # helper_specs registry / attach key
-    assert m.FIBER_EXPLORER_CAP == 32
+    assert m.FIBER_EXPLORER_CAP == 64
 
 
 def test_find_helper_candidates_export_find():
@@ -571,14 +571,14 @@ def test_find_helper_candidates_export_find():
 
 
 def test_runtime_result_attaches_find_helper_key():
-    """Regression: find must attach on runtime result; FIBER_EXPLORER_CAP=32 kept."""
+    """Regression: find must attach on runtime result; FIBER_EXPLORER_CAP=64 kept (measured Soft sequential)."""
     import inspect
     from aura_build import self_evolve_runtime as m
 
     src = inspect.getsource(m.cmd_runtime)
     assert "find_helper" in src  # helper_specs registry / attach key
     assert "last_helper" in src  # helper_specs registry / attach key
-    assert m.FIBER_EXPLORER_CAP == 32
+    assert m.FIBER_EXPLORER_CAP == 64
 
 
 def test_count_helper_candidates_export_count():
@@ -591,14 +591,14 @@ def test_count_helper_candidates_export_count():
 
 
 def test_runtime_result_attaches_count_helper_key():
-    """Regression: count must attach on runtime result; FIBER_EXPLORER_CAP=32 kept."""
+    """Regression: count must attach on runtime result; FIBER_EXPLORER_CAP=64 kept (measured Soft sequential)."""
     import inspect
     from aura_build import self_evolve_runtime as m
 
     src = inspect.getsource(m.cmd_runtime)
     assert "count_helper" in src  # helper_specs registry / attach key
     assert "find_helper" in src  # helper_specs registry / attach key
-    assert m.FIBER_EXPLORER_CAP == 32
+    assert m.FIBER_EXPLORER_CAP == 64
 
 
 def test_remove_helper_candidates_export_remove():
@@ -611,11 +611,11 @@ def test_remove_helper_candidates_export_remove():
 
 
 def test_runtime_result_attaches_remove_helper_key():
-    """Regression: remove must attach on runtime result; FIBER_EXPLORER_CAP=32 kept."""
+    """Regression: remove must attach on runtime result; FIBER_EXPLORER_CAP=64 kept (measured Soft sequential)."""
     import inspect
     from aura_build import self_evolve_runtime as m
 
     src = inspect.getsource(m.cmd_runtime)
     assert "remove_helper" in src  # helper_specs registry / attach key
     assert "count_helper" in src  # helper_specs registry / attach key
-    assert m.FIBER_EXPLORER_CAP == 32
+    assert m.FIBER_EXPLORER_CAP == 64
