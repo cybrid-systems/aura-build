@@ -1,8 +1,10 @@
-; soft_leetcode_runtime slug=number-of-islands path=promote_soft_full
+; soft_leetcode_runtime slug=number-of-islands path=llm
 ; materialize=current-source worldline_backend=fiber_graph
 ; fiber_live=true incr_proven=false
-; baseline_file=solution.aura hits=8/8
-; Soft oneshot already full; materialize via Soft current-source. No LLM.
+; llm_via=host_parallel fiber_llm_ok=true
+; selected=llm-8 hits=8/8
+; baseline_hits=1/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
 (begin
   (define make-vec2
     (lambda (H W init)
@@ -30,15 +32,14 @@
         (vector-ref
           v i) j x)))
   (define bfs
-    (lambda (grid H W sr sc)
-      (let ((queue (quote 0)))
+    (lambda (grid visited H W sr sc)
+      (let ((queue (quote ())))
         (begin
           (set! queue (cons
               (list
                 sr sc) queue))
-          (vector-set!
-            (vector-ref
-              grid sr) sc 48)
+          (vset2!
+            visited sr sc #t)
           (letrec ((loop (lambda ()
               (if (null? queue)
                 (quote done)
@@ -53,12 +54,13 @@
                                 r 0) (char=?
                                 (vref2
                                   grid (-
-                                    r 1) c) 49))
+                                    r 1) c) 49) (not (vref2
+                                  visited (-
+                                    r 1) c)))
                             (begin
-                              (vector-set!
-                                (vector-ref
-                                  grid (-
-                                    r 1)) c 48)
+                              (vset2!
+                                visited (-
+                                  r 1) c #t)
                               (set! queue (cons
                                   (list
                                     (-
@@ -70,12 +72,13 @@
                                   r 1) H) (char=?
                                 (vref2
                                   grid (+
-                                    r 1) c) 49))
+                                    r 1) c) 49) (not (vref2
+                                  visited (+
+                                    r 1) c)))
                             (begin
-                              (vector-set!
-                                (vector-ref
-                                  grid (+
-                                    r 1)) c 48)
+                              (vset2!
+                                visited (+
+                                  r 1) c #t)
                               (set! queue (cons
                                   (list
                                     (+
@@ -86,12 +89,13 @@
                                 c 0) (char=?
                                 (vref2
                                   grid r (-
-                                    c 1)) 49))
+                                    c 1)) 49) (not (vref2
+                                  visited r (-
+                                    c 1))))
                             (begin
-                              (vector-set!
-                                (vector-ref
-                                  grid r) (-
-                                  c 1) 48)
+                              (vset2!
+                                visited r (-
+                                  c 1) #t)
                               (set! queue (cons
                                   (list
                                     r (-
@@ -103,12 +107,13 @@
                                   c 1) W) (char=?
                                 (vref2
                                   grid r (+
-                                    c 1)) 49))
+                                    c 1)) 49) (not (vref2
+                                  visited r (+
+                                    c 1))))
                             (begin
-                              (vector-set!
-                                (vector-ref
-                                  grid r) (+
-                                  c 1) 48)
+                              (vset2!
+                                visited r (+
+                                  c 1) #t)
                               (set! queue (cons
                                   (list
                                     r (+
@@ -118,30 +123,34 @@
             (loop))))))
   (define solve
     (lambda (H W grid)
-      (let ((count 0))
-        (letrec ((loop (lambda (i)
-            (if (<
-                i H)
-              (letrec ((inner (lambda (j)
-                  (if (<
-                      j W)
-                    (begin
-                      (if (char=?
-                          (vref2
-                            grid i j) 49)
-                        (begin
-                          (set! count (+
-                              count 1))
-                          (bfs
-                            grid H W i j))
-                        (quote noop))
-                      (inner (+
-                          j 1)))
-                    (loop (+
-                        i 1))))))
-                (inner 0))
-              count))))
-          (loop 0)))))
+      (let ((visited (make-vec2
+          H W #f)))
+        (let ((cnt 0))
+          (letrec ((ri (lambda (i)
+              (if (<
+                  i H)
+                (letrec ((rj (lambda (j)
+                    (if (<
+                        j W)
+                      (begin
+                        (if (and
+                            (char=?
+                              (vref2
+                                grid i j) 49) (not (vref2
+                                visited i j)))
+                          (begin
+                            (set! cnt (+
+                                cnt 1))
+                            (bfs
+                              grid visited H W i j))
+                          (quote noop))
+                        (rj (+
+                            j 1)))
+                      (ri (+
+                          i 1))))))
+                  (rj 0))
+                cnt))))
+            (ri 0))))))
   (define run-case
     (lambda (H W grid)
       (let ((gvec (make-vec2
@@ -155,9 +164,8 @@
                       (if (<
                           j W)
                         (begin
-                          (vector-set!
-                            (vector-ref
-                              gvec i) j (string-ref
+                          (vset2!
+                            gvec i j (string-ref
                               (vector-ref
                                 grid i) j))
                           (fillc (+
