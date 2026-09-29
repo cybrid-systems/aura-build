@@ -1,0 +1,131 @@
+; soft_leetcode_runtime slug=binary-tree-right-side-view path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=host_parallel fiber_llm_ok=true
+; selected=llm-40 hits=7/8
+; baseline_hits=6/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define build-tree
+    (lambda (lst)
+      (begin
+        (define len (length lst))
+        (define node-at
+          (lambda (idx)
+            (if (>=
+                idx len)
+              (quote ())
+              (let ((v (list-ref
+                  lst idx)))
+                (if (null? v)
+                  (quote ())
+                  (list
+                    v (node-at (+
+                        (*
+                          idx 2) 1)) (node-at (+
+                        (*
+                          idx 2) 2))))))))
+        (node-at 0))))
+  (define right-side-view
+    (lambda (root)
+      (if (null? root)
+        (quote ())
+        (let ((queue (list root)))
+          (begin
+            (define take-last-nonnull
+              (lambda (q)
+                (letrec ((loop (lambda (qq last)
+                    (if (null? qq)
+                      last
+                      (let ((cur (car qq)))
+                        (if (null? cur)
+                          (loop
+                            (cdr qq) last)
+                          (loop
+                            (cdr qq) cur)))))))
+                  (loop
+                    q (quote ())))))
+            (define step
+              (lambda (q acc)
+                (if (null? q)
+                  (reverse acc)
+                  (let ((level-last (take-last-nonnull q)))
+                    (let ((next-q (letrec ((loop (lambda (qq acc)
+                          (if (null? qq)
+                            (reverse acc)
+                            (let ((node (car qq)))
+                              (if (null? node)
+                                (loop
+                                  (cdr qq) acc)
+                                (let ((l (cadr node)))
+                                  (let ((r (caddr node)))
+                                    (if (null? r)
+                                      (if (null? l)
+                                        (loop
+                                          (cdr qq) acc)
+                                        (loop
+                                          (cdr qq) (cons
+                                            l acc)))
+                                      (loop
+                                        (cdr qq) (cons
+                                          r (if (null? l)
+                                            acc
+                                            (cons
+                                              l acc)))))))))))))
+                        (loop
+                          q (quote ())))))
+                      (step
+                        next-q (cons
+                          (car level-last) acc)))))))
+            (step
+              queue (quote ())))))))
+  (define display-list
+    (lambda (lst)
+      (begin
+        (display "[")
+        (letrec ((loop (lambda (l first?)
+            (if (null? l)
+              (display "]")
+              (begin
+                (if (not first?)
+                  (display ", ")
+                  ())
+                (display (car l))
+                (loop
+                  (cdr l) #f))))))
+          (loop
+            lst #t)))))
+  (define solve
+    (lambda (root)
+      (right-side-view root)))
+  (define run-case
+    (lambda (i lst)
+      (let ((root (build-tree lst)))
+        (begin
+          (display "CASE")
+          (display i)
+          (display "=")
+          (display-list (solve root))
+          (newline)))))
+  (run-case
+    0 (list
+      1 2 3 (quote ()) 5 (quote ()) 4))
+  (run-case
+    1 (list
+      1 2 3 4 (quote ()) (quote ()) (quote ()) 5))
+  (run-case
+    2 (list
+      1 (quote ()) 3))
+  (run-case
+    3 (quote ()))
+  (run-case
+    4 (list 1))
+  (run-case
+    5 (list
+      1 2 3 4 5 6 7))
+  (run-case
+    6 (list
+      1 2 (quote ()) 3 (quote ()) 4))
+  (run-case
+    7 (list
+      1 2 3 (quote ()) (quote ()) 5 6)))
