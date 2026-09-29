@@ -2,8 +2,8 @@
 ; materialize=current-source worldline_backend=fiber_graph
 ; fiber_live=true incr_proven=false
 ; llm_via=host_parallel fiber_llm_ok=true
-; selected=llm-7 hits=4/8
-; baseline_hits=0/8
+; selected=llm-1 hits=7/8
+; baseline_hits=4/8
 ; Expected values used only for host scoring / LLM context, not hardcoded into display.
 (begin
   (define parse-int
@@ -17,48 +17,36 @@
                   (-
                     0 val)
                   val) j)
-              (if (char=?
-                  (string-ref
-                    s j) 45)
-                (loop
-                  (+
-                    j 1) #t val)
+              (let ((c (string-ref
+                  s j)))
                 (if (char=?
-                    (string-ref
-                      s j) 44)
-                  (cons
-                    (if neg
-                      (-
-                        0 val)
-                      val) j)
-                  (if (char=?
-                      (string-ref
-                        s j) 93)
+                    c 45)
+                  (loop
+                    (+
+                      j 1) #t val)
+                  (if (or
+                      (char=?
+                        c 44) (char=?
+                        c 93))
                     (cons
                       (if neg
                         (-
                           0 val)
                         val) j)
-                    (if (char=?
-                        (string-ref
-                          s j) 32)
+                    (if (or
+                        (char=?
+                          c 32) (char=?
+                          c 91))
                       (loop
                         (+
                           j 1) neg val)
-                      (if (char=?
-                          (string-ref
-                            s j) 91)
+                      (let ((d (-
+                          (char->integer c) (char->integer 48))))
                         (loop
                           (+
-                            j 1) neg val)
-                        (let ((d (-
-                            (char->integer (string-ref
-                                s j)) (char->integer 48))))
-                          (loop
-                            (+
-                              j 1) neg (+
-                              (*
-                                val 10) d))))))))))))
+                            j 1) neg (+
+                            (*
+                              val 10) d)))))))))))
           (loop
             i #f 0)))))
   (define parse-temps
@@ -78,12 +66,10 @@
                   (reverse acc)
                   (let ((p (parse-int
                       s i)))
-                    (let ((v (car p)))
-                      (let ((ni (cdr p)))
-                        (loop
-                          (+
-                            ni 1) (cons
-                            v acc))))))))))
+                    (loop
+                      (+
+                        (cdr p) 1) (cons
+                        (car p) acc))))))))
             (loop
               start (quote ())))))))
   (define list-set!
@@ -116,10 +102,32 @@
                   i 1)))))))
         (loop
           lst 0))))
+  (define list-length
+    (lambda (lst)
+      (letrec ((loop (lambda (l acc)
+          (if (null? l)
+            acc
+            (loop
+              (cdr l) (+
+                acc 1))))))
+        (loop
+          lst 0))))
+  (define make-zero-list
+    (lambda (n)
+      (letrec ((loop (lambda (k acc)
+          (if (=
+              k 0)
+            acc
+            (loop
+              (-
+                k 1) (cons
+                0 acc))))))
+        (loop
+          n (quote ())))))
   (define solve
     (lambda (temps)
-      (let ((n (length temps)))
-        (letrec ((loop (lambda (i stack result)
+      (let ((n (list-length temps)))
+        (letrec ((main-loop (lambda (i stack result)
             (if (=
                 i n)
               result
@@ -127,36 +135,26 @@
                   temps i)))
                 (letrec ((pop-loop (lambda (st res)
                     (if (null? st)
-                      (loop
+                      (main-loop
                         (+
                           i 1) (cons
                           i st) res)
                       (let ((idx (car st)))
-                        (let ((tt (list-ref-safe
-                            temps idx)))
-                          (begin
-                            (if (>
-                                t tt)
-                              (pop-loop
-                                (cdr (cons
-                                    idx (quote ()))) (list-set!
-                                  res idx (-
-                                    i idx)))
-                              ())
-                            (if (not (>
-                                  t tt))
-                              (loop
-                                (+
-                                  i 1) (cons
-                                  i st) res)
-                              (pop-loop
-                                (cdr (cons
-                                    idx (quote ()))) res)))))))))
+                        (if (>
+                            t (list-ref-safe
+                              temps idx))
+                          (pop-loop
+                            (cdr st) (list-set!
+                              res idx (-
+                                i idx)))
+                          (main-loop
+                            (+
+                              i 1) (cons
+                              i st) res)))))))
                   (pop-loop
                     stack result)))))))
-          (loop
-            0 (quote ()) (make-list
-              n 0))))))
+          (main-loop
+            0 (quote ()) (make-zero-list n))))))
   (define print-json-array
     (lambda (lst)
       (begin
@@ -180,12 +178,11 @@
   (define run-case
     (lambda (label input-str)
       (let ((temps (parse-temps input-str)))
-        (let ((result (solve temps)))
-          (begin
-            (display label)
-            (display "=")
-            (print-json-array result)
-            (newline))))))
+        (begin
+          (display label)
+          (display "=")
+          (print-json-array (solve temps))
+          (newline)))))
   (run-case
     "CASE0" "CASE0=[73,74,75,71,69,72,76,73]")
   (run-case

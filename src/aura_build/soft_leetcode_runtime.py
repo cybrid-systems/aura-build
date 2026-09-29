@@ -1297,6 +1297,30 @@ def repair_llm(
                 "out_path": str((pdir / "solution_runtime.aura").relative_to(repo)),
             }
 
+    # Thin harness: do not burn MiniMax when Soft baseline already full.
+    # Stamp solution_runtime.aura from the winning baseline so later skips are cheap.
+    if baseline.get("ok") and int(baseline.get("hits") or 0) >= int(baseline.get("total") or 0) > 0:
+        out = pdir / "solution_runtime.aura"
+        src_txt = str(baseline.get("src") or "")
+        if src_txt and not out.is_file():
+            out.write_text(src_txt, encoding="utf-8")
+        return {
+            "ok": True,
+            "reason": "already_full_baseline",
+            "slug": slug,
+            "baseline": {k: baseline.get(k) for k in ("hits", "total", "aura_file", "ok")},
+            "verify": {
+                "ok": True,
+                "hits": baseline.get("hits"),
+                "total": baseline.get("total"),
+            },
+            "skipped": True,
+            "fiber_live": False,
+            "materialize": "baseline_stamp" if src_txt else None,
+            "out_path": str(out.relative_to(repo)) if out.is_file() or src_txt else None,
+            "note": "baseline already full; skip swarm/MiniMax (kernel path idle)",
+        }
+
     env_path = Path(env_file or Path.home() / ".config/aura-build/minimax.env")
     try:
         cfg = load_minimax_config(env_file=env_path)
@@ -1388,9 +1412,24 @@ def repair_llm(
         llm_meta["swarm_mutate"] = mut_meta
 
         candidates: list[tuple[str, str]] = [("baseline", str(baseline["src"]))]
-        # Include local swarm-mutated lines as Soft-scored explorers (rule+mutate mix)
+        # Soft-score only REAL mutate:rebind variants (src body differs). Banner-only
+        # kernel_swarm_seed lines stay MiniMax seeds — scoring 24 identical baselines
+        # burns Soft restart budget and masks sock_score_collapse (generate-parentheses).
+        base_body = str(baseline.get("src") or "").strip()
         for mc in mut_cands:
-            candidates.append((str(mc.get("name") or "mut"), str(mc.get("src") or "")))
+            raw = str(mc.get("src") or "")
+            # strip thin adapter banner if present
+            body = raw
+            if body.lstrip().startswith("; kernel-swarm-seed"):
+                body = "\n".join(
+                    ln for ln in body.splitlines()
+                    if not ln.lstrip().startswith("; kernel-swarm-seed")
+                ).strip()
+            via = str(mc.get("via") or "")
+            if via == "kernel_swarm_seed" and body == base_body:
+                continue
+            if body and body != base_body:
+                candidates.append((str(mc.get("name") or "mut"), raw if raw.strip() else body))
         for i, src in enumerate(proposals):
             candidates.append((f"llm-{i}", src))
 
@@ -1454,6 +1493,51 @@ def repair_llm(
             )
         llm_meta["score_session_restarts"] = restarts
         llm_meta["score_max_restarts"] = max_restarts
+
+        # Oneshot fallback when Soft sock scored everything 0 but oneshot baseline > 0
+        # (honest sock_score_collapse — do not invent Ready; measure via oneshot).
+        base_hits_oneshot = int(baseline.get("hits") or 0)
+        sess_max = max((int(e.get("hits") or 0) for e in explorers), default=0)
+        if explorers and base_hits_oneshot > 0 and sess_max == 0:
+            llm_meta["oneshot_rescore"] = {"trigger": "sock_score_collapse", "n": 0}
+            rescored: list[dict[str, Any]] = []
+            # Cap oneshot fanout: baseline + top LLM extracts (src already in explorers)
+            prefer = [e for e in explorers if str(e.get("name") or "").startswith("llm-")]
+            prefer = prefer[: min(12, len(prefer))]
+            queue = [e for e in explorers if e.get("name") == "baseline"] + prefer
+            seen_src: set[str] = set()
+            for e in queue:
+                ssrc = str(e.get("src") or "")
+                if not ssrc or ssrc in seen_src:
+                    continue
+                seen_src.add(ssrc)
+                tmp = scratch / f"oneshot_{e.get('name')}.aura"
+                try:
+                    tmp.write_text(ssrc, encoding="utf-8")
+                    sc = score_aura_file(repo, tmp, tests, aura_bin=aura_bin)
+                except Exception as exc:  # noqa: BLE001
+                    sc = {"ok": False, "hits": 0, "total": len(tests), "reason": f"oneshot_exc:{type(exc).__name__}"}
+                rescored.append(
+                    {
+                        "name": str(e.get("name")),
+                        "hits": int(sc.get("hits") or 0),
+                        "total": int(sc.get("total") or len(tests)),
+                        "via": "oneshot_rescore",
+                        "ok": bool(sc.get("ok")),
+                        "reason": sc.get("reason"),
+                        "src": ssrc,
+                        "stdout_head": (sc.get("stdout_head") if isinstance(sc, dict) else None),
+                        "transient": False,
+                        "session_restarts": restarts,
+                    }
+                )
+            if rescored and max(int(r["hits"]) for r in rescored) > 0:
+                explorers = rescored
+                llm_meta["oneshot_rescore"]["n"] = len(rescored)
+                llm_meta["oneshot_rescore"]["max_hits"] = max(int(r["hits"]) for r in rescored)
+                llm_meta["oneshot_rescore"]["ok"] = True
+            else:
+                llm_meta["oneshot_rescore"]["ok"] = False
 
         if not explorers:
             return {
@@ -1908,6 +1992,7 @@ def cmd_soft_leetcode(args: Any) -> int:
         )
         save_strategy(repo, _lc_state, harness_root)
         # Durable feedback-accumulated prompts + sock-vs-quality no_gain analysis
+        # Skip Soft feedback write on already_full_* (no transform attempted).
         from aura_build.prompt_feedback import (
             classify_no_gain_cause,
             load_feedback,
@@ -1916,52 +2001,67 @@ def cmd_soft_leetcode(args: Any) -> int:
         )
 
         cause = None
-        if not result.get("ok"):
-            cause = classify_no_gain_cause(
-                explorers=list(result.get("explorers") or []),
-                soft_select=result.get("soft_select") if isinstance(result.get("soft_select"), dict) else None,
-                baseline_hits=int(base.get("hits")) if base.get("hits") is not None else None,
+        if result.get("skipped"):
+            print(
+                json.dumps(
+                    {
+                        "event": "soft_leetcode_feedback",
+                        "slug": result.get("slug") or s,
+                        "no_gain_cause": None,
+                        "skipped": True,
+                        "reason": result.get("reason"),
+                        "feedback_notes": 0,
+                    },
+                    ensure_ascii=False,
+                )
+            )
+        else:
+            if not result.get("ok"):
+                cause = classify_no_gain_cause(
+                    explorers=list(result.get("explorers") or []),
+                    soft_select=result.get("soft_select") if isinstance(result.get("soft_select"), dict) else None,
+                    baseline_hits=int(base.get("hits")) if base.get("hits") is not None else None,
+                    selected_hits=int(selected.get("hits")) if selected.get("hits") is not None else None,
+                    pre_score_session=(llm_meta.get("pre_score_session") or {}),
+                )
+                result["no_gain_cause"] = cause
+                _lc_state["last_no_gain_cause"] = cause
+                save_strategy(repo, _lc_state, harness_root)
+            fb = load_feedback(repo, harness_root)
+            mut_ops = []
+            sm = llm_meta.get("swarm_mutate") or {}
+            if isinstance(sm.get("ranked_ops"), list):
+                mut_ops = list(sm.get("ranked_ops") or [])[:6]
+            fb = observe_transform_feedback(
+                fb,
+                slug=str(result.get("slug") or s),
+                ok=bool(result.get("ok")),
+                reason=str(result.get("reason") or ""),
+                fail_details=None,
                 selected_hits=int(selected.get("hits")) if selected.get("hits") is not None else None,
-                pre_score_session=(llm_meta.get("pre_score_session") or {}),
+                baseline_hits=int(base.get("hits")) if base.get("hits") is not None else None,
+                total=int(total) if total is not None else None,
+                no_gain_cause=cause if not result.get("ok") else "gain",
+                llm_via=str(llm_via) if llm_via else None,
+                mutate_ops=mut_ops,
+                harness_root=harness_root,
+                aura_bin=aura_bin,
             )
-            result["no_gain_cause"] = cause
-            _lc_state["last_no_gain_cause"] = cause
-            save_strategy(repo, _lc_state, harness_root)
-        fb = load_feedback(repo, harness_root)
-        mut_ops = []
-        sm = llm_meta.get("swarm_mutate") or {}
-        if isinstance(sm.get("ranked_ops"), list):
-            mut_ops = list(sm.get("ranked_ops") or [])[:6]
-        fb = observe_transform_feedback(
-            fb,
-            slug=str(result.get("slug") or s),
-            ok=bool(result.get("ok")),
-            reason=str(result.get("reason") or ""),
-            fail_details=None,
-            selected_hits=int(selected.get("hits")) if selected.get("hits") is not None else None,
-            baseline_hits=int(base.get("hits")) if base.get("hits") is not None else None,
-            total=int(total) if total is not None else None,
-            no_gain_cause=cause if not result.get("ok") else "gain",
-            llm_via=str(llm_via) if llm_via else None,
-            mutate_ops=mut_ops,
-            harness_root=harness_root,
-            aura_bin=aura_bin,
-        )
-        save_feedback(repo, fb, harness_root)
-        print(
-            json.dumps(
-                {
-                    "event": "soft_leetcode_feedback",
-                    "slug": result.get("slug") or s,
-                    "no_gain_cause": cause,
-                    "feedback_notes": len(fb.get("notes") or []),
-                    "swarm_rank_via": sm.get("rank_via"),
-                    "swarm_n": sm.get("n"),
-                    "propose_path": llm_meta.get("propose_path"),
-                },
-                ensure_ascii=False,
+            save_feedback(repo, fb, harness_root)
+            print(
+                json.dumps(
+                    {
+                        "event": "soft_leetcode_feedback",
+                        "slug": result.get("slug") or s,
+                        "no_gain_cause": cause,
+                        "feedback_notes": len(fb.get("notes") or []),
+                        "swarm_rank_via": sm.get("rank_via"),
+                        "swarm_n": sm.get("n"),
+                        "propose_path": llm_meta.get("propose_path"),
+                    },
+                    ensure_ascii=False,
+                )
             )
-        )
         print(
             json.dumps(
                 {
