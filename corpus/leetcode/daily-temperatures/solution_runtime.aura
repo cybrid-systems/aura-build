@@ -1,0 +1,204 @@
+; soft_leetcode_runtime slug=daily-temperatures path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=host_parallel fiber_llm_ok=true
+; selected=llm-7 hits=4/8
+; baseline_hits=0/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define parse-int
+    (lambda (s i)
+      (let ((len (string-length s)))
+        (letrec ((loop (lambda (j neg val)
+            (if (>=
+                j len)
+              (cons
+                (if neg
+                  (-
+                    0 val)
+                  val) j)
+              (if (char=?
+                  (string-ref
+                    s j) 45)
+                (loop
+                  (+
+                    j 1) #t val)
+                (if (char=?
+                    (string-ref
+                      s j) 44)
+                  (cons
+                    (if neg
+                      (-
+                        0 val)
+                      val) j)
+                  (if (char=?
+                      (string-ref
+                        s j) 93)
+                    (cons
+                      (if neg
+                        (-
+                          0 val)
+                        val) j)
+                    (if (char=?
+                        (string-ref
+                          s j) 32)
+                      (loop
+                        (+
+                          j 1) neg val)
+                      (if (char=?
+                          (string-ref
+                            s j) 91)
+                        (loop
+                          (+
+                            j 1) neg val)
+                        (let ((d (-
+                            (char->integer (string-ref
+                                s j)) (char->integer 48))))
+                          (loop
+                            (+
+                              j 1) neg (+
+                              (*
+                                val 10) d))))))))))))
+          (loop
+            i #f 0)))))
+  (define parse-temps
+    (lambda (s)
+      (let ((len (string-length s)))
+        (let ((start (if (>=
+              len 6)
+            6
+            0)))
+          (letrec ((loop (lambda (i acc)
+              (if (>=
+                  i len)
+                (reverse acc)
+                (if (char=?
+                    (string-ref
+                      s i) 93)
+                  (reverse acc)
+                  (let ((p (parse-int
+                      s i)))
+                    (let ((v (car p)))
+                      (let ((ni (cdr p)))
+                        (loop
+                          (+
+                            ni 1) (cons
+                            v acc))))))))))
+            (loop
+              start (quote ())))))))
+  (define list-set!
+    (lambda (lst idx val)
+      (letrec ((loop (lambda (l i acc)
+          (if (null? l)
+            (reverse acc)
+            (if (=
+                i idx)
+              (loop
+                (cdr l) (+
+                  i 1) (cons
+                  val acc))
+              (loop
+                (cdr l) (+
+                  i 1) (cons
+                  (car l) acc)))))))
+        (loop
+          lst 0 (quote ())))))
+  (define list-ref-safe
+    (lambda (lst idx)
+      (letrec ((loop (lambda (l i)
+          (if (null? l)
+            0
+            (if (=
+                i idx)
+              (car l)
+              (loop
+                (cdr l) (+
+                  i 1)))))))
+        (loop
+          lst 0))))
+  (define solve
+    (lambda (temps)
+      (let ((n (length temps)))
+        (letrec ((loop (lambda (i stack result)
+            (if (=
+                i n)
+              result
+              (let ((t (list-ref-safe
+                  temps i)))
+                (letrec ((pop-loop (lambda (st res)
+                    (if (null? st)
+                      (loop
+                        (+
+                          i 1) (cons
+                          i st) res)
+                      (let ((idx (car st)))
+                        (let ((tt (list-ref-safe
+                            temps idx)))
+                          (begin
+                            (if (>
+                                t tt)
+                              (pop-loop
+                                (cdr (cons
+                                    idx (quote ()))) (list-set!
+                                  res idx (-
+                                    i idx)))
+                              ())
+                            (if (not (>
+                                  t tt))
+                              (loop
+                                (+
+                                  i 1) (cons
+                                  i st) res)
+                              (pop-loop
+                                (cdr (cons
+                                    idx (quote ()))) res)))))))))
+                  (pop-loop
+                    stack result)))))))
+          (loop
+            0 (quote ()) (make-list
+              n 0))))))
+  (define print-json-array
+    (lambda (lst)
+      (begin
+        (display "[")
+        (letrec ((loop (lambda (l first)
+            (if (null? l)
+              (void)
+              (if first
+                (begin
+                  (display (car l))
+                  (loop
+                    (cdr l) #f))
+                (begin
+                  (display ",")
+                  (display (car l))
+                  (loop
+                    (cdr l) #f)))))))
+          (loop
+            lst #t))
+        (display "]"))))
+  (define run-case
+    (lambda (label input-str)
+      (let ((temps (parse-temps input-str)))
+        (let ((result (solve temps)))
+          (begin
+            (display label)
+            (display "=")
+            (print-json-array result)
+            (newline))))))
+  (run-case
+    "CASE0" "CASE0=[73,74,75,71,69,72,76,73]")
+  (run-case
+    "CASE1" "CASE1=[30,40,50,60]")
+  (run-case
+    "CASE2" "CASE2=[30,60,90]")
+  (run-case
+    "CASE3" "CASE3=[90,60,30]")
+  (run-case
+    "CASE4" "CASE4=[70]")
+  (run-case
+    "CASE5" "CASE5=[]")
+  (run-case
+    "CASE6" "CASE6=[0,-1,-2,-3,-4]")
+  (run-case
+    "CASE7" "CASE7=[-5,-5,-5,-5,-5]"))
