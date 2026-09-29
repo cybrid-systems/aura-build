@@ -1,9 +1,9 @@
 ; soft_leetcode_runtime slug=all-paths-from-source-to-target path=llm
 ; materialize=current-source worldline_backend=fiber_graph
 ; fiber_live=true incr_proven=false
-; llm_via=fiber fiber_llm_ok=true
-; selected=llm-1 hits=5/8
-; baseline_hits=0/8
+; llm_via=host_parallel fiber_llm_ok=true
+; selected=llm-31 hits=8/8
+; baseline_hits=7/8
 ; Expected values used only for host scoring / LLM context, not hardcoded into display.
 (begin
   (define my-length
@@ -22,34 +22,50 @@
             i 1)))))
   (define my-reverse
     (lambda (lst)
-      (begin
-        (define rev
-          (lambda (acc lst)
-            (if (null? lst)
-              acc
-              (rev
-                (cons
-                  (car lst) acc) (cdr lst)))))
+      (let ((rev (lambda (acc lst)
+          (if (null? lst)
+            acc
+            (rev
+              (cons
+                (car lst) acc) (cdr lst))))))
         (rev
           (quote ()) lst))))
+  (define insert-sorted
+    (lambda (x lst)
+      (if (null? lst)
+        (list x)
+        (if (<=
+            x (car lst))
+          (cons
+            x lst)
+          (cons
+            (car lst) (insert-sorted
+              x (cdr lst)))))))
+  (define sort-list
+    (lambda (lst)
+      (if (null? lst)
+        (quote ())
+        (insert-sorted
+          (car lst) (sort-list (cdr lst))))))
+  (define neighbors-of
+    (lambda (graph u)
+      (sort-list (list-ref
+          graph u))))
   (define dfs
     (lambda (graph target u path)
       (if (=
           u target)
         (list path)
-        (let ((neighbors (list-ref
+        (let ((neighbors (neighbors-of
             graph u)))
-          (begin
-            (define explore
-              (lambda (nbrs acc)
-                (if (null? nbrs)
-                  acc
-                  (let ((nbr (car nbrs)))
-                    (explore
-                      (cdr nbrs) (append
-                        acc (dfs
-                          graph target nbr (append
-                            path (list nbr)))))))))
+          (letrec ((explore (lambda (nbrs acc)
+              (if (null? nbrs)
+                acc
+                (explore
+                  (cdr nbrs) (append
+                    acc (dfs
+                      graph target (car nbrs) (append
+                        path (list (car nbrs))))))))))
             (explore
               neighbors (quote ())))))))
   (define find-all-paths
@@ -58,38 +74,38 @@
         (dfs
           graph (-
             n 1) 0 (list 0)))))
-  (define display-path-simple
+  (define display-path
     (lambda (path)
       (begin
         (display "[")
-        (define walk
-          (lambda (lst)
+        (letrec ((walk (lambda (lst)
             (if (null? lst)
               (quote ())
               (begin
                 (display (number->string (car lst)))
-                (if (null? (cdr lst))
-                  (quote ())
-                  (display ","))
-                (walk (cdr lst))))))
-        (walk path)
-        (display "]"))))
+                (if (not (null? (cdr lst)))
+                  (display ",")
+                  (quote ()))
+                (walk (cdr lst)))))))
+          (begin
+            (walk path)
+            (display "]"))))))
   (define display-paths
     (lambda (paths)
       (begin
         (display "[")
-        (define walk
-          (lambda (lst)
+        (letrec ((walk (lambda (lst)
             (if (null? lst)
               (quote ())
               (begin
-                (display-path-simple (car lst))
-                (if (null? (cdr lst))
-                  (quote ())
-                  (display ","))
-                (walk (cdr lst))))))
-        (walk paths)
-        (display "]"))))
+                (display-path (car lst))
+                (if (not (null? (cdr lst)))
+                  (display ",")
+                  (quote ()))
+                (walk (cdr lst)))))))
+          (begin
+            (walk paths)
+            (display "]"))))))
   (define solve
     (lambda (graph)
       (find-all-paths graph)))
