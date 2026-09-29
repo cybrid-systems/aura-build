@@ -6705,9 +6705,11 @@ def _score_find_helper_src(sess: Any, src: str, *, timeout_s: float = 12.0) -> d
         }
     sess.raw_line("(eval-current)", timeout_s=timeout_s)
     cases = [
-        "(equal? (find even? (quote (1 2 3))) 2)",
-        "(equal? (find odd? (quote (2 4 5))) 5)",
-        "(equal? (find even? (quote ())) (quote ()))",
+        # Soft serve set-code workspace lacks even?/odd? (math not re-bound) —
+        # use lambda predicates only (same denseness honesty as product find).
+        "(equal? (find (lambda (x) (= (modulo x 2) 0)) (quote (1 2 3))) 2)",
+        "(equal? (find (lambda (x) (= (modulo x 2) 1)) (quote (2 4 5))) 5)",
+        "(equal? (find (lambda (x) #t) (quote ())) (quote ()))",
         "(equal? (find (lambda (x) (> x 9)) (quote (1 2 3))) (quote ()))",
         "(equal? (find (lambda (x) (= x 3)) (quote (1 2 3 4))) 3)",
         "(equal? (find (lambda (x) #t) (quote (7))) 7)",
@@ -6879,9 +6881,9 @@ def _run_soft_find_helper_evolve(
         out.write_text(body, encoding="utf-8")
 
         verify = sess.raw_line(
-            '(and (equal? (find even? (quote (1 2 3))) 2)'
-            ' (equal? (find odd? (quote (2 4 5))) 5)'
-            ' (equal? (find even? (quote ())) (quote ())))',
+            '(and (equal? (find (lambda (x) (= (modulo x 2) 0)) (quote (1 2 3))) 2)'
+            ' (equal? (find (lambda (x) (= (modulo x 2) 1)) (quote (2 4 5))) 5)'
+            ' (equal? (find (lambda (x) #t) (quote ())) (quote ())))',
             timeout_s=8.0,
         )
         v_ok = verify.get("status") == "ok" and _truthy_soft(verify.get("value"))

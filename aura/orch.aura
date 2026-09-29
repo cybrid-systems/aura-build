@@ -1,7 +1,7 @@
 ; aura-build kernel — scout → mutate → eval → select-best
 ; Primary product path. Simulated = pure Aura fitness; aura = in-process mutate:rebind.
 ; Slice 3: fiber_live ⇒ worldline_backend=fiber_graph (fiber:spawn fan-out); else file.
-; Soft gap fill: util string-pad/string-take/string-drop/list-take/list-drop/list-tail/make-list/for-each/hash-for-each/hash-fold/foldr/hash-empty?/hash->list/any/all/last (+ soft_* denseness).
+; Soft gap fill: util string-pad/string-take/string-drop/list-take/list-drop/list-tail/make-list/for-each/hash-for-each/hash-fold/foldr/hash-empty?/hash->list/any/all/last/find (+ soft_* denseness).
 (export run-episode run-harness-canary select-best run-backend-episode)
 
 (require "util" all:)
@@ -27,6 +27,11 @@
           (if (or (> wf bf) (and (= wf bf) (string>? wid bid)))
             (loop (cdr xs) w)
             (loop (cdr xs) best)))))))
+
+
+(define (worldline-by-id worldlines id)
+  ; Soft denseness find — Soft oneshot unbound; Soft std/list lacks find (SRFI-1).
+  (find (lambda (w) (equal? (hash-ref w "id") id)) worldlines))
 
 (define (sim-mutate prompt seed n)
   (let loop ((i 0) (out (list)))
@@ -173,7 +178,9 @@
                                 (aura-eval (car xs) prompt seed i)
                                 (sim-eval (car xs) prompt seed i))))
                      (loop (+ i 1) (cdr xs) (cons got out))))))))
-         (selected (select-best evaluated))
+         (selected0 (select-best evaluated))
+         (selected (let ((got (worldline-by-id evaluated (hash-ref selected0 "id"))))
+                     (if (null? got) selected0 got)))
          (fit-map (let ((h (hash)))
                     (for-each (lambda (w)
                                 (hash-set! h (hash-ref w "id")
