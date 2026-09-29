@@ -499,3 +499,23 @@ def test_runtime_result_attaches_hash_to_list_helper_key():
     assert 'result["hash_to_list_helper"]' in src
     assert 'result["hash_empty_helper"]' in src
     assert m.FIBER_EXPLORER_CAP == 32
+
+
+def test_any_helper_candidates_export_any():
+    from aura_build.self_evolve_runtime import _ANY_HELPER_CANDIDATES
+
+    assert len(_ANY_HELPER_CANDIDATES) >= 2
+    for name, src in _ANY_HELPER_CANDIDATES:
+        assert "any" in src
+        assert "(export any)" in src
+
+
+def test_runtime_result_attaches_any_helper_key():
+    """Regression: any must attach on runtime result; FIBER_EXPLORER_CAP=32 kept."""
+    import inspect
+    from aura_build import self_evolve_runtime as m
+
+    src = inspect.getsource(m.cmd_runtime)
+    assert 'result["any_helper"]' in src
+    assert 'result["hash_to_list_helper"]' in src
+    assert m.FIBER_EXPLORER_CAP == 32

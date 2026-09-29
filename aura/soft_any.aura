@@ -1,0 +1,17 @@
+; Soft-materialized any helper (self-evolve Soft path)
+; materialize=current-source  fiber_live=true when denseness measured
+; selected=named-let  denseness=soft_ready_async_denseness_4048
+; incr_proven=false
+; Product: Soft oneshot unbound any (Soft std/list defines iterative
+; any/all #928; Soft oneshot does not auto-load std/list; sibling of foldr)
+(begin
+  (export any)
+  (define any
+    (lambda (pred lst)
+      (letrec ((loop (lambda (xs)
+          (if (null? xs)
+            #f
+            (if (pred (car xs))
+              #t
+              (loop (cdr xs)))))))
+        (loop lst)))))
