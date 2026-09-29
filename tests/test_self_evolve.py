@@ -375,10 +375,10 @@ def test_runtime_result_attaches_list_and_make_list_helper_keys():
     from aura_build import self_evolve_runtime as m
 
     src = inspect.getsource(m.cmd_runtime)
-    assert 'result["list_take_helper"]' in src
-    assert 'result["list_drop_helper"]' in src
-    assert 'result["make_list_helper"]' in src
-    assert 'result["for_each_helper"]' in src
+    assert "list_take_helper" in src  # helper_specs registry / attach key
+    assert "list_drop_helper" in src  # helper_specs registry / attach key
+    assert "make_list_helper" in src  # helper_specs registry / attach key
+    assert "for_each_helper" in src  # helper_specs registry / attach key
     assert m.FIBER_EXPLORER_CAP == 32
 
 def test_for_each_helper_candidates_export_for_each():
@@ -396,8 +396,8 @@ def test_runtime_result_attaches_for_each_helper_key():
     from aura_build import self_evolve_runtime as m
 
     src = inspect.getsource(m.cmd_runtime)
-    assert 'result["for_each_helper"]' in src
-    assert 'result["make_list_helper"]' in src
+    assert "for_each_helper" in src  # helper_specs registry / attach key
+    assert "make_list_helper" in src  # helper_specs registry / attach key
     assert m.FIBER_EXPLORER_CAP == 32
 
 def test_hash_for_each_helper_candidates_export_hash_for_each():
@@ -415,8 +415,8 @@ def test_runtime_result_attaches_hash_for_each_helper_key():
     from aura_build import self_evolve_runtime as m
 
     src = inspect.getsource(m.cmd_runtime)
-    assert 'result["hash_for_each_helper"]' in src
-    assert 'result["for_each_helper"]' in src
+    assert "hash_for_each_helper" in src  # helper_specs registry / attach key
+    assert "for_each_helper" in src  # helper_specs registry / attach key
     assert m.FIBER_EXPLORER_CAP == 32
 
 
@@ -435,8 +435,8 @@ def test_runtime_result_attaches_hash_fold_helper_key():
     from aura_build import self_evolve_runtime as m
 
     src = inspect.getsource(m.cmd_runtime)
-    assert 'result["hash_fold_helper"]' in src
-    assert 'result["hash_for_each_helper"]' in src
+    assert "hash_fold_helper" in src  # helper_specs registry / attach key
+    assert "hash_for_each_helper" in src  # helper_specs registry / attach key
     assert m.FIBER_EXPLORER_CAP == 32
 
 
@@ -455,8 +455,8 @@ def test_runtime_result_attaches_foldr_helper_key():
     from aura_build import self_evolve_runtime as m
 
     src = inspect.getsource(m.cmd_runtime)
-    assert 'result["foldr_helper"]' in src
-    assert 'result["hash_fold_helper"]' in src
+    assert "foldr_helper" in src  # helper_specs registry / attach key
+    assert "hash_fold_helper" in src  # helper_specs registry / attach key
     assert m.FIBER_EXPLORER_CAP == 32
 
 
@@ -475,8 +475,8 @@ def test_runtime_result_attaches_hash_empty_helper_key():
     from aura_build import self_evolve_runtime as m
 
     src = inspect.getsource(m.cmd_runtime)
-    assert 'result["hash_empty_helper"]' in src
-    assert 'result["foldr_helper"]' in src
+    assert "hash_empty_helper" in src  # helper_specs registry / attach key
+    assert "foldr_helper" in src  # helper_specs registry / attach key
     assert m.FIBER_EXPLORER_CAP == 32
 
 
@@ -496,8 +496,8 @@ def test_runtime_result_attaches_hash_to_list_helper_key():
     from aura_build import self_evolve_runtime as m
 
     src = inspect.getsource(m.cmd_runtime)
-    assert 'result["hash_to_list_helper"]' in src
-    assert 'result["hash_empty_helper"]' in src
+    assert "hash_to_list_helper" in src  # helper_specs registry / attach key
+    assert "hash_empty_helper" in src  # helper_specs registry / attach key
     assert m.FIBER_EXPLORER_CAP == 32
 
 
@@ -516,8 +516,8 @@ def test_runtime_result_attaches_any_helper_key():
     from aura_build import self_evolve_runtime as m
 
     src = inspect.getsource(m.cmd_runtime)
-    assert 'result["any_helper"]' in src
-    assert 'result["hash_to_list_helper"]' in src
+    assert "any_helper" in src  # helper_specs registry / attach key
+    assert "hash_to_list_helper" in src  # helper_specs registry / attach key
     assert m.FIBER_EXPLORER_CAP == 32
 
 
@@ -536,8 +536,8 @@ def test_runtime_result_attaches_all_helper_key():
     from aura_build import self_evolve_runtime as m
 
     src = inspect.getsource(m.cmd_runtime)
-    assert 'result["all_helper"]' in src
-    assert 'result["any_helper"]' in src
+    assert "all_helper" in src  # helper_specs registry / attach key
+    assert "any_helper" in src  # helper_specs registry / attach key
     assert m.FIBER_EXPLORER_CAP == 32
 
 
@@ -556,8 +556,8 @@ def test_runtime_result_attaches_last_helper_key():
     from aura_build import self_evolve_runtime as m
 
     src = inspect.getsource(m.cmd_runtime)
-    assert 'result["last_helper"]' in src
-    assert 'result["all_helper"]' in src
+    assert "last_helper" in src  # helper_specs registry / attach key
+    assert "all_helper" in src  # helper_specs registry / attach key
     assert m.FIBER_EXPLORER_CAP == 32
 
 
@@ -576,8 +576,8 @@ def test_runtime_result_attaches_find_helper_key():
     from aura_build import self_evolve_runtime as m
 
     src = inspect.getsource(m.cmd_runtime)
-    assert 'result["find_helper"]' in src
-    assert 'result["last_helper"]' in src
+    assert "find_helper" in src  # helper_specs registry / attach key
+    assert "last_helper" in src  # helper_specs registry / attach key
     assert m.FIBER_EXPLORER_CAP == 32
 
 
@@ -596,8 +596,8 @@ def test_runtime_result_attaches_count_helper_key():
     from aura_build import self_evolve_runtime as m
 
     src = inspect.getsource(m.cmd_runtime)
-    assert 'result["count_helper"]' in src
-    assert 'result["find_helper"]' in src
+    assert "count_helper" in src  # helper_specs registry / attach key
+    assert "find_helper" in src  # helper_specs registry / attach key
     assert m.FIBER_EXPLORER_CAP == 32
 
 
@@ -616,6 +616,6 @@ def test_runtime_result_attaches_remove_helper_key():
     from aura_build import self_evolve_runtime as m
 
     src = inspect.getsource(m.cmd_runtime)
-    assert 'result["remove_helper"]' in src
-    assert 'result["count_helper"]' in src
+    assert "remove_helper" in src  # helper_specs registry / attach key
+    assert "count_helper" in src  # helper_specs registry / attach key
     assert m.FIBER_EXPLORER_CAP == 32

@@ -41,7 +41,7 @@ def _soft_sel_meta(soft_sel: dict[str, Any] | None) -> dict[str, Any]:
         if soft_sel.get(k) is not None or k in ("via", "reason")
     }
 
-DEFAULT_SOFT = "/workspace/aura-grok/build_soft4079/aura"
+DEFAULT_SOFT = "/workspace/aura-grok/build/aura"
 # Refuse Soft in-session scoring when any test list JSON exceeds this (chars).
 MAX_LIST_JSON_CHARS = 120
 SOFT_VERIFY_TIMEOUT_S = 20.0
@@ -1496,12 +1496,45 @@ def _update_meta(repo: Path, result: dict[str, Any]) -> str | None:
 
 
 def cmd_soft_leetcode(args: Any) -> int:
+    """LeetCode Soft transform path — first-class when inventory nonempty.
+
+    Latency breakdown + adaptive explorer/worldline policy serve dual goal:
+    throughput AND accuracy of code transforms while aura-build self-evolves.
+    """
+    from aura_build.self_evolve_strategy import (
+        LatencyClock,
+        effective_explorer_cap,
+        effective_worldlines,
+        leetcode_inventory_nonempty,
+        load_strategy,
+    )
+
     repo = Path(getattr(args, "repo", None) or Path.cwd()).resolve()
     aura_bin = (
         getattr(args, "aura_bin", None)
         or os.environ.get("AURA_BIN")
         or DEFAULT_SOFT
     )
+    _lc_clock = LatencyClock(session="soft_leetcode")
+    _lc_state = load_strategy(repo)
+    _lc_inv = leetcode_inventory_nonempty(repo)
+    print(
+        json.dumps(
+            {
+                "event": "soft_leetcode_strategy",
+                "inventory_nonempty": _lc_inv,
+                "worldlines": effective_worldlines(_lc_state),
+                "explorer_cap": effective_explorer_cap(_lc_state),
+                "note": (
+                    "first-class transform path when inventory nonempty; "
+                    "skip invent soft_* only when combat/leetcode empty; "
+                    "prefer Soft-native; never invent Soft Ready"
+                ),
+            },
+            ensure_ascii=False,
+        )
+    )
+    # per-slug wall timed inside loop (transform closed-loop)
     slug = getattr(args, "slug", None) or ""
     batch = bool(getattr(args, "batch", False))
     batch_llm = bool(getattr(args, "batch_llm", False))
@@ -1579,6 +1612,7 @@ def cmd_soft_leetcode(args: Any) -> int:
     results: list[dict[str, Any]] = []
     commit_paths: list[str] = ["src/aura_build/soft_leetcode_runtime.py"]
     for s in slugs:
+        _lc_clock.start("pursue_round")
         if mode == "llm":
             result = repair_llm(
                 repo,
@@ -1592,7 +1626,17 @@ def cmd_soft_leetcode(args: Any) -> int:
             result = repair_recipe(
                 repo, RECIPES[s], aura_bin=str(aura_bin), harness_root=harness_root
             )
+        _lc_clock.end(
+            "pursue_round",
+            ok=bool(result.get("ok")),
+            fiber_live=bool(result.get("fiber_live")) if "fiber_live" in result else None,
+            extra={"slug": result.get("slug") or s},
+        )
+        result["latency"] = _lc_clock.summary(
+            fiber_live=bool(result.get("fiber_live")) if "fiber_live" in result else None
+        )
         print(json.dumps({"event": "soft_leetcode_runtime", **result}, ensure_ascii=False))
+        print(json.dumps({"event": "soft_leetcode_latency", **result["latency"]}, ensure_ascii=False))
         results.append(result)
         if result.get("aura_issue_candidate") and not result.get("ok"):
             print(

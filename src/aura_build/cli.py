@@ -906,15 +906,37 @@ def _cmd_pursue(args: argparse.Namespace) -> int:
     )
     prefer_session = bool(getattr(args, "prefer_session", True)) and not force_kernel
 
+    # Adaptive worldlines from recent pursue soft_ready+goal_met observations.
+    # Explicit --worldlines < 256 stays sticky; default 256 may shrink to 64/128.
+    from aura_build.self_evolve_strategy import (
+        LatencyClock,
+        effective_worldlines,
+        load_strategy,
+        observe_pursue_round,
+        save_strategy,
+    )
+
+    strat = load_strategy(root if isinstance(root, Path) else Path(root))
+    wl_cli = int(args.worldlines)
+    wl_eff = effective_worldlines(strat, requested=wl_cli)
+    if wl_eff != wl_cli:
+        print(
+            f"pursue: adaptive worldlines {wl_cli}→{wl_eff} "
+            f"(soft_ready/goal_met history; never invent Soft Ready)",
+            file=sys.stderr,
+        )
+
     if prefer_session:
         try:
             from aura_build.serve_session import run_pursue_session
 
+            pursue_clock = LatencyClock(session="pursue")
+            pursue_clock.start("pursue_round")
             summary = run_pursue_session(
                 goal=args.goal,
                 min_fitness=min_fit_f,
                 max_rounds=int(args.max_rounds),
-                worldlines=int(args.worldlines),
+                worldlines=wl_eff,
                 aura_bin=args.aura_bin,
                 harness_root=root,
                 out=args.out or Path("trajectories/pursue.jsonl"),
@@ -922,6 +944,36 @@ def _cmd_pursue(args: argparse.Namespace) -> int:
                 llm_assist=llm_assist,
                 llm_hint=llm_hint,
             )
+            pursue_clock.end(
+                "pursue_round",
+                ok=bool(summary.get("ok")),
+                fiber_live=bool(summary.get("fiber_live"))
+                if "fiber_live" in summary
+                else None,
+                n=int(summary.get("session_evals") or wl_eff),
+                extra={
+                    "goal_met": bool(summary.get("goal_met")),
+                    "soft_ready": bool(summary.get("serve_async_soft_ready_ok")),
+                    "worldlines": wl_eff,
+                },
+            )
+            lat = pursue_clock.summary(
+                fiber_live=bool(summary.get("fiber_live"))
+                if "fiber_live" in summary
+                else None
+            )
+            summary["latency"] = lat
+            summary["worldlines_cli"] = wl_cli
+            summary["worldlines_effective"] = wl_eff
+            print(json.dumps({"event": "pursue_latency", **lat}, ensure_ascii=False))
+            strat = observe_pursue_round(
+                strat,
+                soft_ready=bool(summary.get("serve_async_soft_ready_ok")),
+                goal_met=bool(summary.get("goal_met")),
+                ms=int(lat.get("total_ms") or 0),
+                requested_worldlines=wl_cli,
+            )
+            save_strategy(root if isinstance(root, Path) else Path(root), strat)
         except Exception as exc:  # noqa: BLE001
             print(f"pursue: session path failed ({exc}); falling back to kernel", file=sys.stderr)
             summary = {"ok": False, "fallback": "aura_kernel_dispatch", "error": str(exc)}
@@ -937,6 +989,8 @@ def _cmd_pursue(args: argparse.Namespace) -> int:
                 f"cold_spawns={summary.get('cold_spawns')} "
                 f"soft_ready={summary.get('serve_async_soft_ready_ok')} "
                 f"fail_bits={summary.get('serve_async_soft_ready_fail_bits')} "
+                f"worldlines={wl_eff} "
+                f"latency_ms={(summary.get('latency') or {}).get('total_ms')} "
                 f"kernel=aura"
             )
             print(line)
@@ -962,7 +1016,7 @@ def _cmd_pursue(args: argparse.Namespace) -> int:
         "AURA_BUILD_PREDICATE": predicate or "fitness_ge:0.8",
         "AURA_BUILD_MIN_FITNESS": min_fit_s,
         "AURA_BUILD_MAX_ROUNDS": str(args.max_rounds),
-        "AURA_BUILD_WORLDLINES": str(args.worldlines),
+        "AURA_BUILD_WORLDLINES": str(wl_eff),
         "AURA_BUILD_MODE": args.mode,
         "AURA_BUILD_REQUESTED_MODE": args.mode,
         "AURA_BUILD_OUT": str(args.out or Path("trajectories/pursue.jsonl")),
@@ -980,7 +1034,7 @@ def _cmd_pursue(args: argparse.Namespace) -> int:
 
     # Force-kernel oneshot scales with worldlines (select-best string>? path + mutate).
     # Prefer-session path returns earlier; this timeout only applies to Aura kernel dispatch.
-    wl = max(1, int(getattr(args, "worldlines", 3) or 3))
+    wl = max(1, int(wl_eff))
     timeout = max(180.0, float(args.max_rounds) * 90.0, float(wl) * 8.0)
     code = _dispatch(
         "pursue",

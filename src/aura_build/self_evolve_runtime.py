@@ -14,6 +14,13 @@ North-star dogfood (not corpus-gen repair):
 
 Host verifies stamp banner honesty, then commits+pushes only the selected
 materialized stamp (and runtime kernel when changed).
+
+Latency breakdown (wall-clock phases) emits in JSON events + progress summary
+via ``self_evolve_strategy.LatencyClock``. Adaptive strategy shortens rounds:
+skip Soft-native-green / already-green denseness rematerialize, early oneshot
+on explorer hang, shrink worldlines after fast soft_ready pursue. Soft bugs →
+Aura issues only. Combat/LeetCode inventory nonempty → first-class transforms;
+skip invent soft_* only when empty.
 """
 
 from __future__ import annotations
@@ -30,7 +37,7 @@ from typing import Any
 from aura_build.self_evolve_host import git_commit_and_maybe_push, run_host_verify
 from aura_build.stamp_banner import stamp_banner_agrees
 
-DEFAULT_SOFT = "/workspace/aura-grok/build_soft4079/aura"
+DEFAULT_SOFT = "/workspace/aura-grok/build/aura"
 RUNTIME_KERNEL = "aura/self_evolve_runtime.aura"
 STAMP_PATH = "aura/self_evolve_stamp.aura"
 HELPER_PATH = "aura/soft_worldline_pick.aura"
@@ -66,6 +73,8 @@ DEFAULT_BUMPS = (2, 9, 4, 7, 1)
 # (fiber:join WARN defuse_version storm → sock stall). Cap explorers;
 # denseness honesty remains fiber_fanout_probe (1 spawn+join). Prefer
 # Soft prefer-session for wl=256 pursue; runtime stamp does not need 256 joins.
+# Adaptive strategy (self_evolve_strategy) may LOWER effective cap on hang
+# observations — never raise above this ceiling. Do not invent Soft Ready.
 FIBER_EXPLORER_CAP = 32
 
 _RUNTIME_OK_RE = re.compile(
@@ -7704,6 +7713,8 @@ def _run_serve_fiber(
     worldlines: int = 256,
     bumps: tuple[int, ...] | list[int] | None = None,
     harness_root: Path | None = None,
+    explorer_cap: int | None = None,
+    latency_clock: Any = None,
 ) -> dict[str, Any]:
     """Long-lived Soft serve + denseness + fiber explorer worldlines → current-source."""
     from aura_build.llm_dogfood import fiber_fanout_probe
@@ -7712,7 +7723,11 @@ def _run_serve_fiber(
     hroot = harness_root or (repo / ".aura-build")
     # Cap Soft fiber explorers — full wl=256 sequential fiber:spawn+mutate
     # stalls Soft serve (sock hang after fiber:join defuse WARN storm).
-    n_explore = max(1, min(int(worldlines), int(FIBER_EXPLORER_CAP)))
+    # Adaptive strategy may lower effective cap; never raise above FIBER_EXPLORER_CAP.
+    eff_cap = int(FIBER_EXPLORER_CAP)
+    if explorer_cap is not None:
+        eff_cap = max(1, min(int(FIBER_EXPLORER_CAP), int(explorer_cap)))
+    n_explore = max(1, min(int(worldlines), eff_cap))
     bumps_list = list(bumps) if bumps else list(DEFAULT_BUMPS[:n_explore])
     if len(bumps_list) < n_explore:
         # pad uniquely up to cap (not full worldlines)
@@ -7722,13 +7737,32 @@ def _run_serve_fiber(
             x += 1
 
     sess = None
+    phase_ms: dict[str, int] = {}
+    hang_or_timeout = False
     try:
+        t_sess = time.monotonic()
+        if latency_clock is not None:
+            latency_clock.start("session_start")
         sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+        phase_ms["session_start"] = max(0, int((time.monotonic() - t_sess) * 1000))
+        if latency_clock is not None:
+            latency_clock.end("session_start", ok=bool(sess and sess.alive()))
         if not sess.alive():
-            return {"ok": False, "reason": "serve_not_alive", "fallback_ok": True}
+            return {"ok": False, "reason": "serve_not_alive", "fallback_ok": True, "latency_ms": phase_ms}
 
+        t_den = time.monotonic()
+        if latency_clock is not None:
+            latency_clock.start("denseness_probe")
         probe = fiber_fanout_probe(sess, n=max(1, int(worldlines)), timeout_s=8.0)
+        phase_ms["denseness_probe"] = max(0, int((time.monotonic() - t_den) * 1000))
         denseness_ok = bool(probe.get("ok"))
+        if latency_clock is not None:
+            latency_clock.end(
+                "denseness_probe",
+                ok=denseness_ok,
+                fiber_live=denseness_ok,
+                n=max(1, int(worldlines)),
+            )
         denseness_note = str(
             probe.get("note") or probe.get("reason") or ("ok" if denseness_ok else "fail")
         )
@@ -7767,6 +7801,10 @@ def _run_serve_fiber(
             pass
 
         explorers: list[dict[str, Any]] = []
+        t_ex = time.monotonic()
+        if latency_clock is not None:
+            latency_clock.start("explorer_loop")
+        hang_or_timeout = False
         for b in bumps_list:
             body = (
                 f"(fiber:join (fiber:spawn (lambda () "
@@ -7779,7 +7817,10 @@ def _run_serve_fiber(
             r = sess.raw_line(body, timeout_s=15.0)
             ms = max(1, int((time.monotonic() - t0) * 1000))
             val = r.get("value")
-            ok = r.get("status") == "ok" and _as_num(val) > -999_999
+            st = str(r.get("status") or "")
+            ok = st == "ok" and _as_num(val) > -999_999
+            if st in ("timeout", "error", "hang") or ms >= 14000:
+                hang_or_timeout = True
             explorers.append(
                 {
                     "bump": int(b),
@@ -7793,6 +7834,19 @@ def _run_serve_fiber(
             )
 
         ok_ex = [e for e in explorers if e.get("ok")]
+        phase_ms["explorer_loop"] = max(0, int((time.monotonic() - t_ex) * 1000))
+        if latency_clock is not None:
+            latency_clock.end(
+                "explorer_loop",
+                ok=bool(ok_ex),
+                fiber_live=True,
+                n=len(explorers),
+                extra={
+                    "ok_n": len(ok_ex),
+                    "hang_or_timeout": hang_or_timeout,
+                    "explorer_cap": eff_cap,
+                },
+            )
         if not ok_ex:
             return {
                 "ok": False,
@@ -7850,6 +7904,9 @@ def _run_serve_fiber(
             }
 
         traj = f"serve-fiber-{best_b}-{best_v}"
+        t_stamp = time.monotonic()
+        if latency_clock is not None:
+            latency_clock.start("stamp")
         body = _build_stamp_body(
             src=src,
             traj=traj,
@@ -7865,12 +7922,17 @@ def _run_serve_fiber(
         stamp_path.parent.mkdir(parents=True, exist_ok=True)
         stamp_path.write_text(body, encoding="utf-8")
         v = _validate_stamp(repo, expect_fiber_live=True)
+        phase_ms["stamp"] = max(0, int((time.monotonic() - t_stamp) * 1000))
+        if latency_clock is not None:
+            latency_clock.end("stamp", ok=bool(v.get("ok")), fiber_live=True)
         if not v.get("ok"):
             return {
                 **v,
                 "explorers": explorers,
                 "denseness": probe,
                 "aura_issue_candidate": True,
+                "latency_ms": phase_ms,
+                "hang_or_timeout": hang_or_timeout,
             }
 
         return {
@@ -7886,6 +7948,9 @@ def _run_serve_fiber(
             "explore_parallel": "fiber_sequential_oneshots",
             "incr_proven": False,
             "fiber_live": True,
+            "explorer_cap": eff_cap,
+            "hang_or_timeout": hang_or_timeout,
+            "latency_ms": phase_ms,
             "soft_select": {
                 "via": soft_sel.get("via"),
                 "reason": soft_sel.get("reason"),
@@ -7926,6 +7991,26 @@ def _run_soft_runtime(
 
 
 def cmd_runtime(args: Any) -> int:
+    """Soft runtime self-evolve with latency breakdown + adaptive strategy.
+
+    High-speed evolution repair: skip redundant Soft-native / already-green
+    denseness rematerialize, adaptive explorer cap / early oneshot on hang,
+    emit wall-clock phases in JSON. Prefer Soft-native; never invent Soft Ready.
+    """
+    from aura_build.self_evolve_strategy import (
+        LatencyClock,
+        combat_inventory_nonempty,
+        effective_explorer_cap,
+        effective_worldlines,
+        load_strategy,
+        observe_runtime_round,
+        probe_soft_native,
+        save_strategy,
+        should_prefer_oneshot,
+        should_skip_helper_rematerialize,
+        skipped_helper_stub,
+    )
+
     repo = Path(getattr(args, "repo", None) or Path.cwd()).resolve()
     aura_bin = (
         getattr(args, "aura_bin", None)
@@ -7934,305 +8019,205 @@ def cmd_runtime(args: Any) -> int:
     )
     force_oneshot = bool(getattr(args, "force_oneshot", False))
     prefer_serve = not force_oneshot and bool(getattr(args, "prefer_serve", True))
-    worldlines = int(getattr(args, "worldlines", None) or 256)
+    worldlines_cli = int(getattr(args, "worldlines", None) or 256)
     harness_root = Path(
         getattr(args, "harness_root", None) or (repo / ".aura-build")
     )
 
-    helper: dict[str, Any] = {"ok": False, "reason": "skipped"}
-    starts_helper: dict[str, Any] = {"ok": False, "reason": "skipped"}
-    ends_helper: dict[str, Any] = {"ok": False, "reason": "skipped"}
-    contains_helper: dict[str, Any] = {"ok": False, "reason": "skipped"}
-    split_helper: dict[str, Any] = {"ok": False, "reason": "skipped"}
-    replace_helper: dict[str, Any] = {"ok": False, "reason": "skipped"}
-    trim_helper: dict[str, Any] = {"ok": False, "reason": "skipped"}
-    downcase_helper: dict[str, Any] = {"ok": False, "reason": "skipped"}
-    upcase_helper: dict[str, Any] = {"ok": False, "reason": "skipped"}
-    pad_helper: dict[str, Any] = {"ok": False, "reason": "skipped"}
-    take_helper: dict[str, Any] = {"ok": False, "reason": "skipped"}
-    drop_helper: dict[str, Any] = {"ok": False, "reason": "skipped"}
-    list_take_helper: dict[str, Any] = {"ok": False, "reason": "skipped"}
-    list_drop_helper: dict[str, Any] = {"ok": False, "reason": "skipped"}
-    make_list_helper: dict[str, Any] = {"ok": False, "reason": "skipped"}
-    for_each_helper: dict[str, Any] = {"ok": False, "reason": "skipped"}
-    hash_for_each_helper: dict[str, Any] = {"ok": False, "reason": "skipped"}
-    hash_fold_helper: dict[str, Any] = {"ok": False, "reason": "skipped"}
-    foldr_helper: dict[str, Any] = {"ok": False, "reason": "skipped"}
-    hash_empty_helper: dict[str, Any] = {"ok": False, "reason": "skipped"}
-    hash_to_list_helper: dict[str, Any] = {"ok": False, "reason": "skipped"}
-    any_helper: dict[str, Any] = {"ok": False, "reason": "skipped"}
-    all_helper: dict[str, Any] = {"ok": False, "reason": "skipped"}
-    last_helper: dict[str, Any] = {"ok": False, "reason": "skipped"}
-    find_helper: dict[str, Any] = {"ok": False, "reason": "skipped"}
-    count_helper: dict[str, Any] = {"ok": False, "reason": "skipped"}
-    remove_helper: dict[str, Any] = {"ok": False, "reason": "skipped"}
-    delete_helper: dict[str, Any] = {"ok": False, "reason": "skipped"}
+    clock = LatencyClock(session="self_evolve_runtime")
+    state = load_strategy(repo, harness_root)
+    worldlines = effective_worldlines(state, requested=worldlines_cli)
+    explorer_cap = effective_explorer_cap(state)
+    prefer_oneshot_early = should_prefer_oneshot(state) and not force_oneshot
+
+    print(
+        json.dumps(
+            {
+                "event": "self_evolve_strategy",
+                "worldlines": worldlines,
+                "worldlines_cli": worldlines_cli,
+                "explorer_cap": explorer_cap,
+                "explorer_cap_ceiling": FIBER_EXPLORER_CAP,
+                "prefer_oneshot_early": prefer_oneshot_early,
+                "prefer_serve": prefer_serve,
+                "combat_or_leetcode_inventory": combat_inventory_nonempty(repo),
+                "last_helpers_all_green": state.get("last_helpers_all_green"),
+                "last_nothing_to_commit": state.get("last_nothing_to_commit"),
+                "last_explorer_hang": state.get("last_explorer_hang"),
+                "policy": (
+                    "skip Soft-native-green denseness; skip rematerialize when "
+                    "already_green+nothing_to_commit; lower explorer_cap / early "
+                    "oneshot on hang; shrink worldlines after fast soft_ready pursue; "
+                    "combat/leetcode inventory nonempty → first-class transforms; "
+                    "never invent Soft Ready"
+                ),
+            },
+            ensure_ascii=False,
+        )
+    )
+
+    # Soft-native probe (aggregate denseness skip input) — host metrics only.
+    soft_native: dict[str, Any] = {"ok": False, "green": {}, "ms": 0}
+    clock.start("soft_native_probe")
     if prefer_serve:
-        helper = _run_soft_helper_evolve(
-            repo, aura_bin=str(aura_bin), harness_root=harness_root
+        soft_native = probe_soft_native(str(aura_bin))
+        state["soft_native_green"] = dict(soft_native.get("green") or {})
+    clock.end(
+        "soft_native_probe",
+        ok=bool(soft_native.get("ok")),
+        n=int(soft_native.get("n_green") or 0),
+        extra={"n_total": soft_native.get("n_total"), "ms_probe": soft_native.get("ms")},
+    )
+    print(
+        json.dumps(
+            {
+                "event": "self_evolve_soft_native_probe",
+                "ok": soft_native.get("ok"),
+                "n_green": soft_native.get("n_green"),
+                "n_total": soft_native.get("n_total"),
+                "ms": soft_native.get("ms"),
+                "green": soft_native.get("green"),
+            },
+            ensure_ascii=False,
         )
-        print(json.dumps({"event": "self_evolve_helper", **helper}, ensure_ascii=False))
-        starts_helper = _run_soft_starts_helper_evolve(
-            repo, aura_bin=str(aura_bin), harness_root=harness_root
-        )
-        print(
-            json.dumps(
-                {"event": "self_evolve_starts_helper", **starts_helper},
-                ensure_ascii=False,
-            )
-        )
-        ends_helper = _run_soft_ends_helper_evolve(
-            repo, aura_bin=str(aura_bin), harness_root=harness_root
-        )
-        print(
-            json.dumps(
-                {"event": "self_evolve_ends_helper", **ends_helper},
-                ensure_ascii=False,
-            )
-        )
-        contains_helper = _run_soft_contains_helper_evolve(
-            repo, aura_bin=str(aura_bin), harness_root=harness_root
-        )
-        print(
-            json.dumps(
-                {"event": "self_evolve_contains_helper", **contains_helper},
-                ensure_ascii=False,
-            )
-        )
-        split_helper = _run_soft_split_helper_evolve(
-            repo, aura_bin=str(aura_bin), harness_root=harness_root
-        )
-        print(
-            json.dumps(
-                {"event": "self_evolve_split_helper", **split_helper},
-                ensure_ascii=False,
-            )
-        )
-        replace_helper = _run_soft_replace_helper_evolve(
-            repo, aura_bin=str(aura_bin), harness_root=harness_root
-        )
-        print(
-            json.dumps(
-                {"event": "self_evolve_replace_helper", **replace_helper},
-                ensure_ascii=False,
-            )
-        )
-        trim_helper = _run_soft_trim_helper_evolve(
-            repo, aura_bin=str(aura_bin), harness_root=harness_root
-        )
-        print(
-            json.dumps(
-                {"event": "self_evolve_trim_helper", **trim_helper},
-                ensure_ascii=False,
-            )
-        )
-        downcase_helper = _run_soft_downcase_helper_evolve(
-            repo, aura_bin=str(aura_bin), harness_root=harness_root
-        )
-        print(
-            json.dumps(
-                {"event": "self_evolve_downcase_helper", **downcase_helper},
-                ensure_ascii=False,
-            )
-        )
-        upcase_helper = _run_soft_upcase_helper_evolve(
-            repo, aura_bin=str(aura_bin), harness_root=harness_root
-        )
-        print(
-            json.dumps(
-                {"event": "self_evolve_upcase_helper", **upcase_helper},
-                ensure_ascii=False,
-            )
-        )
-        pad_helper = _run_soft_pad_helper_evolve(
-            repo, aura_bin=str(aura_bin), harness_root=harness_root
-        )
-        print(
-            json.dumps(
-                {"event": "self_evolve_pad_helper", **pad_helper},
-                ensure_ascii=False,
-            )
-        )
-        take_helper = _run_soft_take_helper_evolve(
-            repo, aura_bin=str(aura_bin), harness_root=harness_root
-        )
-        print(
-            json.dumps(
-                {"event": "self_evolve_take_helper", **take_helper},
-                ensure_ascii=False,
-            )
-        )
-        drop_helper = _run_soft_drop_helper_evolve(
-            repo, aura_bin=str(aura_bin), harness_root=harness_root
-        )
-        print(
-            json.dumps(
-                {"event": "self_evolve_drop_helper", **drop_helper},
-                ensure_ascii=False,
-            )
-        )
-        list_take_helper = _run_soft_list_take_helper_evolve(
-            repo, aura_bin=str(aura_bin), harness_root=harness_root
-        )
-        print(
-            json.dumps(
-                {"event": "self_evolve_list_take_helper", **list_take_helper},
-                ensure_ascii=False,
-            )
-        )
+    )
 
-        list_drop_helper = _run_soft_list_drop_helper_evolve(
-            repo, aura_bin=str(aura_bin), harness_root=harness_root
-        )
-        print(
-            json.dumps(
-                {"event": "self_evolve_list_drop_helper", **list_drop_helper},
-                ensure_ascii=False,
-            )
-        )
-        make_list_helper = _run_soft_make_list_helper_evolve(
-            repo, aura_bin=str(aura_bin), harness_root=harness_root
-        )
-        print(
-            json.dumps(
-                {"event": "self_evolve_make_list_helper", **make_list_helper},
-                ensure_ascii=False,
-            )
-        )
-        for_each_helper = _run_soft_for_each_helper_evolve(
-            repo, aura_bin=str(aura_bin), harness_root=harness_root
-        )
-        print(
-            json.dumps(
-                {"event": "self_evolve_for_each_helper", **for_each_helper},
-                ensure_ascii=False,
-            )
-        )
-        hash_for_each_helper = _run_soft_hash_for_each_helper_evolve(
-            repo, aura_bin=str(aura_bin), harness_root=harness_root
-        )
-        print(
-            json.dumps(
-                {"event": "self_evolve_hash_for_each_helper", **hash_for_each_helper},
-                ensure_ascii=False,
-            )
-        )
-        hash_fold_helper = _run_soft_hash_fold_helper_evolve(
-            repo, aura_bin=str(aura_bin), harness_root=harness_root
-        )
-        print(
-            json.dumps(
-                {"event": "self_evolve_hash_fold_helper", **hash_fold_helper},
-                ensure_ascii=False,
-            )
-        )
-        foldr_helper = _run_soft_foldr_helper_evolve(
-            repo, aura_bin=str(aura_bin), harness_root=harness_root
-        )
-        print(
-            json.dumps(
-                {"event": "self_evolve_foldr_helper", **foldr_helper},
-                ensure_ascii=False,
-            )
-        )
-        hash_empty_helper = _run_soft_hash_empty_helper_evolve(
-            repo, aura_bin=str(aura_bin), harness_root=harness_root
-        )
-        print(
-            json.dumps(
-                {"event": "self_evolve_hash_empty_helper", **hash_empty_helper},
-                ensure_ascii=False,
-            )
-        )
-        hash_to_list_helper = _run_soft_hash_to_list_helper_evolve(
-            repo, aura_bin=str(aura_bin), harness_root=harness_root
-        )
-        print(
-            json.dumps(
-                {"event": "self_evolve_hash_to_list_helper", **hash_to_list_helper},
-                ensure_ascii=False,
-            )
-        )
-        any_helper = _run_soft_any_helper_evolve(
-            repo, aura_bin=str(aura_bin), harness_root=harness_root
-        )
-        print(
-            json.dumps(
-                {"event": "self_evolve_any_helper", **any_helper},
-                ensure_ascii=False,
-            )
-        )
+    # Helper pipeline: (result_key, event_name, path_const, evolve_fn)
+    helper_specs: list[tuple[str, str, str, Any]] = [
+        ("helper", "self_evolve_helper", HELPER_PATH, _run_soft_helper_evolve),
+        ("starts_helper", "self_evolve_starts_helper", STARTS_HELPER_PATH, _run_soft_starts_helper_evolve),
+        ("ends_helper", "self_evolve_ends_helper", ENDS_HELPER_PATH, _run_soft_ends_helper_evolve),
+        ("contains_helper", "self_evolve_contains_helper", CONTAINS_HELPER_PATH, _run_soft_contains_helper_evolve),
+        ("split_helper", "self_evolve_split_helper", SPLIT_HELPER_PATH, _run_soft_split_helper_evolve),
+        ("replace_helper", "self_evolve_replace_helper", REPLACE_HELPER_PATH, _run_soft_replace_helper_evolve),
+        ("trim_helper", "self_evolve_trim_helper", TRIM_HELPER_PATH, _run_soft_trim_helper_evolve),
+        ("downcase_helper", "self_evolve_downcase_helper", DOWNCASE_HELPER_PATH, _run_soft_downcase_helper_evolve),
+        ("upcase_helper", "self_evolve_upcase_helper", UPCASE_HELPER_PATH, _run_soft_upcase_helper_evolve),
+        ("pad_helper", "self_evolve_pad_helper", PAD_HELPER_PATH, _run_soft_pad_helper_evolve),
+        ("take_helper", "self_evolve_take_helper", TAKE_HELPER_PATH, _run_soft_take_helper_evolve),
+        ("drop_helper", "self_evolve_drop_helper", DROP_HELPER_PATH, _run_soft_drop_helper_evolve),
+        ("list_take_helper", "self_evolve_list_take_helper", LIST_TAKE_HELPER_PATH, _run_soft_list_take_helper_evolve),
+        ("list_drop_helper", "self_evolve_list_drop_helper", LIST_DROP_HELPER_PATH, _run_soft_list_drop_helper_evolve),
+        ("make_list_helper", "self_evolve_make_list_helper", MAKE_LIST_HELPER_PATH, _run_soft_make_list_helper_evolve),
+        ("for_each_helper", "self_evolve_for_each_helper", FOR_EACH_HELPER_PATH, _run_soft_for_each_helper_evolve),
+        ("hash_for_each_helper", "self_evolve_hash_for_each_helper", HASH_FOR_EACH_HELPER_PATH, _run_soft_hash_for_each_helper_evolve),
+        ("hash_fold_helper", "self_evolve_hash_fold_helper", HASH_FOLD_HELPER_PATH, _run_soft_hash_fold_helper_evolve),
+        ("foldr_helper", "self_evolve_foldr_helper", FOLDR_HELPER_PATH, _run_soft_foldr_helper_evolve),
+        ("hash_empty_helper", "self_evolve_hash_empty_helper", HASH_EMPTY_HELPER_PATH, _run_soft_hash_empty_helper_evolve),
+        ("hash_to_list_helper", "self_evolve_hash_to_list_helper", HASH_TO_LIST_HELPER_PATH, _run_soft_hash_to_list_helper_evolve),
+        ("any_helper", "self_evolve_any_helper", ANY_HELPER_PATH, _run_soft_any_helper_evolve),
+        ("all_helper", "self_evolve_all_helper", ALL_HELPER_PATH, _run_soft_all_helper_evolve),
+        ("last_helper", "self_evolve_last_helper", LAST_HELPER_PATH, _run_soft_last_helper_evolve),
+        ("find_helper", "self_evolve_find_helper", FIND_HELPER_PATH, _run_soft_find_helper_evolve),
+        ("count_helper", "self_evolve_count_helper", COUNT_HELPER_PATH, _run_soft_count_helper_evolve),
+        ("remove_helper", "self_evolve_remove_helper", REMOVE_HELPER_PATH, _run_soft_remove_helper_evolve),
+        ("delete_helper", "self_evolve_delete_helper", DELETE_HELPER_PATH, _run_soft_delete_helper_evolve),
+    ]
 
-        all_helper = _run_soft_all_helper_evolve(
-            repo, aura_bin=str(aura_bin), harness_root=harness_root
+    helper_results: dict[str, dict[str, Any]] = {
+        key: {"ok": False, "reason": "skipped"} for key, *_ in helper_specs
+    }
+    denseness_agg = {
+        "n": 0,
+        "ok_n": 0,
+        "skip_n": 0,
+        "fail_n": 0,
+        "ms": 0,
+        "skipped": [],
+        "ran": [],
+    }
+
+    if prefer_serve and not prefer_oneshot_early:
+        clock.start("denseness_per_helper")
+        for key, event, path_rel, fn in helper_specs:
+            hpath = repo / path_rel
+            skip, skip_reason = should_skip_helper_rematerialize(
+                state,
+                helper_key=key,
+                helper_path=hpath,
+                soft_native_green=state.get("soft_native_green") or {},
+            )
+            denseness_agg["n"] += 1
+            if skip:
+                out = skipped_helper_stub(path=path_rel, reason=skip_reason)
+                helper_results[key] = out
+                denseness_agg["skip_n"] += 1
+                denseness_agg["ok_n"] += 1
+                denseness_agg["skipped"].append({"key": key, "reason": skip_reason})
+                print(json.dumps({"event": event, **out, "ms": 0}, ensure_ascii=False))
+                continue
+            t0 = time.monotonic()
+            out = fn(repo, aura_bin=str(aura_bin), harness_root=harness_root)
+            ms = max(0, int((time.monotonic() - t0) * 1000))
+            out = dict(out)
+            out["ms"] = ms
+            helper_results[key] = out
+            denseness_agg["ms"] += ms
+            denseness_agg["ran"].append({"key": key, "ok": bool(out.get("ok")), "ms": ms})
+            if out.get("ok"):
+                denseness_agg["ok_n"] += 1
+            else:
+                denseness_agg["fail_n"] += 1
+            print(json.dumps({"event": event, **out}, ensure_ascii=False))
+        clock.end(
+            "denseness_per_helper",
+            ok=denseness_agg["fail_n"] == 0,
+            n=denseness_agg["n"],
+            extra={
+                "ok_n": denseness_agg["ok_n"],
+                "skip_n": denseness_agg["skip_n"],
+                "fail_n": denseness_agg["fail_n"],
+                "helpers_ms": denseness_agg["ms"],
+            },
         )
         print(
             json.dumps(
-                {"event": "self_evolve_all_helper", **all_helper},
+                {"event": "self_evolve_denseness_aggregate", **denseness_agg},
                 ensure_ascii=False,
             )
         )
-
-        last_helper = _run_soft_last_helper_evolve(
-            repo, aura_bin=str(aura_bin), harness_root=harness_root
+    elif prefer_oneshot_early:
+        clock.mark(
+            "denseness_per_helper",
+            ok=True,
+            n=0,
+            ms=0,
+            extra={"skipped_all": True, "reason": "prefer_oneshot_early"},
         )
         print(
             json.dumps(
-                {"event": "self_evolve_last_helper", **last_helper},
-                ensure_ascii=False,
-            )
-        )
-
-        find_helper = _run_soft_find_helper_evolve(
-            repo, aura_bin=str(aura_bin), harness_root=harness_root
-        )
-        print(
-            json.dumps(
-                {"event": "self_evolve_find_helper", **find_helper},
-                ensure_ascii=False,
-            )
-        )
-
-        count_helper = _run_soft_count_helper_evolve(
-            repo, aura_bin=str(aura_bin), harness_root=harness_root
-        )
-        print(
-            json.dumps(
-                {"event": "self_evolve_count_helper", **count_helper},
-                ensure_ascii=False,
-            )
-        )
-
-        remove_helper = _run_soft_remove_helper_evolve(
-            repo, aura_bin=str(aura_bin), harness_root=harness_root
-        )
-        print(
-            json.dumps(
-                {"event": "self_evolve_remove_helper", **remove_helper},
-                ensure_ascii=False,
-            )
-        )
-
-        delete_helper = _run_soft_delete_helper_evolve(
-            repo, aura_bin=str(aura_bin), harness_root=harness_root
-        )
-        print(
-            json.dumps(
-                {"event": "self_evolve_delete_helper", **delete_helper},
+                {
+                    "event": "self_evolve_denseness_aggregate",
+                    "n": 0,
+                    "ok_n": 0,
+                    "skip_n": 0,
+                    "fail_n": 0,
+                    "ms": 0,
+                    "skipped_all": True,
+                    "reason": "prefer_oneshot_early",
+                },
                 ensure_ascii=False,
             )
         )
 
     result: dict[str, Any]
-    if prefer_serve:
+    fallback_oneshot = False
+    hang_or_timeout = False
+    if prefer_serve and not prefer_oneshot_early:
+        # session_start / denseness_probe / explorer_loop / stamp timed inside _run_serve_fiber
         result = _run_serve_fiber(
             repo,
             aura_bin=str(aura_bin),
             worldlines=worldlines,
             harness_root=harness_root,
+            explorer_cap=explorer_cap,
+            latency_clock=clock,
         )
+        hang_or_timeout = bool(result.get("hang_or_timeout"))
         print(json.dumps({"event": "self_evolve_runtime_serve", **result}, ensure_ascii=False))
         if not result.get("ok") and result.get("fallback_ok", True):
+            fallback_oneshot = True
+            clock.start("oneshot_fallback")
             print(
                 json.dumps(
                     {
@@ -8245,381 +8230,82 @@ def cmd_runtime(args: Any) -> int:
             )
             result = _run_soft_oneshot(repo, aura_bin=str(aura_bin))
             result["fallback_from"] = "serve_fiber"
+            clock.end(
+                "oneshot_fallback",
+                ok=bool(result.get("ok")),
+                fiber_live=False,
+            )
     else:
-        result = _run_soft_oneshot(repo, aura_bin=str(aura_bin))
+        if prefer_oneshot_early:
+            print(
+                json.dumps(
+                    {
+                        "event": "self_evolve_runtime_fallback",
+                        "from": "prefer_oneshot_early",
+                        "to": "oneshot_mutate",
+                        "fiber_live": False,
+                    },
+                    ensure_ascii=False,
+                )
+            )
+            clock.start("oneshot_fallback")
+            result = _run_soft_oneshot(repo, aura_bin=str(aura_bin))
+            result["fallback_from"] = "prefer_oneshot_early"
+            clock.end(
+                "oneshot_fallback",
+                ok=bool(result.get("ok")),
+                fiber_live=False,
+            )
+            fallback_oneshot = True
+        else:
+            clock.start("oneshot_fallback")
+            result = _run_soft_oneshot(repo, aura_bin=str(aura_bin))
+            clock.end(
+                "oneshot_fallback",
+                ok=bool(result.get("ok")),
+                fiber_live=False,
+            )
 
-    result["helper"] = {
-        k: helper.get(k)
-        for k in (
-            "ok",
-            "reason",
-            "path",
-            "selected",
-            "fiber_live",
-            "materialize",
-            "src_len",
-            "denseness_note",
-        )
-    }
-    result["starts_helper"] = {
-        k: starts_helper.get(k)
-        for k in (
-            "ok",
-            "reason",
-            "path",
-            "selected",
-            "fiber_live",
-            "materialize",
-            "src_len",
-            "denseness_note",
-        )
-    }
-    result["ends_helper"] = {
-        k: ends_helper.get(k)
-        for k in (
-            "ok",
-            "reason",
-            "path",
-            "selected",
-            "fiber_live",
-            "materialize",
-            "src_len",
-            "denseness_note",
-        )
-    }
-    result["contains_helper"] = {
-        k: contains_helper.get(k)
-        for k in (
-            "ok",
-            "reason",
-            "path",
-            "selected",
-            "fiber_live",
-            "materialize",
-            "src_len",
-            "denseness_note",
-        )
-    }
-    result["split_helper"] = {
-        k: split_helper.get(k)
-        for k in (
-            "ok",
-            "reason",
-            "path",
-            "selected",
-            "fiber_live",
-            "materialize",
-            "src_len",
-            "denseness_note",
-        )
-    }
-    result["replace_helper"] = {
-        k: replace_helper.get(k)
-        for k in (
-            "ok",
-            "reason",
-            "path",
-            "selected",
-            "fiber_live",
-            "materialize",
-            "src_len",
-            "denseness_note",
-        )
-    }
-    result["trim_helper"] = {
-        k: trim_helper.get(k)
-        for k in (
-            "ok",
-            "reason",
-            "path",
-            "selected",
-            "fiber_live",
-            "materialize",
-            "src_len",
-            "denseness_note",
-        )
-    }
-    result["downcase_helper"] = {
-        k: downcase_helper.get(k)
-        for k in (
-            "ok",
-            "reason",
-            "path",
-            "selected",
-            "fiber_live",
-            "materialize",
-            "src_len",
-            "denseness_note",
-        )
-    }
-    result["upcase_helper"] = {
-        k: upcase_helper.get(k)
-        for k in (
-            "ok",
-            "reason",
-            "path",
-            "selected",
-            "fiber_live",
-            "materialize",
-            "src_len",
-            "denseness_note",
-        )
-    }
-    result["pad_helper"] = {
-        k: pad_helper.get(k)
-        for k in (
-            "ok",
-            "reason",
-            "path",
-            "selected",
-            "fiber_live",
-            "materialize",
-            "src_len",
-            "denseness_note",
-        )
-    }
-    result["take_helper"] = {
-        k: take_helper.get(k)
-        for k in (
-            "ok",
-            "reason",
-            "path",
-            "selected",
-            "fiber_live",
-            "materialize",
-            "src_len",
-            "denseness_note",
-        )
-    }
-    result["drop_helper"] = {
-        k: drop_helper.get(k)
-        for k in (
-            "ok",
-            "reason",
-            "path",
-            "selected",
-            "fiber_live",
-            "materialize",
-            "src_len",
-            "denseness_note",
-        )
-    }
-    result["list_take_helper"] = {
-        k: list_take_helper.get(k)
-        for k in (
-            "ok",
-            "reason",
-            "path",
-            "selected",
-            "fiber_live",
-            "materialize",
-            "src_len",
-            "denseness_note",
-        )
-    }
-    result["list_drop_helper"] = {
-        k: list_drop_helper.get(k)
-        for k in (
-            "ok",
-            "reason",
-            "path",
-            "selected",
-            "fiber_live",
-            "materialize",
-            "src_len",
-            "denseness_note",
-        )
-    }
-    result["make_list_helper"] = {
-        k: make_list_helper.get(k)
-        for k in (
-            "ok",
-            "reason",
-            "path",
-            "selected",
-            "fiber_live",
-            "materialize",
-            "src_len",
-            "denseness_note",
-        )
-    }
-    result["for_each_helper"] = {
-        k: for_each_helper.get(k)
-        for k in (
-            "ok",
-            "reason",
-            "path",
-            "selected",
-            "fiber_live",
-            "materialize",
-            "src_len",
-            "denseness_note",
-        )
-    }
-    result["hash_for_each_helper"] = {
-        k: hash_for_each_helper.get(k)
-        for k in (
-            "ok",
-            "reason",
-            "path",
-            "selected",
-            "fiber_live",
-            "materialize",
-            "src_len",
-            "denseness_note",
-        )
-    }
-    result["hash_fold_helper"] = {
-        k: hash_fold_helper.get(k)
-        for k in (
-            "ok",
-            "reason",
-            "path",
-            "selected",
-            "fiber_live",
-            "materialize",
-            "src_len",
-            "denseness_note",
-        )
-    }
-    result["foldr_helper"] = {
-        k: foldr_helper.get(k)
-        for k in (
-            "ok",
-            "reason",
-            "path",
-            "selected",
-            "fiber_live",
-            "materialize",
-            "src_len",
-            "denseness_note",
-        )
-    }
-    result["hash_empty_helper"] = {
-        k: hash_empty_helper.get(k)
-        for k in (
-            "ok",
-            "reason",
-            "path",
-            "selected",
-            "fiber_live",
-            "materialize",
-            "src_len",
-            "denseness_note",
-        )
-    }
-    result["hash_to_list_helper"] = {
-        k: hash_to_list_helper.get(k)
-        for k in (
-            "ok",
-            "reason",
-            "path",
-            "selected",
-            "fiber_live",
-            "materialize",
-            "src_len",
-            "denseness_note",
-        )
-    }
-    result["any_helper"] = {
-        k: any_helper.get(k)
-        for k in (
-            "ok",
-            "reason",
-            "path",
-            "selected",
-            "fiber_live",
-            "materialize",
-            "src_len",
-            "denseness_note",
-        )
-    }
+    _helper_keys = (
+        "ok",
+        "reason",
+        "path",
+        "selected",
+        "fiber_live",
+        "materialize",
+        "src_len",
+        "denseness_note",
+        "ms",
+        "skipped",
+    )
+    for key, *_rest in helper_specs:
+        src_h = helper_results.get(key) or {}
+        result[key] = {k: src_h.get(k) for k in _helper_keys}
 
-    result["all_helper"] = {
-        k: all_helper.get(k)
-        for k in (
-            "ok",
-            "reason",
-            "path",
-            "selected",
-            "fiber_live",
-            "materialize",
-            "src_len",
-            "denseness_note",
-        )
+    result["soft_native_probe"] = {
+        "n_green": soft_native.get("n_green"),
+        "n_total": soft_native.get("n_total"),
+        "ms": soft_native.get("ms"),
+        "green": soft_native.get("green"),
     }
-
-    result["last_helper"] = {
-        k: last_helper.get(k)
-        for k in (
-            "ok",
-            "reason",
-            "path",
-            "selected",
-            "fiber_live",
-            "materialize",
-            "src_len",
-            "denseness_note",
-        )
+    result["strategy"] = {
+        "worldlines": worldlines,
+        "explorer_cap": explorer_cap,
+        "prefer_oneshot_early": prefer_oneshot_early,
+        "denseness_skip_n": denseness_agg.get("skip_n"),
+        "denseness_ran_n": len(denseness_agg.get("ran") or []),
     }
-
-    result["find_helper"] = {
-        k: find_helper.get(k)
-        for k in (
-            "ok",
-            "reason",
-            "path",
-            "selected",
-            "fiber_live",
-            "materialize",
-            "src_len",
-            "denseness_note",
-        )
-    }
-
-    result["count_helper"] = {
-        k: count_helper.get(k)
-        for k in (
-            "ok",
-            "reason",
-            "path",
-            "selected",
-            "fiber_live",
-            "materialize",
-            "src_len",
-            "denseness_note",
-        )
-    }
-
-    result["remove_helper"] = {
-        k: remove_helper.get(k)
-        for k in (
-            "ok",
-            "reason",
-            "path",
-            "selected",
-            "fiber_live",
-            "materialize",
-            "src_len",
-            "denseness_note",
-        )
-    }
-
-    result["delete_helper"] = {
-        k: delete_helper.get(k)
-        for k in (
-            "ok",
-            "reason",
-            "path",
-            "selected",
-            "fiber_live",
-            "materialize",
-            "src_len",
-            "denseness_note",
-        )
-    }
-
+    latency = clock.summary(fiber_live=bool(result.get("fiber_live")))
+    result["latency"] = latency
     print(json.dumps({"event": "self_evolve_runtime", **result}, ensure_ascii=False))
+    print(
+        json.dumps(
+            {"event": "self_evolve_latency", **latency},
+            ensure_ascii=False,
+        )
+    )
+    print(f"self-evolve latency: {latency.get('progress')}", file=sys.stderr)
+
     if not result.get("ok"):
         if result.get("aura_issue_candidate"):
             print(
@@ -8627,9 +8313,23 @@ def cmd_runtime(args: Any) -> int:
                 "file Aura issue with tip SHA + repro (do not invent Soft Ready)",
                 file=sys.stderr,
             )
+        # still persist strategy observations on fail
+        helpers_for_obs = {k: result.get(k) for k, *_ in helper_specs}
+        state = observe_runtime_round(
+            state,
+            helpers=helpers_for_obs,
+            explorers=result.get("explorers") if isinstance(result.get("explorers"), list) else None,
+            fiber_live=bool(result.get("fiber_live")),
+            fallback_oneshot=fallback_oneshot,
+            hang_or_timeout=hang_or_timeout,
+            nothing_to_commit=False,
+            latency=latency,
+        )
+        save_strategy(repo, state, harness_root)
         return 1
 
     verify_mode = getattr(args, "verify", "stamp") or "stamp"
+    clock.start("materialize_commit")
     verify = run_host_verify(
         repo,
         verify_mode,
@@ -8638,25 +8338,83 @@ def cmd_runtime(args: Any) -> int:
     )
     print(json.dumps({"event": "host_verify", **verify}, ensure_ascii=False))
     if not verify.get("ok"):
+        clock.end("materialize_commit", ok=False)
         print(
             f"self-evolve runtime: verify failed reason={verify.get('reason')} (no commit)",
             file=sys.stderr,
         )
+        save_strategy(repo, state, harness_root)
         return int(verify.get("exit_code") or 1)
 
     if getattr(args, "no_commit", False):
+        clock.end("materialize_commit", ok=True, extra={"no_commit": True})
+        latency = clock.summary(fiber_live=bool(result.get("fiber_live")))
+        print(json.dumps({"event": "self_evolve_latency", **latency}, ensure_ascii=False))
         print("self-evolve runtime: --no-commit; skip git")
+        helpers_for_obs = {k: result.get(k) for k, *_ in helper_specs}
+        state = observe_runtime_round(
+            state,
+            helpers=helpers_for_obs,
+            explorers=result.get("explorers") if isinstance(result.get("explorers"), list) else None,
+            fiber_live=bool(result.get("fiber_live")),
+            fallback_oneshot=fallback_oneshot,
+            hang_or_timeout=hang_or_timeout,
+            nothing_to_commit=False,
+            latency=latency,
+        )
+        save_strategy(repo, state, harness_root)
         return 0
 
-    paths = [STAMP_PATH, RUNTIME_KERNEL, HELPER_PATH, STARTS_HELPER_PATH, ENDS_HELPER_PATH, CONTAINS_HELPER_PATH, SPLIT_HELPER_PATH, REPLACE_HELPER_PATH, TRIM_HELPER_PATH, DOWNCASE_HELPER_PATH, UPCASE_HELPER_PATH, PAD_HELPER_PATH, TAKE_HELPER_PATH, DROP_HELPER_PATH, LIST_TAKE_HELPER_PATH, LIST_DROP_HELPER_PATH, MAKE_LIST_HELPER_PATH, FOR_EACH_HELPER_PATH, HASH_FOR_EACH_HELPER_PATH, HASH_FOLD_HELPER_PATH, FOLDR_HELPER_PATH, HASH_EMPTY_HELPER_PATH, HASH_TO_LIST_HELPER_PATH, ANY_HELPER_PATH, ALL_HELPER_PATH, LAST_HELPER_PATH, FIND_HELPER_PATH, COUNT_HELPER_PATH, REMOVE_HELPER_PATH, DELETE_HELPER_PATH, "src/aura_build/self_evolve_runtime.py", "src/aura_build/serve_session.py", "src/aura_build/soft_leetcode_runtime.py", "tests/test_serve_session.py", "tests/test_self_evolve.py"]
+    paths = [
+        STAMP_PATH,
+        RUNTIME_KERNEL,
+        HELPER_PATH,
+        STARTS_HELPER_PATH,
+        ENDS_HELPER_PATH,
+        CONTAINS_HELPER_PATH,
+        SPLIT_HELPER_PATH,
+        REPLACE_HELPER_PATH,
+        TRIM_HELPER_PATH,
+        DOWNCASE_HELPER_PATH,
+        UPCASE_HELPER_PATH,
+        PAD_HELPER_PATH,
+        TAKE_HELPER_PATH,
+        DROP_HELPER_PATH,
+        LIST_TAKE_HELPER_PATH,
+        LIST_DROP_HELPER_PATH,
+        MAKE_LIST_HELPER_PATH,
+        FOR_EACH_HELPER_PATH,
+        HASH_FOR_EACH_HELPER_PATH,
+        HASH_FOLD_HELPER_PATH,
+        FOLDR_HELPER_PATH,
+        HASH_EMPTY_HELPER_PATH,
+        HASH_TO_LIST_HELPER_PATH,
+        ANY_HELPER_PATH,
+        ALL_HELPER_PATH,
+        LAST_HELPER_PATH,
+        FIND_HELPER_PATH,
+        COUNT_HELPER_PATH,
+        REMOVE_HELPER_PATH,
+        DELETE_HELPER_PATH,
+        "src/aura_build/self_evolve_runtime.py",
+        "src/aura_build/self_evolve_strategy.py",
+        "src/aura_build/serve_session.py",
+        "src/aura_build/soft_leetcode_runtime.py",
+        "tests/test_serve_session.py",
+        "tests/test_self_evolve.py",
+        "tests/test_self_evolve_strategy.py",
+    ]
     fl = "true" if result.get("fiber_live") else "false"
     backend = result.get("worldline_backend") or "unknown"
     helper_sel = (result.get("helper") or {}).get("selected") or "-"
+    skip_n = denseness_agg.get("skip_n") or 0
     msg = (
         f"self-evolve(runtime): materialize=current-source "
         f"backend={backend} selected={result.get('selected')} "
         f"observed={result.get('observed')} "
         f"helper={helper_sel} "
+        f"denseness_skip={skip_n} "
+        f"explorer_cap={explorer_cap} "
         f"kernel=aura incr_proven=false fiber_live={fl}"
     )
     git_res = git_commit_and_maybe_push(
@@ -8665,7 +8423,31 @@ def cmd_runtime(args: Any) -> int:
         paths=paths,
         no_push=bool(getattr(args, "no_push", False)),
     )
+    clock.end(
+        "materialize_commit",
+        ok=bool(git_res.get("ok") or git_res.get("reason") == "nothing_to_commit"),
+        extra={"committed": bool(git_res.get("committed")), "reason": git_res.get("reason")},
+    )
     print(json.dumps({"event": "git", **git_res}, ensure_ascii=False))
-    if not git_res.get("committed") and git_res.get("reason") != "nothing_to_commit":
+
+    latency = clock.summary(fiber_live=bool(result.get("fiber_live")))
+    print(json.dumps({"event": "self_evolve_latency", **latency}, ensure_ascii=False))
+    print(f"self-evolve latency: {latency.get('progress')}", file=sys.stderr)
+
+    nothing = git_res.get("reason") == "nothing_to_commit"
+    helpers_for_obs = {k: result.get(k) for k, *_ in helper_specs}
+    state = observe_runtime_round(
+        state,
+        helpers=helpers_for_obs,
+        explorers=result.get("explorers") if isinstance(result.get("explorers"), list) else None,
+        fiber_live=bool(result.get("fiber_live")),
+        fallback_oneshot=fallback_oneshot,
+        hang_or_timeout=hang_or_timeout,
+        nothing_to_commit=bool(nothing),
+        latency=latency,
+    )
+    save_strategy(repo, state, harness_root)
+
+    if not git_res.get("committed") and not nothing:
         return 1
     return 0
