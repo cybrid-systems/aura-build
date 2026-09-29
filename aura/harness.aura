@@ -1,7 +1,7 @@
 ; aura-build kernel — L1 harness mutate + canary decide (AUTOPROMOTE default OFF)
 ; L1 live path: std/hot-strategy register!/swap!/heal! + last-good.
 ; harness.json remains durable mirror / config seed. Never invent fiber_live / incr_proven.
-; Soft gap fill: util …/find/count/remove/delete/range (+ soft_*) via util require. Soft tip 7c0952a (#4151) gold find/count/remove/delete/range + R7RS take — prefer Soft-native.
+; Soft gap fill: util …/find/count/remove/delete/range/take/drop (+ soft_*) via util require. Soft tip af82f75 (#4152 Soft-zero-cost) gold find/count/remove/delete/range + R7RS take/drop — prefer Soft-native.
 (export
   default-harness load-harness save-harness validate-harness
   propose-mutate decide-canary harness-path

@@ -5,7 +5,7 @@
   iso-now make-id
   default-fitness seed-from-prompt
   join-path abs-path string-trim string-downcase string-pad string-take string-drop
-  list-take list-drop list-tail make-list for-each hash-for-each hash-fold foldr hash-empty? hash->list any all last find count remove delete range
+  list-take list-drop take drop list-tail make-list for-each hash-for-each hash-fold foldr hash-empty? hash->list any all last find count remove delete range
   round4)
 
 (require "std/io" all:)
@@ -83,9 +83,9 @@
         (substring s n len)))))
 
 
-; First n list elements (Soft oneshot native `take` returns opaque unprintable;
-; denseness path: aura/soft_list_take.aura). Used by orch/worldline to cap
-; evaluated/candidate lists (align host FIBER_EXPLORER_CAP honesty).
+; Soft tip af82f75 (#4152 Soft-zero-cost; gold R7RS take/drop @ #4177/#4221 CLOSED).
+; Prefer Soft-native (take lst n)/(drop lst n). list-take/list-drop + soft_list_* =
+; denseness defense-in-depth (align host FIBER_EXPLORER_CAP honesty).
 (define (list-take xs n)
   (letrec ((go (lambda (xs n)
                  (if (or (<= n 0) (null? xs))
@@ -94,9 +94,8 @@
     (go xs n)))
 
 
-; Drop first n list elements (Soft oneshot native `drop` returns opaque unprintable;
-; denseness path: aura/soft_list_drop.aura). Complement of list-take — orch overflow
-; honesty after list-take cap; select-best starts with list-drop rest.
+; Soft tip af82f75 gold-binds drop. Prefer Soft-native; list-drop/soft_list_drop =
+; denseness defense-in-depth. Complement of take — orch overflow honesty after take cap.
 (define (list-drop xs n)
   (letrec ((go (lambda (xs n)
                  (if (or (<= n 0) (null? xs))
@@ -105,8 +104,17 @@
     (go xs n)))
 
 ; R7RS list-tail ≡ list-drop (Soft oneshot unbound list-tail; denseness: soft_list_drop).
+;; Soft-native aliases (defense-in-depth when Soft gold unbound in module). Soft shape:
+; (take lst n) / (drop lst n). Prefer Soft-native at call sites.
+(define (take lst n)
+  (list-take lst n))
+
+(define (drop lst n)
+  (list-drop lst n))
+
+; R7RS list-tail ≡ drop (Soft oneshot unbound list-tail; denseness: soft_list_drop).
 (define (list-tail xs n)
-  (list-drop xs n))
+  (drop xs n))
 
 ; R7RS make-list (Soft oneshot unbound; denseness path: aura/soft_make_list.aura).
 ; Soft self_evolve_select + leetcode_observe already Soft-gap this primitive.
@@ -191,7 +199,7 @@
 
 
 
-; Soft tip 7c0952a (#4151) gold-binds find/count/remove/delete/range (+5954717 take). util/soft_find
+; Soft tip af82f75 (#4152 Soft-zero-cost; gold find/count/remove/delete/range + R7RS take/drop). util/soft_find
 ; remain defense-in-depth. Soft shape: (find pred lst) → first or ().
 (define (find pred lst)
   (let loop ((xs lst))
@@ -201,28 +209,28 @@
 
 
 
-; Soft tip 7c0952a gold-binds count on oneshot (std/list). util/soft_count remain
+; Soft tip af82f75 gold-binds count on oneshot (std/list). util/soft_count remain
 ; defense-in-depth. Soft shape: (count pred lst) → integer; empty → 0.
 (define (count pred lst)
   (let loop ((xs lst) (n 0))
     (if (null? xs) n
       (loop (cdr xs) (if (pred (car xs)) (+ n 1) n)))))
 
-; Soft tip 7c0952a gold-binds remove on oneshot (std/list; #4224 CLOSED). util/soft_remove
+; Soft tip af82f75 gold-binds remove on oneshot (std/list; #4224 CLOSED). util/soft_remove
 ; remain defense-in-depth. Soft shape: (remove pred lst) → elements where pred is false.
 (define (remove pred lst)
   (let loop ((xs lst) (acc (quote ())))
     (if (null? xs) (reverse acc)
       (loop (cdr xs) (if (pred (car xs)) acc (cons (car xs) acc))))))
 
-; Soft tip 7c0952a gold-binds delete on oneshot (std/list; #4226 CLOSED). util/soft_delete
+; Soft tip af82f75 gold-binds delete on oneshot (std/list; #4226 CLOSED). util/soft_delete
 ; remain defense-in-depth. Soft shape: (delete x lst) → equal?-based drop of x.
 (define (delete x lst)
   (let loop ((xs lst) (acc (quote ())))
     (if (null? xs) (reverse acc)
       (loop (cdr xs) (if (equal? (car xs) x) acc (cons (car xs) acc))))))
 
-; Soft tip 7c0952a gold-binds range on oneshot (std/list; #4225 CLOSED). Soft shape:
+; Soft tip af82f75 gold-binds range on oneshot (std/list; #4225 CLOSED). Soft shape:
 ; (range start end) → list [start, end). Prefer Soft-native; no soft_range invent this round
 ; (combat empty → skip invent). util define = defense-in-depth.
 (define (range start end)

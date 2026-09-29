@@ -1,7 +1,7 @@
 ; aura-build kernel — scout → mutate → eval → select-best
 ; Primary product path. Simulated = pure Aura fitness; aura = in-process mutate:rebind.
 ; Slice 3: fiber_live ⇒ worldline_backend=fiber_graph (fiber:spawn fan-out); else file.
-; Soft gap fill: util …/last/find/count/remove/delete/range (+ soft_* denseness). Soft tip 7c0952a (#4151) gold find/count/remove/delete/range + R7RS take — prefer Soft-native; soft_* fallbacks.
+; Soft gap fill: util …/last/find/count/remove/delete/range/take/drop (+ soft_* denseness). Soft tip af82f75 (#4152 Soft-zero-cost) gold find/count/remove/delete/range + R7RS take/drop — prefer Soft-native; soft_* fallbacks.
 (export run-episode run-harness-canary select-best run-backend-episode)
 
 (require "util" all:)
@@ -17,7 +17,8 @@
 (define (select-best worldlines)
   (if (null? worldlines)
     (error "no worldlines to select")
-    (let loop ((xs (list-drop worldlines 1)) (best (car worldlines)))
+    ; Prefer Soft-native drop (tip af82f75 / #4221 CLOSED); util/list-drop fallback.
+    (let loop ((xs (drop worldlines 1)) (best (car worldlines)))
       (if (null? xs) best
         (let* ((w (car xs))
                (wf (hash-ref (hash-ref w "eval") "fitness"))
@@ -186,7 +187,8 @@
              (let* ((raw0 (if (equal? mode "aura")
                             (aura-mutate prompt seed n)
                             (sim-mutate prompt seed n)))
-                    (raw (list-take raw0 n)))
+                    ; Prefer Soft-native take (tip af82f75 / #4221 CLOSED); util/list-take fallback.
+                    (raw (take raw0 n)))
                (let loop ((i 0) (xs raw) (out (list)))
                  (if (null? xs) (reverse out)
                    (let ((got (if (equal? mode "aura")
@@ -274,8 +276,9 @@
                      "discarded" discarded "rt" rt))
              (let* ((ws (workspace-create ws-root n))
                     (cids0 (hash-keys (hash-ref ws "candidates")))
-                    (cids (list-take cids0 n))
-                    (cid-overflow (list-drop cids0 n))
+                    ; Prefer Soft-native take/drop (tip af82f75 / #4221 CLOSED).
+                    (cids (take cids0 n))
+                    (cid-overflow (drop cids0 n))
                     (evaluated
                       (let loop ((i 0) (xs cids) (out (list)))
                         (if (null? xs) (reverse out)
