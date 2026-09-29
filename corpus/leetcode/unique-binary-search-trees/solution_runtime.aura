@@ -1,0 +1,59 @@
+; soft_leetcode_runtime slug=unique-binary-search-trees path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=host_parallel fiber_llm_ok=true
+; selected=llm-6 hits=8/8
+; baseline_hits=0/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define solve
+    (lambda (n)
+      (letrec ((loop (lambda (k cat)
+          (if (=
+              k n)
+            (list-ref
+              cat k)
+            (let ((next (letrec ((sum-loop (lambda (i acc)
+                  (if (>
+                      i k)
+                    acc
+                    (sum-loop
+                      (+
+                        i 1) (+
+                        acc (*
+                          (list-ref
+                            cat i) (list-ref
+                            cat (-
+                              k i)))))))))
+                (sum-loop
+                  0 0))))
+              (loop
+                (+
+                  k 1) (append
+                  cat (list next))))))))
+        (loop
+          0 (list 1)))))
+  (define run-case
+    (lambda (i n)
+      (begin
+        (display "CASE")
+        (display i)
+        (display "=")
+        (display (solve n))
+        (newline))))
+  (run-case
+    0 0)
+  (run-case
+    1 1)
+  (run-case
+    2 2)
+  (run-case
+    3 3)
+  (run-case
+    4 4)
+  (run-case
+    5 5)
+  (run-case
+    6 6)
+  (run-case
+    7 10))
