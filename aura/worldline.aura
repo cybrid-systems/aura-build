@@ -10,7 +10,7 @@
   fiber-fanout-aura fiber-fanout-sim fiber-discard-losers
   fiber-runtime-fields fiber-audit-write fiber-indices fiber-fitness-extent)
 
-; Soft gap fill: util …/find/count/remove/delete/range/take/drop (+ soft_* denseness). Soft tip 32b07d8 (#4153 Soft-zero-cost) gold find/count/remove/delete/range/extent/last + R7RS take/drop — prefer Soft-native.
+; Soft gap fill: util …/find/count/remove/delete/range/take/drop (+ soft_* denseness). Soft tip 32b07d8 (#4153 Soft-zero-cost) gold find/count/remove/delete/range/extent/last/filter + R7RS take/drop — prefer Soft-native.
 (require "util" all:)
 (require "std/io" all:)
 (require "traj" all:)
@@ -110,6 +110,8 @@
         #t))
     kept))
 
+; Prefer Soft-native filter (tip 32b07d8 gold-binds filter; SRFI-1). Local define =
+; denseness defense-in-depth when Soft filter unbound in module. Soft shape: (filter pred lst).
 (define (filter pred xs)
   (if (null? xs) (list)
     (if (pred (car xs))
