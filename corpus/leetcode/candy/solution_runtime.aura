@@ -2,8 +2,8 @@
 ; materialize=current-source worldline_backend=fiber_graph
 ; fiber_live=true incr_proven=false
 ; llm_via=host_parallel fiber_llm_ok=true
-; selected=llm-26 hits=7/8
-; baseline_hits=2/8
+; selected=llm-41 hits=8/8
+; baseline_hits=7/8
 ; Expected values used only for host scoring / LLM context, not hardcoded into display.
 (begin
   (define solve
@@ -17,7 +17,7 @@
             (let ((right (build-right
                 ratings n)))
               (combine
-                left right 0 0)))))))
+                left right)))))))
   (define build-left
     (lambda (ratings n)
       (letrec ((loop (lambda (i acc prev-val)
@@ -45,7 +45,7 @@
       (letrec ((loop (lambda (i acc next-val)
           (if (<
               i 0)
-            (reverse acc)
+            acc
             (let ((cur-val (if (or
                   (=
                     i (-
@@ -65,14 +65,13 @@
           (-
             n 1) (quote ()) 1))))
   (define combine
-    (lambda (l r i acc)
+    (lambda (l r)
       (if (null? l)
-        acc
-        (combine
-          (cdr l) (cdr r) (+
-            i 1) (+
-            acc (max
-              (car l) (car r)))))))
+        0
+        (+
+          (max
+            (car l) (car r)) (combine
+            (cdr l) (cdr r))))))
   (define max
     (lambda (a b)
       (if (>
