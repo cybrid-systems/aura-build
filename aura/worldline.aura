@@ -10,7 +10,7 @@
   fiber-fanout-aura fiber-fanout-sim fiber-discard-losers
   fiber-runtime-fields fiber-audit-write fiber-indices fiber-fitness-extent)
 
-; Soft gap fill: util …/find/count/remove/delete/range/take/drop (+ soft_* denseness). Soft tip 32b07d8 (#4153 Soft-zero-cost) gold find/count/remove/delete/range/extent/last/filter + R7RS take/drop — prefer Soft-native.
+; Soft gap fill: util …/find/count/remove/delete/range/take/drop/any/all (+ soft_* denseness). Soft tip 069bafa (#4154 Soft-zero-extra; #4153 Soft-zero-cost) gold find/count/remove/delete/range/extent/last/filter/any/all + R7RS take/drop — prefer Soft-native. #4228: direct (filter even? …) empty — local define denseness + lambda/let OK.
 (require "util" all:)
 (require "std/io" all:)
 (require "traj" all:)
@@ -110,8 +110,9 @@
         #t))
     kept))
 
-; Prefer Soft-native filter (tip 32b07d8 gold-binds filter; SRFI-1). Local define =
-; denseness defense-in-depth when Soft filter unbound in module. Soft shape: (filter pred lst).
+; Prefer Soft-native filter (tip 069bafa gold-binds filter; SRFI-1). Local define =
+; denseness defense-in-depth (#4228: Soft oneshot direct (filter even?/odd?/positive?/zero? lst)
+; returns empty; let/apply/lambda OK — keep local denseness). Soft shape: (filter pred lst).
 (define (filter pred xs)
   (if (null? xs) (list)
     (if (pred (car xs))
@@ -250,11 +251,11 @@
         "fiber_candidate_count" n))
 
 (define (fiber-indices n)
-  ; Prefer Soft-native range (tip 32b07d8 / #4225 CLOSED); util/range defense-in-depth.
+  ; Prefer Soft-native range (tip 069bafa / #4225 CLOSED); util/range defense-in-depth.
   (range 0 n))
 
 (define (fiber-fitness-extent fits)
-  ; Prefer Soft-native extent (tip 32b07d8 / #4225 CLOSED); util/extent defense-in-depth.
+  ; Prefer Soft-native extent (tip 069bafa / #4225 CLOSED); util/extent defense-in-depth.
   ; fits = list of numeric fitness values from fiber fan-out.
   (extent fits))
 
@@ -345,7 +346,7 @@
     (eval-current)
     (let ((spawned (spawn-aura-fibers n)))
       (let ((fids (car spawned))
-            ; Prefer Soft-native drop (tip 32b07d8 / #4221 CLOSED); util/list-drop fallback.
+            ; Prefer Soft-native drop (tip 069bafa / #4221 CLOSED); util/list-drop fallback.
             (meta (car (drop spawned 1))))
         (let ((joins (join-all fids)))
           (let ((evaluated (eval-aura-joins meta joins)))
