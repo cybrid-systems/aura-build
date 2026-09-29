@@ -1,0 +1,121 @@
+; soft_leetcode_runtime slug=decode-string path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=host_parallel fiber_llm_ok=true
+; selected=llm-6 hits=8/8
+; baseline_hits=0/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define repeat-str
+    (lambda (xs k)
+      (if (=
+          k 0)
+        (quote ())
+        (append
+          xs (repeat-str
+            xs (-
+              k 1))))))
+  (define decode
+    (lambda (s)
+      (let ((len (string-length s)))
+        (let ((count-stack (quote ())))
+          (let ((result-stack (quote ())))
+            (let ((current (quote ())))
+              (letrec ((loop (lambda (i)
+                  (if (=
+                      i len)
+                    (let ((all (append
+                        (reverse result-stack) (list current))))
+                      (letrec ((build (lambda (xs acc)
+                          (if (null? xs)
+                            (list->string (reverse acc))
+                            (letrec ((build2 (lambda (ss acc)
+                                (if (null? ss)
+                                  (build
+                                    (cdr xs) acc)
+                                  (build2
+                                    (cdr ss) (cons
+                                      (car ss) acc))))))
+                              (build2
+                                (car xs) acc))))))
+                        (build
+                          all (quote ()))))
+                    (let ((c (string-ref
+                        s i)))
+                      (if (char-numeric? c)
+                        (let ((num 0))
+                          (letrec ((nloop (lambda (j)
+                              (if (and
+                                  (<
+                                    j len) (char-numeric? (string-ref
+                                      s j)))
+                                (begin
+                                  (set! num (+
+                                      (*
+                                        num 10) (-
+                                        (char->integer (string-ref
+                                            s j)) 48)))
+                                  (nloop (+
+                                      j 1)))
+                                (begin
+                                  (set! count-stack (cons
+                                      num count-stack))
+                                  (set! result-stack (cons
+                                      current result-stack))
+                                  (set! current (quote ()))
+                                  (loop j))))))
+                            (nloop i)))
+                        (if (char=?
+                            c 91)
+                          (loop (+
+                              i 1))
+                          (if (char=?
+                              c 93)
+                            (let ((k (car count-stack)))
+                              (begin
+                                (set! count-stack (cdr count-stack))
+                                (let ((parent (car result-stack)))
+                                  (begin
+                                    (set! result-stack (cdr result-stack))
+                                    (set! current (append
+                                        parent (repeat-str
+                                          current k)))
+                                    (loop (+
+                                        i 1))))))
+                            (begin
+                              (set! current (append
+                                  current (list c)))
+                              (loop (+
+                                  i 1)))))))))))
+                (loop 0))))))))
+  (define solve
+    (lambda (s)
+      (decode s)))
+  (define run-cases
+    (lambda ()
+      (begin
+        (display "CASE0=")
+        (display (solve "3[a]2[bc]"))
+        (newline)
+        (display "CASE1=")
+        (display (solve "3[a2[c]]"))
+        (newline)
+        (display "CASE2=")
+        (display (solve "2[abc]3[cd]ef"))
+        (newline)
+        (display "CASE3=")
+        (display (solve "10[a]"))
+        (newline)
+        (display "CASE4=")
+        (display (solve "abc"))
+        (newline)
+        (display "CASE5=")
+        (display (solve "0[abc]"))
+        (newline)
+        (display "CASE6=")
+        (display (solve "2[a]2[b]3[c]"))
+        (newline)
+        (display "CASE7=")
+        (display (solve "3[z2[y]b]"))
+        (newline))))
+  (run-cases))
