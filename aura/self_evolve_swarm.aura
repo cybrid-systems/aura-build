@@ -125,7 +125,7 @@
   (hash "n_mut" 48
         "n_mut_ceil" 64
         "worldlines_prefer" 256
-        "explorer_cap_prefer" 32
+        "explorer_cap_prefer" 64
         "seed_policy" "minimax_seed_only_no_soft_score_banner"
         "path" "swarm_mutate_then_llm"
         "mix" (list "rule" "mutate" "llm")
@@ -146,7 +146,7 @@
     (memory-set harness-root "leet_swarm" "n_mut" (hash-ref knobs "n_mut" 48))
     (memory-set harness-root "leet_swarm" "n_mut_ceil" (hash-ref knobs "n_mut_ceil" 64))
     (memory-set harness-root "leet_swarm" "worldlines_prefer" 256)
-    (memory-set harness-root "leet_swarm" "explorer_cap_prefer" 32)
+    (memory-set harness-root "leet_swarm" "explorer_cap_prefer" 64)
     (memory-set harness-root "leet_swarm" "diverge_sticky" #t)
     (hash "ok" #t "profile" "leet_swarm" "slug" slug "kernel" "aura" "n_mut" 48)))
 
