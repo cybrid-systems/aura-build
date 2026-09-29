@@ -1,0 +1,154 @@
+; soft_leetcode_runtime slug=bipartite-graph path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=host_parallel fiber_llm_ok=true
+; selected=llm-9 hits=8/8
+; baseline_hits=5/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define make-adj
+    (lambda (n edges)
+      (let ((adj (make-vector
+          (+
+            n 1) (quote ()))))
+        (begin
+          (define add-edge
+            (lambda (u v)
+              (begin
+                (vector-set!
+                  adj u (cons
+                    v (vector-ref
+                      adj u)))
+                (vector-set!
+                  adj v (cons
+                    u (vector-ref
+                      adj v))))))
+          (letrec ((loop (lambda (es)
+              (if (null? es)
+                adj
+                (let ((e (car es)))
+                  (begin
+                    (add-edge
+                      (car e) (cadr e))
+                    (loop (cdr es))))))))
+            (loop edges))))))
+  (define bipartite?
+    (lambda (n adj)
+      (let ((color (make-vector
+          (+
+            n 1) -1)))
+        (begin
+          (define try-start
+            (lambda (s)
+              (begin
+                (vector-set!
+                  color s 0)
+                (letrec ((loop (lambda (queue)
+                    (if (null? queue)
+                      #t
+                      (let ((u (car queue)))
+                        (let ((rest (cdr queue)))
+                          (letrec ((inner (lambda (nbs)
+                              (if (null? nbs)
+                                (loop rest)
+                                (if (=
+                                    (vector-ref
+                                      color (car nbs)) -1)
+                                  (begin
+                                    (vector-set!
+                                      color (car nbs) (-
+                                        1 (vector-ref
+                                          color u)))
+                                    (set! rest (cons
+                                        (car nbs) rest))
+                                    (inner (cdr nbs)))
+                                  (if (=
+                                      (vector-ref
+                                        color (car nbs)) (vector-ref
+                                        color u))
+                                    #f
+                                    (inner (cdr nbs))))))))
+                            (inner (vector-ref
+                                adj u)))))))))
+                  (loop (list s))))))
+          (letrec ((outer (lambda (v)
+              (if (>
+                  v n)
+                #t
+                (if (=
+                    (vector-ref
+                      color v) -1)
+                  (if (try-start v)
+                    (outer (+
+                        v 1))
+                    #f)
+                  (outer (+
+                      v 1)))))))
+            (outer 1))))))
+  (define solve
+    (lambda (n edges)
+      (let ((adj (make-adj
+          n edges)))
+        (bipartite?
+          n adj))))
+  (define bool->str
+    (lambda (b)
+      (if b
+        "YES"
+        "NO")))
+  (define cases (list
+      (list
+        3 (list
+          (list
+            1 2) (list
+            2 3) (list
+            1 3))) (list
+        4 (list
+          (list
+            1 2) (list
+            2 3) (list
+            3 4))) (list
+        1 (quote ())) (list
+        2 (list (list
+            1 2))) (list
+        5 (quote ())) (list
+        5 (list
+          (list
+            1 2) (list
+            2 3) (list
+            3 4) (list
+            4 5) (list
+            5 1))) (list
+        6 (list
+          (list
+            1 2) (list
+            1 3) (list
+            2 4) (list
+            3 4) (list
+            5 6))) (list
+        4 (list
+          (list
+            1 2) (list
+            1 3) (list
+            1 4) (list
+            2 3) (list
+            2 4) (list
+            3 4)))))
+  (define run-cases
+    (lambda (cs i)
+      (if (null? cs)
+        (quote ())
+        (begin
+          (let ((c (car cs)))
+            (begin
+              (display "CASE")
+              (display (number->string i))
+              (display "=")
+              (display (bool->str (solve
+                    (car c) (cadr c))))
+              (newline)))
+          (run-cases
+            (cdr cs) (+
+              i 1))))))
+  (run-cases
+    cases 0))
