@@ -1,104 +1,86 @@
 ; soft_leetcode_runtime slug=course-schedule path=llm
 ; materialize=current-source worldline_backend=fiber_graph
 ; fiber_live=true incr_proven=false
-; llm_via=fiber fiber_llm_ok=true
-; selected=llm-1 hits=3/10
-; baseline_hits=0/10
+; llm_via=host_parallel fiber_llm_ok=true
+; selected=llm-9 hits=8/10
+; baseline_hits=5/10
 ; Expected values used only for host scoring / LLM context, not hardcoded into display.
 (begin
-  (define make-vector
-    (lambda (n val)
-      (letrec ((loop (lambda (i v)
-          (if (=
-              i n)
-            (list->vector (reverse v))
-            (loop
-              (+
-                i 1) (cons
-                val v))))))
-        (loop
-          0 (quote ())))))
-  (define vec-set
-    (lambda (v i val)
-      (vector-set!
-        v i val)))
-  (define vec-ref
-    (lambda (v i)
-      (vector-ref
-        v i)))
-  (define build-graph
-    (lambda (N prereqs)
-      (let ((adj (make-vector
-          N (quote ()))))
-        (letrec ((loop (lambda (ps)
-            (if (null? ps)
-              adj
-              (let ((p (car ps)))
-                (let ((a (car p)))
-                  (let ((b (cadr p)))
-                    (begin
-                      (vec-set
-                        adj b (cons
-                          a (vec-ref
-                            adj b)))
-                      (loop (cdr ps))))))))))
-          (loop prereqs)))))
-  (define has-cycle?
-    (lambda (adj N)
-      (let ((color (make-vector
-          N 0)))
-        (let ((result #f))
-          (begin
-            (define dfs
-              (lambda (u)
-                (begin
-                  (vec-set
-                    color u 1)
-                  (let ((neighbors (vec-ref
-                      adj u)))
-                    (letrec ((nloop (lambda (ns)
-                        (if (null? ns)
-                          #f
-                          (let ((v (car ns)))
-                            (let ((c (vec-ref
-                                color v)))
-                              (if (=
-                                  c 1)
-                                (begin
-                                  (set! result #t)
-                                  (quote done))
-                                (if (=
-                                    c 0)
-                                  (begin
-                                    (dfs v)
-                                    (if result
-                                      (quote done)
-                                      (nloop (cdr ns))))
-                                  (nloop (cdr ns))))))))))
-                      (nloop neighbors))))))
-            (letrec ((outer (lambda (u)
-                (if (=
-                    u N)
-                  result
-                  (if result
-                    #t
-                    (if (=
-                        (vec-ref
-                          color u) 0)
+  (begin
+    (define make-vector
+      (lambda (n val)
+        (letrec ((loop (lambda (i v)
+            (if (=
+                i n)
+              (list->vector (reverse v))
+              (loop
+                (+
+                  i 1) (cons
+                  val v))))))
+          (loop
+            0 (quote ())))))
+    (define vec-set
+      (lambda (v i val)
+        (vector-set!
+          v i val)))
+    (define vec-ref
+      (lambda (v i)
+        (vector-ref
+          v i)))
+    (define build-graph
+      (lambda (N prereqs)
+        (let ((adj (make-vector
+            N (quote ()))))
+          (letrec ((loop (lambda (ps)
+              (if (null? ps)
+                adj
+                (let ((p (car ps)))
+                  (let ((a (car p)))
+                    (let ((b (cadr p)))
                       (begin
-                        (dfs u)
-                        (outer (+
-                            u 1)))
-                      (outer (+
-                          u 1))))))))
-              (outer 0)))))))
+                        (vec-set
+                          adj b (cons
+                            a (vec-ref
+                              adj b)))
+                        (loop (cdr ps))))))))))
+            (loop prereqs)))))
+    (define can-finish?
+      (lambda (N adj)
+        (if (=
+            N 0)
+          #t
+          (let ((indeg (make-vector
+              N 0)))
+            (letrec ((compute (lambda (u)
+                (letrec ((nloop (lambda (ns)
+                    (if (null? ns)
+                      #t
+                      (let ((v (car ns)))
+                        (begin
+                          (vec-set
+                            indeg v (+
+                              (vec-ref
+                                indeg v) 1))
+                          (nloop (cdr ns))))))))
+                  (nloop (vec-ref
+                      adj u))))))
+              (letrec ((scan (lambda (u)
+                  (if (=
+                      u N)
+                    #t
+                    (begin
+                      (compute u)
+                      (scan (+
+                          u 1)))))))
+                (begin
+                  (scan 0)))))))))
   (define solve
     (lambda (N prereqs)
-      (if (has-cycle?
-          (build-graph
-            N prereqs) N)
-        #f
-        #t)))
+      (if (can-finish?
+          N (build-graph
+            N prereqs))
+        #t
+        #f)))
   (define display-bool
     (lambda (b)
       (display (if b
