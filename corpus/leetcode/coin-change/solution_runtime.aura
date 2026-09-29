@@ -1,12 +1,12 @@
 ; soft_leetcode_runtime slug=coin-change path=llm
 ; materialize=current-source worldline_backend=fiber_graph
 ; fiber_live=true incr_proven=false
-; llm_via=fiber fiber_llm_ok=true
-; selected=llm-1 hits=3/8
-; baseline_hits=1/8
+; llm_via=host_parallel fiber_llm_ok=true
+; selected=llm-55 hits=8/8
+; baseline_hits=3/8
 ; Expected values used only for host scoring / LLM context, not hardcoded into display.
 (begin
-  (define min
+  (define min2
     (lambda (a b)
       (if (<
           a b)
@@ -16,7 +16,7 @@
     (lambda (n val)
       (if (<=
           n 0)
-        (quote 0)
+        (quote ())
         (cons
           val (make-list
             (-
@@ -45,74 +45,59 @@
                 i 1) val))))))
   (define coin-change
     (lambda (denominations amount)
-      (if (=
-          amount 0)
-        0
-        (let ((n-d (length denominations)))
-          (let ((size (+
-              amount 1)))
-            (let ((dp (make-list
-                size size)))
-              (begin
-                (letrec ((loop-d (lambda (k dp)
-                    (if (>=
-                        k size)
-                      dp
-                      (loop-d
-                        (+
-                          k 1) (list-set
-                          dp k 0))))))
-                  (loop-d
-                    0 dp))
-                (let ((dp (letrec ((loop-d (lambda (k dpl)
-                      (if (>=
-                          k size)
-                        dpl
-                        (loop-d
-                          (+
-                            k 1) (list-set
-                            dpl k 0))))))
-                    (loop-d
-                      0 dp))))
-                  (letrec ((loop-i (lambda (i)
-                      (if (>
-                          i amount)
-                        (let ((result (list-ref
-                            dp amount)))
-                          (if (>=
-                              result size)
-                            -1
-                            result))
-                        (begin
-                          (letrec ((loop-d (lambda (ds best)
-                              (if (null? ds)
-                                (quote done)
-                                (let ((d (car ds)))
-                                  (let ((rest (cdr ds)))
-                                    (if (and
-                                        (>=
-                                          i d) (<
-                                          (+
-                                            (list-ref
-                                              dp (-
-                                                i d)) 1) (list-ref
-                                            best i)))
-                                      (let ((cand (+
-                                          (list-ref
-                                            dp (-
-                                              i d)) 1)))
-                                        (begin
-                                          (set! best (list-set
-                                              best i cand))
-                                          (loop-d
-                                            rest best)))
-                                      (loop-d
-                                        rest best))))))))
-                            (loop-d
-                              denominations dp))
-                          (loop-i (+
-                              i 1)))))))
-                    (loop-i 1))))))))))
+      (let ((size (+
+          amount 1)))
+        (let ((INF (+
+            size 1)))
+          (let ((dp (make-list
+              size INF)))
+            (begin
+              (set! dp (list-set
+                  dp 0 0))
+              (letrec ((loop-i (lambda (i)
+                  (if (>
+                      i amount)
+                    (quote done)
+                    (begin
+                      (letrec ((loop-d (lambda (ds)
+                          (if (null? ds)
+                            (quote done)
+                            (let ((d (car ds)))
+                              (let ((rest (cdr ds)))
+                                (begin
+                                  (if (>=
+                                      i d)
+                                    (let ((prev (list-ref-safe
+                                        dp (-
+                                          i d))))
+                                      (begin
+                                        (if (and
+                                            (number? prev) (<
+                                              prev INF))
+                                          (let ((cand (+
+                                              prev 1)))
+                                            (let ((cur (list-ref-safe
+                                                dp i)))
+                                              (if (<
+                                                  cand cur)
+                                                (set! dp (list-set
+                                                    dp i cand))
+                                                (quote ok))))
+                                          ())
+                                        (quote ok)))
+                                    (quote ok))
+                                  (loop-d rest))))))))
+                        (loop-d denominations))
+                      (loop-i (+
+                          i 1)))))))
+                (loop-i 1))
+              (let ((ans (list-ref-safe
+                  dp amount)))
+                (if (and
+                    (number? ans) (<
+                      ans INF))
+                  ans
+                  -1))))))))
   (define solve
     (lambda (denominations amount)
       (coin-change
