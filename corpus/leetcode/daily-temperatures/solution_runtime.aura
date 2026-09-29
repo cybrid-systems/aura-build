@@ -2,8 +2,8 @@
 ; materialize=current-source worldline_backend=fiber_graph
 ; fiber_live=true incr_proven=false
 ; llm_via=host_parallel fiber_llm_ok=true
-; selected=llm-1 hits=7/8
-; baseline_hits=4/8
+; selected=llm-9 hits=8/8
+; baseline_hits=7/8
 ; Expected values used only for host scoring / LLM context, not hardcoded into display.
 (begin
   (define parse-int
@@ -52,26 +52,34 @@
   (define parse-temps
     (lambda (s)
       (let ((len (string-length s)))
-        (let ((start (if (>=
-              len 6)
-            6
-            0)))
-          (letrec ((loop (lambda (i acc)
-              (if (>=
-                  i len)
-                (reverse acc)
-                (if (char=?
-                    (string-ref
-                      s i) 93)
+        (letrec ((find-bracket (lambda (j)
+            (if (>=
+                j len)
+              len
+              (if (char=?
+                  (string-ref
+                    s j) 91)
+                (+
+                  j 1)
+                (find-bracket (+
+                    j 1)))))))
+          (let ((start (find-bracket 0)))
+            (letrec ((loop (lambda (i acc)
+                (if (>=
+                    i len)
                   (reverse acc)
-                  (let ((p (parse-int
-                      s i)))
-                    (loop
-                      (+
-                        (cdr p) 1) (cons
-                        (car p) acc))))))))
-            (loop
-              start (quote ())))))))
+                  (if (char=?
+                      (string-ref
+                        s i) 93)
+                    (reverse acc)
+                    (let ((p (parse-int
+                        s i)))
+                      (loop
+                        (+
+                          (cdr p) 1) (cons
+                          (car p) acc))))))))
+              (loop
+                start (quote ()))))))))
   (define list-set!
     (lambda (lst idx val)
       (letrec ((loop (lambda (l i acc)
