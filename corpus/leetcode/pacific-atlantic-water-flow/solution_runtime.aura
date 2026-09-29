@@ -1,0 +1,301 @@
+; soft_leetcode_runtime slug=pacific-atlantic-water-flow path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=host_parallel fiber_llm_ok=true
+; selected=llm-31 hits=3/8
+; baseline_hits=0/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define list-length
+    (lambda (xs)
+      (if (null? xs)
+        0
+        (+
+          1 (list-length (cdr xs))))))
+  (define list-ref
+    (lambda (xs i)
+      (if (=
+          i 0)
+        (car xs)
+        (list-ref
+          (cdr xs) (-
+            i 1)))))
+  (define grid-ref
+    (lambda (grid r c)
+      (list-ref
+        (list-ref
+          grid r) c)))
+  (define reverse-list
+    (lambda (xs)
+      (letrec ((loop (lambda (xs acc)
+          (if (null? xs)
+            acc
+            (loop
+              (cdr xs) (cons
+                (car xs) acc))))))
+        (loop
+          xs (quote ())))))
+  (define in-list?
+    (lambda (x xs)
+      (if (null? xs)
+        #f
+        (if (equal?
+            (car xs) x)
+          #t
+          (in-list?
+            x (cdr xs))))))
+  (define append-l
+    (lambda (a b)
+      (if (null? a)
+        b
+        (cons
+          (car a) (append-l
+            (cdr a) b)))))
+  (define bfs-reachable
+    (lambda (heights m n starts)
+      (letrec ((loop (lambda (queue visited)
+          (if (null? queue)
+            visited
+            (let ((cell (car queue)))
+              (let ((rest-q (cdr queue)))
+                (let ((r (car cell)))
+                  (let ((c (cdr cell)))
+                    (let ((cur-h (grid-ref
+                        heights r c)))
+                      (if (in-list?
+                          cell visited)
+                        (loop
+                          rest-q visited)
+                        (let ((new-visited (cons
+                            cell visited)))
+                          (let ((neighbors (let ((acc (quote ())))
+                              (begin
+                                (if (and
+                                    (<
+                                      (+
+                                        c 1) n) (not (in-list?
+                                        (cons
+                                          r (+
+                                            c 1)) visited)))
+                                  (set! acc (cons
+                                      (cons
+                                        r (+
+                                          c 1)) acc))
+                                  acc)
+                                (if (and
+                                    (>=
+                                      (-
+                                        c 1) 0) (not (in-list?
+                                        (cons
+                                          r (-
+                                            c 1)) visited)))
+                                  (set! acc (cons
+                                      (cons
+                                        r (-
+                                          c 1)) acc))
+                                  acc)
+                                (if (and
+                                    (<
+                                      (+
+                                        r 1) m) (not (in-list?
+                                        (cons
+                                          (+
+                                            r 1) c) visited)))
+                                  (set! acc (cons
+                                      (cons
+                                        (+
+                                          r 1) c) acc))
+                                  acc)
+                                (if (and
+                                    (>=
+                                      (-
+                                        r 1) 0) (not (in-list?
+                                        (cons
+                                          (-
+                                            r 1) c) visited)))
+                                  (set! acc (cons
+                                      (cons
+                                        (-
+                                          r 1) c) acc))
+                                  acc)
+                                acc))))
+                            (let ((valid (letrec ((loop2 (lambda (nb acc)
+                                  (if (null? nb)
+                                    acc
+                                    (let ((cell2 (car nb)))
+                                      (let ((nr (car cell2)))
+                                        (let ((nc (cdr cell2)))
+                                          (let ((nh (grid-ref
+                                              heights (car cell2) (cdr cell2))))
+                                            (if (>=
+                                                nh cur-h)
+                                              (loop2
+                                                (cdr nb) (cons
+                                                  cell2 acc))
+                                              (loop2
+                                                (cdr nb) acc))))))))))
+                                (loop2
+                                  neighbors (quote ())))))
+                              (loop
+                                (append-l
+                                  rest-q valid) new-visited))))))))))))))
+        (loop
+          starts (quote ())))))
+  (define solve
+    (lambda (heights)
+      (let ((m (list-length heights)))
+        (if (=
+            m 0)
+          (quote ())
+          (let ((n (list-length (car heights))))
+            (if (=
+                n 0)
+              (quote ())
+              (let ((pacific-starts (append-l
+                  (letrec ((loop (lambda (c a)
+                      (if (=
+                          c n)
+                        a
+                        (loop
+                          (+
+                            c 1) (cons
+                            (cons
+                              0 c) a))))))
+                    (loop
+                      0 (quote ()))) (letrec ((loop (lambda (r a)
+                      (if (=
+                          r m)
+                        a
+                        (loop
+                          (+
+                            r 1) (cons
+                            (cons
+                              r 0) a))))))
+                    (loop
+                      1 (quote ()))))))
+                (let ((atlantic-starts (append-l
+                    (letrec ((loop (lambda (c a)
+                        (if (=
+                            c n)
+                          a
+                          (loop
+                            (+
+                              c 1) (cons
+                              (cons
+                                (-
+                                  m 1) c) a))))))
+                      (loop
+                        0 (quote ()))) (letrec ((loop (lambda (r a)
+                        (if (=
+                            r (-
+                              m 1))
+                          a
+                          (loop
+                            (+
+                              r 1) (cons
+                              (cons
+                                r (-
+                                  n 1)) a))))))
+                      (loop
+                        0 (quote ()))))))
+                  (let ((p-set (bfs-reachable
+                      heights m n pacific-starts)))
+                    (let ((a-set (bfs-reachable
+                        heights m n atlantic-starts)))
+                      (letrec ((loop (lambda (ps acc)
+                          (if (null? ps)
+                            acc
+                            (let ((cell (car ps)))
+                              (if (in-list?
+                                  cell a-set)
+                                (loop
+                                  (cdr ps) (cons
+                                    cell acc))
+                                (loop
+                                  (cdr ps) acc)))))))
+                        (loop
+                          p-set (quote ())))))))))))))
+  (define cell->pair
+    (lambda (cell)
+      (vector
+        (car cell) (cdr cell))))
+  (define format-cells
+    (lambda (cells)
+      (letrec ((loop (lambda (cs parts)
+          (if (null? cs)
+            (string-append
+              "[" (implode (cdr (apply
+                    append (map
+                      (lambda (p)
+                        (list
+                          ",[" (number->string (car p)) "," (number->string (cdr p)) "]")) parts)))) "]")
+            (loop
+              (cdr cs) (cons
+                (car cs) parts))))))
+        (loop
+          cells (quote ())))))
+  (define cells-to-string
+    (lambda (cells)
+      (letrec ((loop (lambda (cs first acc)
+          (if (null? cs)
+            (string-append
+              acc "]")
+            (let ((cell (car cs)))
+              (let ((r (car cell)))
+                (let ((c (cdr cell)))
+                  (let ((cell-str (string-append
+                      "[" (number->string r) "," (number->string c) "]")))
+                    (let ((sep (if first
+                        ""
+                        ",")))
+                      (loop
+                        (cdr cs) #f (string-append
+                          acc sep cell-str)))))))))))
+        (loop
+          cells #t "["))))
+  (define main
+    (lambda ()
+      (begin
+        (display "CASE0=")
+        (display (cells-to-string (solve (quote ((1
+                    2 2 3 5)
+                  (3
+                    2 3 4 4) (2
+                    4 5 3 1) (6
+                    7 1 4 5) (5
+                    1 1 2 4))))))
+        (newline)
+        (display "CASE1=")
+        (display (cells-to-string (solve (quote ((1))))))
+        (newline)
+        (display "CASE2=")
+        (display (cells-to-string (solve (quote ((1 2) (2 3))))))
+        (newline)
+        (display "CASE3=")
+        (display (cells-to-string (solve (quote ((2 1) (1 2))))))
+        (newline)
+        (display "CASE4=")
+        (display (cells-to-string (solve (quote ((1
+                    2 3)
+                  (4
+                    5 6) (7
+                    8 9))))))
+        (newline)
+        (display "CASE5=")
+        (display (cells-to-string (solve (quote ((10
+                    10 10)
+                  (10
+                    10 10) (10
+                    10 10))))))
+        (newline)
+        (display "CASE6=")
+        (display (cells-to-string (solve (quote ((1 2) (3 4))))))
+        (newline)
+        (display "CASE7=")
+        (display (cells-to-string (solve (quote ((5
+                    4 3)
+                  (4
+                    3 2) (3
+                    2 1))))))
+        (newline))))
+  (main))
