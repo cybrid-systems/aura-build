@@ -916,7 +916,9 @@ def _cmd_pursue(args: argparse.Namespace) -> int:
         save_strategy,
     )
 
-    strat = load_strategy(root if isinstance(root, Path) else Path(root))
+    repo = Path(getattr(args, "repo", None) or Path.cwd()).resolve()
+    harness = root if isinstance(root, Path) else Path(root)
+    strat = load_strategy(repo, harness_root=harness)
     wl_cli = int(args.worldlines)
     wl_eff = effective_worldlines(strat, requested=wl_cli)
     if wl_eff != wl_cli:
@@ -973,7 +975,7 @@ def _cmd_pursue(args: argparse.Namespace) -> int:
                 ms=int(lat.get("total_ms") or 0),
                 requested_worldlines=wl_cli,
             )
-            save_strategy(root if isinstance(root, Path) else Path(root), strat)
+            save_strategy(repo, strat, harness_root=harness)
         except Exception as exc:  # noqa: BLE001
             print(f"pursue: session path failed ({exc}); falling back to kernel", file=sys.stderr)
             summary = {"ok": False, "fallback": "aura_kernel_dispatch", "error": str(exc)}
