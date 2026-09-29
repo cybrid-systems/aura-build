@@ -5,7 +5,7 @@
   iso-now make-id
   default-fitness seed-from-prompt
   join-path abs-path string-trim string-downcase string-pad string-take string-drop
-  list-take list-drop list-tail make-list for-each hash-for-each hash-fold foldr hash-empty? hash->list any all last find
+  list-take list-drop list-tail make-list for-each hash-for-each hash-fold foldr hash-empty? hash->list any all last find count
   round4)
 
 (require "std/io" all:)
@@ -199,6 +199,16 @@
     (if (null? xs) (quote ())
       (if (pred (car xs)) (car xs)
         (loop (cdr xs))))))
+
+
+
+; Soft oneshot unbound count (Soft std/list.aura does NOT export count — SRFI-1 gap;
+; Soft oneshot auto-loads list/string/hash/math only). Denseness path: aura/soft_count.aura
+; (selected=named-let). Soft shape: (count pred lst) → integer; empty → 0.
+(define (count pred lst)
+  (let loop ((xs lst) (n 0))
+    (if (null? xs) n
+      (loop (cdr xs) (if (pred (car xs)) (+ n 1) n)))))
 
 (define (ensure-dir path)
   (sh (string-append "mkdir -p '" path "'"))

@@ -1,0 +1,20 @@
+; Soft-materialized count helper (self-evolve Soft path)
+; materialize=current-source  fiber_live=true when denseness measured
+; selected=named-let  denseness=soft_ready_async_denseness_4048
+; incr_proven=false
+; Product: Soft oneshot unbound count (Soft std/list does not export
+; count — SRFI-1 gap; Soft oneshot auto-loads list/string/hash/math only)
+(begin
+  (export count)
+  (define count
+    (lambda (pred lst)
+      (letrec ((loop (lambda (xs n)
+          (if (null? xs)
+            n
+            (loop
+              (cdr xs) (if (pred (car xs))
+                (+
+                  n 1)
+                n))))))
+        (loop
+          lst 0)))))
