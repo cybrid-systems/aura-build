@@ -1,7 +1,7 @@
 ; aura-build kernel — L1 harness mutate + canary decide (AUTOPROMOTE default OFF)
 ; L1 live path: std/hot-strategy register!/swap!/heal! + last-good.
 ; harness.json remains durable mirror / config seed. Never invent fiber_live / incr_proven.
-; Soft gap fill: util …/find/count/remove/delete/range/take/drop/any/all (+ soft_*) via util require. Soft tip fecdf63 (#4228 CLOSED Soft oneshot filter+std/math preds FIXED; #4154 Soft-zero-extra; #4153 Soft-zero-cost) gold find/count/remove/delete/range/extent/last/filter/any/all + R7RS take/drop (#4220–#4226/#4228 CLOSED) — prefer Soft-native.
+; Soft gap fill: util …/find/count/remove/delete/range/take/drop/any/all (+ soft_*) via util require. Soft tip fecdf63 (#4228 CLOSED Soft oneshot filter+std/math preds FIXED; #4154 Soft-zero-extra; #4153 Soft-zero-cost) gold find/count/remove/delete/range/extent/last/filter/any/all + R7RS take/drop (#4220–#4226/#4228 CLOSED) — prefer Soft-native. Soft tip fecdf63 also gold-binds partition/member/zip (oneshot green; combat empty → skip invent soft_*); prefer Soft-native.
 (export
   default-harness load-harness save-harness validate-harness
   propose-mutate decide-canary harness-path

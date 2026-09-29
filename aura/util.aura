@@ -240,6 +240,10 @@
 ; Soft shape: (extent lst) → max-min span of numeric list; empty → 0.
 ; Prefer Soft-native; no soft_extent invent (combat empty → skip invent).
 ; util define = defense-in-depth for fitness-span honesty in orch/worldline.
+; Soft tip fecdf63 gold-binds partition/member/zip on oneshot (std/list).
+; Soft shapes: (partition pred lst) → (yes . no); (member x lst) → tail or #f;
+; (zip a b) → list of pairs. Prefer Soft-native; combat empty → skip invent soft_*.
+; export.aura member-str denseness remains local bool membership helper.
 (define (extent lst)
   (if (null? lst) 0
     (let loop ((xs (cdr lst)) (mn (car lst)) (mx (car lst)))

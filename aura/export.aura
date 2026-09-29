@@ -162,6 +162,8 @@
 
 ; ── light schema gate ────────────────────────────────────────────
 
+; Prefer Soft-native member (tip fecdf63 gold-binds); member-str =
+; denseness bool membership helper (Soft member returns tail/#f).
 (define (member-str x xs)
   (if (null? xs) #f
     (if (equal? x (car xs)) #t (member-str x (cdr xs)))))
