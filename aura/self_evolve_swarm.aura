@@ -19,6 +19,7 @@
   swarm-mutate-fanout
   swarm-observe-gain
   swarm-schedule-write
+  swarm-diverge-knobs
   run-swarm-mutate-round
   mix-explorers-swarm)
 
@@ -31,13 +32,17 @@
 
 ; Mutation-type names aligned with Soft std/ant defaults (Issue #2876).
 (define (swarm-default-ops)
+  ; Diversified Soft mutate-op mix for high-diverge MiniMax seeding (ant pheromone:rank).
   (list "edsl-lit-tweak"
         "edsl-op-swap"
         "edsl-body-wrap"
         "full-disp-bool"
         "full-disp-ref"
         "edsl-disp-ref"
-        "full-hash-wrap"))
+        "full-hash-wrap"
+        "edsl-cond-swap"
+        "edsl-let-wrap"
+        "full-tail-recur"))
 
 (define (swarm-rank-ops)
   ; Soft ACO rank — host fallback only if Soft fails (caller checks via).
@@ -115,17 +120,35 @@
         (loop (cdr xs)))))
   (hash "ok" #t "updated" op-list "delta" delta "via" "soft_ant_pheromone"))
 
+(define (swarm-diverge-knobs)
+  ; High-diverge Soft intent (user: 多发散). Sticky prefer — host reads Soft memory.
+  (hash "n_mut" 48
+        "n_mut_ceil" 64
+        "worldlines_prefer" 256
+        "explorer_cap_prefer" 32
+        "seed_policy" "minimax_seed_only_no_soft_score_banner"
+        "path" "swarm_mutate_then_llm"
+        "mix" (list "rule" "mutate" "llm")
+        "diverge_sticky" #t
+        "kernel" "aura"))
+
 (define (swarm-schedule-write harness-root slug ranked probes)
   ; Persist Soft-ranked schedule for thin host MiniMax seed (not Python brain).
-  (memory-set harness-root "leet_swarm" "last_slug" slug)
-  (memory-set harness-root "leet_swarm" "ranked_ops" ranked)
-  (memory-set harness-root "leet_swarm" "probes" probes)
-  (memory-set harness-root "leet_swarm" "mix" (list "rule" "mutate" "llm"))
-  (memory-set harness-root "leet_swarm" "path" "swarm_mutate_then_llm")
-  (memory-set harness-root "leet_swarm" "kernel" "aura")
-  ; Host MiniMax seed-only for banner ops; Soft-score only mutate:rebind body diffs.
-  (memory-set harness-root "leet_swarm" "seed_policy" "minimax_seed_only_no_soft_score_banner")
-  (hash "ok" #t "profile" "leet_swarm" "slug" slug "kernel" "aura"))
+  (let ((knobs (swarm-diverge-knobs)))
+    (memory-set harness-root "leet_swarm" "last_slug" slug)
+    (memory-set harness-root "leet_swarm" "ranked_ops" ranked)
+    (memory-set harness-root "leet_swarm" "probes" probes)
+    (memory-set harness-root "leet_swarm" "mix" (list "rule" "mutate" "llm"))
+    (memory-set harness-root "leet_swarm" "path" "swarm_mutate_then_llm")
+    (memory-set harness-root "leet_swarm" "kernel" "aura")
+    ; Host MiniMax seed-only for banner ops; Soft-score only mutate:rebind body diffs.
+    (memory-set harness-root "leet_swarm" "seed_policy" "minimax_seed_only_no_soft_score_banner")
+    (memory-set harness-root "leet_swarm" "n_mut" (hash-ref knobs "n_mut" 48))
+    (memory-set harness-root "leet_swarm" "n_mut_ceil" (hash-ref knobs "n_mut_ceil" 64))
+    (memory-set harness-root "leet_swarm" "worldlines_prefer" 256)
+    (memory-set harness-root "leet_swarm" "explorer_cap_prefer" 32)
+    (memory-set harness-root "leet_swarm" "diverge_sticky" #t)
+    (hash "ok" #t "profile" "leet_swarm" "slug" slug "kernel" "aura" "n_mut" 48)))
 
 (define (mix-explorers-swarm)
   ; Strategy mix expressed in kernel (not Python self_evolve_strategy alone).
@@ -145,6 +168,8 @@
     (display (hash-ref rank "via" ""))
     (display " slug=")(display slug)
     (display " ranked_n=")(display (length ranked))
+    (display " n_mut=")(display 48)
+    (display " wl_prefer=")(display 256)
     (display " mix=")(display (mix-explorers-swarm))
     (newline)
     (hash "ok" #t

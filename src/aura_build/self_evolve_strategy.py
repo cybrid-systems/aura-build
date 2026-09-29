@@ -131,6 +131,7 @@ def _default_state() -> dict[str, Any]:
         "prefer_oneshot_early": False,
         "worldlines": WORLDLINES_FULL,
         "worldlines_idx": 2,  # index into WORLDLINES_RAMP → 256
+        "diverge_sticky": True,  # user 多发散: do not shrink wl while sticky
         "last_helpers_all_green": False,
         "last_nothing_to_commit": False,
         "last_explorer_hang": False,
@@ -322,6 +323,11 @@ def effective_explorer_cap(state: dict[str, Any], *, requested: int | None = Non
 
 def effective_worldlines(state: dict[str, Any], *, requested: int | None = None) -> int:
     """Adaptive pursue/runtime worldlines from recent soft_ready+goal_met speed."""
+    sticky = bool(state.get("diverge_sticky")) or (
+        (os.environ.get("AURA_BUILD_DIVERGE_STICKY") or "").strip() in ("1", "true", "yes")
+    )
+    if sticky:
+        return WORLDLINES_FULL
     wl = int(state.get("worldlines") or WORLDLINES_FULL)
     wl = max(WORLDLINES_FAST, min(WORLDLINES_FULL, wl))
     if requested is not None and int(requested) > 0:
@@ -443,8 +449,15 @@ def observe_pursue_round(
     idx = max(0, min(len(WORLDLINES_RAMP) - 1, idx))
 
     # ~256 Soft session evals often land ~60–120s; treat <180s as fast enough to shrink.
+    # User 多发散 / Soft leet_swarm diverge_sticky: pin WORLDLINES_FULL (256).
+    sticky = bool(state.get("diverge_sticky")) or (
+        (os.environ.get("AURA_BUILD_DIVERGE_STICKY") or "").strip() in ("1", "true", "yes")
+    )
     fast = ms is not None and int(ms) < 180_000
-    if soft_ready and goal_met and fast:
+    if sticky:
+        idx = len(WORLDLINES_RAMP) - 1  # 256
+        notes.append(f"diverge_sticky→wl={WORLDLINES_RAMP[idx]}")
+    elif soft_ready and goal_met and fast:
         # Shrink toward WORLDLINES_FAST
         idx = max(0, idx - 1)
         notes.append(f"pursue_fast_ok→wl={WORLDLINES_RAMP[idx]}")
@@ -455,6 +468,8 @@ def observe_pursue_round(
 
     state["worldlines_idx"] = idx
     state["worldlines"] = WORLDLINES_RAMP[idx]
+    if sticky:
+        state["diverge_sticky"] = True
     if requested_worldlines is not None and int(requested_worldlines) < WORLDLINES_FULL:
         # Explicit low CLI stays sticky for this observe only via effective_worldlines
         pass

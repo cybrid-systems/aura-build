@@ -22,6 +22,9 @@ MUTATE_OPS: list[str] = [
     "full-disp-ref",
     "edsl-disp-ref",
     "full-hash-wrap",
+    "edsl-cond-swap",
+    "edsl-let-wrap",
+    "full-tail-recur",
 ]
 
 
@@ -89,11 +92,23 @@ def run_kernel_swarm_mutate(
                 via = "soft_ant_pheromone"
         except (OSError, json.JSONDecodeError):
             pass
+    n_mut = 48
+    diverge_sticky = True
+    if mem.is_file():
+        try:
+            data = json.loads(mem.read_text(encoding="utf-8"))
+            if isinstance(data.get("n_mut"), (int, float)):
+                n_mut = max(48, min(64, int(data["n_mut"])))
+            diverge_sticky = bool(data.get("diverge_sticky", True))
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            pass
     ok = proc.returncode == 0 and "swarm_mutate ok=true" in out
     return {
         "ok": ok,
         "via": via if ok else "soft_fail",
         "ranked_ops": ranked,
+        "n_mut": n_mut,
+        "diverge_sticky": diverge_sticky,
         "stdout": out[:500],
         "stderr": (proc.stderr or "")[:300],
         "path": "kernel_swarm_mutate",
@@ -181,7 +196,7 @@ def local_multi_mutate(
     out: list[dict[str, Any]] = []
     # Seed variants: same src tagged with Soft-ranked op schedule — Soft kernel
     # (or MiniMax) applies; do not invent host sexpr rewrites as product.
-    for i in range(max(1, min(int(n), 24))):
+    for i in range(max(1, min(int(n), 64))):
         op = ops[i % len(ops)]
         banner = f"; kernel-swarm-seed op={op} i={i} seed={seed}\n"
         out.append(
@@ -215,11 +230,17 @@ def swarm_mutate_candidates(
         if k == "ant":
             continue
         probes[k] = soft_swarm_probe(k, aura_bin=aura_bin)
-    cands = local_multi_mutate(src, n=n, ranked_ops=ranked, seed=seed)
+    # Soft kernel prefers n_mut≥48 for diverge; honor max(requested, Soft n_mut)
+    soft_n = int(kr.get("n_mut") or 48)
+    n_eff = max(int(n), soft_n, 48)
+    n_eff = min(64, n_eff)
+    cands = local_multi_mutate(src, n=n_eff, ranked_ops=ranked, seed=seed)
     meta = {
         "ok": bool(cands),
         "n_requested": int(n),
         "n": len(cands),
+        "n_mut": n_eff,
+        "diverge_sticky": bool(kr.get("diverge_sticky", True)),
         "rank_via": kr.get("via") or "host_fallback",
         "ranked_ops": ranked,
         "probes": {

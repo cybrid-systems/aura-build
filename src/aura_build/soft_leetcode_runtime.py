@@ -1002,7 +1002,8 @@ def _minimax_propose_aura(
         import os
 
         def _one(i: int) -> tuple[int, str | None, dict[str, Any]]:
-            temp = temperature + 0.05 * (i % 8)
+            # Wide temp spread across fanout (diverge): ~0.15..0.95
+            temp = 0.15 + (0.80 * (i / max(1, n_eff - 1)))
             attempt: dict[str, Any] = {
                 "i": i,
                 "temperature": temp,
@@ -1377,7 +1378,8 @@ def repair_llm(
         from aura_build.soft_swarm_mutate import swarm_mutate_candidates
 
         feedback_state = load_feedback(repo, hroot)
-        mut_n = max(8, min(24, int(proposals)))
+        # Soft kernel diverge: n_mut≥48 (leet_swarm); MiniMax seed fanout tracks proposals.
+        mut_n = max(48, min(64, int(proposals)))
         mut_cands, mut_meta = swarm_mutate_candidates(
             str(baseline.get("src") or ""),
             n=mut_n,
