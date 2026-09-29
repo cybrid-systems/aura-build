@@ -1,7 +1,7 @@
 ; aura-build kernel — self-evolve dogfood (harness L1 + worldlines over this repo)
 ; GAP: se-write-stamp string-builds the stamp body (NOT Soft current-source).
-; Soft gap fill: soft_pad/soft_take/soft_drop/soft_list_take/soft_list_drop/soft_make_list/soft_for_each/soft_hash_for_each/soft_hash_fold/soft_foldr/soft_hash_empty/soft_hash_to_list/soft_any/soft_all/soft_last/soft_find/soft_count/soft_remove Soft-materialized for stamp/align/trunc/prefix-strip/list-cap/list-rest/make-list/for-each/hash-for-each/hash-fold/foldr/hash-empty?/hash->list/any/all/last/find/count/remove;
-; Soft tip 5954717 gold-binds find/count/R7RS take (+ last/any/all/… via std prelude); still lacks remove (#4224). soft_* denseness = defense-in-depth; prefer Soft-native when probing oneshot. #4223 serve fiber explorer timeouts — keep FIBER_EXPLORER_CAP=32.
+; Soft gap fill: soft_pad/…/soft_remove/soft_delete Soft-materialized for stamp/align/…/find/count/remove/delete;
+; Soft tip 25c8ae0 gold-binds find/count/remove/delete/range + R7RS take (#4224–#4226 CLOSED). soft_* = defense-in-depth; prefer Soft-native. #4223 CLOSED green @ explorers 32/32 — keep FIBER_EXPLORER_CAP=32 (do not raise without remeasure).
 ; Soft runtime north-star: aura/self_evolve_runtime.aura + `aura-build self-evolve runtime`
 ;   set-code -> mutate:rebind -> select-best -> (current-source :workspace :pretty) -> write-file.
 ; Mutate/canary → select-best → materialize stamp into git worktree → light verify.

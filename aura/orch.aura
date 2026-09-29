@@ -1,7 +1,7 @@
 ; aura-build kernel — scout → mutate → eval → select-best
 ; Primary product path. Simulated = pure Aura fitness; aura = in-process mutate:rebind.
 ; Slice 3: fiber_live ⇒ worldline_backend=fiber_graph (fiber:spawn fan-out); else file.
-; Soft gap fill: util …/last/find/count/remove (+ soft_* denseness). Soft tip 5954717 gold find/count/R7RS take — prefer Soft-native; soft_find/soft_count fallbacks.
+; Soft gap fill: util …/last/find/count/remove/delete (+ soft_* denseness). Soft tip 25c8ae0 gold find/count/remove/delete/range + R7RS take — prefer Soft-native; soft_* fallbacks.
 (export run-episode run-harness-canary select-best run-backend-episode)
 
 (require "util" all:)
@@ -43,8 +43,12 @@
 
 
 (define (worldlines-without-id worldlines id)
-  ; Soft denseness remove — Soft oneshot unbound; Soft std/list lacks remove (SRFI-1 #4224).
+  ; Prefer Soft-native remove (tip 25c8ae0 / #4224 CLOSED); util/soft_remove fallback.
   (remove (lambda (w) (equal? (hash-ref w "id") id)) worldlines))
+
+(define (ids-without ids id)
+  ; Prefer Soft-native delete (tip 25c8ae0 / #4226 CLOSED); util/soft_delete fallback.
+  (delete id ids))
 
 (define (sim-mutate prompt seed n)
   (let loop ((i 0) (out (list)))
@@ -163,7 +167,7 @@
           "privacy" (hash "redacted" #f "retention_class" "dogfood"))))
 
 (define (filter-truth xs)
-  ; Soft denseness remove (#4224) — drop falsey; Soft oneshot unbound remove.
+  ; Prefer Soft-native remove (tip 25c8ae0 / #4224 CLOSED) — drop falsey.
   (remove (lambda (x) (not x)) xs))
 
 (define (run-backend-episode prompt seed n mode harness-root l1 l2-id attach?)

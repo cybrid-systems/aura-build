@@ -10,7 +10,7 @@
   fiber-fanout-aura fiber-fanout-sim fiber-discard-losers
   fiber-runtime-fields fiber-audit-write)
 
-; Soft gap fill: util string-take/list-take/list-drop/list-tail/make-list (+ soft_* denseness).
+; Soft gap fill: util …/find/count/remove/delete (+ soft_* denseness). Soft tip 25c8ae0 gold find/count/remove/delete/range + R7RS take — prefer Soft-native.
 (require "util" all:)
 (require "std/io" all:)
 (require "traj" all:)
@@ -81,10 +81,8 @@
     payload))
 
 (define (filter-truth xs)
-  (if (null? xs) (list)
-    (if (car xs)
-      (cons (car xs) (filter-truth (cdr xs)))
-      (filter-truth (cdr xs)))))
+  ; Prefer Soft-native remove (tip 25c8ae0 / #4224 CLOSED) — drop falsey.
+  (remove (lambda (x) (not x)) xs))
 
 (define (workspace-discard-losers ws selected-id fitness-by-id)
   (let* ((root (hash-ref ws "root"))
@@ -231,16 +229,14 @@
     (begin (f (car xs)) (for-each f (cdr xs)))))
 
 (define (fiber-discard-losers selected-id fitness-by-id ids)
-  (filter-truth
-    (map (lambda (cid)
-           (if (equal? cid selected-id)
-             #f
-             (hash "id" cid
-                   "reason" "lower_fitness"
-                   "fitness" (hash-ref fitness-by-id cid 0.0)
-                   "stable_ref" cid
-                   "worldline_backend" BACKEND_FIBER)))
-         ids)))
+  ; Prefer Soft-native delete (tip 25c8ae0 / #4226 CLOSED) then map losers.
+  (map (lambda (cid)
+         (hash "id" cid
+               "reason" "lower_fitness"
+               "fitness" (hash-ref fitness-by-id cid 0.0)
+               "stable_ref" cid
+               "worldline_backend" BACKEND_FIBER))
+       (delete selected-id ids)))
 
 (define (fiber-runtime-fields root n live session ids)
   (hash "workspace" root

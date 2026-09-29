@@ -5,7 +5,7 @@
   iso-now make-id
   default-fitness seed-from-prompt
   join-path abs-path string-trim string-downcase string-pad string-take string-drop
-  list-take list-drop list-tail make-list for-each hash-for-each hash-fold foldr hash-empty? hash->list any all last find count remove
+  list-take list-drop list-tail make-list for-each hash-for-each hash-fold foldr hash-empty? hash->list any all last find count remove delete
   round4)
 
 (require "std/io" all:)
@@ -191,8 +191,8 @@
 
 
 
-; Soft tip 5954717 gold-binds find on oneshot (std/list). util/soft_find remain
-; defense-in-depth for hosts without Soft gold. Soft shape: (find pred lst) → first or ().
+; Soft tip 25c8ae0 gold-binds find/count/remove/delete/range (+5954717 take). util/soft_find
+; remain defense-in-depth. Soft shape: (find pred lst) → first or ().
 (define (find pred lst)
   (let loop ((xs lst))
     (if (null? xs) (quote ())
@@ -201,20 +201,26 @@
 
 
 
-; Soft tip 5954717 gold-binds count on oneshot (std/list). util/soft_count remain
+; Soft tip 25c8ae0 gold-binds count on oneshot (std/list). util/soft_count remain
 ; defense-in-depth. Soft shape: (count pred lst) → integer; empty → 0.
 (define (count pred lst)
   (let loop ((xs lst) (n 0))
     (if (null? xs) n
       (loop (cdr xs) (if (pred (car xs)) (+ n 1) n)))))
 
-; Soft oneshot unbound remove (Soft std/list.aura does NOT export remove — SRFI-1 gap;
-; Soft tip 5954717 has find/count/filter/partition but not remove). Denseness path:
-; aura/soft_remove.aura. Soft shape: (remove pred lst) → elements where pred is false.
+; Soft tip 25c8ae0 gold-binds remove on oneshot (std/list; #4224 CLOSED). util/soft_remove
+; remain defense-in-depth. Soft shape: (remove pred lst) → elements where pred is false.
 (define (remove pred lst)
   (let loop ((xs lst) (acc (quote ())))
     (if (null? xs) (reverse acc)
       (loop (cdr xs) (if (pred (car xs)) acc (cons (car xs) acc))))))
+
+; Soft tip 25c8ae0 gold-binds delete on oneshot (std/list; #4226 CLOSED). util/soft_delete
+; remain defense-in-depth. Soft shape: (delete x lst) → equal?-based drop of x.
+(define (delete x lst)
+  (let loop ((xs lst) (acc (quote ())))
+    (if (null? xs) (reverse acc)
+      (loop (cdr xs) (if (equal? (car xs) x) acc (cons (car xs) acc))))))
 
 (define (ensure-dir path)
   (sh (string-append "mkdir -p '" path "'"))
