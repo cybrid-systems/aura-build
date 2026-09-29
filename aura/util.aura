@@ -5,7 +5,7 @@
   iso-now make-id
   default-fitness seed-from-prompt
   join-path abs-path string-trim string-downcase string-pad string-take string-drop
-  list-take list-drop list-tail make-list for-each hash-for-each hash-fold foldr hash-empty? hash->list any all last find count
+  list-take list-drop list-tail make-list for-each hash-for-each hash-fold foldr hash-empty? hash->list any all last find count remove
   round4)
 
 (require "std/io" all:)
@@ -191,9 +191,8 @@
 
 
 
-; Soft oneshot unbound find (Soft std/list.aura does NOT export find — SRFI-1 gap;
-; Soft oneshot auto-loads list/string/hash/math only). Denseness path: aura/soft_find.aura
-; (selected=named-let). Soft shape: (find pred lst) → first match or ().
+; Soft tip 5954717 gold-binds find on oneshot (std/list). util/soft_find remain
+; defense-in-depth for hosts without Soft gold. Soft shape: (find pred lst) → first or ().
 (define (find pred lst)
   (let loop ((xs lst))
     (if (null? xs) (quote ())
@@ -202,13 +201,20 @@
 
 
 
-; Soft oneshot unbound count (Soft std/list.aura does NOT export count — SRFI-1 gap;
-; Soft oneshot auto-loads list/string/hash/math only). Denseness path: aura/soft_count.aura
-; (selected=named-let). Soft shape: (count pred lst) → integer; empty → 0.
+; Soft tip 5954717 gold-binds count on oneshot (std/list). util/soft_count remain
+; defense-in-depth. Soft shape: (count pred lst) → integer; empty → 0.
 (define (count pred lst)
   (let loop ((xs lst) (n 0))
     (if (null? xs) n
       (loop (cdr xs) (if (pred (car xs)) (+ n 1) n)))))
+
+; Soft oneshot unbound remove (Soft std/list.aura does NOT export remove — SRFI-1 gap;
+; Soft tip 5954717 has find/count/filter/partition but not remove). Denseness path:
+; aura/soft_remove.aura. Soft shape: (remove pred lst) → elements where pred is false.
+(define (remove pred lst)
+  (let loop ((xs lst) (acc (quote ())))
+    (if (null? xs) (reverse acc)
+      (loop (cdr xs) (if (pred (car xs)) acc (cons (car xs) acc))))))
 
 (define (ensure-dir path)
   (sh (string-append "mkdir -p '" path "'"))
