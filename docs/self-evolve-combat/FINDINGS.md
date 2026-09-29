@@ -308,3 +308,4 @@ Fresh Soft `--serve-async` (`build_soft4048/aura`, no MiniMax, no fiber http-pos
 **Push:** combat `--no-push` (no aura-build product materialize). This FINDINGS stamp is the productized docs commit.
 
 **New Aura issues:** none.
+- `20260929-220958` ok=True llm_via=fiber llm_parallel=fiber explore=fiber_graph artifacts=`combat_20260929-220958_stdout.json`

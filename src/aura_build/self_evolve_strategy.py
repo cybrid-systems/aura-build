@@ -16,6 +16,9 @@ Policy (documented; driven by recent observations in process or scratch state):
    denseness for those symbols (prefer Soft-native; soft_* = temporary DI).
 5. Combat/LeetCode inventory nonempty → first-class transform path; skip invent
    soft_extent etc. only when combat inventory empty.
+6. Mix explorers continuously: rules + Soft mutate + MiniMax propose-only
+   (Soft/session owns select-best). Cap MiniMax via AURA_BUILD_LLM_PARALLEL_CAP
+   / proposals~32. Strategy evolves from latency+accuracy (not denseness-only).
 
 Honesty: fiber_live / incr_proven / Soft Ready only when measured. Soft bugs →
 file Aura issues only; do not implement Soft C++ here.
@@ -137,6 +140,17 @@ def _default_state() -> dict[str, Any]:
         "soft_native_green": {},
         "recent_latency": [],
         "notes": [],
+        # Continuous LLM+accuracy evolution (MiniMax propose-only; Soft owns select-best)
+        "last_llm_via": None,
+        "last_llm_ok": False,
+        "last_llm_proposals": 0,
+        "last_transform_pass_rate": None,
+        "last_transform_passed": 0,
+        "last_transform_total": 0,
+        "last_transform_slug": None,
+        "last_problems_per_min": None,
+        "llm_rounds": 0,
+        "mix_explorers": ["rule", "mutate", "llm"],
     }
 
 
@@ -471,6 +485,76 @@ def combat_inventory_nonempty(repo: Path) -> bool:
                 return True
     # LeetCode nonempty counts as transform inventory for dual goal
     return leetcode_inventory_nonempty(repo)
+
+
+
+def observe_llm_round(
+    state: dict[str, Any],
+    *,
+    slug: str | None,
+    ok: bool,
+    llm_via: str | None,
+    proposals: int = 0,
+    passed: int | None = None,
+    total: int | None = None,
+    latency_ms: int | None = None,
+    fiber_live: bool | None = None,
+    tokens: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Update strategy from a MiniMax+Soft transform round (LeetCode/combat).
+
+    MiniMax is propose-only; Soft/session owns select-best / denseness honesty.
+    Continuously evolves worldlines / explorer mix from latency+accuracy.
+    """
+    notes = list(state.get("notes") or [])
+    state["llm_rounds"] = int(state.get("llm_rounds") or 0) + 1
+    state["last_llm_via"] = llm_via
+    state["last_llm_ok"] = bool(ok) and bool(llm_via) and str(llm_via) not in ("none", "")
+    state["last_llm_proposals"] = int(proposals or 0)
+    state["last_transform_slug"] = slug
+    if passed is not None and total is not None and int(total) > 0:
+        state["last_transform_passed"] = int(passed)
+        state["last_transform_total"] = int(total)
+        rate = float(passed) / float(total)
+        state["last_transform_pass_rate"] = round(rate, 4)
+        if rate >= 1.0:
+            notes.append(f"llm_full:{slug}:{llm_via}")
+        elif rate > 0:
+            notes.append(f"llm_partial:{slug}:{passed}/{total}:{llm_via}")
+        else:
+            notes.append(f"llm_no_gain:{slug}:{llm_via}")
+        # Accuracy cliff vs pursue wl shrink: if pass_rate < 0.5 after wl=64, ramp wl
+        if rate < 0.5 and int(state.get("worldlines") or WORLDLINES_FULL) <= WORLDLINES_FAST:
+            idx = min(2, int(state.get("worldlines_idx") or 0) + 1)
+            state["worldlines_idx"] = idx
+            state["worldlines"] = WORLDLINES_RAMP[idx]
+            notes.append(f"llm_acc_cliff→wl={state['worldlines']}")
+    if latency_ms is not None and int(latency_ms) > 0:
+        # problems/min for this slug (1 problem in latency_ms)
+        ppm = 60000.0 / float(latency_ms)
+        state["last_problems_per_min"] = round(ppm, 4)
+        recent = list(state.get("recent_latency") or [])
+        recent.append(
+            {
+                "total_ms": int(latency_ms),
+                "progress": (
+                    f"llm slug={slug} via={llm_via} ok={ok} "
+                    f"pass={passed}/{total} ppm={state['last_problems_per_min']} "
+                    f"proposals={proposals} fiber_live={fiber_live}"
+                ),
+                "fiber_live": bool(fiber_live) if fiber_live is not None else None,
+                "llm_via": llm_via,
+                "slug": slug,
+                "tokens": tokens,
+            }
+        )
+        state["recent_latency"] = recent[-12:]
+    # Ensure mix stays rule+mutate+llm (never denseness-only)
+    state["mix_explorers"] = ["rule", "mutate", "llm"]
+    if state.get("last_llm_ok"):
+        notes.append("mix_explorers=rule+mutate+llm")
+    state["notes"] = notes[-24:]
+    return state
 
 
 def skipped_helper_stub(

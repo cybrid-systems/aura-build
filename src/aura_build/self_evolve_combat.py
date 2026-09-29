@@ -592,6 +592,43 @@ def run_combat(
         honesty = {**_stamp_honesty_from_status(st), **honesty}
 
     findings = classify_findings(summary, session_st=st)
+    # Continuous strategy evolution: MiniMax+Soft combat mix (rule/llm/intent)
+    try:
+        from aura_build.self_evolve_strategy import (
+            load_strategy,
+            observe_llm_round,
+            save_strategy,
+        )
+        hroot = Path(harness_root) if harness_root else (repo / ".aura-build")
+        # Persist under repo harness so closed-loop strategy sees combat burns
+        strat_root = repo / ".aura-build"
+        st_strat = load_strategy(repo, strat_root)
+        proj_name = Path(proj).name if proj else (task or "combat")
+        st_strat = observe_llm_round(
+            st_strat,
+            slug=f"combat:{proj_name}",
+            ok=bool(summary.get("ok")),
+            llm_via=honesty.get("llm_via") or summary.get("llm_via"),
+            proposals=int(
+                summary.get("llm_calls")
+                or summary.get("llm_calls_parallel")
+                or fe
+                or worldlines
+                or 0
+            ),
+            passed=1 if summary.get("ok") else 0,
+            total=1,
+            latency_ms=int(summary.get("ms") or summary.get("total_ms") or 0) or None,
+            fiber_live=bool(honesty.get("fiber_live")) if honesty.get("fiber_live") is not None else None,
+            tokens=summary.get("tokens") or summary.get("llm_tokens"),
+        )
+        save_strategy(repo, st_strat, strat_root)
+        summary = dict(summary)
+        summary["strategy_llm_rounds"] = st_strat.get("llm_rounds")
+        summary["mix_explorers"] = st_strat.get("mix_explorers")
+        summary["problems_per_min"] = st_strat.get("last_problems_per_min")
+    except Exception:
+        pass
     paths = write_combat_artifacts(
         out,
         ts=ts,

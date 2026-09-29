@@ -947,7 +947,95 @@ def _minimax_propose_aura(
     ]
     sources: list[str] = []
     meta: dict[str, Any] = {"attempts": [], "llm_via": "none", "llm_ok": False}
-    for i in range(max(1, n)):
+
+    # High-speed MiniMax burn: parallel host propose when n>=4 (Soft owns select-best).
+    # Cap by AURA_BUILD_LLM_PARALLEL_CAP (default 64) and AURA_BUILD_MINIMAX_CAP (default 32).
+    # Fiber path stays available for n<4 denseness honesty / small probes.
+    def _caps() -> tuple[int, int]:
+        import os
+        def _i(name: str, default: int) -> int:
+            raw = (os.environ.get(name) or "").strip()
+            try:
+                return max(1, int(raw)) if raw else default
+            except ValueError:
+                return default
+        return _i("AURA_BUILD_LLM_PARALLEL_CAP", 64), _i("AURA_BUILD_MINIMAX_CAP", 32)
+
+    parallel_cap, minimax_cap = _caps()
+    n_eff = max(1, min(int(n), parallel_cap, minimax_cap))
+    meta["n_requested"] = int(n)
+    meta["n"] = n_eff
+    meta["parallel_cap"] = parallel_cap
+    meta["minimax_cap"] = minimax_cap
+
+    if n_eff >= 4:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import os
+
+        def _one(i: int) -> tuple[int, str | None, dict[str, Any]]:
+            temp = temperature + 0.05 * (i % 8)
+            attempt: dict[str, Any] = {"i": i, "temperature": temp, "via": "host_parallel"}
+            try:
+                resp = chat_completions(
+                    messages,
+                    config=cfg,
+                    temperature=temp,
+                    max_tokens=3500,
+                    timeout_s=90.0,
+                )
+            except Exception as exc:  # noqa: BLE001
+                attempt["error"] = f"{type(exc).__name__}:{exc}"
+                return i, None, attempt
+            attempt["ok"] = bool(resp.get("ok") if isinstance(resp, dict) else False)
+            usage = None
+            if isinstance(resp, dict):
+                usage = resp.get("usage") or (resp.get("data") or {}).get("usage")
+                attempt["usage"] = usage
+                content = ""
+                if resp.get("content"):
+                    content = str(resp.get("content") or "")
+                elif resp.get("choices"):
+                    try:
+                        content = str(resp["choices"][0]["message"]["content"] or "")
+                    except Exception:
+                        content = str(resp.get("text") or "")
+                else:
+                    content = str(resp.get("text") or resp.get("display") or "")
+            else:
+                content = str(resp or "")
+            src = extract_aura_source(content) if content else None
+            attempt["extracted"] = bool(src)
+            attempt["content_len"] = len(content or "")
+            return i, src if src else None, attempt
+
+        workers = min(n_eff, parallel_cap, minimax_cap, 32)
+        meta["workers"] = workers
+        meta["llm_via"] = "host_parallel"
+        token_sum = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futs = [pool.submit(_one, i) for i in range(n_eff)]
+            for fut in as_completed(futs):
+                i, src, attempt = fut.result()
+                meta["attempts"].append(attempt)
+                u = attempt.get("usage") if isinstance(attempt.get("usage"), dict) else None
+                if u:
+                    for k in token_sum:
+                        try:
+                            token_sum[k] += int(u.get(k) or 0)
+                        except (TypeError, ValueError):
+                            pass
+                if src:
+                    sources.append(src)
+                    meta["llm_ok"] = True
+        meta["tokens"] = token_sum
+        meta["n_ok"] = len(sources)
+        # Prefer Soft fiber denseness honesty stamp when measured (propose still host_parallel)
+        if fiber_llm_ok:
+            meta["fiber_llm_ok"] = True
+            meta["propose_path"] = "host_parallel_soft_select"
+        return sources, meta
+
+    for i in range(max(1, n_eff)):
         temp = temperature + 0.15 * i
         attempt: dict[str, Any] = {"i": i, "temperature": temp}
         resp: dict[str, Any] = {}
@@ -1507,6 +1595,8 @@ def cmd_soft_leetcode(args: Any) -> int:
         effective_worldlines,
         leetcode_inventory_nonempty,
         load_strategy,
+        observe_llm_round,
+        save_strategy,
     )
 
     repo = Path(getattr(args, "repo", None) or Path.cwd()).resolve()
@@ -1525,8 +1615,11 @@ def cmd_soft_leetcode(args: Any) -> int:
                 "inventory_nonempty": _lc_inv,
                 "worldlines": effective_worldlines(_lc_state),
                 "explorer_cap": effective_explorer_cap(_lc_state),
+                "mix_explorers": _lc_state.get("mix_explorers") or ["rule", "mutate", "llm"],
+                "llm_rounds": _lc_state.get("llm_rounds") or 0,
                 "note": (
                     "first-class transform path when inventory nonempty; "
+                    "mix explorers=rule+mutate+MiniMax propose-only (Soft select-best); "
                     "skip invent soft_* only when combat/leetcode empty; "
                     "prefer Soft-native; never invent Soft Ready"
                 ),
@@ -1637,6 +1730,65 @@ def cmd_soft_leetcode(args: Any) -> int:
         )
         print(json.dumps({"event": "soft_leetcode_runtime", **result}, ensure_ascii=False))
         print(json.dumps({"event": "soft_leetcode_latency", **result["latency"]}, ensure_ascii=False))
+        # Continuous strategy evolution from latency+accuracy (MiniMax propose + Soft verify)
+        vfy = result.get("verify") or {}
+        base = result.get("baseline") or {}
+        # Prefer post-verify hits; on no_gain Soft may omit verify — use selected/baseline.
+        selected = result.get("selected") or {}
+        passed = vfy.get("hits")
+        if passed is None:
+            passed = selected.get("hits")
+        if passed is None:
+            passed = base.get("hits")
+        total = vfy.get("total") or selected.get("total") or base.get("total")
+        lat = result.get("latency") or {}
+        llm_meta = result.get("llm") or {}
+        llm_via = (
+            result.get("llm_via")
+            or llm_meta.get("llm_via")
+            or ("recipe" if mode != "llm" else "none")
+        )
+        tokens = (
+            result.get("tokens")
+            or result.get("llm_tokens")
+            or llm_meta.get("tokens")
+        )
+        _lc_state = observe_llm_round(
+            _lc_state,
+            slug=str(result.get("slug") or s),
+            ok=bool(result.get("ok")),
+            llm_via=str(llm_via),
+            proposals=int(
+                result.get("proposals_n")
+                or result.get("n_proposals")
+                or llm_meta.get("n_ok")
+                or llm_meta.get("n")
+                or len(result.get("explorers") or [])
+                or proposals
+                or 0
+            ),
+            passed=int(passed) if passed is not None else None,
+            total=int(total) if total is not None else None,
+            latency_ms=int(lat.get("total_ms") or 0) or None,
+            fiber_live=bool(result.get("fiber_live")) if "fiber_live" in result else None,
+            tokens=tokens,
+        )
+        save_strategy(repo, _lc_state, harness_root)
+        print(
+            json.dumps(
+                {
+                    "event": "self_evolve_strategy_llm",
+                    "slug": result.get("slug") or s,
+                    "llm_via": _lc_state.get("last_llm_via"),
+                    "pass_rate": _lc_state.get("last_transform_pass_rate"),
+                    "problems_per_min": _lc_state.get("last_problems_per_min"),
+                    "worldlines": _lc_state.get("worldlines"),
+                    "mix_explorers": _lc_state.get("mix_explorers"),
+                    "llm_rounds": _lc_state.get("llm_rounds"),
+                },
+                ensure_ascii=False,
+            )
+        )
         results.append(result)
         if result.get("aura_issue_candidate") and not result.get("ok"):
             print(
