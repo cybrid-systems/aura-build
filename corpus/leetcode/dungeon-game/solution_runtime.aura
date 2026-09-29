@@ -1,0 +1,156 @@
+; soft_leetcode_runtime slug=dungeon-game path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=host_parallel fiber_llm_ok=true
+; selected=llm-55 hits=6/8
+; baseline_hits=5/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define length
+    (lambda (xs)
+      (if (null? xs)
+        0
+        (+
+          1 (length (cdr xs))))))
+  (define list-ref
+    (lambda (xs i)
+      (if (=
+          i 0)
+        (car xs)
+        (list-ref
+          (cdr xs) i))))
+  (define min
+    (lambda (a b)
+      (if (<
+          a b)
+        a
+        b)))
+  (define max
+    (lambda (a b)
+      (if (>
+          a b)
+        a
+        b)))
+  (define cell
+    (lambda (grid i j)
+      (list-ref
+        (list-ref
+          grid i) j)))
+  (define nrows
+    (lambda (g)
+      (length g)))
+  (define ncols
+    (lambda (g)
+      (length (list-ref
+          g 0))))
+  (define solve
+    (lambda (grid)
+      (let ((m (nrows grid)))
+        (let ((n (ncols grid)))
+          (let ((last-i (-
+              m 1)))
+            (let ((last-j (-
+                n 1)))
+              (begin
+                (define compute-row 0)
+                (define build-all 0)
+                (define dp 0)
+                (define top-row 0)
+                (define result 0)
+                (set! compute-row (lambda (i j dp-row-so-far dp-below-row)
+                    (if (<
+                        j 0)
+                      dp-row-so-far
+                      (let ((val (cell
+                          grid i j)))
+                        (let ((right-dp (if (=
+                              j last-j)
+                            #f
+                            (car dp-row-so-far))))
+                          (let ((down-dp (if (=
+                                i last-i)
+                              #f
+                              (list-ref
+                                dp-below-row j))))
+                            (let ((next-min (if (and
+                                  right-dp down-dp)
+                                (min
+                                  right-dp down-dp)
+                                (if right-dp
+                                  right-dp
+                                  (if down-dp
+                                    down-dp
+                                    1)))))
+                              (let ((needed (-
+                                  next-min val)))
+                                (let ((h (if (<
+                                      needed 1)
+                                    1
+                                    needed)))
+                                  (compute-row
+                                    i (-
+                                      j 1) (cons
+                                      h dp-row-so-far) dp-below-row))))))))))
+                (set! build-all (lambda (i acc-below)
+                    (if (<
+                        i 0)
+                      acc-below
+                      (let ((new-row (compute-row
+                          i last-j (quote ()) (if (null? acc-below)
+                            (quote ())
+                            (car acc-below)))))
+                        (build-all
+                          (-
+                            i 1) (cons
+                            new-row acc-below))))))
+                (set! dp (build-all
+                    (-
+                      m 1) (quote ())))
+                (set! top-row (car dp))
+                (set! result (list-ref
+                    top-row 0))
+                result)))))))
+  (define grid0 (quote ((-2
+          -3 3)
+        (-5
+          -10 1) (10
+          30 -5))))
+  (define grid1 (quote ((0))))
+  (define grid2 (quote ((-3))))
+  (define grid3 (quote ((1
+          2 3) (0
+          0 0))))
+  (define grid4 (quote ((-1
+          -1 -1)
+        (-1
+          -1 -1) (-1
+          -1 -1))))
+  (define grid5 (quote ((100))))
+  (define grid6 (quote ((0
+          0 0) (0
+          0 0))))
+  (define grid7 (quote ((-2 1) (-3 1))))
+  (display "CASE0=")
+  (display (solve grid0))
+  (newline)
+  (display "CASE1=")
+  (display (solve grid1))
+  (newline)
+  (display "CASE2=")
+  (display (solve grid2))
+  (newline)
+  (display "CASE3=")
+  (display (solve grid3))
+  (newline)
+  (display "CASE4=")
+  (display (solve grid4))
+  (newline)
+  (display "CASE5=")
+  (display (solve grid5))
+  (newline)
+  (display "CASE6=")
+  (display (solve grid6))
+  (newline)
+  (display "CASE7=")
+  (display (solve grid7))
+  (newline))
