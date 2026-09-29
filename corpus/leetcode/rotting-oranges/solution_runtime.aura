@@ -1,0 +1,245 @@
+; soft_leetcode_runtime slug=rotting-oranges path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=host_parallel fiber_llm_ok=true
+; selected=llm-42 hits=8/8
+; baseline_hits=0/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define replicate
+    (lambda (n v)
+      (if (=
+          n 0)
+        (quote ())
+        (cons
+          v (replicate
+            (-
+              n 1) v)))))
+  (define len
+    (lambda (xs)
+      (if (null? xs)
+        0
+        (+
+          1 (len (cdr xs))))))
+  (define nth
+    (lambda (xs i)
+      (if (=
+          i 0)
+        (car xs)
+        (nth
+          (cdr xs) (-
+            i 1)))))
+  (define set-nth
+    (lambda (xs i v)
+      (if (=
+          i 0)
+        (cons
+          v (cdr xs))
+        (cons
+          (car xs) (set-nth
+            (cdr xs) (-
+              i 1) v)))))
+  (define set-row
+    (lambda (grid r new-row)
+      (if (=
+          r 0)
+        (cons
+          new-row (cdr grid))
+        (cons
+          (car grid) (set-row
+            (cdr grid) (-
+              r 1) new-row)))))
+  (define get-val
+    (lambda (grid r c)
+      (nth
+        (nth
+          grid r) c)))
+  (define set-val
+    (lambda (grid r c v)
+      (set-row
+        grid r (set-nth
+          (nth
+            grid r) c v))))
+  (define num-rows
+    (lambda (grid)
+      (len grid)))
+  (define num-cols
+    (lambda (grid)
+      (if (null? grid)
+        0
+        (len (car grid)))))
+  (define count-fresh-row
+    (lambda (row)
+      (if (null? row)
+        0
+        (+
+          (if (=
+              (car row) 1)
+            1
+            0) (count-fresh-row (cdr row))))))
+  (define count-fresh
+    (lambda (grid)
+      (if (null? grid)
+        0
+        (+
+          (count-fresh-row (car grid)) (count-fresh (cdr grid))))))
+  (define collect-rotten
+    (lambda (grid r)
+      (if (null? grid)
+        (quote ())
+        (append
+          (collect-rotten-row
+            (car grid) r 0) (collect-rotten
+            (cdr grid) (+
+              r 1))))))
+  (define collect-rotten-row
+    (lambda (row r c)
+      (if (null? row)
+        (quote ())
+        (if (=
+            (car row) 2)
+          (cons
+            (list
+              r c 0) (collect-rotten-row
+              (cdr row) r (+
+                c 1)))
+          (collect-rotten-row
+            (cdr row) r (+
+              c 1))))))
+  (define try-rot
+    (lambda (grid r c t nrows ncols)
+      (if (or
+          (<
+            r 0) (>=
+            r nrows) (<
+            c 0) (>=
+            c ncols))
+        (list
+          grid (quote ()) 0)
+        (let ((val (get-val
+            grid r c)))
+          (if (=
+              val 1)
+            (list
+              (set-val
+                grid r c 2) (list (list
+                  r c t)) 1)
+            (list
+              grid (quote ()) 0))))))
+  (define bfs
+    (lambda (grid queue fresh time nrows ncols)
+      (if (null? queue)
+        (if (=
+            fresh 0)
+          time
+          -1)
+        (let ((item (car queue)))
+          (let ((rest-q (cdr queue)))
+            (let ((r (car item)))
+              (let ((c (car (cdr item))))
+                (let ((t (car (cdr (cdr item)))))
+                  (if (>
+                      t time)
+                    (bfs
+                      grid queue fresh (+
+                        time 1) nrows ncols)
+                    (let ((n0 (try-rot
+                        grid (-
+                          r 1) c (+
+                          t 1) nrows ncols)))
+                      (let ((n1 (try-rot
+                          (car n0) (+
+                            r 1) c (+
+                            t 1) nrows ncols)))
+                        (let ((n2 (try-rot
+                            (car n1) r (-
+                              c 1) (+
+                              t 1) nrows ncols)))
+                          (let ((n3 (try-rot
+                              (car n2) r (+
+                                c 1) (+
+                                t 1) nrows ncols)))
+                            (let ((new-grid (car n3)))
+                              (let ((new-items (append
+                                  (cadr n0) (append
+                                    (cadr n1) (append
+                                      (cadr n2) (cadr n3))))))
+                                (let ((rotted (+
+                                    (car (cdr (cdr n0))) (+
+                                      (car (cdr (cdr n1))) (+
+                                        (car (cdr (cdr n2))) (car (cdr (cdr n3))))))))
+                                  (bfs
+                                    new-grid (append
+                                      rest-q new-items) (-
+                                      fresh rotted) time nrows ncols)))))))))))))))))
+  (define solve
+    (lambda (grid)
+      (let ((nrows (num-rows grid)))
+        (let ((ncols (num-cols grid)))
+          (let ((fresh (count-fresh grid)))
+            (if (or
+                (null? grid) (=
+                  nrows 0))
+              0
+              (if (=
+                  fresh 0)
+                0
+                (let ((initial-q (collect-rotten
+                    grid 0)))
+                  (if (null? initial-q)
+                    -1
+                    (bfs
+                      grid initial-q fresh 0 nrows ncols))))))))))
+  (define run-tests
+    (lambda ()
+      (let ((case0 (quote ((2
+              1 1)
+            (1
+              1 0) (0
+              1 1)))))
+        (begin
+          (display "CASE0=")
+          (display (solve case0))
+          (newline)
+          (let ((case1 (quote ((2
+                  1 1)
+                (0
+                  1 0) (1
+                  1 1)))))
+            (begin
+              (display "CASE1=")
+              (display (solve case1))
+              (newline)
+              (let ((case2 (quote ((0 2)))))
+                (begin
+                  (display "CASE2=")
+                  (display (solve case2))
+                  (newline)
+                  (let ((case3 (quote ((1)))))
+                    (begin
+                      (display "CASE3=")
+                      (display (solve case3))
+                      (newline)
+                      (let ((case4 (quote ())))
+                        (begin
+                          (display "CASE4=")
+                          (display (solve case4))
+                          (newline)
+                          (let ((case5 (quote ((0)))))
+                            (begin
+                              (display "CASE5=")
+                              (display (solve case5))
+                              (newline)
+                              (let ((case6 (quote ((1
+                                      2 1 1)))))
+                                (begin
+                                  (display "CASE6=")
+                                  (display (solve case6))
+                                  (newline)
+                                  (let ((case7 (quote ((2 2)
+                                        (1 1) (1 1)))))
+                                    (begin
+                                      (display "CASE7=")
+                                      (display (solve case7))
+                                      (newline)))))))))))))))))))
+  (run-tests))
