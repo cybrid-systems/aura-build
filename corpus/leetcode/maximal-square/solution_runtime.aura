@@ -2,95 +2,140 @@
 ; materialize=current-source worldline_backend=fiber_graph
 ; fiber_live=true incr_proven=false
 ; llm_via=host_parallel fiber_llm_ok=true
-; selected=llm-39 hits=2/8
-; baseline_hits=0/8
+; selected=llm-38 hits=8/8
+; baseline_hits=5/8
 ; Expected values used only for host scoring / LLM context, not hardcoded into display.
 (begin
-  (define solve
-    (lambda (m n grid)
-      (let ((max-side 0))
-        (letrec ((loop-i (lambda (i)
+  (begin
+    (define min3
+      (lambda (a b c)
+        (min
+          a (min
+            b c))))
+    (define list-ref-nth
+      (lambda (lst k)
+        (if (=
+            k 0)
+          (car lst)
+          (list-ref-nth
+            (cdr lst) (-
+              k 1)))))
+    (define grid-ref
+      (lambda (grid i j)
+        (list-ref-nth
+          (list-ref-nth
+            grid i) j)))
+    (define make-vector2d
+      (lambda (m n init)
+        (letrec ((make-row (lambda (j)
             (if (=
-                i m)
-              (*
-                max-side max-side)
-              (letrec ((loop-j (lambda (j)
-                  (if (=
-                      j n)
-                    (loop-i (+
-                        i 1))
-                    (let ((cell (grid-ref
-                        grid i j)))
-                      (begin
-                        (if (=
-                            cell 1)
-                          (let ((side (if (or
-                                (=
-                                  i 0) (=
-                                  j 0))
-                              1
-                              (+
-                                1 (min3
-                                  (grid-ref
-                                    grid (-
-                                      i 1) j) (grid-ref
-                                    grid i (-
-                                      j 1)) (grid-ref
-                                    grid (-
-                                      i 1) (-
-                                      j 1)))))))
-                            (if (>
-                                side max-side)
-                              (set! max-side side)
-                              (quote noop)))
-                          (quote noop))
-                        (loop-j (+
-                            j 1))))))))
-                (loop-j 0))))))
-          (loop-i 0)))))
-  (define min3
-    (lambda (a b c)
-      (min
-        a (min
-          b c))))
-  (define grid-ref
-    (lambda (grid i j)
-      (letrec ((loop (lambda (rows k)
-          (if (=
-              k i)
-            (letrec ((loop2 (lambda (row l)
+                j n)
+              (quote ())
+              (cons
+                init (make-row (+
+                    j 1)))))))
+          (letrec ((make-grid (lambda (i)
+              (if (=
+                  i m)
+                (quote ())
+                (cons
+                  (make-row 0) (make-grid (+
+                      i 1)))))))
+            (make-grid 0)))))
+    (define vec-set
+      (lambda (grid i j val)
+        (letrec ((make-row (lambda (k row)
+            (if (=
+                k j)
+              (cons
+                val (cdr row))
+              (cons
+                (car row) (make-row
+                  (+
+                    k 1) (cdr row)))))))
+          (letrec ((make-grid (lambda (k rows)
+              (if (=
+                  k i)
+                (cons
+                  (make-row
+                    0 (car rows)) (cdr rows))
+                (cons
+                  (car rows) (make-grid
+                    (+
+                      k 1) (cdr rows)))))))
+            (make-grid
+              0 grid)))))
+    (define vec-ref
+      (lambda (grid i j)
+        (list-ref-nth
+          (list-ref-nth
+            grid i) j)))
+    (define solve
+      (lambda (m n grid)
+        (let ((dp (make-vector2d
+            m n 0)))
+          (let ((max-side 0))
+            (letrec ((loop-i (lambda (i)
                 (if (=
-                    l j)
-                  (car row)
-                  (loop2
-                    (cdr row) (+
-                      l 1))))))
-              (loop2
-                (car rows) 0))
-            (loop
-              (cdr rows) (+
-                k 1))))))
-        (loop
-          grid 0))))
-  (define run-case
-    (lambda (i m n grid)
-      (begin
-        (display "CASE")
-        (display i)
-        (display "=")
-        (display (solve
-            m n grid))
-        (newline))))
-  (let ((case0-m 4))
-    (let ((case0-n 5))
-      (let ((case0-grid (quote ((1
-              0 1 0 0)
-            (1
-              0 1 1 1) (1
-              1 1 1 1) (1
-              0 0 1 0)))))
-        (run-case
-          0 case0-m case0-n case0-grid))))
+                    i m)
+                  (*
+                    max-side max-side)
+                  (letrec ((loop-j (lambda (j)
+                      (if (=
+                          j n)
+                        (loop-i (+
+                            i 1))
+                        (let ((cell (grid-ref
+                            grid i j)))
+                          (begin
+                            (if (=
+                                cell 1)
+                              (let ((side (if (or
+                                    (=
+                                      i 0) (=
+                                      j 0))
+                                  1
+                                  (+
+                                    1 (min3
+                                      (vec-ref
+                                        dp (-
+                                          i 1) j) (vec-ref
+                                        dp i (-
+                                          j 1)) (vec-ref
+                                        dp (-
+                                          i 1) (-
+                                          j 1)))))))
+                                (begin
+                                  (set! dp (vec-set
+                                      dp i j side))
+                                  (if (>
+                                      side max-side)
+                                    (set! max-side side)
+                                    (quote noop))))
+                              (quote noop))
+                            (loop-j (+
+                                j 1))))))))
+                    (loop-j 0))))))
+              (loop-i 0))))))
+    (define run-case
+      (lambda (i m n grid)
+        (begin
+          (display "CASE")
+          (display i)
+          (display "=")
+          (display (solve
+              m n grid))
+          (newline))))
+    (let ((case0-m 4))
+      (let ((case0-n 5))
+        (let ((case0-grid (quote ((1
+                0 1 0 0)
+              (1
+                0 1 1 1) (1
+                1 1 1 1) (1
+                0 0 1 0)))))
+          (run-case
+            0 case0-m case0-n case0-grid)))))
   (let ((case1-m 1))
     (let ((case1-n 1))
       (let ((case1-grid (quote ((0)))))
