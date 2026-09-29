@@ -1,0 +1,130 @@
+; aura-build KERNEL — feedback-accumulated fail/hit notes (product brain)
+;
+; Soft/Aura state under memory profile "leet_feedback" drives MiniMax prompt
+; variation. NOT prompt_feedback.py as the evolution brain — host may only
+; read the JSON Soft wrote.
+;
+; Cause classes (honest): sock_transient / sock_score_collapse / quality_plateau
+; / quality_no_improvement / gain.
+(export
+  feedback-observe
+  feedback-classify
+  feedback-prompt-suffix
+  feedback-load
+  feedback-family-hints
+  run-feedback-round)
+
+(require "util" all:)
+(require "memory" all:)
+(require "std/io" all:)
+(require "std/hash" all:)
+
+(define FEEDBACK_PROFILE "leet_feedback")
+
+(define (feedback-load harness-root)
+  (memory-list harness-root FEEDBACK_PROFILE))
+
+(define (feedback-classify selected baseline transient-n zero-n n soft-via)
+  (cond
+    ((>= transient-n (if (> (quotient n 3) 2) (quotient n 3) 2))
+     "sock_transient")
+    ((and (> baseline 0) (= selected 0) (>= zero-n (quotient (* n 2) 3)))
+     "sock_score_collapse")
+    ((and (equal? soft-via "host_fallback") #t)
+     "sock_select_transient")
+    ((and (= selected baseline) (> selected 0))
+     "quality_plateau")
+    ((<= selected baseline)
+     "quality_no_improvement")
+    ((> selected baseline)
+     "gain")
+    (#t "quality_unknown")))
+
+(define (feedback-family-hints slug)
+  ; Algorithm-family tips live in KERNEL (not Python product).
+  (cond
+    ((or (equal? slug "daily-temperatures")
+         (string-contains? slug "next-greater")
+         (string-contains? slug "asteroid"))
+     (list "Use a monotonic stack (indices) for next-greater / warmer patterns."
+           "Iterate left→right; pop colder tops; fill distance array."))
+    ((or (equal? slug "climbing-stairs")
+         (string-contains? slug "fibonacci")
+         (string-contains? slug "house-robber"))
+     (list "O(n) iterative DP; rolling two vars; avoid deep Soft recursion."
+           "Circular robber: solve exclude-first and exclude-last; take max."))
+    ((string-contains? slug "parenthes")
+     (list "Backtrack open/close counts; prune close>open; length 2n."))
+    ((equal? slug "gas-station")
+     (list "One-pass circuit: reset start when tank<0; total<0 → -1."))
+    ((string-contains? slug "decode")
+     (list "Stack of (prev, k); digit→k; '[' push; ']' pop+repeat."))
+    ((or (string-contains? slug "island")
+         (string-contains? slug "flood")
+         (string-contains? slug "route")
+         (string-contains? slug "course-schedule"))
+     (list "Prefer BFS/queue Soft-friendly loops; mark visited."))
+    (#t (list "Prefer iterative Soft-friendly loops; preserve CASE harness."))))
+
+(define (string-contains? text substr)
+  (if (or (not (string? text)) (not (string? substr))) #f
+    (let ((n (string-length text)) (m (string-length substr)))
+      (let loop ((i 0))
+        (if (> i (- n m)) #f
+          (if (equal? (substring text i (+ i m)) substr) #t
+            (loop (+ i 1))))))))
+
+(define (feedback-observe harness-root slug ok cause hits baseline total mutate-ops fails)
+  (let* ((data (feedback-load harness-root))
+         (notes (let ((v (hash-ref data "notes")))
+                  (if (list? v) v (list))))
+         (note (hash "slug" slug
+                     "ok" ok
+                     "cause" cause
+                     "hits" hits
+                     "baseline_hits" baseline
+                     "total" total
+                     "mutate_ops" mutate-ops
+                     "fails" fails
+                     "kernel" "aura"))
+         (new-notes (append notes (list note)))
+         ; keep last 48
+         (trimmed (if (> (length new-notes) 48)
+                    (list-tail new-notes (- (length new-notes) 48))
+                    new-notes)))
+    (memory-set harness-root FEEDBACK_PROFILE "notes" trimmed)
+    (memory-set harness-root FEEDBACK_PROFILE "last" note)
+    (memory-set harness-root FEEDBACK_PROFILE (string-append "slug:" slug) note)
+    note))
+
+(define (feedback-prompt-suffix harness-root slug variant-i)
+  (let* ((data (feedback-load harness-root))
+         (last (hash-ref data "last"))
+         (family (feedback-family-hints slug))
+         (cause (if (hash? last) (hash-ref last "cause" "") ""))
+         (lines (list
+                  (string-append "Kernel feedback cause=" cause)
+                  (string-append "Algorithm family tip: "
+                                 (if (null? family) "iterative Soft loops" (car family)))
+                  (string-append "Prompt variation["
+                                 (number->string (modulo variant-i 8))
+                                 "]: preserve CASE harness; Soft select-best owns scoring."))))
+    (if (equal? cause "quality_plateau")
+      (append lines
+              (list "ESCALATE: prior quality-plateau — switch algorithm family."))
+      lines)))
+
+(define (run-feedback-round)
+  (let* ((slug (env-get "AURA_BUILD_SLUG" "unknown"))
+         (harness (env-get "AURA_BUILD_HARNESS_ROOT" ".aura-build"))
+         (ok-s (env-get "AURA_BUILD_FB_OK" "false"))
+         (ok (equal? ok-s "true"))
+         (cause (env-get "AURA_BUILD_FB_CAUSE" "quality_unknown"))
+         (hits (env-int "AURA_BUILD_FB_HITS" 0))
+         (base (env-int "AURA_BUILD_FB_BASELINE" 0))
+         (total (env-int "AURA_BUILD_FB_TOTAL" 8))
+         (note (feedback-observe harness slug ok cause hits base total (list) (list)))
+         (suffix (feedback-prompt-suffix harness slug 0)))
+    (display "feedback ok=true kernel=aura slug=")(display slug)
+    (display " cause=")(display cause)(newline)
+    (hash "ok" #t "kernel" "aura" "note" note "prompt_suffix" suffix)))

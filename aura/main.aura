@@ -14,6 +14,8 @@
 (require "self_evolve" all:)
 (require "llm_dogfood" all:)
 (require "pursue" all:)
+(require "self_evolve_swarm" all:)
+(require "self_evolve_feedback" all:)
 (require "std/io" all:)
 
 (define (write-response obj)
@@ -270,6 +272,30 @@
     (if (hash-ref result "ok" #f) 0 2)))
 
 
+
+(define (cmd-swarm-mutate)
+  (let ((result (run-swarm-mutate-round)))
+    (write-response (hash "cmd" "swarm-mutate"
+                          "ok" (hash-ref result "ok" #f)
+                          "kernel" "aura"
+                          "path" (hash-ref result "path" "")
+                          "slug" (hash-ref result "slug" "")
+                          "rank" (hash-ref result "rank" (hash))
+                          "probes" (hash-ref result "probes" (hash))
+                          "mix_explorers" (hash-ref result "mix_explorers" (list))
+                          "fiber_live" #f
+                          "note" "fiber_live not claimed; denseness probe owns honesty"))
+    (if (hash-ref result "ok" #f) 0 1)))
+
+(define (cmd-feedback)
+  (let ((result (run-feedback-round)))
+    (write-response (hash "cmd" "feedback"
+                          "ok" (hash-ref result "ok" #f)
+                          "kernel" "aura"
+                          "note" (hash-ref result "note" (hash))
+                          "prompt_suffix" (hash-ref result "prompt_suffix" (list))))
+    (if (hash-ref result "ok" #f) 0 1)))
+
 (define (kernel-main)
   (let ((cmd (env-get "AURA_BUILD_CMD" "run")))
     (display "AURA_BUILD_KERNEL cmd=")(display cmd)(newline)
@@ -287,6 +313,8 @@
       ((equal? cmd "self-evolve") (cmd-self-evolve))
       ((equal? cmd "llm-dogfood") (cmd-llm-dogfood))
       ((equal? cmd "pursue") (cmd-pursue))
+      ((equal? cmd "swarm-mutate") (cmd-swarm-mutate))
+      ((equal? cmd "feedback") (cmd-feedback))
       (else
         (display "unknown AURA_BUILD_CMD=")(display cmd)(newline)
         (write-response (hash "ok" #f "error" "unknown_cmd"))

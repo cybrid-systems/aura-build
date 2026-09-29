@@ -4,6 +4,7 @@
 ; Honesty: never invent incr_proven / fiber_live / worldline_backend via env alone.
 ; Soft gap fill: util …/find/count/remove/delete/range/take/drop/any/all (+ soft_* denseness). Soft tip fecdf63 (#4228 CLOSED Soft oneshot filter+std/math preds FIXED; #4154 Soft-zero-extra; #4153 Soft-zero-cost) gold find/count/remove/delete/range/extent/last/filter/any/all + R7RS take/drop (#4220–#4226/#4228 CLOSED) — prefer Soft-native; soft_* denseness. #4228 CLOSED. Soft tip fecdf63 also gold-binds partition/member/zip (oneshot green; combat empty → skip invent soft_*); prefer Soft-native.
 (export run-pursue)
+; Strategy mix [rule, mutate, llm] / swarm_mutate_then_llm: see aura/self_evolve_swarm.aura
 
 (require "util" all:)
 (require "traj" all:)

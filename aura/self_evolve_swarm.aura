@@ -1,0 +1,156 @@
+; aura-build KERNEL — Soft swarm multi-mutate (product brain; NOT host Python)
+;
+; Soft std/ant pheromone:rank mutation-operator types; std/pso|abc probe honesty.
+; Local multi-mutate via mutate:rebind + worldline/fiber explorers on the Soft
+; FlatAST — Soft Ready never invented. Host Python is thin harness only.
+;
+; Pipeline (LeetCode / combat / pursue):
+;   1. (swarm-rank-ops) → Soft-ranked mutate op schedule
+;   2. (swarm-mutate-fanout score-fn n) → mutate:rebind candidates scored in Soft
+;   3. (swarm-observe-gain op-list delta) → pheromone:update on helpful ops
+;   4. Host may seed MiniMax from kernel-written schedule under harness memory
+;
+; denseness soft_*.aura = temporary; prefer Soft-native. Three-layer split.
+(export
+  swarm-default-ops
+  swarm-rank-ops
+  swarm-probe
+  swarm-mutate-rebind
+  swarm-mutate-fanout
+  swarm-observe-gain
+  swarm-schedule-write
+  run-swarm-mutate-round
+  mix-explorers-swarm)
+
+(require "util" all:)
+(require "memory" all:)
+(require "traj" all:)
+(require "std/io" all:)
+(require "std/hash" all:)
+(require "std/ant" all:)
+
+; Mutation-type names aligned with Soft std/ant defaults (Issue #2876).
+(define (swarm-default-ops)
+  (list "edsl-lit-tweak"
+        "edsl-op-swap"
+        "edsl-body-wrap"
+        "full-disp-bool"
+        "full-disp-ref"
+        "edsl-disp-ref"
+        "full-hash-wrap"))
+
+(define (swarm-rank-ops)
+  ; Soft ACO rank — host fallback only if Soft fails (caller checks via).
+  (pheromone:init)
+  (let* ((ops (swarm-default-ops))
+         (ranked (pheromone:rank ops)))
+    (hash "ok" #t
+          "via" "soft_ant_pheromone"
+          "ranked_ops" ranked
+          "path" "kernel_swarm_rank"
+          "kernel" "aura")))
+
+(define (swarm-probe kind)
+  ; Honesty probe for Soft std swarm backends. Never invents Soft Ready.
+  (cond
+    ((equal? kind "ant")
+     (let ((r (swarm-rank-ops)))
+       (hash "ok" (hash-ref r "ok" #f) "via" (hash-ref r "via" "") "kind" "ant")))
+    ((equal? kind "pso")
+     (begin
+       (require "std/pso" all:)
+       (pso:init 1 8 (list (list 0.0 1.0)))
+       (pso:step! (lambda (x) (- 0.0 (* (car x) (car x)))))
+       (let ((b (pso:best)))
+         (hash "ok" (number? (if (pair? b) (car b) b))
+               "via" "soft_pso"
+               "kind" "pso"
+               "best" b))))
+    ((equal? kind "abc")
+     (begin
+       (require "std/abc" all:)
+       (abc:init 1 8 (list (list -2.0 2.0)))
+       (abc:step! (lambda (x) (- 0.0 (* (car x) (car x)))))
+       (let ((b (abc:best)))
+         (hash "ok" #t "via" "soft_abc" "kind" "abc" "best" b))))
+    (#t (hash "ok" #f "via" "unknown_kind" "kind" kind))))
+
+; Apply one Soft mutate:rebind of solve → score-fn → restore optional.
+; body-src is a string lambda form for mutate:rebind.
+(define (swarm-mutate-rebind body-src score-fn)
+  (mutate:rebind "solve" body-src "solve-swarm-cand")
+  (eval-current)
+  (score-fn))
+
+; Fan-out: try several body candidates (list of strings); return best hits + list.
+; bodies = ((name . body-src) ...) ; score-fn → number (higher better)
+(define (swarm-mutate-fanout bodies score-fn)
+  (let loop ((xs bodies) (best-name "") (best-score -1) (acc (list)))
+    (if (null? xs)
+      (hash "ok" #t
+            "best_name" best-name
+            "best_score" best-score
+            "n" (length acc)
+            "explorers" (reverse acc)
+            "path" "kernel_swarm_mutate_rebind"
+            "kernel" "aura")
+      (let* ((pair (car xs))
+             (name (car pair))
+             (body (cdr pair))
+             (sc (swarm-mutate-rebind body score-fn))
+             (nsc (if (number? sc) sc 0))
+             (row (hash "name" name "hits" nsc "via" "mutate_rebind")))
+        (loop (cdr xs)
+              (if (> nsc best-score) name best-name)
+              (if (> nsc best-score) nsc best-score)
+              (cons row acc))))))
+
+(define (swarm-observe-gain op-list delta)
+  ; Reinforce Soft pheromone trails for ops that produced gain.
+  (pheromone:init)
+  (let loop ((xs op-list))
+    (if (null? xs) #t
+      (begin
+        (pheromone:update (car xs) (if (number? delta) delta 1.0))
+        (loop (cdr xs)))))
+  (hash "ok" #t "updated" op-list "delta" delta "via" "soft_ant_pheromone"))
+
+(define (swarm-schedule-write harness-root slug ranked probes)
+  ; Persist Soft-ranked schedule for thin host MiniMax seed (not Python brain).
+  (memory-set harness-root "leet_swarm" "last_slug" slug)
+  (memory-set harness-root "leet_swarm" "ranked_ops" ranked)
+  (memory-set harness-root "leet_swarm" "probes" probes)
+  (memory-set harness-root "leet_swarm" "mix" (list "rule" "mutate" "llm"))
+  (memory-set harness-root "leet_swarm" "path" "swarm_mutate_then_llm")
+  (memory-set harness-root "leet_swarm" "kernel" "aura")
+  (hash "ok" #t "profile" "leet_swarm" "slug" slug "kernel" "aura"))
+
+(define (mix-explorers-swarm)
+  ; Strategy mix expressed in kernel (not Python self_evolve_strategy alone).
+  (list "rule" "mutate" "llm"))
+
+(define (run-swarm-mutate-round)
+  ; Entry for thin host: AURA_BUILD_CMD=swarm-mutate / env slug+harness.
+  (let* ((slug (env-get "AURA_BUILD_SLUG" "unknown"))
+         (harness (env-get "AURA_BUILD_HARNESS_ROOT" ".aura-build"))
+         (rank (swarm-rank-ops))
+         (pso (swarm-probe "pso"))
+         (abc (swarm-probe "abc"))
+         (probes (hash "ant" rank "pso" pso "abc" abc))
+         (ranked (hash-ref rank "ranked_ops" (swarm-default-ops)))
+         (_ (swarm-schedule-write harness slug ranked probes)))
+    (display "swarm_mutate ok=true kernel=aura via=")
+    (display (hash-ref rank "via" ""))
+    (display " slug=")(display slug)
+    (display " ranked_n=")(display (length ranked))
+    (display " mix=")(display (mix-explorers-swarm))
+    (newline)
+    (hash "ok" #t
+          "kernel" "aura"
+          "path" "swarm_mutate_then_llm"
+          "slug" slug
+          "rank" rank
+          "probes" probes
+          "mix_explorers" (mix-explorers-swarm)
+          "fiber_live" #f
+          "note" "fiber_live not claimed; measure via denseness probe")))

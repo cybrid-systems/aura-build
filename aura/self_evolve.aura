@@ -8,6 +8,7 @@
 ; Host may run heavier smoke/prove before commit/push.
 ; Honesty: never invent incr_proven / fiber_live. runtime.kernel = aura.
 (export run-self-evolve)
+; Soft swarm multi-mutate + feedback: aura/self_evolve_swarm.aura + self_evolve_feedback.aura (kernel brain; host thin).
 
 (require "util" all:)
 (require "traj" all:)

@@ -1360,6 +1360,8 @@ def repair_llm(
             aura_bin=aura_bin,
             seed=424242 + (abs(hash(slug)) % 10000),
             prefer_kinds=["pso", "abc"],
+            slug=slug,
+            harness_root=hroot,
         )
 
         # Concurrent MiniMax burn seeded by mutated variants (not plain single-shot)
@@ -1942,6 +1944,8 @@ def cmd_soft_leetcode(args: Any) -> int:
             no_gain_cause=cause if not result.get("ok") else "gain",
             llm_via=str(llm_via) if llm_via else None,
             mutate_ops=mut_ops,
+            harness_root=harness_root,
+            aura_bin=aura_bin,
         )
         save_feedback(repo, fb, harness_root)
         print(

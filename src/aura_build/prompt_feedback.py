@@ -1,42 +1,59 @@
-"""Feedback-accumulated prompts for MiniMax LeetCode/combat (product path).
+"""THIN harness adapter — Soft/Aura KERNEL owns feedback-accumulated prompts.
 
-Persists fail/hit/no_gain notes across rounds under harness_root so subsequent
-proposes get richer, varied context — not denseness-only, not one-off scratch.
+Product path: ``aura/self_evolve_feedback.aura`` + memory profile leet_feedback.
+Host only reads Soft-written JSON / invokes Soft ``run-feedback-round``.
+Do NOT grow Python prompt product logic here.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import subprocess
 from pathlib import Path
 from typing import Any
 
-FEEDBACK_NAME = "self_evolve_prompt_feedback.json"
+DEFAULT_SOFT = "/workspace/aura-grok/build/aura"
+FEEDBACK_NAME = "leet_feedback.json"  # Soft memory profile file
 MAX_NOTES = 48
 MAX_SLUG_NOTES = 12
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
 
 
 def feedback_path(repo: Path, harness_root: Path | None = None) -> Path:
     root = Path(harness_root) if harness_root else Path(
         os.environ.get("AURA_BUILD_HARNESS_ROOT") or (repo / ".aura-build")
     )
-    root.mkdir(parents=True, exist_ok=True)
-    return root / FEEDBACK_NAME
+    return root / "memory" / FEEDBACK_NAME
 
 
 def load_feedback(repo: Path, harness_root: Path | None = None) -> dict[str, Any]:
     path = feedback_path(repo, harness_root)
     if not path.is_file():
-        return {"version": 1, "notes": [], "by_slug": {}}
+        return {"version": 1, "notes": [], "by_slug": {}, "kernel": "aura"}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return {"version": 1, "notes": [], "by_slug": {}}
+        return {"version": 1, "notes": [], "by_slug": {}, "kernel": "aura"}
     if not isinstance(data, dict):
-        return {"version": 1, "notes": [], "by_slug": {}}
+        return {"version": 1, "notes": [], "by_slug": {}, "kernel": "aura"}
     data.setdefault("version", 1)
     data.setdefault("notes", [])
     data.setdefault("by_slug", {})
+    data["kernel"] = "aura"
+    # Soft memory stores slug:X keys; normalize by_slug for readers
+    by = dict(data.get("by_slug") or {})
+    for k, v in list(data.items()):
+        if isinstance(k, str) and k.startswith("slug:") and isinstance(v, dict):
+            slug = k[5:]
+            by.setdefault(slug, [])
+            if v not in by[slug]:
+                by[slug] = (by.get(slug) or []) + [v]
+                by[slug] = by[slug][-MAX_SLUG_NOTES:]
+    data["by_slug"] = by
     return data
 
 
@@ -45,9 +62,65 @@ def save_feedback(
     state: dict[str, Any],
     harness_root: Path | None = None,
 ) -> Path:
+    """Prefer Soft kernel write; host save is demoted fallback only."""
     path = feedback_path(repo, harness_root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    state = dict(state)
+    state["kernel"] = "aura"
+    state["note"] = "prefer aura/self_evolve_feedback.aura memory-set"
     path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return path
+
+
+def run_kernel_feedback(
+    *,
+    slug: str,
+    ok: bool,
+    cause: str,
+    hits: int = 0,
+    baseline: int = 0,
+    total: int = 8,
+    aura_bin: str | None = None,
+    harness_root: Path | None = None,
+    timeout_s: float = 30.0,
+) -> dict[str, Any]:
+    bin_path = aura_bin or os.environ.get("AURA_BIN") or DEFAULT_SOFT
+    repo = _repo_root()
+    hroot = Path(harness_root) if harness_root else repo / ".aura-build"
+    soft_lib = Path("/workspace/aura-grok/lib")
+    env = {
+        **os.environ,
+        "AURA_BIN": bin_path,
+        "AURA_PATH": os.environ.get("AURA_PATH") or f"{soft_lib}:{repo / 'aura'}",
+        "AURA_BUILD_HARNESS_ROOT": str(hroot),
+        "AURA_BUILD_SLUG": slug,
+        "AURA_BUILD_FB_OK": "true" if ok else "false",
+        "AURA_BUILD_FB_CAUSE": cause,
+        "AURA_BUILD_FB_HITS": str(int(hits)),
+        "AURA_BUILD_FB_BASELINE": str(int(baseline)),
+        "AURA_BUILD_FB_TOTAL": str(int(total)),
+        "AURA_SANDBOX": os.environ.get("AURA_SANDBOX") or "off",
+    }
+    form = '(begin (require "self_evolve_feedback" all:) (run-feedback-round))'
+    try:
+        proc = subprocess.run(
+            [bin_path, "-e", form],
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+            check=False,
+            start_new_session=True,
+            env=env,
+            cwd=str(repo),
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "reason": str(exc), "kernel": "aura"}
+    return {
+        "ok": proc.returncode == 0,
+        "stdout": (proc.stdout or "")[:400],
+        "kernel": "aura",
+        "path": "kernel_feedback",
+    }
 
 
 def observe_transform_feedback(
@@ -63,39 +136,38 @@ def observe_transform_feedback(
     no_gain_cause: str | None = None,
     llm_via: str | None = None,
     mutate_ops: list[str] | None = None,
+    harness_root: Path | None = None,
+    aura_bin: str | None = None,
 ) -> dict[str, Any]:
-    """Append a durable note from a Soft+LLM transform round."""
-    notes = list(state.get("notes") or [])
-    by_slug: dict[str, Any] = dict(state.get("by_slug") or {})
+    """Write via Soft kernel; merge into returned state from Soft memory."""
     cause = no_gain_cause or ("gain" if ok else (reason or "unknown"))
-    snippet_fails = []
-    for d in (fail_details or [])[:6]:
-        snippet_fails.append(
-            {
-                "id": d.get("id"),
-                "expected": str(d.get("expected"))[:80],
-                "got": str(d.get("got"))[:80],
-            }
-        )
-    note = {
+    run_kernel_feedback(
+        slug=slug,
+        ok=ok,
+        cause=str(cause),
+        hits=int(selected_hits or 0),
+        baseline=int(baseline_hits or 0),
+        total=int(total or 8),
+        aura_bin=aura_bin,
+        harness_root=harness_root,
+    )
+    repo = _repo_root()
+    loaded = load_feedback(repo, harness_root)
+    # keep caller-compatible shape
+    state["notes"] = list(loaded.get("notes") or [])[-MAX_NOTES:]
+    state["by_slug"] = loaded.get("by_slug") or {}
+    state["last"] = loaded.get("last") or {
         "slug": slug,
-        "ok": bool(ok),
-        "reason": reason,
+        "ok": ok,
         "cause": cause,
         "hits": selected_hits,
         "baseline_hits": baseline_hits,
         "total": total,
         "llm_via": llm_via,
         "mutate_ops": list(mutate_ops or [])[:8],
-        "fails": snippet_fails,
+        "kernel": "aura",
     }
-    notes.append(note)
-    state["notes"] = notes[-MAX_NOTES:]
-    slug_notes = list(by_slug.get(slug) or [])
-    slug_notes.append(note)
-    by_slug[slug] = slug_notes[-MAX_SLUG_NOTES:]
-    state["by_slug"] = by_slug
-    state["last"] = note
+    state["kernel"] = "aura"
     return state
 
 
@@ -107,16 +179,18 @@ def classify_no_gain_cause(
     selected_hits: int | None = None,
     pre_score_session: dict[str, Any] | None = None,
 ) -> str:
-    """Distinguish Soft sock collapse vs proposal quality no_gain (honest)."""
+    """Honest sock-vs-quality classify (thin; mirrors Soft feedback-classify)."""
     ex = list(explorers or [])
     if not ex:
         return "no_explorers"
     n = len(ex)
-    transient_n = sum(1 for e in ex if e.get("transient") or e.get("reason") in (
-        "set_code_failed", "eval_transient", "run_transient"
-    ))
+    transient_n = sum(
+        1
+        for e in ex
+        if e.get("transient")
+        or e.get("reason") in ("set_code_failed", "eval_transient", "run_transient")
+    )
     zero_n = sum(1 for e in ex if int(e.get("hits") or 0) == 0)
-    # Sock: majority transient/set_code_failed OR selected zeros while baseline held hits
     if transient_n >= max(2, n // 3):
         return "sock_transient"
     if (
@@ -133,7 +207,6 @@ def classify_no_gain_cause(
     pre = pre_score_session or {}
     if pre.get("via") in ("restart", "cold_start") and zero_n >= (n * 2) // 3:
         return "sock_after_reattach_still_poor"
-    # Quality: Soft scored, best ≤ baseline
     if selected_hits is not None and baseline_hits is not None:
         if int(selected_hits) <= int(baseline_hits):
             if int(selected_hits) == int(baseline_hits) and int(selected_hits) > 0:
@@ -150,51 +223,57 @@ def build_prompt_variation(
     variant_i: int = 0,
     mutate_seed_ops: list[str] | None = None,
     mutate_seed_note: str | None = None,
+    harness_root: Path | None = None,
+    aura_bin: str | None = None,
 ) -> str:
-    """Richer, varied user-prompt suffix from accumulated feedback + mutate seed."""
+    """Read Soft kernel feedback + family tips from Soft memory (not Python brain)."""
+    bin_path = aura_bin or os.environ.get("AURA_BIN") or DEFAULT_SOFT
+    repo = _repo_root()
+    hroot = Path(harness_root) if harness_root else (
+        Path(os.environ.get("AURA_BUILD_HARNESS_ROOT") or (repo / ".aura-build"))
+    )
+    soft_lib = Path("/workspace/aura-grok/lib")
+    env = {
+        **os.environ,
+        "AURA_PATH": os.environ.get("AURA_PATH") or f"{soft_lib}:{repo / 'aura'}",
+        "AURA_BUILD_HARNESS_ROOT": str(hroot),
+        "AURA_BUILD_SLUG": slug,
+        "AURA_SANDBOX": os.environ.get("AURA_SANDBOX") or "off",
+    }
+    form = (
+        "(begin (require \"self_evolve_feedback\" all:) "
+        f"(feedback-prompt-suffix \"{hroot}\" \"{slug}\" {int(variant_i)}))"
+    )
     lines: list[str] = []
-    fb = feedback or {}
-    slug_notes = list((fb.get("by_slug") or {}).get(slug) or [])
-    global_notes = list(fb.get("notes") or [])[-8:]
-    # Cause histogram
-    causes: dict[str, int] = {}
-    for n in slug_notes + global_notes:
-        c = str(n.get("cause") or "")
-        if c:
-            causes[c] = causes.get(c, 0) + 1
-    if causes:
-        top = sorted(causes.items(), key=lambda kv: -kv[1])[:5]
-        lines.append("Feedback-accumulated no_gain/gain causes (recent):")
-        for c, k in top:
-            lines.append(f"  - {c}: {k}")
-    # Prior fail patterns for this slug
-    if slug_notes:
-        last = slug_notes[-1]
-        lines.append(
-            f"Prior round on {slug}: ok={last.get('ok')} reason={last.get('reason')} "
-            f"cause={last.get('cause')} hits={last.get('hits')}/{last.get('total')}"
+    try:
+        proc = subprocess.run(
+            [bin_path, "-e", form],
+            capture_output=True,
+            text=True,
+            timeout=20.0,
+            check=False,
+            start_new_session=True,
+            env=env,
+            cwd=str(repo),
         )
-        for f in (last.get("fails") or [])[:4]:
-            lines.append(
-                f"  prior fail CASE{f.get('id')}: got={f.get('got')!r} expected={f.get('expected')!r}"
-            )
-    # Prompt variation by variant index
-    focus = [
-        "Focus on edge cases (empty / singleton / duplicates).",
-        "Prefer iterative Soft-friendly loops over deep recursion.",
-        "Preserve CASE print harness; only fix solve algorithm.",
-        "Do not hardcode expected outputs into display.",
-        "Watch off-by-one and inclusive bounds.",
-        "Prefer Soft-native list/string helpers when available.",
-        "Keep solution under 200 lines; avoid inventing APIs.",
-        "If prior plateaued, try a different algorithm family.",
-    ]
-    lines.append(f"Prompt variation[{variant_i % len(focus)}]: {focus[variant_i % len(focus)]}")
+        out = (proc.stdout or "").strip()
+        if out and proc.returncode == 0:
+            lines.append(f"Kernel prompt_suffix: {out[:800]}")
+    except Exception:  # noqa: BLE001
+        pass
+    fb = feedback or load_feedback(repo, hroot)
+    last = fb.get("last") or {}
+    if last:
+        lines.append(
+            f"Prior Soft-memory note: ok={last.get('ok')} cause={last.get('cause')} "
+            f"hits={last.get('hits')}/{last.get('total')}"
+        )
     if mutate_seed_ops:
-        lines.append(f"Local swarm-mutate seed ops: {', '.join(mutate_seed_ops[:6])}")
+        lines.append(f"Soft-ranked swarm seed ops: {', '.join(mutate_seed_ops[:6])}")
     if mutate_seed_note:
         lines.append(f"Mutate seed note: {mutate_seed_note[:240]}")
-    # Current fail details already in main prompt — add emphasis
     if fail_details:
         lines.append(f"Still failing {len(fail_details)} cases — repair those first.")
+    if not lines:
+        lines.append("Kernel feedback empty — Soft select-best owns scoring.")
     return "\n".join(lines)
