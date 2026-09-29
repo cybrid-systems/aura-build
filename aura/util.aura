@@ -5,7 +5,7 @@
   iso-now make-id
   default-fitness seed-from-prompt
   join-path abs-path string-trim string-downcase string-pad string-take string-drop
-  list-take list-drop list-tail make-list for-each hash-for-each hash-fold foldr hash-empty? hash->list any
+  list-take list-drop list-tail make-list for-each hash-for-each hash-fold foldr hash-empty? hash->list any all
   round4)
 
 (require "std/io" all:)
@@ -169,6 +169,15 @@
   (let loop ((xs lst))
     (if (null? xs) #f
       (if (pred (car xs)) #t (loop (cdr xs))))))
+
+
+; Soft oneshot unbound all (Soft std/list.aura defines iterative any/all #928;
+; Soft oneshot does not auto-load std/list). Denseness path: aura/soft_all.aura
+; (selected=named-let). Soft std shape: (all pred lst).
+(define (all pred lst)
+  (let loop ((xs lst))
+    (if (null? xs) #t
+      (if (pred (car xs)) (loop (cdr xs)) #f))))
 
 (define (ensure-dir path)
   (sh (string-append "mkdir -p '" path "'"))
