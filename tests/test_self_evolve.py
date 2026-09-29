@@ -559,3 +559,63 @@ def test_runtime_result_attaches_last_helper_key():
     assert 'result["last_helper"]' in src
     assert 'result["all_helper"]' in src
     assert m.FIBER_EXPLORER_CAP == 32
+
+
+def test_find_helper_candidates_export_find():
+    from aura_build.self_evolve_runtime import _FIND_HELPER_CANDIDATES
+
+    assert len(_FIND_HELPER_CANDIDATES) >= 2
+    for name, src in _FIND_HELPER_CANDIDATES:
+        assert "find" in src
+        assert "(export find)" in src
+
+
+def test_runtime_result_attaches_find_helper_key():
+    """Regression: find must attach on runtime result; FIBER_EXPLORER_CAP=32 kept."""
+    import inspect
+    from aura_build import self_evolve_runtime as m
+
+    src = inspect.getsource(m.cmd_runtime)
+    assert 'result["find_helper"]' in src
+    assert 'result["last_helper"]' in src
+    assert m.FIBER_EXPLORER_CAP == 32
+
+
+def test_count_helper_candidates_export_count():
+    from aura_build.self_evolve_runtime import _COUNT_HELPER_CANDIDATES
+
+    assert len(_COUNT_HELPER_CANDIDATES) >= 2
+    for name, src in _COUNT_HELPER_CANDIDATES:
+        assert "count" in src
+        assert "(export count)" in src
+
+
+def test_runtime_result_attaches_count_helper_key():
+    """Regression: count must attach on runtime result; FIBER_EXPLORER_CAP=32 kept."""
+    import inspect
+    from aura_build import self_evolve_runtime as m
+
+    src = inspect.getsource(m.cmd_runtime)
+    assert 'result["count_helper"]' in src
+    assert 'result["find_helper"]' in src
+    assert m.FIBER_EXPLORER_CAP == 32
+
+
+def test_remove_helper_candidates_export_remove():
+    from aura_build.self_evolve_runtime import _REMOVE_HELPER_CANDIDATES
+
+    assert len(_REMOVE_HELPER_CANDIDATES) >= 2
+    for name, src in _REMOVE_HELPER_CANDIDATES:
+        assert "remove" in src
+        assert "(export remove)" in src
+
+
+def test_runtime_result_attaches_remove_helper_key():
+    """Regression: remove must attach on runtime result; FIBER_EXPLORER_CAP=32 kept."""
+    import inspect
+    from aura_build import self_evolve_runtime as m
+
+    src = inspect.getsource(m.cmd_runtime)
+    assert 'result["remove_helper"]' in src
+    assert 'result["count_helper"]' in src
+    assert m.FIBER_EXPLORER_CAP == 32
