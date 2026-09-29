@@ -109,11 +109,11 @@ def test_observe_pursue_shrinks_then_ramps():
         "notes": [],
     }
     state = observe_pursue_round(
-        state, soft_ready=True, goal_met=True, ms=5_000
+        state, soft_ready=True, goal_met=True, ms=90_000
     )
     assert state["worldlines"] == 128  # one step down from 256
     state = observe_pursue_round(
-        state, soft_ready=True, goal_met=True, ms=4_000
+        state, soft_ready=True, goal_met=True, ms=80_000
     )
     assert state["worldlines"] == WORLDLINES_FAST
     # miss ramps up

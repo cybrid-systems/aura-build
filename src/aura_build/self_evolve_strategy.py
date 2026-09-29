@@ -424,7 +424,8 @@ def observe_pursue_round(
     idx = int(state.get("worldlines_idx") if state.get("worldlines_idx") is not None else 2)
     idx = max(0, min(len(WORLDLINES_RAMP) - 1, idx))
 
-    fast = ms is not None and int(ms) < 45_000
+    # ~256 Soft session evals often land ~60–120s; treat <180s as fast enough to shrink.
+    fast = ms is not None and int(ms) < 180_000
     if soft_ready and goal_met and fast:
         # Shrink toward WORLDLINES_FAST
         idx = max(0, idx - 1)
