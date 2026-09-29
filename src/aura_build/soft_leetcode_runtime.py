@@ -1326,10 +1326,32 @@ def repair_llm(
         for i, src in enumerate(proposals):
             candidates.append((f"llm-{i}", src))
 
+        # After long host_parallel MiniMax proposes, Soft sock may be stale —
+        # re-attach/ping before any set-code scoring (host fix; do not invent Ready).
+        from aura_build.serve_session import ensure_session_ready
+
+        sess, ready_meta = ensure_session_ready(
+            sess, aura_bin=aura_bin, harness_root=hroot
+        )
+        llm_meta["pre_score_session"] = ready_meta
+        if ready_meta.get("via") in ("restart", "cold_start"):
+            denseness = fiber_fanout_probe(sess, n=2, timeout_s=6.0)
+            fiber_live = bool(denseness.get("ok"))
+            probe = fiber_llm_probe(sess, scratch_dir=scratch, timeout_s=30.0, config=cfg)
+            fiber_llm_ok = bool(probe.get("ok"))
+
+        # Restart budget scales with parallel propose fanout (was hard-capped at 2,
+        # so after sock death mid-batch the remaining explorers all set_code_failed
+        # → Soft select saw only zeros → honest no_gain).
+        max_restarts = max(2, min(8, 2 + len(candidates) // 8))
         restarts = 0
+        consecutive_fail = 0
         for name, src in candidates:
             sc = _session_score_src(sess, src, tests)
-            if sc.get("transient") and restarts < 2:
+            need_restart = bool(sc.get("transient")) or (
+                sc.get("reason") == "set_code_failed" and consecutive_fail >= 1
+            )
+            if need_restart and restarts < max_restarts:
                 _stop_quiet(sess)
                 sess, fiber_live, fiber_llm_ok, denseness = _restart_soft_session(
                     aura_bin=aura_bin,
@@ -1337,8 +1359,17 @@ def repair_llm(
                     scratch=scratch,
                     cfg=cfg,
                 )
+                # ensure sock actually answers before retry score
+                sess, _ready2 = ensure_session_ready(
+                    sess, aura_bin=aura_bin, harness_root=hroot
+                )
                 restarts += 1
+                consecutive_fail = 0
                 sc = _session_score_src(sess, src, tests)
+            if sc.get("transient") or sc.get("reason") == "set_code_failed":
+                consecutive_fail += 1
+            else:
+                consecutive_fail = 0
             explorers.append(
                 {
                     "name": name,
@@ -1353,6 +1384,8 @@ def repair_llm(
                     "session_restarts": restarts,
                 }
             )
+        llm_meta["score_session_restarts"] = restarts
+        llm_meta["score_max_restarts"] = max_restarts
 
         if not explorers:
             return {
@@ -1374,6 +1407,29 @@ def repair_llm(
             repo=repo,
             tie_key=_llm_rank,
         )
+        # Soft pick-best sock transient after parallel propose → re-attach + retry once
+        if soft_sel.get("transient") or str(soft_sel.get("reason") or "").startswith(
+            "transient:"
+        ):
+            sess, ready_sel = ensure_session_ready(
+                sess, aura_bin=aura_bin, harness_root=hroot
+            )
+            if not ready_sel.get("ok"):
+                _stop_quiet(sess)
+                sess, fiber_live, fiber_llm_ok, denseness = _restart_soft_session(
+                    aura_bin=aura_bin,
+                    harness_root=hroot,
+                    scratch=scratch,
+                    cfg=cfg,
+                )
+            best, soft_sel = select_explorer_soft(
+                explorers,
+                score_key="hits",
+                sess=sess,
+                repo=repo,
+                tie_key=_llm_rank,
+            )
+            soft_sel = {**soft_sel, "pre_select_session": ready_sel}
         assert best is not None
         base_hits = int(baseline.get("hits") or 0)
         best_hits = int(best["hits"])
@@ -1734,20 +1790,29 @@ def cmd_soft_leetcode(args: Any) -> int:
         vfy = result.get("verify") or {}
         base = result.get("baseline") or {}
         # Prefer post-verify hits; on no_gain Soft may omit verify — use selected/baseline.
+        # When sock death zeroed session scores, selected.hits can be 0 while oneshot
+        # baseline still holds — report max for strategy accuracy (never invent gain).
         selected = result.get("selected") or {}
         passed = vfy.get("hits")
         if passed is None:
-            passed = selected.get("hits")
-        if passed is None:
-            passed = base.get("hits")
+            sel_h = selected.get("hits")
+            base_h = base.get("hits")
+            if sel_h is not None and base_h is not None:
+                passed = max(int(sel_h), int(base_h))
+            elif sel_h is not None:
+                passed = sel_h
+            else:
+                passed = base_h
         total = vfy.get("total") or selected.get("total") or base.get("total")
         lat = result.get("latency") or {}
         llm_meta = result.get("llm") or {}
         llm_via = (
             result.get("llm_via")
             or llm_meta.get("llm_via")
-            or ("recipe" if mode != "llm" else "none")
+            or ("recipe" if mode != "llm" else None)
         )
+        if not llm_via:
+            llm_via = "recipe" if mode != "llm" else "none"
         tokens = (
             result.get("tokens")
             or result.get("llm_tokens")
@@ -1757,7 +1822,7 @@ def cmd_soft_leetcode(args: Any) -> int:
             _lc_state,
             slug=str(result.get("slug") or s),
             ok=bool(result.get("ok")),
-            llm_via=str(llm_via),
+            llm_via=str(llm_via) if llm_via is not None else None,
             proposals=int(
                 result.get("proposals_n")
                 or result.get("n_proposals")
