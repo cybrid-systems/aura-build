@@ -11,8 +11,9 @@ Hardening:
 
 No expected-answer hardcoding into display. Never invent fiber_live/incr_proven.
 
-LLM path (--llm / --batch-llm): MiniMax propose-only full Aura candidates → Soft
-set-code worldlines → in-session CASE score → select-best → current-source materialize.
+LLM path (--llm / --batch-llm): Soft swarm (ant/pso/abc) local multi-mutation FIRST →
+concurrent MiniMax propose seeded by mutated variants + feedback-accumulated prompts →
+Soft set-code worldlines → select-best → current-source. Sock re-attach before score.
 Prefer fiber http-post when measured; else host MiniMax. Recipes still used when slug matches
 and --llm is not forced.
 """
@@ -912,10 +913,18 @@ def _minimax_propose_aura(
     scratch: Path,
     temperature: float,
     n: int = 2,
+    seed_variants: list[dict[str, Any]] | None = None,
+    feedback: dict[str, Any] | None = None,
 ) -> tuple[list[str], dict[str, Any]]:
-    """Propose-only MiniMax: return list of aura sources + meta (llm_via measured)."""
+    """Propose-only MiniMax: return list of aura sources + meta (llm_via measured).
+
+    When ``seed_variants`` (Soft-swarm local multi-mutates) is provided, each
+    concurrent worker is seeded with a mutated prior + feedback-accumulated
+    prompt variation — not plain single-shot propose from one baseline.
+    """
     from aura_build.fiber_llm import fiber_chat_completions
     from aura_build.minimax import chat_completions, extract_aura_source
+    from aura_build.prompt_feedback import build_prompt_variation
 
     fail_lines = []
     for d in fail_details[:16]:
@@ -930,21 +939,41 @@ def _minimax_propose_aura(
     if not fail_lines:
         fail_lines = ["(no CASE diffs; rely on stderr / prior)"]
     passing = max(0, len(tests) - len(fail_details))
-    user = (
-        f"Slug: {slug}\n"
-        f"Soft score context: {passing}/{len(tests)} cases already pass; "
-        f"{len(fail_details)} still fail — focus on the failing cases.\n\n"
-        f"Problem:\n{problem_md[:2000]}\n\n"
-        f"Prior Aura source (fix):\n```aura\n{prior_src[:6500]}\n```\n\n"
-        f"stderr (truncated):\n{(stderr_snippet or '')[:1000]}\n\n"
-        f"Failing CASE diffs (clues only; do NOT hardcode expected into display):\n"
-        + "\n".join(fail_lines)
-        + "\n\nWrite a repaired complete solution.aura now that still prints CASE lines via solve."
-    )
-    messages = [
-        {"role": "system", "content": LLM_SYSTEM},
-        {"role": "user", "content": user},
-    ]
+    seeds = list(seed_variants or [])
+
+    def _messages_for(i: int) -> list[dict[str, str]]:
+        seed = seeds[i % len(seeds)] if seeds else None
+        seed_src = str((seed or {}).get("src") or prior_src)
+        seed_ops = list((seed or {}).get("ops") or [])
+        seed_name = str((seed or {}).get("name") or "baseline")
+        fb_suffix = build_prompt_variation(
+            slug=slug,
+            fail_details=fail_details,
+            feedback=feedback,
+            variant_i=i,
+            mutate_seed_ops=seed_ops or None,
+            mutate_seed_note=f"seed={seed_name}" if seed else None,
+        )
+        user = (
+            f"Slug: {slug}\n"
+            f"Soft score context: {passing}/{len(tests)} cases already pass; "
+            f"{len(fail_details)} still fail — focus on the failing cases.\n\n"
+            f"Problem:\n{problem_md[:2000]}\n\n"
+            f"Prior Aura source (swarm-mutated seed={seed_name} ops={seed_ops or ['none']}; fix):\n"
+            f"```aura\n{seed_src[:6500]}\n```\n\n"
+            f"stderr (truncated):\n{(stderr_snippet or '')[:1000]}\n\n"
+            f"Failing CASE diffs (clues only; do NOT hardcode expected into display):\n"
+            + "\n".join(fail_lines)
+            + "\n\n"
+            + fb_suffix
+            + "\n\nWrite a repaired complete solution.aura now that still prints CASE lines via solve."
+        )
+        return [
+            {"role": "system", "content": LLM_SYSTEM},
+            {"role": "user", "content": user},
+        ]
+
+    messages = _messages_for(0)
     sources: list[str] = []
     meta: dict[str, Any] = {"attempts": [], "llm_via": "none", "llm_ok": False}
 
@@ -974,10 +1003,18 @@ def _minimax_propose_aura(
 
         def _one(i: int) -> tuple[int, str | None, dict[str, Any]]:
             temp = temperature + 0.05 * (i % 8)
-            attempt: dict[str, Any] = {"i": i, "temperature": temp, "via": "host_parallel"}
+            attempt: dict[str, Any] = {
+                "i": i,
+                "temperature": temp,
+                "via": "host_parallel",
+                "seeded": bool(seeds),
+            }
+            if seeds:
+                attempt["seed_name"] = str(seeds[i % len(seeds)].get("name") or "")
+                attempt["seed_ops"] = list(seeds[i % len(seeds)].get("ops") or [])
             try:
                 resp = chat_completions(
-                    messages,
+                    _messages_for(i),
                     config=cfg,
                     temperature=temp,
                     max_tokens=3500,
@@ -1029,10 +1066,18 @@ def _minimax_propose_aura(
                     meta["llm_ok"] = True
         meta["tokens"] = token_sum
         meta["n_ok"] = len(sources)
+        meta["seeded_n"] = len(seeds)
+        meta["feedback_notes"] = len((feedback or {}).get("notes") or [])
         # Prefer Soft fiber denseness honesty stamp when measured (propose still host_parallel)
         if fiber_llm_ok:
             meta["fiber_llm_ok"] = True
-            meta["propose_path"] = "host_parallel_soft_select"
+            meta["propose_path"] = (
+                "swarm_mutate_then_host_parallel_soft_select"
+                if seeds
+                else "host_parallel_soft_select"
+            )
+        elif seeds:
+            meta["propose_path"] = "swarm_mutate_then_host_parallel"
         return sources, meta
 
     for i in range(max(1, n_eff)):
@@ -1303,6 +1348,21 @@ def repair_llm(
         probe = fiber_llm_probe(sess, scratch_dir=scratch, timeout_s=45.0, config=cfg)
         fiber_llm_ok = bool(probe.get("ok"))
 
+        # --- Soft swarm local multi-mutation FIRST (ant/pso/abc rank → host mutate) ---
+        from aura_build.prompt_feedback import load_feedback
+        from aura_build.soft_swarm_mutate import swarm_mutate_candidates
+
+        feedback_state = load_feedback(repo, hroot)
+        mut_n = max(8, min(24, int(proposals)))
+        mut_cands, mut_meta = swarm_mutate_candidates(
+            str(baseline.get("src") or ""),
+            n=mut_n,
+            aura_bin=aura_bin,
+            seed=424242 + (abs(hash(slug)) % 10000),
+            prefer_kinds=["pso", "abc"],
+        )
+
+        # Concurrent MiniMax burn seeded by mutated variants (not plain single-shot)
         proposals, llm_meta = _minimax_propose_aura(
             slug=slug,
             problem_md=problem_md,
@@ -1316,13 +1376,19 @@ def repair_llm(
             scratch=scratch,
             temperature=0.25,
             n=proposals,
+            seed_variants=mut_cands,
+            feedback=feedback_state,
         )
         llm_meta["fiber_llm_probe"] = {
             "ok": probe.get("ok"),
             "reason": probe.get("reason") or probe.get("note"),
         }
+        llm_meta["swarm_mutate"] = mut_meta
 
         candidates: list[tuple[str, str]] = [("baseline", str(baseline["src"]))]
+        # Include local swarm-mutated lines as Soft-scored explorers (rule+mutate mix)
+        for mc in mut_cands:
+            candidates.append((str(mc.get("name") or "mut"), str(mc.get("src") or "")))
         for i, src in enumerate(proposals):
             candidates.append((f"llm-{i}", src))
 
@@ -1839,6 +1905,59 @@ def cmd_soft_leetcode(args: Any) -> int:
             tokens=tokens,
         )
         save_strategy(repo, _lc_state, harness_root)
+        # Durable feedback-accumulated prompts + sock-vs-quality no_gain analysis
+        from aura_build.prompt_feedback import (
+            classify_no_gain_cause,
+            load_feedback,
+            observe_transform_feedback,
+            save_feedback,
+        )
+
+        cause = None
+        if not result.get("ok"):
+            cause = classify_no_gain_cause(
+                explorers=list(result.get("explorers") or []),
+                soft_select=result.get("soft_select") if isinstance(result.get("soft_select"), dict) else None,
+                baseline_hits=int(base.get("hits")) if base.get("hits") is not None else None,
+                selected_hits=int(selected.get("hits")) if selected.get("hits") is not None else None,
+                pre_score_session=(llm_meta.get("pre_score_session") or {}),
+            )
+            result["no_gain_cause"] = cause
+            _lc_state["last_no_gain_cause"] = cause
+            save_strategy(repo, _lc_state, harness_root)
+        fb = load_feedback(repo, harness_root)
+        mut_ops = []
+        sm = llm_meta.get("swarm_mutate") or {}
+        if isinstance(sm.get("ranked_ops"), list):
+            mut_ops = list(sm.get("ranked_ops") or [])[:6]
+        fb = observe_transform_feedback(
+            fb,
+            slug=str(result.get("slug") or s),
+            ok=bool(result.get("ok")),
+            reason=str(result.get("reason") or ""),
+            fail_details=None,
+            selected_hits=int(selected.get("hits")) if selected.get("hits") is not None else None,
+            baseline_hits=int(base.get("hits")) if base.get("hits") is not None else None,
+            total=int(total) if total is not None else None,
+            no_gain_cause=cause if not result.get("ok") else "gain",
+            llm_via=str(llm_via) if llm_via else None,
+            mutate_ops=mut_ops,
+        )
+        save_feedback(repo, fb, harness_root)
+        print(
+            json.dumps(
+                {
+                    "event": "soft_leetcode_feedback",
+                    "slug": result.get("slug") or s,
+                    "no_gain_cause": cause,
+                    "feedback_notes": len(fb.get("notes") or []),
+                    "swarm_rank_via": sm.get("rank_via"),
+                    "swarm_n": sm.get("n"),
+                    "propose_path": llm_meta.get("propose_path"),
+                },
+                ensure_ascii=False,
+            )
+        )
         print(
             json.dumps(
                 {
