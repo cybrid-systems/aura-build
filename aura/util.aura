@@ -5,7 +5,7 @@
   iso-now make-id
   default-fitness seed-from-prompt
   join-path abs-path string-trim string-downcase string-pad string-take string-drop
-  list-take list-drop take drop list-tail make-list for-each hash-for-each hash-fold foldr hash-empty? hash->list any all last find count remove delete range
+  list-take list-drop take drop list-tail make-list for-each hash-for-each hash-fold foldr hash-empty? hash->list any all last find count remove delete range extent
   round4)
 
 (require "std/io" all:)
@@ -83,7 +83,7 @@
         (substring s n len)))))
 
 
-; Soft tip af82f75 (#4152 Soft-zero-cost; gold R7RS take/drop @ #4177/#4221 CLOSED).
+; Soft tip 32b07d8 (#4153 Soft-zero-cost; gold R7RS take/drop @ #4177/#4221 CLOSED).
 ; Prefer Soft-native (take lst n)/(drop lst n). list-take/list-drop + soft_list_* =
 ; denseness defense-in-depth (align host FIBER_EXPLORER_CAP honesty).
 (define (list-take xs n)
@@ -94,7 +94,7 @@
     (go xs n)))
 
 
-; Soft tip af82f75 gold-binds drop. Prefer Soft-native; list-drop/soft_list_drop =
+; Soft tip 32b07d8 gold-binds drop. Prefer Soft-native; list-drop/soft_list_drop =
 ; denseness defense-in-depth. Complement of take — orch overflow honesty after take cap.
 (define (list-drop xs n)
   (letrec ((go (lambda (xs n)
@@ -188,9 +188,9 @@
       (if (pred (car xs)) (loop (cdr xs)) #f))))
 
 
-; Soft oneshot unbound last (Soft std/list.aura defines iterative last;
-; Soft oneshot does not auto-load std/list). Denseness path: aura/soft_last.aura
-; (selected=named-let). Soft std shape: (last lst); empty → ().
+; Soft tip 32b07d8 (#4153 Soft-zero-cost) gold-binds last on oneshot (std/list).
+; Prefer Soft-native (last lst); util/soft_last = denseness defense-in-depth
+; (selected=named-let). Soft shape: (last lst); empty → ().
 (define (last lst)
   (if (null? lst) (quote ())
     (let loop ((xs lst))
@@ -199,7 +199,7 @@
 
 
 
-; Soft tip af82f75 (#4152 Soft-zero-cost; gold find/count/remove/delete/range + R7RS take/drop). util/soft_find
+; Soft tip 32b07d8 (#4153 Soft-zero-cost; gold find/count/remove/delete/range + R7RS take/drop). util/soft_find
 ; remain defense-in-depth. Soft shape: (find pred lst) → first or ().
 (define (find pred lst)
   (let loop ((xs lst))
@@ -209,34 +209,47 @@
 
 
 
-; Soft tip af82f75 gold-binds count on oneshot (std/list). util/soft_count remain
+; Soft tip 32b07d8 gold-binds count on oneshot (std/list). util/soft_count remain
 ; defense-in-depth. Soft shape: (count pred lst) → integer; empty → 0.
 (define (count pred lst)
   (let loop ((xs lst) (n 0))
     (if (null? xs) n
       (loop (cdr xs) (if (pred (car xs)) (+ n 1) n)))))
 
-; Soft tip af82f75 gold-binds remove on oneshot (std/list; #4224 CLOSED). util/soft_remove
+; Soft tip 32b07d8 gold-binds remove on oneshot (std/list; #4224 CLOSED). util/soft_remove
 ; remain defense-in-depth. Soft shape: (remove pred lst) → elements where pred is false.
 (define (remove pred lst)
   (let loop ((xs lst) (acc (quote ())))
     (if (null? xs) (reverse acc)
       (loop (cdr xs) (if (pred (car xs)) acc (cons (car xs) acc))))))
 
-; Soft tip af82f75 gold-binds delete on oneshot (std/list; #4226 CLOSED). util/soft_delete
+; Soft tip 32b07d8 gold-binds delete on oneshot (std/list; #4226 CLOSED). util/soft_delete
 ; remain defense-in-depth. Soft shape: (delete x lst) → equal?-based drop of x.
 (define (delete x lst)
   (let loop ((xs lst) (acc (quote ())))
     (if (null? xs) (reverse acc)
       (loop (cdr xs) (if (equal? (car xs) x) acc (cons (car xs) acc))))))
 
-; Soft tip af82f75 gold-binds range on oneshot (std/list; #4225 CLOSED). Soft shape:
+; Soft tip 32b07d8 gold-binds range on oneshot (std/list; #4225 CLOSED). Soft shape:
 ; (range start end) → list [start, end). Prefer Soft-native; no soft_range invent this round
 ; (combat empty → skip invent). util define = defense-in-depth.
 (define (range start end)
   (let loop ((i start) (acc (quote ())))
     (if (>= i end) (reverse acc)
       (loop (+ i 1) (cons i acc)))))
+
+; Soft tip 32b07d8 gold-binds extent on oneshot (std/math; #4225 renamed range→extent).
+; Soft shape: (extent lst) → max-min span of numeric list; empty → 0.
+; Prefer Soft-native; no soft_extent invent (combat empty → skip invent).
+; util define = defense-in-depth for fitness-span honesty in orch/worldline.
+(define (extent lst)
+  (if (null? lst) 0
+    (let loop ((xs (cdr lst)) (mn (car lst)) (mx (car lst)))
+      (if (null? xs) (- mx mn)
+        (let ((x (car xs)))
+          (loop (cdr xs)
+                (if (< x mn) x mn)
+                (if (> x mx) x mx)))))))
 
 (define (ensure-dir path)
   (sh (string-append "mkdir -p '" path "'"))

@@ -1,8 +1,8 @@
 ; aura-build kernel — scout → mutate → eval → select-best
 ; Primary product path. Simulated = pure Aura fitness; aura = in-process mutate:rebind.
 ; Slice 3: fiber_live ⇒ worldline_backend=fiber_graph (fiber:spawn fan-out); else file.
-; Soft gap fill: util …/last/find/count/remove/delete/range/take/drop (+ soft_* denseness). Soft tip af82f75 (#4152 Soft-zero-cost) gold find/count/remove/delete/range + R7RS take/drop — prefer Soft-native; soft_* fallbacks.
-(export run-episode run-harness-canary select-best run-backend-episode)
+; Soft gap fill: util …/last/find/count/remove/delete/range/take/drop (+ soft_* denseness). Soft tip 32b07d8 (#4153 Soft-zero-cost) gold find/count/remove/delete/range/extent/last + R7RS take/drop — prefer Soft-native; soft_* fallbacks.
+(export run-episode run-harness-canary select-best run-backend-episode fitness-extent fitness-values)
 
 (require "util" all:)
 (require "traj" all:)
@@ -17,7 +17,7 @@
 (define (select-best worldlines)
   (if (null? worldlines)
     (error "no worldlines to select")
-    ; Prefer Soft-native drop (tip af82f75 / #4221 CLOSED); util/list-drop fallback.
+    ; Prefer Soft-native drop (tip 32b07d8 / #4221 CLOSED); util/list-drop fallback.
     (let loop ((xs (drop worldlines 1)) (best (car worldlines)))
       (if (null? xs) best
         (let* ((w (car xs))
@@ -42,6 +42,15 @@
              (hash-ref ev "passed" #f)))
          worldlines))
 
+
+(define (fitness-values worldlines)
+  ; Map evaluated worldlines → fitness list for Soft-native extent.
+  (map (lambda (w) (hash-ref (hash-ref w "eval") "fitness")) worldlines))
+
+(define (fitness-extent worldlines)
+  ; Prefer Soft-native extent (tip 32b07d8 / #4225 CLOSED); util/extent defense-in-depth.
+  ; Empty → 0. Honesty: span of fitnesses observed this episode.
+  (extent (fitness-values worldlines)))
 
 (define (worldlines-without-id worldlines id)
   ; Prefer Soft-native remove (tip 25c8ae0 / #4224 CLOSED); util/soft_remove fallback.
@@ -187,7 +196,7 @@
              (let* ((raw0 (if (equal? mode "aura")
                             (aura-mutate prompt seed n)
                             (sim-mutate prompt seed n)))
-                    ; Prefer Soft-native take (tip af82f75 / #4221 CLOSED); util/list-take fallback.
+                    ; Prefer Soft-native take (tip 32b07d8 / #4221 CLOSED); util/list-take fallback.
                     (raw (take raw0 n)))
                (let loop ((i 0) (xs raw) (out (list)))
                  (if (null? xs) (reverse out)
@@ -241,6 +250,8 @@
     (hash-set! rt "worldline_backend_reason" (hash-ref decision "reason" ""))
     (hash-set! rt "fiber_live" (hash-ref decision "fiber_live" #f))
     (hash-set! rt "session_model" (hash-ref decision "session_model" SESSION_SHARED))
+    ; Prefer Soft-native extent (tip 32b07d8) — fitness span honesty.
+    (hash-set! rt "fitness_extent" (fitness-extent evaluated))
     (hash "episode" ep "selected" selected
           "worldline_backend" backend)))
 
@@ -276,7 +287,7 @@
                      "discarded" discarded "rt" rt))
              (let* ((ws (workspace-create ws-root n))
                     (cids0 (hash-keys (hash-ref ws "candidates")))
-                    ; Prefer Soft-native take/drop (tip af82f75 / #4221 CLOSED).
+                    ; Prefer Soft-native take/drop (tip 32b07d8 / #4221 CLOSED).
                     (cids (take cids0 n))
                     (cid-overflow (drop cids0 n))
                     (evaluated

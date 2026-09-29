@@ -8,9 +8,9 @@
   workspace-discard-one workspace-runtime-fields
   decide-worldline-backend
   fiber-fanout-aura fiber-fanout-sim fiber-discard-losers
-  fiber-runtime-fields fiber-audit-write fiber-indices)
+  fiber-runtime-fields fiber-audit-write fiber-indices fiber-fitness-extent)
 
-; Soft gap fill: util …/find/count/remove/delete/range/take/drop (+ soft_* denseness). Soft tip af82f75 (#4152 Soft-zero-cost) gold find/count/remove/delete/range + R7RS take/drop — prefer Soft-native.
+; Soft gap fill: util …/find/count/remove/delete/range/take/drop (+ soft_* denseness). Soft tip 32b07d8 (#4153 Soft-zero-cost) gold find/count/remove/delete/range/extent/last + R7RS take/drop — prefer Soft-native.
 (require "util" all:)
 (require "std/io" all:)
 (require "traj" all:)
@@ -248,8 +248,13 @@
         "fiber_candidate_count" n))
 
 (define (fiber-indices n)
-  ; Prefer Soft-native range (tip af82f75 / #4225 CLOSED); util/range defense-in-depth.
+  ; Prefer Soft-native range (tip 32b07d8 / #4225 CLOSED); util/range defense-in-depth.
   (range 0 n))
+
+(define (fiber-fitness-extent fits)
+  ; Prefer Soft-native extent (tip 32b07d8 / #4225 CLOSED); util/extent defense-in-depth.
+  ; fits = list of numeric fitness values from fiber fan-out.
+  (extent fits))
 
 (define (fiber-spawn-mutate i bump)
   (let ((name (wl-name i))
@@ -338,7 +343,7 @@
     (eval-current)
     (let ((spawned (spawn-aura-fibers n)))
       (let ((fids (car spawned))
-            ; Prefer Soft-native drop (tip af82f75 / #4221 CLOSED); util/list-drop fallback.
+            ; Prefer Soft-native drop (tip 32b07d8 / #4221 CLOSED); util/list-drop fallback.
             (meta (car (drop spawned 1))))
         (let ((joins (join-all fids)))
           (let ((evaluated (eval-aura-joins meta joins)))
