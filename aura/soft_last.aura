@@ -1,0 +1,17 @@
+; Soft-materialized last helper (self-evolve Soft path)
+; materialize=current-source  fiber_live=true when denseness measured
+; selected=named-let  denseness=soft_ready_async_denseness_4048
+; incr_proven=false
+; Product: Soft oneshot unbound last (Soft std/list defines iterative
+; last; Soft oneshot does not auto-load std/list; sibling of any/all)
+(begin
+  (export last)
+  (define last
+    (lambda (lst)
+      (if (null? lst)
+        (quote ())
+        (letrec ((loop (lambda (xs)
+            (if (null? (cdr xs))
+              (car xs)
+              (loop (cdr xs))))))
+          (loop lst))))))

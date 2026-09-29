@@ -539,3 +539,23 @@ def test_runtime_result_attaches_all_helper_key():
     assert 'result["all_helper"]' in src
     assert 'result["any_helper"]' in src
     assert m.FIBER_EXPLORER_CAP == 32
+
+
+def test_last_helper_candidates_export_last():
+    from aura_build.self_evolve_runtime import _LAST_HELPER_CANDIDATES
+
+    assert len(_LAST_HELPER_CANDIDATES) >= 2
+    for name, src in _LAST_HELPER_CANDIDATES:
+        assert "last" in src
+        assert "(export last)" in src
+
+
+def test_runtime_result_attaches_last_helper_key():
+    """Regression: last must attach on runtime result; FIBER_EXPLORER_CAP=32 kept."""
+    import inspect
+    from aura_build import self_evolve_runtime as m
+
+    src = inspect.getsource(m.cmd_runtime)
+    assert 'result["last_helper"]' in src
+    assert 'result["all_helper"]' in src
+    assert m.FIBER_EXPLORER_CAP == 32
