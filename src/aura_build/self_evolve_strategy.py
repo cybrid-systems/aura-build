@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 # Ceiling matches self_evolve_runtime.FIBER_EXPLORER_CAP — adaptive may lower only.
-EXPLORER_CAP_CEILING = 32
+EXPLORER_CAP_CEILING = 64  # aligned FIBER_EXPLORER_CAP; measured Soft sequential ok@64
 EXPLORER_CAP_FLOOR = 8
 WORLDLINES_FULL = 256
 WORLDLINES_FAST = 64

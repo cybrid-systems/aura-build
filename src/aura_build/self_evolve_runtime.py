@@ -75,7 +75,7 @@ DEFAULT_BUMPS = (2, 9, 4, 7, 1)
 # Soft prefer-session for wl=256 pursue; runtime stamp does not need 256 joins.
 # Adaptive strategy (self_evolve_strategy) may LOWER effective cap on hang
 # observations — never raise above this ceiling. Do not invent Soft Ready.
-FIBER_EXPLORER_CAP = 32
+FIBER_EXPLORER_CAP = 64  # measured sequential fiber:spawn+join ok@64; fail@96 serve_session_timeout Soft tip e34f879
 
 _RUNTIME_OK_RE = re.compile(
     r"RUNTIME_OK\s+selected=(?P<selected>\S+)\s+observed=(?P<observed>\S+)"
