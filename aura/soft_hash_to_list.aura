@@ -1,0 +1,16 @@
+; Soft-materialized hash->list helper (self-evolve Soft path)
+; materialize=current-source  fiber_live=true when denseness measured
+; selected=map-keys  denseness=soft_ready_async_denseness_4048
+; incr_proven=false
+; Product: Soft oneshot unbound hash->list (Soft std/hash defines via
+; map+hash-keys+hash-ref; Soft oneshot does not auto-load std/hash;
+; sibling of hash-empty?/hash-fold/hash-for-each)
+(begin
+  (export hash->list)
+  (define hash->list
+    (lambda (h)
+      (map
+        (lambda (k)
+          (list
+            k (hash-ref
+              h k))) (hash-keys h)))))

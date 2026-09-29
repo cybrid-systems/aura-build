@@ -479,3 +479,23 @@ def test_runtime_result_attaches_hash_empty_helper_key():
     assert 'result["foldr_helper"]' in src
     assert m.FIBER_EXPLORER_CAP == 32
 
+
+
+def test_hash_to_list_helper_candidates_export_hash_to_list():
+    from aura_build.self_evolve_runtime import _HASH_TO_LIST_HELPER_CANDIDATES
+
+    assert len(_HASH_TO_LIST_HELPER_CANDIDATES) >= 2
+    for name, src in _HASH_TO_LIST_HELPER_CANDIDATES:
+        assert "hash->list" in src
+        assert "(export hash->list)" in src
+
+
+def test_runtime_result_attaches_hash_to_list_helper_key():
+    """Regression: hash_to_list must attach on runtime result; FIBER_EXPLORER_CAP=32 kept."""
+    import inspect
+    from aura_build import self_evolve_runtime as m
+
+    src = inspect.getsource(m.cmd_runtime)
+    assert 'result["hash_to_list_helper"]' in src
+    assert 'result["hash_empty_helper"]' in src
+    assert m.FIBER_EXPLORER_CAP == 32
