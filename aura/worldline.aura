@@ -8,9 +8,9 @@
   workspace-discard-one workspace-runtime-fields
   decide-worldline-backend
   fiber-fanout-aura fiber-fanout-sim fiber-discard-losers
-  fiber-runtime-fields fiber-audit-write)
+  fiber-runtime-fields fiber-audit-write fiber-indices)
 
-; Soft gap fill: util …/find/count/remove/delete (+ soft_* denseness). Soft tip 25c8ae0 gold find/count/remove/delete/range + R7RS take — prefer Soft-native.
+; Soft gap fill: util …/find/count/remove/delete/range (+ soft_* denseness). Soft tip 7c0952a (#4151) gold find/count/remove/delete/range + R7RS take — prefer Soft-native.
 (require "util" all:)
 (require "std/io" all:)
 (require "traj" all:)
@@ -246,6 +246,10 @@
         "fiber_live" live
         "worldline_backend" BACKEND_FIBER
         "fiber_candidate_count" n))
+
+(define (fiber-indices n)
+  ; Prefer Soft-native range (tip 7c0952a / #4225 CLOSED); util/range defense-in-depth.
+  (range 0 n))
 
 (define (fiber-spawn-mutate i bump)
   (let ((name (wl-name i))

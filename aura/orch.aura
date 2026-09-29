@@ -1,7 +1,7 @@
 ; aura-build kernel — scout → mutate → eval → select-best
 ; Primary product path. Simulated = pure Aura fitness; aura = in-process mutate:rebind.
 ; Slice 3: fiber_live ⇒ worldline_backend=fiber_graph (fiber:spawn fan-out); else file.
-; Soft gap fill: util …/last/find/count/remove/delete (+ soft_* denseness). Soft tip 25c8ae0 gold find/count/remove/delete/range + R7RS take — prefer Soft-native; soft_* fallbacks.
+; Soft gap fill: util …/last/find/count/remove/delete/range (+ soft_* denseness). Soft tip 7c0952a (#4151) gold find/count/remove/delete/range + R7RS take — prefer Soft-native; soft_* fallbacks.
 (export run-episode run-harness-canary select-best run-backend-episode)
 
 (require "util" all:)
