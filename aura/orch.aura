@@ -337,6 +337,8 @@
     (hash-set! rtrun "worldline_backend_reason" (hash-ref decision "reason" ""))
     (hash-set! rtrun "fiber_live" (hash-ref decision "fiber_live" #f))
     (hash-set! rtrun "session_model" (hash-ref decision "session_model" SESSION_SHARED))
+    ; Prefer Soft-native extent (tip 32b07d8) — fitness span honesty (aura-repo path).
+    (hash-set! rtrun "fitness_extent" (fitness-extent evaluated))
     (hash-set! rtrun "profile"
                (hash "id" "aura-repo"
                      "fitness_source" (if (equal? mode "aura") "aura" "simulated")
