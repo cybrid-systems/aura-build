@@ -143,3 +143,20 @@ def test_cmd_runtime_source_has_latency_and_strategy():
     assert "soft_native_probe" in src
     assert 'result["list_take_helper"]' in src or "list_take_helper" in src
     assert m.DEFAULT_SOFT.endswith("build/aura")
+
+
+def test_already_green_skip_without_nothing_to_commit(tmp_path: Path) -> None:
+    from aura_build.self_evolve_strategy import should_skip_helper_rematerialize
+
+    helper = tmp_path / "soft_worldline_pick.aura"
+    helper.write_text("; stub\n", encoding="utf-8")
+    st = {
+        "last_helpers_all_green": True,
+        "last_nothing_to_commit": False,
+        "soft_native_green": {},
+    }
+    skip, reason = should_skip_helper_rematerialize(
+        st, helper_key="helper", helper_path=helper
+    )
+    assert skip is True
+    assert reason == "already_green_skip"

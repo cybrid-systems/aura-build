@@ -408,6 +408,107 @@ def probe_serve_async_soft_ready(
                 pass
 
 
+
+
+def _bin_identity(aura_bin: str) -> dict[str, Any]:
+    """Stable Soft binary identity for soft-ready / reuse caches."""
+    p = Path(resolve_aura_bin(aura_bin) or aura_bin or "")
+    out: dict[str, Any] = {"path": str(p) if p else "", "mtime_ns": 0, "size": 0}
+    try:
+        if p.is_file():
+            st = p.stat()
+            out["path"] = str(p.resolve())
+            out["mtime_ns"] = int(st.st_mtime_ns)
+            out["size"] = int(st.st_size)
+    except OSError:
+        pass
+    return out
+
+
+def _soft_ready_cache_path(hroot: Path) -> Path:
+    return hroot / "soft_ready_cache.json"
+
+
+def load_cached_soft_ready(hroot: Path, aura_bin: str) -> dict[str, Any] | None:
+    """Return cached Soft Ready probe when bin path+mtime+size match; else None."""
+    path = _soft_ready_cache_path(hroot)
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    ident = _bin_identity(aura_bin)
+    cached_id = data.get("bin") or {}
+    if (
+        str(cached_id.get("path") or "") != ident["path"]
+        or int(cached_id.get("mtime_ns") or 0) != ident["mtime_ns"]
+        or int(cached_id.get("size") or 0) != ident["size"]
+    ):
+        return None
+    probe = data.get("probe")
+    if not isinstance(probe, dict) or "ok" not in probe:
+        return None
+    out = dict(probe)
+    out["cached"] = True
+    out["cache_reason"] = "bin_mtime_match"
+    return out
+
+
+def save_cached_soft_ready(hroot: Path, aura_bin: str, probe: dict[str, Any]) -> None:
+    """Persist Soft Ready probe for this Soft binary (host cache; never invents ok)."""
+    if not isinstance(probe, dict) or "ok" not in probe:
+        return
+    hroot.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "bin": _bin_identity(aura_bin),
+        "probe": {
+            "ok": bool(probe.get("ok")),
+            "serve_mode_preferred": probe.get("serve_mode_preferred"),
+            "reason": probe.get("reason"),
+            "fail_bits": probe.get("fail_bits"),
+            "fail_bits_decoded": probe.get("fail_bits_decoded"),
+        },
+        "saved_at": _iso_now(),
+    }
+    try:
+        _soft_ready_cache_path(hroot).write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
+
+
+def _bins_match(a: str | None, b: str | None) -> bool:
+    if not a or not b:
+        return False
+    try:
+        return Path(a).resolve() == Path(b).resolve()
+    except OSError:
+        return str(a) == str(b)
+
+
+def _wait_holder_gone(hroot: Path, *, timeout_s: float = 5.0) -> None:
+    """Ensure prior holder/aura/sock are gone before cold spawn (avoids dual-holder thrash)."""
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        marker = read_marker(hroot)
+        sock_alive = sock_path(hroot).exists()
+        pid_alive = False
+        if marker:
+            for key in ("holder_pid", "pid"):
+                pid = int(marker.get(key) or 0)
+                if pid and _pid_alive(pid):
+                    pid_alive = True
+                    break
+        if not sock_alive and not pid_alive:
+            return
+        time.sleep(0.05)
+
+
 def _extract_fail_bits(stderr: str) -> str | None:
     import re
 
@@ -693,7 +794,20 @@ def _holder_main(harness_root: str, aura_bin: str) -> None:
         hroot,
     )
     env = aura_subprocess_env(aura_bin)
-    soft_probe = probe_serve_async_soft_ready(aura_bin)
+    boot_t0 = time.monotonic()
+    boot_ms: dict[str, int] = {}
+    soft_probe = load_cached_soft_ready(hroot, aura_bin)
+    if soft_probe is None:
+        t_probe = time.monotonic()
+        soft_probe = probe_serve_async_soft_ready(aura_bin)
+        boot_ms["soft_ready_probe_ms"] = max(0, int((time.monotonic() - t_probe) * 1000))
+        save_cached_soft_ready(hroot, aura_bin, soft_probe)
+        soft_probe = dict(soft_probe)
+        soft_probe["cached"] = False
+    else:
+        boot_ms["soft_ready_probe_ms"] = 0
+        soft_probe = dict(soft_probe)
+        soft_probe["cached"] = True
     prefer_async = bool(soft_probe.get("ok"))
     serve_mode = SERVE_MODE_ASYNC if prefer_async else SERVE_MODE_SYNC
     aura_argv = [aura_bin, "--serve-async"] if prefer_async else [aura_bin, "--serve"]
@@ -711,6 +825,7 @@ def _holder_main(harness_root: str, aura_bin: str) -> None:
             start_new_session=True,
         )
 
+    t_spawn = time.monotonic()
     proc = _spawn(aura_argv)
     # Warm ping — sync accepts sexpr; async wants JSON exec when Ready.
     if prefer_async:
@@ -719,6 +834,7 @@ def _holder_main(harness_root: str, aura_bin: str) -> None:
         )
     else:
         warm = _aura_send_line(proc, "(+ 1 1)", timeout_s=8.0)
+    boot_ms["spawn_warm_ms"] = max(0, int((time.monotonic() - t_spawn) * 1000))
     if warm.get("status") != "ok" and prefer_async:
         # Measured Soft Ready said ok but warm failed — honest fallback to sync.
         try:
@@ -748,6 +864,7 @@ def _holder_main(harness_root: str, aura_bin: str) -> None:
         sys.exit(2)
 
     # Shared-ast / same-session probe — if aura dies mid-probe, fall back sync once.
+    t_shared = time.monotonic()
     try:
         if proc.poll() is not None:
             raise RuntimeError(f"aura_exited_before_shared_probe rc={proc.returncode}")
@@ -847,12 +964,22 @@ def _holder_main(harness_root: str, aura_bin: str) -> None:
                 shared_probe.get("serve_same_session_mutate_ok")
             ),
             "shared_ast_probe": shared_probe,
+            "boot_ms": {
+                **boot_ms,
+                "shared_ast_probe_ms": max(
+                    0, int((time.monotonic() - t_shared) * 1000)
+                ),
+                "holder_total_ms": max(0, int((time.monotonic() - boot_t0) * 1000)),
+            },
+            "attach_mode": "cold",
             "notes": (
                 f"serve_mode={serve_mode}; Soft Ready async="
-                f"{soft_probe.get('ok')} ({soft_probe.get('reason')}); "
+                f"{soft_probe.get('ok')} ({soft_probe.get('reason')}"
+                f"{';cached' if soft_probe.get('cached') else ''}); "
                 f"serve_cross_session_shared_ast={shared_ast}; "
                 f"same_session_mutate_ok="
-                f"{shared_probe.get('serve_same_session_mutate_ok')}"
+                f"{shared_probe.get('serve_same_session_mutate_ok')}; "
+                f"boot_ms={boot_ms}"
             ),
         },
         hroot,
@@ -1083,23 +1210,49 @@ def start_session(
     harness_root: Path | str | None = None,
     force: bool = False,
 ) -> ServeSession:
-    """Start holder daemon + aura --serve; durable across CLI process exit."""
+    """Start holder daemon + aura --serve; durable across CLI process exit.
+
+    Prefer reuse when an alive holder serves the same Soft binary (高速进化):
+    cold Soft --serve-async attach is tens of seconds; reuse is a ping.
+    Pass force=True only for hang recovery / explicit dirty restart.
+    """
     global _ATTACHED
     hroot = Path(harness_root) if harness_root else Path(
         os.environ.get("AURA_BUILD_HARNESS_ROOT") or ".aura-build"
     )
     hroot.mkdir(parents=True, exist_ok=True)
+    bin_path = resolve_aura_bin(aura_bin)
+    t0 = time.monotonic()
 
     existing = attach_session(harness_root=hroot, aura_bin=aura_bin)
-    if existing is not None and existing.alive() and not force:
-        return existing
+    if existing is not None and not force:
+        same_bin = _bins_match(existing.aura_bin, bin_path) if bin_path else True
+        if same_bin and existing.alive():
+            # Stamp reuse for latency breakdown (do not invent Soft Ready).
+            marker = read_marker(hroot) or {}
+            marker = dict(marker)
+            marker["attach_mode"] = "reuse"
+            marker["attach_ms"] = max(0, int((time.monotonic() - t0) * 1000))
+            try:
+                write_marker(marker, hroot)
+            except OSError:
+                pass
+            existing.attach_mode = "reuse"  # type: ignore[attr-defined]
+            existing.attach_ms = marker["attach_ms"]  # type: ignore[attr-defined]
+            _ATTACHED = existing
+            return existing
+        if not same_bin and bin_path:
+            # Soft binary changed — must cold-start; fall through.
+            force = True
+
     if existing is not None and force:
         existing.stop(clear=True)
+        _wait_holder_gone(hroot, timeout_s=5.0)
     else:
         # Clear stale
         stop_session(harness_root=hroot)
+        _wait_holder_gone(hroot, timeout_s=5.0)
 
-    bin_path = resolve_aura_bin(aura_bin)
     if not bin_path:
         raise RuntimeError("aura_binary_missing: set AURA_BIN / --aura-bin")
 
@@ -1124,6 +1277,7 @@ def start_session(
     # Wait for marker + ping
     sess: ServeSession | None = None
     # Soft Ready + async warm + shared-ast (+ sync side-probe #4047 B) can exceed 60s.
+    # Contended dual-holder thrash previously approached this deadline (~90s).
     deadline = time.monotonic() + 90.0
     saw_boot = False
     while time.monotonic() < deadline:
@@ -1152,12 +1306,23 @@ def start_session(
                     holder_pid=int(marker.get("holder_pid") or 0),
                 )
                 if sess.ping(timeout_s=2.0):
+                    attach_ms = max(0, int((time.monotonic() - t0) * 1000))
+                    marker = dict(marker)
+                    marker["attach_mode"] = "cold"
+                    marker["attach_ms"] = attach_ms
+                    try:
+                        write_marker(marker, hroot)
+                    except OSError:
+                        pass
+                    sess.attach_mode = "cold"  # type: ignore[attr-defined]
+                    sess.attach_ms = attach_ms  # type: ignore[attr-defined]
                     _ATTACHED = sess
                     return sess
         time.sleep(0.1)
     raise RuntimeError(
         "serve_session_start_timeout: holder did not become ready "
-        f"(saw_boot={saw_boot}; Soft Ready + shared-ast may take ~30–60s)"
+        f"(saw_boot={saw_boot}; Soft Ready + shared-ast may take ~30–60s; "
+        "check dual-holder thrash / serve.stderr.log)"
     )
 
 
@@ -1291,7 +1456,16 @@ def is_session_transient(msg: object) -> bool:
 
 
 def stop_quiet(sess: ServeSession | None) -> None:
+    """Stop Soft serve quietly.
+
+    High-speed evolution: when ``AURA_BUILD_KEEP_SERVE`` is truthy (default on),
+    leave the warm holder alive for pursue / denseness reuse. Pass
+    ``AURA_BUILD_KEEP_SERVE=0`` to restore eager teardown.
+    """
     if sess is None:
+        return
+    keep = (os.environ.get("AURA_BUILD_KEEP_SERVE") or "1").strip().lower()
+    if keep not in ("0", "false", "off", "no"):
         return
     try:
         sess.stop(clear=True)

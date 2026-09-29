@@ -328,7 +328,7 @@ def _run_soft_helper_evolve(
     hroot = harness_root or (repo / ".aura-build")
     sess = None
     try:
-        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=False)
         if not sess.alive():
             return {"ok": False, "reason": "serve_not_alive", "fiber_live": False}
 
@@ -587,7 +587,7 @@ def _run_soft_starts_helper_evolve(
     hroot = harness_root or (repo / ".aura-build")
     sess = None
     try:
-        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=False)
         if not sess.alive():
             return {"ok": False, "reason": "serve_not_alive", "fiber_live": False}
 
@@ -841,7 +841,7 @@ def _run_soft_ends_helper_evolve(
     hroot = harness_root or (repo / ".aura-build")
     sess = None
     try:
-        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=False)
         if not sess.alive():
             return {"ok": False, "reason": "serve_not_alive", "fiber_live": False}
 
@@ -1113,7 +1113,7 @@ def _run_soft_contains_helper_evolve(
     hroot = harness_root or (repo / ".aura-build")
     sess = None
     try:
-        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=False)
         if not sess.alive():
             return {"ok": False, "reason": "serve_not_alive", "fiber_live": False}
 
@@ -1390,7 +1390,7 @@ def _run_soft_split_helper_evolve(
     hroot = harness_root or (repo / ".aura-build")
     sess = None
     try:
-        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=False)
         if not sess.alive():
             return {"ok": False, "reason": "serve_not_alive", "fiber_live": False}
 
@@ -1678,7 +1678,7 @@ def _run_soft_replace_helper_evolve(
     hroot = harness_root or (repo / ".aura-build")
     sess = None
     try:
-        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=False)
         if not sess.alive():
             return {"ok": False, "reason": "serve_not_alive", "fiber_live": False}
 
@@ -1952,7 +1952,7 @@ def _run_soft_trim_helper_evolve(
     hroot = harness_root or (repo / ".aura-build")
     sess = None
     try:
-        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=False)
         if not sess.alive():
             return {"ok": False, "reason": "serve_not_alive", "fiber_live": False}
 
@@ -2221,7 +2221,7 @@ def _run_soft_downcase_helper_evolve(
     hroot = harness_root or (repo / ".aura-build")
     sess = None
     try:
-        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=False)
         if not sess.alive():
             return {"ok": False, "reason": "serve_not_alive", "fiber_live": False}
 
@@ -2488,7 +2488,7 @@ def _run_soft_upcase_helper_evolve(
     hroot = harness_root or (repo / ".aura-build")
     sess = None
     try:
-        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=False)
         if not sess.alive():
             return {"ok": False, "reason": "serve_not_alive", "fiber_live": False}
 
@@ -2757,7 +2757,7 @@ def _run_soft_pad_helper_evolve(
     hroot = harness_root or (repo / ".aura-build")
     sess = None
     try:
-        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=False)
         if not sess.alive():
             return {"ok": False, "reason": "serve_not_alive", "fiber_live": False}
 
@@ -3021,7 +3021,7 @@ def _run_soft_take_helper_evolve(
     hroot = harness_root or (repo / ".aura-build")
     sess = None
     try:
-        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=False)
         if not sess.alive():
             return {"ok": False, "reason": "serve_not_alive", "fiber_live": False}
 
@@ -3288,7 +3288,7 @@ def _run_soft_drop_helper_evolve(
     hroot = harness_root or (repo / ".aura-build")
     sess = None
     try:
-        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=False)
         if not sess.alive():
             return {"ok": False, "reason": "serve_not_alive", "fiber_live": False}
 
@@ -3545,7 +3545,7 @@ def _run_soft_list_take_helper_evolve(
     hroot = harness_root or (repo / ".aura-build")
     sess = None
     try:
-        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=False)
         if not sess.alive():
             return {"ok": False, "reason": "serve_not_alive", "fiber_live": False}
 
@@ -3804,7 +3804,7 @@ def _run_soft_list_drop_helper_evolve(
     hroot = harness_root or (repo / ".aura-build")
     sess = None
     try:
-        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=False)
         if not sess.alive():
             return {"ok": False, "reason": "serve_not_alive", "fiber_live": False}
 
@@ -4061,7 +4061,7 @@ def _run_soft_make_list_helper_evolve(
     hroot = harness_root or (repo / ".aura-build")
     sess = None
     try:
-        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=False)
         if not sess.alive():
             return {"ok": False, "reason": "serve_not_alive", "fiber_live": False}
 
@@ -4347,7 +4347,7 @@ def _run_soft_for_each_helper_evolve(
     hroot = harness_root or (repo / ".aura-build")
     sess = None
     try:
-        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=False)
         if not sess.alive():
             return {"ok": False, "reason": "serve_not_alive", "fiber_live": False}
 
@@ -4649,7 +4649,7 @@ def _run_soft_hash_for_each_helper_evolve(
     hroot = harness_root or (repo / ".aura-build")
     sess = None
     try:
-        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=False)
         if not sess.alive():
             return {"ok": False, "reason": "serve_not_alive", "fiber_live": False}
 
@@ -4929,7 +4929,7 @@ def _run_soft_hash_fold_helper_evolve(
     hroot = harness_root or (repo / ".aura-build")
     sess = None
     try:
-        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=False)
         if not sess.alive():
             return {"ok": False, "reason": "serve_not_alive", "fiber_live": False}
 
@@ -5209,7 +5209,7 @@ def _run_soft_foldr_helper_evolve(
     hroot = harness_root or (repo / ".aura-build")
     sess = None
     try:
-        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=False)
         if not sess.alive():
             return {"ok": False, "reason": "serve_not_alive", "fiber_live": False}
 
@@ -5464,7 +5464,7 @@ def _run_soft_hash_empty_helper_evolve(
     hroot = harness_root or (repo / ".aura-build")
     sess = None
     try:
-        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=False)
         if not sess.alive():
             return {"ok": False, "reason": "serve_not_alive", "fiber_live": False}
 
@@ -5721,7 +5721,7 @@ def _run_soft_hash_to_list_helper_evolve(
     hroot = harness_root or (repo / ".aura-build")
     sess = None
     try:
-        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=False)
         if not sess.alive():
             return {"ok": False, "reason": "serve_not_alive", "fiber_live": False}
 
@@ -5984,7 +5984,7 @@ def _run_soft_any_helper_evolve(
     hroot = harness_root or (repo / ".aura-build")
     sess = None
     try:
-        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=False)
         if not sess.alive():
             return {"ok": False, "reason": "serve_not_alive", "fiber_live": False}
 
@@ -6245,7 +6245,7 @@ def _run_soft_all_helper_evolve(
     hroot = harness_root or (repo / ".aura-build")
     sess = None
     try:
-        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=False)
         if not sess.alive():
             return {"ok": False, "reason": "serve_not_alive", "fiber_live": False}
 
@@ -6508,7 +6508,7 @@ def _run_soft_last_helper_evolve(
     hroot = harness_root or (repo / ".aura-build")
     sess = None
     try:
-        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=False)
         if not sess.alive():
             return {"ok": False, "reason": "serve_not_alive", "fiber_live": False}
 
@@ -6773,7 +6773,7 @@ def _run_soft_find_helper_evolve(
     hroot = harness_root or (repo / ".aura-build")
     sess = None
     try:
-        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=False)
         if not sess.alive():
             return {"ok": False, "reason": "serve_not_alive", "fiber_live": False}
 
@@ -7031,7 +7031,7 @@ def _run_soft_count_helper_evolve(
     hroot = harness_root or (repo / ".aura-build")
     sess = None
     try:
-        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=False)
         if not sess.alive():
             return {"ok": False, "reason": "serve_not_alive", "fiber_live": False}
 
@@ -7289,7 +7289,7 @@ def _run_soft_remove_helper_evolve(
     hroot = harness_root or (repo / ".aura-build")
     sess = None
     try:
-        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=False)
         if not sess.alive():
             return {"ok": False, "reason": "serve_not_alive", "fiber_live": False}
 
@@ -7548,7 +7548,7 @@ def _run_soft_delete_helper_evolve(
     hroot = harness_root or (repo / ".aura-build")
     sess = None
     try:
-        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=False)
         if not sess.alive():
             return {"ok": False, "reason": "serve_not_alive", "fiber_live": False}
 
@@ -7715,8 +7715,15 @@ def _run_serve_fiber(
     harness_root: Path | None = None,
     explorer_cap: int | None = None,
     latency_clock: Any = None,
+    force_session: bool = False,
+    keep_session: bool = True,
 ) -> dict[str, Any]:
-    """Long-lived Soft serve + denseness + fiber explorer worldlines → current-source."""
+    """Long-lived Soft serve + denseness + fiber explorer worldlines → current-source.
+
+    High-speed: reuse alive Soft serve for same binary (force_session=False);
+    keep_session=True leaves warm pool for pursue / next denseness (set-code resets).
+    force_session=True only for hang recovery — cold Soft attach dominates wall time.
+    """
     from aura_build.llm_dogfood import fiber_fanout_probe
     from aura_build.serve_session import start_session
 
@@ -7737,16 +7744,25 @@ def _run_serve_fiber(
             x += 1
 
     sess = None
-    phase_ms: dict[str, int] = {}
+    phase_ms: dict[str, Any] = {}
     hang_or_timeout = False
     try:
         t_sess = time.monotonic()
         if latency_clock is not None:
             latency_clock.start("session_start")
-        sess = start_session(aura_bin=aura_bin, harness_root=hroot, force=True)
+        # Prefer reuse — force=True was paying ~17–90s Soft cold attach every round.
+        sess = start_session(
+            aura_bin=aura_bin, harness_root=hroot, force=bool(force_session)
+        )
         phase_ms["session_start"] = max(0, int((time.monotonic() - t_sess) * 1000))
+        attach_mode = str(getattr(sess, "attach_mode", None) or "unknown")
+        phase_ms["session_attach_mode"] = attach_mode  # type: ignore[assignment]
         if latency_clock is not None:
-            latency_clock.end("session_start", ok=bool(sess and sess.alive()))
+            latency_clock.end(
+                "session_start",
+                ok=bool(sess and sess.alive()),
+                extra={"attach_mode": attach_mode, "force": bool(force_session)},
+            )
         if not sess.alive():
             return {"ok": False, "reason": "serve_not_alive", "fallback_ok": True, "latency_ms": phase_ms}
 
@@ -7976,8 +7992,19 @@ def _run_serve_fiber(
             "aura_issue_candidate": "hang" in str(exc).lower() or "timeout" in str(exc).lower(),
         }
     finally:
-        from aura_build.serve_session import stop_quiet as _stop_quiet_sess
-        _stop_quiet_sess(sess)
+        # Keep warm Soft serve by default (高速进化) — pursue / next round reuse.
+        # On hang, force-stop regardless of AURA_BUILD_KEEP_SERVE (sock unusable).
+        if hang_or_timeout:
+            from aura_build.serve_session import stop_session as _stop_session
+            try:
+                _stop_session(harness_root=hroot)
+            except Exception:  # noqa: BLE001
+                pass
+        elif not keep_session:
+            from aura_build.serve_session import stop_quiet as _stop_quiet_sess
+            import os as _os
+            _os.environ["AURA_BUILD_KEEP_SERVE"] = "0"
+            _stop_quiet_sess(sess)
 
 
 # Back-compat alias used by tests / older call sites

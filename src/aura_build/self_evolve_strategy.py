@@ -337,8 +337,12 @@ def should_skip_helper_rematerialize(
     green = soft_native_green if soft_native_green is not None else state.get("soft_native_green") or {}
     if native_key and bool(green.get(native_key)):
         return True, f"soft_native_skip:{native_key}"
-    if state.get("last_helpers_all_green") and state.get("last_nothing_to_commit"):
-        return True, "already_green_nothing_to_commit"
+    # High-speed: helpers all-green last round → skip rematerialize even if tip
+    # committed (stamp/product commit must not force Soft denseness cold restarts).
+    if state.get("last_helpers_all_green") and helper_path.is_file():
+        if state.get("last_nothing_to_commit"):
+            return True, "already_green_nothing_to_commit"
+        return True, "already_green_skip"
     return False, "run"
 
 
