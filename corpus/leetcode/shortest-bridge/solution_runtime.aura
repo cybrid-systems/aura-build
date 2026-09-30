@@ -1,0 +1,394 @@
+; soft_leetcode_runtime slug=shortest-bridge path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=host_parallel fiber_llm_ok=true
+; selected=llm-40 hits=7/8
+; baseline_hits=0/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define make-grid
+    (lambda (n rows)
+      (let ((v (make-vector
+          (*
+            n n) 0)))
+        (letrec ((loop (lambda (i)
+            (if (=
+                i n)
+              v
+              (begin
+                (letrec ((inner (lambda (j)
+                    (if (=
+                        j n)
+                      (quote done)
+                      (begin
+                        (vector-set!
+                          v (+
+                            (*
+                              i n) j) (list-ref
+                            (list-ref
+                              rows i) j))
+                        (inner (+
+                            j 1)))))))
+                  (inner 0))
+                (loop (+
+                    i 1)))))))
+          (loop 0)))))
+  (define grid-get
+    (lambda (g n r c)
+      (vector-ref
+        g (+
+          (*
+            r n) c))))
+  (define grid-set!
+    (lambda (g n r c v)
+      (vector-set!
+        g (+
+          (*
+            r n) c) v)))
+  (define idx
+    (lambda (n r c)
+      (+
+        (*
+          r n) c)))
+  (define collect-island
+    (lambda (g n sr sc)
+      (let ((total (*
+          n n)))
+        (let ((visited (make-vector
+            total #f)))
+          (let ((queue (list (cons
+                sr sc))))
+            (let ((cells (quote ())))
+              (begin
+                (vector-set!
+                  visited (idx
+                    n sr sc) #t)
+                (set! cells (cons
+                    (cons
+                      sr sc) cells))
+                (letrec ((loop (lambda ()
+                    (if (null? queue)
+                      cells
+                      (let ((cell (car queue)))
+                        (let ((r (car cell)))
+                          (let ((c (cdr cell)))
+                            (let ((rest (cdr queue)))
+                              (let ((nq0 rest))
+                                (let ((nq (begin
+                                    (let ((nr (+
+                                        r 1)))
+                                      (let ((nc c))
+                                        (let ((id (idx
+                                            n nr nc)))
+                                          (if (and
+                                              (<
+                                                nr n) (=
+                                                (grid-get
+                                                  g n nr nc) 1) (not (vector-ref
+                                                  visited id)))
+                                            (begin
+                                              (vector-set!
+                                                visited id #t)
+                                              (set! nq0 (append
+                                                  nq0 (list (cons
+                                                      nr nc))))
+                                              (set! cells (cons
+                                                  (cons
+                                                    nr nc) cells)))
+                                            ()))))
+                                    (let ((nr (-
+                                        r 1)))
+                                      (let ((nc c))
+                                        (let ((id (idx
+                                            n nr nc)))
+                                          (if (and
+                                              (>=
+                                                nr 0) (=
+                                                (grid-get
+                                                  g n nr nc) 1) (not (vector-ref
+                                                  visited id)))
+                                            (begin
+                                              (vector-set!
+                                                visited id #t)
+                                              (set! nq0 (append
+                                                  nq0 (list (cons
+                                                      nr nc))))
+                                              (set! cells (cons
+                                                  (cons
+                                                    nr nc) cells)))
+                                            ()))))
+                                    (let ((nr r))
+                                      (let ((nc (+
+                                          c 1)))
+                                        (let ((id (idx
+                                            n nr nc)))
+                                          (if (and
+                                              (<
+                                                nc n) (=
+                                                (grid-get
+                                                  g n nr nc) 1) (not (vector-ref
+                                                  visited id)))
+                                            (begin
+                                              (vector-set!
+                                                visited id #t)
+                                              (set! nq0 (append
+                                                  nq0 (list (cons
+                                                      nr nc))))
+                                              (set! cells (cons
+                                                  (cons
+                                                    nr nc) cells)))
+                                            ()))))
+                                    (let ((nr r))
+                                      (let ((nc (-
+                                          c 1)))
+                                        (let ((id (idx
+                                            n nr nc)))
+                                          (if (and
+                                              (>=
+                                                nc 0) (=
+                                                (grid-get
+                                                  g n nr nc) 1) (not (vector-ref
+                                                  visited id)))
+                                            (begin
+                                              (vector-set!
+                                                visited id #t)
+                                              (set! nq0 (append
+                                                  nq0 (list (cons
+                                                      nr nc))))
+                                              (set! cells (cons
+                                                  (cons
+                                                    nr nc) cells)))
+                                            ()))))
+                                    nq0)))
+                                  (begin
+                                    (set! queue nq)
+                                    (loop))))))))))))
+                  (loop)))))))))
+  (define bfs-bridge
+    (lambda (g n source-cells)
+      (let ((total (*
+          n n)))
+        (let ((visited (make-vector
+            total #f)))
+          (let ((queue source-cells))
+            (let ((dist 0))
+              (let ((done #f))
+                (let ((answer -1))
+                  (begin
+                    (letrec ((mloop (lambda (cs)
+                        (if (null? cs)
+                          (quote done)
+                          (let ((c (car cs)))
+                            (let ((r (car c)))
+                              (let ((cc (cdr c)))
+                                (begin
+                                  (vector-set!
+                                    visited (idx
+                                      n r cc) #t)
+                                  (mloop (cdr cs))))))))))
+                      (mloop source-cells))
+                    (if (and
+                        (=
+                          n 1) (=
+                          (grid-get
+                            g n 0 0) 1))
+                      0
+                      (letrec ((bfs-loop (lambda ()
+                          (if (or
+                              done (null? queue))
+                            answer
+                            (let ((sz (length queue)))
+                              (let ((found-this-layer #f))
+                                (letrec ((process (lambda (k)
+                                    (if (=
+                                        k sz)
+                                      (begin
+                                        (if found-this-layer
+                                          (set! answer dist)
+                                          (set! dist (+
+                                              dist 1)))
+                                        (bfs-loop))
+                                      (let ((cell (car queue)))
+                                        (let ((r (car cell)))
+                                          (let ((c (cdr cell)))
+                                            (let ((rest (cdr queue)))
+                                              (begin
+                                                (set! queue rest)
+                                                (let ((nr (+
+                                                    r 1)))
+                                                  (let ((nc c))
+                                                    (let ((id1 (idx
+                                                        n nr nc)))
+                                                      (if (and
+                                                          (<
+                                                            nr n) (not (vector-ref
+                                                              visited id1)))
+                                                        (begin
+                                                          (vector-set!
+                                                            visited id1 #t)
+                                                          (if (=
+                                                              (grid-get
+                                                                g n nr nc) 1)
+                                                            (set! found-this-layer #t)
+                                                            (set! queue (append
+                                                                queue (list (cons
+                                                                    nr nc))))))
+                                                        ()))))
+                                                (let ((nr (-
+                                                    r 1)))
+                                                  (let ((nc c))
+                                                    (let ((id2 (idx
+                                                        n nr nc)))
+                                                      (if (and
+                                                          (>=
+                                                            nr 0) (not (vector-ref
+                                                              visited id2)))
+                                                        (begin
+                                                          (vector-set!
+                                                            visited id2 #t)
+                                                          (if (=
+                                                              (grid-get
+                                                                g n nr nc) 1)
+                                                            (set! found-this-layer #t)
+                                                            (set! queue (append
+                                                                queue (list (cons
+                                                                    nr nc))))))
+                                                        ()))))
+                                                (let ((nr r))
+                                                  (let ((nc (+
+                                                      c 1)))
+                                                    (let ((id3 (idx
+                                                        n nr nc)))
+                                                      (if (and
+                                                          (<
+                                                            nc n) (not (vector-ref
+                                                              visited id3)))
+                                                        (begin
+                                                          (vector-set!
+                                                            visited id3 #t)
+                                                          (if (=
+                                                              (grid-get
+                                                                g n nr nc) 1)
+                                                            (set! found-this-layer #t)
+                                                            (set! queue (append
+                                                                queue (list (cons
+                                                                    nr nc))))))
+                                                        ()))))
+                                                (let ((nr r))
+                                                  (let ((nc (-
+                                                      c 1)))
+                                                    (let ((id4 (idx
+                                                        n nr nc)))
+                                                      (if (and
+                                                          (>=
+                                                            nc 0) (not (vector-ref
+                                                              visited id4)))
+                                                        (begin
+                                                          (vector-set!
+                                                            visited id4 #t)
+                                                          (if (=
+                                                              (grid-get
+                                                                g n nr nc) 1)
+                                                            (set! found-this-layer #t)
+                                                            (set! queue (append
+                                                                queue (list (cons
+                                                                    nr nc))))))
+                                                        ()))))
+                                                (process (+
+                                                    k 1)))))))))))
+                                  (process 0))))))))
+                        (bfs-loop))))))))))))
+  (define solve
+    (lambda (grid)
+      (let ((n (length grid)))
+        (let ((g (make-grid
+            n grid)))
+          (let ((start-r 0))
+            (let ((start-c 0))
+              (let ((found-start #f))
+                (begin
+                  (letrec ((row-loop (lambda (r)
+                      (if (and
+                          (<
+                            r n) (not found-start))
+                        (letrec ((col-loop (lambda (c)
+                            (if (and
+                                (<
+                                  c n) (not found-start))
+                              (if (=
+                                  (vector-ref
+                                    g (idx
+                                      n r c)) 1)
+                                (begin
+                                  (set! start-r r)
+                                  (set! start-c c)
+                                  (set! found-start #t))
+                                (col-loop (+
+                                    c 1)))
+                              (if found-start
+                                (quote done)
+                                (row-loop (+
+                                    r 1)))))))
+                          (col-loop 0))
+                        (quote done)))))
+                    (row-loop 0))
+                  (if (not found-start)
+                    0
+                    (let ((island-cells (collect-island
+                        g n start-r start-c)))
+                      (bfs-bridge
+                        g n island-cells)))))))))))
+  (display "CASE0=")
+  (display (solve (quote ((0
+            1 0 0)
+          (0
+            0 0 0) (0
+            0 1 0) (0
+            0 0 0)))))
+  (newline)
+  (display "CASE1=")
+  (display (solve (quote ((1
+            1 1 1 1)
+          (1
+            0 0 0 1) (1
+            0 1 0 1) (1
+            0 0 0 1) (1
+            1 1 1 1)))))
+  (newline)
+  (display "CASE2=")
+  (display (solve (quote ((1
+            0 0)
+          (0
+            0 0) (0
+            0 1)))))
+  (newline)
+  (display "CASE3=")
+  (display (solve (quote ((1 0) (0 1)))))
+  (newline)
+  (display "CASE4=")
+  (display (solve (quote ((1
+            1 0 0 0)
+          (1
+            1 0 0 0) (0
+            0 0 1 1) (0
+            0 0 1 1)))))
+  (newline)
+  (display "CASE5=")
+  (display (solve (quote ((1)))))
+  (newline)
+  (display "CASE6=")
+  (display (solve (quote ((1
+            1 0 1 0)
+          (0
+            1 0 0 1) (1
+            0 0 0 0) (0
+            0 0 1 0) (1
+            0 1 0 1)))))
+  (newline)
+  (display "CASE7=")
+  (display (solve (quote ((1
+            0 1)
+          (1
+            0 0) (0
+            0 1)))))
+  (newline))
