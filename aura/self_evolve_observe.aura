@@ -11,9 +11,11 @@
 ;     when Soft can invoke them (measured present below).
 ;
 ; Soft observe ≠ Hard proof: counter rise on Soft is guidance only.
-; Steering: accuracy first; press fanout only when correctness gates green;
-; if gates red (force-full / cold-miss / cascade-parity / soa-desync storm) →
-; shrink worldlines / MiniMax / explorer — do not burn harder.
+; Steering: Soft observability STORM (force-full / cold-miss / cascade-parity /
+; soa-desync rising, readiness low, hold over-budget, steal hard-fail) → red
+; shrink wl/explorer/minimax + mix rule+mutate. Transform accuracy_red
+; (AURA_BUILD_ACC_OK=false) is NOT Soft storm: keep press / amber-mid with llm;
+; stamp soft_observe_ne_hard=true; record accuracy_red as reason/note only.
 (export
   observe-query-keys
   observe-sample-stats
@@ -166,7 +168,8 @@
      (observe-pos (hash-ref prev key -1))))
 
 (define (observe-gate sample-bundle prev-bundle accuracy-ok)
-  ; correctness gates from Aura query faces; accuracy-ok from host/Soft feedback.
+  ; Storm from Aura query faces only. accuracy_ok is transform feedback —
+  ; accuracy_red ≠ Soft storm (do not drive red shrink). Soft observe ≠ Hard.
   (let* ((samples (hash-ref sample-bundle "samples" (list)))
          (prev-samples (if (hash? prev-bundle)
                          (hash-ref prev-bundle "samples" (list))
@@ -193,19 +196,22 @@
          (hold-red (or (> (observe-pos (hash-ref mh "over-budget" 0)) 0)
                        (> (observe-pos (hash-ref mh "live-over-budget-observe-total" 0)) 0)))
          (steal-red (> (observe-pos (hash-ref ps "post_steal_linear_hard_fail_total" 0)) 0))
-         ; Rising force-full / cold-miss / parity / soa force-full ⇒ red.
-         ; Absolute parity/soa-ff/steal hard-fail also red (correctness).
+         ; Rising force-full / cold-miss / parity / soa force-full ⇒ Soft storm red.
+         ; Absolute parity/soa-ff/steal hard-fail also storm-red (observability).
          (storm-red (or (> d-force 0) (> d-cold 0) (> d-parity 0) (> d-soa-ff 0)
                         (> parity-abs 0) (> soa-ff-abs 0) ready-red hold-red steal-red))
          (acc-ok (if (boolean? accuracy-ok) accuracy-ok #t))
+         (accuracy-signal (not acc-ok))
+         ; Gate color from Soft storm / lifetime amber ONLY — not accuracy_red.
+         ; accuracy_red alone: keep green press (or amber if lifetime force/cold).
          (gate (cond
-                 ((not acc-ok) "red")
                  (storm-red "red")
-                 ; amber: lifetime force-full present but not rising this sample
+                 ; amber: lifetime force-full/cold present but not rising this sample
                  ((or (> force-abs 0) (> cold-abs 0)) "amber")
                  (#t "green")))
          (reasons (list)))
-    (if (not acc-ok)
+    ; accuracy_red is a reason/note only — does NOT force gate=red shrink.
+    (if accuracy-signal
       (set! reasons (cons "accuracy_red" reasons))
       #t)
     (if (> d-force 0)
@@ -229,11 +235,15 @@
     (if steal-red
       (set! reasons (cons "post_steal_linear_hard_fail" reasons))
       #t)
-    (if (and (equal? gate "amber") (null? reasons))
+    (if (and (equal? gate "amber")
+             (not (member "force_full_rising" reasons))
+             (not (member "cold_miss_rising" reasons))
+             (or (> force-abs 0) (> cold-abs 0)))
       (set! reasons (cons "force_full_or_cold_lifetime" reasons))
       #t)
     (hash "gate" gate
           "accuracy_ok" acc-ok
+          "accuracy_signal" accuracy-signal
           "storm_red" storm-red
           "reasons" (reverse reasons)
           "deltas" (hash "partial_forced_full_by_impact_total" d-force
@@ -241,11 +251,16 @@
                          "dual-dep-graph-parity-fail-total" d-parity
                          "soa-dirty-desync-force-full-total" d-soa-ff)
           "soft_observe_ne_hard" #t
-          "note" "Soft observe ≠ Hard; guidance only")))
+          "note" (if accuracy-signal
+                   "accuracy_red≠Soft_storm; Soft observe ≠ Hard; guidance only"
+                   "Soft observe ≠ Hard; guidance only"))))
 
 (define (observe-steer gate-h)
-  ; accuracy first; green → can raise / keep diverge; red → shrink fanout.
+  ; Soft storm_red → shrink fanout. accuracy_signal alone does NOT drop llm
+  ; or crush explorer — gate color already excludes accuracy_red→red.
   (let* ((gate (hash-ref gate-h "gate" "amber"))
+         (storm (hash-ref gate-h "storm_red" #f))
+         (acc-sig (hash-ref gate-h "accuracy_signal" #f))
          (sticky (env-bool "AURA_BUILD_DIVERGE_STICKY" #t))
          (wl (cond
                ((equal? gate "green") (if sticky 256 256))
@@ -263,12 +278,14 @@
                   ((equal? gate "green") 48)
                   ((equal? gate "amber") 32)
                   (#t 16)))
-         ; red: lean mutate+rule (less MiniMax burn); green: full mix
+         ; red (Soft storm only): lean mutate+rule; green/amber keep llm
          (mix (cond
                 ((equal? gate "red") (list "rule" "mutate"))
                 (#t (list "rule" "mutate" "llm"))))
          (press (equal? gate "green")))
     (hash "gate" gate
+          "storm_red" storm
+          "accuracy_signal" acc-sig
           "worldlines_prefer" wl
           "explorer_cap_prefer" explorer
           "minimax_cap_prefer" minimax
@@ -279,9 +296,13 @@
           "path" "observe_steer"
           "kernel" "aura"
           "soft_observe_ne_hard" #t
-          "note" (if press
-                   "gates_green→can_raise_fanout"
-                   "gates_red_or_amber→shrink_or_rebalance_no_harder_burn"))))
+          "note" (cond
+                   (press (if acc-sig
+                            "query_faces_green+accuracy_red→keep_press_fanout"
+                            "gates_green→can_raise_fanout"))
+                   ((equal? gate "red")
+                    "soft_storm_red→shrink_fanout_no_harder_burn")
+                   (#t "gates_amber→rebalance_keep_llm")))))
 
 (define (observe-apply-to-swarm harness-root steer)
   ; Persist Soft knobs for thin host; also mirror into leet_swarm prefer fields.
@@ -328,6 +349,8 @@
          (_4 (observe-apply-to-swarm harness steer)))
     (display "observe_steer ok=true kernel=aura gate=")
     (display (hash-ref gate "gate" ""))
+    (display " storm_red=")(display (hash-ref gate "storm_red" #f))
+    (display " accuracy_signal=")(display (hash-ref gate "accuracy_signal" #f))
     (display " press=")(display (hash-ref steer "press_fanout" #f))
     (display " wl=")(display (hash-ref steer "worldlines_prefer" 0))
     (display " explorer=")(display (hash-ref steer "explorer_cap_prefer" 0))

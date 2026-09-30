@@ -5,6 +5,10 @@ Product path: ``aura/self_evolve_observe.aura`` samples existing Aura
 / mutation-hold / steal residual) and adapts worldlines / explorer / MiniMax
 mix. Soft observe ≠ Hard proof.
 
+Soft storm (force-full / cold-miss / parity / soa-desync / …) → shrink.
+Transform ``accuracy_ok=False`` / accuracy_red is NOT Soft storm — Soft keeps
+press or amber-mid with llm; host only mirrors Soft knobs (no accuracy→shrink).
+
 This module only starts Soft oneshot (or optional serve raw_line) and reads
 harness memory Soft wrote. Do NOT grow a Python evolution brain here.
 """
@@ -122,12 +126,26 @@ def run_kernel_observe_steer(
     if not gate and isinstance(mem.get("gate"), str):
         gate = {"gate": mem.get("gate")}
     ok = ("observe_steer ok=true" in stdout) or bool(steer.get("gate") or mem.get("gate"))
+    gate_color = (
+        (gate.get("gate") if isinstance(gate, dict) else None)
+        or mem.get("gate")
+        or steer.get("gate")
+    )
+    storm_red = False
+    accuracy_signal = False
+    if isinstance(gate, dict):
+        storm_red = bool(gate.get("storm_red"))
+        accuracy_signal = bool(gate.get("accuracy_signal")) or (
+            "accuracy_red" in (gate.get("reasons") or [])
+        )
+    if not accuracy_signal and isinstance(steer, dict):
+        accuracy_signal = bool(steer.get("accuracy_signal"))
     return {
         "ok": ok,
         "via": via,
-        "gate": (gate.get("gate") if isinstance(gate, dict) else None)
-        or mem.get("gate")
-        or steer.get("gate"),
+        "gate": gate_color,
+        "storm_red": storm_red,
+        "accuracy_signal": accuracy_signal,
         "reasons": (gate.get("reasons") if isinstance(gate, dict) else None) or [],
         "worldlines_prefer": steer.get("worldlines_prefer")
         or mem.get("worldlines_prefer"),
@@ -189,10 +207,13 @@ def apply_observe_to_strategy(state: dict[str, Any], observe: dict[str, Any]) ->
         state["mix_explorers"] = [str(x) for x in mix]
     state["observe_press_fanout"] = bool(press)
     state["soft_observe_ne_hard"] = True
+    state["observe_storm_red"] = bool(observe.get("storm_red"))
+    state["observe_accuracy_signal"] = bool(observe.get("accuracy_signal"))
     state["diverge_sticky"] = bool(observe.get("press_fanout")) and gate == "green"
     notes.append(
-        f"observe_steer gate={gate} wl={wl} explorer={ex} press={press} "
-        f"reasons={observe.get('reasons')}"
+        f"observe_steer gate={gate} storm={observe.get('storm_red')} "
+        f"acc_sig={observe.get('accuracy_signal')} wl={wl} explorer={ex} "
+        f"press={press} reasons={observe.get('reasons')}"
     )
     state["notes"] = notes[-24:]
     return state

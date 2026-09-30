@@ -2011,6 +2011,8 @@ def cmd_soft_leetcode(args: Any) -> int:
             result["observe_steer"] = {
                 "ok": bool(obs.get("ok")),
                 "gate": obs.get("gate"),
+                "storm_red": obs.get("storm_red"),
+                "accuracy_signal": obs.get("accuracy_signal"),
                 "reasons": obs.get("reasons"),
                 "worldlines_prefer": obs.get("worldlines_prefer"),
                 "explorer_cap_prefer": obs.get("explorer_cap_prefer"),
@@ -2029,6 +2031,8 @@ def cmd_soft_leetcode(args: Any) -> int:
                         "slug": result.get("slug") or s,
                         "ok": bool(obs.get("ok")),
                         "gate": obs.get("gate"),
+                        "storm_red": obs.get("storm_red"),
+                        "accuracy_signal": obs.get("accuracy_signal"),
                         "press_fanout": obs.get("press_fanout"),
                         "worldlines_prefer": obs.get("worldlines_prefer"),
                         "explorer_cap_prefer": obs.get("explorer_cap_prefer"),
