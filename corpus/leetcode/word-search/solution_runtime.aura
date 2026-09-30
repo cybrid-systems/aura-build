@@ -2,8 +2,8 @@
 ; materialize=current-source worldline_backend=fiber_graph
 ; fiber_live=true incr_proven=false
 ; llm_via=host_parallel fiber_llm_ok=true
-; selected=llm-8 hits=6/8
-; baseline_hits=0/8
+; selected=llm-47 hits=7/8
+; baseline_hits=6/8
 ; Expected values used only for host scoring / LLM context, not hardcoded into display.
 (begin
   (define string-length
@@ -17,7 +17,7 @@
             (loop (+
                 i 1))))))
         (loop 0))))
-  (define string-ref-impl
+  (define char-at
     (lambda (s i)
       (substring
         s i (+
@@ -28,6 +28,18 @@
         board (+
           (*
             i n) j))))
+  (define make-zero-list
+    (lambda (n)
+      (letrec ((loop (lambda (k acc)
+          (if (=
+              k 0)
+            acc
+            (loop
+              (-
+                k 1) (cons
+                0 acc))))))
+        (loop
+          n (quote ())))))
   (define set-list
     (lambda (lst idx val)
       (if (=
@@ -38,6 +50,13 @@
           (car lst) (set-list
             (cdr lst) (-
               idx 1) val)))))
+  (define char=?
+    (lambda (a b)
+      (and
+        (string=?
+          a b) (=
+          (string-length a) 1) (=
+          (string-length b) 1))))
   (define dfs
     (lambda (board m n i j idx word visited wlen)
       (if (=
@@ -55,28 +74,26 @@
             (if (=
                 (list-ref
                   visited pos) 0)
-              (if (string=?
+              (if (char=?
                   (board-ref
-                    board n i j) (string-ref-impl
+                    board n i j) (char-at
                     word idx))
                 (let ((visited (set-list
                     visited pos 1)))
-                  (if (or
-                      (dfs
-                        board m n (+
-                          i 1) j (+
-                          idx 1) word visited wlen) (dfs
-                        board m n (-
-                          i 1) j (+
-                          idx 1) word visited wlen) (dfs
-                        board m n i (+
-                          j 1) (+
-                          idx 1) word visited wlen) (dfs
-                        board m n i (-
-                          j 1) (+
-                          idx 1) word visited wlen))
-                    #t
-                    #f))
+                  (or
+                    (dfs
+                      board m n (+
+                        i 1) j (+
+                        idx 1) word visited wlen) (dfs
+                      board m n (-
+                        i 1) j (+
+                        idx 1) word visited wlen) (dfs
+                      board m n i (+
+                        j 1) (+
+                        idx 1) word visited wlen) (dfs
+                      board m n i (-
+                        j 1) (+
+                        idx 1) word visited wlen)))
                 #f)
               #f))
           #f))))
@@ -86,50 +103,40 @@
         (if (=
             wlen 0)
           #t
-          (letrec ((loop (lambda (i found)
+          (letrec ((outer (lambda (i found)
               (if (or
                   found (>=
                     i m))
                 found
-                (letrec ((loop2 (lambda (j found)
+                (letrec ((inner (lambda (j found)
                     (if (or
                         found (>=
                           j n))
-                      (loop
+                      (outer
                         (+
                           i 1) found)
-                      (let ((visited (make-list
-                          (*
-                            m n) 0)))
+                      (let ((visited (make-zero-list (*
+                            m n))))
                         (if (and
-                            (string=?
+                            (char=?
                               (board-ref
-                                board n i j) (string-ref-impl
+                                board n i j) (char-at
                                 word 0)) (dfs
                               board m n i j 0 word visited wlen))
-                          (loop2
+                          (inner
                             (+
                               j 1) #t)
-                          (loop2
+                          (inner
                             (+
                               j 1) found)))))))
-                  (loop2
+                  (inner
                     0 found))))))
-            (loop
+            (outer
               0 #f))))))
-  (define flatten-board
-    (lambda (rows)
-      (letrec ((loop (lambda (rows acc)
-          (if (null? rows)
-            (reverse acc)
-            (loop
-              (cdr rows) (append
-                acc (car rows)))))))
-        (loop
-          rows (quote ())))))
   (define run-case
     (lambda (idx m n rows word)
-      (let ((board (flatten-board rows)))
+      (let ((board (apply
+          append rows)))
         (let ((result (solve
             m n board word)))
           (begin
