@@ -112,7 +112,7 @@ def soft_pick_best_score(
         return {**base, "via": "host_fallback", "reason": "lambda_extract_failed"}
 
     lst = " ".join(str(n) for n in nums)
-    form = f"(let ((pick-best {lam})) (pick-best (list {lst})))".replace("\n", " ")
+    form = f"(letrec ((pick-best {lam})) (pick-best (list {lst})))".replace("\n", " ")
     try:
         r = sess.raw_line(form, timeout_s=timeout_s)
     except Exception as exc:  # noqa: BLE001

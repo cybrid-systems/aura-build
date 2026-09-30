@@ -5,13 +5,14 @@
 ; read the JSON Soft wrote.
 ;
 ; Cause classes (honest): sock_transient / sock_score_collapse / quality_plateau
-; / quality_no_improvement / gain.
+; / quality_no_improvement / soft_score_inflate / verify_no_gain / gain.
 (export
   feedback-observe
   feedback-classify
   feedback-prompt-suffix
   feedback-load
   feedback-family-hints
+  feedback-format-fails
   run-feedback-round)
 
 (require "util" all:)
@@ -42,6 +43,7 @@
 
 (define (feedback-family-hints slug)
   ; Algorithm-family tips live in KERNEL (not Python product).
+  ; Near-ceiling plateau families get assert-gap focus (not blind 64x mutate).
   (cond
     ((or (equal? slug "daily-temperatures")
          (string-contains? slug "next-greater")
@@ -59,12 +61,44 @@
      (list "One-pass circuit: reset start when tank<0; total<0 → -1."))
     ((string-contains? slug "decode")
      (list "Stack of (prev, k); digit→k; '[' push; ']' pop+repeat."))
+    ((or (equal? slug "target-sum")
+         (string-contains? slug "partition-equal")
+         (string-contains? slug "subset-sum"))
+     (list "Near-ceiling DP: meet-in-middle or knapsack count of +/− assignments."
+           "Focus remaining failing CASE inputs — do not re-mutate already-green cases."))
+    ((or (equal? slug "word-search")
+         (string-contains? slug "word-break"))
+     (list "Backtrack with mark/unmark board cells; prune early on mismatch."
+           "Repair only failing CASE boards/words; keep passing harness."))
+    ((or (equal? slug "dungeon-game")
+         (string-contains? slug "dungeon"))
+     (list "DP from bottom-right; hp need = max(1, next - cell); focus fail cells."))
+    ((or (equal? slug "as-far-from-land-as-possible")
+         (string-contains? slug "as-far")
+         (string-contains? slug "shortest-bridge")
+         (string-contains? slug "island")
+         (string-contains? slug "flood")
+         (string-contains? slug "pacific-atlantic"))
+     (list "Multi-source BFS Soft-friendly loops; mark visited; avoid cons-typed indices."
+           "Prefer integer flat indices over (cons r c) pairs for Soft oneshot."))
+    ((or (string-contains? slug "course-schedule")
+         (string-contains? slug "route"))
+     (list "Kahn BFS topo; detect cycle → empty; Soft oneshot must parse cleanly."
+           "Do not redefine Soft list-ref/list-length; keep CASE harness."))
+    ((or (equal? slug "binary-tree-right-side-view")
+         (string-contains? slug "binary-tree"))
+     (list "Level-order BFS; take last node each level; Soft-friendly queues."))
+    ((or (string-contains? slug "substring-with-concatenation")
+         (string-contains? slug "concatenated-words"))
+     (list "Sliding window + word multiset counts; focus remaining fail windows."
+           "Near-ceiling: repair assert gaps only — do not blind 64× same mutate."))
     ((or (string-contains? slug "island")
          (string-contains? slug "flood")
          (string-contains? slug "route")
          (string-contains? slug "course-schedule"))
      (list "Prefer BFS/queue Soft-friendly loops; mark visited."))
-    (#t (list "Prefer iterative Soft-friendly loops; preserve CASE harness."))))
+    (#t (list "Prefer iterative Soft-friendly loops; preserve CASE harness."
+              "Near-ceiling: feed failing CASE diffs into repair — not blind mutate."))))
 
 (define (string-contains? text substr)
   (if (or (not (string? text)) (not (string? substr))) #f
@@ -73,6 +107,29 @@
         (if (> i (- n m)) #f
           (if (equal? (substring text i (+ i m)) substr) #t
             (loop (+ i 1))))))))
+
+(define (feedback-format-fails fails)
+  ; fails = list of hashes with id/got/expected (optional input)
+  (if (or (not (list? fails)) (null? fails))
+    (list)
+    (let loop ((rest fails) (out (list)) (n 0))
+      (if (or (null? rest) (>= n 6))
+        (reverse out)
+        (let ((f (car rest)))
+          (if (not (hash? f))
+            (loop (cdr rest) out n)
+            (let* ((id (hash-ref f "id" -1))
+                   (got (hash-ref f "got" "?"))
+                   (exp (hash-ref f "expected" "?"))
+                   (line (string-append
+                           "FAIL CASE"
+                           (number->string (if (number? id) id -1))
+                           " got="
+                           (if (string? got) got "?")
+                           " expected="
+                           (if (string? exp) exp "?")
+                           " — repair this assert gap")))
+              (loop (cdr rest) (cons line out) (+ n 1)))))))))
 
 (define (feedback-observe harness-root slug ok cause hits baseline total mutate-ops fails)
   (let* ((data (feedback-load harness-root))
@@ -85,7 +142,7 @@
                      "baseline_hits" baseline
                      "total" total
                      "mutate_ops" mutate-ops
-                     "fails" fails
+                     "fails" (if (list? fails) fails (list))
                      "kernel" "aura"))
          (new-notes (append notes (list note)))
          ; keep last 48
@@ -100,8 +157,18 @@
 (define (feedback-prompt-suffix harness-root slug variant-i)
   (let* ((data (feedback-load harness-root))
          (last (hash-ref data "last"))
+         (slug-note (hash-ref data (string-append "slug:" slug)))
+         (note (if (hash? slug-note) slug-note last))
          (family (feedback-family-hints slug))
-         (cause (if (hash? last) (hash-ref last "cause" "") ""))
+         (cause (if (hash? note) (hash-ref note "cause" "") ""))
+         (hits (if (hash? note) (hash-ref note "hits" 0) 0))
+         (total (if (hash? note) (hash-ref note "total" 0) 0))
+         (fails (if (hash? note) (hash-ref note "fails" (list)) (list)))
+         (fail-lines (feedback-format-fails (if (list? fails) fails (list))))
+         (near-ceiling (and (number? hits) (number? total)
+                            (> hits 0) (> total 0)
+                            (>= hits (- total 3))
+                            (< hits total)))
          (lines (list
                   (string-append "Kernel feedback cause=" cause)
                   (string-append "Algorithm family tip: "
@@ -109,10 +176,26 @@
                   (string-append "Prompt variation["
                                  (number->string (modulo variant-i 8))
                                  "]: preserve CASE harness; Soft select-best owns scoring."))))
-    (if (equal? cause "quality_plateau")
-      (append lines
-              (list "ESCALATE: prior quality-plateau — switch algorithm family."))
-      lines)))
+    (let* ((lines2 (if near-ceiling
+                     (append lines
+                             (list (string-append
+                                     "NEAR-CEILING "
+                                     (number->string hits) "/" (number->string total)
+                                     " — focus remaining failing asserts; do not blind 64× mutate.")))
+                     lines))
+           (lines3 (if (null? fail-lines)
+                     lines2
+                     (append lines2 (list "Assert gaps:") fail-lines)))
+           (lines4 (if (equal? cause "quality_plateau")
+                     (append lines3
+                             (list "ESCALATE: prior quality-plateau — switch algorithm family; use FAIL CASE diffs."))
+                     lines3))
+           (lines5 (if (or (equal? cause "soft_score_inflate")
+                           (equal? cause "verify_no_gain"))
+                     (append lines4
+                             (list "Soft session score ≠ oneshot verify — prefer Soft-friendly loops; oneshot-confirm gains."))
+                     lines4)))
+      lines5)))
 
 (define (run-feedback-round)
   (let* ((slug (env-get "AURA_BUILD_SLUG" "unknown"))
@@ -123,7 +206,14 @@
          (hits (env-int "AURA_BUILD_FB_HITS" 0))
          (base (env-int "AURA_BUILD_FB_BASELINE" 0))
          (total (env-int "AURA_BUILD_FB_TOTAL" 8))
-         (note (feedback-observe harness slug ok cause hits base total (list) (list)))
+         ; Host may pass compact fail JSON via env; Soft parses if present.
+         (fails-raw (env-get "AURA_BUILD_FB_FAILS" ""))
+         (fails (if (or (not (string? fails-raw)) (equal? fails-raw ""))
+                  (list)
+                  ; Soft has no JSON parser here — host also memory-merges fails.
+                  ; Keep env as opaque breadcrumb; empty list unless Soft list form.
+                  (list)))
+         (note (feedback-observe harness slug ok cause hits base total (list) fails))
          (suffix (feedback-prompt-suffix harness slug 0)))
     (display "feedback ok=true kernel=aura slug=")(display slug)
     (display " cause=")(display cause)(newline)

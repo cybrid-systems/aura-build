@@ -141,6 +141,18 @@ def observe_transform_feedback(
 ) -> dict[str, Any]:
     """Write via Soft kernel; merge into returned state from Soft memory."""
     cause = no_gain_cause or ("gain" if ok else (reason or "unknown"))
+    # Compact fail gaps for Soft prompt-suffix (near-ceiling assert focus).
+    fails_compact: list[dict[str, Any]] = []
+    for d in list(fail_details or [])[:6]:
+        if not isinstance(d, dict):
+            continue
+        fails_compact.append(
+            {
+                "id": d.get("id"),
+                "got": None if d.get("got") is None else str(d.get("got"))[:80],
+                "expected": None if d.get("expected") is None else str(d.get("expected"))[:80],
+            }
+        )
     run_kernel_feedback(
         slug=slug,
         ok=ok,
@@ -153,20 +165,34 @@ def observe_transform_feedback(
     )
     repo = _repo_root()
     loaded = load_feedback(repo, harness_root)
+    # Thin host: Soft observe currently cannot parse fail JSON; stamp fails onto
+    # Soft-memory last/slug note so feedback-prompt-suffix can format assert gaps.
+    last = dict(loaded.get("last") or {})
+    last.update(
+        {
+            "slug": slug,
+            "ok": ok,
+            "cause": cause,
+            "hits": selected_hits,
+            "baseline_hits": baseline_hits,
+            "total": total,
+            "llm_via": llm_via,
+            "mutate_ops": list(mutate_ops or [])[:8],
+            "fails": fails_compact,
+            "kernel": "aura",
+        }
+    )
+    loaded["last"] = last
+    loaded[f"slug:{slug}"] = last
+    notes = list(loaded.get("notes") or [])
+    if notes and isinstance(notes[-1], dict) and notes[-1].get("slug") == slug:
+        notes[-1] = {**notes[-1], "fails": fails_compact, "cause": cause}
+    loaded["notes"] = notes[-MAX_NOTES:]
+    save_feedback(repo, loaded, harness_root)
     # keep caller-compatible shape
     state["notes"] = list(loaded.get("notes") or [])[-MAX_NOTES:]
     state["by_slug"] = loaded.get("by_slug") or {}
-    state["last"] = loaded.get("last") or {
-        "slug": slug,
-        "ok": ok,
-        "cause": cause,
-        "hits": selected_hits,
-        "baseline_hits": baseline_hits,
-        "total": total,
-        "llm_via": llm_via,
-        "mutate_ops": list(mutate_ops or [])[:8],
-        "kernel": "aura",
-    }
+    state["last"] = last
     state["kernel"] = "aura"
     return state
 
@@ -178,8 +204,17 @@ def classify_no_gain_cause(
     baseline_hits: int | None = None,
     selected_hits: int | None = None,
     pre_score_session: dict[str, Any] | None = None,
+    reason: str | None = None,
+    oneshot_confirm: dict[str, Any] | None = None,
 ) -> str:
     """Honest sock-vs-quality classify (thin; mirrors Soft feedback-classify)."""
+    if reason in ("soft_score_inflate", "verify_no_gain"):
+        return str(reason)
+    oc = oneshot_confirm or {}
+    if oc and oc.get("ok") is False and int(oc.get("soft_hits") or 0) > int(
+        oc.get("oneshot_hits") or 0
+    ):
+        return "soft_score_inflate"
     ex = list(explorers or [])
     if not ex:
         return "no_explorers"
@@ -273,7 +308,24 @@ def build_prompt_variation(
     if mutate_seed_note:
         lines.append(f"Mutate seed note: {mutate_seed_note[:240]}")
     if fail_details:
-        lines.append(f"Still failing {len(fail_details)} cases — repair those first.")
+        lines.append(
+            f"Still failing {len(fail_details)} cases — repair those assert gaps first "
+            "(near-ceiling: do not blind 64× same mutate)."
+        )
+        for d in fail_details[:6]:
+            if not isinstance(d, dict):
+                continue
+            lines.append(
+                f"FAIL CASE{d.get('id')} got={d.get('got')!s} expected={d.get('expected')!s}"
+            )
+    last_fails = (last.get("fails") if isinstance(last, dict) else None) or []
+    if last_fails and not fail_details:
+        lines.append("Soft-memory assert gaps (prior round):")
+        for d in list(last_fails)[:6]:
+            if isinstance(d, dict):
+                lines.append(
+                    f"FAIL CASE{d.get('id')} got={d.get('got')!s} expected={d.get('expected')!s}"
+                )
     if not lines:
         lines.append("Kernel feedback empty — Soft select-best owns scoring.")
     return "\n".join(lines)

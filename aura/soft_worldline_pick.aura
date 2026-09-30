@@ -3,17 +3,20 @@
 ; selected=max-loop  denseness=soft_ready_async_denseness_4048
 ; incr_proven=false
 ; Not stamp dogfood — real kernel helper used by Soft runtime path.
+; pick-best: max of numeric list. Body is closed (no free pick-best) so host
+; soft_select (let/letrec wrap of extracted lambda) stays correct; avoids
+; WAVE10 soft_bad_value returning the whole list / <error> under sock stress.
 (begin
   (export pick-best)
   (define pick-best
     (lambda (xs)
       (letrec ((loop (lambda (rest best)
-          (if (null? rest)
-            best
-            (loop
-              (cdr rest) (if (>
-                  (car rest) best)
-                (car rest)
-                best))))))
-        (loop
-          xs -999999)))))
+                       (if (null? rest)
+                         best
+                         (loop (cdr rest)
+                               (if (> (car rest) best)
+                                 (car rest)
+                                 best))))))
+        (if (null? xs)
+          -999999
+          (loop (cdr xs) (car xs)))))))

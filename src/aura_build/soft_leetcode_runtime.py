@@ -1606,6 +1606,80 @@ def repair_llm(
                 "denseness": {"ok": denseness.get("ok"), "note": denseness.get("note")},
             }
 
+        # Soft set-code can inflate hits vs oneshot (WAVE10 shortest-bridge Soft 1/8
+        # all-CASE=0 vs oneshot all-CASE=-1). Thin honesty: oneshot-confirm Soft-claimed
+        # gains before materialize. Soft bug tracked separately (set-code ≠ oneshot).
+        soft_via_score = str(best.get("via") or "")
+        if soft_via_score != "oneshot_rescore" and best_hits > base_hits:
+            win_src_chk = str(best.get("src") or "")
+            confirm_meta: dict[str, Any] = {
+                "trigger": "soft_claimed_gain",
+                "soft_hits": best_hits,
+                "soft_via": soft_via_score,
+            }
+            if win_src_chk:
+                tmp_c = scratch / f"oneshot_confirm_{best.get('name')}.aura"
+                try:
+                    tmp_c.write_text(win_src_chk, encoding="utf-8")
+                    sc_c = score_aura_file(repo, tmp_c, tests, aura_bin=aura_bin)
+                except Exception as exc:  # noqa: BLE001
+                    sc_c = {
+                        "ok": False,
+                        "hits": 0,
+                        "total": len(tests),
+                        "reason": f"oneshot_confirm_exc:{type(exc).__name__}",
+                    }
+                oneshot_hits = int(sc_c.get("hits") or 0)
+                confirm_meta["oneshot_hits"] = oneshot_hits
+                confirm_meta["oneshot_got"] = sc_c.get("got")
+                confirm_meta["ok"] = oneshot_hits > base_hits
+                llm_meta["oneshot_confirm"] = confirm_meta
+                if oneshot_hits <= base_hits:
+                    # Soft inflate — do not materialize a false Soft winner
+                    return {
+                        "ok": False,
+                        "reason": "soft_score_inflate",
+                        "slug": slug,
+                        "baseline": {
+                            k: baseline.get(k) for k in ("hits", "total", "aura_file", "ok")
+                        },
+                        "selected": {
+                            k: best.get(k) for k in ("name", "hits", "total", "via")
+                        },
+                        "verify": sc_c,
+                        "explorers": [
+                            {
+                                k: e.get(k)
+                                for k in ("name", "hits", "total", "via", "ok", "reason")
+                            }
+                            for e in explorers
+                        ],
+                        "llm": llm_meta,
+                        "fiber_live": fiber_live,
+                        "fiber_llm_ok": fiber_llm_ok,
+                        "soft_select": _soft_sel_meta(soft_sel),
+                        "denseness": {
+                            "ok": denseness.get("ok"),
+                            "note": denseness.get("note"),
+                        },
+                        "aura_issue_candidate": True,
+                        "no_gain_cause": "soft_score_inflate",
+                    }
+                # Trust oneshot hits for materialize gate / selected stamp
+                best = {
+                    **best,
+                    "hits": oneshot_hits,
+                    "total": int(sc_c.get("total") or best.get("total") or len(tests)),
+                    "ok": bool(sc_c.get("ok")),
+                    "via": "oneshot_confirm",
+                    "soft_session_hits": best_hits,
+                }
+                best_hits = oneshot_hits
+            else:
+                confirm_meta["ok"] = False
+                confirm_meta["reason"] = "no_src"
+                llm_meta["oneshot_confirm"] = confirm_meta
+
         # Materialize winner via set-code + current-source (restart once on transient sock errors)
         win_src = str(best.get("src") or "")
         boot = sess.raw_line(
@@ -2077,6 +2151,23 @@ def cmd_soft_leetcode(args: Any) -> int:
                 )
             )
         else:
+            # Near-ceiling assert gaps: prefer verify/baseline got map for Soft prompt.
+            fail_details_fb: list[dict] = []
+            try:
+                tests_fb = json.loads(
+                    (repo / "corpus" / "leetcode" / str(result.get("slug") or s) / "tests.json").read_text(
+                        encoding="utf-8"
+                    )
+                )
+                got_fb = {}
+                vfy = result.get("verify") if isinstance(result.get("verify"), dict) else {}
+                if isinstance(vfy.get("got"), dict):
+                    got_fb = {int(k) if str(k).isdigit() else k: v for k, v in vfy["got"].items()}
+                elif isinstance(base.get("got"), dict):
+                    got_fb = {int(k) if str(k).isdigit() else k: v for k, v in base["got"].items()}
+                fail_details_fb = _fail_case_details(tests_fb, got_fb)
+            except Exception:
+                fail_details_fb = []
             if not result.get("ok"):
                 cause = classify_no_gain_cause(
                     explorers=list(result.get("explorers") or []),
@@ -2084,6 +2175,8 @@ def cmd_soft_leetcode(args: Any) -> int:
                     baseline_hits=int(base.get("hits")) if base.get("hits") is not None else None,
                     selected_hits=int(selected.get("hits")) if selected.get("hits") is not None else None,
                     pre_score_session=(llm_meta.get("pre_score_session") or {}),
+                    reason=str(result.get("reason") or ""),
+                    oneshot_confirm=(llm_meta.get("oneshot_confirm") or {}),
                 )
                 result["no_gain_cause"] = cause
                 _lc_state["last_no_gain_cause"] = cause
@@ -2098,7 +2191,7 @@ def cmd_soft_leetcode(args: Any) -> int:
                 slug=str(result.get("slug") or s),
                 ok=bool(result.get("ok")),
                 reason=str(result.get("reason") or ""),
-                fail_details=None,
+                fail_details=fail_details_fb,
                 selected_hits=int(selected.get("hits")) if selected.get("hits") is not None else None,
                 baseline_hits=int(base.get("hits")) if base.get("hits") is not None else None,
                 total=int(total) if total is not None else None,
