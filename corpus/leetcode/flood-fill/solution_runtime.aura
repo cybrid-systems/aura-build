@@ -1,0 +1,216 @@
+; soft_leetcode_runtime slug=flood-fill path=llm
+; materialize=current-source worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=host_parallel fiber_llm_ok=true
+; selected=llm-19 hits=8/8
+; baseline_hits=4/8
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(begin
+  (define display-row
+    (lambda (row)
+      (begin
+        (display "[")
+        (letrec ((loop (lambda (i xs)
+            (if (null? xs)
+              (display "]")
+              (begin
+                (if (>
+                    i 0)
+                  (display ",")
+                  (quote ()))
+                (display (car xs))
+                (loop
+                  (+
+                    i 1) (cdr xs)))))))
+          (loop
+            0 row)))))
+  (define display-screen
+    (lambda (scr)
+      (begin
+        (display "[")
+        (letrec ((loop (lambda (i rows)
+            (if (null? rows)
+              (display "]")
+              (begin
+                (if (>
+                    i 0)
+                  (display ",")
+                  (quote ()))
+                (display-row (car rows))
+                (loop
+                  (+
+                    i 1) (cdr rows)))))))
+          (loop
+            0 scr)))))
+  (define list-ref-safe
+    (lambda (lst i)
+      (letrec ((loop (lambda (k xs)
+          (if (null? xs)
+            -1
+            (if (=
+                k i)
+              (car xs)
+              (loop
+                (+
+                  k 1) (cdr xs)))))))
+        (loop
+          0 lst))))
+  (define list-set-safe
+    (lambda (lst i v)
+      (if (null? lst)
+        lst
+        (if (=
+            i 0)
+          (cons
+            v (cdr lst))
+          (cons
+            (car lst) (list-set-safe
+              (cdr lst) (-
+                i 1) v))))))
+  (define row-set
+    (lambda (row c v n)
+      (list-set-safe
+        row c v)))
+  (define screen-set
+    (lambda (screen r c v m n)
+      (if (null? screen)
+        screen
+        (if (=
+            r 0)
+          (cons
+            (row-set
+              (car screen) c v n) (cdr screen))
+          (cons
+            (car screen) (screen-set
+              (cdr screen) (-
+                r 1) c v m n))))))
+  (define screen-ref
+    (lambda (screen r c)
+      (letrec ((loop (lambda (k rows)
+          (if (null? rows)
+            -1
+            (if (=
+                k r)
+              (list-ref-safe
+                (car rows) c)
+              (loop
+                (+
+                  k 1) (cdr rows)))))))
+        (loop
+          0 screen))))
+  (define in-bounds
+    (lambda (r c m n)
+      (and
+        (>=
+          r 0) (<
+          r m) (>=
+          c 0) (<
+          c n))))
+  (define solve
+    (lambda (screen sr sc new_color)
+      (let ((m (length screen)))
+        (let ((n (if (null? screen)
+            0
+            (length (car screen)))))
+          (let ((orig (screen-ref
+              screen sr sc)))
+            (if (=
+                orig new_color)
+              screen
+              (letrec ((fill-loop (lambda (queue)
+                  (if (null? queue)
+                    screen
+                    (let ((cell (car queue)))
+                      (let ((rest (cdr queue)))
+                        (let ((r (car cell)))
+                          (let ((c (cdr cell)))
+                            (if (and
+                                (in-bounds
+                                  r c m n) (=
+                                  (screen-ref
+                                    screen r c) orig))
+                              (begin
+                                (set! screen (screen-set
+                                    screen r c new_color m n))
+                                (fill-loop (append
+                                    rest (list
+                                      (cons
+                                        (+
+                                          r 1) c) (cons
+                                        (-
+                                          r 1) c) (cons
+                                        r (+
+                                          c 1)) (cons
+                                        r (-
+                                          c 1))))))
+                              (fill-loop rest))))))))))
+                (fill-loop (list (cons
+                      sr sc))))))))))
+  (let ((s0 (quote ((1
+          1 1)
+        (1
+          1 0) (1
+          0 1)))))
+    (begin
+      (display "CASE0=")
+      (display-screen (solve
+          s0 1 1 2))
+      (newline)))
+  (let ((s1 (quote ((0
+          0 0) (0
+          0 0)))))
+    (begin
+      (display "CASE1=")
+      (display-screen (solve
+          s1 0 0 0))
+      (newline)))
+  (let ((s2 (quote ((0
+          0 0) (0
+          0 0)))))
+    (begin
+      (display "CASE2=")
+      (display-screen (solve
+          s2 0 1 1))
+      (newline)))
+  (let ((s3 (quote ((5)))))
+    (begin
+      (display "CASE3=")
+      (display-screen (solve
+          s3 0 0 9))
+      (newline)))
+  (let ((s4 (quote ((1
+          2 1)
+        (2
+          1 2) (1
+          2 1)))))
+    (begin
+      (display "CASE4=")
+      (display-screen (solve
+          s4 0 0 3))
+      (newline)))
+  (let ((s5 (quote ((1
+          1 1 1 1)
+        (1
+          1 1 1 1) (1
+          1 1 1 1)))))
+    (begin
+      (display "CASE5=")
+      (display-screen (solve
+          s5 1 2 7))
+      (newline)))
+  (let ((s6 (quote ((0
+          1 0)
+        (1
+          1 1) (0
+          1 0)))))
+    (begin
+      (display "CASE6=")
+      (display-screen (solve
+          s6 1 1 5))
+      (newline)))
+  (let ((s7 (quote ((1 0) (0 1)))))
+    (begin
+      (display "CASE7=")
+      (display-screen (solve
+          s7 0 0 8))
+      (newline))))
