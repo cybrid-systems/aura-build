@@ -1,0 +1,348 @@
+; aura-build KERNEL — Soft observe-steer from existing Aura query:* faces
+;
+; Prefer landed observability keys (no new mid-struct counters, no rename):
+;   query:incremental-relower-stats
+;     relower_skipped_entirely_count
+;     partial_forced_full_by_impact_total
+;     incremental_relower_cold_miss_total
+;   query:dirty-cascade-stats
+;   query:soa-dirty-stats
+;   query:type-linear-commit-health / query:mutation-hold-* / steal residual
+;     when Soft can invoke them (measured present below).
+;
+; Soft observe ≠ Hard proof: counter rise on Soft is guidance only.
+; Steering: accuracy first; press fanout only when correctness gates green;
+; if gates red (force-full / cold-miss / cascade-parity / soa-desync storm) →
+; shrink worldlines / MiniMax / explorer — do not burn harder.
+(export
+  observe-query-keys
+  observe-sample-stats
+  observe-gate
+  observe-steer
+  observe-apply-to-swarm
+  run-observe-steer-round)
+
+(require "util" all:)
+(require "memory" all:)
+(require "std/io" all:)
+(require "std/hash" all:)
+
+(define OBSERVE_PROFILE "leet_observe")
+(define SWARM_PROFILE "leet_swarm")
+
+; Exact faces Soft can invoke today (rg + Soft -e probe; do not invent).
+(define (observe-query-keys)
+  (list "query:incremental-relower-stats"
+        "query:dirty-cascade-stats"
+        "query:soa-dirty-stats"
+        "query:type-linear-commit-health"
+        "query:mutation-hold-estimate"
+        "query:mutation-hold-live"
+        "query:work-steal-stats"
+        "query:post-steal-closed-loop-stats"))
+
+(define (observe-num h key)
+  ; Soft hash-ref on these query faces returns numbers when present.
+  (let ((v (hash-ref h key -1)))
+    (if (number? v) v -1)))
+
+(define (observe-sample-one facade)
+  (let* ((h (engine:metrics facade))
+         (ok (and (hash? h) (> (length (hash-keys h)) 0)))
+         (nkeys (if (hash? h) (length (hash-keys h)) 0)))
+    (cond
+      ((equal? facade "query:incremental-relower-stats")
+       (hash "facade" facade
+             "ok" ok
+             "nkeys" nkeys
+             "relower_skipped_entirely_count"
+             (observe-num h "relower_skipped_entirely_count")
+             "partial_forced_full_by_impact_total"
+             (observe-num h "partial_forced_full_by_impact_total")
+             "incremental_relower_cold_miss_total"
+             (observe-num h "incremental_relower_cold_miss_total")
+             "cold-miss-total" (observe-num h "cold-miss-total")
+             "full-fallbacks" (observe-num h "full-fallbacks")
+             "partial-relowers" (observe-num h "partial-relowers")))
+      ((equal? facade "query:dirty-cascade-stats")
+       (hash "facade" facade
+             "ok" ok
+             "nkeys" nkeys
+             "cascade-nodes-marked-total"
+             (observe-num h "cascade-nodes-marked-total")
+             "cascade-bfs-hits" (observe-num h "cascade-bfs-hits")
+             "dual-dep-graph-parity-fail-total"
+             (observe-num h "dual-dep-graph-parity-fail-total")
+             "hybrid-deferred-cascade-total"
+             (observe-num h "hybrid-deferred-cascade-total")
+             "cascade-skip-subtree-total"
+             (observe-num h "cascade-skip-subtree-total")))
+      ((equal? facade "query:soa-dirty-stats")
+       (hash "facade" facade
+             "ok" ok
+             "nkeys" nkeys
+             "soa-dirty-desync-detected-total"
+             (observe-num h "soa-dirty-desync-detected-total")
+             "soa-dirty-desync-force-full-total"
+             (observe-num h "soa-dirty-desync-force-full-total")
+             "soa_dirty_desync_detected_total"
+             (observe-num h "soa_dirty_desync_detected_total")
+             "soa-dirty-finish-cascade-total"
+             (observe-num h "soa-dirty-finish-cascade-total")
+             "schema-4168" (observe-num h "schema-4168")))
+      ((equal? facade "query:type-linear-commit-health")
+       (hash "facade" facade
+             "ok" ok
+             "nkeys" nkeys
+             "readiness-bp" (observe-num h "readiness-bp")
+             "occurrence-stale" (observe-num h "occurrence-stale")
+             "coercion-evidence-loss-bp"
+             (observe-num h "coercion-evidence-loss-bp")
+             "pending-full-solve-residual-escalate-total"
+             (observe-num h "pending-full-solve-residual-escalate-total")
+             "schema-2613" (observe-num h "schema-2613")))
+      ((equal? facade "query:mutation-hold-estimate")
+       (hash "facade" facade
+             "ok" ok
+             "nkeys" nkeys
+             "hold-us-p50" (observe-num h "hold-us-p50")
+             "hold-us-p99" (observe-num h "hold-us-p99")
+             "recommend-split" (observe-num h "recommend-split")
+             "budget-us" (observe-num h "budget-us")
+             "schema-2405" (observe-num h "schema-2405")))
+      ((equal? facade "query:mutation-hold-live")
+       (hash "facade" facade
+             "ok" ok
+             "nkeys" nkeys
+             "over-budget" (observe-num h "over-budget")
+             "live-over-budget-observe-total"
+             (observe-num h "live-over-budget-observe-total")
+             "held" (observe-num h "held")
+             "schema-2517" (observe-num h "schema-2517")))
+      ((equal? facade "query:work-steal-stats")
+       (hash "facade" facade
+             "ok" ok
+             "nkeys" nkeys
+             "steal-attempts" (observe-num h "steal-attempts")
+             "steal-successes" (observe-num h "steal-successes")
+             "steal-violations" (observe-num h "steal-violations")
+             "steal-deferred-mutation"
+             (observe-num h "steal-deferred-mutation")))
+      ((equal? facade "query:post-steal-closed-loop-stats")
+       (hash "facade" facade
+             "ok" ok
+             "nkeys" nkeys
+             "post_steal_linear_hard_fail_total"
+             (observe-num h "post_steal_linear_hard_fail_total")
+             "post-steal-linear-hard-fail-total"
+             (observe-num h "post-steal-linear-hard-fail-total")
+             "linear-provenance-ok"
+             (observe-num h "linear-provenance-ok")))
+      (#t (hash "facade" facade "ok" ok "nkeys" nkeys)))))
+
+(define (observe-sample-stats)
+  (let loop ((ks (observe-query-keys)) (acc (list)))
+    (if (null? ks)
+      (hash "ok" #t
+            "samples" (reverse acc)
+            "soft_observe_ne_hard" #t
+            "note" "Soft observe guidance only; not Hard proof"
+            "kernel" "aura")
+      (loop (cdr ks) (cons (observe-sample-one (car ks)) acc)))))
+
+(define (observe-find-sample samples facade)
+  (let loop ((xs samples))
+    (cond
+      ((null? xs) (hash))
+      ((equal? (hash-ref (car xs) "facade" "") facade) (car xs))
+      (#t (loop (cdr xs))))))
+
+(define (observe-pos n)
+  ; Treat missing (-1) as 0 for gate math; present zeros stay 0.
+  (if (and (number? n) (>= n 0)) n 0))
+
+(define (observe-delta cur prev key)
+  (- (observe-pos (hash-ref cur key -1))
+     (observe-pos (hash-ref prev key -1))))
+
+(define (observe-gate sample-bundle prev-bundle accuracy-ok)
+  ; correctness gates from Aura query faces; accuracy-ok from host/Soft feedback.
+  (let* ((samples (hash-ref sample-bundle "samples" (list)))
+         (prev-samples (if (hash? prev-bundle)
+                         (hash-ref prev-bundle "samples" (list))
+                         (list)))
+         (rel (observe-find-sample samples "query:incremental-relower-stats"))
+         (prev-rel (observe-find-sample prev-samples "query:incremental-relower-stats"))
+         (cas (observe-find-sample samples "query:dirty-cascade-stats"))
+         (prev-cas (observe-find-sample prev-samples "query:dirty-cascade-stats"))
+         (soa (observe-find-sample samples "query:soa-dirty-stats"))
+         (prev-soa (observe-find-sample prev-samples "query:soa-dirty-stats"))
+         (tl (observe-find-sample samples "query:type-linear-commit-health"))
+         (mh (observe-find-sample samples "query:mutation-hold-live"))
+         (ps (observe-find-sample samples "query:post-steal-closed-loop-stats"))
+         (d-force (observe-delta rel prev-rel "partial_forced_full_by_impact_total"))
+         (d-cold (observe-delta rel prev-rel "incremental_relower_cold_miss_total"))
+         (d-parity (observe-delta cas prev-cas "dual-dep-graph-parity-fail-total"))
+         (d-soa-ff (observe-delta soa prev-soa "soa-dirty-desync-force-full-total"))
+         (force-abs (observe-pos (hash-ref rel "partial_forced_full_by_impact_total" 0)))
+         (cold-abs (observe-pos (hash-ref rel "incremental_relower_cold_miss_total" 0)))
+         (parity-abs (observe-pos (hash-ref cas "dual-dep-graph-parity-fail-total" 0)))
+         (soa-ff-abs (observe-pos (hash-ref soa "soa-dirty-desync-force-full-total" 0)))
+         (ready-bp (hash-ref tl "readiness-bp" -1))
+         (ready-red (and (number? ready-bp) (>= ready-bp 0) (< ready-bp 5000)))
+         (hold-red (or (> (observe-pos (hash-ref mh "over-budget" 0)) 0)
+                       (> (observe-pos (hash-ref mh "live-over-budget-observe-total" 0)) 0)))
+         (steal-red (> (observe-pos (hash-ref ps "post_steal_linear_hard_fail_total" 0)) 0))
+         ; Rising force-full / cold-miss / parity / soa force-full ⇒ red.
+         ; Absolute parity/soa-ff/steal hard-fail also red (correctness).
+         (storm-red (or (> d-force 0) (> d-cold 0) (> d-parity 0) (> d-soa-ff 0)
+                        (> parity-abs 0) (> soa-ff-abs 0) ready-red hold-red steal-red))
+         (acc-ok (if (boolean? accuracy-ok) accuracy-ok #t))
+         (gate (cond
+                 ((not acc-ok) "red")
+                 (storm-red "red")
+                 ; amber: lifetime force-full present but not rising this sample
+                 ((or (> force-abs 0) (> cold-abs 0)) "amber")
+                 (#t "green")))
+         (reasons (list)))
+    (if (not acc-ok)
+      (set! reasons (cons "accuracy_red" reasons))
+      #t)
+    (if (> d-force 0)
+      (set! reasons (cons "force_full_rising" reasons))
+      #t)
+    (if (> d-cold 0)
+      (set! reasons (cons "cold_miss_rising" reasons))
+      #t)
+    (if (or (> d-parity 0) (> parity-abs 0))
+      (set! reasons (cons "cascade_parity_fail" reasons))
+      #t)
+    (if (or (> d-soa-ff 0) (> soa-ff-abs 0))
+      (set! reasons (cons "soa_desync_force_full" reasons))
+      #t)
+    (if ready-red
+      (set! reasons (cons "type_linear_readiness_low" reasons))
+      #t)
+    (if hold-red
+      (set! reasons (cons "mutation_hold_over_budget" reasons))
+      #t)
+    (if steal-red
+      (set! reasons (cons "post_steal_linear_hard_fail" reasons))
+      #t)
+    (if (and (equal? gate "amber") (null? reasons))
+      (set! reasons (cons "force_full_or_cold_lifetime" reasons))
+      #t)
+    (hash "gate" gate
+          "accuracy_ok" acc-ok
+          "storm_red" storm-red
+          "reasons" (reverse reasons)
+          "deltas" (hash "partial_forced_full_by_impact_total" d-force
+                         "incremental_relower_cold_miss_total" d-cold
+                         "dual-dep-graph-parity-fail-total" d-parity
+                         "soa-dirty-desync-force-full-total" d-soa-ff)
+          "soft_observe_ne_hard" #t
+          "note" "Soft observe ≠ Hard; guidance only")))
+
+(define (observe-steer gate-h)
+  ; accuracy first; green → can raise / keep diverge; red → shrink fanout.
+  (let* ((gate (hash-ref gate-h "gate" "amber"))
+         (sticky (env-bool "AURA_BUILD_DIVERGE_STICKY" #t))
+         (wl (cond
+               ((equal? gate "green") (if sticky 256 256))
+               ((equal? gate "amber") 128)
+               (#t 64)))
+         (explorer (cond
+                     ((equal? gate "green") 64)
+                     ((equal? gate "amber") 32)
+                     (#t 16)))
+         (minimax (cond
+                    ((equal? gate "green") 64)
+                    ((equal? gate "amber") 32)
+                    (#t 16)))
+         (n-mut (cond
+                  ((equal? gate "green") 48)
+                  ((equal? gate "amber") 32)
+                  (#t 16)))
+         ; red: lean mutate+rule (less MiniMax burn); green: full mix
+         (mix (cond
+                ((equal? gate "red") (list "rule" "mutate"))
+                (#t (list "rule" "mutate" "llm"))))
+         (press (equal? gate "green")))
+    (hash "gate" gate
+          "worldlines_prefer" wl
+          "explorer_cap_prefer" explorer
+          "minimax_cap_prefer" minimax
+          "n_mut" n-mut
+          "mix" mix
+          "press_fanout" press
+          "diverge_sticky" (and sticky press)
+          "path" "observe_steer"
+          "kernel" "aura"
+          "soft_observe_ne_hard" #t
+          "note" (if press
+                   "gates_green→can_raise_fanout"
+                   "gates_red_or_amber→shrink_or_rebalance_no_harder_burn"))))
+
+(define (observe-apply-to-swarm harness-root steer)
+  ; Persist Soft knobs for thin host; also mirror into leet_swarm prefer fields.
+  (memory-set harness-root OBSERVE_PROFILE "steer" steer)
+  (memory-set harness-root OBSERVE_PROFILE "gate" (hash-ref steer "gate" "amber"))
+  (memory-set harness-root OBSERVE_PROFILE "worldlines_prefer"
+              (hash-ref steer "worldlines_prefer" 64))
+  (memory-set harness-root OBSERVE_PROFILE "explorer_cap_prefer"
+              (hash-ref steer "explorer_cap_prefer" 16))
+  (memory-set harness-root OBSERVE_PROFILE "minimax_cap_prefer"
+              (hash-ref steer "minimax_cap_prefer" 16))
+  (memory-set harness-root OBSERVE_PROFILE "n_mut" (hash-ref steer "n_mut" 16))
+  (memory-set harness-root OBSERVE_PROFILE "mix" (hash-ref steer "mix" (list)))
+  (memory-set harness-root OBSERVE_PROFILE "press_fanout"
+              (hash-ref steer "press_fanout" #f))
+  (memory-set harness-root OBSERVE_PROFILE "soft_observe_ne_hard" #t)
+  ; Mirror into leet_swarm so swarm_mutate_candidates / diverge knobs see Soft brain.
+  (memory-set harness-root SWARM_PROFILE "worldlines_prefer"
+              (hash-ref steer "worldlines_prefer" 64))
+  (memory-set harness-root SWARM_PROFILE "explorer_cap_prefer"
+              (hash-ref steer "explorer_cap_prefer" 16))
+  (memory-set harness-root SWARM_PROFILE "n_mut" (hash-ref steer "n_mut" 16))
+  (memory-set harness-root SWARM_PROFILE "mix" (hash-ref steer "mix" (list)))
+  (memory-set harness-root SWARM_PROFILE "diverge_sticky"
+              (hash-ref steer "diverge_sticky" #f))
+  (memory-set harness-root SWARM_PROFILE "observe_gate" (hash-ref steer "gate" "amber"))
+  (memory-set harness-root SWARM_PROFILE "observe_press_fanout"
+              (hash-ref steer "press_fanout" #f))
+  steer)
+
+(define (run-observe-steer-round)
+  (let* ((harness (env-get "AURA_BUILD_HARNESS_ROOT" ".aura-build"))
+         (slug (env-get "AURA_BUILD_SLUG" "unknown"))
+         (acc-s (env-get "AURA_BUILD_ACC_OK" "true"))
+         (acc-ok (equal? acc-s "true"))
+         (prev (memory-list harness OBSERVE_PROFILE))
+         (prev-sample (hash-ref prev "last_sample" (hash)))
+         (sample (observe-sample-stats))
+         (gate (observe-gate sample prev-sample acc-ok))
+         (steer (observe-steer gate))
+         (_ (memory-set harness OBSERVE_PROFILE "last_sample" sample))
+         (_2 (memory-set harness OBSERVE_PROFILE "last_gate" gate))
+         (_3 (memory-set harness OBSERVE_PROFILE "last_slug" slug))
+         (_4 (observe-apply-to-swarm harness steer)))
+    (display "observe_steer ok=true kernel=aura gate=")
+    (display (hash-ref gate "gate" ""))
+    (display " press=")(display (hash-ref steer "press_fanout" #f))
+    (display " wl=")(display (hash-ref steer "worldlines_prefer" 0))
+    (display " explorer=")(display (hash-ref steer "explorer_cap_prefer" 0))
+    (display " minimax=")(display (hash-ref steer "minimax_cap_prefer" 0))
+    (display " n_mut=")(display (hash-ref steer "n_mut" 0))
+    (display " mix=")(display (hash-ref steer "mix" (list)))
+    (display " soft_observe_ne_hard=true")
+    (display " slug=")(display slug)
+    (display " reasons=")(display (hash-ref gate "reasons" (list)))
+    (newline)
+    (hash "ok" #t
+          "kernel" "aura"
+          "slug" slug
+          "sample" sample
+          "gate" gate
+          "steer" steer
+          "soft_observe_ne_hard" #t
+          "query_keys" (observe-query-keys))))

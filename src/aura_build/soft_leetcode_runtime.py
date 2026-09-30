@@ -1992,6 +1992,61 @@ def cmd_soft_leetcode(args: Any) -> int:
             fiber_live=bool(result.get("fiber_live")) if "fiber_live" in result else None,
             tokens=tokens,
         )
+        # Soft observe-steer: sample existing Aura query:* into strategy knobs.
+        # Soft observe ≠ Hard; host only surfaces Soft memory (thin harness).
+        try:
+            from aura_build.soft_observe_steer import (
+                apply_observe_to_strategy,
+                run_kernel_observe_steer,
+            )
+
+            acc_ok = bool(result.get("ok"))
+            obs = run_kernel_observe_steer(
+                slug=str(result.get("slug") or s),
+                aura_bin=aura_bin,
+                harness_root=harness_root,
+                accuracy_ok=acc_ok,
+            )
+            _lc_state = apply_observe_to_strategy(_lc_state, obs)
+            result["observe_steer"] = {
+                "ok": bool(obs.get("ok")),
+                "gate": obs.get("gate"),
+                "reasons": obs.get("reasons"),
+                "worldlines_prefer": obs.get("worldlines_prefer"),
+                "explorer_cap_prefer": obs.get("explorer_cap_prefer"),
+                "minimax_cap_prefer": obs.get("minimax_cap_prefer"),
+                "n_mut": obs.get("n_mut"),
+                "mix": obs.get("mix"),
+                "press_fanout": obs.get("press_fanout"),
+                "soft_observe_ne_hard": True,
+                "via": obs.get("via"),
+                "query_keys": obs.get("query_keys"),
+            }
+            print(
+                json.dumps(
+                    {
+                        "event": "soft_observe_steer",
+                        "slug": result.get("slug") or s,
+                        "ok": bool(obs.get("ok")),
+                        "gate": obs.get("gate"),
+                        "press_fanout": obs.get("press_fanout"),
+                        "worldlines_prefer": obs.get("worldlines_prefer"),
+                        "explorer_cap_prefer": obs.get("explorer_cap_prefer"),
+                        "minimax_cap_prefer": obs.get("minimax_cap_prefer"),
+                        "mix": obs.get("mix"),
+                        "reasons": obs.get("reasons"),
+                        "soft_observe_ne_hard": True,
+                        "via": obs.get("via"),
+                    },
+                    ensure_ascii=False,
+                )
+            )
+        except Exception as _obs_exc:  # noqa: BLE001
+            result["observe_steer"] = {
+                "ok": False,
+                "reason": f"obs_exc:{type(_obs_exc).__name__}",
+                "soft_observe_ne_hard": True,
+            }
         save_strategy(repo, _lc_state, harness_root)
         # Durable feedback-accumulated prompts + sock-vs-quality no_gain analysis
         # Skip Soft feedback write on already_full_* (no transform attempted).

@@ -29,6 +29,7 @@
 (require "std/io" all:)
 (require "std/hash" all:)
 (require "std/ant" all:)
+(require "self_evolve_observe" all:)
 
 ; Mutation-type names aligned with Soft std/ant defaults (Issue #2876).
 (define (swarm-default-ops)
@@ -121,16 +122,29 @@
   (hash "ok" #t "updated" op-list "delta" delta "via" "soft_ant_pheromone"))
 
 (define (swarm-diverge-knobs)
-  ; High-diverge Soft intent (user: 多发散). Sticky prefer — host reads Soft memory.
-  (hash "n_mut" 48
-        "n_mut_ceil" 64
-        "worldlines_prefer" 256
-        "explorer_cap_prefer" 64
-        "seed_policy" "minimax_seed_only_no_soft_score_banner"
-        "path" "swarm_mutate_then_llm"
-        "mix" (list "rule" "mutate" "llm")
-        "diverge_sticky" #t
-        "kernel" "aura"))
+  ; High-diverge Soft intent (user: 多发散). When observe-steer gate is red/amber,
+  ; prefer Soft observe knobs (accuracy first; do not burn harder). Green → sticky raise.
+  (let* ((harness (env-get "AURA_BUILD_HARNESS_ROOT" ".aura-build"))
+         (obs (memory-list harness "leet_observe"))
+         (steer (hash-ref obs "steer" (hash)))
+         (gate (hash-ref obs "gate" (hash-ref steer "gate" "green")))
+         (has-steer (hash? steer))
+         (wl (if has-steer (hash-ref steer "worldlines_prefer" 256) 256))
+         (ex (if has-steer (hash-ref steer "explorer_cap_prefer" 64) 64))
+         (nm (if has-steer (hash-ref steer "n_mut" 48) 48))
+         (mix (if has-steer (hash-ref steer "mix" (list "rule" "mutate" "llm"))
+                (list "rule" "mutate" "llm")))
+         (sticky (if has-steer (hash-ref steer "diverge_sticky" #t) #t)))
+    (hash "n_mut" nm
+          "n_mut_ceil" 64
+          "worldlines_prefer" wl
+          "explorer_cap_prefer" ex
+          "seed_policy" "minimax_seed_only_no_soft_score_banner"
+          "path" "swarm_mutate_then_llm"
+          "mix" mix
+          "diverge_sticky" sticky
+          "observe_gate" gate
+          "kernel" "aura")))
 
 (define (swarm-schedule-write harness-root slug ranked probes)
   ; Persist Soft-ranked schedule for thin host MiniMax seed (not Python brain).
@@ -156,8 +170,10 @@
 
 (define (run-swarm-mutate-round)
   ; Entry for thin host: AURA_BUILD_CMD=swarm-mutate / env slug+harness.
+  ; Sample Aura query:* observe-steer before ranking (prefer existing keys).
   (let* ((slug (env-get "AURA_BUILD_SLUG" "unknown"))
          (harness (env-get "AURA_BUILD_HARNESS_ROOT" ".aura-build"))
+         (_obs (run-observe-steer-round))
          (rank (swarm-rank-ops))
          (pso (swarm-probe "pso"))
          (abc (swarm-probe "abc"))

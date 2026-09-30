@@ -16,6 +16,7 @@
 (require "pursue" all:)
 (require "self_evolve_swarm" all:)
 (require "self_evolve_feedback" all:)
+(require "self_evolve_observe" all:)
 (require "std/io" all:)
 
 (define (write-response obj)
@@ -287,6 +288,20 @@
                           "note" "fiber_live not claimed; denseness probe owns honesty"))
     (if (hash-ref result "ok" #f) 0 1)))
 
+
+(define (cmd-observe-steer)
+  (let ((result (run-observe-steer-round)))
+    (write-response (hash "cmd" "observe-steer"
+                          "ok" (hash-ref result "ok" #f)
+                          "kernel" "aura"
+                          "slug" (hash-ref result "slug" "")
+                          "gate" (hash-ref result "gate" (hash))
+                          "steer" (hash-ref result "steer" (hash))
+                          "sample" (hash-ref result "sample" (hash))
+                          "query_keys" (hash-ref result "query_keys" (list))
+                          "soft_observe_ne_hard" #t))
+    (if (hash-ref result "ok" #f) 0 1)))
+
 (define (cmd-feedback)
   (let ((result (run-feedback-round)))
     (write-response (hash "cmd" "feedback"
@@ -315,6 +330,7 @@
       ((equal? cmd "pursue") (cmd-pursue))
       ((equal? cmd "swarm-mutate") (cmd-swarm-mutate))
       ((equal? cmd "feedback") (cmd-feedback))
+      ((equal? cmd "observe-steer") (cmd-observe-steer))
       (else
         (display "unknown AURA_BUILD_CMD=")(display cmd)(newline)
         (write-response (hash "ok" #f "error" "unknown_cmd"))

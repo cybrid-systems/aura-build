@@ -94,11 +94,18 @@ def run_kernel_swarm_mutate(
             pass
     n_mut = 48
     diverge_sticky = True
+    observe_gate = None
     if mem.is_file():
         try:
             data = json.loads(mem.read_text(encoding="utf-8"))
+            observe_gate = data.get("observe_gate")
             if isinstance(data.get("n_mut"), (int, float)):
-                n_mut = max(48, min(64, int(data["n_mut"])))
+                # Soft observe-steer may shrink n_mut on red/amber gates — honor it.
+                raw_n = int(data["n_mut"])
+                if observe_gate in ("red", "amber") or data.get("observe_press_fanout") is False:
+                    n_mut = max(8, min(64, raw_n))
+                else:
+                    n_mut = max(48, min(64, raw_n))
             diverge_sticky = bool(data.get("diverge_sticky", True))
         except (OSError, json.JSONDecodeError, TypeError, ValueError):
             pass
@@ -109,6 +116,7 @@ def run_kernel_swarm_mutate(
         "ranked_ops": ranked,
         "n_mut": n_mut,
         "diverge_sticky": diverge_sticky,
+        "observe_gate": observe_gate,
         "stdout": out[:500],
         "stderr": (proc.stderr or "")[:300],
         "path": "kernel_swarm_mutate",
@@ -230,10 +238,14 @@ def swarm_mutate_candidates(
         if k == "ant":
             continue
         probes[k] = soft_swarm_probe(k, aura_bin=aura_bin)
-    # Soft kernel prefers n_mut≥48 for diverge; honor max(requested, Soft n_mut)
+    # Soft observe-steer may shrink n_mut when gates red/amber — honor Soft brain.
     soft_n = int(kr.get("n_mut") or 48)
-    n_eff = max(int(n), soft_n, 48)
-    n_eff = min(64, n_eff)
+    gate = kr.get("observe_gate")
+    if gate in ("red", "amber") or kr.get("diverge_sticky") is False:
+        n_eff = max(8, min(64, min(int(n), soft_n)))
+    else:
+        n_eff = max(int(n), soft_n, 48)
+        n_eff = min(64, n_eff)
     cands = local_multi_mutate(src, n=n_eff, ranked_ops=ranked, seed=seed)
     meta = {
         "ok": bool(cands),
@@ -241,6 +253,7 @@ def swarm_mutate_candidates(
         "n": len(cands),
         "n_mut": n_eff,
         "diverge_sticky": bool(kr.get("diverge_sticky", True)),
+        "observe_gate": kr.get("observe_gate"),
         "rank_via": kr.get("via") or "host_fallback",
         "ranked_ops": ranked,
         "probes": {
