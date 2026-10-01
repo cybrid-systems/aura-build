@@ -1,0 +1,105 @@
+; soft_leetcode_runtime slug=course-schedule-ii path=llm
+; materialize=proposed_source_fallback worldline_backend=fiber_graph
+; fiber_live=true incr_proven=false
+; llm_via=host_parallel fiber_llm_ok=true
+; selected=llm-9 hits=10/10
+; baseline_hits=0/10
+; Expected values used only for host scoring / LLM context, not hardcoded into display.
+(define (list-length lst)
+  (if (null? lst) 0 (+ 1 (list-length (cdr lst)))))
+
+(define (list-ref lst i)
+  (if (= i 0) (car lst) (list-ref (cdr lst) (- i 1))))
+
+(define (vec-make n fill)
+  (let ((v (make-vector n fill)))
+    (define (ref i) (vector-ref v i))
+    (define (set i val) (vector-set! v i val))
+    (define (the-v v) v)
+    (lambda (m)
+      (cond ((eq? m 'ref) ref)
+            ((eq? m 'set) set)
+            ((eq? m 'vec) (lambda () v))
+            (else '())))))
+
+(define (append-list lst x)
+  (if (null? lst) (list x) (cons (car lst) (append-list (cdr lst) x))))
+
+(define (solve n prereqs)
+  (cond ((= n 0) '())
+        (else
+         (let ((adj (make-vector n '()))
+               (in-deg (make-vector n 0)))
+           (let ((m (list-length prereqs)))
+             (let loop ((k 0))
+               (if (>= k m) 'done
+                   (let ((pair (list-ref prereqs k)))
+                     (let ((a (list-ref pair 0)) (b (list-ref pair 1)))
+                       (vector-set! adj a (append-list (vector-ref adj a) b))
+                       (vector-set! in-deg b (+ (vector-ref in-deg b) 1))
+                       (loop (+ k 1)))))))
+           (let ((queue (list)))
+             (let qinit ((i 0))
+               (if (>= i n) 'done
+                   (begin
+                     (if (= (vector-ref in-deg i) 0)
+                         (set! queue (append-list queue i))
+                         'skip)
+                     (qinit (+ i 1)))))
+             (let ((result '()))
+               (let process ()
+                 (if (null? queue) 'done
+                     (let ((u (car queue)))
+                       (set! queue (cdr queue))
+                       (set! result (append-list result u))
+                       (let nloop ((ns (vector-ref adj u)))
+                         (if (null? ns) 'done
+                             (let ((v (car ns)))
+                               (let ((d (vector-ref in-deg v)))
+                                 (vector-set! in-deg v (- d 1))
+                                 (if (= (- d 1) 0)
+                                     (set! queue (append-list queue v))
+                                     'skip))
+                               (nloop (cdr ns))))))
+                     (process)))
+               (if (= (list-length result) n) result '())))))))
+
+(define (display-list lst)
+  (display "[")
+  (let loop ((l lst) (first #t))
+    (cond ((null? l) (display "]"))
+          (else
+           (if first (set! first #f) (display ","))
+           (display (car l))
+           (loop (cdr l) #f)))))
+
+(define (display-result r)
+  (cond ((null? r) (display "[]"))
+        ((list? r) (display-list r))
+        (else (display r))))
+
+(define cases
+  (list
+    (list 4 '((1 0) (2 0) (3 1) (3 2)))
+    (list 3 '((1 0) (2 1)))
+    (list 3 '())
+    (list 3 '((0 1) (1 2) (2 0)))
+    (list 2 '((0 0)))
+    (list 0 '())
+    (list 1 '())
+    (list 6 '((1 0) (2 0) (3 1) (4 1) (5 2) (5 3)))
+    (list 4 '((1 0) (2 0) (3 1) (3 2)))
+    (list 5 '((1 0) (2 0) (3 0) (4 0)))))
+
+(let loop-cases ((cs cases) (i 0))
+  (cond ((null? cs) 'done)
+        (else
+         (let ((c (car cs)))
+           (let ((n (list-ref c 0)) (p (list-ref c 1)))
+             (let ((r (solve n p)))
+               (display (string-append "CASE" (number->string i)))
+               (display "=")
+               (display-result r)
+               (newline)
+               (loop-cases (cdr cs) (+ i 1))))))))
+
