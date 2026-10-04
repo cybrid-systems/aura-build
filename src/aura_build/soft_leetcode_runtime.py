@@ -1181,6 +1181,11 @@ def _restart_soft_session(
 
 
 
+def _norm_ws(value: str) -> str:
+    """Whitespace-insensitive source identity (pretty-print tolerant)."""
+    return "".join((value or "").split())
+
+
 def _session_score_src(
     sess: Any,
     src: str,
@@ -1202,6 +1207,51 @@ def _session_score_src(
             "msg": msg,
             "reason": "set_code_failed",
             "transient": _is_session_transient(msg),
+        }
+    # Issue #4333: a reused Soft session can keep the PREVIOUS candidate's
+    # workspace while set-code still reports ok (adopt-if-held). The
+    # eval-current display then scores the held program's CASE output on
+    # this candidate — the soft_score_inflate family (Repro B: 28/64
+    # explorers all claiming 8/8 while oneshot of their own bytes got 0/8
+    # with got={}). Verify the session actually adopted this candidate's
+    # source before trusting any display; fail the explorer honestly
+    # instead of returning inflated hits. One re-arm retry (same spirit as
+    # the set_code_failed restart path) before the honest fail.
+    adopted = False
+    for attempt in (0, 1):
+        cs = sess.raw_line(
+            "(display (current-source :workspace :pretty))", timeout_s=20.0
+        )
+        cur_src = _norm_ws(str(cs.get("display") or ""))
+        cand = _norm_ws(src)
+        if cur_src and (cand in cur_src or cur_src in cand):
+            adopted = True
+            break
+        if attempt == 0:
+            boot = sess.raw_line(
+                f'(set-code "{esc}")',
+                timeout_s=min(SOFT_SET_CODE_TIMEOUT_S, timeout_s + 2),
+            )
+            if boot.get("status") != "ok":
+                msg = boot.get("msg") or boot.get("status")
+                return {
+                    "ok": False,
+                    "hits": 0,
+                    "total": len(tests),
+                    "status": boot.get("status"),
+                    "msg": msg,
+                    "reason": "set_code_failed",
+                    "transient": _is_session_transient(msg),
+                }
+    if not adopted:
+        return {
+            "ok": False,
+            "hits": 0,
+            "total": len(tests),
+            "status": boot.get("status"),
+            "msg": "session kept a held workspace; candidate source not adopted",
+            "reason": "source_not_adopted",
+            "transient": False,
         }
     ev = sess.raw_line("(eval-current)", timeout_s=timeout_s)
     if _is_session_transient(ev.get("msg") or ev.get("status")):
