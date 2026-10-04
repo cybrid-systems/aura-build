@@ -1194,31 +1194,40 @@ def _session_score_src(
     timeout_s: float = SOFT_EVAL_TIMEOUT_S,
 ) -> dict[str, Any]:
     esc = _soft_escape(src)
-    boot = sess.raw_line(
-        f'(set-code "{esc}")', timeout_s=min(SOFT_SET_CODE_TIMEOUT_S, timeout_s + 2)
-    )
-    if boot.get("status") != "ok":
-        msg = boot.get("msg") or boot.get("status")
-        return {
-            "ok": False,
-            "hits": 0,
-            "total": len(tests),
-            "status": boot.get("status"),
-            "msg": msg,
-            "reason": "set_code_failed",
-            "transient": _is_session_transient(msg),
-        }
-    # Issue #4333: a reused Soft session can keep the PREVIOUS candidate's
-    # workspace while set-code still reports ok (adopt-if-held). The
-    # eval-current display then scores the held program's CASE output on
-    # this candidate — the soft_score_inflate family (Repro B: 28/64
-    # explorers all claiming 8/8 while oneshot of their own bytes got 0/8
-    # with got={}). Verify the session actually adopted this candidate's
-    # source before trusting any display; fail the explorer honestly
-    # instead of returning inflated hits. One re-arm retry (same spirit as
-    # the set_code_failed restart path) before the honest fail.
     adopted = False
+    boot: dict[str, Any] = {}
     for attempt in (0, 1):
+        # Issue #4333: set-code + eval-current must be ONE evaluator
+        # transaction. Splitting them across two serve round-trips lets a
+        # parallel propose fiber re-set-code the shared workspace in between
+        # (shared-graph Soft pins named sessions to the default service) —
+        # the adopt-if-held display contamination this guard exists for.
+        # Same atomic-begin pattern as the mutate explorer path.
+        boot = sess.raw_line(
+            f'(begin (set-code "{esc}") (eval-current))',
+            timeout_s=min(SOFT_SET_CODE_TIMEOUT_S, timeout_s + 2) + timeout_s,
+        )
+        if boot.get("status") != "ok":
+            msg = boot.get("msg") or boot.get("status")
+            return {
+                "ok": False,
+                "hits": 0,
+                "total": len(tests),
+                "status": boot.get("status"),
+                "msg": msg,
+                "reason": "set_code_failed",
+                "transient": _is_session_transient(msg),
+            }
+        # Issue #4333: a reused Soft session can keep the PREVIOUS candidate's
+        # workspace while set-code still reports ok (adopt-if-held). The
+        # display then scores the held program's CASE output on this
+        # candidate — the soft_score_inflate family (Repro B: 28/64
+        # explorers all claiming 8/8 while oneshot of their own bytes got
+        # 0/8 with got={}). Verify the session actually adopted this
+        # candidate's source before trusting the transaction display; fail
+        # the explorer honestly instead of returning inflated hits. One
+        # re-arm retry (re-sends the atomic transaction) before the honest
+        # fail — the credited display always comes from an ADOPTED state.
         cs = sess.raw_line(
             "(display (current-source :workspace :pretty))", timeout_s=20.0
         )
@@ -1227,22 +1236,6 @@ def _session_score_src(
         if cur_src and (cand in cur_src or cur_src in cand):
             adopted = True
             break
-        if attempt == 0:
-            boot = sess.raw_line(
-                f'(set-code "{esc}")',
-                timeout_s=min(SOFT_SET_CODE_TIMEOUT_S, timeout_s + 2),
-            )
-            if boot.get("status") != "ok":
-                msg = boot.get("msg") or boot.get("status")
-                return {
-                    "ok": False,
-                    "hits": 0,
-                    "total": len(tests),
-                    "status": boot.get("status"),
-                    "msg": msg,
-                    "reason": "set_code_failed",
-                    "transient": _is_session_transient(msg),
-                }
     if not adopted:
         return {
             "ok": False,
@@ -1253,7 +1246,7 @@ def _session_score_src(
             "reason": "source_not_adopted",
             "transient": False,
         }
-    ev = sess.raw_line("(eval-current)", timeout_s=timeout_s)
+    ev = boot  # display from the ADOPTED transaction
     if _is_session_transient(ev.get("msg") or ev.get("status")):
         return {
             "ok": False,
